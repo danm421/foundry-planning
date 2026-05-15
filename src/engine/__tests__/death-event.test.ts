@@ -632,6 +632,68 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     expect(result.ledgerEntries[0].resultingAccountId).toBeNull();
     expect(result.resultingAccounts).toHaveLength(0);
   });
+
+  it("lapses a primary designation that names the decedent themselves", () => {
+    // An account owned by the client that names the client as its own
+    // beneficiary: the designation cannot take effect (you can't inherit
+    // your own asset). It must lapse so the fraction cascades to will/fallback.
+    const iraNamingSelf: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraNamingSelf, 1,
+      [{ id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: "Smith", dateOfBirth: "1970-01-01" }],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.fractionClaimed).toBe(0);
+    expect(result.consumed).toBe(false);
+    expect(result.resultingAccounts).toHaveLength(0);
+    expect(result.ledgerEntries).toHaveLength(0);
+  });
+
+  it("lapses only the decedent's share, routing co-beneficiaries normally", () => {
+    const iraSplit: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 50, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "primary", percentage: 50, householdRole: "spouse", sortOrder: 1 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraSplit, 1,
+      [
+        { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: LEGACY_FM_SPOUSE, role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
+    expect(result.consumed).toBe(false);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0].recipientKind).toBe("spouse");
+  });
+
+  it("lapses a designation naming the decedent via a direct familyMemberId", () => {
+    const iraNamingSelf: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, familyMemberId: LEGACY_FM_CLIENT, sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraNamingSelf, 1,
+      [{ id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null }],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.fractionClaimed).toBe(0);
+    expect(result.resultingAccounts).toHaveLength(0);
+  });
 });
 
 describe("applyWillSpecificBequests (Step 3a)", () => {
@@ -1051,6 +1113,42 @@ describe("applyFirstDeath orchestrator", () => {
     expect(result.warnings).toEqual([]);
     // Income clipped
     expect(result.incomes[0].endYear).toBe(2050);
+  });
+
+  it("does not crash when a deceased-owned account names the decedent as its own beneficiary", () => {
+    // Regression: a taxable account owned by the client that names "Client"
+    // as its primary beneficiary. The bene step used to route the account
+    // back to the (now-deceased) client, leaving a dead-owner orphan that
+    // tripped assertPrecedenceChainInvariants. The designation must lapse and
+    // the account cascade to the will residual.
+    const selfNamed: Account = {
+      id: "client-self-bene",
+      name: "John Brokerage",
+      category: "taxable", subType: "brokerage",
+      value: 200000, basis: 120000,
+      growthRate: 0.05, rmdEnabled: false,
+      beneficiaries: [
+        { id: "b-self", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+      ],
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const selfInput: DeathEventInput = {
+      ...input,
+      accounts: [...baseAccounts, selfNamed],
+      accountBalances: { ...input.accountBalances, "client-self-bene": 200000 },
+      basisMap: { ...input.basisMap, "client-self-bene": 120000 },
+    };
+
+    const result = applyFirstDeath(selfInput);
+
+    // No account is left controlled by the decedent.
+    for (const a of result.accounts) {
+      expect(controllingFamilyMember(a)).not.toBe("fm-client");
+    }
+    // The self-named account cascaded onward (will residual → surviving spouse).
+    const routed = result.transfers.find((t) => t.sourceAccountId === "client-self-bene");
+    expect(routed).toBeDefined();
+    expect(routed!.via).toBe("will");
   });
 
   it("emits residual_fallback_fired when a deceased-owned account has no will clause", () => {

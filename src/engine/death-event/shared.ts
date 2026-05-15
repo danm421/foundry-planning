@@ -409,18 +409,35 @@ export function applyBeneficiaryDesignations(
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
   linkedLiability: Liability | undefined,
+  /** FM id of the decedent. Designations naming this person lapse — you can't
+   *  inherit your own asset — so their share cascades to the will/fallback
+   *  steps. Defaults to null (no lapse check) for direct-unit-test callers. */
+  deceasedFmId: string | null = null,
 ): StepResult {
-  const primaries = (source.beneficiaries ?? []).filter(
-    (b) => b.tier === "primary",
-  );
+  const noDesignations: StepResult = {
+    consumed: false,
+    resultingAccounts: [],
+    resultingLiabilities: [],
+    ledgerEntries: [],
+    fractionClaimed: 0,
+  };
+
+  // A designation that names the decedent themselves (directly via
+  // familyMemberId, or via a household-role that resolves to them) cannot
+  // take effect. Drop those primaries so their fraction stays undisposed and
+  // cascades to the will / fallback steps.
+  const primaries = (source.beneficiaries ?? []).filter((b) => {
+    if (b.tier !== "primary") return false;
+    if (deceasedFmId == null) return true;
+    if (b.familyMemberId) return b.familyMemberId !== deceasedFmId;
+    if (b.householdRole) {
+      const roleFm = familyMembers.find((f) => f.role === b.householdRole);
+      return roleFm?.id !== deceasedFmId;
+    }
+    return true;
+  });
   if (primaries.length === 0) {
-    return {
-      consumed: false,
-      resultingAccounts: [],
-      resultingLiabilities: [],
-      ledgerEntries: [],
-      fractionClaimed: 0,
-    };
+    return noDesignations;
   }
 
   const famMap = new Map(familyMembers.map((f) => [f.id, f]));

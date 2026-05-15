@@ -45,4 +45,87 @@ describe("BeneficiariesTab", () => {
     });
     expect(edit.desiredFields).toHaveProperty("beneficiaries");
   });
+
+  it("renders tier sums as numbers when the API returns string percentages", async () => {
+    mockFetch.mockReset();
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          {
+            id: "d1",
+            targetKind: "account",
+            accountId: "a1",
+            entityId: null,
+            tier: "primary",
+            familyMemberId: null,
+            externalBeneficiaryId: null,
+            entityIdRef: null,
+            householdRole: "client",
+            percentage: "60.00",
+            sortOrder: 0,
+          },
+          {
+            id: "d2",
+            targetKind: "account",
+            accountId: "a1",
+            entityId: null,
+            tier: "primary",
+            familyMemberId: null,
+            externalBeneficiaryId: null,
+            entityIdRef: null,
+            householdRole: "spouse",
+            percentage: "40.00",
+            sortOrder: 1,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+    render(<BeneficiariesTab clientId="c1" accountId="a1" active />);
+
+    expect(await screen.findByText("sum: 100.00%")).toBeInTheDocument();
+  });
+
+  it("omits household principals (client/spouse) from the family beneficiary list", async () => {
+    mockFetch.mockReset();
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          {
+            id: "d1",
+            targetKind: "account",
+            accountId: "a1",
+            entityId: null,
+            tier: "primary",
+            familyMemberId: null,
+            externalBeneficiaryId: null,
+            entityIdRef: null,
+            householdRole: null,
+            percentage: "100.00",
+            sortOrder: 0,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { id: "fm-client", firstName: "Pat", lastName: "Client", relationship: "child", role: "client" },
+          { id: "fm-spouse", firstName: "Sam", lastName: "Spouse", relationship: "child", role: "spouse" },
+          { id: "fm-kid", firstName: "Kid", lastName: "Smith", relationship: "child", role: "child" },
+        ],
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+    render(<BeneficiariesTab clientId="c1" accountId="a1" active />);
+    await screen.findByRole("heading", { name: /primary/i, level: 4 });
+
+    expect(screen.queryByRole("option", { name: /Pat Client/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /Sam Spouse/ })).toBeNull();
+    expect(screen.getAllByRole("option", { name: /Kid Smith/ }).length).toBeGreaterThan(0);
+  });
 });

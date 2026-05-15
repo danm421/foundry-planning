@@ -117,6 +117,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     const step2 = applyBeneficiaryDesignations(
       effectiveAcct, undisposed,
       familyMembers, externalBeneficiaries, entities, linkedLiability,
+      deceasedFmId,
     );
     if (step2.fractionClaimed > 0) {
       stepAccts.push(...step2.resultingAccounts);

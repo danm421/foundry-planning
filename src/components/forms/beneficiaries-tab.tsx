@@ -17,6 +17,17 @@ interface BeneficiariesTabProps {
   active: boolean;
 }
 
+// `beneficiary_designations.percentage` is a Postgres `decimal`, which Drizzle
+// surfaces as a string. Coerce to a number at the trust boundary so downstream
+// arithmetic (tier sums) doesn't silently string-concatenate.
+function normalizeDesignations(rows: Designation[]): Designation[] {
+  return rows.map((d) => ({
+    ...d,
+    percentage:
+      typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
+  }));
+}
+
 function AccountBeneficiaryEditor({
   clientId,
   accountId,
@@ -107,11 +118,7 @@ function AccountBeneficiaryEditor({
       // scenario_change row, not designations; useScenarioWriter triggers router.refresh().
       const saved = await res.json().catch(() => null);
       if (Array.isArray(saved)) {
-        const normalized = (saved as Designation[]).map((d) => ({
-          ...d,
-          percentage:
-            typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
-        }));
+        const normalized = normalizeDesignations(saved as Designation[]);
         setRows(normalized);
         onSaved(normalized);
       }
@@ -362,8 +369,12 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
           Array<{ id: string; name: string }>,
         ];
         if (cancelled) return;
-        setDesignations(d);
-        setMembers(m);
+        setDesignations(normalizeDesignations(d));
+        // Household principals (client/spouse) are stored as family_members
+        // rows with a defaulted `relationship` of "child". They have their own
+        // "Household" optgroup below, so exclude them here to avoid showing
+        // them as kin — and to keep them out of the "child" beneficiary list.
+        setMembers(m.filter((fm) => fm.role !== "client" && fm.role !== "spouse"));
         setExternals(e);
         setEntities(ent);
         setLoaded(true);
