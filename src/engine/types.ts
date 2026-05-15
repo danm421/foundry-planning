@@ -697,6 +697,11 @@ export interface SavingsRule {
    *  base+catch-up for IRA-group accounts). Overrides annualAmount and
    *  annualPercent. Non-retirement subtypes resolve to 0. */
   contributeMax?: boolean;
+  /** Fraction (0..1) of the resolved contribution designated Roth. Applies
+   *  to 401(k)/403(b) accounts only; null/0 means fully pre-tax. The Roth
+   *  slice feeds the account's rothValue and is excluded from the
+   *  above-the-line deduction. */
+  rothPercent?: number | null;
   /** Whether this contribution counts as an above-the-line deduction.
    *  The derive-deductions logic gates on both subtype eligibility AND this flag. */
   isDeductible: boolean;
