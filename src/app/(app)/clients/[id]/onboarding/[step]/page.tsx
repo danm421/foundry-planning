@@ -6,7 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
-import { isImportEligibleStep, type ImportEligibleStep } from "@/lib/onboarding/import-sections";
+import { isImportEligibleStep } from "@/lib/onboarding/import-sections";
 import OnboardingShell from "../onboarding-shell";
 import WizardImportLauncher from "@/components/onboarding/wizard-import-launcher";
 import HouseholdStep from "../steps/household-step";
@@ -83,10 +83,10 @@ export default async function OnboardingStepPage({ params }: PageProps) {
 
   return (
     <OnboardingShell clientId={id} activeStep={step} statuses={statuses}>
-      {importEligible && baseScenarioId ? (
+      {isImportEligibleStep(step) && baseScenarioId ? (
         <WizardImportLauncher
           clientId={id}
-          step={step as ImportEligibleStep}
+          step={step}
           baseScenarioId={baseScenarioId}
           activeImportId={activeImportId}
         />
