@@ -165,6 +165,15 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     }
     return map;
   }, [working]);
+  // Account display names keyed by id — used by the death columns to resolve
+  // asset-gift marker labels ("P% of {account name}").
+  const accountNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const acct of working.accounts ?? []) {
+      map.set(acct.id, acct.name);
+    }
+    return map;
+  }, [working.accounts]);
   const reportData = useMemo(
     () =>
       buildEstateTransferReportData({
@@ -398,6 +407,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                   deathOrder={1}
                   projection={projection}
                   onAssetClick={setDistributionDialogId}
+                  gifts={workingGifts}
+                  accountNameById={accountNameById}
+                  onGiftClick={setEditingGiftId}
                 />
               </div>
               {/* Death column 3 — second death, married only */}
@@ -408,6 +420,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                     deathOrder={2}
                     projection={projection}
                     onAssetClick={setDistributionDialogId}
+                    gifts={workingGifts}
+                    accountNameById={accountNameById}
+                    onGiftClick={setEditingGiftId}
                   />
                 </div>
               ) : (
