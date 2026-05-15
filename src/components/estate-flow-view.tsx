@@ -12,6 +12,7 @@ import {
 } from "@/components/scenario/scenario-picker-dropdown";
 import { EstateFlowOwnershipColumn } from "@/components/estate-flow-ownership-column";
 import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
+import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import type { ClientData } from "@/engine/types";
 
 export interface EstateFlowViewProps {
@@ -97,6 +98,17 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [working],
   );
   const ownership = useMemo(() => buildOwnershipColumn(working), [working]);
+  const reportData = useMemo(
+    () =>
+      buildEstateTransferReportData({
+        projection,
+        asOf: { kind: "split" },
+        ordering,
+        clientData: working,
+        ownerNames: props.ownerNames,
+      }),
+    [projection, ordering, working, props.ownerNames],
+  );
   const pendingChanges = useMemo(
     () => diffWorkingCopy(original, working),
     [original, working],
@@ -169,11 +181,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         {/* Death column 1 — first death */}
         <div className="rounded border border-gray-800/60 p-3">
           <EstateFlowDeathColumn
+            section={reportData.firstDeath}
             deathOrder={1}
             projection={projection}
-            clientData={working}
-            ordering={ordering}
-            ownerNames={props.ownerNames}
             onAssetClick={setDistributionDialogId}
           />
           {/* pendingChanges wired here to avoid unused-variable lint */}
@@ -183,16 +193,14 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         {props.isMarried ? (
           <div className="rounded border border-gray-800/60 p-3">
             <EstateFlowDeathColumn
+              section={reportData.secondDeath}
               deathOrder={2}
               projection={projection}
-              clientData={working}
-              ordering={ordering}
-              ownerNames={props.ownerNames}
               onAssetClick={setDistributionDialogId}
             />
           </div>
         ) : (
-          <div className="rounded border border-gray-800/60 p-3" />
+          <div className="rounded border border-gray-800/60 p-3" aria-hidden="true" />
         )}
       </div>
 

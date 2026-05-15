@@ -2,9 +2,7 @@
 
 import { useMemo } from "react";
 import type { ProjectionResult } from "@/engine/projection";
-import type { ClientData } from "@/engine/types";
 import {
-  buildEstateTransferReportData,
   type DeathSectionData,
   type RecipientGroup,
   type ConflictEntry,
@@ -75,6 +73,16 @@ function DeathWarningsCallout({ warnings }: { warnings: string[] }) {
   );
 }
 
+// ── Drain kinds (module-scoped to avoid per-render reallocation) ─────────────
+
+const DRAIN_KINDS: ReadonlyArray<keyof RecipientGroup["drainsByKind"]> = [
+  "federal_estate_tax",
+  "state_estate_tax",
+  "admin_expenses",
+  "debts_paid",
+  "ird_tax",
+];
+
 // ── Recipient group — direct render with clickable asset rows ─────────────────
 // EstateTransferRecipientCard does not accept a row-click callback, so we
 // render recipient groups directly here, matching the card's dark-theme
@@ -90,13 +98,6 @@ function ClickableRecipientGroup({
   const isSpouse = group.recipientKind === "spouse";
   const isSystemDefault = group.recipientKind === "system_default";
 
-  const DRAIN_KINDS: ReadonlyArray<keyof RecipientGroup["drainsByKind"]> = [
-    "federal_estate_tax",
-    "state_estate_tax",
-    "admin_expenses",
-    "debts_paid",
-    "ird_tax",
-  ];
   const totalDrains = DRAIN_KINDS.reduce((s, k) => s + group.drainsByKind[k], 0);
   const hasReductions = Math.abs(totalDrains) >= 0.5;
 
@@ -151,11 +152,13 @@ function ClickableRecipientGroup({
                     key={`${a.sourceAccountId ?? a.sourceLiabilityId ?? "asset"}-${i}`}
                     type="button"
                     disabled={accountId == null}
+                    aria-label={`${a.label} — ${fmt.format(a.amount)}`}
+                    aria-disabled={accountId == null ? true : undefined}
                     onClick={() => accountId != null && onAssetClick(accountId)}
                     className={
                       "group flex w-full items-baseline justify-between gap-3 py-0.5 pl-2 text-left text-xs text-gray-300 " +
                       (accountId != null
-                        ? "cursor-pointer hover:text-gray-100"
+                        ? "cursor-pointer hover:text-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
                         : "cursor-default")
                     }
                   >
@@ -224,39 +227,21 @@ function TotalsStrip({ section }: { section: DeathSectionData }) {
 // ── EstateFlowDeathColumn ─────────────────────────────────────────────────────
 
 interface EstateFlowDeathColumnProps {
+  /** Pre-built section data from the view-level useMemo — null when no event falls in the plan window. */
+  section: DeathSectionData | null;
+  /** Which ordinal death this column represents — used for empty-state messaging only. */
   deathOrder: 1 | 2;
+  /** Full projection — needed for the deathWarnings lookup. */
   projection: ProjectionResult;
-  clientData: ClientData;
-  ordering: "primaryFirst" | "spouseFirst";
-  ownerNames: { clientName: string; spouseName: string | null };
   onAssetClick: (accountId: string) => void;
 }
 
 export function EstateFlowDeathColumn({
+  section,
   deathOrder,
   projection,
-  clientData,
-  ordering,
-  ownerNames,
   onAssetClick,
 }: EstateFlowDeathColumnProps) {
-  // Call buildEstateTransferReportData with split mode — the estate-flow view
-  // always uses split (actual projected death years) per the design spec.
-  const reportData = useMemo(
-    () =>
-      buildEstateTransferReportData({
-        projection,
-        asOf: { kind: "split" },
-        ordering,
-        clientData,
-        ownerNames,
-      }),
-    [projection, ordering, clientData, ownerNames],
-  );
-
-  const section: DeathSectionData | null =
-    deathOrder === 1 ? reportData.firstDeath : reportData.secondDeath;
-
   // Resolve death warnings from the projection year matching this section.
   const deathWarnings: string[] = useMemo(() => {
     if (!section) return [];
