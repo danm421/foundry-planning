@@ -23,7 +23,7 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
   if (!client) notFound();
 
   const scenarioId = sp.scenario ?? "base";
-  const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioId, {});
+  const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioId, {}).catch(() => notFound());
 
   const isMarried =
     client.filingStatus === "married_joint" ||
