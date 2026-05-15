@@ -79,12 +79,12 @@ describe("applySavingsRules", () => {
     };
     const result = applySavingsRules([splitRule], 2026, 150000, baseClient);
     expect(result.byAccount["acct-401k"]).toBe(10000);
-    expect(result.rothByAccount["acct-401k"]).toBeCloseTo(4000, 6);
+    expect(result.rothByAccount["acct-401k"]).toBe(4000);
   });
 
   it("rothByAccount is empty when no rule has rothPercent", () => {
     const result = applySavingsRules(sampleSavingsRules, 2026, 150000, baseClient);
-    expect(result.rothByAccount["acct-401k"] ?? 0).toBe(0);
+    expect(result.rothByAccount).toEqual({});
   });
 
   it("rothByAccount tracks the capped contribution, not the requested amount", () => {
@@ -100,7 +100,7 @@ describe("applySavingsRules", () => {
     // legacy surplus cap of 4000 clamps the 10000 contribution
     const result = applySavingsRules([splitRule], 2026, 150000, baseClient, 4000);
     expect(result.byAccount["acct-401k"]).toBe(4000);
-    expect(result.rothByAccount["acct-401k"]).toBeCloseTo(2000, 6);
+    expect(result.rothByAccount["acct-401k"]).toBe(2000);
   });
 });
 
