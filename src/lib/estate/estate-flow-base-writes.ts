@@ -60,6 +60,10 @@ export function baseWritesForChange(
           body: { owners: desiredFields.owners },
         });
       }
+      // The entity beneficiaries route only accepts trust entities (it rejects
+      // non-trusts with a 400). The estate-flow UI only ever emits entity
+      // beneficiary changes for trusts, so this holds today — revisit if that
+      // changes.
       if ("beneficiaries" in desiredFields) {
         writes.push({
           url: `${base}/entities/${targetId}/beneficiaries`,
@@ -70,6 +74,9 @@ export function baseWritesForChange(
       break;
     }
     case "will": {
+      // diffWorkingCopy always emits bequests and residuaryRecipients together
+      // for wills, so in practice both keys are present whenever this runs; the
+      // guard just keeps the branch consistent with account/entity above.
       if ("bequests" in desiredFields || "residuaryRecipients" in desiredFields) {
         writes.push({
           url: `${base}/wills/${targetId}`,
