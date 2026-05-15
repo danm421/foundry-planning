@@ -216,9 +216,15 @@ export default function SavingsRuleDialog({
     const rothPercentInput = Number(data.get("rothPercentInput") ?? 0);
     const rothShareOfMax = Number(data.get("rothShareOfMax") ?? 0);
 
-    let outAnnualAmount: string;
-    let outAnnualPercent: string | null;
-    let outRothPercent: string | null;
+    // Defaults cover max-mode and non-401(k)/403(b) accounts; the split
+    // branches below override for amount/percent split modes.
+    let outAnnualAmount: string =
+      contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0");
+    let outAnnualPercent: string | null =
+      contribMode === "percent" && annualPercentInput
+        ? String(Number(annualPercentInput) / 100)
+        : null;
+    let outRothPercent: string | null = null;
 
     if (showRothSplit && !hasSchedule && contribMode === "amount") {
       const total = pretaxAmount + rothAmount;
@@ -227,26 +233,13 @@ export default function SavingsRuleDialog({
       outRothPercent = total > 0 ? String(rothAmount / total) : "0";
     } else if (showRothSplit && !hasSchedule && contribMode === "percent") {
       const total = pretaxPercentInput + rothPercentInput;
-      outAnnualAmount = editing?.annualAmount ?? "0";
+      // outAnnualAmount keeps the default (a stale snapshot for new rules);
+      // the engine ignores annualAmount when annualPercent is set.
       outAnnualPercent = total > 0 ? String(total / 100) : null;
       outRothPercent = total > 0 ? String(rothPercentInput / total) : "0";
     } else if (showRothSplit) {
-      // max mode, or any scheduled rule: total comes from elsewhere,
-      // rothShareOfMax sets the split directly.
-      outAnnualAmount = contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0");
-      outAnnualPercent =
-        contribMode === "percent" && annualPercentInput
-          ? String(Number(annualPercentInput) / 100)
-          : null;
+      // max mode or any scheduled rule: rothShareOfMax sets the split directly.
       outRothPercent = String(rothShareOfMax / 100);
-    } else {
-      // non-401(k)/403(b): unchanged single-contribution behavior
-      outAnnualAmount = contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0");
-      outAnnualPercent =
-        contribMode === "percent" && annualPercentInput
-          ? String(Number(annualPercentInput) / 100)
-          : null;
-      outRothPercent = null;
     }
 
     return {
