@@ -858,6 +858,38 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     expect(result.ledgerEntries).toHaveLength(0);
   });
 
+  it("claims only the live contingent's sub-fraction when a co-contingent lapses", () => {
+    // Primary 100% names the decedent → fully lapses. Contingent tier is split
+    // child-a 50% / decedent 50%. child-a claims its 50% sub-fraction; the
+    // decedent's 50% lapses too, so fractionClaimed is 0.5 and the residual
+    // cascades to the will/fallback steps (consumed = false).
+    const iraPartialContingentLapse: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 50, familyMemberId: "child-a", sortOrder: 0 },
+        { id: "ben-3", tier: "contingent", percentage: 50, householdRole: "client", sortOrder: 1 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraPartialContingentLapse, 1,
+      [
+        { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.consumed).toBe(false);
+    expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientId: "child-a",
+      amount: 250000,
+    });
+  });
+
   it("lapses a primary naming the predeceased principal and routes to the contingent", () => {
     // Final-death scenario: account owned by the spouse names the client as
     // primary. The client predeceased — passed as predeceasedFmId — so the
