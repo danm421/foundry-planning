@@ -8,7 +8,20 @@ export interface GiftChange {
   gift: EstateFlowGift;
 }
 
-/** Structural equality over the plain-JSON EstateFlowGift shape. */
+/**
+ * Structural equality over the plain-JSON EstateFlowGift shape.
+ *
+ * CONTRACT: `eq` uses `JSON.stringify`, which is both key-order- and
+ * key-presence-sensitive. Any code that constructs an `EstateFlowGift` for
+ * comparison (notably the upcoming gift-fields UI in later tasks) MUST either:
+ *   a) spread an existing gift object — `{ ...gift, field: x }` — so that key
+ *      order is preserved, or
+ *   b) match the exact key order produced by `giftRowToDraft` /
+ *      `giftSeriesRowToDraft` in `estate-flow-gifts.ts`.
+ * Violating this contract produces spurious "update" diff entries even when
+ * the values are identical. If that contract becomes hard to maintain, replace
+ * this function with a field-by-field comparator.
+ */
 function eq(a: EstateFlowGift, b: EstateFlowGift): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -21,7 +34,7 @@ function recipientWord(g: EstateFlowGift): string {
       : "beneficiary";
 }
 
-function describe(op: GiftChange["op"], g: EstateFlowGift): string {
+function describeChange(op: GiftChange["op"], g: EstateFlowGift): string {
   const verb = op === "add" ? "New gift" : op === "remove" ? "Removed gift" : "Edited gift";
   const detail =
     g.kind === "series"
@@ -50,15 +63,15 @@ export function diffGifts(
 
   for (const g of initial) {
     if (!workingById.has(g.id)) {
-      removes.push({ op: "remove", gift: g, description: describe("remove", g) });
+      removes.push({ op: "remove", gift: g, description: describeChange("remove", g) });
     }
   }
   for (const g of working) {
     const orig = initialById.get(g.id);
     if (!orig) {
-      adds.push({ op: "add", gift: g, description: describe("add", g) });
+      adds.push({ op: "add", gift: g, description: describeChange("add", g) });
     } else if (!eq(orig, g)) {
-      updates.push({ op: "update", gift: g, description: describe("update", g) });
+      updates.push({ op: "update", gift: g, description: describeChange("update", g) });
     }
   }
 

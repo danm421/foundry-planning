@@ -12,8 +12,12 @@ const g2: EstateFlowGift = {
 };
 
 describe("diffGifts", () => {
-  it("returns no changes when the lists are equal", () => {
+  it("returns no changes when the lists are equal (same reference)", () => {
     expect(diffGifts([g1], [g1])).toEqual([]);
+  });
+
+  it("returns no changes for distinct but value-equal gift objects (proves value equality, not reference equality)", () => {
+    expect(diffGifts([g1], [{ ...g1 }])).toEqual([]);
   });
 
   it("classifies a gift present only in working as an add", () => {
