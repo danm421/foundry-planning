@@ -292,6 +292,17 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "savings-roth-percent": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "rothPercent",
+          rule.rothPercent ?? null,
+          m.rothPercent,
+        );
+        break;
+      }
       case "savings-contribute-max": {
         const rule = savingsRuleFor(m.accountId);
         if (!rule) break;
