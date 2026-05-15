@@ -164,6 +164,11 @@ export const beneficiaryTierEnum = pgEnum("beneficiary_tier", [
   "remainder",
 ]);
 
+export const distributionFormEnum = pgEnum("distribution_form", [
+  "in_trust",
+  "outright",
+]);
+
 export const beneficiaryTargetKindEnum = pgEnum("beneficiary_target_kind", [
   "account",
   "trust",
@@ -779,6 +784,10 @@ export const beneficiaryDesignations = pgTable(
     householdRole: householdRoleEnum("household_role"),
     percentage: decimal("percentage", { precision: 5, scale: 2 }).notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
+    // How a remainder beneficiary receives their share: held in a continuing
+    // trust ('in_trust') or distributed free and clear ('outright'). Null for
+    // non-remainder tiers — the distinction is only meaningful for the corpus.
+    distributionForm: distributionFormEnum("distribution_form"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
