@@ -158,30 +158,35 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   );
 
   // Save to current named scenario — loop pending changes through the writer.
+  const { submit } = writer;
   const handleSaveToScenario = useCallback(async () => {
     if (!isNamedScenario || pendingChanges.length === 0) return;
     setIsSaving(true);
     setSaveError(null);
     try {
+      let saved = 0;
       for (const change of pendingChanges) {
         // baseFallback is a dummy — writer routes to the changes API in scenario mode.
-        const res = await writer.submit(change.edit, { url: "", method: "PATCH" });
+        const res = await submit(change.edit, { url: "", method: "PATCH" });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          const msg =
-            typeof body?.error === "string"
-              ? body.error
-              : `Save failed (HTTP ${res.status})`;
-          setSaveError(msg);
+          const apiMsg =
+            typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
+          const prefix =
+            saved > 0
+              ? `${saved} of ${pendingChanges.length} change(s) saved. `
+              : "";
+          setSaveError(`${prefix}Save failed: ${apiMsg}`);
           return;
         }
+        saved++;
       }
-      // router.refresh() is called by writer.submit on the last success,
+      // router.refresh() is called by writer.submit on every successful submit,
       // which reloads initialClientData and clears the dirty badge.
     } finally {
       setIsSaving(false);
     }
-  }, [isNamedScenario, pendingChanges, writer]);
+  }, [isNamedScenario, pendingChanges, submit]);
 
   // Save as a new scenario — create scenario then POST each change directly.
   const handleSaveAsNew = useCallback(async () => {

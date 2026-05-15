@@ -34,7 +34,8 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
         isBaseCase: scenariosTable.isBaseCase,
       })
       .from(scenariosTable)
-      .where(eq(scenariosTable.clientId, id)),
+      .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
+      .where(and(eq(scenariosTable.clientId, id), eq(clients.firmId, firmId))),
     db
       .select({
         id: scenarioSnapshots.id,
@@ -42,7 +43,8 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
         sourceKind: scenarioSnapshots.sourceKind,
       })
       .from(scenarioSnapshots)
-      .where(eq(scenarioSnapshots.clientId, id)),
+      .innerJoin(clients, eq(clients.id, scenarioSnapshots.clientId))
+      .where(and(eq(scenarioSnapshots.clientId, id), eq(clients.firmId, firmId))),
   ]);
 
   const isMarried =
