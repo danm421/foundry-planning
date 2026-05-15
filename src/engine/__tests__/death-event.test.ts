@@ -779,6 +779,38 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     expect(byRecipient["child-b"]).toBeCloseTo(250000, 2);
   });
 
+  it("splits the lapsed fraction proportionally across multiple contingents", () => {
+    // Primary 100% names the decedent → fully lapses. The contingent tier has
+    // two beneficiaries at 60% / 40%; the whole account routes to them in that
+    // ratio (account value 500000 → 300000 / 200000).
+    const iraMultiContingent: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 60, familyMemberId: "child-a", sortOrder: 0 },
+        { id: "ben-3", tier: "contingent", percentage: 40, familyMemberId: "child-b", sortOrder: 1 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraMultiContingent, 1,
+      [
+        { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+        { id: "child-b", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries).toHaveLength(2);
+    const byRecipient = Object.fromEntries(
+      result.ledgerEntries.map((e) => [e.recipientId, e.amount]),
+    );
+    expect(byRecipient["child-a"]).toBeCloseTo(300000, 2);
+    expect(byRecipient["child-b"]).toBeCloseTo(200000, 2);
+  });
+
   it("carries the contingent tier forward onto a surviving-spouse primary share", () => {
     // Primary = spouse (lives); contingent = a trust. The spouse inherits, and
     // the resulting account must carry the contingent tier forward, promoted
