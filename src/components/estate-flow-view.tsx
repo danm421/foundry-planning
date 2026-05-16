@@ -20,6 +20,7 @@ import type { ClientData } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
 import DialogTabs from "@/components/dialog-tabs";
 import { EstateFlowReportTab } from "@/components/estate-flow-report-tab";
+import { EstateFlowChartTab } from "@/components/estate-flow-chart-tab";
 
 export interface EstateFlowViewProps {
   clientId: string;
@@ -144,7 +145,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
 
-  const [activeTab, setActiveTab] = useState<"report">("report");
+  const [activeTab, setActiveTab] = useState<"report" | "chart">("report");
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -476,24 +477,42 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       </div>
 
       <DialogTabs
-        tabs={[{ id: "report", label: "Report" }]}
+        tabs={[
+          { id: "report", label: "Report" },
+          { id: "chart", label: "Flow Chart" },
+        ]}
         activeTab={activeTab}
-        onTabChange={(id) => setActiveTab(id as "report")}
+        onTabChange={(id) => {
+          if (id === "report" || id === "chart") setActiveTab(id);
+        }}
       />
 
-      <EstateFlowReportTab
-        working={working}
-        workingGifts={workingGifts}
-        projection={projection}
-        engineData={engineData}
-        ordering={ordering}
-        isMarried={props.isMarried}
-        ownerNames={props.ownerNames}
-        planStartYear={planStartYear}
-        planEndYear={planEndYear}
-        applyEdit={applyEdit}
-        setWorkingGifts={setWorkingGifts}
-      />
+      {activeTab === "report" && (
+        <EstateFlowReportTab
+          working={working}
+          workingGifts={workingGifts}
+          projection={projection}
+          engineData={engineData}
+          ordering={ordering}
+          isMarried={props.isMarried}
+          ownerNames={props.ownerNames}
+          planStartYear={planStartYear}
+          planEndYear={planEndYear}
+          applyEdit={applyEdit}
+          setWorkingGifts={setWorkingGifts}
+        />
+      )}
+
+      {activeTab === "chart" && (
+        <EstateFlowChartTab
+          working={working}
+          engineData={engineData}
+          projection={projection}
+          workingGifts={workingGifts}
+          isMarried={props.isMarried}
+          ownerNames={props.ownerNames}
+        />
+      )}
 
       {isDirty && (
         <div
