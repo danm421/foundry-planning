@@ -75,6 +75,8 @@ function entityKind(entity: EntitySummary): "trust" | "business" {
 /** Business entities (not trusts, not foundations) carry a flat `value` and
  *  get a clickable "business-self" row in Column 1. */
 function isBusinessEntity(entity: EntitySummary): boolean {
+  // "foundation" is intentionally excluded: foundations hold value through accounts
+  // (like trusts), not a flat entity.value.
   return (
     entity.entityType === "llc" ||
     entity.entityType === "s_corp" ||

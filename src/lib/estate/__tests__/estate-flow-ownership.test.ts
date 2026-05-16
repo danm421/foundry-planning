@@ -804,4 +804,20 @@ describe("buildOwnershipColumn — row kind & default cash", () => {
     const out = buildOwnershipColumn(cd);
     expect(out.groups.find((g) => g.key === "entity:ent-trust")).toBeUndefined();
   });
+
+  it("does not emit a business-self row for a foundation entity", () => {
+    const cd = data({
+      entities: [
+        {
+          id: "ent-foundation", name: "Smith Family Foundation", entityType: "foundation",
+          includeInPortfolio: false, isGrantor: false,
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd);
+    // Foundation groups are only emitted if they have account children;
+    // with no accounts, the group is dropped entirely.
+    const foundationGroup = out.groups.find((g) => g.key === "entity:ent-foundation");
+    expect(foundationGroup).toBeUndefined();
+  });
 });
