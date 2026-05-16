@@ -1510,6 +1510,11 @@ export const willBequestKindEnum = pgEnum("will_bequest_kind", [
   "liability",
 ]);
 
+export const willResiduaryTierEnum = pgEnum("will_residuary_tier", [
+  "primary",
+  "contingent",
+]);
+
 export const wills = pgTable(
   "wills",
   {
@@ -1580,6 +1585,7 @@ export const willResiduaryRecipients = pgTable(
       .references(() => wills.id, { onDelete: "cascade" }),
     recipientKind: willRecipientKindEnum("recipient_kind").notNull(),
     recipientId: uuid("recipient_id"),
+    tier: willResiduaryTierEnum("tier").notNull().default("primary"),
     percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull(),
     sortOrder: integer("sort_order").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

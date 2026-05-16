@@ -1,0 +1,2 @@
+CREATE TYPE "public"."will_residuary_tier" AS ENUM('primary', 'contingent');--> statement-breakpoint
+ALTER TABLE "will_residuary_recipients" ADD COLUMN "tier" "will_residuary_tier" DEFAULT 'primary' NOT NULL;
