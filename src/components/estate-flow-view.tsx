@@ -16,6 +16,7 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
 import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
+import EstateFlowRemainderDialog from "@/components/estate-flow-remainder-dialog";
 import { changeOwner, changeBeneficiaries, upsertWills } from "@/lib/estate/estate-flow-edits";
 import { baseWritesForChange } from "@/lib/estate/estate-flow-base-writes";
 import {
@@ -201,6 +202,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
   // Standalone "Add a gift" dialog (no source account).
   const [addGiftOpen, setAddGiftOpen] = useState(false);
+  // Residuary ("remainder estate") clause dialog.
+  const [remainderDialogOpen, setRemainderDialogOpen] = useState(false);
   // Gift currently being edited via a column-1 future-gift marker.
   const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
 
@@ -575,6 +578,13 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold">Estate Flow</h1>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setRemainderDialogOpen(true)}
+            className="rounded border border-[#1f2024] px-3 py-1.5 text-xs font-medium text-[#e7e6e2] transition-colors hover:border-[#3a3b40] hover:bg-[#1f2024]"
+          >
+            Remainder estate
+          </button>
           {props.isMarried && (
             <DeathOrderToggle
               value={ordering}
@@ -748,6 +758,20 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             setDistributionDialogId(null);
           }}
           onClose={() => setDistributionDialogId(null)}
+        />
+      )}
+
+      {/* Residuary ("remainder estate") clause dialog. */}
+      {remainderDialogOpen && (
+        <EstateFlowRemainderDialog
+          clientData={working}
+          isMarried={props.isMarried}
+          ownerNames={props.ownerNames}
+          onApplyWill={(wills) => {
+            applyEdit((d) => upsertWills(d, wills));
+            setRemainderDialogOpen(false);
+          }}
+          onClose={() => setRemainderDialogOpen(false)}
         />
       )}
 
