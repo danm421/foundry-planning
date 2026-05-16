@@ -9,6 +9,8 @@ export {
   applyBeneficiaryDesignations,
   applyWillSpecificBequests,
   applyWillAllAssetsResidual,
+  applyWillResiduary,
+  selectResiduaryTier,
   applyFallback,
   applyIncomeTermination,
   distributeFirstDeathUnlinkedLiabilities,

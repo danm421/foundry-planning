@@ -7,9 +7,11 @@ import {
   applyFallback,
   applyIncomeTermination,
   applyWillAllAssetsResidual,
+  applyWillResiduary,
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
+  selectResiduaryTier,
   runPourOut,
   type DeathEventInput,
   type DeathEventResult,
@@ -158,6 +160,30 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
         stepLiabs.push(...step3b.resultingLiabilities);
         stepLedger.push(...step3b.ledgerEntries);
         undisposed -= step3b.fractionClaimed;
+      }
+    }
+
+    // Step 3c: residuary clause (deathOrder=2). Contingent tier governs unless
+    // the household was never married (single filer → primary tier). A non-null
+    // predeceasedFmId means a spouse principal existed → household was married.
+    if (undisposed > 1e-9 && deceasedWill) {
+      const step3c = applyWillResiduary(
+        effectiveAcct,
+        undisposed,
+        deceasedWill,
+        selectResiduaryTier(2, predeceasedFmId != null),
+        null,
+        null,
+        familyMembers,
+        externalBeneficiaries,
+        entities,
+        linkedLiability,
+      );
+      if (step3c.fractionClaimed > 0) {
+        stepAccts.push(...step3c.resultingAccounts);
+        stepLiabs.push(...step3c.resultingLiabilities);
+        stepLedger.push(...step3c.ledgerEntries);
+        undisposed -= step3c.fractionClaimed;
       }
     }
 
