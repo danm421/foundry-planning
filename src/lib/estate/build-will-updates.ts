@@ -95,3 +95,50 @@ export function buildWillUpdates(input: BuildWillUpdatesInput): Will[] {
 
   return [...updates.values()];
 }
+
+export interface BuildJointWillUpdatesInput {
+  account: Pick<Account, "id" | "name">;
+  /** The client's will, or null if they have none yet. */
+  clientWill: Will | null;
+  clientRecipients: WillBequestRecipient[];
+  /** The spouse's will, or null if they have none yet. */
+  spouseWill: Will | null;
+  spouseRecipients: WillBequestRecipient[];
+  newId: () => string;
+}
+
+/**
+ * Compute the will(s) to persist for a JOINT-owned asset. Each grantor's will
+ * disposes that grantor's fractional share, unconditionally (condition
+ * "always"). A will is minted only when its grantor has recipients and no
+ * existing will; a grantor with no recipients and an existing bequest has it
+ * removed (per the withAssetBequest "no recipients = remove" contract); a
+ * grantor with no recipients and no will is omitted entirely. Pure.
+ */
+export function buildJointWillUpdates(input: BuildJointWillUpdatesInput): Will[] {
+  const { account, newId } = input;
+  const updates: Will[] = [];
+
+  const applyFor = (
+    grantor: "client" | "spouse",
+    existing: Will | null,
+    recipients: WillBequestRecipient[],
+  ): void => {
+    if (recipients.length === 0) {
+      // Remove from an existing will only — never mint an empty will.
+      if (existing) {
+        updates.push(withAssetBequest(existing, account, [], "always", newId));
+      }
+      return;
+    }
+    const base: Will =
+      existing ??
+      ({ id: newId(), grantor, bequests: [], residuaryRecipients: [] } satisfies Will);
+    updates.push(withAssetBequest(base, account, recipients, "always", newId));
+  };
+
+  applyFor("client", input.clientWill, input.clientRecipients);
+  applyFor("spouse", input.spouseWill, input.spouseRecipients);
+
+  return updates;
+}
