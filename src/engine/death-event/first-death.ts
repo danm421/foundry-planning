@@ -506,6 +506,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     creditorDrainTotal: 0,
     will: input.will,
     deceased: input.deceased,
+    residuaryTier: "primary",
   });
   const irdAttributions = computeIrdAttributions({
     deathOrder: 1,

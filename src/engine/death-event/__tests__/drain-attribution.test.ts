@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { DeathTransfer, WillResiduaryRecipient } from "@/engine/types";
-import { computeDrainAttributions } from "../drain-attribution";
+import type { DeathTransfer, Will, WillResiduaryRecipient } from "@/engine/types";
+import {
+  attributeDrainsToLedger,
+  computeDrainAttributions,
+} from "../drain-attribution";
 
 const t = (overrides: Partial<DeathTransfer>): DeathTransfer => ({
   year: 2026,
@@ -282,5 +285,104 @@ describe("computeDrainAttributions — residuary-first", () => {
       residuaryRecipients: [],
     });
     expect(out).toEqual([]);
+  });
+});
+
+describe("attributeDrainsToLedger — tier-aware residuary", () => {
+  it("attributeDrainsToLedger filters residuary recipients to the active tier", () => {
+    const will: Will = {
+      id: "w1",
+      grantor: "client",
+      bequests: [],
+      residuaryRecipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: "fm-primary",
+          tier: "primary",
+          percentage: 100,
+          sortOrder: 0,
+        },
+        {
+          recipientKind: "family_member",
+          recipientId: "fm-contingent",
+          tier: "contingent",
+          percentage: 100,
+          sortOrder: 1,
+        },
+      ],
+    };
+    const transfers: DeathTransfer[] = [
+      t({ recipientId: "fm-primary", amount: 200_000 }),
+      t({ recipientId: "fm-contingent", amount: 200_000 }),
+    ];
+    const result = attributeDrainsToLedger({
+      deathOrder: 1,
+      transfers,
+      estateTax: {
+        federalEstateTax: 0,
+        stateEstateTax: 0,
+        estateAdminExpenses: 100_000,
+      },
+      creditorDrainTotal: 0,
+      will,
+      deceased: "client",
+      residuaryTier: "primary",
+    });
+    // With residuaryTier="primary", the primary recipient absorbs the full drain.
+    const primaryDrain = result
+      .filter(
+        (a) => a.recipientId === "fm-primary" && a.drainKind === "admin_expenses",
+      )
+      .reduce((s, a) => s + a.amount, 0);
+    expect(primaryDrain).toBeCloseTo(100_000, 0);
+  });
+
+  it("attributeDrainsToLedger routes the drain to the contingent tier when it governs", () => {
+    const will: Will = {
+      id: "w1",
+      grantor: "client",
+      bequests: [],
+      residuaryRecipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: "fm-primary",
+          tier: "primary",
+          percentage: 100,
+          sortOrder: 0,
+        },
+        {
+          recipientKind: "family_member",
+          recipientId: "fm-contingent",
+          tier: "contingent",
+          percentage: 100,
+          sortOrder: 1,
+        },
+      ],
+    };
+    const transfers: DeathTransfer[] = [
+      t({ recipientId: "fm-primary", amount: 200_000 }),
+      t({ recipientId: "fm-contingent", amount: 200_000 }),
+    ];
+    const result = attributeDrainsToLedger({
+      deathOrder: 2,
+      transfers,
+      estateTax: {
+        federalEstateTax: 0,
+        stateEstateTax: 0,
+        estateAdminExpenses: 100_000,
+      },
+      creditorDrainTotal: 0,
+      will,
+      deceased: "client",
+      residuaryTier: "contingent",
+    });
+    const contingentDrain = result
+      .filter(
+        (a) =>
+          a.recipientId === "fm-contingent" &&
+          a.drainKind === "admin_expenses",
+      )
+      .reduce((s, a) => s + a.amount, 0);
+    expect(contingentDrain).toBeCloseTo(100_000, 0);
   });
 });

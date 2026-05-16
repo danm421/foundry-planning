@@ -245,6 +245,12 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Resolve household principal FM ids for ownership comparisons in drains.
   const deceasedFmId =
     input.familyMembers.find((fm) => fm.role === input.deceased)?.id ?? null;
+  // The other principal predeceased this final-death event. A predeceased FM
+  // existing means the household was married → contingent residuary tier.
+  const predeceasedFmId =
+    input.familyMembers.find(
+      (fm) => fm.role === (input.deceased === "client" ? "spouse" : "client"),
+    )?.id ?? null;
 
   // Phase 0 — life-insurance pre-chain transform. Triggering policies have
   // their cash value swapped for faceValue and are reclassified as cash, so
@@ -577,6 +583,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     creditorDrainTotal: creditorDrain.drainedTotal,
     will: input.will,
     deceased: input.deceased,
+    residuaryTier: selectResiduaryTier(2, predeceasedFmId != null),
   });
   const irdAttributions = computeIrdAttributions({
     deathOrder: 2,
