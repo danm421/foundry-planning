@@ -191,6 +191,14 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   );
   const isDirty = pendingChanges.length > 0 || giftChanges.length > 0;
 
+  // Stabilise ownerNames by keying on the actual string values so child memos
+  // that depend on this object don't re-run on every parent render.
+  const ownerNames = useMemo(
+    () => props.ownerNames,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [props.ownerNames.clientName, props.ownerNames.spouseName],
+  );
+
   // One mutation entry point: every dialog calls this with an edit fn.
   const applyEdit = useCallback(
     (fn: (d: ClientData) => ClientData) => setWorking((cur) => fn(cur)),
@@ -455,7 +463,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold">Estate Flow</h1>
         <div className="flex items-center gap-3">
-          {props.isMarried && (
+          {props.isMarried && activeTab === "report" && (
             <DeathOrderToggle
               value={ordering}
               onChange={setOrdering}
@@ -495,7 +503,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           engineData={engineData}
           ordering={ordering}
           isMarried={props.isMarried}
-          ownerNames={props.ownerNames}
+          ownerNames={ownerNames}
           planStartYear={planStartYear}
           planEndYear={planEndYear}
           applyEdit={applyEdit}
@@ -510,7 +518,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           projection={projection}
           workingGifts={workingGifts}
           isMarried={props.isMarried}
-          ownerNames={props.ownerNames}
+          ownerNames={ownerNames}
         />
       )}
 

@@ -97,7 +97,7 @@ export function EstateFlowChartTab({
   // Derive years list and todayYear from the projection.
   const projectionYears = useMemo(
     () => projection.years.map((y) => y.year),
-    [projection.years],
+    [projection],
   );
   const todayYear = projectionYears[0] ?? new Date().getFullYear();
 
