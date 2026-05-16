@@ -680,6 +680,13 @@
       "when": 1778867434093,
       "tag": "0096_worthless_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1778895385261,
+      "tag": "0097_equal_wolfsbane",
+      "breakpoints": true
     }
   ]
 }

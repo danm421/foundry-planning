@@ -356,3 +356,60 @@ describe("willUpdateSchema with residuary", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("residuary tier validation", () => {
+  const recip = (
+    tier: "primary" | "contingent",
+    percentage: number,
+    sortOrder: number,
+  ) => ({
+    recipientKind: "family_member" as const,
+    recipientId: "11111111-1111-1111-1111-111111111111",
+    tier,
+    percentage,
+    sortOrder,
+  });
+
+  it("defaults a tier-less recipient to 'primary'", () => {
+    const parsed = willUpdateSchema.parse({
+      bequests: [],
+      residuaryRecipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: "11111111-1111-1111-1111-111111111111",
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    });
+    expect(parsed.residuaryRecipients?.[0].tier).toBe("primary");
+  });
+
+  it("accepts each tier summing to 100 independently", () => {
+    const r = willUpdateSchema.safeParse({
+      bequests: [],
+      residuaryRecipients: [
+        recip("primary", 100, 0),
+        recip("contingent", 60, 1),
+        recip("contingent", 40, 2),
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects a primary tier that does not sum to 100", () => {
+    const r = willUpdateSchema.safeParse({
+      bequests: [],
+      residuaryRecipients: [recip("primary", 80, 0)],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects a non-empty contingent tier that does not sum to 100", () => {
+    const r = willUpdateSchema.safeParse({
+      bequests: [],
+      residuaryRecipients: [recip("primary", 100, 0), recip("contingent", 50, 1)],
+    });
+    expect(r.success).toBe(false);
+  });
+});

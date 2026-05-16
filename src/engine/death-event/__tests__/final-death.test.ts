@@ -278,4 +278,88 @@ describe("applyFinalDeath — gross transfers + drain attribution (Phase B)", ()
     expect(onB?.amount).toBeCloseTo(result.estateTax.stateEstateTax, 0);
     expect(onA).toBeUndefined();
   });
+
+  it("married final death: step-3c distribution and drain attribution use the same residuary tier", () => {
+    // Married household (predeceased spouse FM present) → contingent tier governs.
+    // Will residuary has BOTH tiers: primary → kid-a, contingent → kid-b.
+    // The single-source-of-truth tier means BOTH the step-3c asset transfer
+    // AND the estate-tax drain attribution must land on the contingent
+    // recipient (kid-b) — never the primary recipient (kid-a). If the two
+    // derivations ever desynced, one of these would route to kid-a.
+    const brokerage: Account = {
+      id: "brok",
+      name: "Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 1_000_000,
+      basis: 500_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
+      ],
+    };
+    const will: Will = {
+      id: "w1",
+      grantor: "client",
+      bequests: [],
+      residuaryRecipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: "kid-a",
+          percentage: 100,
+          sortOrder: 0,
+          tier: "primary",
+        },
+        {
+          recipientKind: "family_member",
+          recipientId: "kid-b",
+          percentage: 100,
+          sortOrder: 1,
+          tier: "contingent",
+        },
+      ],
+    };
+    const spouseFm: FamilyMember = {
+      id: "spouse-fm",
+      role: "spouse",
+      relationship: "other",
+      firstName: "Spouse",
+      lastName: "Test",
+      dateOfBirth: "1972-01-01",
+    };
+    const kidB: FamilyMember = {
+      id: "kid-b",
+      role: "child",
+      relationship: "child",
+      firstName: "Bob",
+      lastName: "Test",
+      dateOfBirth: "2002-01-01",
+    };
+    const input = mkInput({
+      accounts: [brokerage],
+      will,
+      familyMembers: [spouseFm, kidA, kidB],
+      planSettings: planSettings({ flatStateEstateRate: 0.1 }),
+    });
+    const result = applyFinalDeath(input);
+
+    // Step-3c distribution: the residuary asset transfer goes to the
+    // contingent recipient (kid-b), because the household was married.
+    const residuaryTransfers = result.transfers.filter(
+      (t) => t.via === "will_residuary" && t.amount > 0,
+    );
+    expect(residuaryTransfers).toHaveLength(1);
+    expect(residuaryTransfers[0].recipientId).toBe("kid-b");
+
+    // Drain attribution: the estate-tax drain lands on the SAME recipient.
+    const stateAttribs = result.estateTax.drainAttributions.filter(
+      (a) => a.drainKind === "state_estate_tax",
+    );
+    expect(stateAttribs.every((a) => a.recipientId === "kid-b")).toBe(true);
+    const stateOnB = stateAttribs
+      .filter((a) => a.recipientId === "kid-b")
+      .reduce((s, a) => s + a.amount, 0);
+    expect(stateOnB).toBeCloseTo(result.estateTax.stateEstateTax, 0);
+  });
 });

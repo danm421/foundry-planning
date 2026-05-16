@@ -8,6 +8,7 @@ import {
   applyIncomeTermination,
   applyTitling,
   applyWillAllAssetsResidual,
+  applyWillResiduary,
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeFirstDeathUnlinkedLiabilities,
@@ -165,6 +166,20 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
         stepLiabs.push(...step3b.resultingLiabilities);
         stepLedger.push(...step3b.ledgerEntries);
         undisposed -= step3b.fractionClaimed;
+      }
+    }
+
+    // Step 3c: residuary clause. Spouse survives at first death → primary tier.
+    if (undisposed > 1e-9 && deceasedWill) {
+      const step3c = applyWillResiduary(
+        effectiveAcct, undisposed, deceasedWill, "primary", survivor, survivorFmId,
+        familyMembers, externalBeneficiaries, entities, linkedLiability,
+      );
+      if (step3c.fractionClaimed > 0) {
+        stepAccts.push(...step3c.resultingAccounts);
+        stepLiabs.push(...step3c.resultingLiabilities);
+        stepLedger.push(...step3c.ledgerEntries);
+        undisposed -= step3c.fractionClaimed;
       }
     }
 
@@ -491,6 +506,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     creditorDrainTotal: 0,
     will: input.will,
     deceased: input.deceased,
+    residuaryTier: "primary",
   });
   const irdAttributions = computeIrdAttributions({
     deathOrder: 1,

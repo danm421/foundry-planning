@@ -5,6 +5,7 @@ const MECH_LABEL: Record<DeathTransfer["via"], string> = {
   titling: "titling",
   beneficiary_designation: "beneficiary",
   will: "will",
+  will_residuary: "remainder",
   will_liability_bequest: "will (debt)",
   fallback_spouse: "fallback",
   fallback_children: "fallback",

@@ -48,6 +48,7 @@ type DbState = {
     willId: string;
     recipientKind: string;
     recipientId: string | null;
+    tier: string;
     percentage: string;
     sortOrder: number;
   }>;
@@ -283,6 +284,7 @@ vi.mock("@/db", async () => {
                   willId: (row.willId as string) ?? lastWillId,
                   recipientKind: row.recipientKind as string,
                   recipientId: (row.recipientId as string | null) ?? null,
+                  tier: (row.tier as string) ?? "primary",
                   percentage: (row.percentage as string) ?? "0",
                   sortOrder: (row.sortOrder as number) ?? 0,
                 });
@@ -642,6 +644,7 @@ const RESIDUARY_ROW_FAMILY = {
   willId: WILL_EXISTING_ID,
   recipientKind: "family_member",
   recipientId: FM_A_ID,
+  tier: "primary",
   percentage: "100.00",
   sortOrder: 0,
 };
@@ -651,6 +654,7 @@ const RESIDUARY_ROW_SPOUSE = {
   willId: WILL_EXISTING_ID,
   recipientKind: "spouse",
   recipientId: null,
+  tier: "primary",
   percentage: "100.00",
   sortOrder: 0,
 };
@@ -683,6 +687,7 @@ describe("residuary recipients — GET / POST / PATCH", () => {
         id: RESIDUARY_ROW_SPOUSE.id,
         recipientKind: "spouse",
         recipientId: null,
+        tier: "primary",
         percentage: 100,
         sortOrder: 0,
       },
@@ -709,6 +714,7 @@ describe("residuary recipients — GET / POST / PATCH", () => {
         id: RESIDUARY_ROW_FAMILY.id,
         recipientKind: "family_member",
         recipientId: FM_A_ID,
+        tier: "primary",
         percentage: 100,
         sortOrder: 0,
       },
@@ -847,5 +853,46 @@ describe("residuary recipients — GET / POST / PATCH", () => {
     );
     expect(res.status).toBe(200);
     expect(dbState.willResiduaryRecipients).toHaveLength(0);
+  });
+
+  it("tier round-trip: POST a contingent residuary recipient and GET echoes tier='contingent'", async () => {
+    // POST a new will with a contingent-tier residuary recipient
+    const { POST } = await import("../route");
+    const postRes = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          grantor: "client",
+          bequests: [],
+          residuaryRecipients: [
+            {
+              recipientKind: "family_member",
+              recipientId: FM_A_ID,
+              tier: "contingent",
+              percentage: 100,
+              sortOrder: 0,
+            },
+          ],
+        }),
+      }) as unknown as Parameters<typeof POST>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof POST>[1],
+    );
+    expect(postRes.status).toBe(201);
+
+    // GET the list and find the will we just created
+    const { GET } = await import("../route");
+    const getRes = await GET(
+      new Request("http://x") as unknown as Parameters<typeof GET>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof GET>[1],
+    );
+    expect(getRes.status).toBe(200);
+    const body = await getRes.json();
+    const will = body.find((w: { grantor: string }) => w.grantor === "client");
+    expect(will).toBeDefined();
+    const contingent = will.residuaryRecipients.find(
+      (r: { tier: string }) => r.tier === "contingent",
+    );
+    expect(contingent).toBeDefined();
+    expect(contingent.tier).toBe("contingent");
   });
 });

@@ -7,9 +7,11 @@ import {
   applyFallback,
   applyIncomeTermination,
   applyWillAllAssetsResidual,
+  applyWillResiduary,
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
+  selectResiduaryTier,
   runPourOut,
   type DeathEventInput,
   type DeathEventResult,
@@ -40,6 +42,12 @@ interface FinalDeathChainResult {
   liabilities: Liability[];
   transfers: DeathTransfer[];
   warnings: string[];
+  /** Single source of truth for the residuary tier governing this final
+   *  death — computed ONCE here from predeceasedFmId. Both the chain's
+   *  step-3c distribution and the orchestrator's drain-attribution call
+   *  read this, so estate distribution and drain attribution can never
+   *  desync (plan HARD INVARIANT). */
+  residuaryTier: "primary" | "contingent";
 }
 
 /** The 4c precedence chain (no titling — no joint accounts at final death —
@@ -61,6 +69,11 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   const predeceasedRole = deceased === "client" ? "spouse" : "client";
   const predeceasedFmId =
     familyMembers.find((fm) => fm.role === predeceasedRole)?.id ?? null;
+  // Single source of truth for the residuary tier at this final death. A
+  // non-null predeceasedFmId means a spouse principal existed → household
+  // was married → contingent tier. Computed ONCE here; consumed by step 3c
+  // below AND by the orchestrator's drain-attribution call (via the result).
+  const residuaryTier = selectResiduaryTier(2, predeceasedFmId != null);
 
   // Defensive: no joint accounts can exist at 4c. Entity/family-member-owned
   // (ownerFamilyMemberId heir-distribution) accounts are exempt.
@@ -161,6 +174,29 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
       }
     }
 
+    // Step 3c: residuary clause (deathOrder=2). Uses the single `residuaryTier`
+    // computed once above — contingent unless the household was never married.
+    if (undisposed > 1e-9 && deceasedWill) {
+      const step3c = applyWillResiduary(
+        effectiveAcct,
+        undisposed,
+        deceasedWill,
+        residuaryTier,
+        null,
+        null,
+        familyMembers,
+        externalBeneficiaries,
+        entities,
+        linkedLiability,
+      );
+      if (step3c.fractionClaimed > 0) {
+        stepAccts.push(...step3c.resultingAccounts);
+        stepLiabs.push(...step3c.resultingLiabilities);
+        stepLedger.push(...step3c.ledgerEntries);
+        undisposed -= step3c.fractionClaimed;
+      }
+    }
+
     // Step 4: Fallback with survivor=null — tier 1 skipped; tiers 2/3 live.
     if (undisposed > 1e-9) {
       const step4 = applyFallback(
@@ -205,6 +241,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     liabilities: nextLiabilities,
     transfers: assetTransfers,
     warnings,
+    residuaryTier,
   };
 }
 
@@ -551,6 +588,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     creditorDrainTotal: creditorDrain.drainedTotal,
     will: input.will,
     deceased: input.deceased,
+    // Read the SAME tier the chain's step-3c distribution used — single
+    // source of truth, so distribution and drain attribution never desync.
+    residuaryTier: chainResult.residuaryTier,
   });
   const irdAttributions = computeIrdAttributions({
     deathOrder: 2,

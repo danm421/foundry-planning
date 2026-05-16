@@ -9,6 +9,8 @@ import {
   type ScenarioOption,
   type SnapshotOption,
 } from "@/components/scenario/scenario-picker-dropdown";
+import EstateFlowRemainderDialog from "@/components/estate-flow-remainder-dialog";
+import { upsertWills } from "@/lib/estate/estate-flow-edits";
 import { baseWritesForChange } from "@/lib/estate/estate-flow-base-writes";
 import {
   applyGiftsToClientData,
@@ -146,6 +148,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
 
   const [activeTab, setActiveTab] = useState<"report" | "chart">("report");
+  // Residuary ("remainder estate") clause dialog.
+  const [remainderDialogOpen, setRemainderDialogOpen] = useState(false);
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -463,6 +467,13 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold">Estate Flow</h1>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setRemainderDialogOpen(true)}
+            className="rounded border border-[#1f2024] px-3 py-1.5 text-xs font-medium text-[#e7e6e2] transition-colors hover:border-[#3a3b40] hover:bg-[#1f2024]"
+          >
+            Remainder estate
+          </button>
           {props.isMarried && activeTab === "report" && (
             <DeathOrderToggle
               value={ordering}
@@ -584,6 +595,22 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Residuary ("remainder estate") clause dialog. Opened from the
+          control-bar button; the report/chart tab dialogs live in their
+          respective tab components. */}
+      {remainderDialogOpen && (
+        <EstateFlowRemainderDialog
+          clientData={working}
+          isMarried={props.isMarried}
+          ownerNames={props.ownerNames}
+          onApplyWill={(wills) => {
+            applyEdit((d) => upsertWills(d, wills));
+            setRemainderDialogOpen(false);
+          }}
+          onClose={() => setRemainderDialogOpen(false)}
+        />
       )}
     </div>
   );

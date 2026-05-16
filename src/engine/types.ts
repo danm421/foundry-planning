@@ -53,6 +53,8 @@ export interface WillBequest {
 export interface WillResiduaryRecipient {
   recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
   recipientId: string | null;
+  /** Which tier governs. Omitted = "primary" (back-compat for older rows). */
+  tier?: "primary" | "contingent";
   percentage: number;
   sortOrder: number;
 }
@@ -84,6 +86,7 @@ export interface DeathTransfer {
     | "titling"
     | "beneficiary_designation"
     | "will"
+    | "will_residuary"
     | "will_liability_bequest"
     | "fallback_spouse"
     | "fallback_children"

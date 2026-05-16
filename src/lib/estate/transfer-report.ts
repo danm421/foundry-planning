@@ -189,6 +189,7 @@ const MECHANISM_LABELS: Record<DeathTransfer["via"], string> = {
   titling: "Account Titling",
   beneficiary_designation: "Beneficiary Designation",
   will: "Specific Bequest",
+  will_residuary: "Bequest – remainder",
   will_liability_bequest: "Will Liability Bequest",
   fallback_spouse: "Default Order — Spouse",
   fallback_children: "Default Order — Children",

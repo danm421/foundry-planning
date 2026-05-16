@@ -168,8 +168,14 @@ export function attributeDrainsToLedger(args: {
   creditorDrainTotal: number;
   will: Will | null;
   deceased: "client" | "spouse";
+  /** Residuary tier governing this death — only that tier's recipients absorb
+   *  drains residuary-first. */
+  residuaryTier: "primary" | "contingent";
 }): DrainAttribution[] {
   const deceasedWill = args.will && args.will.grantor === args.deceased ? args.will : null;
+  const residuaryRecipients = (deceasedWill?.residuaryRecipients ?? []).filter(
+    (r) => (r.tier ?? "primary") === args.residuaryTier,
+  );
   return computeDrainAttributions({
     deathOrder: args.deathOrder,
     transfers: args.transfers,
@@ -180,7 +186,7 @@ export function attributeDrainsToLedger(args: {
       debts_paid: args.creditorDrainTotal,
       ird_tax: 0,
     },
-    residuaryRecipients: deceasedWill?.residuaryRecipients ?? [],
+    residuaryRecipients,
   });
 }
 

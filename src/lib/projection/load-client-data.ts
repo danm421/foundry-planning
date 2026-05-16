@@ -488,6 +488,7 @@ export const loadClientDataWithContext = cache(
       list.push({
         recipientKind: r.recipientKind,
         recipientId: r.recipientId,
+        tier: r.tier,
         percentage: parseFloat(r.percentage),
         sortOrder: r.sortOrder,
       });

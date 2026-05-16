@@ -871,6 +871,94 @@ export function applyWillAllAssetsResidual(
   };
 }
 
+/** Which residuary tier governs the grantor's estate at this death. Primary =
+ *  the grantor's spouse survived them (first death); contingent = the spouse
+ *  predeceased them (married final death). A single-filer household (no
+ *  spouse) always uses the primary tier — there is no spouse to predecease. */
+export function selectResiduaryTier(
+  deathOrder: 1 | 2,
+  householdIsMarried: boolean,
+): "primary" | "contingent" {
+  if (deathOrder === 1) return "primary";
+  return householdIsMarried ? "contingent" : "primary";
+}
+
+/** Step 3c: residuary ("remainder estate") clause. Fires on whatever fraction
+ *  of the account the specific + all_assets bequests left undisposed, routing
+ *  it to the will's residuary recipients for the governing `tier`. An empty
+ *  tier claims nothing — the account flows on to the fallback cascade.
+ *  Mirrors applyWillAllAssetsResidual's share-building + scale/normalize/split
+ *  pattern; only the recipient source (residuaryRecipients vs all_assets
+ *  bequests) and the ledger `via` tag differ. */
+export function applyWillResiduary(
+  source: Account,
+  undisposedFraction: number,
+  will: Will,
+  tier: "primary" | "contingent",
+  survivor: "client" | "spouse" | null,
+  survivorFmId: string | null,
+  familyMembers: FamilyMember[],
+  externals: ExternalBeneficiarySummary[],
+  entities: EntitySummary[],
+  linkedLiability: Liability | undefined,
+): StepResult {
+  const recipients = (will.residuaryRecipients ?? []).filter(
+    (r) => (r.tier ?? "primary") === tier,
+  );
+  if (recipients.length === 0) {
+    return empty();
+  }
+
+  const shares: SplitShare[] = [];
+  for (const r of recipients) {
+    const rFrac = undisposedFraction * (r.percentage / 100);
+    const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
+      resolveRecipientLabelAndMutation(
+        r,
+        survivor,
+        survivorFmId,
+        familyMembers,
+        externals,
+        entities,
+      );
+    shares.push({
+      fraction: rFrac,
+      removed: removed || undefined,
+      ownerMutation,
+      ledgerMeta: { via: "will_residuary", recipientKind, recipientId, recipientLabel },
+    });
+  }
+
+  const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
+  if (totalClaimed < 1e-9) {
+    return empty();
+  }
+
+  // Scale source + liability to the totalClaimed portion; normalize shares to sum=1.
+  const scaledSource: Account = {
+    ...source,
+    value: source.value * totalClaimed,
+    basis: source.basis * totalClaimed,
+  };
+  const scaledLiability: Liability | undefined = linkedLiability
+    ? {
+        ...linkedLiability,
+        balance: linkedLiability.balance * totalClaimed,
+        monthlyPayment: linkedLiability.monthlyPayment * totalClaimed,
+      }
+    : undefined;
+  const normalized = shares.map((sh) => ({ ...sh, fraction: sh.fraction / totalClaimed }));
+  const split = splitAccount(scaledSource, normalized, scaledLiability);
+
+  return {
+    consumed: Math.abs(totalClaimed - undisposedFraction) < 1e-9,
+    resultingAccounts: split.resultingAccounts,
+    resultingLiabilities: split.resultingLiabilities,
+    ledgerEntries: split.ledgerEntries,
+    fractionClaimed: totalClaimed,
+  };
+}
+
 function empty(): StepResult {
   return {
     consumed: false,
