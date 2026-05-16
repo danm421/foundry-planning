@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type {
   SankeyLayout,
   PositionedNode,
@@ -66,8 +66,12 @@ const KIND_COLORS: Record<SankeyNodeKind, string> = {
 
 interface Props {
   layout: SankeyLayout;
-  /** Stage headers across the top, e.g. ["Owners", "Surviving Spouse", "Inherited"]. */
-  stageHeaders: string[];
+  /**
+   * Stage headers across the top — exactly three entries, one per stage:
+   * [0] owners, [1] surviving-spouse pool, [2] inherited / final recipients.
+   * Matches the `SankeyStage` domain of `0 | 1 | 2`.
+   */
+  stageHeaders: [string, string, string];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -242,6 +246,19 @@ export function EstateFlowSankey({ layout, stageHeaders }: Props) {
     [layout.nodes],
   );
 
+  // ── Event handlers — declared before any early return to satisfy Rules of Hooks ──
+  const handleLinkEnter = useCallback((link: PositionedLink) => {
+    setSelection({ kind: "link", link });
+  }, []);
+
+  const handleNodeEnter = useCallback((node: PositionedNode) => {
+    setSelection({ kind: "node", node });
+  }, []);
+
+  const handleLeave = useCallback(() => {
+    setSelection(null);
+  }, []);
+
   // Empty layout guard
   if (layout.nodes.length === 0) {
     return (
@@ -270,19 +287,6 @@ export function EstateFlowSankey({ layout, stageHeaders }: Props) {
   );
 
   const totalSvgHeight = HEADER_H + layout.height + LEGEND_H;
-
-  // ── Event handlers ─────────────────────────────────────────────────────────
-  function handleLinkEnter(link: PositionedLink) {
-    setSelection({ kind: "link", link });
-  }
-
-  function handleNodeEnter(node: PositionedNode) {
-    setSelection({ kind: "node", node });
-  }
-
-  function handleLeave() {
-    setSelection(null);
-  }
 
   return (
     <div className="flex gap-3">

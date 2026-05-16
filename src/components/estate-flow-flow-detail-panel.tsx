@@ -11,6 +11,15 @@ const fmt = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+// ── Node kind readable labels ─────────────────────────────────────────────────
+
+const KIND_NODE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  spousePool: "Spouse Estate",
+  finalBeneficiary: "Recipient",
+  taxSink: "Taxes & Expenses",
+};
+
 // ── Mechanism readable labels ─────────────────────────────────────────────────
 
 const MECHANISM_LABELS: Record<string, string> = {
@@ -103,16 +112,10 @@ export function EstateFlowFlowDetailPanel({ selection }: Props) {
 
   // selection.kind === "node"
   const { node } = selection;
-  const kindLabel: Record<string, string> = {
-    owner: "Owner",
-    spousePool: "Spouse Estate",
-    finalBeneficiary: "Recipient",
-    taxSink: "Taxes & Expenses",
-  };
 
   return (
     <aside className="w-64 shrink-0 rounded border border-gray-800/60 bg-gray-900/60 p-3 text-xs">
-      <SectionHeader>{kindLabel[node.kind] ?? node.kind}</SectionHeader>
+      <SectionHeader>{KIND_NODE_LABELS[node.kind] ?? node.kind}</SectionHeader>
       <p className="mt-1 font-medium text-gray-100">{node.label}</p>
       <p className="mt-0.5 tabular-nums text-gray-300">
         {fmt.format(node.value)}
