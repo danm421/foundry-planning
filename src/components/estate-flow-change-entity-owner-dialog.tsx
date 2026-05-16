@@ -83,7 +83,8 @@ export default function EstateFlowChangeEntityOwnerDialog({
     if (id === "joint" && clientFmId && spouseFmId) {
       setSplitPercents((prev) => {
         const next = { ...prev };
-        if ((next[clientFmId] ?? 0) + (next[spouseFmId] ?? 0) === 0) {
+        // Seed an even split unless the entity is already a real two-way split.
+        if (!((next[clientFmId] ?? 0) > 0 && (next[spouseFmId] ?? 0) > 0)) {
           next[clientFmId] = 50;
           next[spouseFmId] = 50;
         }
