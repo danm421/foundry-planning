@@ -4,24 +4,13 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { diffWorkingCopy } from "@/lib/estate/estate-flow-diff";
-import { buildOwnershipColumn } from "@/lib/estate/estate-flow-ownership";
 import {
   ScenarioPickerDropdown,
   type ScenarioOption,
   type SnapshotOption,
 } from "@/components/scenario/scenario-picker-dropdown";
-import { EstateFlowOwnershipColumn } from "@/components/estate-flow-ownership-column";
-import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
-import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
-import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
-import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
-import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
-import { changeOwner, changeBeneficiaries, upsertWills } from "@/lib/estate/estate-flow-edits";
 import { baseWritesForChange } from "@/lib/estate/estate-flow-base-writes";
 import {
-  addGift,
-  updateGift,
-  removeGift,
   applyGiftsToClientData,
   type EstateFlowGift,
 } from "@/lib/estate/estate-flow-gifts";
@@ -29,6 +18,8 @@ import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
+import DialogTabs from "@/components/dialog-tabs";
+import { EstateFlowReportTab } from "@/components/estate-flow-report-tab";
 
 export interface EstateFlowViewProps {
   clientId: string;
@@ -152,12 +143,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   );
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
-  const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
-  const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
-  // Standalone "Add a gift" dialog (no source account).
-  const [addGiftOpen, setAddGiftOpen] = useState(false);
-  // Gift currently being edited via a column-1 future-gift marker.
-  const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<"report">("report");
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -193,53 +180,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const planEndYear =
     projection.years[projection.years.length - 1]?.year ?? planStartYear;
 
-  // As-of year for column 1. Initialises to the plan's first year ("today").
-  const [asOfYear, setAsOfYear] = useState<number>(planStartYear);
-
-  const ownership = useMemo(
-    () => buildOwnershipColumn(working, { projection, asOfYear, gifts: workingGifts }),
-    [working, projection, asOfYear, workingGifts],
-  );
-
-  // Human label for each gift recipient, keyed by recipient id. Built from the
-  // working copy's family members / entities / external beneficiaries so the
-  // ownership column can resolve future-gift markers.
-  const recipientLabelById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const fm of working.familyMembers ?? []) {
-      map.set(
-        fm.id,
-        [fm.firstName, fm.lastName].filter(Boolean).join(" ") || fm.firstName,
-      );
-    }
-    for (const entity of working.entities ?? []) {
-      if (entity.name) map.set(entity.id, entity.name);
-    }
-    for (const ext of working.externalBeneficiaries ?? []) {
-      map.set(ext.id, ext.name);
-    }
-    return map;
-  }, [working.familyMembers, working.entities, working.externalBeneficiaries]);
-  // Account display names keyed by id — used by the death columns to resolve
-  // asset-gift marker labels ("P% of {account name}").
-  const accountNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const acct of working.accounts ?? []) {
-      map.set(acct.id, acct.name);
-    }
-    return map;
-  }, [working.accounts]);
-  const reportData = useMemo(
-    () =>
-      buildEstateTransferReportData({
-        projection,
-        asOf: { kind: "split" },
-        ordering,
-        clientData: engineData,
-        ownerNames: props.ownerNames,
-      }),
-    [projection, ordering, engineData, props.ownerNames],
-  );
   const pendingChanges = useMemo(
     () => diffWorkingCopy(original, working),
     [original, working],
@@ -508,22 +448,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     }
   }, [pendingChanges, giftChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
 
-  const ownerDialogAccount = ownerDialogId
-    ? working.accounts.find((a) => a.id === ownerDialogId)
-    : undefined;
-
-  // Plan tax-inflation rate, threaded to the gift-fields warning preview.
-  const taxInflationRate =
-    working.planSettings.taxInflationRate ??
-    working.planSettings.inflationRate ??
-    0;
-
-  // The gift targeted by an open edit dialog. Undefined when the gift was
-  // removed out from under the dialog — guarded at render time below.
-  const editingGift = editingGiftId
-    ? workingGifts.find((g) => g.id === editingGiftId)
-    : undefined;
-
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* Control bar */}
@@ -551,62 +475,25 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         </div>
       </div>
 
-      {/* Three-column layout */}
-      <div className="grid grid-cols-3 gap-4">
-        {/* Ownership column */}
-        <div className="rounded border border-gray-800/60 p-3">
-          <EstateFlowOwnershipColumn
-            data={ownership}
-            onAssetClick={setOwnerDialogId}
-            minYear={planStartYear}
-            maxYear={planEndYear}
-            asOfYear={asOfYear}
-            onYearChange={setAsOfYear}
-            gifts={workingGifts}
-            recipientLabelById={recipientLabelById}
-            onGiftClick={(giftId) => setEditingGiftId(giftId)}
-            onAddGift={() => setAddGiftOpen(true)}
-          />
-        </div>
-        {/* Death columns — ordering toggle swaps which section feeds column 2 vs 3 */}
-        {(() => {
-          const [col2Section, col3Section] =
-            ordering === "spouseFirst"
-              ? [reportData.secondDeath, reportData.firstDeath]
-              : [reportData.firstDeath, reportData.secondDeath];
-          return (
-            <>
-              <div className="rounded border border-gray-800/60 p-3">
-                <EstateFlowDeathColumn
-                  section={col2Section}
-                  deathOrder={1}
-                  projection={projection}
-                  onAssetClick={setDistributionDialogId}
-                  gifts={workingGifts}
-                  accountNameById={accountNameById}
-                  onGiftClick={setEditingGiftId}
-                />
-              </div>
-              {/* Death column 3 — second death, married only */}
-              {props.isMarried ? (
-                <div className="rounded border border-gray-800/60 p-3">
-                  <EstateFlowDeathColumn
-                    section={col3Section}
-                    deathOrder={2}
-                    projection={projection}
-                    onAssetClick={setDistributionDialogId}
-                    gifts={workingGifts}
-                    accountNameById={accountNameById}
-                    onGiftClick={setEditingGiftId}
-                  />
-                </div>
-              ) : (
-                <div className="rounded border border-gray-800/60 p-3" aria-hidden="true" />
-              )}
-            </>
-          );
-        })()}
-      </div>
+      <DialogTabs
+        tabs={[{ id: "report", label: "Report" }]}
+        activeTab={activeTab}
+        onTabChange={(id) => setActiveTab(id as "report")}
+      />
+
+      <EstateFlowReportTab
+        working={working}
+        workingGifts={workingGifts}
+        projection={projection}
+        engineData={engineData}
+        ordering={ordering}
+        isMarried={props.isMarried}
+        ownerNames={props.ownerNames}
+        planStartYear={planStartYear}
+        planEndYear={planEndYear}
+        applyEdit={applyEdit}
+        setWorkingGifts={setWorkingGifts}
+      />
 
       {isDirty && (
         <div
@@ -670,76 +557,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             </div>
           </div>
         </div>
-      )}
-
-      {ownerDialogAccount && (
-        <EstateFlowChangeOwnerDialog
-          account={ownerDialogAccount}
-          clientData={working}
-          ledger={projection.giftLedger}
-          taxInflationRate={taxInflationRate}
-          onApply={(owners) => {
-            applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
-            setOwnerDialogId(null);
-          }}
-          onApplyGift={(draft) => {
-            setWorkingGifts((cur) => addGift(cur, draft));
-            setOwnerDialogId(null);
-          }}
-          onClose={() => setOwnerDialogId(null)}
-        />
-      )}
-
-      {distributionDialogId && working.accounts.some((a) => a.id === distributionDialogId) && (
-        <EstateFlowChangeDistributionDialog
-          accountId={distributionDialogId}
-          clientData={working}
-          onApplyBeneficiaries={(refs) => {
-            applyEdit((d) => changeBeneficiaries(d, "account", distributionDialogId, refs));
-            setDistributionDialogId(null);
-          }}
-          onApplyWill={(wills) => {
-            applyEdit((d) => upsertWills(d, wills));
-            setDistributionDialogId(null);
-          }}
-          onClose={() => setDistributionDialogId(null)}
-        />
-      )}
-
-      {/* Standalone "Add a gift" dialog — sourceAccount is always null here. */}
-      {addGiftOpen && (
-        <EstateFlowAddGiftDialog
-          clientData={working}
-          ledger={projection.giftLedger}
-          taxInflationRate={taxInflationRate}
-          editing={null}
-          onApply={(draft) => {
-            setWorkingGifts((cur) => addGift(cur, draft));
-            setAddGiftOpen(false);
-          }}
-          onDelete={() => {}}
-          onClose={() => setAddGiftOpen(false)}
-        />
-      )}
-
-      {/* Edit / delete an existing gift, opened from a column-1 marker. */}
-      {editingGiftId && editingGift && (
-        <EstateFlowAddGiftDialog
-          key={editingGiftId}
-          clientData={working}
-          ledger={projection.giftLedger}
-          taxInflationRate={taxInflationRate}
-          editing={editingGift}
-          onApply={(draft) => {
-            setWorkingGifts((cur) => updateGift(cur, draft));
-            setEditingGiftId(null);
-          }}
-          onDelete={() => {
-            setWorkingGifts((cur) => removeGift(cur, editingGiftId));
-            setEditingGiftId(null);
-          }}
-          onClose={() => setEditingGiftId(null)}
-        />
       )}
     </div>
   );
