@@ -40,6 +40,15 @@ export default function EstateFlowChangeEntityOwnerDialog({
     [clientData.familyMembers],
   );
 
+  // The dialog edits only the client/spouse split. If the entity has any other
+  // family-member owner (e.g. a child holding a stake), applying would replace
+  // it — warn the advisor rather than silently dropping it.
+  const hasOtherOwners = useMemo(() => {
+    return (entity.owners ?? []).some(
+      (o) => o.familyMemberId !== clientFmId && o.familyMemberId !== spouseFmId,
+    );
+  }, [entity.owners, clientFmId, spouseFmId]);
+
   // Infer the starting destination from the entity's current owners.
   const initialDestId = useMemo((): DestId => {
     const owners = entity.owners ?? [];
@@ -125,6 +134,13 @@ export default function EstateFlowChangeEntityOwnerDialog({
         <p className="text-[14px] font-medium text-ink">{entity.name ?? "Business"}</p>
         <p className="mt-0.5 text-[12px] text-ink-3">{fmt.format(entity.value ?? 0)}</p>
       </div>
+
+      {hasOtherOwners && (
+        <p className="mb-4 rounded bg-amber-900/30 px-3 py-2 text-[11px] text-amber-200">
+          This business has other owners not shown here. Applying a change will
+          replace all owners with the selection below.
+        </p>
+      )}
 
       <div>
         <p className={fieldLabelClassName}>Owner</p>
