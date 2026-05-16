@@ -13,6 +13,7 @@ import {
 import type { ClientData } from "@/engine/types";
 import { EstateTransferDeathSection } from "./estate-transfer-death-section";
 import { EstateTransferRecipientTotals } from "./estate-transfer-recipient-totals";
+import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
 
 interface EstateTransferReportViewProps {
   clientId: string;
@@ -21,8 +22,6 @@ interface EstateTransferReportViewProps {
   ownerDobs: OwnerDobs;
   retirementYear: number;
 }
-
-type Ordering = "primaryFirst" | "spouseFirst";
 
 export default function EstateTransferReportView({
   clientId,
@@ -35,7 +34,7 @@ export default function EstateTransferReportView({
   const [projection, setProjection] = useState<ProjectionResult | null>(null);
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [selectedAsOf, setSelectedAsOf] = useState<AsOfValue>("today");
-  const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
+  const [ordering, setOrdering] = useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -151,30 +150,11 @@ export default function EstateTransferReportView({
             />
           </label>
           {isMarried && !isSplit && (
-            <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
-              <button
-                type="button"
-                className={
-                  ordering === "primaryFirst"
-                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
-                }
-                onClick={() => setOrdering("primaryFirst")}
-              >
-                {ownerNames.clientName} dies first
-              </button>
-              <button
-                type="button"
-                className={
-                  ordering === "spouseFirst"
-                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
-                }
-                onClick={() => setOrdering("spouseFirst")}
-              >
-                {ownerNames.spouseName ?? "Spouse"} dies first
-              </button>
-            </div>
+            <DeathOrderToggle
+              value={ordering}
+              onChange={setOrdering}
+              ownerNames={ownerNames}
+            />
           )}
         </div>
       </div>
