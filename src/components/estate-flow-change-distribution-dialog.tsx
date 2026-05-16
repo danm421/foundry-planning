@@ -493,10 +493,9 @@ function EstateFlowChangeDistributionDialogInner({
 
   // Joint assets validate each editor independently — a non-empty editor must
   // sum to 100%; an empty editor is valid (it removes that grantor's bequest).
-  const jointSpouseSum = cascadeRows.reduce((s, r) => s + r.percentage, 0);
   const jointSpouseOk =
     cascadeRows.length === 0 ||
-    (Math.abs(jointSpouseSum - 100) < 0.5 &&
+    (Math.abs(cascadeSum - 100) < 0.5 &&
       cascadeRows.every((r) => r.recipientKind === "spouse" || r.recipientId != null));
   const jointWillValid = willSumOk && willRecipientsHaveIds && jointSpouseOk;
 
@@ -517,6 +516,11 @@ function EstateFlowChangeDistributionDialogInner({
       return;
     }
 
+    const newId = (): string =>
+      typeof crypto !== "undefined"
+        ? crypto.randomUUID()
+        : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
     // Joint-owned path: each spouse's will disposes that spouse's share.
     if (isJointOwned) {
       onApplyWill(
@@ -526,10 +530,7 @@ function EstateFlowChangeDistributionDialogInner({
           clientRecipients: rowsToWillRecipients(willRecipientRows),
           spouseWill,
           spouseRecipients: rowsToWillRecipients(cascadeRows),
-          newId: () =>
-            typeof crypto !== "undefined"
-              ? crypto.randomUUID()
-              : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          newId,
         }),
       );
       return;
@@ -549,10 +550,7 @@ function EstateFlowChangeDistributionDialogInner({
         hasSpouseRecipient,
         spouseCascadeRecipients: rowsToWillRecipients(cascadeRows),
         spouseWill,
-        newId: () =>
-          typeof crypto !== "undefined"
-            ? crypto.randomUUID()
-            : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        newId,
       }),
     );
   }
