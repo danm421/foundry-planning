@@ -7,7 +7,8 @@ import { redistributeTier, splitEvenly } from "@/components/forms/auto-split-per
 import WillRecipientList, {
   type WillRecipientRow,
 } from "@/components/estate-flow-will-recipient-list";
-import { buildWillUpdates } from "@/lib/estate/build-will-updates";
+import { buildWillUpdates, buildJointWillUpdates } from "@/lib/estate/build-will-updates";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import type {
   Account,
   BeneficiaryRef,
@@ -399,6 +400,36 @@ function EstateFlowChangeDistributionDialogInner({
     [clientData.wills],
   );
 
+  /** The client's will, if they have one — left editor target for joint assets. */
+  const clientWill = useMemo(
+    () => (clientData.wills ?? []).find((w) => w.grantor === "client") ?? null,
+    [clientData.wills],
+  );
+
+  // ── Joint-ownership detection ─────────────────────────────────────────────
+
+  const clientFmId = useMemo(
+    () => (clientData.familyMembers ?? []).find((m) => m.role === "client")?.id ?? null,
+    [clientData.familyMembers],
+  );
+  const spouseFmId = useMemo(
+    () => (clientData.familyMembers ?? []).find((m) => m.role === "spouse")?.id ?? null,
+    [clientData.familyMembers],
+  );
+
+  /** Joint-owned = a family_member owner resolving to client AND one to spouse. */
+  const isJointOwned = useMemo(() => {
+    const fmIds = account.owners
+      .filter(
+        (o): o is Extract<typeof o, { kind: "family_member" }> =>
+          o.kind === "family_member",
+      )
+      .map((o) => o.familyMemberId);
+    const hasClient = fmIds.some((id) => id === clientFmId || id === LEGACY_FM_CLIENT);
+    const hasSpouse = fmIds.some((id) => id === spouseFmId || id === LEGACY_FM_SPOUSE);
+    return hasClient && hasSpouse;
+  }, [account.owners, clientFmId, spouseFmId]);
+
   /** The spouse's existing specific bequest for this account, if any. */
   const spouseBequestForAccount = useMemo(
     () =>
@@ -460,8 +491,21 @@ function EstateFlowChangeDistributionDialogInner({
     cascadeOk &&
     (willForAccount !== null || defaultWillForNewBequest !== null);
 
+  // Joint assets validate each editor independently — a non-empty editor must
+  // sum to 100%; an empty editor is valid (it removes that grantor's bequest).
+  const jointSpouseSum = cascadeRows.reduce((s, r) => s + r.percentage, 0);
+  const jointSpouseOk =
+    cascadeRows.length === 0 ||
+    (Math.abs(jointSpouseSum - 100) < 0.5 &&
+      cascadeRows.every((r) => r.recipientKind === "spouse" || r.recipientId != null));
+  const jointWillValid = willSumOk && willRecipientsHaveIds && jointSpouseOk;
+
   const canApply =
-    activeTab === "beneficiary" ? beneficiaryValid : willValid;
+    activeTab === "beneficiary"
+      ? beneficiaryValid
+      : isJointOwned
+        ? jointWillValid
+        : willValid;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -470,6 +514,24 @@ function EstateFlowChangeDistributionDialogInner({
 
     if (activeTab === "beneficiary") {
       onApplyBeneficiaries(rowsToRefs(beneficiaryRows));
+      return;
+    }
+
+    // Joint-owned path: each spouse's will disposes that spouse's share.
+    if (isJointOwned) {
+      onApplyWill(
+        buildJointWillUpdates({
+          account: { id: account.id, name: account.name },
+          clientWill,
+          clientRecipients: rowsToWillRecipients(willRecipientRows),
+          spouseWill,
+          spouseRecipients: rowsToWillRecipients(cascadeRows),
+          newId: () =>
+            typeof crypto !== "undefined"
+              ? crypto.randomUUID()
+              : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        }),
+      );
       return;
     }
 
@@ -708,6 +770,57 @@ function EstateFlowChangeDistributionDialogInner({
   }
 
   function renderWillTab() {
+    // Joint-owned: two side-by-side editors, one per grantor's will. No
+    // condition selector and no spouse-cascade block — each will disposes
+    // its own owner's share unconditionally.
+    if (isJointOwned) {
+      return (
+        <div className="mt-4">
+          <p className="mb-3 text-[12px] text-ink-3">
+            This asset is jointly owned. Each will disposes that owner&apos;s share —
+            saving writes a specific bequest into each, creating a will that
+            doesn&apos;t exist yet.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded border border-hair bg-card-2 px-3 py-3">
+              <p className="mb-2 text-[12px] font-medium text-ink">
+                {clientName}&apos;s will
+              </p>
+              <WillRecipientList
+                label="Recipients"
+                sumMsgId="joint-client-sum-msg"
+                rows={willRecipientRows}
+                onChange={setWillRecipientRows}
+                spouseName={spouseName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Client will recipient"
+              />
+            </div>
+            <div className="rounded border border-hair bg-card-2 px-3 py-3">
+              <p className="mb-2 text-[12px] font-medium text-ink">
+                {spouseName ?? "Spouse"}&apos;s will
+              </p>
+              <WillRecipientList
+                label="Recipients"
+                sumMsgId="joint-spouse-sum-msg"
+                rows={cascadeRows}
+                onChange={setCascadeRows}
+                spouseName={spouseName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Spouse will recipient"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const noWillAvailable = !willForAccount && !defaultWillForNewBequest;
     const willId = "will-sum-msg";
 
@@ -823,7 +936,7 @@ function EstateFlowChangeDistributionDialogInner({
         if (!open) onClose();
       }}
       title="Change Distribution"
-      size="md"
+      size={isJointOwned ? "lg" : "md"}
       primaryAction={{
         label: "Apply",
         onClick: handleApply,
