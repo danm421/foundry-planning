@@ -1,4 +1,4 @@
-import type { EstateFlowGift } from "./estate-flow-gifts";
+import { giftRecipientKindLabel, type EstateFlowGift } from "./estate-flow-gifts";
 
 export interface GiftChange {
   /** Human-readable summary for the unsaved-changes list. */
@@ -13,7 +13,7 @@ export interface GiftChange {
  *
  * CONTRACT: `eq` uses `JSON.stringify`, which is both key-order- and
  * key-presence-sensitive. Any code that constructs an `EstateFlowGift` for
- * comparison (notably the upcoming gift-fields UI in later tasks) MUST either:
+ * comparison (notably EstateFlowGiftFields' draft assembly) MUST either:
  *   a) spread an existing gift object — `{ ...gift, field: x }` — so that key
  *      order is preserved, or
  *   b) match the exact key order produced by `giftRowToDraft` /
@@ -27,11 +27,7 @@ function eq(a: EstateFlowGift, b: EstateFlowGift): boolean {
 }
 
 function recipientWord(g: EstateFlowGift): string {
-  return g.recipient.kind === "entity"
-    ? "trust"
-    : g.recipient.kind === "family_member"
-      ? "family member"
-      : "beneficiary";
+  return giftRecipientKindLabel(g.recipient.kind);
 }
 
 function describeChange(op: GiftChange["op"], g: EstateFlowGift): string {

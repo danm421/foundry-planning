@@ -3,7 +3,10 @@ import type {
   OwnershipGroup,
   OwnershipAssetRow,
 } from "@/lib/estate/estate-flow-ownership";
-import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import {
+  giftRecipientKindLabel,
+  type EstateFlowGift,
+} from "@/lib/estate/estate-flow-gifts";
 import { EstateFlowYearScrubber } from "@/components/estate-flow-year-scrubber";
 
 // ── Currency formatter (matches estate-transfer-recipient-card.tsx) ───────────
@@ -37,14 +40,6 @@ function AccountTypeChip({ type }: { type: string }) {
     </span>
   );
 }
-
-// ── Recipient label fallback ──────────────────────────────────────────────────
-
-const RECIPIENT_KIND_FALLBACK: Record<EstateFlowGift["recipient"]["kind"], string> = {
-  entity: "trust",
-  family_member: "family member",
-  external_beneficiary: "beneficiary",
-};
 
 // ── Asset row ─────────────────────────────────────────────────────────────────
 
@@ -146,7 +141,7 @@ function AssetRow({
             const gift = gifts.find((x) => x.id === g.giftId);
             const recipientLabel = gift
               ? recipientLabelById.get(gift.recipient.id) ??
-                RECIPIENT_KIND_FALLBACK[gift.recipient.kind]
+                giftRecipientKindLabel(gift.recipient.kind)
               : "beneficiary";
             return (
               <button

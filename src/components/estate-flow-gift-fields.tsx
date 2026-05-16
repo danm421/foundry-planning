@@ -24,7 +24,7 @@ export interface EstateFlowGiftFieldsProps {
   /** When launched from a column-1 asset, the source account; null for a standalone gift. */
   sourceAccount: { id: string; name: string; value: number } | null;
   /**
-   * Editing an existing gift — its kind is then locked (decision 3).
+   * Editing an existing gift — its kind is then locked.
    *
    * REMOUNT CONTRACT: this prop is read only by `useState` lazy initialisers,
    * so swapping it on a mounted instance would leave stale field values. The
@@ -87,8 +87,8 @@ function segButtonClassName(active: boolean, disabled: boolean): string {
  *
  * REMOUNT CONTRACT: the parent MUST give this component a `key` that changes
  * per gift — e.g. `key={editing?.id ?? "new"}` — so the form remounts (and
- * re-seeds its state) whenever the edited gift changes. Tasks 8 and 9 rely on
- * this; do not add prop→state sync effects instead.
+ * re-seeds its state) whenever the edited gift changes. Do not add prop→state
+ * sync effects instead.
  */
 export function EstateFlowGiftFields({
   clientData,
@@ -211,16 +211,16 @@ export function EstateFlowGiftFields({
   );
   const recipientIsTrust = selectedRecipient?.isIrrevocableTrust ?? false;
 
-  // Decision 2: recurring only to irrevocable trusts. Force one-time otherwise.
+  // Recurring only to irrevocable trusts. Force one-time otherwise.
   const recurringAllowed = recipientIsTrust;
   const effectiveRecurring = recurringAllowed && isRecurring;
 
-  // Decision 1: in-kind only to irrevocable trusts and only with a source
-  // account. Cash everywhere else.
+  // In-kind only to irrevocable trusts and only with a source account. Cash
+  // everywhere else.
   const inKindAllowed = recipientIsTrust && sourceAccount != null;
   const effectiveInKind = !effectiveRecurring && inKindAllowed && isInKind;
 
-  // Decision 3: when editing, the kind axis is locked.
+  // When editing, the kind axis is locked.
   const kindLocked = editing != null;
 
   // ── Draft assembly ─────────────────────────────────────────────────────────
@@ -336,7 +336,7 @@ export function EstateFlowGiftFields({
   const breaches = useMemo<GiftWarningBreach[]>(() => {
     if (!draft) return [];
 
-    // taxableContribution: per decision/plan, cash → amount, asset → value×pct,
+    // taxableContribution: cash → amount, asset → value×pct,
     // series → per-year annualAmount (preview the start year).
     let taxableContribution: number;
     let previewYear: number;

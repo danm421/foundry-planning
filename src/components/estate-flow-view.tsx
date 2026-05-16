@@ -105,14 +105,6 @@ async function persistGiftChange(
   change: GiftChange,
 ): Promise<Response> {
   const { op, gift } = change;
-  const recipientFields = {
-    recipientEntityId:
-      gift.recipient.kind === "entity" ? gift.recipient.id : null,
-    recipientFamilyMemberId:
-      gift.recipient.kind === "family_member" ? gift.recipient.id : null,
-    recipientExternalBeneficiaryId:
-      gift.recipient.kind === "external_beneficiary" ? gift.recipient.id : null,
-  };
 
   // ── series ────────────────────────────────────────────────────────────────
   if (gift.kind === "series") {
@@ -154,6 +146,14 @@ async function persistGiftChange(
 
   // Common one-time fields. accountId is included only on POST (it is immutable
   // and rejected by the PATCH schema).
+  const recipientFields = {
+    recipientEntityId:
+      gift.recipient.kind === "entity" ? gift.recipient.id : null,
+    recipientFamilyMemberId:
+      gift.recipient.kind === "family_member" ? gift.recipient.id : null,
+    recipientExternalBeneficiaryId:
+      gift.recipient.kind === "external_beneficiary" ? gift.recipient.id : null,
+  };
   const oneTimeBody: Record<string, unknown> = {
     year: gift.year,
     yearRef: null,
@@ -220,8 +220,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   // column 1 shows the client's death and column 2 shows the spouse's death;
   // "spouseFirst" swaps them. The projection result is identical either way.
   // Materialise gift drafts into the engine input so the projection and report
-  // reflect existing (and, in later tasks, sandbox-edited) gifts. The loader
-  // strips gifts/giftEvents from initialClientData; they flow back in here.
+  // reflect existing and sandbox-edited gifts. The loader strips
+  // gifts/giftEvents from initialClientData; they flow back in here.
   const engineData = useMemo(
     () => applyGiftsToClientData(working, workingGifts, props.cpi),
     [working, workingGifts, props.cpi],
@@ -263,7 +263,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       map.set(ext.id, ext.name);
     }
     return map;
-  }, [working]);
+  }, [working.familyMembers, working.entities, working.externalBeneficiaries]);
   // Account display names keyed by id — used by the death columns to resolve
   // asset-gift marker labels ("P% of {account name}").
   const accountNameById = useMemo(() => {
@@ -680,11 +680,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           account={ownerDialogAccount}
           clientData={working}
           ledger={projection.giftLedger}
-          taxInflationRate={
-            working.planSettings.taxInflationRate ??
-            working.planSettings.inflationRate ??
-            0
-          }
+          taxInflationRate={taxInflationRate}
           onApply={(owners) => {
             applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
             setOwnerDialogId(null);

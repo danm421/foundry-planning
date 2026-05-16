@@ -155,11 +155,11 @@ export function buildOwnershipColumn(
    * `asOfYear` and a `projection` are supplied, the projection's year-N
    * ending value wins; otherwise the advisor-entered base value is used.
    */
+  const yearState =
+    options.asOfYear !== undefined && options.projection
+      ? options.projection.years.find((y) => y.year === options.asOfYear)
+      : undefined;
   const resolveValue = (accountId: string, baseValue: number): number => {
-    if (options.asOfYear === undefined || !options.projection) return baseValue;
-    const yearState = options.projection.years.find(
-      (y) => y.year === options.asOfYear,
-    );
     return yearState?.accountLedgers[accountId]?.endingValue ?? baseValue;
   };
 

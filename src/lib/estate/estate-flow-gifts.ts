@@ -10,6 +10,15 @@ export interface GiftRecipientRef {
   id: string;
 }
 
+/** Human-readable noun for a gift recipient's kind. */
+export function giftRecipientKindLabel(kind: GiftRecipientRef["kind"]): string {
+  return kind === "entity"
+    ? "trust"
+    : kind === "family_member"
+      ? "family member"
+      : "beneficiary";
+}
+
 export type EstateFlowGift =
   | {
       kind: "cash-once";
@@ -104,9 +113,9 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
       percent: Number(row.percent ?? 0),
       grantor: row.grantor,
       recipient: recipientFromRow(row),
-      // Bug C fix: carry advisor-supplied amount override from the DB row.
+      // Carry advisor-supplied amount override from the DB row.
       amountOverride: row.amount != null ? Number(row.amount) : undefined,
-      // Bug B fix: carry eventKind (DB default is "outright"; always present).
+      // Carry eventKind (DB default is "outright"; always present).
       eventKind: row.eventKind,
     };
   }
@@ -117,9 +126,9 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
     amount: Number(row.amount ?? 0),
     grantor: row.grantor,
     recipient: recipientFromRow(row),
-    // Bug A fix: carry useCrummeyPowers from the DB row (was hardcoded false).
+    // Carry useCrummeyPowers from the DB row.
     crummey: row.useCrummeyPowers,
-    // Bug B fix: carry eventKind (DB default is "outright"; always present).
+    // Carry eventKind (DB default is "outright"; always present).
     eventKind: row.eventKind,
   };
 }
@@ -175,7 +184,7 @@ export function applyGiftsToClientData(
 
   for (const g of gifts) {
     if (g.kind === "cash-once") {
-      // Bug B note: loader's mappedGifts omits eventKind from Gift[] entries
+      // The loader's mappedGifts omits eventKind from Gift[] entries
       // (the field is optional on Gift and the loader never sets it there).
       // We match that exact behaviour — eventKind is NOT propagated to Gift[].
       // Invariant: cash gifts always carry a non-null amount (DB convention:
@@ -198,7 +207,7 @@ export function applyGiftsToClientData(
       // the discriminated union). For family_member / external_beneficiary
       // recipients we pass an empty string — matching the loader's `!` assertion
       // pattern which assumes cash gifts always target an entity in practice.
-      // Bug B fix: use g.eventKind ?? "outright" to mirror loader's cashFromGifts.
+      // Use g.eventKind ?? "outright" to mirror loader's cashFromGifts.
       // The cast drops "joint" from the union. This mirrors load-client-data.ts
       // which performs the identical cast. How the engine handles a "joint" value
       // in a client/spouse field is a pre-existing engine concern, out of scope here.
@@ -213,8 +222,8 @@ export function applyGiftsToClientData(
         eventKind: g.eventKind ?? "outright",
       });
     } else if (g.kind === "asset-once") {
-      // Bug B fix: use g.eventKind ?? "outright" to mirror loader's assetFromGifts.
-      // Bug C fix: pass amountOverride to mirror loader's assetFromGifts.
+      // Use g.eventKind ?? "outright" and pass amountOverride to mirror the
+      // loader's assetFromGifts.
       // The cast drops "joint" from the union — identical to load-client-data.ts.
       // How the engine handles a "joint" value in a client/spouse field is a
       // pre-existing engine concern, out of scope for this module.
