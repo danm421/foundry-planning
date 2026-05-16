@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildEstateFlowGraph, type BuildGraphInput } from "../estate-flow-sankey";
+import { buildEstateFlowGraph, layoutEstateFlowGraph, type BuildGraphInput } from "../estate-flow-sankey";
 import type { EstateTransferReportData, DeathSectionData } from "@/lib/estate/transfer-report";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -168,130 +168,137 @@ describe("buildEstateFlowGraph — single filer", () => {
 
 // ── Married two-death ─────────────────────────────────────────────────────────
 
+/**
+ * Reusable married two-death EstateTransferReportData fixture.
+ * Pat dies first ($900 to spouse pool + $200 to Kid A + $100 tax).
+ * Sam (spouse pool) dies second ($650 to Kid A + $50 tax).
+ */
+function marriedReport(): EstateTransferReportData {
+  const first = deathSection({
+    recipients: [
+      {
+        key: "spouse|",
+        recipientKind: "spouse",
+        recipientId: null,
+        recipientLabel: "Sam",
+        total: 700,
+        netTotal: 700,
+        drainsByKind: {
+          federal_estate_tax: 0,
+          state_estate_tax: 0,
+          admin_expenses: 0,
+          debts_paid: 0,
+          ird_tax: 0,
+        },
+        byMechanism: [
+          {
+            mechanism: "titling",
+            mechanismLabel: "Account Titling",
+            total: 700,
+            assets: [
+              {
+                sourceAccountId: "a1",
+                sourceLiabilityId: null,
+                label: "Joint Home",
+                amount: 700,
+                basis: 0,
+                conflictIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        key: "family_member|kid",
+        recipientKind: "family_member",
+        recipientId: "kid",
+        recipientLabel: "Kid A",
+        total: 200,
+        netTotal: 200,
+        drainsByKind: {
+          federal_estate_tax: 0,
+          state_estate_tax: 0,
+          admin_expenses: 0,
+          debts_paid: 0,
+          ird_tax: 0,
+        },
+        byMechanism: [
+          {
+            mechanism: "beneficiary_designation",
+            mechanismLabel: "Beneficiary Designation",
+            total: 200,
+            assets: [
+              {
+                sourceAccountId: "a2",
+                sourceLiabilityId: null,
+                label: "IRA",
+                amount: 200,
+                basis: 0,
+                conflictIds: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    reductions: [{ kind: "federal_estate_tax", label: "Federal estate tax", amount: 100 }],
+  });
+
+  const second = deathSection({
+    decedent: "spouse",
+    decedentName: "Sam",
+    year: 2047,
+    assetEstateValue: 700,
+    recipients: [
+      {
+        key: "family_member|kid",
+        recipientKind: "family_member",
+        recipientId: "kid",
+        recipientLabel: "Kid A",
+        total: 650,
+        netTotal: 650,
+        drainsByKind: {
+          federal_estate_tax: 0,
+          state_estate_tax: 0,
+          admin_expenses: 0,
+          debts_paid: 0,
+          ird_tax: 0,
+        },
+        byMechanism: [
+          {
+            mechanism: "will",
+            mechanismLabel: "Specific Bequest",
+            total: 650,
+            assets: [
+              {
+                sourceAccountId: "a1",
+                sourceLiabilityId: null,
+                label: "Joint Home",
+                amount: 650,
+                basis: 0,
+                conflictIds: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    reductions: [{ kind: "federal_estate_tax", label: "Federal estate tax", amount: 50 }],
+  });
+
+  return {
+    ordering: "primaryFirst",
+    asOfLabel: "Both die in 2041",
+    firstDeath: first,
+    secondDeath: second,
+    aggregateRecipientTotals: [],
+    isEmpty: false,
+  };
+}
+
 describe("buildEstateFlowGraph — married", () => {
   it("threads a single spouse-pool node between the two deaths", () => {
-    const first = deathSection({
-      recipients: [
-        {
-          key: "spouse|",
-          recipientKind: "spouse",
-          recipientId: null,
-          recipientLabel: "Sam",
-          total: 700,
-          netTotal: 700,
-          drainsByKind: {
-            federal_estate_tax: 0,
-            state_estate_tax: 0,
-            admin_expenses: 0,
-            debts_paid: 0,
-            ird_tax: 0,
-          },
-          byMechanism: [
-            {
-              mechanism: "titling",
-              mechanismLabel: "Account Titling",
-              total: 700,
-              assets: [
-                {
-                  sourceAccountId: "a1",
-                  sourceLiabilityId: null,
-                  label: "Joint Home",
-                  amount: 700,
-                  basis: 0,
-                  conflictIds: [],
-                },
-              ],
-            },
-          ],
-        },
-        {
-          key: "family_member|kid",
-          recipientKind: "family_member",
-          recipientId: "kid",
-          recipientLabel: "Kid A",
-          total: 200,
-          netTotal: 200,
-          drainsByKind: {
-            federal_estate_tax: 0,
-            state_estate_tax: 0,
-            admin_expenses: 0,
-            debts_paid: 0,
-            ird_tax: 0,
-          },
-          byMechanism: [
-            {
-              mechanism: "beneficiary_designation",
-              mechanismLabel: "Beneficiary Designation",
-              total: 200,
-              assets: [
-                {
-                  sourceAccountId: "a2",
-                  sourceLiabilityId: null,
-                  label: "IRA",
-                  amount: 200,
-                  basis: 0,
-                  conflictIds: [],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      reductions: [{ kind: "federal_estate_tax", label: "Federal estate tax", amount: 100 }],
-    });
-
-    const second = deathSection({
-      decedent: "spouse",
-      decedentName: "Sam",
-      year: 2047,
-      assetEstateValue: 700,
-      recipients: [
-        {
-          key: "family_member|kid",
-          recipientKind: "family_member",
-          recipientId: "kid",
-          recipientLabel: "Kid A",
-          total: 650,
-          netTotal: 650,
-          drainsByKind: {
-            federal_estate_tax: 0,
-            state_estate_tax: 0,
-            admin_expenses: 0,
-            debts_paid: 0,
-            ird_tax: 0,
-          },
-          byMechanism: [
-            {
-              mechanism: "will",
-              mechanismLabel: "Specific Bequest",
-              total: 650,
-              assets: [
-                {
-                  sourceAccountId: "a1",
-                  sourceLiabilityId: null,
-                  label: "Joint Home",
-                  amount: 650,
-                  basis: 0,
-                  conflictIds: [],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      reductions: [{ kind: "federal_estate_tax", label: "Federal estate tax", amount: 50 }],
-    });
-
-    const report: EstateTransferReportData = {
-      ordering: "primaryFirst",
-      asOfLabel: "Both die in 2041",
-      firstDeath: first,
-      secondDeath: second,
-      aggregateRecipientTotals: [],
-      isEmpty: false,
-    };
-
-    const graph = buildEstateFlowGraph(input({ reportData: report }));
+    const graph = buildEstateFlowGraph(input({ reportData: marriedReport() }));
 
     const pools = graph.nodes.filter((n) => n.kind === "spousePool");
     expect(pools).toHaveLength(1);
@@ -472,6 +479,37 @@ describe("buildEstateFlowGraph — gift link ID uniqueness", () => {
     // Both gift links exist
     const giftLinks = graph.links.filter((l) => l.mechanism === "gift");
     expect(giftLinks).toHaveLength(2);
+  });
+});
+
+// ── Layout geometry ───────────────────────────────────────────────────────────
+
+describe("layoutEstateFlowGraph", () => {
+  it("places nodes left-to-right by stage with no vertical overlap", () => {
+    const graph = buildEstateFlowGraph(input({ reportData: marriedReport() }));
+    const layout = layoutEstateFlowGraph(graph, { width: 900, height: 500 });
+
+    // Column ordering: every stage-0 node is left of every stage-2 node.
+    const xByStage = (stage: number) =>
+      layout.nodes.filter((n) => n.stage === stage).map((n) => n.x);
+    const maxStage0 = Math.max(...xByStage(0));
+    const minStage2 = Math.min(...xByStage(2));
+    expect(maxStage0).toBeLessThan(minStage2);
+
+    // No two nodes in the same column overlap vertically.
+    for (const stage of [0, 1, 2]) {
+      const col = layout.nodes
+        .filter((n) => n.stage === stage)
+        .sort((a, b) => a.y - b.y);
+      for (let i = 1; i < col.length; i++) {
+        expect(col[i].y).toBeGreaterThanOrEqual(col[i - 1].y + col[i - 1].h);
+      }
+    }
+
+    // Every link resolves to a non-empty path.
+    for (const link of layout.links) {
+      expect(link.path.length).toBeGreaterThan(0);
+    }
   });
 });
 

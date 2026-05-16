@@ -517,3 +517,162 @@ function isSpouseGroup(section: DeathSectionData, nodeId: string): boolean {
     (r) => r.recipientKind === "spouse" && recipientNodeId(r) === nodeId,
   );
 }
+
+// ── Layout types ──────────────────────────────────────────────────────────────
+
+export interface LayoutOptions {
+  width: number;
+  height: number;
+}
+
+export interface PositionedNode extends SankeyNode {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface PositionedLink extends SankeyLink {
+  /** SVG path `d` for a quadratic ribbon between the two nodes. */
+  path: string;
+  /** Vertical thickness of the ribbon at each endpoint. */
+  thickness: number;
+}
+
+export interface SankeyLayout {
+  nodes: PositionedNode[];
+  links: PositionedLink[];
+  width: number;
+  height: number;
+}
+
+// ── Layout implementation ─────────────────────────────────────────────────────
+
+const NODE_W = 16; // px width of the node rail
+const GAP = 8; // px gap between stacked nodes
+const PAD = 24; // px padding from canvas edge to stage-0/stage-2 columns
+
+/**
+ * Lay out a Sankey graph into positioned nodes and Bézier-pathed links.
+ *
+ * Column positions:
+ *   stage 0 → x = PAD
+ *   stage 1 → x = width/2 − NODE_W/2
+ *   stage 2 → x = width − PAD − NODE_W
+ *
+ * Within each column, nodes are stacked top-to-bottom sorted by value
+ * descending, with taxSink nodes forced to the bottom. Node height is
+ * proportional to its value relative to the column total.
+ *
+ * Links are cubic Bézier ribbons; per-link vertical offsets track a running
+ * cursor on both the source right edge and target left edge so multiple links
+ * on a shared node do not all collapse to the node's vertical centre.
+ *
+ * Edge cases:
+ *   - Empty graph → { nodes: [], links: [], width, height }
+ *   - Column whose total is 0 → every node gets h = 0 (no division by zero)
+ */
+export function layoutEstateFlowGraph(
+  graph: EstateFlowGraph,
+  opts: LayoutOptions,
+): SankeyLayout {
+  const { width, height } = opts;
+
+  if (graph.nodes.length === 0) {
+    return { nodes: [], links: [], width, height };
+  }
+
+  // ── 1. Group nodes by stage ───────────────────────────────────────────────
+  const byStage = new Map<SankeyStage, SankeyNode[]>();
+  for (const node of graph.nodes) {
+    const list = byStage.get(node.stage) ?? [];
+    list.push(node);
+    byStage.set(node.stage, list);
+  }
+
+  // ── 2. Compute column x positions ────────────────────────────────────────
+  function stageX(stage: SankeyStage): number {
+    if (stage === 0) return PAD;
+    if (stage === 1) return width / 2 - NODE_W / 2;
+    return width - PAD - NODE_W;
+  }
+
+  // ── 3. Stack nodes within each column ────────────────────────────────────
+  const positionedNodes = new Map<string, PositionedNode>();
+
+  for (const [stage, nodes] of byStage) {
+    // Sort: non-tax nodes by value desc, taxSink nodes sorted to the bottom
+    const sorted = [...nodes].sort((a, b) => {
+      const aTax = a.kind === "taxSink" ? 1 : 0;
+      const bTax = b.kind === "taxSink" ? 1 : 0;
+      if (aTax !== bTax) return aTax - bTax; // tax sinks after regular nodes
+      return b.value - a.value; // largest first within each group
+    });
+
+    const columnTotal = sorted.reduce((s, n) => s + n.value, 0);
+    const totalGaps = Math.max(0, sorted.length - 1) * GAP;
+    const availableH = Math.max(0, height - totalGaps);
+
+    const x = stageX(stage);
+    let cursorY = 0;
+
+    for (const node of sorted) {
+      const h = columnTotal > 0 ? (node.value / columnTotal) * availableH : 0;
+      positionedNodes.set(node.id, {
+        ...node,
+        x,
+        y: cursorY,
+        w: NODE_W,
+        h: Math.max(0, h),
+      });
+      cursorY += Math.max(0, h) + GAP;
+    }
+  }
+
+  // ── 4. Build positioned links with per-node running y-offsets ────────────
+  // Track running cursor on each node's right edge (source) and left edge (target)
+  const sourceCursor = new Map<string, number>(); // nodeId → next available y on right edge
+  const targetCursor = new Map<string, number>(); // nodeId → next available y on left edge
+
+  const positionedLinks: PositionedLink[] = [];
+
+  for (const link of graph.links) {
+    const srcNode = positionedNodes.get(link.sourceId);
+    const tgtNode = positionedNodes.get(link.targetId);
+
+    if (!srcNode || !tgtNode) continue;
+
+    // Thickness proportional to link value relative to source node height
+    const thickness =
+      srcNode.h > 0 ? (link.value / srcNode.value) * srcNode.h : 0;
+
+    // Source attachment point (right edge of source node)
+    const srcCursorY = sourceCursor.get(link.sourceId) ?? srcNode.y;
+    const srcY = srcCursorY + thickness / 2;
+    const srcX = srcNode.x + srcNode.w;
+    sourceCursor.set(link.sourceId, srcCursorY + thickness);
+
+    // Target attachment point (left edge of target node)
+    const tgtCursorY = targetCursor.get(link.targetId) ?? tgtNode.y;
+    const tgtY = tgtCursorY + thickness / 2;
+    const tgtX = tgtNode.x;
+    targetCursor.set(link.targetId, tgtCursorY + thickness);
+
+    // Cubic Bézier: control points at horizontal midpoint
+    const cx = (srcX + tgtX) / 2;
+    const path = `M ${srcX} ${srcY} C ${cx} ${srcY}, ${cx} ${tgtY}, ${tgtX} ${tgtY}`;
+
+    positionedLinks.push({
+      ...link,
+      path,
+      thickness,
+    });
+  }
+
+  return {
+    nodes: Array.from(positionedNodes.values()),
+    links: positionedLinks,
+    width,
+    height,
+  };
+}
