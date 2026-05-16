@@ -738,3 +738,70 @@ describe("buildOwnershipColumn — projected snapshot", () => {
     expect(row?.futureGifts ?? []).toEqual([]);
   });
 });
+
+describe("buildOwnershipColumn — row kind & default cash", () => {
+  it("flags a default-checking account row with isDefaultCash", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-cash", name: "Household Checking", category: "cash",
+          subType: "checking", value: 5_000, basis: 5_000, growthRate: 0,
+          rmdEnabled: false, isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd);
+    const row = out.groups.flatMap((g) => g.assets).find((a) => a.accountId === "acc-cash");
+    expect(row?.isDefaultCash).toBe(true);
+    expect(row?.rowKind).toBe("account");
+  });
+
+  it("emits a business-self row as the first row of a business entity group", () => {
+    const cd = data({
+      entities: [
+        {
+          id: "ent-biz", name: "Acme LLC", entityType: "llc",
+          value: 250_000, includeInPortfolio: true, isGrantor: false,
+          owners: [{ familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd);
+    const group = out.groups.find((g) => g.key === "entity:ent-biz");
+    expect(group).toBeDefined();
+    expect(group!.assets[0].rowKind).toBe("business-entity");
+    expect(group!.assets[0].accountId).toBe("ent-biz");
+    expect(group!.assets[0].value).toBe(250_000);
+    expect(group!.subtotal).toBe(250_000);
+  });
+
+  it("emits a business-self row even when the business value is 0", () => {
+    const cd = data({
+      entities: [
+        {
+          id: "ent-new", name: "New Co", entityType: "s_corp",
+          includeInPortfolio: true, isGrantor: false, owners: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd, { asOfYear: 2030 });
+    const group = out.groups.find((g) => g.key === "entity:ent-new");
+    expect(group).toBeDefined();
+    expect(group!.assets[0].rowKind).toBe("business-entity");
+    expect(group!.assets[0].value).toBe(0);
+  });
+
+  it("does not emit a business-self row for a trust entity", () => {
+    const cd = data({
+      entities: [
+        {
+          id: "ent-trust", name: "Family Trust", entityType: "trust",
+          includeInPortfolio: false, isGrantor: true,
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd);
+    expect(out.groups.find((g) => g.key === "entity:ent-trust")).toBeUndefined();
+  });
+});
