@@ -18,6 +18,7 @@ export interface WillsPanelRecipient {
   id?: string;
   recipientKind: WillRecipientKind;
   recipientId: string | null;
+  tier?: "primary" | "contingent";
   percentage: number;
   sortOrder: number;
 }

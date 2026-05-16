@@ -81,7 +81,9 @@ describe("WillsPanel", () => {
     expect(screen.getByText("Brokerage to spouse")).toBeDefined();
     expect(screen.getByText(/Fidelity Brokerage/)).toBeDefined();
     expect(screen.getAllByText(/100%/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/If spouse survives/i)).toBeDefined();
+    // Exact match for the bequest condition badge — avoids colliding with the
+    // residuary section's "Primary — if spouse survives" tier label.
+    expect(screen.getByText("If spouse survives")).toBeDefined();
   });
 
   it("hides the spouse section when spouseName is null", () => {
@@ -349,10 +351,12 @@ describe("WillsPanel — debt bequests in the unified list", () => {
     expect(visaOption!.disabled).toBe(true);
   });
 
-  it("renders the Residuary clause section per grantor", () => {
+  it("renders the Remainder estate section per grantor", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
-    expect(screen.getAllByText(/Residuary clause/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/No residuary specified/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Remainder estate/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/No remainder clause specified/i).length,
+    ).toBeGreaterThan(0);
   });
 
   it("renders a populated residuary clause from initialWills", () => {
@@ -376,8 +380,8 @@ describe("WillsPanel — debt bequests in the unified list", () => {
         ]}
       />,
     );
-    // No "no residuary" copy when one is configured
-    const empties = screen.queryAllByText(/No residuary specified/i);
+    // No "no remainder" copy when one is configured
+    const empties = screen.queryAllByText(/No remainder clause specified/i);
     // Spouse-grantor (no will) still shows the empty state; client-grantor should NOT
     expect(empties.length).toBe(1);
     // Spouse option appears as a recipient row
