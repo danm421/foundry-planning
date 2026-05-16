@@ -7,7 +7,8 @@ import { redistributeTier, splitEvenly } from "@/components/forms/auto-split-per
 import WillRecipientList, {
   type WillRecipientRow,
 } from "@/components/estate-flow-will-recipient-list";
-import { buildWillUpdates } from "@/lib/estate/build-will-updates";
+import { buildWillUpdates, buildJointWillUpdates } from "@/lib/estate/build-will-updates";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import type {
   Account,
   BeneficiaryRef,
@@ -53,6 +54,15 @@ interface BeneficiaryRow {
  */
 function isRetirementAccount(account: Account): boolean {
   return account.category === "retirement";
+}
+
+/**
+ * Real estate and business interests carry no beneficiary designation — they
+ * pass only by will (or titling). The Beneficiary Designation tab is disabled
+ * for these categories, mirroring how retirement disables the Will tab.
+ */
+function isBequestOnlyAccount(account: Account): boolean {
+  return account.category === "real_estate" || account.category === "business";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -253,6 +263,7 @@ function EstateFlowChangeDistributionDialogInner({
   onClose,
 }: InnerProps) {
   const isRetirement = isRetirementAccount(account);
+  const isBequestOnly = isBequestOnlyAccount(account);
 
   // Refs for keyboard-navigation focus management on the tablist.
   const tabBtnRefs = useRef<Record<RouteTab, HTMLButtonElement | null>>({
@@ -268,6 +279,7 @@ function EstateFlowChangeDistributionDialogInner({
    * by law). When neither is true and a will bequest exists, we default to "will".
    */
   const currentRoute = useMemo((): RouteTab => {
+    if (isBequestOnly) return "will";
     if (isRetirement) return "beneficiary";
     if (account.beneficiaries && account.beneficiaries.length > 0) return "beneficiary";
     // Check if any will has a specific bequest for this account.
@@ -285,7 +297,7 @@ function EstateFlowChangeDistributionDialogInner({
     }
     // Default: beneficiary designation (even if empty, so advisor can set one).
     return "beneficiary";
-  }, [isRetirement, account.beneficiaries, clientData.wills, account.id]);
+  }, [isBequestOnly, isRetirement, account.beneficiaries, clientData.wills, account.id]);
 
   const [activeTab, setActiveTab] = useState<RouteTab>(currentRoute);
 
@@ -388,6 +400,36 @@ function EstateFlowChangeDistributionDialogInner({
     [clientData.wills],
   );
 
+  /** The client's will, if they have one — left editor target for joint assets. */
+  const clientWill = useMemo(
+    () => (clientData.wills ?? []).find((w) => w.grantor === "client") ?? null,
+    [clientData.wills],
+  );
+
+  // ── Joint-ownership detection ─────────────────────────────────────────────
+
+  const clientFmId = useMemo(
+    () => (clientData.familyMembers ?? []).find((m) => m.role === "client")?.id ?? null,
+    [clientData.familyMembers],
+  );
+  const spouseFmId = useMemo(
+    () => (clientData.familyMembers ?? []).find((m) => m.role === "spouse")?.id ?? null,
+    [clientData.familyMembers],
+  );
+
+  /** Joint-owned = a family_member owner resolving to client AND one to spouse. */
+  const isJointOwned = useMemo(() => {
+    const fmIds = account.owners
+      .filter(
+        (o): o is Extract<typeof o, { kind: "family_member" }> =>
+          o.kind === "family_member",
+      )
+      .map((o) => o.familyMemberId);
+    const hasClient = fmIds.some((id) => id === clientFmId || id === LEGACY_FM_CLIENT);
+    const hasSpouse = fmIds.some((id) => id === spouseFmId || id === LEGACY_FM_SPOUSE);
+    return hasClient && hasSpouse;
+  }, [account.owners, clientFmId, spouseFmId]);
+
   /** The spouse's existing specific bequest for this account, if any. */
   const spouseBequestForAccount = useMemo(
     () =>
@@ -449,8 +491,20 @@ function EstateFlowChangeDistributionDialogInner({
     cascadeOk &&
     (willForAccount !== null || defaultWillForNewBequest !== null);
 
+  // Joint assets validate each editor independently — a non-empty editor must
+  // sum to 100%; an empty editor is valid (it removes that grantor's bequest).
+  const jointSpouseOk =
+    cascadeRows.length === 0 ||
+    (Math.abs(cascadeSum - 100) < 0.5 &&
+      cascadeRows.every((r) => r.recipientKind === "spouse" || r.recipientId != null));
+  const jointWillValid = willSumOk && willRecipientsHaveIds && jointSpouseOk;
+
   const canApply =
-    activeTab === "beneficiary" ? beneficiaryValid : willValid;
+    activeTab === "beneficiary"
+      ? beneficiaryValid
+      : isJointOwned
+        ? jointWillValid
+        : willValid;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -459,6 +513,26 @@ function EstateFlowChangeDistributionDialogInner({
 
     if (activeTab === "beneficiary") {
       onApplyBeneficiaries(rowsToRefs(beneficiaryRows));
+      return;
+    }
+
+    const newId = (): string =>
+      typeof crypto !== "undefined"
+        ? crypto.randomUUID()
+        : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    // Joint-owned path: each spouse's will disposes that spouse's share.
+    if (isJointOwned) {
+      onApplyWill(
+        buildJointWillUpdates({
+          account: { id: account.id, name: account.name },
+          clientWill,
+          clientRecipients: rowsToWillRecipients(willRecipientRows),
+          spouseWill,
+          spouseRecipients: rowsToWillRecipients(cascadeRows),
+          newId,
+        }),
+      );
       return;
     }
 
@@ -476,10 +550,7 @@ function EstateFlowChangeDistributionDialogInner({
         hasSpouseRecipient,
         spouseCascadeRecipients: rowsToWillRecipients(cascadeRows),
         spouseWill,
-        newId: () =>
-          typeof crypto !== "undefined"
-            ? crypto.randomUUID()
-            : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        newId,
       }),
     );
   }
@@ -697,6 +768,57 @@ function EstateFlowChangeDistributionDialogInner({
   }
 
   function renderWillTab() {
+    // Joint-owned: two side-by-side editors, one per grantor's will. No
+    // condition selector and no spouse-cascade block — each will disposes
+    // its own owner's share unconditionally.
+    if (isJointOwned) {
+      return (
+        <div className="mt-4">
+          <p className="mb-3 text-[12px] text-ink-3">
+            This asset is jointly owned. Each will disposes that owner&apos;s share —
+            saving writes a specific bequest into each, creating a will that
+            doesn&apos;t exist yet.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded border border-hair bg-card-2 px-3 py-3">
+              <p className="mb-2 text-[12px] font-medium text-ink">
+                {clientName}&apos;s will
+              </p>
+              <WillRecipientList
+                label="Recipients"
+                sumMsgId="joint-client-sum-msg"
+                rows={willRecipientRows}
+                onChange={setWillRecipientRows}
+                spouseName={spouseName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Client will recipient"
+              />
+            </div>
+            <div className="rounded border border-hair bg-card-2 px-3 py-3">
+              <p className="mb-2 text-[12px] font-medium text-ink">
+                {spouseName ?? "Spouse"}&apos;s will
+              </p>
+              <WillRecipientList
+                label="Recipients"
+                sumMsgId="joint-spouse-sum-msg"
+                rows={cascadeRows}
+                onChange={setCascadeRows}
+                spouseName={spouseName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Spouse will recipient"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const noWillAvailable = !willForAccount && !defaultWillForNewBequest;
     const willId = "will-sum-msg";
 
@@ -812,7 +934,7 @@ function EstateFlowChangeDistributionDialogInner({
         if (!open) onClose();
       }}
       title="Change Distribution"
-      size="md"
+      size={isJointOwned ? "lg" : "md"}
       primaryAction={{
         label: "Apply",
         onClick: handleApply,
@@ -841,7 +963,11 @@ function EstateFlowChangeDistributionDialogInner({
           role="tablist"
           aria-label="Distribution method"
           onKeyDown={(e) => {
-            const tabs: Array<RouteTab> = isRetirement ? ["beneficiary"] : ["beneficiary", "will"];
+            const tabs: Array<RouteTab> = isRetirement
+              ? ["beneficiary"]
+              : isBequestOnly
+                ? ["will"]
+                : ["beneficiary", "will"];
             const currentIndex = tabs.indexOf(activeTab);
             if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
               e.preventDefault();
@@ -869,14 +995,23 @@ function EstateFlowChangeDistributionDialogInner({
             id="eflow-tab-beneficiary"
             aria-controls="eflow-panel-beneficiary"
             aria-selected={activeTab === "beneficiary"}
-            onClick={() => setActiveTab("beneficiary")}
+            disabled={isBequestOnly}
+            title={
+              isBequestOnly
+                ? "Real estate and business interests have no beneficiary designation — they pass by will."
+                : undefined
+            }
+            onClick={() => !isBequestOnly && setActiveTab("beneficiary")}
             className={`rounded border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-              activeTab === "beneficiary"
-                ? "border-accent bg-accent/15 text-accent"
-                : "border-hair bg-card-2 text-ink-2 hover:bg-card-hover"
+              isBequestOnly
+                ? "cursor-not-allowed border-hair opacity-40 text-ink-2"
+                : activeTab === "beneficiary"
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-hair bg-card-2 text-ink-2 hover:bg-card-hover"
             }`}
           >
             Beneficiary Designation
+            {isBequestOnly && <span className="ml-1 text-[10px]">(N/A)</span>}
           </button>
           <button
             ref={(el) => { tabBtnRefs.current["will"] = el; }}

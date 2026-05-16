@@ -16,7 +16,8 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
 import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
-import { changeOwner, changeBeneficiaries, upsertWills } from "@/lib/estate/estate-flow-edits";
+import EstateFlowChangeEntityOwnerDialog from "@/components/estate-flow-change-entity-owner-dialog";
+import { changeOwner, changeBeneficiaries, upsertWills, changeEntityOwners } from "@/lib/estate/estate-flow-edits";
 import { baseWritesForChange } from "@/lib/estate/estate-flow-base-writes";
 import {
   addGift,
@@ -198,6 +199,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
+  const [entityDialogId, setEntityDialogId] = useState<string | null>(null);
   const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
   // Standalone "Add a gift" dialog (no source account).
   const [addGiftOpen, setAddGiftOpen] = useState(false);
@@ -556,6 +558,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const ownerDialogAccount = ownerDialogId
     ? working.accounts.find((a) => a.id === ownerDialogId)
     : undefined;
+  const entityDialogEntity = entityDialogId
+    ? (working.entities ?? []).find((e) => e.id === entityDialogId)
+    : undefined;
 
   // Plan tax-inflation rate, threaded to the gift-fields warning preview.
   const taxInflationRate =
@@ -602,7 +607,10 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         <div className="rounded border border-gray-800/60 p-3">
           <EstateFlowOwnershipColumn
             data={ownership}
-            onAssetClick={setOwnerDialogId}
+            onAssetClick={(id, rowKind) => {
+              if (rowKind === "business-entity") setEntityDialogId(id);
+              else setOwnerDialogId(id);
+            }}
             minYear={planStartYear}
             maxYear={planEndYear}
             asOfYear={asOfYear}
@@ -732,6 +740,18 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             setOwnerDialogId(null);
           }}
           onClose={() => setOwnerDialogId(null)}
+        />
+      )}
+
+      {entityDialogEntity && (
+        <EstateFlowChangeEntityOwnerDialog
+          entity={entityDialogEntity}
+          clientData={working}
+          onApply={(owners) => {
+            applyEdit((d) => changeEntityOwners(d, entityDialogId!, owners));
+            setEntityDialogId(null);
+          }}
+          onClose={() => setEntityDialogId(null)}
         />
       )}
 

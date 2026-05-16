@@ -1,4 +1,4 @@
-import type { ClientData, Account, BeneficiaryRef, Will } from "@/engine/types";
+import type { ClientData, Account, BeneficiaryRef, Will, EntitySummary } from "@/engine/types";
 
 type AccountOwners = Account["owners"];
 
@@ -38,6 +38,21 @@ export function changeBeneficiaries(
     if (e.id !== targetId) return e;
     changed = true;
     return { ...e, beneficiaries };
+  });
+  return changed ? { ...data, entities } : data;
+}
+
+/** Replace the owners array on one business entity. Pure — input is never mutated. */
+export function changeEntityOwners(
+  data: ClientData,
+  entityId: string,
+  owners: NonNullable<EntitySummary["owners"]>,
+): ClientData {
+  let changed = false;
+  const entities = (data.entities ?? []).map((e) => {
+    if (e.id !== entityId) return e;
+    changed = true;
+    return { ...e, owners };
   });
   return changed ? { ...data, entities } : data;
 }
