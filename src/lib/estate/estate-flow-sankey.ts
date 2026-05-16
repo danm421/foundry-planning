@@ -485,7 +485,7 @@ export function buildEstateFlowGraph(input: BuildGraphInput): EstateFlowGraph {
           label: recipientKey,
           value: giftValue,
           stage: 2,
-          recipientKind: gift.recipient.kind as RecipientGroup["recipientKind"],
+          recipientKind: gift.recipient.kind,
         });
       }
 

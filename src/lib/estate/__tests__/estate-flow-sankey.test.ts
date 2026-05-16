@@ -309,6 +309,13 @@ describe("buildEstateFlowGraph — married", () => {
     );
     expect(kidNodes).toHaveLength(1);
     expect(kidNodes[0].value).toBeCloseTo(200 + 650, 2);
+
+    // Conservation: sum(owners) == sum(finalBeneficiaries) + sum(taxSinks)
+    const sum = (ns: typeof graph.nodes) => ns.reduce((s, n) => s + n.value, 0);
+    const owners = graph.nodes.filter((n) => n.kind === "owner");
+    const finals = graph.nodes.filter((n) => n.kind === "finalBeneficiary");
+    const sinks = graph.nodes.filter((n) => n.kind === "taxSink");
+    expect(sum(owners)).toBeCloseTo(sum(finals) + sum(sinks), 2);
   });
 });
 
