@@ -75,6 +75,7 @@ const SHORT_MECHANISM_LABELS: Partial<
   titling: "Titling",
   beneficiary_designation: "Beneficiary",
   will: "Bequest",
+  will_residuary: "Remainder",
   will_liability_bequest: "Will debt",
   fallback_spouse: "Default",
   fallback_children: "Default",

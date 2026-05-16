@@ -116,6 +116,7 @@ export const willResiduaryRecipientSchema = z
       "spouse",
     ]),
     recipientId: uuidSchema.nullable(),
+    tier: z.enum(["primary", "contingent"]).default("primary"),
     percentage: z.number().gt(0).lte(100),
     sortOrder: z.number().int().min(0),
   })
@@ -136,20 +137,25 @@ export const willResiduaryRecipientSchema = z
   });
 
 const residuarySumRefiner: <
-  T extends { residuaryRecipients?: { percentage: number }[] },
+  T extends {
+    residuaryRecipients?: { percentage: number; tier?: "primary" | "contingent" }[];
+  },
 >(
   v: T,
   ctx: z.RefinementCtx,
 ) => void = (v, ctx) => {
   const list = v.residuaryRecipients ?? [];
-  if (list.length === 0) return;
-  const sum = list.reduce((s, r) => s + r.percentage, 0);
-  if (Math.abs(sum - 100) > 0.01) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["residuaryRecipients"],
-      message: `residuary recipient percentages must sum to 100 (got ${sum})`,
-    });
+  for (const tier of ["primary", "contingent"] as const) {
+    const tierRows = list.filter((r) => (r.tier ?? "primary") === tier);
+    if (tierRows.length === 0) continue;
+    const sum = tierRows.reduce((s, r) => s + r.percentage, 0);
+    if (Math.abs(sum - 100) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["residuaryRecipients"],
+        message: `${tier} residuary recipient percentages must sum to 100 (got ${sum})`,
+      });
+    }
   }
 };
 
