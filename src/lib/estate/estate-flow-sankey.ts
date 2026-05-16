@@ -55,6 +55,14 @@ export interface BuildGraphInput {
 /** Synthetic bucket for transfers whose source account isn't found. */
 const ESTATE_BUCKET = { id: "estate", kind: "client" as const, label: "Estate" };
 
+interface LinkAccum {
+  sourceId: string;
+  targetId: string;
+  mechanism: string;
+  value: number;
+  assets: AssetTransferLine[];
+}
+
 /**
  * Resolve the owner bucket for an asset transfer line.
  * Falls back to a synthetic "estate" bucket when sourceAccountId is null or the
@@ -109,13 +117,6 @@ function buildDeathStage(
 
   // Accumulate per-(ownerBucketId, recipientKey, mechanism) triples
   // Map: `${ownerBucketId}:${recipientKey}:${mechanism}` -> { value, assets, sourceId, targetId, mechanism }
-  interface LinkAccum {
-    sourceId: string;
-    targetId: string;
-    mechanism: string;
-    value: number;
-    assets: AssetTransferLine[];
-  }
   const linkMap = new Map<string, LinkAccum>();
 
   // Track gross outflow per owner bucket (for proportional tax allocation)
@@ -319,13 +320,6 @@ export function buildEstateFlowGraph(input: BuildGraphInput): EstateFlowGraph {
     }
     allLinks.push(...first.links);
 
-    existingFinalNodes = new Map(
-      Array.from(first.finalNodes.entries()).filter(
-        ([id]) => !isSpouseGroup(reportData.firstDeath!, reportData.firstDeath!.recipients.find(
-          (r) => recipientNodeId(r) === id,
-        ) ? id : "__none__"),
-      ),
-    );
     // Rebuild existingFinalNodes from allNodes (includes non-spouse finals)
     existingFinalNodes = new Map(
       Array.from(allNodes.entries()).filter(([, n]) => n.kind === "finalBeneficiary"),
@@ -438,13 +432,16 @@ export function buildEstateFlowGraph(input: BuildGraphInput): EstateFlowGraph {
       }
       recipientKey = `${gift.recipient.kind}|${gift.recipient.id}`;
     } else if (gift.kind === "cash-once") {
-      const grantorId = gift.grantor === "joint" ? "joint" : gift.grantor;
-      sourceId = `owner:${grantorId}`;
+      sourceId = `owner:${gift.grantor}`;
+      const grantorLabel =
+        gift.grantor === "client" ? input.ownerNames.clientName
+        : gift.grantor === "spouse" ? (input.ownerNames.spouseName ?? "Spouse")
+        : "Joint";
       if (!allNodes.has(sourceId)) {
         allNodes.set(sourceId, {
           id: sourceId,
           kind: "owner",
-          label: gift.grantor,
+          label: grantorLabel,
           value: 0,
           stage: 0,
         });
@@ -453,50 +450,57 @@ export function buildEstateFlowGraph(input: BuildGraphInput): EstateFlowGraph {
       recipientKey = `${gift.recipient.kind}|${gift.recipient.id}`;
     } else {
       // series
-      const grantorId = gift.grantor;
-      sourceId = `owner:${grantorId}`;
+      sourceId = `owner:${gift.grantor}`;
+      const grantorLabel =
+        gift.grantor === "client" ? input.ownerNames.clientName
+        : (input.ownerNames.spouseName ?? "Spouse");
       if (!allNodes.has(sourceId)) {
         allNodes.set(sourceId, {
           id: sourceId,
           kind: "owner",
-          label: gift.grantor,
+          label: grantorLabel,
           value: 0,
           stage: 0,
         });
       }
       const totalYears = gift.endYear - gift.startYear + 1;
+      // Nominal total only — series inflation growth is not modelled in the flow diagram.
       giftValue = gift.annualAmount * totalYears;
       recipientKey = `${gift.recipient.kind}|${gift.recipient.id}`;
     }
 
-    // Add gift value to the source owner node's outflow
-    allNodes.get(sourceId)!.value += giftValue;
+    // Skip zero-value gifts (e.g. asset-once where account was not found)
+    if (giftValue > 0) {
+      // Add gift value to the source owner node's outflow
+      allNodes.get(sourceId)!.value += giftValue;
 
-    // Upsert final node for recipient
-    const finalId = `final:${recipientKey}`;
-    if (allNodes.has(finalId)) {
-      allNodes.get(finalId)!.value += giftValue;
-    } else {
-      allNodes.set(finalId, {
-        id: finalId,
-        kind: "finalBeneficiary",
-        label: recipientKey,
+      // Upsert final node for recipient
+      const finalId = `final:${recipientKey}`;
+      if (allNodes.has(finalId)) {
+        allNodes.get(finalId)!.value += giftValue;
+      } else {
+        allNodes.set(finalId, {
+          id: finalId,
+          kind: "finalBeneficiary",
+          label: recipientKey,
+          value: giftValue,
+          stage: 2,
+          recipientKind: gift.recipient.kind as RecipientGroup["recipientKind"],
+        });
+      }
+
+      // Emit gift link — include gift.id to prevent collision when two gifts share the same
+      // grantor and recipient.
+      const linkId = `${sourceId}->${finalId}:gift:${gift.id}`;
+      allLinks.push({
+        id: linkId,
+        sourceId,
+        targetId: finalId,
         value: giftValue,
-        stage: 2,
-        recipientKind: gift.recipient.kind as RecipientGroup["recipientKind"],
+        mechanism: "gift",
+        assets: [],
       });
     }
-
-    // Emit gift link
-    const linkId = `${sourceId}->${finalId}:gift`;
-    allLinks.push({
-      id: linkId,
-      sourceId,
-      targetId: finalId,
-      value: giftValue,
-      mechanism: "gift",
-      assets: [],
-    });
   }
 
   return {

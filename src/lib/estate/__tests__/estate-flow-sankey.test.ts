@@ -421,3 +421,91 @@ describe("buildEstateFlowGraph — gift links", () => {
     expect(ownerNodeTotal).toBeCloseTo(outboundLinks, 2);
   });
 });
+
+// ── Multiple gifts, same grantor + recipient → distinct link IDs ───────────
+
+describe("buildEstateFlowGraph — gift link ID uniqueness", () => {
+  it("produces distinct link IDs when two cash-once gifts share the same grantor and recipient", () => {
+    const report: EstateTransferReportData = {
+      ordering: "primaryFirst",
+      asOfLabel: "Today",
+      firstDeath: deathSection(),
+      secondDeath: null,
+      aggregateRecipientTotals: [],
+      isEmpty: false,
+    };
+
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "cash-once",
+        id: "gift-A",
+        year: 2030,
+        amount: 17000,
+        grantor: "client",
+        recipient: { kind: "family_member", id: "kid" },
+        crummey: false,
+      },
+      {
+        kind: "cash-once",
+        id: "gift-B",
+        year: 2031,
+        amount: 18000,
+        grantor: "client",
+        recipient: { kind: "family_member", id: "kid" },
+        crummey: false,
+      },
+    ];
+
+    const graph = buildEstateFlowGraph(
+      input({ reportData: report, clientData: singleFilerData(), gifts }),
+    );
+
+    const ids = graph.links.map((l) => l.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    // Both gift amounts should be reflected in the recipient's final node value
+    const kidGiftNode = graph.nodes.find((n) => n.id === "final:family_member|kid");
+    expect(kidGiftNode).toBeDefined();
+    // The node accumulates both gifts (17000 + 18000 = 35000) on top of death transfer (900)
+    expect(kidGiftNode!.value).toBeCloseTo(900 + 17000 + 18000, 2);
+
+    // Both gift links exist
+    const giftLinks = graph.links.filter((l) => l.mechanism === "gift");
+    expect(giftLinks).toHaveLength(2);
+  });
+});
+
+// ── Second-death-only graph (no firstDeath) ───────────────────────────────────
+
+describe("buildEstateFlowGraph — second-death-only", () => {
+  it("does not throw and produces a valid graph when firstDeath is null", () => {
+    const report: EstateTransferReportData = {
+      ordering: "primaryFirst",
+      asOfLabel: "Spouse dies in 2047",
+      firstDeath: null,
+      secondDeath: deathSection({
+        decedent: "spouse",
+        decedentName: "Sam",
+        year: 2047,
+        assetEstateValue: 1000,
+      }),
+      aggregateRecipientTotals: [],
+      isEmpty: false,
+    };
+
+    // Should not throw
+    const graph = buildEstateFlowGraph(input({ reportData: report, clientData: singleFilerData() }));
+
+    // A spousePool node is emitted to represent the second-death estate
+    const pool = graph.nodes.find((n) => n.kind === "spousePool");
+    expect(pool).toBeDefined();
+
+    // Final beneficiary node(s) exist
+    const finals = graph.nodes.filter((n) => n.kind === "finalBeneficiary");
+    expect(finals.length).toBeGreaterThan(0);
+
+    // All link IDs are unique
+    const ids = graph.links.map((l) => l.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
