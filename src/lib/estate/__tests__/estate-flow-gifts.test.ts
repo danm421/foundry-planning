@@ -10,16 +10,33 @@ import {
   giftRowToDraft,
   giftSeriesRowToDraft,
 } from "../estate-flow-gifts";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, Liability } from "@/engine/types";
 
-function baseData(): ClientData {
+function baseData(liabilities: Liability[] = []): ClientData {
   return {
     accounts: [],
     entities: [],
     wills: [],
     gifts: [],
     giftEvents: [],
-  } as unknown as ClientData; // minimal ClientData stub — only gifts/giftEvents are exercised
+    liabilities,
+  } as unknown as ClientData; // minimal ClientData stub — only gifts/giftEvents/liabilities are exercised
+}
+
+/** Minimal Liability fixture. `linkedPropertyId` ties the mortgage to an account. */
+function liability(overrides: Partial<Liability> = {}): Liability {
+  return {
+    id: "liab-1",
+    name: "Mortgage",
+    balance: 300000,
+    interestRate: 0.05,
+    monthlyPayment: 1600,
+    startYear: 2020,
+    startMonth: 1,
+    termMonths: 360,
+    linkedPropertyId: "acc-1",
+    ...overrides,
+  };
 }
 
 const cashGift: EstateFlowGift = {
@@ -304,6 +321,143 @@ describe("applyGiftsToClientData — round-trip correctness", () => {
     if (assetEvents[0].kind === "asset") {
       expect(assetEvents[0].amountOverride).toBe(500000);
     }
+  });
+});
+
+// ── Bug D: bundled liability transfer for mortgaged in-kind asset gifts ───────
+describe("applyGiftsToClientData — bundled liability transfer", () => {
+  it("asset-once with NO linked liability produces only the asset event", () => {
+    const out = applyGiftsToClientData(baseData(), [assetGift], 0.025);
+    expect(out.giftEvents.filter((e) => e.kind === "asset")).toHaveLength(1);
+    expect(out.giftEvents.filter((e) => e.kind === "liability")).toHaveLength(0);
+  });
+
+  it("asset-once whose account has a linked liability emits a matching liability event", () => {
+    const out = applyGiftsToClientData(
+      baseData([liability({ id: "liab-1", linkedPropertyId: "acc-1" })]),
+      [assetGift],
+      0.025,
+    );
+    expect(out.giftEvents.filter((e) => e.kind === "asset")).toHaveLength(1);
+
+    const liabEvents = out.giftEvents.filter((e) => e.kind === "liability");
+    expect(liabEvents).toHaveLength(1);
+    expect(liabEvents[0]).toEqual({
+      kind: "liability",
+      year: 2031,
+      liabilityId: "liab-1",
+      percent: 0.4,
+      grantor: "spouse",
+      recipientEntityId: "trust-1",
+      parentGiftId: "g2",
+      eventKind: "outright",
+    });
+  });
+
+  it("matches year/grantor/recipient/percent of the parent asset gift", () => {
+    const gift: EstateFlowGift = {
+      kind: "asset-once",
+      id: "g-mortgaged",
+      year: 2035,
+      accountId: "acc-house",
+      percent: 0.75,
+      grantor: "client",
+      recipient: { kind: "entity", id: "trust-irr" },
+    };
+    const out = applyGiftsToClientData(
+      baseData([liability({ id: "mtg-9", linkedPropertyId: "acc-house" })]),
+      [gift],
+      0.025,
+    );
+    const liabEvent = out.giftEvents.find((e) => e.kind === "liability");
+    expect(liabEvent).toMatchObject({
+      year: 2035,
+      grantor: "client",
+      recipientEntityId: "trust-irr",
+      percent: 0.75,
+      liabilityId: "mtg-9",
+      parentGiftId: "g-mortgaged",
+    });
+  });
+
+  it("carries the parent asset gift's eventKind onto the liability event", () => {
+    const gift: EstateFlowGift = {
+      kind: "asset-once",
+      id: "g-clut-asset",
+      year: 2032,
+      accountId: "acc-1",
+      percent: 0.5,
+      grantor: "client",
+      recipient: { kind: "entity", id: "trust-1" },
+      eventKind: "clut_remainder_interest",
+    };
+    const out = applyGiftsToClientData(
+      baseData([liability({ linkedPropertyId: "acc-1" })]),
+      [gift],
+      0.025,
+    );
+    const liabEvent = out.giftEvents.find((e) => e.kind === "liability");
+    expect(liabEvent).toMatchObject({ eventKind: "clut_remainder_interest" });
+  });
+
+  it("ignores liabilities not linked to the gifted account", () => {
+    const out = applyGiftsToClientData(
+      baseData([liability({ id: "liab-other", linkedPropertyId: "acc-other" })]),
+      [assetGift],
+      0.025,
+    );
+    expect(out.giftEvents.filter((e) => e.kind === "liability")).toHaveLength(0);
+  });
+
+  it("cash-once gifts never produce a liability event", () => {
+    const out = applyGiftsToClientData(
+      baseData([liability({ linkedPropertyId: "acc-1" })]),
+      [cashGift],
+      0.025,
+    );
+    expect(out.giftEvents.filter((e) => e.kind === "liability")).toHaveLength(0);
+  });
+
+  it("series gifts never produce a liability event", () => {
+    const out = applyGiftsToClientData(
+      baseData([liability({ linkedPropertyId: "acc-1" })]),
+      [seriesGift],
+      0.025,
+    );
+    expect(out.giftEvents.filter((e) => e.kind === "liability")).toHaveLength(0);
+  });
+
+  it("keeps the giftEvents sorted by year when a liability event is added", () => {
+    const earlyAsset: EstateFlowGift = {
+      kind: "asset-once",
+      id: "g-early",
+      year: 2028,
+      accountId: "acc-1",
+      percent: 0.3,
+      grantor: "client",
+      recipient: { kind: "entity", id: "trust-1" },
+    };
+    const out = applyGiftsToClientData(
+      baseData([liability({ linkedPropertyId: "acc-1" })]),
+      [assetGift, earlyAsset, cashGift],
+      0.025,
+    );
+    const years = out.giftEvents.map((e) => e.year);
+    expect(years).toEqual([...years].sort((a, b) => a - b));
+  });
+
+  it("does not mutate the input data when emitting a liability event", () => {
+    const input = baseData([liability({ linkedPropertyId: "acc-1" })]);
+    applyGiftsToClientData(input, [assetGift], 0.025);
+    expect(input.gifts).toEqual([]);
+    expect(input.giftEvents).toEqual([]);
+    expect(input.liabilities).toHaveLength(1);
+  });
+
+  it("treats missing data.liabilities as no liabilities", () => {
+    const data = { accounts: [], entities: [], wills: [], gifts: [], giftEvents: [] } as unknown as ClientData;
+    const out = applyGiftsToClientData(data, [assetGift], 0.025);
+    expect(out.giftEvents.filter((e) => e.kind === "liability")).toHaveLength(0);
   });
 });
 

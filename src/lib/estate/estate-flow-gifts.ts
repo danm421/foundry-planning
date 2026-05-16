@@ -169,10 +169,14 @@ export function removeGift(gifts: EstateFlowGift[], id: string): EstateFlowGift[
  * Mirrors the gift transformation in load-client-data.ts so a strip-then-reapply
  * round-trip is identity. Pure — `data` is never mutated.
  *
- * Note: the loader also emits liability-kind GiftEvents (from gift rows with
- * liabilityId set). Those are not representable as EstateFlowGift drafts (they
- * are DB-only child rows); callers that need them must pass them through
- * separately. This function only materialises cash-once, asset-once, and series.
+ * Liability-kind GiftEvents are NOT representable as standalone EstateFlowGift
+ * drafts (they are DB-only bundled child rows). Instead they are derived here:
+ * for every asset-once gift whose source account has a linked liability, a
+ * matching liability GiftEvent is emitted — mirroring the gift route's
+ * auto-bundling so a gifted mortgaged asset carries its debt out of the estate.
+ * This keeps the estate-flow projection consistent with load-client-data.ts,
+ * and works for both saved gifts and unsaved sandbox gifts (the liabilities
+ * list is derived self-contained from `data`).
  */
 export function applyGiftsToClientData(
   data: ClientData,
@@ -237,6 +241,28 @@ export function applyGiftsToClientData(
         amountOverride: g.amountOverride,
         eventKind: g.eventKind ?? "outright",
       });
+      // If the gifted account has a linked liability (a mortgage), the gift
+      // route auto-creates a bundled liability child gift row so the debt
+      // follows the asset. Mirror that here: emit a matching liability
+      // GiftEvent at the same year/grantor/recipient/percent. Without this the
+      // estate-flow projection leaves the mortgage with the household after the
+      // property has left the estate. parentGiftId references the asset gift's
+      // id — the engine uses it only for bundling correlation, not its math.
+      const linkedLiability = (data.liabilities ?? []).find(
+        (l) => l.linkedPropertyId === g.accountId,
+      );
+      if (linkedLiability) {
+        giftEvents.push({
+          kind: "liability",
+          year: g.year,
+          liabilityId: linkedLiability.id,
+          percent: g.percent,
+          grantor: g.grantor as "client" | "spouse",
+          recipientEntityId: g.recipient.id,
+          parentGiftId: g.id,
+          eventKind: g.eventKind ?? "outright",
+        });
+      }
     } else {
       // series
       giftEvents.push(
