@@ -62,7 +62,10 @@ function tierValid(rows: WillRecipientRow[]): boolean {
   const idsOk = rows.every(
     (r) => r.recipientKind === "spouse" || r.recipientId != null,
   );
-  return idsOk && Math.abs(sum - 100) < 0.5;
+  // Tolerance matches the server-side residuarySumRefiner in
+  // src/lib/schemas/wills.ts (rejects when Math.abs(sum - 100) > 0.01) so the
+  // dialog accepts exactly what the API will accept.
+  return idsOk && Math.abs(sum - 100) <= 0.01;
 }
 
 /**
