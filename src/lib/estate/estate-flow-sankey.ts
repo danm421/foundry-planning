@@ -533,7 +533,7 @@ export interface PositionedNode extends SankeyNode {
 }
 
 export interface PositionedLink extends SankeyLink {
-  /** SVG path `d` for a quadratic ribbon between the two nodes. */
+  /** SVG path `d` for a cubic Bézier ribbon between the two nodes. */
   path: string;
   /** Vertical thickness of the ribbon at each endpoint. */
   thickness: number;
