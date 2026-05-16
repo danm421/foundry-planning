@@ -489,6 +489,10 @@ describe("layoutEstateFlowGraph", () => {
     const graph = buildEstateFlowGraph(input({ reportData: marriedReport() }));
     const layout = layoutEstateFlowGraph(graph, { width: 900, height: 500 });
 
+    // Layout must be non-empty for a non-empty input graph.
+    expect(layout.nodes.length).toBe(graph.nodes.length);
+    expect(layout.links.length).toBe(graph.links.length);
+
     // Column ordering: every stage-0 node is left of every stage-2 node.
     const xByStage = (stage: number) =>
       layout.nodes.filter((n) => n.stage === stage).map((n) => n.x);
