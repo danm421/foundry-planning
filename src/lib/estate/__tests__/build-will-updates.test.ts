@@ -195,6 +195,7 @@ describe("buildJointWillUpdates", () => {
     const spouse = out.find((w) => w.grantor === "spouse");
     expect(spouse).toBeDefined();
     expect(spouse!.bequests).toHaveLength(1);
+    expect(spouse!.bequests[0]).toMatchObject({ accountId: "acc-1", condition: "always" });
   });
 
   it("does not mint a will for a grantor with no recipients", () => {
@@ -222,5 +223,20 @@ describe("buildJointWillUpdates", () => {
     });
     const spouse = out.find((w) => w.grantor === "spouse");
     expect(spouse!.bequests).toHaveLength(0);
+  });
+
+  it("does not mutate the input wills", () => {
+    const clientWill = will("will-client", "client", [specificBequest("bq-c", "acc-1")]);
+    const spouseWill = will("will-spouse", "spouse", [specificBequest("bq-s", "acc-1")]);
+    buildJointWillUpdates({
+      account,
+      clientWill,
+      clientRecipients: [recipient("fm-kid", 100)],
+      spouseWill,
+      spouseRecipients: [recipient("fm-kid", 100)],
+      newId: makeIdGen(),
+    });
+    expect(clientWill.bequests[0].recipients).toEqual([]);
+    expect(spouseWill.bequests[0].recipients).toEqual([]);
   });
 });

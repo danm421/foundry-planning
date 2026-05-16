@@ -131,6 +131,7 @@ export function buildJointWillUpdates(input: BuildJointWillUpdatesInput): Will[]
       }
       return;
     }
+    // `grantor` is used only when minting a fresh will below.
     const base: Will =
       existing ??
       ({ id: newId(), grantor, bequests: [], residuaryRecipients: [] } satisfies Will);
