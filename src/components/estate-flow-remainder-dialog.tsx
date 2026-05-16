@@ -139,6 +139,9 @@ export default function EstateFlowRemainderDialog({
       ...rowsToRecipients(clientPrimary, "primary", 0),
       ...rowsToRecipients(clientContingent, "contingent", clientPrimary.length),
     ];
+    // An emptied existing will still emits a Will with residuaryRecipients: []
+    // so the consumer CLEARS the clause — the consumer must OVERWRITE the
+    // will's residuaryRecipients, not merge into them.
     if (clientRecipients.length > 0 || clientWill) {
       wills.push({
         id: clientWill?.id ?? newId(),
