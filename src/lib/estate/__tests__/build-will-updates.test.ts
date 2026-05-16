@@ -74,6 +74,25 @@ describe("buildWillUpdates", () => {
     expect(out[0].bequests[0].recipients).toEqual([recipient("fm-kid", 100)]);
   });
 
+  it("removes the existing bequest when the client's recipients are cleared", () => {
+    const existing = specificBequest("bq-existing", "acc-1");
+    const out = buildWillUpdates(
+      baseInput({
+        clientWill: will("will-client", "client", [existing]),
+        clientRecipients: [],
+      }),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe("will-client");
+    expect(out[0].bequests).toEqual([]);
+  });
+
+  it("does not append a bequest when recipients are empty and none exists", () => {
+    const out = buildWillUpdates(baseInput({ clientRecipients: [] }));
+    expect(out).toHaveLength(1);
+    expect(out[0].bequests).toEqual([]);
+  });
+
   it("creates a spouse will with the cascade bequest when the spouse has none", () => {
     const out = buildWillUpdates(
       baseInput({

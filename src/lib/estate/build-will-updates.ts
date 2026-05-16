@@ -30,6 +30,14 @@ function withAssetBequest(
   const existing = will.bequests.find(
     (b) => b.kind === "asset" && b.assetMode === "specific" && b.accountId === account.id,
   );
+  // No recipients means "remove the bequest": drop the existing clause rather
+  // than persisting a zero-recipient bequest (which the engine cannot split),
+  // and never mint a new empty one.
+  if (recipients.length === 0) {
+    return existing
+      ? { ...will, bequests: will.bequests.filter((b) => b.id !== existing.id) }
+      : will;
+  }
   if (existing) {
     return {
       ...will,

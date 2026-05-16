@@ -714,15 +714,21 @@ export function applyWillSpecificBequests(
       firesAtDeath(b, deathOrder),
   );
 
+  // Shared "this clause claims nothing" result — the account flows on to the
+  // residuary / fallback steps untouched.
+  const notFired = (
+    warnings: string[],
+  ): StepResult & { warnings: string[] } => ({
+    consumed: false,
+    resultingAccounts: [],
+    resultingLiabilities: [],
+    ledgerEntries: [],
+    fractionClaimed: 0,
+    warnings,
+  });
+
   if (specifics.length === 0) {
-    return {
-      consumed: false,
-      resultingAccounts: [],
-      resultingLiabilities: [],
-      ledgerEntries: [],
-      fractionClaimed: 0,
-      warnings: [],
-    };
+    return notFired([]);
   }
 
   // Compute per-bequest fractions (of the source account total). Over-
@@ -757,6 +763,14 @@ export function applyWillSpecificBequests(
   });
 
   const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
+
+  // A specific clause with no effective allocation — every matching bequest
+  // resolved to zero recipients (e.g. the distribution dialog cleared them) or
+  // zero percentages — claims nothing. Treat it as not-fired, rather than
+  // dividing by zero when normalizing shares below.
+  if (totalClaimed < 1e-9) {
+    return notFired(warnings);
+  }
 
   // Scale source + liability down to `totalClaimed` and normalize shares to sum=1.
   const scaledSource: Account = {
