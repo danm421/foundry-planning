@@ -45,7 +45,7 @@ function AccountTypeChip({ type }: { type: string }) {
 
 interface AssetRowProps {
   asset: OwnershipAssetRow;
-  onAssetClick: (accountId: string) => void;
+  onAssetClick: (id: string, rowKind: "account" | "business-entity") => void;
   gifts: EstateFlowGift[];
   recipientLabelById: Map<string, string>;
   onGiftClick: (giftId: string) => void;
@@ -65,9 +65,18 @@ function AssetRow({
     <li>
       <button
         type="button"
-        onClick={() => onAssetClick(asset.accountId)}
-        aria-label={`${asset.name}, ${fmt.format(asset.value)}${asset.hasConflict ? ", no estate plan" : ""}${asset.hasBeneficiaries ? ", has beneficiary" : ""}${asset.isSplit ? `, ${Math.round(asset.percent * 100)}% split` : ""}. Click to edit.`}
-        className="w-full rounded px-2 py-1.5 text-left transition-colors hover:bg-gray-800/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+        disabled={asset.isDefaultCash}
+        title={
+          asset.isDefaultCash
+            ? "Cash account — ownership is fixed to its household/entity"
+            : undefined
+        }
+        onClick={() => onAssetClick(asset.accountId, asset.rowKind)}
+        aria-label={`${asset.name}, ${fmt.format(asset.value)}${asset.hasConflict ? ", no estate plan" : ""}${asset.hasBeneficiaries ? ", has beneficiary" : ""}${asset.isSplit ? `, ${Math.round(asset.percent * 100)}% split` : ""}${asset.isDefaultCash ? "" : ". Click to edit."}`}
+        className={
+          "w-full rounded px-2 py-1.5 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 " +
+          (asset.isDefaultCash ? "cursor-default" : "hover:bg-gray-800/50")
+        }
       >
         {/* Primary row */}
         <div className="flex items-start justify-between gap-2">
@@ -165,7 +174,7 @@ function AssetRow({
 
 interface GroupCardProps {
   group: OwnershipGroup;
-  onAssetClick: (accountId: string) => void;
+  onAssetClick: (id: string, rowKind: "account" | "business-entity") => void;
   gifts: EstateFlowGift[];
   recipientLabelById: Map<string, string>;
   onGiftClick: (giftId: string) => void;
@@ -216,7 +225,7 @@ function GroupCard({
 
 interface EstateFlowOwnershipColumnProps {
   data: OwnershipColumnData;
-  onAssetClick: (accountId: string) => void;
+  onAssetClick: (id: string, rowKind: "account" | "business-entity") => void;
   /** Plan's first year — treated as "today". */
   minYear: number;
   /** Plan's last projected year. */
