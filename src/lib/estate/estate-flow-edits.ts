@@ -1,4 +1,4 @@
-import type { ClientData, Account, BeneficiaryRef, Will, WillResiduaryRecipient } from "@/engine/types";
+import type { ClientData, Account, BeneficiaryRef, Will } from "@/engine/types";
 
 type AccountOwners = Account["owners"];
 
@@ -43,20 +43,20 @@ export function changeBeneficiaries(
 }
 
 /**
- * Replace bequests + residuary recipients on one will. Pure.
- * Pass an empty array to clear the residuary clause.
+ * Insert or replace wills by id. Wills with a matching id are replaced;
+ * wills with a new id are appended. Pure — input is never mutated.
+ *
+ * The distribution dialog uses this to write the client's will and an
+ * auto-created spouse will (the second-death cascade) in a single edit.
  */
-export function changeWillBequests(
-  data: ClientData,
-  willId: string,
-  bequests: Will["bequests"],
-  residuaryRecipients: WillResiduaryRecipient[],
-): ClientData {
-  let changed = false;
-  const wills = (data.wills ?? []).map((w) => {
-    if (w.id !== willId) return w;
-    changed = true;
-    return { ...w, bequests, residuaryRecipients };
-  });
-  return changed ? { ...data, wills } : data;
+export function upsertWills(data: ClientData, wills: Will[]): ClientData {
+  if (wills.length === 0) return data;
+  const byId = new Map(wills.map((w) => [w.id, w]));
+  const existing = data.wills ?? [];
+  const merged = existing.map((w) => byId.get(w.id) ?? w);
+  const existingIds = new Set(existing.map((w) => w.id));
+  for (const w of wills) {
+    if (!existingIds.has(w.id)) merged.push(w);
+  }
+  return { ...data, wills: merged };
 }

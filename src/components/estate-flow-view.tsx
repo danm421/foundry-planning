@@ -15,7 +15,7 @@ import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
-import { changeOwner, changeBeneficiaries, changeWillBequests } from "@/lib/estate/estate-flow-edits";
+import { changeOwner, changeBeneficiaries, upsertWills } from "@/lib/estate/estate-flow-edits";
 import { baseWritesForChange } from "@/lib/estate/estate-flow-base-writes";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
@@ -455,8 +455,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             applyEdit((d) => changeBeneficiaries(d, "account", distributionDialogId, refs));
             setDistributionDialogId(null);
           }}
-          onApplyWill={(willId, bequests, residuary) => {
-            applyEdit((d) => changeWillBequests(d, willId, bequests, residuary));
+          onApplyWill={(wills) => {
+            applyEdit((d) => upsertWills(d, wills));
             setDistributionDialogId(null);
           }}
           onClose={() => setDistributionDialogId(null)}

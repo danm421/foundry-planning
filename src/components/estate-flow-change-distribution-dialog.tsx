@@ -4,6 +4,10 @@ import { useState, useMemo, useRef } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import { redistributeTier, splitEvenly } from "@/components/forms/auto-split-percentages";
+import WillRecipientList, {
+  type WillRecipientRow,
+} from "@/components/estate-flow-will-recipient-list";
+import { buildWillUpdates } from "@/lib/estate/build-will-updates";
 import type {
   Account,
   BeneficiaryRef,
@@ -11,7 +15,6 @@ import type {
   Will,
   WillBequest,
   WillBequestRecipient,
-  WillResiduaryRecipient,
 } from "@/engine/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -20,11 +23,9 @@ interface Props {
   accountId: string;
   clientData: ClientData;
   onApplyBeneficiaries: (refs: BeneficiaryRef[]) => void;
-  onApplyWill: (
-    willId: string,
-    bequests: Will["bequests"],
-    residuary: WillResiduaryRecipient[],
-  ) => void;
+  /** Receives the will(s) to upsert: the client's will, plus the spouse's
+   *  will when the bequest cascades to the spouse. */
+  onApplyWill: (wills: Will[]) => void;
   onClose: () => void;
 }
 
@@ -39,15 +40,6 @@ interface BeneficiaryRow {
   recipientKind: "householdRole" | "family_member" | "external_beneficiary" | "entity";
   recipientId: string | null; // null when householdRole
   householdRole?: "client" | "spouse";
-  sortOrder: number;
-}
-
-// Will-editing row for recipients on a specific bequest or residuary clause.
-interface WillRecipientRow {
-  key: string;
-  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
-  recipientId: string | null;
-  percentage: number;
   sortOrder: number;
 }
 
@@ -211,14 +203,6 @@ function benefRowToSelectValue(row: BeneficiaryRow): string {
   return "";
 }
 
-function willRowToSelectValue(row: WillRecipientRow): string {
-  if (row.recipientKind === "spouse") return "spouse";
-  if (row.recipientKind === "entity") return `ent:${row.recipientId ?? ""}`;
-  if (row.recipientKind === "external_beneficiary") return `ext:${row.recipientId ?? ""}`;
-  if (row.recipientKind === "family_member") return `fm:${row.recipientId ?? ""}`;
-  return "";
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 // Shared row input style matching owner dialog
@@ -257,11 +241,7 @@ interface InnerProps {
   account: Account;
   clientData: ClientData;
   onApplyBeneficiaries: (refs: BeneficiaryRef[]) => void;
-  onApplyWill: (
-    willId: string,
-    bequests: Will["bequests"],
-    residuary: WillResiduaryRecipient[],
-  ) => void;
+  onApplyWill: (wills: Will[]) => void;
   onClose: () => void;
 }
 
@@ -336,6 +316,15 @@ function EstateFlowChangeDistributionDialogInner({
     [clientData.entities],
   );
 
+  // Recipient options for the will tab — shared by the bequest list and the
+  // spouse cascade. Plain consts: the React Compiler memoizes them.
+  const familyOptions = familyMembers.map((fm) => ({
+    id: fm.id,
+    label: `${fm.firstName} ${fm.lastName ?? ""}`.trim(),
+  }));
+  const externalOptions = externalBeneficiaries.map((x) => ({ id: x.id, label: x.name }));
+  const entityOptions = entities.map((e) => ({ id: e.id, label: e.name ?? "" }));
+
   // ── Will context ──────────────────────────────────────────────────────────
 
   /**
@@ -393,16 +382,41 @@ function EstateFlowChangeDistributionDialogInner({
   // props start unlocked so the first add still triggers an even split.
   const [lockedKeys, setLockedKeys] = useState<ReadonlySet<string>>(() => new Set());
 
+  /** The spouse's will, if they have one — target for the second-death cascade. */
+  const spouseWill = useMemo(
+    () => (clientData.wills ?? []).find((w) => w.grantor === "spouse") ?? null,
+    [clientData.wills],
+  );
+
+  /** The spouse's existing specific bequest for this account, if any. */
+  const spouseBequestForAccount = useMemo(
+    () =>
+      spouseWill?.bequests.find(
+        (b) => b.kind === "asset" && b.assetMode === "specific" && b.accountId === account.id,
+      ) ?? null,
+    [spouseWill, account.id],
+  );
+
   // ── Will tab state ────────────────────────────────────────────────────────
 
-  // Recipients on the specific bequest for this account.
+  // Seed editable rows once at mount — `willRecipientsToRows` mints fresh keys,
+  // so it must not re-run on every render. eslint-disable: deliberately seeded
+  // from the initial props, not re-derived.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialWillRows = useMemo(() => willRecipientsToRows(bequestForAccount?.recipients ?? []), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialCascadeRows = useMemo(() => willRecipientsToRows(spouseBequestForAccount?.recipients ?? []), []);
+
+  // Recipients on the specific bequest for this account.
   const [willRecipientRows, setWillRecipientRows] = useState<WillRecipientRow[]>(initialWillRows);
 
   const [willCondition, setWillCondition] = useState<WillBequest["condition"]>(
     bequestForAccount?.condition ?? "always",
   );
+
+  // Recipients of the spouse's second-death bequest for this asset (the
+  // cascade). Seeded from the spouse's existing bequest, edited in place.
+  const [cascadeRows, setCascadeRows] = useState<WillRecipientRow[]>(initialCascadeRows);
 
   // ── Validation ────────────────────────────────────────────────────────────
 
@@ -413,14 +427,26 @@ function EstateFlowChangeDistributionDialogInner({
   const beneficiaryValid = primaryOk && contingentOk;
 
   const willSum = willRecipientRows.reduce((s, r) => s + r.percentage, 0);
-  const willSumOk =
-    willRecipientRows.length === 0 || Math.abs(willSum - 100) < 0.5;
+  const willSumOk = willRecipientRows.length === 0 || Math.abs(willSum - 100) < 0.5;
   const willRecipientsHaveIds = willRecipientRows.every(
     (r) => r.recipientKind === "spouse" || r.recipientId != null,
   );
+
+  const hasSpouseRecipient = willRecipientRows.some((r) => r.recipientKind === "spouse");
+
+  // The spouse cascade is optional; once it has rows it must form a valid
+  // distribution, just like the bequest itself.
+  const cascadeActive = hasSpouseRecipient && cascadeRows.length > 0;
+  const cascadeSum = cascadeRows.reduce((s, r) => s + r.percentage, 0);
+  const cascadeOk =
+    !cascadeActive ||
+    (Math.abs(cascadeSum - 100) < 0.5 &&
+      cascadeRows.every((r) => r.recipientKind === "spouse" || r.recipientId != null));
+
   const willValid =
     willSumOk &&
     willRecipientsHaveIds &&
+    cascadeOk &&
     (willForAccount !== null || defaultWillForNewBequest !== null);
 
   const canApply =
@@ -436,41 +462,26 @@ function EstateFlowChangeDistributionDialogInner({
       return;
     }
 
-    // Will path: update the specific bequest or create a new one.
+    // Will path: build the client's will — and the spouse's, when the bequest
+    // cascades to the spouse — then hand them off to be upserted.
     const targetWill = willForAccount ?? defaultWillForNewBequest;
     if (!targetWill) return;
 
-    const newRecipients = rowsToWillRecipients(willRecipientRows);
-
-    if (bequestForAccount) {
-      // Replace this bequest's recipients in-place; preserve all other bequests.
-      const updatedBequests: WillBequest[] = targetWill.bequests.map((b) => {
-        if (b.id === bequestForAccount.id) {
-          return { ...b, recipients: newRecipients, condition: willCondition };
-        }
-        return b;
-      });
-      onApplyWill(targetWill.id, updatedBequests, targetWill.residuaryRecipients ?? []);
-    } else {
-      // Create a new specific bequest for this account.
-      const newBequest: WillBequest = {
-        id: typeof crypto !== "undefined" ? crypto.randomUUID() : `bq-${Date.now()}`,
-        name: account.name,
-        kind: "asset",
-        assetMode: "specific",
-        accountId: account.id,
-        liabilityId: null,
-        percentage: 100,
-        condition: willCondition,
-        sortOrder: targetWill.bequests.length,
-        recipients: newRecipients,
-      };
-      onApplyWill(
-        targetWill.id,
-        [...targetWill.bequests, newBequest],
-        targetWill.residuaryRecipients ?? [],
-      );
-    }
+    onApplyWill(
+      buildWillUpdates({
+        account: { id: account.id, name: account.name },
+        clientWill: targetWill,
+        clientRecipients: rowsToWillRecipients(willRecipientRows),
+        clientCondition: willCondition,
+        hasSpouseRecipient,
+        spouseCascadeRecipients: rowsToWillRecipients(cascadeRows),
+        spouseWill,
+        newId: () =>
+          typeof crypto !== "undefined"
+            ? crypto.randomUUID()
+            : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      }),
+    );
   }
 
   // ── Beneficiary row helpers ───────────────────────────────────────────────
@@ -567,58 +578,6 @@ function EstateFlowChangeDistributionDialogInner({
       patch.householdRole = undefined;
     }
     if (Object.keys(patch).length > 0) updateBeneficiaryRow(key, patch);
-  }
-
-  // ── Will row helpers ──────────────────────────────────────────────────────
-
-  function addWillRow() {
-    setWillRecipientRows((prev) => [
-      ...prev,
-      {
-        key: newKey(),
-        recipientKind: isMarried ? "spouse" : "family_member",
-        recipientId: null,
-        percentage: 0,
-        sortOrder: prev.length,
-      },
-    ]);
-  }
-
-  function removeWillRow(key: string) {
-    setWillRecipientRows((prev) => prev.filter((r) => r.key !== key));
-  }
-
-  function applyWillSelectValue(key: string, value: string) {
-    const patch: Partial<WillRecipientRow> = {};
-    if (value === "") {
-      // Blank option: clear recipient.
-      patch.recipientKind = "family_member";
-      patch.recipientId = null;
-    } else if (value === "spouse") {
-      patch.recipientKind = "spouse";
-      patch.recipientId = null;
-    } else if (value.startsWith("fm:")) {
-      patch.recipientKind = "family_member";
-      patch.recipientId = value.slice(3);
-    } else if (value.startsWith("ext:")) {
-      patch.recipientKind = "external_beneficiary";
-      patch.recipientId = value.slice(4);
-    } else if (value.startsWith("ent:")) {
-      patch.recipientKind = "entity";
-      patch.recipientId = value.slice(4);
-    }
-    if (Object.keys(patch).length > 0) {
-      setWillRecipientRows((prev) =>
-        prev.map((r) => (r.key === key ? { ...r, ...patch } : r)),
-      );
-    }
-  }
-
-  function changeWillPct(key: string, raw: number) {
-    const clamped = clampPct(raw);
-    setWillRecipientRows((prev) =>
-      prev.map((r) => (r.key === key ? { ...r, percentage: clamped } : r)),
-    );
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -804,93 +763,42 @@ function EstateFlowChangeDistributionDialogInner({
         )}
 
         {/* Recipients */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className={fieldLabelClassName + " mb-0"}>Recipients</span>
-            <span
-              id={willId}
-              className={`text-[11px] ${willSumOk ? "text-ink-3" : "text-crit"}`}
-            >
-              {willRecipientRows.length > 0
-                ? `${willSum.toFixed(0)}%${!willSumOk ? " — must equal 100%" : ""}`
-                : "No recipients yet"}
-            </span>
+        <WillRecipientList
+          label="Recipients"
+          sumMsgId={willId}
+          rows={willRecipientRows}
+          onChange={setWillRecipientRows}
+          spouseName={spouseName}
+          familyMembers={familyOptions}
+          externalBeneficiaries={externalOptions}
+          entities={entityOptions}
+          childMembers={childMembers}
+          recipientAriaLabel="Will recipient"
+        />
+
+        {/* Spouse cascade — what the spouse's will does at the second death */}
+        {hasSpouseRecipient && (
+          <div className="rounded border border-hair bg-card-2 px-3 py-3">
+            <p className="mb-2 text-[12px] text-ink-3">
+              This bequest leaves the asset to {spouseName ?? "the spouse"}. Set what{" "}
+              {spouseName ?? "the spouse"}&apos;s will does with it at the second death — saving
+              writes a matching bequest into {spouseName ?? "the spouse"}&apos;s will, creating
+              that will if it doesn&apos;t exist yet.
+            </p>
+            <WillRecipientList
+              label="At the second death, distribute to"
+              sumMsgId="cascade-sum-msg"
+              rows={cascadeRows}
+              onChange={setCascadeRows}
+              spouseName={spouseName}
+              familyMembers={familyOptions}
+              externalBeneficiaries={externalOptions}
+              entities={entityOptions}
+              childMembers={childMembers}
+              recipientAriaLabel="Spouse cascade recipient"
+            />
           </div>
-          <ul className="space-y-2">
-            {willRecipientRows.map((row) => (
-              <li key={row.key} className="flex items-center gap-2">
-                <select
-                  aria-label="Will recipient"
-                  value={willRowToSelectValue(row)}
-                  onChange={(e) => applyWillSelectValue(row.key, e.target.value)}
-                  className={rowSelectClassName + " flex-1 min-w-0"}
-                >
-                  <option value="">— select recipient —</option>
-                  {spouseName && (
-                    <optgroup label="Household">
-                      <option value="spouse">{spouseName} (spouse)</option>
-                    </optgroup>
-                  )}
-                  {familyMembers.length > 0 && (
-                    <optgroup label="Family">
-                      {familyMembers.map((fm) => (
-                        <option key={fm.id} value={`fm:${fm.id}`}>
-                          {fm.firstName} {fm.lastName ?? ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {externalBeneficiaries.length > 0 && (
-                    <optgroup label="External">
-                      {externalBeneficiaries.map((x) => (
-                        <option key={x.id} value={`ext:${x.id}`}>
-                          {x.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {entities.length > 0 && (
-                    <optgroup label="Entity">
-                      {entities.map((e) => (
-                        <option key={e.id} value={`ent:${e.id}`}>
-                          {e.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  aria-label="Will recipient percent"
-                  aria-describedby={willId}
-                  aria-invalid={!willSumOk}
-                  value={row.percentage}
-                  onChange={(e) => { const v = parseFloat(e.target.value); changeWillPct(row.key, Number.isNaN(v) ? row.percentage : v); }}
-                  className={rowFieldBase + " w-20 text-right"}
-                />
-                <span className="text-[12px] text-ink-3">%</span>
-                <button
-                  type="button"
-                  aria-label="Remove will recipient"
-                  onClick={() => removeWillRow(row.key)}
-                  className="text-[12px] text-ink-4 hover:text-crit transition-colors"
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={addWillRow}
-            className="mt-2 text-[12px] text-accent hover:text-accent-ink"
-          >
-            + Add recipient
-          </button>
-        </div>
+        )}
       </div>
     );
   }

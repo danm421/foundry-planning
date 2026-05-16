@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { changeOwner, changeBeneficiaries, changeWillBequests } from "../estate-flow-edits";
-import type { ClientData, Account, BeneficiaryRef } from "@/engine/types";
+import { changeOwner, changeBeneficiaries, upsertWills } from "../estate-flow-edits";
+import type { ClientData, Account, BeneficiaryRef, Will } from "@/engine/types";
 
 function baseData(): ClientData {
   const account = {
@@ -85,17 +85,19 @@ describe("changeBeneficiaries", () => {
   });
 });
 
-describe("changeWillBequests", () => {
-  it("replaces bequests and residuary recipients on the matching will", () => {
+describe("upsertWills", () => {
+  const will = (id: string, grantor: "client" | "spouse"): Will =>
+    ({ id, grantor, bequests: [], residuaryRecipients: [] }) as Will;
+
+  it("replaces an existing will by id", () => {
     const data = {
       accounts: [],
       entities: [],
-      wills: [{ id: "will-1", grantor: "client", bequests: [], residuaryRecipients: [] }],
+      wills: [will("will-1", "client")],
     } as unknown as ClientData;
-    const next = changeWillBequests(
-      data,
-      "will-1",
-      [
+    const replacement: Will = {
+      ...will("will-1", "client"),
+      bequests: [
         {
           id: "bq-1",
           name: "House",
@@ -109,63 +111,55 @@ describe("changeWillBequests", () => {
           recipients: [],
         },
       ],
-      [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }],
-    );
+    };
+    const next = upsertWills(data, [replacement]);
+    expect(next.wills).toHaveLength(1);
     expect(next.wills?.[0].bequests).toHaveLength(1);
-    expect(next.wills?.[0].residuaryRecipients).toHaveLength(1);
+  });
+
+  it("appends a will with a new id", () => {
+    const data = {
+      accounts: [],
+      entities: [],
+      wills: [will("will-1", "client")],
+    } as unknown as ClientData;
+    const next = upsertWills(data, [will("will-2", "spouse")]);
+    expect(next.wills).toHaveLength(2);
+    expect(next.wills?.[1].grantor).toBe("spouse");
+  });
+
+  it("replaces one will and appends another in a single call", () => {
+    const data = {
+      accounts: [],
+      entities: [],
+      wills: [will("will-1", "client")],
+    } as unknown as ClientData;
+    const next = upsertWills(data, [will("will-1", "client"), will("will-2", "spouse")]);
+    expect(next.wills?.map((w) => w.id)).toEqual(["will-1", "will-2"]);
+  });
+
+  it("creates the wills array when the client has none", () => {
+    const data = { accounts: [], entities: [] } as unknown as ClientData;
+    const next = upsertWills(data, [will("will-1", "client")]);
+    expect(next.wills).toHaveLength(1);
   });
 
   it("does not mutate the input", () => {
     const data = {
       accounts: [],
       entities: [],
-      wills: [{ id: "will-1", grantor: "client", bequests: [], residuaryRecipients: [] }],
+      wills: [will("will-1", "client")],
     } as unknown as ClientData;
-    changeWillBequests(
-      data,
-      "will-1",
-      [
-        {
-          id: "bq-1",
-          name: "House",
-          kind: "asset",
-          assetMode: "specific",
-          accountId: "acc-1",
-          liabilityId: null,
-          percentage: 100,
-          condition: "always",
-          sortOrder: 0,
-          recipients: [],
-        },
-      ],
-      [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }],
-    );
-    expect(data.wills?.[0].bequests).toHaveLength(0);
+    upsertWills(data, [will("will-2", "spouse")]);
+    expect(data.wills).toHaveLength(1);
   });
 
-  it("clears the residuary clause when residuaryRecipients is []", () => {
+  it("returns data unchanged when wills is empty", () => {
     const data = {
       accounts: [],
       entities: [],
-      wills: [{ id: "will-1", grantor: "client", bequests: [], residuaryRecipients: [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }] }],
+      wills: [will("will-1", "client")],
     } as unknown as ClientData;
-    const next = changeWillBequests(
-      data,
-      "will-1",
-      [{ id: "bq-1", name: "House", kind: "asset", assetMode: "specific", accountId: "acc-1", liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] }],
-      [],
-    );
-    expect(next.wills?.[0].residuaryRecipients).toEqual([]);
-    expect(next.wills?.[0].bequests).toHaveLength(1);
-  });
-
-  it("returns data unchanged when the will id is unknown", () => {
-    const data = {
-      accounts: [],
-      entities: [],
-      wills: [{ id: "will-1", grantor: "client", bequests: [], residuaryRecipients: [] }],
-    } as unknown as ClientData;
-    const next = changeWillBequests(data, "will-missing", [], []);
-    expect(next.wills?.[0]).toBe(data.wills?.[0]);
+    expect(upsertWills(data, [])).toBe(data);
   });
 });
