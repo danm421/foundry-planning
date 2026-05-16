@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { changeOwner, changeBeneficiaries, upsertWills } from "../estate-flow-edits";
+import { changeOwner, changeBeneficiaries, upsertWills, changeEntityOwners } from "../estate-flow-edits";
 import type { ClientData, Account, BeneficiaryRef, Will } from "@/engine/types";
 
 function baseData(): ClientData {
@@ -161,5 +161,43 @@ describe("upsertWills", () => {
       wills: [will("will-1", "client")],
     } as unknown as ClientData;
     expect(upsertWills(data, [])).toBe(data);
+  });
+});
+
+describe("changeEntityOwners", () => {
+  function entityData(): ClientData {
+    return {
+      accounts: [],
+      entities: [
+        {
+          id: "ent-1",
+          name: "Acme LLC",
+          entityType: "llc",
+          owners: [{ familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      wills: [],
+    } as unknown as ClientData;
+  }
+
+  it("replaces the owners array on the matching entity", () => {
+    const next = changeEntityOwners(entityData(), "ent-1", [
+      { familyMemberId: "fm-client", percent: 0.5 },
+      { familyMemberId: "fm-spouse", percent: 0.5 },
+    ]);
+    expect(next.entities?.[0].owners).toHaveLength(2);
+    expect(next.entities?.[0].owners?.[1]).toMatchObject({ percent: 0.5 });
+  });
+
+  it("does not mutate the input data", () => {
+    const input = entityData();
+    changeEntityOwners(input, "ent-1", [{ familyMemberId: "fm-spouse", percent: 1 }]);
+    expect(input.entities?.[0].owners?.[0].familyMemberId).toBe("fm-client");
+  });
+
+  it("returns data unchanged when the entity id is unknown", () => {
+    const input = entityData();
+    const next = changeEntityOwners(input, "ent-missing", []);
+    expect(next).toBe(input);
   });
 });
