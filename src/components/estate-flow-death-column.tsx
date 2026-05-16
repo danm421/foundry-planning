@@ -7,6 +7,7 @@ import {
   type MechanismBreakdown,
   type RecipientGroup,
 } from "@/lib/estate/transfer-report";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { EstateTransferConflictsCallout } from "@/components/estate-transfer-conflicts-callout";
 import {
   summarizeDeathWarnings,
@@ -82,6 +83,88 @@ const SHORT_MECHANISM_LABELS: Partial<
   trust_pour_out: "Pour-out",
 };
 
+// ── Gift → recipient-group matching ──────────────────────────────────────────
+// A gift matches a recipient group when the gift's recipient id equals the
+// group's `recipientId` AND the gift's recipient kind equals the group's
+// `recipientKind`. Gift recipient kinds (entity / family_member /
+// external_beneficiary) are a subset of RecipientGroup.recipientKind, so the
+// discriminators line up directly — no mapping table needed. `spouse` and
+// `system_default` groups never carry a recipient id that gifts target.
+
+function giftMatchesGroup(gift: EstateFlowGift, group: RecipientGroup): boolean {
+  if (group.recipientId == null) return false;
+  return (
+    gift.recipient.kind === group.recipientKind &&
+    gift.recipient.id === group.recipientId
+  );
+}
+
+/**
+ * Human-readable label for a planned-gift marker line, per gift kind:
+ *  - cash-once → formatted dollar amount
+ *  - series    → "$X/yr START–END"
+ *  - asset-once → "P% of {account name}" (account name resolved via the map;
+ *                 falls back to "an asset" when the id is not resolvable)
+ */
+function giftMarkerLabel(
+  gift: EstateFlowGift,
+  accountNameById: Map<string, string>,
+): { label: string; year: number } {
+  if (gift.kind === "cash-once") {
+    return { label: fmt.format(gift.amount), year: gift.year };
+  }
+  if (gift.kind === "series") {
+    return {
+      label: `${fmt.format(gift.annualAmount)}/yr ${gift.startYear}–${gift.endYear}`,
+      year: gift.startYear,
+    };
+  }
+  const assetName = accountNameById.get(gift.accountId) ?? "an asset";
+  return {
+    label: `${Math.round(gift.percent * 100)}% of ${assetName}`,
+    year: gift.year,
+  };
+}
+
+// ── Planned lifetime gifts block ─────────────────────────────────────────────
+// Inter-vivos gifts the recipient receives during life. Rendered as a separate
+// annotation under the recipient's inherited-asset rows — it does NOT roll into
+// the group's total / netTotal.
+
+function PlannedGiftsBlock({
+  gifts,
+  accountNameById,
+  onGiftClick,
+}: {
+  gifts: EstateFlowGift[];
+  accountNameById: Map<string, string>;
+  onGiftClick: (giftId: string) => void;
+}) {
+  if (gifts.length === 0) return null;
+  return (
+    <div className="mt-1.5 border-t border-amber-900/30 pt-1">
+      <p className="text-[9px] font-medium uppercase tracking-[0.18em] text-amber-300/80">
+        Planned lifetime gifts
+      </p>
+      <div className="mt-0.5">
+        {gifts.map((gift) => {
+          const { label, year } = giftMarkerLabel(gift, accountNameById);
+          return (
+            <button
+              key={gift.id}
+              type="button"
+              onClick={() => onGiftClick(gift.id)}
+              className="block w-full truncate rounded px-1 py-0.5 text-left text-[11px] text-amber-400/90 transition-colors hover:bg-amber-950/30 hover:text-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+            >
+              Also receives: {label} · {year}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Recipient group — direct render with clickable asset rows ─────────────────
 // EstateTransferRecipientCard does not accept a row-click callback, so we
 // render recipient groups directly here, matching the card's dark-theme
@@ -90,12 +173,22 @@ const SHORT_MECHANISM_LABELS: Partial<
 function ClickableRecipientGroup({
   group,
   onAssetClick,
+  gifts,
+  accountNameById,
+  onGiftClick,
 }: {
   group: RecipientGroup;
   onAssetClick: (accountId: string) => void;
+  gifts: EstateFlowGift[];
+  accountNameById: Map<string, string>;
+  onGiftClick: (giftId: string) => void;
 }) {
   const isSpouse = group.recipientKind === "spouse";
   const isSystemDefault = group.recipientKind === "system_default";
+
+  // Inter-vivos gifts this recipient receives during life. A pure annotation —
+  // deliberately NOT added into group.total / group.netTotal.
+  const matchedGifts = gifts.filter((g) => giftMatchesGroup(g, group));
 
   const totalDrains = DRAIN_KINDS.reduce((s, k) => s + group.drainsByKind[k], 0);
   const hasReductions = Math.abs(totalDrains) >= 0.5;
@@ -184,6 +277,14 @@ function ClickableRecipientGroup({
           })}
       </div>
 
+      {/* Planned lifetime gifts — inter-vivos gifts to this recipient. Shown as
+          a separate amber annotation; does not affect the group total. */}
+      <PlannedGiftsBlock
+        gifts={matchedGifts}
+        accountNameById={accountNameById}
+        onGiftClick={onGiftClick}
+      />
+
       {/* Reductions footer */}
       {hasReductions && (
         <div className="mt-1.5 flex items-baseline justify-between gap-2 border-t border-gray-800/60 pt-1 text-[10px] text-gray-400">
@@ -234,6 +335,12 @@ interface EstateFlowDeathColumnProps {
   /** Full projection — needed for the deathWarnings lookup. */
   projection: ProjectionResult;
   onAssetClick: (accountId: string) => void;
+  /** Working gift drafts — matched per recipient group to render lifetime-gift markers. */
+  gifts: EstateFlowGift[];
+  /** Account display names keyed by id — resolves asset-gift marker labels. */
+  accountNameById: Map<string, string>;
+  /** Opens the gift edit dialog seeded with the clicked gift. */
+  onGiftClick: (giftId: string) => void;
 }
 
 export function EstateFlowDeathColumn({
@@ -241,6 +348,9 @@ export function EstateFlowDeathColumn({
   deathOrder,
   projection,
   onAssetClick,
+  gifts,
+  accountNameById,
+  onGiftClick,
 }: EstateFlowDeathColumnProps) {
   // Resolve death warnings from the projection year matching this section,
   // then translate the raw engine codes into advisor-facing notes. Asset names
@@ -315,6 +425,9 @@ export function EstateFlowDeathColumn({
               key={group.key}
               group={group}
               onAssetClick={onAssetClick}
+              gifts={gifts}
+              accountNameById={accountNameById}
+              onGiftClick={onGiftClick}
             />
           ))}
         </div>

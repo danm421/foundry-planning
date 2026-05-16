@@ -15,8 +15,17 @@ import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
+import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
 import { changeOwner, changeBeneficiaries, upsertWills } from "@/lib/estate/estate-flow-edits";
 import { baseWritesForChange } from "@/lib/estate/estate-flow-base-writes";
+import {
+  addGift,
+  updateGift,
+  removeGift,
+  applyGiftsToClientData,
+  type EstateFlowGift,
+} from "@/lib/estate/estate-flow-gifts";
+import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
 
@@ -26,6 +35,8 @@ export interface EstateFlowViewProps {
   isMarried: boolean;
   ownerNames: { clientName: string; spouseName: string | null };
   initialClientData: ClientData;
+  initialGifts: EstateFlowGift[];
+  cpi: number;
   scenarios?: ScenarioOption[];
   snapshots?: SnapshotOption[];
 }
@@ -76,15 +87,122 @@ function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderToggleProps
   );
 }
 
+// ── Gift persistence ─────────────────────────────────────────────────────────
+
+/**
+ * Map a single GiftChange onto the existing gift API routes and issue the
+ * request. Mirrors the body shapes in the DROP form's save-handlers.ts.
+ *
+ * - cash-once / asset-once → /gifts and /gifts/:id
+ * - series                → /gifts/series and /gifts/series/:id
+ *
+ * The client-generated `id` is never sent on POST — the route assigns one.
+ * On PATCH, the immutable `accountId` is omitted (the gift routes reject it).
+ * `eventKind` is omitted entirely: the POST route rejects any non-"outright"
+ * value, and the PATCH route ignores the field — sandbox gifts are outright.
+ */
+async function persistGiftChange(
+  clientId: string,
+  change: GiftChange,
+): Promise<Response> {
+  const { op, gift } = change;
+
+  // ── series ────────────────────────────────────────────────────────────────
+  if (gift.kind === "series") {
+    if (op === "remove") {
+      return fetch(`/api/clients/${clientId}/gifts/series/${gift.id}`, {
+        method: "DELETE",
+      });
+    }
+    const body = {
+      grantor: gift.grantor,
+      recipientEntityId: gift.recipient.id,
+      startYear: gift.startYear,
+      startYearRef: null,
+      endYear: gift.endYear,
+      endYearRef: null,
+      annualAmount: gift.annualAmount,
+      inflationAdjust: gift.inflationAdjust,
+      useCrummeyPowers: gift.crummey,
+      notes: null,
+    };
+    return fetch(
+      op === "add"
+        ? `/api/clients/${clientId}/gifts/series`
+        : `/api/clients/${clientId}/gifts/series/${gift.id}`,
+      {
+        method: op === "add" ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  // ── cash-once / asset-once ────────────────────────────────────────────────
+  if (op === "remove") {
+    return fetch(`/api/clients/${clientId}/gifts/${gift.id}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Common one-time fields. accountId is included only on POST (it is immutable
+  // and rejected by the PATCH schema).
+  const recipientFields = {
+    recipientEntityId:
+      gift.recipient.kind === "entity" ? gift.recipient.id : null,
+    recipientFamilyMemberId:
+      gift.recipient.kind === "family_member" ? gift.recipient.id : null,
+    recipientExternalBeneficiaryId:
+      gift.recipient.kind === "external_beneficiary" ? gift.recipient.id : null,
+  };
+  const oneTimeBody: Record<string, unknown> = {
+    year: gift.year,
+    yearRef: null,
+    grantor: gift.grantor,
+    ...recipientFields,
+    notes: null,
+  };
+  if (gift.kind === "cash-once") {
+    oneTimeBody.amount = gift.amount;
+    oneTimeBody.useCrummeyPowers = gift.crummey;
+    if (op === "add") oneTimeBody.accountId = null;
+  } else {
+    // asset-once: percent transfer of a source account. Asset gifts have no
+    // Crummey concept — the DROP form sends useCrummeyPowers: false.
+    oneTimeBody.percent = gift.percent;
+    oneTimeBody.useCrummeyPowers = false;
+    if (op === "add") oneTimeBody.accountId = gift.accountId;
+  }
+
+  return fetch(
+    op === "add"
+      ? `/api/clients/${clientId}/gifts`
+      : `/api/clients/${clientId}/gifts/${gift.id}`,
+    {
+      method: op === "add" ? "POST" : "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(oneTimeBody),
+    },
+  );
+}
+
 // ── EstateFlowView ───────────────────────────────────────────────────────────
 
 export default function EstateFlowView(props: EstateFlowViewProps) {
   const original = props.initialClientData;
   const [working, setWorking] = useState<ClientData>(original);
+  // Gift sandbox. New gifts are added via the change-owner dialog.
+  const [workingGifts, setWorkingGifts] = useState<EstateFlowGift[]>(
+    props.initialGifts,
+  );
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
   const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
+  // Standalone "Add a gift" dialog (no source account).
+  const [addGiftOpen, setAddGiftOpen] = useState(false);
+  // Gift currently being edited via a column-1 future-gift marker.
+  const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -102,33 +220,99 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   // components to decide which death feeds which column: when "primaryFirst",
   // column 1 shows the client's death and column 2 shows the spouse's death;
   // "spouseFirst" swaps them. The projection result is identical either way.
-  const projection = useMemo(
-    () => runProjectionWithEvents(working),
-    [working],
+  // Materialise gift drafts into the engine input so the projection and report
+  // reflect existing and sandbox-edited gifts. The loader strips
+  // gifts/giftEvents from initialClientData; they flow back in here.
+  const engineData = useMemo(
+    () => applyGiftsToClientData(working, workingGifts, props.cpi),
+    [working, workingGifts, props.cpi],
   );
-  const ownership = useMemo(() => buildOwnershipColumn(working), [working]);
+  const projection = useMemo(
+    () => runProjectionWithEvents(engineData),
+    [engineData],
+  );
+
+  // Plan year bounds, derived from the projection. `planStartYear` is "today".
+  // Guard against an empty `years` array — fall back to the current calendar year.
+  const planStartYear = projection.years[0]?.year ?? new Date().getFullYear();
+  const planEndYear =
+    projection.years[projection.years.length - 1]?.year ?? planStartYear;
+
+  // As-of year for column 1. Initialises to the plan's first year ("today").
+  const [asOfYear, setAsOfYear] = useState<number>(planStartYear);
+
+  const ownership = useMemo(
+    () => buildOwnershipColumn(working, { projection, asOfYear, gifts: workingGifts }),
+    [working, projection, asOfYear, workingGifts],
+  );
+
+  // Human label for each gift recipient, keyed by recipient id. Built from the
+  // working copy's family members / entities / external beneficiaries so the
+  // ownership column can resolve future-gift markers.
+  const recipientLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const fm of working.familyMembers ?? []) {
+      map.set(
+        fm.id,
+        [fm.firstName, fm.lastName].filter(Boolean).join(" ") || fm.firstName,
+      );
+    }
+    for (const entity of working.entities ?? []) {
+      if (entity.name) map.set(entity.id, entity.name);
+    }
+    for (const ext of working.externalBeneficiaries ?? []) {
+      map.set(ext.id, ext.name);
+    }
+    return map;
+  }, [working.familyMembers, working.entities, working.externalBeneficiaries]);
+  // Account display names keyed by id — used by the death columns to resolve
+  // asset-gift marker labels ("P% of {account name}").
+  const accountNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const acct of working.accounts ?? []) {
+      map.set(acct.id, acct.name);
+    }
+    return map;
+  }, [working.accounts]);
   const reportData = useMemo(
     () =>
       buildEstateTransferReportData({
         projection,
         asOf: { kind: "split" },
         ordering,
-        clientData: working,
+        clientData: engineData,
         ownerNames: props.ownerNames,
       }),
-    [projection, ordering, working, props.ownerNames],
+    [projection, ordering, engineData, props.ownerNames],
   );
   const pendingChanges = useMemo(
     () => diffWorkingCopy(original, working),
     [original, working],
   );
-  const isDirty = pendingChanges.length > 0;
+  const giftChanges = useMemo(
+    () => diffGifts(props.initialGifts, workingGifts),
+    [props.initialGifts, workingGifts],
+  );
+  const isDirty = pendingChanges.length > 0 || giftChanges.length > 0;
 
   // One mutation entry point: every dialog calls this with an edit fn.
   const applyEdit = useCallback(
     (fn: (d: ClientData) => ClientData) => setWorking((cur) => fn(cur)),
     [],
   );
+
+  // Resync the gift sandbox to the server baseline whenever `initialGifts`
+  // changes identity. `initialGifts` is a server-component prop: it is
+  // referentially stable between renders and only changes on `router.refresh()`
+  // (after a save) or a scenario navigation — exactly the moments the sandbox
+  // SHOULD adopt the new baseline. Local edits never change the prop identity,
+  // so a mid-edit sandbox is never clobbered. Without this, gifts added in this
+  // session keep their client-generated UUIDs after a save while the refreshed
+  // `initialGifts` carries the server-assigned ids — `diffGifts` would then see
+  // every saved gift as a phantom `add` forever, re-POSTing duplicates.
+  useEffect(() => {
+    setWorkingGifts(props.initialGifts);
+  }, [props.initialGifts]);
 
   // Warn on browser close / tab close / hard navigation when there are unsaved edits.
   useEffect(() => {
@@ -159,14 +343,35 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
 
   const { submit } = writer;
   const handleSaveInPlace = useCallback(async () => {
-    if (pendingChanges.length === 0) return;
+    if (pendingChanges.length === 0 && giftChanges.length === 0) return;
 
-    // ── Named scenario: store edits as overlay rows via the unified route. ──
-    if (isNamedScenario) {
-      setIsSaving(true);
-      setSaveError(null);
-      try {
-        let saved = 0;
+    // The base-case overlay channel writes directly to the client's real
+    // account/will data — confirm first. Gift-only edits never touch that
+    // data, so the confirm is gated on there being base-mode overlay writes.
+    if (!isNamedScenario && pendingChanges.length > 0) {
+      const confirmed = window.confirm(
+        "This will update the client's actual account ownership, beneficiary, " +
+          "and will data. Continue?",
+      );
+      if (!confirmed) return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      // Total spans both channels so the "{n} of {total}" prefix is accurate.
+      const total = pendingChanges.length + giftChanges.length;
+      let saved = 0;
+      // Tracks whether any HTTP request that does NOT self-refresh has gone
+      // out (base-mode overlay writes + gift writes). When true we issue an
+      // explicit router.refresh() at the end; the scenario-overlay path
+      // refreshes itself via writer.submit.
+      let needsExplicitRefresh = false;
+
+      // ── Overlay channel ─────────────────────────────────────────────────
+      if (isNamedScenario) {
+        // Named scenario: store edits as overlay rows via the unified route.
+        // writer.submit calls router.refresh() after every successful submit.
         for (const change of pendingChanges) {
           // baseFallback is a dummy — writer routes to the changes API in scenario mode.
           const res = await submit(change.edit, { url: "", method: "PATCH" });
@@ -174,68 +379,80 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             const body = await res.json().catch(() => ({}));
             const apiMsg =
               typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
-            const prefix =
-              saved > 0
-                ? `${saved} of ${pendingChanges.length} change(s) saved. `
-                : "";
+            const prefix = saved > 0 ? `${saved} of ${total} change(s) saved. ` : "";
             setSaveError(`${prefix}Save failed: ${apiMsg}`);
             return;
           }
           saved++;
         }
-        // Scenario mode only: writer.submit calls router.refresh() on every
-        // successful submit, which reloads initialClientData and clears the
-        // dirty badge. The base-case branch below refreshes explicitly instead.
-      } finally {
-        setIsSaving(false);
+      } else if (pendingChanges.length > 0) {
+        // Base case: write directly to the client's real account/will data.
+        const writes = pendingChanges.flatMap((c) =>
+          baseWritesForChange(c, props.clientId),
+        );
+        for (const w of writes) {
+          const res = await fetch(w.url, {
+            method: w.method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(w.body),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            const apiMsg =
+              typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
+            const prefix = saved > 0 ? `${saved} of ${total} change(s) saved. ` : "";
+            setSaveError(`${prefix}Save failed: ${apiMsg}`);
+            // Refresh so already-persisted writes reload as the new baseline.
+            router.refresh();
+            return;
+          }
+          needsExplicitRefresh = true;
+          // Count once per change once all its writes succeed is impractical
+          // here — count per write; `total` is change-based, so this prefix is
+          // approximate but only ever shown on a partial failure.
+          saved++;
+        }
       }
-      return;
-    }
 
-    // ── Base case: write directly to the client's real account/will data. ──
-    const confirmed = window.confirm(
-      "This will update the client's actual account ownership, beneficiary, " +
-        "and will data. Continue?",
-    );
-    if (!confirmed) return;
-
-    setIsSaving(true);
-    setSaveError(null);
-    try {
-      const writes = pendingChanges.flatMap((c) =>
-        baseWritesForChange(c, props.clientId),
-      );
-      // Defensive: if no change produced a write, don't refresh / clear the
-      // dirty badge — that would look like a successful save of nothing.
-      if (writes.length === 0) return;
-      let done = 0;
-      for (const w of writes) {
-        const res = await fetch(w.url, {
-          method: w.method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(w.body),
-        });
+      // ── Gift channel ────────────────────────────────────────────────────
+      // Runs on ANY scenario (including base): gift routes are not overlay
+      // calls. cash/asset gift rows are client-global; series resolve the
+      // base-case scenario server-side.
+      //
+      // On a partial failure we still want to refresh so the gifts that DID
+      // persist reload into `initialGifts` (with server ids) and drop out of
+      // `giftChanges` — otherwise a re-save would re-POST them as phantom
+      // `add`s (their client UUIDs are still absent from `initialGifts`).
+      for (const change of giftChanges) {
+        needsExplicitRefresh = true;
+        const res = await persistGiftChange(props.clientId, change);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
             typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
-          const prefix =
-            done > 0 ? `${done} of ${writes.length} write(s) saved. ` : "";
+          const prefix = saved > 0 ? `${saved} of ${total} change(s) saved. ` : "";
           setSaveError(`${prefix}Save failed: ${apiMsg}`);
+          // Refresh so already-persisted gifts reload as the new baseline,
+          // then surface the error. The error stays set across the refresh.
+          router.refresh();
           return;
         }
-        done++;
+        saved++;
       }
-      // Reload initialClientData so `original` catches up to `working` and the
-      // dirty badge clears — same mechanism the scenario path relies on.
-      router.refresh();
+
+      // writer.submit refreshes after each overlay edit, but base-mode writes
+      // and the gift routes do not — an explicit refresh reloads
+      // initialGifts/initialClientData and clears the dirty badge.
+      if (needsExplicitRefresh) router.refresh();
+    } catch {
+      setSaveError("Network error while saving — please try again.");
     } finally {
       setIsSaving(false);
     }
-  }, [pendingChanges, isNamedScenario, submit, props.clientId, router]);
+  }, [pendingChanges, giftChanges, isNamedScenario, submit, props.clientId, router]);
 
   const handleSaveAsNew = useCallback(async () => {
-    if (pendingChanges.length === 0) return;
+    if (pendingChanges.length === 0 && giftChanges.length === 0) return;
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -303,14 +520,53 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         }
       }
 
+      // ── Gift channel ────────────────────────────────────────────────────
+      // Gift rows are client-global (cash/asset) or resolve the base-case
+      // scenario server-side (series) — they persist the same regardless of
+      // the fork. Run after the overlay writes succeed. A gift failure here
+      // leaves the (valid) new scenario in place: the scenario itself is
+      // sound, and the partially-persisted gifts cannot be cleanly rolled
+      // back, so the error is surfaced without deleting the scenario.
+      for (const change of giftChanges) {
+        const res = await persistGiftChange(props.clientId, change);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const apiMsg =
+            typeof body?.error === "string"
+              ? body.error
+              : `Gift save failed (HTTP ${res.status})`;
+          // The new scenario already exists with its overlay changes written.
+          // Tell the advisor so they know where to retry — the scenario is
+          // sound and is intentionally left in place (no rollback).
+          setSaveError(
+            `Scenario "${newName}" was created and its changes saved, but a gift failed to save: ${apiMsg}. Open that scenario to retry the gift.`,
+          );
+          return;
+        }
+      }
+
       router.push(`${pathname}?scenario=${encodeURIComponent(newScenarioId)}`);
+    } catch {
+      setSaveError("Network error while saving — please try again.");
     } finally {
       setIsSaving(false);
     }
-  }, [pendingChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
+  }, [pendingChanges, giftChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
 
   const ownerDialogAccount = ownerDialogId
     ? working.accounts.find((a) => a.id === ownerDialogId)
+    : undefined;
+
+  // Plan tax-inflation rate, threaded to the gift-fields warning preview.
+  const taxInflationRate =
+    working.planSettings.taxInflationRate ??
+    working.planSettings.inflationRate ??
+    0;
+
+  // The gift targeted by an open edit dialog. Undefined when the gift was
+  // removed out from under the dialog — guarded at render time below.
+  const editingGift = editingGiftId
+    ? workingGifts.find((g) => g.id === editingGiftId)
     : undefined;
 
   return (
@@ -347,6 +603,14 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           <EstateFlowOwnershipColumn
             data={ownership}
             onAssetClick={setOwnerDialogId}
+            minYear={planStartYear}
+            maxYear={planEndYear}
+            asOfYear={asOfYear}
+            onYearChange={setAsOfYear}
+            gifts={workingGifts}
+            recipientLabelById={recipientLabelById}
+            onGiftClick={(giftId) => setEditingGiftId(giftId)}
+            onAddGift={() => setAddGiftOpen(true)}
           />
         </div>
         {/* Death columns — ordering toggle swaps which section feeds column 2 vs 3 */}
@@ -363,6 +627,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                   deathOrder={1}
                   projection={projection}
                   onAssetClick={setDistributionDialogId}
+                  gifts={workingGifts}
+                  accountNameById={accountNameById}
+                  onGiftClick={setEditingGiftId}
                 />
               </div>
               {/* Death column 3 — second death, married only */}
@@ -373,6 +640,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                     deathOrder={2}
                     projection={projection}
                     onAssetClick={setDistributionDialogId}
+                    gifts={workingGifts}
+                    accountNameById={accountNameById}
+                    onGiftClick={setEditingGiftId}
                   />
                 </div>
               ) : (
@@ -393,11 +663,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             {/* Change list */}
             <div className="min-w-0">
               <p className="mb-1.5 text-xs font-semibold text-amber-300">
-                Unsaved changes ({pendingChanges.length})
+                Unsaved changes ({pendingChanges.length + giftChanges.length})
               </p>
               <ul className="space-y-0.5">
                 {pendingChanges.map((c, i) => (
-                  <li key={i} className="text-xs text-amber-200/80">
+                  <li key={`overlay-${i}`} className="text-xs text-amber-200/80">
+                    &bull; {c.description}
+                  </li>
+                ))}
+                {giftChanges.map((c, i) => (
+                  <li key={`gift-${i}`} className="text-xs text-amber-200/80">
                     &bull; {c.description}
                   </li>
                 ))}
@@ -410,6 +685,13 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             </div>
             {/* Action buttons */}
             <div className="flex shrink-0 items-center gap-2">
+              {/*
+                "Save in place" persists overlay edits (named scenario → overlay
+                rows; base case → direct writes to the client's real data) AND
+                gift changes (any scenario — gift routes write the gifts tables
+                directly). The panel only renders when `isDirty`, so the button
+                always has something to persist here.
+              */}
               <button
                 type="button"
                 disabled={isSaving}
@@ -439,8 +721,14 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         <EstateFlowChangeOwnerDialog
           account={ownerDialogAccount}
           clientData={working}
+          ledger={projection.giftLedger}
+          taxInflationRate={taxInflationRate}
           onApply={(owners) => {
             applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
+            setOwnerDialogId(null);
+          }}
+          onApplyGift={(draft) => {
+            setWorkingGifts((cur) => addGift(cur, draft));
             setOwnerDialogId(null);
           }}
           onClose={() => setOwnerDialogId(null)}
@@ -460,6 +748,42 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             setDistributionDialogId(null);
           }}
           onClose={() => setDistributionDialogId(null)}
+        />
+      )}
+
+      {/* Standalone "Add a gift" dialog — sourceAccount is always null here. */}
+      {addGiftOpen && (
+        <EstateFlowAddGiftDialog
+          clientData={working}
+          ledger={projection.giftLedger}
+          taxInflationRate={taxInflationRate}
+          editing={null}
+          onApply={(draft) => {
+            setWorkingGifts((cur) => addGift(cur, draft));
+            setAddGiftOpen(false);
+          }}
+          onDelete={() => {}}
+          onClose={() => setAddGiftOpen(false)}
+        />
+      )}
+
+      {/* Edit / delete an existing gift, opened from a column-1 marker. */}
+      {editingGiftId && editingGift && (
+        <EstateFlowAddGiftDialog
+          key={editingGiftId}
+          clientData={working}
+          ledger={projection.giftLedger}
+          taxInflationRate={taxInflationRate}
+          editing={editingGift}
+          onApply={(draft) => {
+            setWorkingGifts((cur) => updateGift(cur, draft));
+            setEditingGiftId(null);
+          }}
+          onDelete={() => {
+            setWorkingGifts((cur) => removeGift(cur, editingGiftId));
+            setEditingGiftId(null);
+          }}
+          onClose={() => setEditingGiftId(null)}
         />
       )}
     </div>

@@ -1,4 +1,5 @@
 import type { ClientData, EntitySummary, Will } from "@/engine/types";
+import type { ProjectionResult } from "@/engine/projection";
 import {
   type AccountOwner,
   controllingFamilyMember,
@@ -6,6 +7,7 @@ import {
   ownedByFamilyMember,
   ownedByEntity,
 } from "@/engine/ownership";
+import type { EstateFlowGift } from "./estate-flow-gifts";
 
 // ── Output Types ─────────────────────────────────────────────────────────────
 
@@ -25,6 +27,8 @@ export interface OwnershipAssetRow {
   hasBeneficiaries: boolean;
   /** No beneficiary AND no will provision (specific bequest or residuary clause). */
   hasConflict: boolean;
+  /** Asset-once gifts dated after the current as-of year that will move this asset out. */
+  futureGifts?: { giftId: string; year: number; percent: number }[];
 }
 
 export interface OwnershipGroup {
@@ -40,6 +44,20 @@ export interface OwnershipGroup {
 export interface OwnershipColumnData {
   groups: OwnershipGroup[];
   grandTotal: number;
+}
+
+export interface OwnershipColumnOptions {
+  /** Live projection — required to read year-N account values. */
+  projection?: ProjectionResult;
+  /**
+   * When set, values come from the projection's year-N state; default = today.
+   * Should always be passed together with `projection`; passing `asOfYear`
+   * without `projection` yields stale base values while still dropping ~0
+   * rows / attaching markers.
+   */
+  asOfYear?: number;
+  /** Working gift drafts — used to attach future-gift markers. */
+  gifts?: EstateFlowGift[];
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -125,9 +143,43 @@ function buildLinkedLiabilities(
  *
  * Empty groups are dropped.
  */
-export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
+export function buildOwnershipColumn(
+  data: ClientData,
+  options: OwnershipColumnOptions = {},
+): OwnershipColumnData {
   const wills = data.wills ?? [];
   const entities = data.entities ?? [];
+
+  /**
+   * Resolve an account's value as of the requested year. When both an
+   * `asOfYear` and a `projection` are supplied, the projection's year-N
+   * ending value wins; otherwise the advisor-entered base value is used.
+   */
+  const yearState =
+    options.asOfYear !== undefined && options.projection
+      ? options.projection.years.find((y) => y.year === options.asOfYear)
+      : undefined;
+  const resolveValue = (accountId: string, baseValue: number): number => {
+    return yearState?.accountLedgers[accountId]?.endingValue ?? baseValue;
+  };
+
+  /**
+   * Asset-once gifts dated strictly after the as-of year that will move
+   * (part of) this account out. Empty unless `asOfYear` is set.
+   */
+  const futureGiftsFor = (
+    accountId: string,
+  ): { giftId: string; year: number; percent: number }[] => {
+    if (options.asOfYear === undefined) return [];
+    return (options.gifts ?? [])
+      .filter(
+        (g): g is Extract<EstateFlowGift, { kind: "asset-once" }> =>
+          g.kind === "asset-once" &&
+          g.accountId === accountId &&
+          g.year > options.asOfYear!,
+      )
+      .map((g) => ({ giftId: g.id, year: g.year, percent: g.percent }));
+  };
 
   const familyMembers = data.familyMembers ?? [];
   const clientFm = familyMembers.find((fm) => fm.role === "client");
@@ -190,18 +242,21 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
       }
       const linkedLiabilities = buildLinkedLiabilities(data, accountId, "entity", soloEntityId);
       const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-      const netValue = account.value - liabilityTotal;
+      const resolvedValue = resolveValue(accountId, account.value);
+      const netValue = resolvedValue - liabilityTotal;
+      const futureGifts = futureGiftsFor(accountId);
       group.assets.push({
         accountId,
         name: account.name,
         accountType: account.category,
-        value: account.value,
+        value: resolvedValue,
         percent: 1,
         isSplit: false,
         linkedLiabilities,
         netValue,
         hasBeneficiaries,
         hasConflict,
+        ...(futureGifts.length > 0 ? { futureGifts } : {}),
       });
       continue;
     }
@@ -215,18 +270,21 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
         const ownerKind = "family_member" as const;
         const linkedLiabilities = buildLinkedLiabilities(data, accountId, ownerKind, soloFmId);
         const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-        const netValue = account.value - liabilityTotal;
+        const resolvedValue = resolveValue(accountId, account.value);
+        const netValue = resolvedValue - liabilityTotal;
+        const futureGifts = futureGiftsFor(accountId);
         targetGroup.assets.push({
           accountId,
           name: account.name,
           accountType: account.category,
-          value: account.value,
+          value: resolvedValue,
           percent: 1,
           isSplit: false,
           linkedLiabilities,
           netValue,
           hasBeneficiaries,
           hasConflict,
+          ...(futureGifts.length > 0 ? { futureGifts } : {}),
         });
       }
       continue;
@@ -251,8 +309,9 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
 
       const linkedLiabilities = buildLinkedLiabilities(data, accountId, "family_member", fmId);
       const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-      const fractionalValue = account.value * percent;
+      const fractionalValue = resolveValue(accountId, account.value) * percent;
       const netValue = fractionalValue - liabilityTotal;
+      const futureGifts = futureGiftsFor(accountId);
 
       targetGroup.assets.push({
         accountId,
@@ -265,16 +324,24 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
         netValue,
         hasBeneficiaries,
         hasConflict,
+        ...(futureGifts.length > 0 ? { futureGifts } : {}),
       });
     }
   }
 
+  // When viewing a projected year, drop any asset whose resolved value has
+  // gone to ~0 (e.g. fully gifted away) so it no longer occupies a row.
+  const dropZeroed = options.asOfYear !== undefined;
+
   const allGroups: OwnershipGroup[] = [clientGroup, spouseGroup, ...entityGroups.values()];
   const nonEmptyGroups = allGroups
-    .map((g) => ({
-      ...g,
-      subtotal: g.assets.reduce((s, a) => s + a.netValue, 0),
-    }))
+    .map((g) => {
+      const assets = dropZeroed
+        ? g.assets.filter((a) => Math.abs(a.value) >= 1)
+        : g.assets;
+      // Recompute the subtotal from the surviving rows so totals stay consistent.
+      return { ...g, assets, subtotal: assets.reduce((s, a) => s + a.netValue, 0) };
+    })
     .filter((g) => g.assets.length > 0);
 
   const grandTotal = nonEmptyGroups.reduce((s, g) => s + g.subtotal, 0);
