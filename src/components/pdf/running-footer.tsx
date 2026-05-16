@@ -22,16 +22,18 @@ export function RunningFooter({
   firmName,
   pageIndex,
   totalPages,
+  accentColor = PDF_THEME.accent,
 }: {
   firmName: string;
   pageIndex: number;
   totalPages: number;
+  accentColor?: string;
 }) {
   return (
     <View style={s.row} fixed>
       <Text style={{ color: PDF_THEME.ink3 }}>Confidential · {firmName}</Text>
       <Text>
-        <Text style={{ color: PDF_THEME.accent }}>
+        <Text style={{ color: accentColor }}>
           {String(pageIndex + 1).padStart(2, "0")}
         </Text>
         <Text style={{ color: PDF_THEME.ink3 }}>

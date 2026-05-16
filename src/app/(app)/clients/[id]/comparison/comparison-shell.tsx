@@ -25,6 +25,7 @@ import { CanvasGroup } from "./canvas-group";
 import { ReportTitle } from "./report-title";
 import { ModeToggle, type CanvasMode } from "./mode-toggle";
 import { SaveStatus } from "./save-status";
+import { ExportPdfButton } from "./export-pdf-button";
 import { WidgetConfigModal } from "./widget-config-modal";
 import { TextWidgetExpandModal } from "@/components/comparison/text-widget-expand-modal";
 
@@ -293,13 +294,23 @@ export function ComparisonShell({
           <ReportTitle value={api.layout.title} onChange={api.setTitle} />
         </div>
         <ModeToggle mode={mode} onChange={setMode} />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <SaveStatus
             dirty={api.dirty}
             saving={api.saving}
             error={saveError}
             onSave={handleSave}
           />
+          {activeCid && (
+            <ExportPdfButton
+              clientId={clientId}
+              comparisonId={activeCid}
+              layout={api.layout}
+              mode={mode}
+              setMode={setMode}
+              mcReady={!mcEnabled || mcState.status === "ready"}
+            />
+          )}
         </div>
       </header>
 

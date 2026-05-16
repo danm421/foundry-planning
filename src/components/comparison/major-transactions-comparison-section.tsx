@@ -40,7 +40,7 @@ function PlanColumn({ plan, yearRange, index }: { plan: ComparisonPlan; yearRang
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
           <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
         </div>
-        <p className="text-sm text-slate-400">No asset transactions in selected range.</p>
+        <p className="text-sm text-slate-400">No major transactions in selected range.</p>
       </div>
     );
   }

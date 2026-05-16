@@ -98,6 +98,8 @@ export function ArtifactDocument({
         reportTitle={artifactTitle}
         reportYear={reportYear}
         firmName={firmName}
+        logoDataUrl={null}
+        accentColor={PDF_THEME.accent}
         pageIndex={contentPageIndex}
         totalPages={totalPages}
       >

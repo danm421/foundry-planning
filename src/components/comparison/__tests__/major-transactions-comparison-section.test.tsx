@@ -53,6 +53,6 @@ describe("MajorTransactionsComparisonSection", () => {
   it("renders empty state when no transactions in range", () => {
     const plan = mkPlan("A", [{ year: 2030 }] as unknown as ComparisonPlan["result"]["years"]);
     render(<MajorTransactionsComparisonSection plans={[plan]} yearRange={null} />);
-    expect(screen.getByText(/No asset transactions/i)).toBeTruthy();
+    expect(screen.getByText(/No major transactions/i)).toBeTruthy();
   });
 });
