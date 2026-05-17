@@ -1,4 +1,4 @@
-import type { ClientData } from "@/engine/types";
+import type { ClientData, WillBequest } from "@/engine/types";
 import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +50,25 @@ function eq(a: unknown, b: unknown): boolean {
     );
   }
   return false;
+}
+
+/**
+ * Bequest content with the persistence-only `id` dropped.
+ *
+ * The will PATCH route applies edits by delete+re-inserting every bequest, so
+ * the database hands back a fresh `id` on every save. Comparing raw bequests
+ * would then see those churned ids as a change and flag the will as
+ * permanently dirty after a save — the "Unsaved changes" banner could never
+ * clear. The diff only cares about the distribution *content*, so the id is
+ * stripped before comparison. (Residuary recipients have no id, so they need
+ * no equivalent treatment.)
+ */
+function bequestContent(bequests: WillBequest[] | undefined) {
+  return (bequests ?? []).map((b) => {
+    const copy: Partial<WillBequest> = { ...b };
+    delete copy.id;
+    return copy;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +150,10 @@ export function diffWorkingCopy(
     const o = origWill.get(w.id);
     if (!o) continue; // skip adds
 
-    if (eq(o.bequests, w.bequests) && eq(o.residuaryRecipients, w.residuaryRecipients)) {
+    if (
+      eq(bequestContent(o.bequests), bequestContent(w.bequests)) &&
+      eq(o.residuaryRecipients, w.residuaryRecipients)
+    ) {
       continue;
     }
 

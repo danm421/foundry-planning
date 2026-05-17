@@ -174,6 +174,36 @@ describe("diffWorkingCopy", () => {
     expect(diffWorkingCopy(original, working)).toEqual([]);
   });
 
+  it("ignores bequest id churn — the will PATCH route regenerates bequest ids on every save", () => {
+    // After a base-case save, the will PATCH route delete+re-inserts bequests,
+    // so the reloaded `original` carries fresh bequest ids while the in-memory
+    // `working` copy still holds the pre-save ids. The bequest *content* is
+    // identical — this must NOT be reported as an unsaved change, or the
+    // "Unsaved changes" banner can never clear.
+    const bequest = (id: string) => ({
+      id,
+      name: "House",
+      kind: "asset",
+      assetMode: "all_assets",
+      accountId: null,
+      liabilityId: null,
+      percentage: 100,
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        { recipientKind: "family_member", recipientId: "fm1", percentage: 100, sortOrder: 0 },
+      ],
+    });
+    const recipient = { recipientKind: "family_member", recipientId: "fm1", percentage: 100, sortOrder: 0 };
+    const original = cd([], [], [
+      { id: "w1", grantor: "client", bequests: [bequest("reloaded-id")], residuaryRecipients: [recipient] },
+    ]);
+    const working = cd([], [], [
+      { id: "w1", grantor: "client", bequests: [bequest("stale-id")], residuaryRecipients: [recipient] },
+    ]);
+    expect(diffWorkingCopy(original, working)).toEqual([]);
+  });
+
   it("resolves will grantor to the family member's first name, not the raw role token", () => {
     const bequest = { id: "bq1", name: "House", kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] };
     const original = cd([], [], [{ id: "w1", grantor: "client", bequests: [], residuaryRecipients: [] }], BASE_FAMILY_MEMBERS);
