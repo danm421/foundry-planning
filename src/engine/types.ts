@@ -82,6 +82,11 @@ export interface DeathTransfer {
   sourceLiabilityId: string | null;
   /** Frozen at event time. Null for asset transfers. */
   sourceLiabilityName: string | null;
+  /** Source business-entity id for a consolidated business-interest transfer.
+   *  Null/undefined for account and liability transfers. When set,
+   *  sourceAccountId and resultingAccountId are null and sourceAccountName
+   *  carries the business name. */
+  sourceEntityId?: string | null;
   via:
     | "titling"
     | "beneficiary_designation"
