@@ -28,6 +28,46 @@ const YEAR = z.number().int().min(1950).max(2150);
 const MONEY = z.number().min(0).max(100_000_000);
 const RATE = z.number().min(-1).max(2); // decimal (-100% to 200%) — leave slack for what-ifs
 
+const ROTH_CONVERSION_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string(),
+    destinationAccountId: z.string().min(1),
+    sourceAccountIds: z.array(z.string().min(1)),
+    conversionType: z.enum([
+      "fixed_amount",
+      "full_account",
+      "deplete_over_period",
+      "fill_up_bracket",
+    ]),
+    fixedAmount: MONEY,
+    fillUpBracket: z.number().min(0).max(1).optional(),
+    startYear: YEAR,
+    endYear: YEAR.optional(),
+    indexingRate: RATE,
+    inflationStartYear: YEAR.optional(),
+  })
+  .passthrough();
+
+const ASSET_TRANSACTION_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string(),
+    type: z.enum(["buy", "sell"]),
+    year: YEAR,
+  })
+  .passthrough();
+
+const REINVESTMENT_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string(),
+    accountIds: z.array(z.string().min(1)),
+    year: YEAR,
+    realizeTaxesOnSwitch: z.boolean(),
+  })
+  .passthrough();
+
 export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   // Goals
   z.object({
@@ -184,6 +224,23 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("savings-end-year"),
     accountId: z.string().uuid(),
     year: YEAR,
+  }),
+
+  // Technique upserts
+  z.object({
+    kind: z.literal("roth-conversion-upsert"),
+    id: z.string().min(1),
+    value: ROTH_CONVERSION_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("asset-transaction-upsert"),
+    id: z.string().min(1),
+    value: ASSET_TRANSACTION_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("reinvestment-upsert"),
+    id: z.string().min(1),
+    value: REINVESTMENT_VALUE.nullable(),
   }),
 ]);
 

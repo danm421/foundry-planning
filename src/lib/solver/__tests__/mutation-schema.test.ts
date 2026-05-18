@@ -169,3 +169,42 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
     expect(kinds.size).toBeGreaterThanOrEqual(29);
   });
 });
+
+describe("SOLVER_MUTATION_SCHEMA — technique upserts", () => {
+  it("accepts a roth-conversion-upsert with a full value", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "roth-conversion-upsert",
+      id: "rc-1",
+      value: {
+        id: "rc-1",
+        name: "Conv",
+        destinationAccountId: "acc-roth",
+        sourceAccountIds: ["acc-trad"],
+        conversionType: "fixed_amount",
+        fixedAmount: 25000,
+        startYear: 2030,
+        endYear: 2035,
+        indexingRate: 0,
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts a reinvestment-upsert removal (value null)", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "reinvestment-upsert",
+      id: "ri-1",
+      value: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects an asset-transaction-upsert with a non-string id", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "asset-transaction-upsert",
+      id: 5,
+      value: null,
+    });
+    expect(r.success).toBe(false);
+  });
+});
