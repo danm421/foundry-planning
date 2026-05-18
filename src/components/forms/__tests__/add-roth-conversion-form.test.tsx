@@ -101,6 +101,36 @@ describe("AddRothConversionForm — scenario mode", () => {
     expect(body.entity.sourceAccountIds).toEqual(["acc-trad"]);
   });
 
+  it("draft mode: emits a RothConversion and does not fetch", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch");
+    const onSubmitDraft = vi.fn();
+    render(
+      <AddRothConversionForm
+        clientId="c1"
+        accounts={[
+          { id: "acc-roth", name: "Roth IRA", category: "retirement", subType: "roth_ira" },
+          { id: "acc-trad", name: "Trad IRA", category: "retirement", subType: "traditional_ira" },
+        ]}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+      />,
+    );
+    // Add the source account
+    fireEvent.click(screen.getByRole("button", { name: /\+ Add/i }));
+    // Enter a fixed amount
+    const amountInput = screen.getByLabelText(/Fixed Amount/i);
+    fireEvent.change(amountInput, { target: { value: "25000" } });
+    // Submit
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
+    const arg = onSubmitDraft.mock.calls[0][0];
+    expect(arg.conversionType).toBe("fixed_amount");
+    expect(arg.fixedAmount).toBe(25000);
+    expect(typeof arg.id).toBe("string");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("posts an `edit` change with desiredFields when initialData is provided", async () => {
     searchParamsMock = new URLSearchParams("scenario=sid-1");
 

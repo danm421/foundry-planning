@@ -6,7 +6,7 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
-import type { RothConversionType } from "@/engine/types";
+import type { RothConversionType, RothConversion } from "@/engine/types";
 
 const ROTH_SUBTYPES = new Set(["roth_ira"]);
 const TAX_DEFERRED_SUBTYPES = new Set(["traditional_ira", "401k", "403b", "sep_ira", "simple_ira"]);
@@ -58,6 +58,9 @@ interface Props {
   initialData?: RothConversionInitialData;
   onClose: () => void;
   onSaved: () => void;
+  /** When provided, the form emits the assembled RothConversion instead of
+   *  persisting via useScenarioWriter. The solver passes this. */
+  onSubmitDraft?: (technique: RothConversion) => void;
 }
 
 export default function AddRothConversionForm({
@@ -69,6 +72,7 @@ export default function AddRothConversionForm({
   initialData,
   onClose,
   onSaved,
+  onSubmitDraft,
 }: Props) {
   const writer = useScenarioWriter(clientId);
 
@@ -181,6 +185,29 @@ export default function AddRothConversionForm({
         inflationStartYear:
           showIndexing && startIndexingMode === "at_start" ? startYear : null,
       };
+
+      if (onSubmitDraft) {
+        const technique: RothConversion = {
+          id: initialData?.id ?? crypto.randomUUID(),
+          name: body.name,
+          destinationAccountId: body.destinationAccountId,
+          sourceAccountIds: body.sourceAccountIds,
+          conversionType: body.conversionType,
+          fixedAmount: body.fixedAmount,
+          startYear: body.startYear,
+          indexingRate: body.indexingRate,
+          ...(body.fillUpBracket != null ? { fillUpBracket: body.fillUpBracket } : {}),
+          ...(body.endYear != null ? { endYear: body.endYear } : {}),
+          ...(body.inflationStartYear != null
+            ? { inflationStartYear: body.inflationStartYear }
+            : {}),
+          ...(body.startYearRef != null ? { startYearRef: body.startYearRef } : {}),
+          ...(body.endYearRef != null ? { endYearRef: body.endYearRef } : {}),
+        };
+        onSubmitDraft(technique);
+        onSaved();
+        return;
+      }
 
       const baseUrl = `/api/clients/${clientId}/roth-conversions`;
       const baseMethod = initialData ? "PUT" : "POST";
