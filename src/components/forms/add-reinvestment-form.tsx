@@ -90,6 +90,9 @@ export default function AddReinvestmentForm({
   const [pctLtGains, setPctLtGains] = useState("");
   const [pctQualifiedDiv, setPctQualifiedDiv] = useState("");
   const [pctTaxExempt, setPctTaxExempt] = useState("");
+  const [realizeTaxesOnSwitch, setRealizeTaxesOnSwitch] = useState(
+    initialData?.realizeTaxesOnSwitch ?? false,
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -204,8 +207,7 @@ export default function AddReinvestmentForm({
         customPctLtCapitalGains: customRealization?.customPctLtCapitalGains ?? null,
         customPctQualifiedDividends: customRealization?.customPctQualifiedDividends ?? null,
         customPctTaxExempt: customRealization?.customPctTaxExempt ?? null,
-        // Phase 2 (Task 15) adds the UI control; always false for now.
-        realizeTaxesOnSwitch: false,
+        realizeTaxesOnSwitch,
         accountIds,
       };
 
@@ -467,6 +469,25 @@ export default function AddReinvestmentForm({
             </div>
           </>
         )}
+
+        {/* Apply taxes on switch */}
+        <div>
+          <label className="flex items-start gap-2 text-sm text-gray-200">
+            <input
+              type="checkbox"
+              checked={realizeTaxesOnSwitch}
+              onChange={(e) => setRealizeTaxesOnSwitch(e.target.checked)}
+              className="mt-0.5 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+            />
+            <span>
+              Apply taxes on switch
+              <span className="mt-0.5 block text-xs text-gray-400">
+                Taxable accounts realize capital gains for the portion of
+                holdings the reallocation sells.
+              </span>
+            </span>
+          </label>
+        </div>
 
         {error && <p className="text-xs font-medium text-red-400">{error}</p>}
 

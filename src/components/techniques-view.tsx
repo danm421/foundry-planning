@@ -329,6 +329,12 @@ function ReinvestmentCard({
             label={targetLabel}
             className="bg-gray-800 text-gray-300 border border-gray-700"
           />
+          {reinvestment.realizeTaxesOnSwitch && (
+            <Badge
+              label="Taxed"
+              className="bg-amber-900/40 text-amber-300 border border-amber-700/50"
+            />
+          )}
           <span className="text-xs text-gray-400">
             {formatYear(reinvestment.year, reinvestment.yearRef)}
           </span>
