@@ -4,6 +4,7 @@ import {
   clients,
   scenarios,
   planSettings,
+  modelPortfolios,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -44,16 +45,23 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
     );
   }
 
-  const [planSettingsRows, { effectiveTree }] = await Promise.all([
+  const [planSettingsRows, { effectiveTree }, modelPortfolioRows] = await Promise.all([
     db
       .select()
       .from(planSettings)
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
+    db
+      .select({ id: modelPortfolios.id, name: modelPortfolios.name })
+      .from(modelPortfolios)
+      .where(eq(modelPortfolios.firmId, firmId)),
   ]);
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const transferRows = [...(effectiveTree.transfers ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  const reinvestmentRows = [...(effectiveTree.reinvestments ?? [])].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
   const rothConversionRows = [...(effectiveTree.rothConversions ?? [])].sort((a, b) =>
@@ -88,6 +96,16 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
       year: s.year,
       amount: String(s.amount),
     })),
+  }));
+
+  const reinvestmentProps = reinvestmentRows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    accountIds: r.accountIds,
+    year: r.year,
+    yearRef: r.yearRef ?? null,
+    targetType: r.targetType ?? "model_portfolio",
+    realizeTaxesOnSwitch: r.realizeTaxesOnSwitch,
   }));
 
   const transactionProps = transactionRows.map((tx) => ({
@@ -151,10 +169,12 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
       <TechniquesView
         clientId={id}
         transfers={transferProps}
+        reinvestments={reinvestmentProps}
         assetTransactions={transactionProps}
         rothConversions={rothConversionProps}
         accounts={accountOptions}
         liabilities={liabilityOptions}
+        modelPortfolios={modelPortfolioRows}
         milestones={milestones}
         clientFirstName={client.firstName}
         spouseFirstName={client.spouseName ?? undefined}

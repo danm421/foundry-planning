@@ -45,6 +45,34 @@ export function resolveCascades(
     tree.transfers = remaining;
   }
 
+  // Reinvestments — filter removed accounts out of the accountIds[] array,
+  // drop the whole reinvestment if every targeted account was removed.
+  if (tree.reinvestments && removedAccountIds.size > 0) {
+    const remaining: typeof tree.reinvestments = [];
+    for (const ri of tree.reinvestments) {
+      const trimmedAccounts = ri.accountIds.filter(
+        (aid) => !removedAccountIds.has(aid),
+      );
+      if (trimmedAccounts.length === 0) {
+        const causeId = ri.accountIds.find((aid) => removedAccountIds.has(aid));
+        warnings.push({
+          kind: "reinvestment_dropped",
+          message: `Reinvestment ${ri.id} dropped — every targeted account was removed`,
+          causedByChangeId: causeId != null
+            ? removedAccountToCause.get(causeId)!
+            : "unknown",
+          affectedEntityId: ri.id,
+          affectedEntityLabel: `Reinvestment · ${ri.name ?? ri.id}`,
+        });
+        continue;
+      }
+
+      ri.accountIds = trimmedAccounts;
+      remaining.push(ri);
+    }
+    tree.reinvestments = remaining;
+  }
+
   // Roth conversions — drop if destination is removed, drop if every source is
   // removed, otherwise filter the removed sources out of the array.
   if (tree.rothConversions && removedAccountIds.size > 0) {

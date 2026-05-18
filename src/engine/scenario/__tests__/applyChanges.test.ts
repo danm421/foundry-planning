@@ -703,3 +703,137 @@ describe("applyScenarioChanges — roth_conversion", () => {
     expect(effectiveTree.rothConversions).toEqual([]);
   });
 });
+
+describe("applyScenarioChanges — reinvestment", () => {
+  // These tests exercise `applyScenarioChanges` in isolation. The resolved
+  // fields (newGrowthRate / newRealization / soldFractionByAccount) are NOT
+  // filled at this layer — `resolveReinvestments` runs later in the loader.
+  // Here we assert only that the RAW reinvestment payload merges correctly.
+
+  it("appends a new reinvestment to the effective tree", () => {
+    const base = minimalClientData();
+    const reinvestment = {
+      id: "ri-new",
+      name: "Switch to Conservative 2035",
+      accountIds: ["a-brokerage"],
+      year: 2035,
+      newGrowthRate: 0,
+      realizeTaxesOnSwitch: true,
+      soldFractionByAccount: {},
+      yearRef: null,
+      targetType: "model_portfolio",
+      modelPortfolioId: "mp-conservative",
+      customGrowthRate: null,
+      customPctOrdinaryIncome: null,
+      customPctLtCapitalGains: null,
+      customPctQualifiedDividends: null,
+      customPctTaxExempt: null,
+    };
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "add",
+      targetKind: "reinvestment",
+      targetId: "ri-new",
+      payload: reinvestment,
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const { effectiveTree } = applyScenarioChanges(base, [change], {}, []);
+    expect(effectiveTree.reinvestments).toHaveLength(1);
+    expect(effectiveTree.reinvestments![0].id).toBe("ri-new");
+    expect(effectiveTree.reinvestments![0].modelPortfolioId).toBe(
+      "mp-conservative",
+    );
+    expect(effectiveTree.reinvestments![0].targetType).toBe("model_portfolio");
+  });
+
+  it("coerces raw decimal-string fields on add (Drizzle decimal round-trip)", () => {
+    const base = minimalClientData();
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "add",
+      targetKind: "reinvestment",
+      targetId: "ri-new",
+      payload: {
+        id: "ri-new",
+        name: "Custom Switch",
+        accountIds: ["a-brokerage"],
+        year: 2035,
+        realizeTaxesOnSwitch: false,
+        soldFractionByAccount: {},
+        targetType: "custom",
+        modelPortfolioId: null,
+        customGrowthRate: "0.05",
+        customPctOrdinaryIncome: "0.2",
+        customPctLtCapitalGains: "0.5",
+        customPctQualifiedDividends: "0.2",
+        customPctTaxExempt: "0.1",
+      },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChanges(base, [change], {}, []);
+    const ri = effectiveTree.reinvestments![0];
+    expect(ri.customGrowthRate).toBe(0.05);
+    expect(ri.customPctOrdinaryIncome).toBe(0.2);
+    expect(ri.customPctLtCapitalGains).toBe(0.5);
+    expect(ri.customPctQualifiedDividends).toBe(0.2);
+    expect(ri.customPctTaxExempt).toBe(0.1);
+  });
+
+  it("applies a raw-keyed edit diff to a base reinvestment", () => {
+    const base = minimalClientData();
+    base.reinvestments = [
+      {
+        id: "ri-1",
+        name: "Switch",
+        accountIds: ["a-brokerage"],
+        year: 2035,
+        newGrowthRate: 0.06,
+        realizeTaxesOnSwitch: false,
+        soldFractionByAccount: {},
+        targetType: "model_portfolio",
+        modelPortfolioId: "mp-old",
+        customGrowthRate: null,
+        customPctOrdinaryIncome: null,
+        customPctLtCapitalGains: null,
+        customPctQualifiedDividends: null,
+        customPctTaxExempt: null,
+      } as NonNullable<ClientData["reinvestments"]>[number],
+    ];
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "reinvestment",
+      targetId: "ri-1",
+      payload: { modelPortfolioId: { from: "mp-old", to: "mp-new" } },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChanges(base, [change], {}, []);
+    expect(effectiveTree.reinvestments![0].modelPortfolioId).toBe("mp-new");
+  });
+
+  it("removes a reinvestment from the effective tree", () => {
+    const base = minimalClientData();
+    base.reinvestments = [
+      { id: "ri-1" } as NonNullable<ClientData["reinvestments"]>[number],
+    ];
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "remove",
+      targetKind: "reinvestment",
+      targetId: "ri-1",
+      payload: null,
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChanges(base, [change], {}, []);
+    expect(effectiveTree.reinvestments).toEqual([]);
+  });
+});

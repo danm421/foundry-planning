@@ -18,6 +18,13 @@ export interface ResolutionContext {
   beneficiariesByAccountId?: Map<string, BeneficiaryRef[]>;
   policiesByAccount?: Record<string, Account["lifeInsurance"]>;
   ownersByAccountId?: Map<string, AccountOwner[]>;
+  /** Per-account BASE (pre-reinvestment) asset-class allocation, keyed by
+   *  account id. Populated by `loadClientData` from the raw account rows —
+   *  the engine `Account` type does not carry `growthSource` /
+   *  `modelPortfolioId`, so the scenario overlay reuses this map to re-resolve
+   *  reinvestment `soldFractionByAccount` after `applyScenarioChanges`.
+   *  Accounts absent from the map resolve to a conservative full turnover. */
+  accountBaseAllocByAccountId?: Map<string, Map<string, number> | undefined>;
 }
 
 type Numericish = string | number | null | undefined;

@@ -238,6 +238,48 @@ export function createGrowthSourceResolver(ctx: {
     return lookup[category] ?? "custom";
   }
 
+  /** Category-default model portfolio id, or null when the category default
+   *  is not a model-portfolio source. */
+  function categoryDefaultPortfolioId(category: string): string | null {
+    const s = ctx.planSettings;
+    switch (category) {
+      case "taxable":
+        return s.modelPortfolioIdTaxable;
+      case "cash":
+        return s.modelPortfolioIdCash;
+      case "retirement":
+        return s.modelPortfolioIdRetirement;
+      default:
+        return null;
+    }
+  }
+
+  /** Fold a list of allocation rows into an asset-class → fractional-weight
+   *  map. Returns undefined when there are no rows (or no positive entries). */
+  function foldAllocs(
+    allocs: readonly { assetClassId: string; weight: string }[] | undefined,
+  ): Map<string, number> | undefined {
+    if (!allocs || allocs.length === 0) return undefined;
+    const map = new Map<string, number>();
+    for (const a of allocs) {
+      map.set(a.assetClassId, (map.get(a.assetClassId) ?? 0) + parseFloat(a.weight));
+    }
+    return map.size > 0 ? map : undefined;
+  }
+
+  /** Asset-class → fractional-weight map for a model portfolio. Returns
+   *  undefined when the portfolio has no allocation rows. Used by the
+   *  reinvestment soldFraction precompute. */
+  function portfolioAllocMap(portfolioId: string): Map<string, number> | undefined {
+    return foldAllocs(allocsByPortfolio.get(portfolioId));
+  }
+
+  /** Asset-class → fractional-weight map for an account's own asset mix.
+   *  Returns undefined when the account has no allocation rows. */
+  function accountAllocMap(accountId: string): Map<string, number> | undefined {
+    return foldAllocs(allocsByAccount.get(accountId));
+  }
+
   return {
     resolveAccount,
     resolvePortfolio,
@@ -245,5 +287,8 @@ export function createGrowthSourceResolver(ctx: {
     resolveCategoryDefault,
     resolveInflation,
     getCategoryGrowthSource,
+    categoryDefaultPortfolioId,
+    portfolioAllocMap,
+    accountAllocMap,
   };
 }

@@ -27,6 +27,7 @@ export type TargetKind =
   | "life_insurance_cash_value_schedule"
   | "life_insurance_policy"
   | "plan_settings"
+  | "reinvestment"
   | "roth_conversion"
   | "savings_rule"
   | "savings_schedule_override"
@@ -71,6 +72,7 @@ export type ToggleState = Record<string, boolean>;
 export interface CascadeWarning {
   kind:
     | "transfer_dropped"
+    | "reinvestment_dropped"
     | "roth_conversion_dropped"
     | "savings_rule_dropped"
     | "beneficiary_reassigned"

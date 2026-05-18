@@ -4,11 +4,13 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import AddTransferForm from "./forms/add-transfer-form";
+import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
 import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
 import AddRothConversionForm, { type RothConversionInitialData } from "./forms/add-roth-conversion-form";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
-import type { ClientMilestones } from "@/lib/milestones";
+import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { YEAR_REF_LABELS } from "@/lib/milestones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,6 +27,16 @@ export interface TransferRow {
   endYearRef: string | null;
   growthRate: string;
   schedules: { id: string; year: number; amount: string }[];
+}
+
+export interface ReinvestmentRow {
+  id: string;
+  name: string;
+  accountIds: string[];
+  year: number;
+  yearRef: string | null;
+  targetType: "model_portfolio" | "custom";
+  realizeTaxesOnSwitch: boolean;
 }
 
 export interface AssetTransactionRow {
@@ -86,10 +98,12 @@ export interface RothConversionRow {
 interface TechniquesViewProps {
   clientId: string;
   transfers: TransferRow[];
+  reinvestments: ReinvestmentRow[];
   assetTransactions: AssetTransactionRow[];
   rothConversions: RothConversionRow[];
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
+  modelPortfolios: { id: string; name: string }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -277,6 +291,61 @@ function TransferCard({
       <div className="flex shrink-0 items-center gap-2">
         <ActionButton onClick={(e) => { e.stopPropagation(); onEdit(); }} label={`Edit ${transfer.name}`} variant="edit" />
         <ActionButton onClick={(e) => { e.stopPropagation(); onDelete(); }} label={`Delete ${transfer.name}`} variant="delete" />
+      </div>
+    </div>
+  );
+}
+
+// ── Reinvestment Card ─────────────────────────────────────────────────────────
+
+function formatYear(year: number, yearRef: string | null): string {
+  if (yearRef && yearRef in YEAR_REF_LABELS) {
+    return `${YEAR_REF_LABELS[yearRef as YearRef]} (${year})`;
+  }
+  return String(year);
+}
+
+function ReinvestmentCard({
+  reinvestment,
+  onEdit,
+  onDelete,
+}: {
+  reinvestment: ReinvestmentRow;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const accountCount = reinvestment.accountIds.length;
+  const targetLabel =
+    reinvestment.targetType === "model_portfolio"
+      ? "Model portfolio"
+      : "Custom rate";
+
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-gray-800 px-4 py-3 last:border-0">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-gray-100">{reinvestment.name}</span>
+          <Badge
+            label={targetLabel}
+            className="bg-gray-800 text-gray-300 border border-gray-700"
+          />
+          {reinvestment.realizeTaxesOnSwitch && (
+            <Badge
+              label="Taxed"
+              className="bg-amber-900/40 text-amber-300 border border-amber-700/50"
+            />
+          )}
+          <span className="text-xs text-gray-400">
+            {formatYear(reinvestment.year, reinvestment.yearRef)}
+          </span>
+        </div>
+        <div className="text-xs text-gray-400">
+          {accountCount} account{accountCount !== 1 ? "s" : ""}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <ActionButton onClick={(e) => { e.stopPropagation(); onEdit(); }} label={`Edit ${reinvestment.name}`} variant="edit" />
+        <ActionButton onClick={(e) => { e.stopPropagation(); onDelete(); }} label={`Delete ${reinvestment.name}`} variant="delete" />
       </div>
     </div>
   );
@@ -654,10 +723,12 @@ function AssetTransactionCard({
 export default function TechniquesView({
   clientId,
   transfers,
+  reinvestments,
   assetTransactions,
   rothConversions,
   accounts,
   liabilities,
+  modelPortfolios,
   milestones,
   clientFirstName,
   spouseFirstName,
@@ -667,6 +738,8 @@ export default function TechniquesView({
 
   const [showAddTransfer, setShowAddTransfer] = useState(false);
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
+  const [showAddReinvestment, setShowAddReinvestment] = useState(false);
+  const [editingReinvestment, setEditingReinvestment] = useState<ReinvestmentInitialData | null>(null);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<AssetTransactionRow | null>(null);
   const [showAddRothConversion, setShowAddRothConversion] = useState(false);
@@ -737,6 +810,17 @@ export default function TechniquesView({
     );
     // writer.submit calls router.refresh on res.ok; this is belt-and-suspenders
     // for the case where the legacy route returns a non-ok status we ignore.
+    router.refresh();
+  }
+
+  async function handleDeleteReinvestment(reinvestmentId: string) {
+    await writer.submit(
+      { op: "remove", targetKind: "reinvestment", targetId: reinvestmentId },
+      {
+        url: `/api/clients/${clientId}/reinvestments?reinvestmentId=${reinvestmentId}`,
+        method: "DELETE",
+      },
+    );
     router.refresh();
   }
 
@@ -826,6 +910,36 @@ export default function TechniquesView({
         )}
       </div>
 
+      {/* ── Reinvestments ─────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900/50">
+        <SectionHeader
+          title="Reinvestments"
+          count={reinvestments.length}
+          action={
+            <button
+              onClick={() => setShowAddReinvestment(true)}
+              className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+            >
+              + Add Reinvestment
+            </button>
+          }
+        />
+        {reinvestments.length === 0 ? (
+          <EmptyState message="No reinvestments yet. Click Add Reinvestment to get started." />
+        ) : (
+          <div>
+            {reinvestments.map((r) => (
+              <ReinvestmentCard
+                key={r.id}
+                reinvestment={r}
+                onEdit={() => setEditingReinvestment(r)}
+                onDelete={() => handleDeleteReinvestment(r.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* ── Asset Transactions ────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900/50">
         <SectionHeader
@@ -883,6 +997,21 @@ export default function TechniquesView({
           initialData={editingTransfer ?? undefined}
           onClose={() => { setShowAddTransfer(false); setEditingTransfer(null); }}
           onSaved={() => { setShowAddTransfer(false); setEditingTransfer(null); router.refresh(); }}
+        />
+      )}
+
+      {/* ── Reinvestment form ─────────────────────────────────────────────── */}
+      {(showAddReinvestment || editingReinvestment) && (
+        <AddReinvestmentForm
+          clientId={clientId}
+          accounts={accounts}
+          modelPortfolios={modelPortfolios}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          initialData={editingReinvestment ?? undefined}
+          onClose={() => { setShowAddReinvestment(false); setEditingReinvestment(null); }}
+          onSaved={() => { setShowAddReinvestment(false); setEditingReinvestment(null); router.refresh(); }}
         />
       )}
 

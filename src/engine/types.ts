@@ -350,6 +350,8 @@ export interface ClientData {
   rothConversions?: RothConversion[];
   /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
   assetTransactions?: AssetTransaction[];
+  /** Reinvestment techniques — change asset mix / growth rate of accounts in a future year. */
+  reinvestments?: Reinvestment[];
   /** Gifts made by the client or spouse. */
   gifts?: Gift[];
   /** Structured gift events (cash / asset / liability) fanned out from DB rows + gift_series.
@@ -782,6 +784,44 @@ export interface Transfer {
 export interface TransferSchedule {
   year: number;
   amount: number;
+}
+
+export interface Reinvestment {
+  id: string;
+  name: string;
+  /** Accounts this reinvestment retargets. */
+  accountIds: string[];
+  /** Resolved absolute year the switch takes effect. */
+  year: number;
+  /** Resolved blended growth rate applied from `year` forward. */
+  newGrowthRate: number;
+  /** Resolved realization mix for taxable/cash accounts. Undefined leaves the
+   *  account's realization untouched (retirement accounts defer tax). */
+  newRealization?: Account["realization"];
+  /** When true, the switch realizes capital gains on taxable accounts. */
+  realizeTaxesOnSwitch: boolean;
+  /** Per-account fraction of holdings turned over by the reallocation.
+   *  Populated at load time per (reinvestment, account) by `resolveReinvestments`.
+   *  Engine multiplies the unrealized gain by this; a missing entry is treated
+   *  as 0. */
+  soldFractionByAccount: Record<string, number>;
+  // View-only metadata. Engine math ignores these.
+  yearRef?: string | null;
+  targetType?: "model_portfolio" | "custom";
+  // ── Resolution INPUTS ──────────────────────────────────────────────
+  // The raw form/DB-shaped fields the resolver consumes to (re)compute
+  // `newGrowthRate`, `newRealization`, and `soldFractionByAccount`. The
+  // engine's projection math NEVER reads these — they exist purely so the
+  // scenario overlay can re-resolve the resolved fields above after
+  // `applyScenarioChanges` merges a raw-shaped scenario payload onto the
+  // effective tree. Carried as metadata, exactly like `targetType`/`yearRef`;
+  // no new imports, so engine purity is preserved.
+  modelPortfolioId?: string | null;
+  customGrowthRate?: number | null;
+  customPctOrdinaryIncome?: number | null;
+  customPctLtCapitalGains?: number | null;
+  customPctQualifiedDividends?: number | null;
+  customPctTaxExempt?: number | null;
 }
 
 export type RothConversionType =

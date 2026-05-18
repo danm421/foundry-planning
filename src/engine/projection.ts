@@ -45,6 +45,7 @@ import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } fro
 import { executeWithdrawals, planSupplementalWithdrawal } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
+import { applyReinvestments } from "./reinvestments";
 import { applyRothConversions } from "./roth-conversions";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
 import {
@@ -892,6 +893,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       return true;
     });
 
+    // ── Apply Reinvestments ─────────────────────────────────────────────────
+    // Retarget account growth profiles before this year's growth pass. The
+    // mutation persists for later years until another reinvestment overrides it.
+    let reinvestmentResult = {
+      capitalGains: 0,
+      byReinvestment: {} as Record<string, { capitalGains: number; label: string }>,
+    };
+    if (data.reinvestments && data.reinvestments.length > 0) {
+      reinvestmentResult = applyReinvestments({
+        reinvestments: data.reinvestments,
+        accounts: workingAccounts,
+        accountBalances,
+        basisMap,
+        accountLedgers,
+        year,
+      });
+    }
+
     // 4. Grow every account (post-BoY: sold accounts are gone, newly-bought
     // accounts are included). When the account has a realization model, split
     // growth into tax buckets: OI, QDiv, STCG, LTCG, Tax-Exempt. Turnover %
@@ -1228,6 +1247,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       realizationSTCG +
       transferResult.taxableOrdinaryIncome +
       transferResult.capitalGains +
+      reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
@@ -1359,7 +1379,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
     taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
     taxDetail.capitalGains +=
-      transferResult.capitalGains + saleResult.capitalGains + grantorCarryInCapGains;
+      transferResult.capitalGains +
+      reinvestmentResult.capitalGains +
+      saleResult.capitalGains +
+      grantorCarryInCapGains;
     if (grantorCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
         type: "capital_gains",
@@ -1381,6 +1404,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const item of saleResult.breakdown) {
       if (item.capitalGain > 0) {
         taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: item.capitalGain };
+      }
+    }
+    for (const [rid, info] of Object.entries(reinvestmentResult.byReinvestment)) {
+      if (info.capitalGains > 0) {
+        taxDetail.bySource[`reinvestment:${rid}`] = { type: "capital_gains", amount: info.capitalGains };
       }
     }
 

@@ -687,6 +687,13 @@
       "when": 1778895385261,
       "tag": "0097_equal_wolfsbane",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1779117214706,
+      "tag": "0098_ancient_black_bolt",
+      "breakpoints": true
     }
   ]
 }
