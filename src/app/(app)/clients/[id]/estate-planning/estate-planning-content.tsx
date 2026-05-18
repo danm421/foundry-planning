@@ -5,10 +5,7 @@ import {
   scenarios as scenariosTable,
   scenarioSnapshots,
 } from "@/db/schema";
-import {
-  parseEstateCompareSearchParams,
-  type EstateCompareRef,
-} from "@/lib/scenario/scenario-from-search-params";
+import type { EstateCompareRef } from "@/lib/scenario/scenario-from-search-params";
 import {
   loadProjectionForRef,
   type LoadedProjection,
