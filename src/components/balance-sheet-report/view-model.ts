@@ -9,6 +9,7 @@
 import type { AccountOwner } from "@/engine/ownership";
 import type { FamilyMember } from "@/engine/types";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
+import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
 import type { OwnershipView } from "./ownership-filter";
 import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
 import { CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_HEX, type AssetCategoryKey } from "./tokens";
@@ -383,46 +384,19 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       categoryKey === "realEstate" &&
       (mortgagesByPropertyId.get(acct.id)?.length ?? 0) > 0;
 
-    // For EoY views: use the engine's locked entity shares (so household
-    // drains on a joint account don't bleed into the entity's portion).
-    // Family slices then split the remaining (value - sum of entity shares)
-    // by their relative ownership.
+    // For EoY views: use the engine's locked entity/family shares (so
+    // household drains on a joint account don't bleed into the entity's
+    // portion). BoY / today views fall back to authored percent × value.
     const useLockedShares = asOfMode === "eoy";
-    const entityShareFor = (entityId: string, percent: number): number => {
-      if (!useLockedShares) return value * percent;
-      return yearData.entityAccountSharesEoY?.get(entityId)?.get(acct.id) ?? value * percent;
-    };
-    let totalEntityShare = 0;
-    let familyPercentTotal = 0;
-    for (const owner of acct.owners) {
-      if (owner.kind === "entity") {
-        totalEntityShare += entityShareFor(owner.entityId, owner.percent);
-      } else {
-        familyPercentTotal += owner.percent;
-      }
-    }
-    const familyPool = Math.max(0, value - totalEntityShare);
+    const ownerSlices = resolveOwnerSlices(
+      acct.id,
+      acct.owners,
+      value,
+      useLockedShares ? yearData.entityAccountSharesEoY : undefined,
+      useLockedShares ? yearData.familyAccountSharesEoY : undefined,
+    );
 
-    for (const owner of acct.owners) {
-      let sliceValue: number;
-      if (owner.kind === "entity") {
-        sliceValue = entityShareFor(owner.entityId, owner.percent);
-      } else {
-        // Prefer engine-emitted locked family share (drifted percentages).
-        // Falls back to the family-pool × authored-percent split for BoY
-        // views or accounts the engine didn't track (single family owner).
-        const locked = useLockedShares
-          ? yearData.familyAccountSharesEoY?.get(owner.familyMemberId)?.get(acct.id)
-          : undefined;
-        if (locked != null) {
-          sliceValue = locked;
-        } else {
-          sliceValue =
-            familyPercentTotal > 0
-              ? familyPool * (owner.percent / familyPercentTotal)
-              : value * owner.percent;
-        }
-      }
+    for (const { owner, value: sliceValue } of ownerSlices) {
       // A $0 entity slice (e.g. an empty default-cash account) still emits a
       // row so the account is visible under its entity. Zero family slices
       // remain suppressed.
@@ -1019,28 +993,14 @@ function computeYearTotals(
     if (!ledger) continue;
     const value = ledger.endingValue;
     if (value <= 0) continue;
-    const entityShareFor = (entityId: string, percent: number): number =>
-      yearData.entityAccountSharesEoY?.get(entityId)?.get(acct.id) ?? value * percent;
-    let totalEntityShare = 0;
-    let familyPercentTotal = 0;
-    for (const owner of acct.owners) {
-      if (owner.kind === "entity") {
-        totalEntityShare += entityShareFor(owner.entityId, owner.percent);
-      } else {
-        familyPercentTotal += owner.percent;
-      }
-    }
-    const familyPool = Math.max(0, value - totalEntityShare);
-    for (const owner of acct.owners) {
-      let sliceValue: number;
-      if (owner.kind === "entity") {
-        sliceValue = entityShareFor(owner.entityId, owner.percent);
-      } else {
-        sliceValue =
-          familyPercentTotal > 0
-            ? familyPool * (owner.percent / familyPercentTotal)
-            : value * owner.percent;
-      }
+    const ownerSlices = resolveOwnerSlices(
+      acct.id,
+      acct.owners,
+      value,
+      yearData.entityAccountSharesEoY,
+      yearData.familyAccountSharesEoY,
+    );
+    for (const { owner, value: sliceValue } of ownerSlices) {
       if (sliceValue <= 0) continue;
       let inEstateValue = 0;
       if (owner.kind === "family_member") {
