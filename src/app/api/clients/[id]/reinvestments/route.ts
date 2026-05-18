@@ -13,17 +13,18 @@ import {
 export const dynamic = "force-dynamic";
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
+  const [[client], [scenario]] = await Promise.all([
+    db
+      .select()
+      .from(clients)
+      .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId))),
+    db
+      .select()
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true))),
+  ]);
 
   if (!client) return null;
-
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
 
   return scenario?.id ?? null;
 }
@@ -114,16 +115,17 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const acctCheck = await assertAccountsInClient(id, accountIds);
+    const [acctCheck, mpCheck] = await Promise.all([
+      assertAccountsInClient(id, accountIds),
+      modelPortfolioId != null
+        ? assertModelPortfoliosInFirm(firmId, [modelPortfolioId])
+        : Promise.resolve(null),
+    ]);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
-
-    if (modelPortfolioId != null) {
-      const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
-      if (!mpCheck.ok) {
-        return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
-      }
+    if (mpCheck && !mpCheck.ok) {
+      return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
     const created = await db.transaction(async (tx) => {
@@ -221,18 +223,19 @@ export async function PUT(
       );
     }
 
-    if (Array.isArray(accountIds) && accountIds.length > 0) {
-      const acctCheck = await assertAccountsInClient(id, accountIds);
-      if (!acctCheck.ok) {
-        return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
-      }
+    const [acctCheck, mpCheck] = await Promise.all([
+      Array.isArray(accountIds) && accountIds.length > 0
+        ? assertAccountsInClient(id, accountIds)
+        : Promise.resolve(null),
+      modelPortfolioId != null
+        ? assertModelPortfoliosInFirm(firmId, [modelPortfolioId])
+        : Promise.resolve(null),
+    ]);
+    if (acctCheck && !acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
-
-    if (modelPortfolioId != null) {
-      const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
-      if (!mpCheck.ok) {
-        return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
-      }
+    if (mpCheck && !mpCheck.ok) {
+      return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
     const [before] = await db
@@ -299,10 +302,24 @@ export async function PUT(
       return NextResponse.json({ error: "Reinvestment not found" }, { status: 404 });
     }
 
-    const updatedAccounts = await db
-      .select()
-      .from(reinvestmentAccounts)
-      .where(eq(reinvestmentAccounts.reinvestmentId, reinvestmentId));
+    // When accountIds was supplied, the transaction reinserted exactly that
+    // array — return it directly. Otherwise the join rows are untouched, so
+    // read current state to build the response.
+    let responseAccountIds: string[];
+    if (Array.isArray(accountIds)) {
+      responseAccountIds = accountIds;
+    } else {
+      const updatedAccounts = await db
+        .select()
+        .from(reinvestmentAccounts)
+        .where(eq(reinvestmentAccounts.reinvestmentId, reinvestmentId));
+      responseAccountIds = updatedAccounts.map((a) => a.accountId);
+    }
+
+    const [beforeSnapshot, afterSnapshot] = await Promise.all([
+      toReinvestmentSnapshot(before),
+      toReinvestmentSnapshot(updated),
+    ]);
 
     await recordUpdate({
       action: "reinvestment.update",
@@ -310,14 +327,14 @@ export async function PUT(
       resourceId: reinvestmentId,
       clientId: id,
       firmId,
-      before: await toReinvestmentSnapshot(before),
-      after: await toReinvestmentSnapshot(updated),
+      before: beforeSnapshot,
+      after: afterSnapshot,
       fieldLabels: REINVESTMENT_FIELD_LABELS,
     });
 
     return NextResponse.json({
       ...updated,
-      accountIds: updatedAccounts.map((a) => a.accountId),
+      accountIds: responseAccountIds,
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

@@ -109,7 +109,7 @@ describe("applyReinvestments", () => {
     expect(acct.realization).toBeUndefined();
   });
 
-  it("returns zero capital gains in Phase 1", () => {
+  it("returns zero capital gains when the switch does not realize tax", () => {
     const result = applyReinvestments({
       reinvestments: [reinvestment({})],
       accounts: [taxableAccount("a1")],

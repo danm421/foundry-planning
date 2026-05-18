@@ -31,12 +31,6 @@ import { soldFraction, type AllocationMap } from "./reinvestment-sold-fraction";
  */
 export type AccountBaseAllocMap = Map<string, AllocationMap | undefined>;
 
-/** A reinvestment entry carrying the raw resolution inputs. The engine
- *  `Reinvestment` type already declares all of them (`modelPortfolioId`,
- *  `customGrowthRate`, `customPct*`, `targetType`), so this is just a
- *  readability alias. */
-export type ResolvableReinvestment = Reinvestment;
-
 export interface ResolveReinvestmentsContext {
   resolver: GrowthSourceResolver;
   /** Base (pre-reinvestment) allocation per account id. */
@@ -53,7 +47,7 @@ export interface ResolveReinvestmentsContext {
  * target allocation, not the account's base allocation.
  */
 export function resolveReinvestments(
-  reinvestments: readonly ResolvableReinvestment[],
+  reinvestments: readonly Reinvestment[],
   ctx: ResolveReinvestmentsContext,
 ): Reinvestment[] {
   const { resolver, accountBaseAllocByAccountId } = ctx;
@@ -126,7 +120,10 @@ export function resolveReinvestments(
 }
 
 /** Coerce a raw numeric input (number, decimal string, or null/undefined) to
- *  a number, falling back to `fallback` for null/undefined. */
+ *  a number, falling back to `fallback` for null/undefined. Distinct from
+ *  resolve-entity's `n`/`nNullable` (fixed 0/undefined fallback) because the
+ *  custom-realization fields need a non-zero default — `customPctOrdinaryIncome`
+ *  falls back to 1 (a fully ordinary-income mix). */
 function num(v: number | string | null | undefined, fallback: number): number {
   if (v == null) return fallback;
   return typeof v === "number" ? v : parseFloat(v);

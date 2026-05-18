@@ -800,9 +800,10 @@ export interface Reinvestment {
   newRealization?: Account["realization"];
   /** When true, the switch realizes capital gains on taxable accounts. */
   realizeTaxesOnSwitch: boolean;
-  /** Per-account fraction of holdings turned over by the reallocation,
-   *  precomputed at load time. Engine multiplies the unrealized gain by this.
-   *  Empty until Phase 2 — engine treats a missing entry as 0. */
+  /** Per-account fraction of holdings turned over by the reallocation.
+   *  Populated at load time per (reinvestment, account) by `resolveReinvestments`.
+   *  Engine multiplies the unrealized gain by this; a missing entry is treated
+   *  as 0. */
   soldFractionByAccount: Record<string, number>;
   // View-only metadata. Engine math ignores these.
   yearRef?: string | null;

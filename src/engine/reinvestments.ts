@@ -11,7 +11,7 @@ export interface ReinvestmentsInput {
 }
 
 export interface ReinvestmentsResult {
-  /** Long-term capital gains realized by switches this year (Phase 2). */
+  /** Long-term capital gains realized by switches this year. */
   capitalGains: number;
   byReinvestment: Record<string, { capitalGains: number; label: string }>;
 }
