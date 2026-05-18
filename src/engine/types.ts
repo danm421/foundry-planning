@@ -350,6 +350,8 @@ export interface ClientData {
   rothConversions?: RothConversion[];
   /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
   assetTransactions?: AssetTransaction[];
+  /** Reinvestment techniques — change asset mix / growth rate of accounts in a future year. */
+  reinvestments?: Reinvestment[];
   /** Gifts made by the client or spouse. */
   gifts?: Gift[];
   /** Structured gift events (cash / asset / liability) fanned out from DB rows + gift_series.
@@ -782,6 +784,29 @@ export interface Transfer {
 export interface TransferSchedule {
   year: number;
   amount: number;
+}
+
+export interface Reinvestment {
+  id: string;
+  name: string;
+  /** Accounts this reinvestment retargets. */
+  accountIds: string[];
+  /** Resolved absolute year the switch takes effect. */
+  year: number;
+  /** Resolved blended growth rate applied from `year` forward. */
+  newGrowthRate: number;
+  /** Resolved realization mix for taxable/cash accounts. Undefined leaves the
+   *  account's realization untouched (retirement accounts defer tax). */
+  newRealization?: Account["realization"];
+  /** When true, the switch realizes capital gains on taxable accounts. */
+  realizeTaxesOnSwitch: boolean;
+  /** Per-account fraction of holdings turned over by the reallocation,
+   *  precomputed at load time. Engine multiplies the unrealized gain by this.
+   *  Empty until Phase 2 — engine treats a missing entry as 0. */
+  soldFractionByAccount: Record<string, number>;
+  // View-only metadata. Engine math ignores these.
+  yearRef?: string | null;
+  targetType?: "model_portfolio" | "custom";
 }
 
 export type RothConversionType =
