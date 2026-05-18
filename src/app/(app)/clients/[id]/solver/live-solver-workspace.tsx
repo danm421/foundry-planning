@@ -33,6 +33,8 @@ interface Props {
   initialSourceClientData: ClientData;
   initialSourceProjection: ProjectionYear[];
   availableScenarios: { id: string; name: string }[];
+  modelPortfolios: { id: string; name: string }[];
+  milestones: import("@/lib/milestones").ClientMilestones;
 }
 
 export function LiveSolverWorkspace({
@@ -43,6 +45,8 @@ export function LiveSolverWorkspace({
   initialSourceClientData,
   initialSourceProjection,
   availableScenarios,
+  modelPortfolios: _modelPortfolios,
+  milestones: _milestones,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();

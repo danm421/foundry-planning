@@ -1,8 +1,9 @@
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { db } from "@/db";
-import { scenarios } from "@/db/schema";
+import { scenarios, modelPortfolios } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { buildClientMilestones } from "@/lib/milestones";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
 
 interface Props {
@@ -24,10 +25,22 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
     ? runProjection(sourceLoaded.effectiveTree)
     : baseProjection;
 
-  const scenarioRows = await db
-    .select({ id: scenarios.id, name: scenarios.name })
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, false)));
+  const [scenarioRows, modelPortfolioRows] = await Promise.all([
+    db
+      .select({ id: scenarios.id, name: scenarios.name })
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, false))),
+    db
+      .select({ id: modelPortfolios.id, name: modelPortfolios.name })
+      .from(modelPortfolios)
+      .where(eq(modelPortfolios.firmId, firmId)),
+  ]);
+
+  const milestones = buildClientMilestones(
+    baseLoaded.effectiveTree.client,
+    baseLoaded.effectiveTree.planSettings.planStartYear,
+    baseLoaded.effectiveTree.planSettings.planEndYear,
+  );
 
   return (
     <LiveSolverWorkspace
@@ -43,6 +56,8 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       initialSourceClientData={sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree}
       initialSourceProjection={sourceProjection}
       availableScenarios={scenarioRows}
+      modelPortfolios={modelPortfolioRows}
+      milestones={milestones}
     />
   );
 }

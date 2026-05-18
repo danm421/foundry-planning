@@ -72,6 +72,13 @@ const baseProps = {
   } as never,
   initialSourceProjection: [{ year: 2026, portfolioAssets: { total: 1_000_000 } }] as never,
   availableScenarios: [],
+  modelPortfolios: [],
+  milestones: {
+    planStart: 2026,
+    planEnd: 2056,
+    clientRetirement: 2030,
+    clientEnd: 2060,
+  },
 };
 
 function makeSseStream(events: Array<{ event: string; data: unknown }>): Response {
