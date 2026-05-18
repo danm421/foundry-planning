@@ -71,6 +71,7 @@ import {
   resolveSavingsRuleFromRaw,
   type ResolutionContext,
 } from "./resolve-entity";
+import { soldFraction, type AllocationMap } from "./reinvestment-sold-fraction";
 
 export class ClientNotFoundError extends Error {
   constructor(public clientId: string) {
@@ -947,6 +948,98 @@ export const loadClientDataWithContext = cache(
         targetType: r.targetType,
       } satisfies Reinvestment;
     });
+
+    // ── Reinvestment soldFraction precompute ────────────────────────────────
+    // The engine `Reinvestment` type does not carry `modelPortfolioId`; keep a
+    // side map from the raw DB rows so the chain below can resolve targets.
+    const reinvestmentModelPortfolioId = new Map<string, string | null>(
+      reinvestmentRows.map((r) => [r.id, r.modelPortfolioId]),
+    );
+
+    // Build asset-class allocation maps from data already loaded above.
+    const allocByPortfolio = new Map<string, AllocationMap>();
+    for (const a of allocationRows) {
+      const map = allocByPortfolio.get(a.modelPortfolioId) ?? new Map();
+      map.set(a.assetClassId, (map.get(a.assetClassId) ?? 0) + parseFloat(a.weight));
+      allocByPortfolio.set(a.modelPortfolioId, map);
+    }
+    const allocByAccount = new Map<string, AllocationMap>();
+    for (const a of accountAllocRows) {
+      const map = allocByAccount.get(a.accountId) ?? new Map();
+      map.set(a.assetClassId, (map.get(a.assetClassId) ?? 0) + parseFloat(a.weight));
+      allocByAccount.set(a.accountId, map);
+    }
+
+    /** Model-portfolio allocation map, or undefined when the portfolio has no
+     *  asset-class allocation rows. */
+    function portfolioAllocMap(portfolioId: string): AllocationMap | undefined {
+      const map = allocByPortfolio.get(portfolioId);
+      return map && map.size > 0 ? map : undefined;
+    }
+
+    /** Plan-settings category-default model portfolio id, if the category
+     *  default resolves to a model portfolio. */
+    function categoryDefaultPortfolioId(category: string): string | null {
+      switch (category) {
+        case "taxable":
+          return settings.modelPortfolioIdTaxable;
+        case "cash":
+          return settings.modelPortfolioIdCash;
+        case "retirement":
+          return settings.modelPortfolioIdRetirement;
+        default:
+          return null;
+      }
+    }
+
+    /** An account's BASE allocation (before any reinvestment), resolved from
+     *  its growth source — mirrors `resolveAccountFromRaw`. Returns undefined
+     *  for flat-rate / inflation / custom sources with no asset-class breakdown. */
+    function accountBaseAllocMap(
+      account: (typeof accountRows)[number],
+    ): AllocationMap | undefined {
+      const gs = account.growthSource ?? "default";
+      // Resolve the `default` growth source to its category source.
+      const categorySource = resolver.getCategoryGrowthSource(account.category);
+      const effectiveSource = gs === "default" ? categorySource : gs;
+      if (effectiveSource === "model_portfolio") {
+        const portfolioId =
+          gs === "default"
+            ? categoryDefaultPortfolioId(account.category)
+            : account.modelPortfolioId;
+        return portfolioId ? portfolioAllocMap(portfolioId) : undefined;
+      }
+      if (effectiveSource === "asset_mix") {
+        const map = allocByAccount.get(account.id);
+        return map && map.size > 0 ? map : undefined;
+      }
+      return undefined;
+    }
+
+    // Precompute soldFraction per (reinvestment, account). Process each
+    // account's reinvestments in year order so the chain resolves correctly.
+    const riByAccount = new Map<string, Reinvestment[]>();
+    for (const ri of mappedReinvestments) {
+      for (const accountId of ri.accountIds) {
+        const list = riByAccount.get(accountId) ?? [];
+        list.push(ri);
+        riByAccount.set(accountId, list);
+      }
+    }
+    for (const [accountId, list] of riByAccount) {
+      list.sort((a, b) => a.year - b.year);
+      const account = accountRows.find((a) => a.id === accountId);
+      let prevAlloc = account ? accountBaseAllocMap(account) : undefined;
+      for (const ri of list) {
+        const modelPortfolioId = reinvestmentModelPortfolioId.get(ri.id);
+        const nextAlloc =
+          ri.targetType === "model_portfolio" && modelPortfolioId
+            ? portfolioAllocMap(modelPortfolioId)
+            : undefined;
+        ri.soldFractionByAccount[accountId] = soldFraction(prevAlloc, nextAlloc);
+        prevAlloc = nextAlloc;
+      }
+    }
 
     const mappedRothConversions = rothConversionRows.map((c) => {
       const sources = rothConversionSourceRows
