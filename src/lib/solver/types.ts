@@ -3,7 +3,13 @@
 // Public types shared between the solver UI, API routes, and pure helpers.
 // Lives in `src/lib/solver/` so it stays framework-free (no Next, no DB).
 
-import type { ClientData, ProjectionYear } from "@/engine/types";
+import type {
+  ClientData,
+  ProjectionYear,
+  RothConversion,
+  AssetTransaction,
+  Reinvestment,
+} from "@/engine/types";
 
 export type SolverPerson = "client" | "spouse";
 
@@ -55,7 +61,10 @@ export type SolverMutation =
   | { kind: "savings-employer-match-amount"; accountId: string; amount: number }
   | { kind: "savings-start-year"; accountId: string; year: number }
   | { kind: "savings-end-year"; accountId: string; year: number }
-  | { kind: "life-expectancy"; person: SolverPerson; age: number };
+  | { kind: "life-expectancy"; person: SolverPerson; age: number }
+  | { kind: "roth-conversion-upsert"; id: string; value: RothConversion | null }
+  | { kind: "asset-transaction-upsert"; id: string; value: AssetTransaction | null }
+  | { kind: "reinvestment-upsert"; id: string; value: Reinvestment | null };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =
@@ -87,7 +96,10 @@ export type SolverMutationKey =
   | `savings-employer-match-amount:${string}`
   | `savings-start-year:${string}`
   | `savings-end-year:${string}`
-  | `life-expectancy:${SolverPerson}`;
+  | `life-expectancy:${SolverPerson}`
+  | `roth-conversion-upsert:${string}`
+  | `asset-transaction-upsert:${string}`
+  | `reinvestment-upsert:${string}`;
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
   switch (m.kind) {
@@ -149,6 +161,12 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `savings-end-year:${m.accountId}`;
     case "life-expectancy":
       return `life-expectancy:${m.person}`;
+    case "roth-conversion-upsert":
+      return `roth-conversion-upsert:${m.id}`;
+    case "asset-transaction-upsert":
+      return `asset-transaction-upsert:${m.id}`;
+    case "reinvestment-upsert":
+      return `reinvestment-upsert:${m.id}`;
   }
 }
 
@@ -184,10 +202,11 @@ export interface SolverSaveResponse {
 /** Internal: a single scenarioChanges row to be inserted, sans scenarioId
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
-  opType: "edit";
-  targetKind: "client" | "income" | "expense" | "savings_rule";
+  opType: "add" | "edit" | "remove";
+  targetKind: "client" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment";
   targetId: string;
-  payload: Record<string, { from: unknown; to: unknown }>;
+  /** edit: { field: { from, to } } map. add: full entity. remove: null. */
+  payload: unknown;
   orderIndex: number;
 }
 
