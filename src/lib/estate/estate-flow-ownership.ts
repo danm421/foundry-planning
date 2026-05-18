@@ -63,6 +63,14 @@ export interface OwnershipColumnOptions {
    * rows / attaching markers.
    */
   asOfYear?: number;
+  /**
+   * The plan's first year ("today"). When `asOfYear` lands on or before this
+   * year, column values come from the advisor-entered current balances rather
+   * than the projection's end-of-year-N state — the projection's first year
+   * already bakes in a full year of growth, contributions and withdrawals,
+   * so reading its `endingValue` would overstate "today".
+   */
+  todayYear?: number;
   /** Working gift drafts — used to attach future-gift markers. */
   gifts?: EstateFlowGift[];
 }
@@ -175,9 +183,17 @@ export function buildOwnershipColumn(
    * Resolve an account's value as of the requested year. When both an
    * `asOfYear` and a `projection` are supplied, the projection's year-N
    * ending value wins; otherwise the advisor-entered base value is used.
+   *
+   * The "today" column (`asOfYear` on or before `todayYear`) is exempt: it
+   * shows current balances, so it keeps the base values and never reads a
+   * projected `endingValue`.
    */
+  const isTodayColumn =
+    options.asOfYear !== undefined &&
+    options.todayYear !== undefined &&
+    options.asOfYear <= options.todayYear;
   const yearState =
-    options.asOfYear !== undefined && options.projection
+    options.asOfYear !== undefined && options.projection && !isTodayColumn
       ? options.projection.years.find((y) => y.year === options.asOfYear)
       : undefined;
   const resolveValue = (accountId: string, baseValue: number): number => {

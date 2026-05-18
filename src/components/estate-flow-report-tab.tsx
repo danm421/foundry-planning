@@ -68,8 +68,14 @@ export function EstateFlowReportTab({
 
   // ── Memos ────────────────────────────────────────────────────────────────────
   const ownership = useMemo(
-    () => buildOwnershipColumn(working, { projection, asOfYear, gifts: workingGifts }),
-    [working, projection, asOfYear, workingGifts],
+    () =>
+      buildOwnershipColumn(working, {
+        projection,
+        asOfYear,
+        todayYear: planStartYear,
+        gifts: workingGifts,
+      }),
+    [working, projection, asOfYear, planStartYear, workingGifts],
   );
 
   // Human label for each gift recipient, keyed by recipient id. Built from the

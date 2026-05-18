@@ -749,6 +749,34 @@ describe("buildOwnershipColumn — projected snapshot", () => {
     expect(row?.value).toBe(142_000);
   });
 
+  it("uses base values (not the projection's year-0 ending value) at the today column", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-1",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 100_000,
+          basis: 80_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    // The projection's first year (2026) already grew the account to 106k.
+    // The "Today" column must still show the advisor-entered 100k.
+    const out = buildOwnershipColumn(cd, {
+      projection: projectionWith("acc-1", 2026, 106_000),
+      asOfYear: 2026,
+      todayYear: 2026,
+    });
+    const row = out.groups.flatMap((g) => g.assets).find((a) => a.accountId === "acc-1");
+    expect(row?.value).toBe(100_000);
+  });
+
   it("drops an account whose projected value is ~0 at asOfYear", () => {
     const cd = data({
       accounts: [
