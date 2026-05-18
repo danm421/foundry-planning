@@ -35,4 +35,12 @@ describe("businessConsolidatedValue", () => {
     );
     expect(v).toBe(27_500); // 10k flat + 17.5k locked + 0 cash
   });
+
+  it("treats locked zero as zero, not falling back to balance × percent", () => {
+    const locked = new Map([["e1", new Map([["aSav", 0]])]]);
+    const v = businessConsolidatedValue(
+      llc, [savings, cash], { aSav: 100_000, aCash: 0 }, locked,
+    );
+    expect(v).toBe(10_000); // 10k flat + 0 locked (no fallback) + 0 cash
+  });
 });

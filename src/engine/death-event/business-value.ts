@@ -19,6 +19,8 @@ export function businessConsolidatedValue(
   let total = entity.value ?? 0;
   for (const a of accounts) {
     const bal = accountBalances[a.id] ?? 0;
+    // Accounts fully drained to zero are excluded even if a locked EoY share
+    // exists — consistent with the computeGrossEstate account loop.
     if (bal <= 0) continue;
     for (const o of a.owners) {
       if (o.kind !== "entity" || o.entityId !== entity.id) continue;
