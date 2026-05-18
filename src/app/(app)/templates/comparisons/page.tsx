@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { TemplateRow, type PresetSummary, type TemplateSummary } from "./template-row";
+import ComparisonTemplatesSkeleton from "./loading-skeleton";
 
 export default function ComparisonTemplatesPage() {
   const [presets, setPresets] = useState<PresetSummary[]>([]);
@@ -25,9 +26,7 @@ export default function ComparisonTemplatesPage() {
           Reusable starting points for client comparisons.
         </p>
 
-        {loading && (
-          <div className="mt-8 text-sm text-slate-500">Loading…</div>
-        )}
+        {loading && <ComparisonTemplatesSkeleton />}
 
         {!loading && (
           <>
