@@ -94,9 +94,16 @@ export default function AddReinvestmentForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // On edit, the row doesn't carry the editable detail fields — fetch them.
+  // On edit, re-fetch the editable detail fields from the API.
+  // ReinvestmentRow is mapped from the framework-free engine type
+  // `Reinvestment`, which deliberately carries only the *resolved* growth
+  // profile (newGrowthRate/newRealization) — not the raw DB inputs the edit
+  // form needs (modelPortfolioId, customGrowthRate, custom realization %s).
+  // Those are resolved away at load time; the engine never needs them. Rather
+  // than pollute the engine type with DB/UI shape, the form re-fetches them.
   useEffect(() => {
     if (!initialData) return;
+    const editId = initialData.id;
     let cancelled = false;
     async function loadDetail() {
       try {
@@ -111,7 +118,7 @@ export default function AddReinvestmentForm({
           customPctQualifiedDividends: string | null;
           customPctTaxExempt: string | null;
         }> = await res.json();
-        const row = rows.find((r) => r.id === initialData!.id);
+        const row = rows.find((r) => r.id === editId);
         if (!row || cancelled) return;
         if (row.modelPortfolioId) setModelPortfolioId(row.modelPortfolioId);
         setCustomGrowthRate(toPercentString(row.customGrowthRate));
