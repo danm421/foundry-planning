@@ -126,6 +126,66 @@ export interface SplitAccountResult {
   ledgerEntries: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">>;
 }
 
+export interface MixedAccountPartition {
+  /** Entity-owned slices — pushed straight to nextAccounts, never routed.
+   *  Each carries a synthetic id; owners is the single entity row at 100%. */
+  entitySlices: Account[];
+  /** Family-only sub-account — keeps the original account id; routes through
+   *  the chain. owners are the family rows renormalized to sum 1. */
+  familyPool: Account;
+}
+
+/**
+ * Partition a mixed family+entity account into retained entity slices and a
+ * routed family pool. Used by the precedence chain so an entity's slice of a
+ * mixed account is not swept into a "joint" whole-account transfer.
+ *
+ * The family pool keeps the original account id (the chain loop deletes and
+ * re-adds balance/basis maps by that id). Entity slices get synthetic ids.
+ * Slice value = locked entityAccountSharesEoY share when available, else
+ * balance × percent; slice basis is proportional to percent.
+ */
+export function partitionMixedAccount(
+  account: Account,
+  balance: number,
+  basis: number,
+  entityAccountSharesEoY: Map<string, Map<string, number>> | undefined,
+): MixedAccountPartition {
+  const entitySlices: Account[] = [];
+  let entityValueTotal = 0;
+  let entityBasisTotal = 0;
+
+  for (const o of account.owners) {
+    if (o.kind !== "entity") continue;
+    const locked = entityAccountSharesEoY?.get(o.entityId)?.get(account.id);
+    const sliceValue = locked ?? balance * o.percent;
+    const sliceBasis = basis * o.percent;
+    entityValueTotal += sliceValue;
+    entityBasisTotal += sliceBasis;
+    entitySlices.push({
+      ...account,
+      id: nextSyntheticId("entity-slice"),
+      value: sliceValue,
+      basis: sliceBasis,
+      owners: [{ kind: "entity", entityId: o.entityId, percent: 1 }],
+    });
+  }
+
+  const familyRows = account.owners.filter((o) => o.kind === "family_member");
+  const familySum = familyRows.reduce((s, o) => s + o.percent, 0);
+  const familyPool: Account = {
+    ...account,
+    value: Math.max(0, balance - entityValueTotal),
+    basis: Math.max(0, basis - entityBasisTotal),
+    owners: familyRows.map((o) => ({
+      ...o,
+      percent: familySum > 0 ? o.percent / familySum : 0,
+    })),
+  };
+
+  return { entitySlices, familyPool };
+}
+
 /** §1014 basis step-up at death. Returns the post-death basis for an
  *  asset that was owned (in whole or in part) by the decedent.
  *  Categories that are income-in-respect-of-a-decedent (`retirement`)

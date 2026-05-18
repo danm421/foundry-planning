@@ -12,6 +12,7 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeFirstDeathUnlinkedLiabilities,
+  partitionMixedAccount,
   runPourOut,
   type DeathEventInput,
   type DeathEventResult,
@@ -102,11 +103,42 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
         `applyFirstDeath: missing accountBalances/basisMap entry for ${acct.id}`,
       );
     }
+
+    // Mixed family+entity account: peel off entity slices (retained,
+    // unchanged) and route only the family pool. Without this the chain
+    // treats the account as joint and sweeps the entity's slice into the
+    // transfer — double-counting it against the consolidated business line.
+    let routedAcct = acct;
+    let routedBalance = balance;
+    let routedBasis = originalBasis;
+    const hasEntityOwner = acct.owners.some((o) => o.kind === "entity");
+    const hasFamilyOwner = acct.owners.some((o) => o.kind === "family_member");
+    if (hasEntityOwner && hasFamilyOwner) {
+      const part = partitionMixedAccount(
+        acct, balance, originalBasis, input.entityAccountSharesEoY,
+      );
+      for (const slice of part.entitySlices) {
+        nextAccounts.push(slice);
+        nextAccountBalances[slice.id] = slice.value;
+        nextBasisMap[slice.id] = slice.basis;
+      }
+      routedAcct = part.familyPool;
+      routedBalance = part.familyPool.value;
+      routedBasis = part.familyPool.basis;
+    }
+
+    // Recompute isJoint on the family pool (entity rows have been peeled off,
+    // so a formerly mixed account may now be sole-FM-owned, not joint).
+    const routedCfm = controllingFamilyMember(routedAcct);
+    const routedIsJoint =
+      ownedByHousehold(routedAcct) > 0.0001 && routedCfm == null
+      && !isFullyEntityOwned(routedAcct);
+
     const steppedBasis = computeSteppedUpBasis(
-      acct.category, balance, originalBasis,
-      { isJointAtFirstDeath: isJoint },
+      routedAcct.category, routedBalance, routedBasis,
+      { isJointAtFirstDeath: routedIsJoint },
     );
-    const effectiveAcct: Account = { ...acct, value: balance, basis: steppedBasis };
+    const effectiveAcct: Account = { ...routedAcct, value: routedBalance, basis: steppedBasis };
 
     // Track remaining undisposed fraction for this account.
     let undisposed = 1; // always 100% of the deceased's share goes through the chain
@@ -549,16 +581,33 @@ function assertPrecedenceChainInvariants(
 ): void {
   const deceasedFmId = input.familyMembers.find((fm) => fm.role === input.deceased)?.id ?? null;
   // 1. Sum of ledger amounts grouped by source = each source's pre-death value
-  //    (skip liability-only transfers which have null sourceAccountId)
+  //    (skip liability-only transfers which have null sourceAccountId).
+  //    Exception: mixed family+entity accounts are partitioned — the chain only
+  //    routes the family pool (ledger sum = routedBalance), the entity slices are
+  //    retained in nextAccounts without ledger entries. So for a source account
+  //    that had entity owners, ledger sum ≤ originalBalance is acceptable.
   const bySource = new Map<string, number>();
   for (const t of chain.transfers) {
     if (t.sourceAccountId == null) continue;
     bySource.set(t.sourceAccountId, (bySource.get(t.sourceAccountId) ?? 0) + t.amount);
   }
+  const sourceAccountMap = new Map(input.accounts.map((a) => [a.id, a]));
   for (const [sourceId, summed] of bySource.entries()) {
     const originalBalance = input.accountBalances[sourceId];
     if (originalBalance == null) continue;
-    if (Math.abs(summed - originalBalance) > 0.01) {
+    const sourceAcct = sourceAccountMap.get(sourceId);
+    const isMixed = sourceAcct != null
+      && sourceAcct.owners.some((o) => o.kind === "entity")
+      && sourceAcct.owners.some((o) => o.kind === "family_member");
+    if (isMixed) {
+      // Mixed account: ledger sum covers only the family pool; entity slices
+      // are retained without ledger entries. Allow summed ≤ originalBalance.
+      if (summed > originalBalance + 0.01) {
+        throw new Error(
+          `applyFirstDeath invariant: ledger sum for mixed account ${sourceId} = ${summed}, exceeds ${originalBalance}`,
+        );
+      }
+    } else if (Math.abs(summed - originalBalance) > 0.01) {
       throw new Error(
         `applyFirstDeath invariant: ledger sum for ${sourceId} = ${summed}, expected ${originalBalance}`,
       );

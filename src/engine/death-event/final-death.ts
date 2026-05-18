@@ -11,6 +11,7 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
+  partitionMixedAccount,
   selectResiduaryTier,
   runPourOut,
   type DeathEventInput,
@@ -115,13 +116,37 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
         `applyFinalDeath: missing accountBalances/basisMap entry for ${acct.id}`,
       );
     }
+
+    // Mixed family+entity account: peel off entity slices (retained,
+    // unchanged) and route only the family pool. Without this the chain
+    // treats the account as joint and sweeps the entity's slice into the
+    // transfer — double-counting it against the consolidated business line.
+    let routedAcct = acct;
+    let routedBalance = balance;
+    let routedBasis = originalBasis;
+    const hasEntityOwner = acct.owners.some((o) => o.kind === "entity");
+    const hasFamilyOwner = acct.owners.some((o) => o.kind === "family_member");
+    if (hasEntityOwner && hasFamilyOwner) {
+      const part = partitionMixedAccount(
+        acct, balance, originalBasis, input.entityAccountSharesEoY,
+      );
+      for (const slice of part.entitySlices) {
+        nextAccounts.push(slice);
+        nextAccountBalances[slice.id] = slice.value;
+        nextBasisMap[slice.id] = slice.basis;
+      }
+      routedAcct = part.familyPool;
+      routedBalance = part.familyPool.value;
+      routedBasis = part.familyPool.basis;
+    }
+
     // §1014 step-up. No joint accounts survive into final-death (first-
     // death titling consumed them), so isJointAtFirstDeath is always false.
     const steppedBasis = computeSteppedUpBasis(
-      acct.category, balance, originalBasis,
+      routedAcct.category, routedBalance, routedBasis,
       { isJointAtFirstDeath: false },
     );
-    const effectiveAcct: Account = { ...acct, value: balance, basis: steppedBasis };
+    const effectiveAcct: Account = { ...routedAcct, value: routedBalance, basis: steppedBasis };
 
     let undisposed = 1;
     let anySpecificClauseTouched = false;
