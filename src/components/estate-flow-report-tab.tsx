@@ -5,6 +5,11 @@ import { buildOwnershipColumn } from "@/lib/estate/estate-flow-ownership";
 import { EstateFlowOwnershipColumn } from "@/components/estate-flow-ownership-column";
 import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
+import { AsOfDropdown, type AsOfValue } from "@/components/report-controls/as-of-dropdown";
+import {
+  asOfSelectionFor,
+  pickDeathColumns,
+} from "@/lib/estate/estate-flow-death-columns";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
 import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
@@ -48,6 +53,10 @@ export function EstateFlowReportTab({
 }: EstateFlowReportTabProps) {
   // ── Tab-local state ──────────────────────────────────────────────────────────
   const [asOfYear, setAsOfYear] = useState<number>(planStartYear);
+  // As-of selection for the two death columns. "split" (each death at its
+  // actual projected year) preserves the report's original behavior; a year
+  // or "today" shows the hypothetical "both die then" scenario.
+  const [deathAsOf, setDeathAsOf] = useState<AsOfValue>("split");
 
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
   const [entityDialogId, setEntityDialogId] = useState<string | null>(null);
@@ -97,13 +106,54 @@ export function EstateFlowReportTab({
     () =>
       buildEstateTransferReportData({
         projection,
-        asOf: { kind: "split" },
+        asOf: asOfSelectionFor(deathAsOf),
         ordering,
         clientData: engineData,
         ownerNames,
       }),
-    [projection, ordering, engineData, ownerNames],
+    [projection, deathAsOf, ordering, engineData, ownerNames],
   );
+
+  // ── Death-column as-of dropdown inputs ───────────────────────────────────────
+  const dropdownYears = useMemo(
+    () => projection.years.map((y) => y.year),
+    [projection.years],
+  );
+  const todayYear = projection.years[0]?.year ?? planStartYear;
+
+  const ownerDobs = useMemo(
+    () => ({
+      clientDob: working.client.dateOfBirth,
+      spouseDob: working.client.spouseDob ?? null,
+    }),
+    [working.client.dateOfBirth, working.client.spouseDob],
+  );
+
+  // Retirement / death-year shortcuts surfaced at the top of the dropdown.
+  const deathAsOfMilestones = useMemo(() => {
+    const c = working.client;
+    const clientRetirementYear =
+      parseInt(c.dateOfBirth.slice(0, 4), 10) + c.retirementAge;
+    const spouseRetirementYear =
+      c.spouseDob && c.spouseRetirementAge != null
+        ? parseInt(c.spouseDob.slice(0, 4), 10) + c.spouseRetirementAge
+        : null;
+    const retirementYear =
+      spouseRetirementYear != null
+        ? Math.max(clientRetirementYear, spouseRetirementYear)
+        : clientRetirementYear;
+    const firstDeathYear = projection.firstDeathEvent?.year;
+    const secondDeathYear = projection.secondDeathEvent?.year;
+    return [
+      { year: retirementYear, label: "Retirement" },
+      ...(firstDeathYear != null
+        ? [{ year: firstDeathYear, label: "First Death" }]
+        : []),
+      ...(secondDeathYear != null
+        ? [{ year: secondDeathYear, label: "Last Death" }]
+        : []),
+    ];
+  }, [working.client, projection.firstDeathEvent, projection.secondDeathEvent]);
 
   // ── Derived ──────────────────────────────────────────────────────────────────
   const ownerDialogAccount = ownerDialogId
@@ -128,6 +178,26 @@ export function EstateFlowReportTab({
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
+      {/* Death-column as-of selector — aligned over the two death columns */}
+      <div className="mb-3 grid grid-cols-3 gap-4">
+        <label className="col-span-2 col-start-2 flex items-center gap-2">
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-500">
+            Death columns as of
+          </span>
+          <AsOfDropdown
+            years={dropdownYears}
+            todayYear={todayYear}
+            selected={deathAsOf}
+            onChange={setDeathAsOf}
+            dobs={ownerDobs}
+            milestones={deathAsOfMilestones}
+            allowSplit
+            yearPrefix={isMarried ? "Both die in" : "Die in"}
+            ariaLabel="Death columns as of"
+          />
+        </label>
+      </div>
+
       {/* Three-column layout */}
       <div className="grid grid-cols-3 gap-4">
         {/* Ownership column */}
@@ -150,10 +220,11 @@ export function EstateFlowReportTab({
         </div>
         {/* Death columns — ordering toggle swaps which section feeds column 2 vs 3 */}
         {(() => {
-          const [col2Section, col3Section] =
-            ordering === "spouseFirst"
-              ? [reportData.secondDeath, reportData.firstDeath]
-              : [reportData.firstDeath, reportData.secondDeath];
+          const [col2Section, col3Section] = pickDeathColumns(
+            reportData,
+            deathAsOf,
+            ordering,
+          );
           return (
             <>
               <div className="rounded border border-gray-800/60 p-3">
