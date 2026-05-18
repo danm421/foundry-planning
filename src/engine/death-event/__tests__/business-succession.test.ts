@@ -112,4 +112,33 @@ describe("applyBusinessSuccession", () => {
     expect(r.transfers[0].amount).toBe(5_000); // 10k × 0.5 joint at first death
     expect(r.warnings).toContain("business_legacy_owners_joint: e1");
   });
+
+  it("deathOrder 2, no survivor, no children → fallback_other_heirs / system_default, successors empty", () => {
+    const r = applyBusinessSuccession({
+      deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
+      deathOrder: 2, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
+      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      will: null, familyMembers: [cooper], externalBeneficiaries: [], year: 2045,
+    });
+    expect(r.transfers).toHaveLength(1);
+    expect(r.transfers[0].recipientKind).toBe("system_default");
+    expect(r.transfers[0].via).toBe("fallback_other_heirs");
+    expect(r.ownerUpdates[0].successors).toHaveLength(0);
+  });
+
+  it("zero consolidated value → no transfers, ownerUpdates, or basisUpdates", () => {
+    const zeroEntity: EntitySummary = {
+      id: "e1", name: "Empty Co", entityType: "llc", value: 0, basis: 0,
+      owners: [{ familyMemberId: "fmCooper", percent: 1 }],
+    } as EntitySummary;
+    const r = applyBusinessSuccession({
+      deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
+      deathOrder: 1, entities: [zeroEntity],
+      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
+    });
+    expect(r.transfers).toHaveLength(0);
+    expect(r.ownerUpdates).toHaveLength(0);
+    expect(r.basisUpdates).toHaveLength(0);
+  });
 });

@@ -3,7 +3,7 @@ import type {
 } from "../types";
 import { isBusinessEntity } from "@/lib/estate/in-estate-weights";
 import { businessConsolidatedValue } from "./business-value";
-import type { ExternalBeneficiarySummary } from "./shared";
+import { type ExternalBeneficiarySummary, firesAtDeath } from "./shared";
 
 /** entity_owners succession: the deceased's rows for one entity move to the
  *  resolved successors. successors is empty for a non-family recipient
@@ -57,10 +57,9 @@ function resolveBusinessRecipient(input: {
   deathOrder: 1 | 2;
   survivorFmId: string | null;
   familyMembers: FamilyMember[];
-  externalBeneficiaries: ExternalBeneficiarySummary[];
   warnings: string[];
 }): ResolvedRecipient[] {
-  const { entity, will, deceased, survivorFmId, familyMembers } = input;
+  const { entity, will, deceased, deathOrder, survivorFmId, familyMembers, warnings } = input;
   const deceasedWill = will && will.grantor === deceased ? will : null;
 
   const mapRecipient = (
@@ -79,7 +78,10 @@ function resolveBusinessRecipient(input: {
         via: "will", fraction, successorFmId: id };
     }
     if (kind === "entity") {
-      return { recipientKind: "entity", recipientId: id, recipientLabel: "Entity",
+      // successorFmId is null — no entity_owners succession is recorded; the
+      // interest leaves the household. Warn so the advisor is aware.
+      warnings.push(`business_bequest_to_entity: ${id ?? entity.id}`);
+      return { recipientKind: "entity", recipientId: id, recipientLabel: "Entity (trust)",
         via: "will", fraction, successorFmId: null };
     }
     return { recipientKind: "external_beneficiary", recipientId: id,
@@ -89,7 +91,8 @@ function resolveBusinessRecipient(input: {
   // 1. Specific will bequest naming this entity.
   if (deceasedWill) {
     const bequest = deceasedWill.bequests.find(
-      (b) => b.kind === "asset" && b.assetMode === "specific" && b.entityId === entity.id,
+      (b) => b.kind === "asset" && b.assetMode === "specific" && b.entityId === entity.id
+        && firesAtDeath(b, deathOrder),
     );
     if (bequest) {
       return bequest.recipients.map((rec) =>
@@ -162,11 +165,14 @@ export function applyBusinessSuccession(input: {
     const recipients = resolveBusinessRecipient({
       entity, will: input.will, deceased: input.deceased,
       deathOrder: input.deathOrder, survivorFmId: input.survivorFmId,
-      familyMembers: input.familyMembers,
-      externalBeneficiaries: input.externalBeneficiaries, warnings,
+      familyMembers: input.familyMembers, warnings,
     });
 
     // Proportional basis on the transferred portion.
+    // entity.basis tracks the flat operating-value basis only; account-slice
+    // basis is carried on each Account and does not flow through this field.
+    // That is why transfer.basis and the §1014 step-up use flatValue (entity.value)
+    // rather than businessConsolidatedValue — the two bases are accounted separately.
     const oldBasis = entity.basis ?? 0;
     const flatValue = entity.value ?? 0;
 
@@ -184,6 +190,8 @@ export function applyBusinessSuccession(input: {
         resultingAccountId: null, resultingLiabilityId: null,
       });
       if (rec.successorFmId != null) {
+        // percent is the successor's ABSOLUTE entity-ownership share:
+        // deceased's share of the entity × this recipient's fraction of that share.
         successors.push({ familyMemberId: rec.successorFmId, percent: share * rec.fraction });
       }
     }
