@@ -14,6 +14,7 @@ import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +45,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
     const { source, mutations } = parsed.data;
 
-    const { effectiveTree } = await loadEffectiveTree(
+    const { effectiveTree, resolutionContext } = await loadEffectiveTree(
       clientId,
       firmId,
       source,
       {},
     );
-    const mutated = applyMutations(effectiveTree, mutations as SolverMutation[]);
+    let mutated = applyMutations(effectiveTree, mutations as SolverMutation[]);
+    if (resolutionContext) {
+      mutated = resolveTechniqueMutations(
+        mutated,
+        mutations as SolverMutation[],
+        resolutionContext,
+      );
+    }
     const projection = runProjection(mutated);
 
     const body: SolverProjectResponse = { projection };
