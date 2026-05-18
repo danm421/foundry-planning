@@ -612,3 +612,48 @@ describe("applyMutations — milestone-ref re-resolution", () => {
     expect(expense.endYear).toBe(2029);
   });
 });
+
+describe("applyMutations — technique upserts", () => {
+  const rc = {
+    id: "rc-1",
+    name: "Conv",
+    destinationAccountId: "acc-roth",
+    sourceAccountIds: ["acc-trad"],
+    conversionType: "fixed_amount" as const,
+    fixedAmount: 20000,
+    startYear: 2030,
+    endYear: 2035,
+    indexingRate: 0,
+  };
+
+  it("adds a roth conversion when none exists with that id", () => {
+    const out = applyMutations(makeBase(), [
+      { kind: "roth-conversion-upsert", id: "rc-1", value: rc },
+    ]);
+    expect(out.rothConversions).toHaveLength(1);
+    expect(out.rothConversions?.[0].fixedAmount).toBe(20000);
+  });
+
+  it("replaces an existing roth conversion with the same id", () => {
+    const base = { ...makeBase(), rothConversions: [rc] };
+    const out = applyMutations(base, [
+      { kind: "roth-conversion-upsert", id: "rc-1", value: { ...rc, fixedAmount: 50000 } },
+    ]);
+    expect(out.rothConversions).toHaveLength(1);
+    expect(out.rothConversions?.[0].fixedAmount).toBe(50000);
+  });
+
+  it("removes a roth conversion when value is null", () => {
+    const base = { ...makeBase(), rothConversions: [rc] };
+    const out = applyMutations(base, [
+      { kind: "roth-conversion-upsert", id: "rc-1", value: null },
+    ]);
+    expect(out.rothConversions).toEqual([]);
+  });
+
+  it("does not mutate the input tree", () => {
+    const base = makeBase();
+    applyMutations(base, [{ kind: "roth-conversion-upsert", id: "rc-1", value: rc }]);
+    expect(base.rothConversions ?? []).toEqual([]);
+  });
+});

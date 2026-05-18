@@ -226,6 +226,24 @@ export function applyMutations(
         }
         break;
       }
+      case "roth-conversion-upsert": {
+        const list = (result.rothConversions ?? []).filter((r) => r.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.rothConversions = list;
+        break;
+      }
+      case "asset-transaction-upsert": {
+        const list = (result.assetTransactions ?? []).filter((t) => t.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.assetTransactions = list;
+        break;
+      }
+      case "reinvestment-upsert": {
+        const list = (result.reinvestments ?? []).filter((r) => r.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.reinvestments = list;
+        break;
+      }
     }
   }
   // Reshift every milestone-anchored startYear/endYear so a retirement-age
