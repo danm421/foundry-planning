@@ -12,7 +12,7 @@ import {
 describe("skeleton blocks", () => {
   it("SkeletonCard renders a default text placeholder", () => {
     const { container } = render(<SkeletonCard />);
-    expect(container.querySelectorAll(".skeleton-block").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll(".skeleton-block").length).toBe(3);
   });
   it("SkeletonCard renders provided children instead of the default", () => {
     const { getByTestId } = render(

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Skeleton, SkeletonText } from "./skeleton";
 
-const CARD = "rounded-lg border border-[var(--color-hair)] bg-[var(--color-card)] p-4";
+const CARD = "rounded-lg border border-hair bg-card p-4";
 
 export function SkeletonCard({ children, className = "" }: { children?: ReactNode; className?: string }) {
   return (
@@ -11,9 +11,9 @@ export function SkeletonCard({ children, className = "" }: { children?: ReactNod
   );
 }
 
-export function SkeletonKpi() {
+export function SkeletonKpi({ className = "" }: { className?: string }) {
   return (
-    <div className={`${CARD} flex flex-col gap-3`} aria-hidden="true">
+    <div className={`${CARD} flex flex-col gap-3 ${className}`.trim()} aria-hidden="true">
       <Skeleton height="0.75rem" width="40%" />
       <Skeleton height="1.75rem" width="70%" />
     </div>
@@ -43,14 +43,14 @@ export function SkeletonChart({ className = "" }: { className?: string }) {
   return (
     <div className={`${CARD} flex flex-col gap-3 ${className}`.trim()} aria-hidden="true">
       <Skeleton height="0.875rem" width="35%" />
-      <Skeleton height="200px" className="w-full" />
+      <Skeleton height="12.5rem" className="w-full" />
     </div>
   );
 }
 
-export function SkeletonForm({ fields = 4 }: { fields?: number }) {
+export function SkeletonForm({ fields = 4, className = "" }: { fields?: number; className?: string }) {
   return (
-    <div className="flex flex-col gap-4" aria-hidden="true">
+    <div className={`flex flex-col gap-4 ${className}`.trim()} aria-hidden="true">
       {Array.from({ length: fields }).map((_, i) => (
         <div key={i} className="flex flex-col gap-2">
           <Skeleton height="0.75rem" width="30%" />

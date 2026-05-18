@@ -24,5 +24,9 @@ export function SkeletonText({ lines = 3, className = "" }: { lines?: number; cl
 }
 
 export function LoadingLabel({ children = "Loading…" }: { children?: ReactNode }) {
-  return <span className="sr-only">{children}</span>;
+  return (
+    <span className="sr-only" role="status" aria-live="polite">
+      {children}
+    </span>
+  );
 }
