@@ -14,6 +14,7 @@ import type { ClientData } from "@/engine/types";
 import { EstateTransferDeathSection } from "./estate-transfer-death-section";
 import { EstateTransferRecipientTotals } from "./estate-transfer-recipient-totals";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
+import EstateTransferSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-transfer/loading-skeleton";
 
 interface EstateTransferReportViewProps {
   clientId: string;
@@ -103,7 +104,7 @@ export default function EstateTransferReportView({
   }
 
   if (loading) {
-    return <div className="text-gray-300">Loading projection…</div>;
+    return <EstateTransferSkeleton />;
   }
 
   if (!projection || projectionYears.length === 0 || todayYear == null) {

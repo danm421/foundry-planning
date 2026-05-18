@@ -16,6 +16,7 @@ import { YearlyEstateCharts } from "./yearly-estate-charts";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
+import EstateTransferSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-transfer/loading-skeleton";
 
 interface Props {
   clientId: string;
@@ -117,7 +118,7 @@ export default function YearlyEstateReportView({
     );
   }
   if (loading) {
-    return <div className="text-gray-300">Loading projection…</div>;
+    return <EstateTransferSkeleton />;
   }
   if (!projection || !report) {
     return (
