@@ -7,6 +7,7 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import type { Reinvestment } from "@/engine/types";
 
 /**
  * Shape passed in when editing. The card-level fields come straight from
@@ -34,6 +35,13 @@ interface AddReinvestmentFormProps {
   initialData?: ReinvestmentInitialData;
   onClose: () => void;
   onSaved: () => void;
+  /**
+   * When provided, the form emits the assembled `Reinvestment` engine object
+   * via this callback instead of persisting to the server. The caller (e.g.
+   * a solver techniques panel) receives the draft to store in local state.
+   * When absent, behavior is 100% unchanged — the form saves normally.
+   */
+  onSubmitDraft?: (technique: Reinvestment) => void;
 }
 
 const TARGET_OPTIONS: {
@@ -92,6 +100,7 @@ export default function AddReinvestmentForm({
   initialData,
   onClose,
   onSaved,
+  onSubmitDraft,
 }: AddReinvestmentFormProps) {
   const writer = useScenarioWriter(clientId);
 
@@ -248,6 +257,33 @@ export default function AddReinvestmentForm({
         realizeTaxesOnSwitch,
         accountIds,
       };
+
+      // ── Draft mode ────────────────────────────────────────────────────────
+      // When a caller provides `onSubmitDraft`, emit the assembled engine object
+      // and skip persistence entirely. `newGrowthRate` and `soldFractionByAccount`
+      // are intentional placeholders — the solver server re-resolves them.
+      if (onSubmitDraft) {
+        const technique: Reinvestment = {
+          id: initialData?.id ?? makeId(),
+          name: body.name,
+          accountIds: body.accountIds,
+          year: body.year,
+          realizeTaxesOnSwitch: body.realizeTaxesOnSwitch,
+          newGrowthRate: 0,
+          soldFractionByAccount: {},
+          targetType: body.targetType,
+          ...(body.modelPortfolioId != null ? { modelPortfolioId: body.modelPortfolioId } : {}),
+          ...(body.customGrowthRate != null ? { customGrowthRate: body.customGrowthRate } : {}),
+          ...(body.customPctOrdinaryIncome != null ? { customPctOrdinaryIncome: body.customPctOrdinaryIncome } : {}),
+          ...(body.customPctLtCapitalGains != null ? { customPctLtCapitalGains: body.customPctLtCapitalGains } : {}),
+          ...(body.customPctQualifiedDividends != null ? { customPctQualifiedDividends: body.customPctQualifiedDividends } : {}),
+          ...(body.customPctTaxExempt != null ? { customPctTaxExempt: body.customPctTaxExempt } : {}),
+          ...(body.yearRef != null ? { yearRef: body.yearRef } : {}),
+        };
+        onSubmitDraft(technique);
+        onSaved();
+        return;
+      }
 
       const newReinvestmentId = makeId();
 
