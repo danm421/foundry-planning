@@ -57,6 +57,11 @@ export function resolveAddPayload(
 export interface LoadEffectiveTreeResult {
   effectiveTree: ClientData;
   warnings: CascadeWarning[];
+  /** Resolution context from the base client-data load. Used by the live
+   *  solver to re-resolve reinvestments added/edited via solver mutations.
+   *  Optional because `applyScenarioChangesWithRefs` (used directly in some
+   *  tests) does not always have one. */
+  resolutionContext?: ResolutionContext;
 }
 
 /**
@@ -142,7 +147,7 @@ export const loadEffectiveTree = cache(
     // toggles are explicitly set, we can return baseTree directly. The base
     // tree already carries the base (scenario_id IS NULL) flow overrides.
     if (resolvedScenario.isBaseCase && Object.keys(toggleState).length === 0) {
-      return { effectiveTree: baseTree, warnings: [] };
+      return { effectiveTree: baseTree, warnings: [], resolutionContext };
     }
 
     const entityIds = baseTree.entities?.map((e) => e.id) ?? [];
@@ -206,13 +211,14 @@ export const loadEffectiveTree = cache(
 
     const resolvedChanges = changes.map((c) => resolveAddPayload(c, resolutionContext));
 
-    return applyScenarioChangesWithRefs(
+    const result = applyScenarioChangesWithRefs(
       treeForChanges,
       resolvedChanges,
       toggleState,
       groups,
       resolutionContext,
     );
+    return { ...result, resolutionContext };
   },
 );
 
