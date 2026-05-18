@@ -12,6 +12,7 @@ import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
 export const REINVESTMENT_FIELD_LABELS: FieldLabels = {
   name: { label: "Name", format: "text" },
   year: { label: "Year", format: "text" },
+  yearRef: { label: "Year reference", format: "text" },
   targetType: { label: "Target", format: "text" },
   modelPortfolioId: { label: "Model portfolio", format: "reference" },
   customGrowthRate: { label: "Custom growth rate", format: "percent" },
@@ -19,7 +20,7 @@ export const REINVESTMENT_FIELD_LABELS: FieldLabels = {
     label: "Apply taxes on switch",
     format: "text",
   },
-  accountIds: { label: "Accounts", format: "text" },
+  accountIds: { label: "Accounts", format: "reference" },
 };
 
 type ReinvestmentRow = typeof reinvestments.$inferSelect;
@@ -57,13 +58,17 @@ export async function toReinvestmentSnapshot(
   return {
     name: row.name,
     year: row.year,
+    yearRef: row.yearRef,
     targetType: row.targetType,
     modelPortfolioId: modelPortfolioRef,
     customGrowthRate:
       row.customGrowthRate != null ? Number(row.customGrowthRate) : null,
     realizeTaxesOnSwitch: row.realizeTaxesOnSwitch,
-    accountIds: accountIds
-      .map((id) => accountMap.get(id) ?? "(deleted)")
-      .join(", "),
+    accountIds: accountIds.map(
+      (id): ReferenceValue => ({
+        id,
+        display: accountMap.get(id) ?? "(deleted)",
+      }),
+    ),
   };
 }
