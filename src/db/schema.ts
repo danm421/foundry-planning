@@ -1997,6 +1997,45 @@ export const transferSchedules = pgTable("transfer_schedules", {
 });
 
 // ============================================================================
+// Reinvestments
+// ============================================================================
+
+export const reinvestmentTargetEnum = pgEnum("reinvestment_target", [
+  "model_portfolio",
+  "custom",
+]);
+
+export const reinvestments = pgTable("reinvestments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id").notNull().references(() => scenarios.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  year: integer("year").notNull(),
+  yearRef: yearRefEnum("year_ref"),
+  targetType: reinvestmentTargetEnum("target_type").notNull().default("model_portfolio"),
+  modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, { onDelete: "set null" }),
+  customGrowthRate: decimal("custom_growth_rate", { precision: 5, scale: 4 }),
+  customPctOrdinaryIncome: decimal("custom_pct_ordinary_income", { precision: 5, scale: 4 }),
+  customPctLtCapitalGains: decimal("custom_pct_lt_capital_gains", { precision: 5, scale: 4 }),
+  customPctQualifiedDividends: decimal("custom_pct_qualified_dividends", { precision: 5, scale: 4 }),
+  customPctTaxExempt: decimal("custom_pct_tax_exempt", { precision: 5, scale: 4 }),
+  realizeTaxesOnSwitch: boolean("realize_taxes_on_switch").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const reinvestmentAccounts = pgTable(
+  "reinvestment_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    reinvestmentId: uuid("reinvestment_id").notNull().references(() => reinvestments.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("reinvestment_accounts_unique").on(t.reinvestmentId, t.accountId)],
+);
+
+// ============================================================================
 // Roth Conversions (technique)
 // ============================================================================
 
