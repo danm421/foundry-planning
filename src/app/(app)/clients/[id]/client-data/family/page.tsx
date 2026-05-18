@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { FamilyContent } from "./family-content";
 import FamilySkeleton from "./loading-skeleton";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -25,8 +26,10 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
   if (!client) notFound();
 
   return (
-    <Suspense fallback={<FamilySkeleton />}>
-      <FamilyContent clientId={id} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<FamilySkeleton />}>
+        <FamilyContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ClientDataPageShell>
   );
 }

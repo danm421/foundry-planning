@@ -23,7 +23,6 @@ import InsurancePanel, {
   type InsurancePanelExternal,
   type InsurancePanelModelPortfolio,
 } from "@/components/insurance-panel";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
@@ -48,11 +47,9 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
 
   if (!scenario) {
     return (
-      <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-          No base case scenario found.
-        </div>
-      </ClientDataPageShell>
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
     );
   }
 
@@ -181,19 +178,17 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
   }));
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <InsurancePanel
-        clientId={id}
-        clientFirstName={client.firstName}
-        spouseFirstName={client.spouseName ?? null}
-        accounts={accts}
-        policies={policies}
-        entities={ents}
-        familyMembers={fams}
-        externalBeneficiaries={exts}
-        modelPortfolios={portfolios}
-        resolvedInflationRate={resolvedInflationRate}
-      />
-    </ClientDataPageShell>
+    <InsurancePanel
+      clientId={id}
+      clientFirstName={client.firstName}
+      spouseFirstName={client.spouseName ?? null}
+      accounts={accts}
+      policies={policies}
+      entities={ents}
+      familyMembers={fams}
+      externalBeneficiaries={exts}
+      modelPortfolios={portfolios}
+      resolvedInflationRate={resolvedInflationRate}
+    />
   );
 }

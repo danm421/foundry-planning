@@ -21,7 +21,6 @@ import WillsPanel, {
   type WillsPanelAssetBequest,
   type WillsPanelLiabilityBequest,
 } from "@/components/wills-panel";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity } from "@/engine/ownership";
 
@@ -46,11 +45,9 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
 
   if (!scenario) {
     return (
-      <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-          No base case scenario found.
-        </div>
-      </ClientDataPageShell>
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
     );
   }
 
@@ -152,17 +149,15 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
   }));
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <WillsPanel
-        clientId={id}
-        primary={primary}
-        accounts={accts}
-        liabilities={liabs}
-        familyMembers={fams}
-        externalBeneficiaries={exts}
-        entities={ents}
-        initialWills={initialWills}
-      />
-    </ClientDataPageShell>
+    <WillsPanel
+      clientId={id}
+      primary={primary}
+      accounts={accts}
+      liabilities={liabs}
+      familyMembers={fams}
+      externalBeneficiaries={exts}
+      entities={ents}
+      initialWills={initialWills}
+    />
   );
 }

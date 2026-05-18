@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { clients, scenarios } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import ModePickerClient from "./mode-picker-client";
 
 interface NewImportContentProps {
@@ -33,12 +32,10 @@ export async function NewImportContent({ clientId: id, scenarioParam }: NewImpor
   const baseCaseId = scenarioRows.find((s) => s.isBaseCase)?.id ?? null;
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <ModePickerClient
-        clientId={id}
-        scenarios={scenarioRows}
-        defaultScenarioId={baseCaseId}
-      />
-    </ClientDataPageShell>
+    <ModePickerClient
+      clientId={id}
+      scenarios={scenarioRows}
+      defaultScenarioId={baseCaseId}
+    />
   );
 }

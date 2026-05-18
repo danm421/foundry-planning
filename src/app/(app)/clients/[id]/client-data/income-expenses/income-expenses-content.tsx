@@ -16,7 +16,6 @@ import { getOrgId } from "@/lib/db-helpers";
 import IncomeExpensesView from "@/components/income-expenses-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity } from "@/engine/ownership";
 import {
@@ -49,11 +48,9 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
 
   if (!scenario) {
     return (
-      <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-          No base case scenario found.
-        </div>
-      </ClientDataPageShell>
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
     );
   }
 
@@ -152,8 +149,7 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
   }));
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <IncomeExpensesView
+    <IncomeExpensesView
       clientId={id}
       initialIncomes={incomes}
       initialExpenses={expenses}
@@ -200,6 +196,5 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
         planEndYear,
       } : undefined}
     />
-    </ClientDataPageShell>
   );
 }

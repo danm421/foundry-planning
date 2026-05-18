@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import { and, eq } from "drizzle-orm";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import { ImportFlowContent } from "./import-flow-content";
 import ImportFlowSkeleton from "./loading-skeleton";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface PageProps {
   params: Promise<{ id: string; importId: string }>;
@@ -24,8 +25,10 @@ export default async function ImportFlowPage({ params, searchParams }: PageProps
   if (!client) redirect("/clients");
 
   return (
-    <Suspense fallback={<ImportFlowSkeleton />}>
-      <ImportFlowContent clientId={id} importId={importId} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<ImportFlowSkeleton />}>
+        <ImportFlowContent clientId={id} importId={importId} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ClientDataPageShell>
   );
 }

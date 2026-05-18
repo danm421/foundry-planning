@@ -4,7 +4,6 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import { listClientImports } from "@/lib/imports/list";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import DraftsList from "./drafts-list";
 
 interface ImportContentProps {
@@ -28,12 +27,10 @@ export async function ImportContent({ clientId: id, scenarioParam }: ImportConte
   });
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <DraftsList
-        clientId={id}
-        inProgress={inProgress}
-        completed={completed}
-      />
-    </ClientDataPageShell>
+    <DraftsList
+      clientId={id}
+      inProgress={inProgress}
+      completed={completed}
+    />
   );
 }

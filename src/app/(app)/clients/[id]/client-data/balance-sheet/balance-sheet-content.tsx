@@ -19,7 +19,6 @@ import { getOrgId } from "@/lib/db-helpers";
 import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
@@ -45,11 +44,9 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
 
   if (!scenario) {
     return (
-      <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-          No base case scenario found.
-        </div>
-      </ClientDataPageShell>
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
     );
   }
 
@@ -317,27 +314,25 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       };
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <BalanceSheetView
-        clientId={id}
-        accounts={accountProps}
-        liabilities={liabilityProps}
-        entities={entityOptions}
-        familyMembers={familyMemberRows}
-        categoryDefaults={categoryDefaults}
-        modelPortfolios={modelPortfolioOptions}
-        ownerNames={{
-          clientName: `${client.firstName} ${client.lastName}`,
-          spouseName: client.spouseName
-            ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
-            : null,
-        }}
-        assetClasses={assetClassOptions}
-        portfolioAllocationsMap={portfolioAllocationsMap}
-        categoryDefaultSources={categoryDefaultSources}
-        milestones={milestones}
-        resolvedInflationRate={resolvedInflationRate}
-      />
-    </ClientDataPageShell>
+    <BalanceSheetView
+      clientId={id}
+      accounts={accountProps}
+      liabilities={liabilityProps}
+      entities={entityOptions}
+      familyMembers={familyMemberRows}
+      categoryDefaults={categoryDefaults}
+      modelPortfolios={modelPortfolioOptions}
+      ownerNames={{
+        clientName: `${client.firstName} ${client.lastName}`,
+        spouseName: client.spouseName
+          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+          : null,
+      }}
+      assetClasses={assetClassOptions}
+      portfolioAllocationsMap={portfolioAllocationsMap}
+      categoryDefaultSources={categoryDefaultSources}
+      milestones={milestones}
+      resolvedInflationRate={resolvedInflationRate}
+    />
   );
 }

@@ -1,4 +1,4 @@
-import { LoadingLabel, SkeletonCard, SkeletonForm } from "@/components/skeleton";
+import { LoadingLabel, SkeletonCard, SkeletonForm, SkeletonText } from "@/components/skeleton";
 
 export default function AssumptionsSkeleton() {
   return (
@@ -6,9 +6,7 @@ export default function AssumptionsSkeleton() {
       <LoadingLabel>Loading assumptions…</LoadingLabel>
 
       {/* Page heading */}
-      <SkeletonCard className="space-y-2">
-        <SkeletonForm fields={0} />
-      </SkeletonCard>
+      <SkeletonText lines={2} />
 
       {/* Main form sections */}
       <SkeletonCard>

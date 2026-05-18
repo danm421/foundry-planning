@@ -6,6 +6,7 @@ import { clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import { ImportContent } from "./import-content";
 import ImportListSkeleton from "./loading-skeleton";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface ImportPageProps {
   params: Promise<{ id: string }>;
@@ -25,8 +26,10 @@ export default async function ImportPage({ params, searchParams }: ImportPagePro
   if (!client) redirect("/clients");
 
   return (
-    <Suspense fallback={<ImportListSkeleton />}>
-      <ImportContent clientId={id} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<ImportListSkeleton />}>
+        <ImportContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ClientDataPageShell>
   );
 }

@@ -21,7 +21,6 @@ import FamilyView, {
   Designation,
 } from "@/components/family-view";
 import OpenItemsPanel from "@/components/open-items/open-items-panel";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
@@ -236,7 +235,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
   };
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
+    <>
       <FamilyView
         clientId={id}
         primary={primary}
@@ -253,6 +252,6 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialAssetFamilyMembers={assetFamilyMembers}
       />
       <OpenItemsPanel clientId={id} firmId={firmId} />
-    </ClientDataPageShell>
+    </>
   );
 }

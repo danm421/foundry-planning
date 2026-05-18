@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { BalanceSheetContent } from "./balance-sheet-content";
 import BalanceSheetSkeleton from "./loading-skeleton";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -25,8 +26,10 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
   if (!client) notFound();
 
   return (
-    <Suspense fallback={<BalanceSheetSkeleton />}>
-      <BalanceSheetContent clientId={id} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<BalanceSheetSkeleton />}>
+        <BalanceSheetContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ClientDataPageShell>
   );
 }

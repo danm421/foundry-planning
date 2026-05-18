@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { TechniquesContent } from "./techniques-content";
 import TechniquesSkeleton from "./loading-skeleton";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -25,8 +26,10 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
   if (!client) notFound();
 
   return (
-    <Suspense fallback={<TechniquesSkeleton />}>
-      <TechniquesContent clientId={id} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<TechniquesSkeleton />}>
+        <TechniquesContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ClientDataPageShell>
   );
 }

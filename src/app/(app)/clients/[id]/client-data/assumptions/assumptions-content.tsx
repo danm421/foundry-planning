@@ -17,7 +17,6 @@ import AssumptionsClient from "./assumptions-client";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
@@ -43,11 +42,9 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
 
   if (!scenario) {
     return (
-      <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-          No base case scenario found.
-        </div>
-      </ClientDataPageShell>
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
     );
   }
 
@@ -101,11 +98,9 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
   const settings = settingsRows[0];
   if (!settings) {
     return (
-      <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-          No plan settings found.
-        </div>
-      </ClientDataPageShell>
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No plan settings found.
+      </div>
     );
   }
 
@@ -238,16 +233,15 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
   }));
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <div className="max-w-3xl space-y-6">
-        <div>
-          <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
-          <p className="mt-1 text-sm text-gray-300">
-            Plan horizon, tax rates, growth assumptions, and withdrawal order.
-          </p>
-        </div>
+    <div className="max-w-3xl space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
+        <p className="mt-1 text-sm text-gray-300">
+          Plan horizon, tax rates, growth assumptions, and withdrawal order.
+        </p>
+      </div>
 
-        <AssumptionsClient
+      <AssumptionsClient
         clientId={id}
         settings={{
           flatFederalRate: String(settings.flatFederalRate),
@@ -307,7 +301,6 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           saltCap,
         }}
       />
-      </div>
-    </ClientDataPageShell>
+    </div>
   );
 }

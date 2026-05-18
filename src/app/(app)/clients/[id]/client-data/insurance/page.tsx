@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { InsuranceContent } from "./insurance-content";
 import InsuranceSkeleton from "./loading-skeleton";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -25,8 +26,10 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
   if (!client) notFound();
 
   return (
-    <Suspense fallback={<InsuranceSkeleton />}>
-      <InsuranceContent clientId={id} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<InsuranceSkeleton />}>
+        <InsuranceContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ClientDataPageShell>
   );
 }

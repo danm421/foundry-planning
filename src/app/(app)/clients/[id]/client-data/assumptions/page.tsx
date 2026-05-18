@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { AssumptionsContent } from "./assumptions-content";
 import AssumptionsSkeleton from "./loading-skeleton";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -25,8 +26,10 @@ export default async function AssumptionsPage({ params, searchParams }: PageProp
   if (!client) notFound();
 
   return (
-    <Suspense fallback={<AssumptionsSkeleton />}>
-      <AssumptionsContent clientId={id} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<AssumptionsSkeleton />}>
+        <AssumptionsContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ClientDataPageShell>
   );
 }

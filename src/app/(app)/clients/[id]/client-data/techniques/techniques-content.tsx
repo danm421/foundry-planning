@@ -9,7 +9,6 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import TechniquesView from "@/components/techniques-view";
 import { buildClientMilestones } from "@/lib/milestones";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 interface TechniquesContentProps {
@@ -34,11 +33,9 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
 
   if (!scenario) {
     return (
-      <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-          No base case scenario found.
-        </div>
-      </ClientDataPageShell>
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
     );
   }
 
@@ -145,18 +142,16 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
   }));
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <TechniquesView
-        clientId={id}
-        transfers={transferProps}
-        assetTransactions={transactionProps}
-        rothConversions={rothConversionProps}
-        accounts={accountOptions}
-        liabilities={liabilityOptions}
-        milestones={milestones}
-        clientFirstName={client.firstName}
-        spouseFirstName={client.spouseName ?? undefined}
-      />
-    </ClientDataPageShell>
+    <TechniquesView
+      clientId={id}
+      transfers={transferProps}
+      assetTransactions={transactionProps}
+      rothConversions={rothConversionProps}
+      accounts={accountOptions}
+      liabilities={liabilityOptions}
+      milestones={milestones}
+      clientFirstName={client.firstName}
+      spouseFirstName={client.spouseName ?? undefined}
+    />
   );
 }

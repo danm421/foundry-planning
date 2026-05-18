@@ -8,7 +8,6 @@ import {
 } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import type { ImportPayloadJson } from "@/lib/imports/types";
-import ClientDataPageShell from "@/components/client-data-page-shell";
 import ImportFlow from "./import-flow";
 
 interface ImportFlowContentProps {
@@ -57,24 +56,22 @@ export async function ImportFlowContent({ clientId: id, importId, scenarioParam 
   const payloadJson = imp.payloadJson as ImportPayloadJson | null;
 
   return (
-    <ClientDataPageShell clientId={id} scenarioId={scenarioParam}>
-      <ImportFlow
-        clientId={id}
-        importId={importId}
-        mode={imp.mode}
-        status={imp.status}
-        scenarioId={imp.scenarioId}
-        notes={imp.notes}
-        files={files.map((f) => ({
-          id: f.id,
-          originalFilename: f.originalFilename,
-          documentType: f.documentType,
-          sizeBytes: f.sizeBytes,
-          uploadedAt: f.uploadedAt.toISOString(),
-        }))}
-        payload={payloadJson?.payload ?? null}
-        perTabCommittedAt={imp.perTabCommittedAt as Record<string, string> | null}
-      />
-    </ClientDataPageShell>
+    <ImportFlow
+      clientId={id}
+      importId={importId}
+      mode={imp.mode}
+      status={imp.status}
+      scenarioId={imp.scenarioId}
+      notes={imp.notes}
+      files={files.map((f) => ({
+        id: f.id,
+        originalFilename: f.originalFilename,
+        documentType: f.documentType,
+        sizeBytes: f.sizeBytes,
+        uploadedAt: f.uploadedAt.toISOString(),
+      }))}
+      payload={payloadJson?.payload ?? null}
+      perTabCommittedAt={imp.perTabCommittedAt as Record<string, string> | null}
+    />
   );
 }
