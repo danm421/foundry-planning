@@ -618,7 +618,6 @@ export function detectConflicts(
   transfers: DeathTransfer[],
   decedent: "client" | "spouse",
 ): ConflictEntry[] {
-  const conflicts: ConflictEntry[] = [];
   const wills = (clientData as unknown as { wills?: Will[] }).wills ?? [];
   const decedentWill = wills.find((w) => w.grantor === decedent);
 
@@ -633,52 +632,82 @@ export function detectConflicts(
     }
   }
 
-  let nextId = 0;
-  const idFor = (account: string) => `conflict-${account}-${nextId++}`;
+  // One entry per account. An account whose governing mechanism splits across
+  // multiple recipients (e.g. a beneficiary designation naming two children)
+  // is a single conflict — not one card per recipient.
+  const byAccount = new Map<
+    string,
+    { entry: ConflictEntry; recipients: Set<string>; intended: string }
+  >();
 
   for (const t of transfers) {
     if (!t.sourceAccountId) continue;
     if (t.amount <= 0) continue;
     if (willHonoredAccounts.has(t.sourceAccountId)) continue;
+    if (!decedentWill) continue;
 
-    // Override 1: governing mechanism is upstream of the will, but a specific
-    // bequest exists for this account in the decedent's will.
+    // The governing mechanism must be upstream of the will for it to override.
     if (
-      decedentWill &&
-      (t.via === "titling" ||
-        t.via === "beneficiary_designation" ||
-        t.via === "fallback_spouse" ||
-        t.via === "fallback_children" ||
-        t.via === "fallback_other_heirs")
+      t.via !== "titling" &&
+      t.via !== "beneficiary_designation" &&
+      t.via !== "fallback_spouse" &&
+      t.via !== "fallback_children" &&
+      t.via !== "fallback_other_heirs"
     ) {
-      const matchingBequest = decedentWill.bequests.find(
-        (b: WillBequest) =>
-          b.kind === "asset" &&
-          b.assetMode === "specific" &&
-          b.accountId === t.sourceAccountId &&
-          conditionApplies(b.condition, decedent),
-      );
-      if (matchingBequest) {
-        const intended = describeRecipients(matchingBequest.recipients, clientData);
-        conflicts.push({
-          id: idFor(t.sourceAccountId),
+      continue;
+    }
+
+    // A specific bequest for this account exists in the decedent's will.
+    const matchingBequest = decedentWill.bequests.find(
+      (b: WillBequest) =>
+        b.kind === "asset" &&
+        b.assetMode === "specific" &&
+        b.accountId === t.sourceAccountId &&
+        conditionApplies(b.condition, decedent),
+    );
+    if (!matchingBequest) continue;
+
+    const governingRecipient = resolveRecipientLabel(t, clientData).name;
+    const existing = byAccount.get(t.sourceAccountId);
+    if (existing) {
+      existing.recipients.add(governingRecipient);
+    } else {
+      byAccount.set(t.sourceAccountId, {
+        entry: {
+          id: `conflict-${t.sourceAccountId}`,
           accountId: t.sourceAccountId,
           accountLabel: t.sourceAccountName ?? "—",
           governingMechanism: t.via,
-          governingRecipient: resolveRecipientLabel(t, clientData).name,
-          overriddenBy: [
-            {
-              mechanism: "will_specific_bequest",
-              intendedRecipient: intended,
-              note: `Will leaves this asset to ${intended}, but ${MECHANISM_LABELS[t.via]} routes it to ${resolveRecipientLabel(t, clientData).name}.`,
-            },
-          ],
-        });
-      }
+          governingRecipient,
+          overriddenBy: [],
+        },
+        recipients: new Set([governingRecipient]),
+        intended: describeRecipients(matchingBequest.recipients, clientData),
+      });
     }
   }
 
-  return conflicts;
+  return Array.from(byAccount.values()).map(({ entry, recipients, intended }) => {
+    const governing = joinNames([...recipients]);
+    return {
+      ...entry,
+      governingRecipient: governing,
+      overriddenBy: [
+        {
+          mechanism: "will_specific_bequest",
+          intendedRecipient: intended,
+          note: `${MECHANISM_LABELS[entry.governingMechanism]} takes precedence over the will, routing this to ${governing} instead of ${intended}.`,
+        },
+      ],
+    };
+  });
+}
+
+/** Join names as a readable list: "A" · "A and B" · "A, B, and C". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
 // ── Conflict-detection helpers ───────────────────────────────────────────────
