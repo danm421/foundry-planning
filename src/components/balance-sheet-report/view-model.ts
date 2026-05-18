@@ -374,7 +374,11 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const categoryKey = DB_TO_KEY[acct.category];
     if (!categoryKey) continue;
     const value = accountValueForYear(yearData, acct.id, asOfMode);
-    if (value <= 0) continue;
+    // Keep entity-owned accounts even at $0 so an entity's default-cash
+    // account stays visible under its entity card — consistent with the
+    // entity cash flow report. Zero-value family accounts are still dropped.
+    const isEntityOwned = acct.owners.some((o) => o.kind === "entity");
+    if (value <= 0 && !isEntityOwned) continue;
     const hasLinkedMortgage =
       categoryKey === "realEstate" &&
       (mortgagesByPropertyId.get(acct.id)?.length ?? 0) > 0;
@@ -419,7 +423,10 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
               : value * owner.percent;
         }
       }
-      if (sliceValue <= 0) continue;
+      // A $0 entity slice (e.g. an empty default-cash account) still emits a
+      // row so the account is visible under its entity. Zero family slices
+      // remain suppressed.
+      if (sliceValue <= 0 && owner.kind !== "entity") continue;
       // Derive percent from slice / account so multi-owner accounts surface
       // the projected (drifted) ownership rather than the static authored split.
       const derivedPercent = value > 0 ? sliceValue / value : owner.percent;

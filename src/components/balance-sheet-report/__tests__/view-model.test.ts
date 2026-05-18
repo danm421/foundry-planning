@@ -419,3 +419,59 @@ describe("buildViewModel — flat business value projection", () => {
     expect(flatRow?.value).toBe(10_000);
   });
 });
+
+describe("buildViewModel — entity default-cash account visibility", () => {
+  it("surfaces an entity's $0 default-cash account as a row under the entity", () => {
+    const vm = buildViewModel({
+      accounts: [
+        {
+          id: "llc-cash",
+          name: "Test Bus — Cash",
+          category: "cash",
+          owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
+        },
+      ],
+      liabilities: [],
+      entities: [
+        {
+          id: "llc",
+          name: "Test Bus",
+          entityType: "llc",
+          value: 10_000,
+          owners: [{ familyMemberId: FM_CLIENT, percent: 1 }],
+        },
+      ],
+      familyMembers,
+      projectionYears: [
+        {
+          year: 2026,
+          portfolioAssets: {
+            cash: {},
+            taxable: {},
+            retirement: {},
+            realEstate: {},
+            business: {},
+            lifeInsurance: {},
+            cashTotal: 0,
+            taxableTotal: 0,
+            retirementTotal: 0,
+            realEstateTotal: 0,
+            businessTotal: 0,
+            lifeInsuranceTotal: 0,
+            total: 0,
+          },
+          liabilityBalancesBoY: {},
+          accountLedgers: { "llc-cash": { beginningValue: 0, endingValue: 0 } },
+        },
+      ],
+      selectedYear: 2026,
+      view: "entities",
+    } as unknown as Parameters<typeof buildViewModel>[0]);
+
+    // The llc-cash account must appear as an asset row under its entity card.
+    const allRows = (vm.entityGroups ?? []).flatMap((g) => g.assetRows);
+    expect(allRows.some((r) => r.accountId === "llc-cash")).toBe(true);
+    const llcGroup = vm.entityGroups?.find((g) => g.entityId === "llc");
+    expect(llcGroup?.assetRows.some((r) => r.accountId === "llc-cash")).toBe(true);
+  });
+});
