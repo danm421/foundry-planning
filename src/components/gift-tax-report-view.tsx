@@ -17,6 +17,7 @@ import {
   type GiftWarningBreach,
 } from "./gift-warning-alert";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
+import GiftTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/gift-tax/loading-skeleton";
 
 interface GiftTaxReportViewProps {
   clientId: string;
@@ -207,9 +208,7 @@ export default function GiftTaxReportView({
     );
   }
   if (loading) {
-    return (
-      <div className="gift-tax-report-printable p-4 text-ink-3">Loading…</div>
-    );
+    return <GiftTaxSkeleton />;
   }
   if (!projection || projection.giftLedger.length === 0) {
     return (

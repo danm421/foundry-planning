@@ -1,0 +1,257 @@
+import { notFound } from "next/navigation";
+import { db } from "@/db";
+import {
+  clients,
+  familyMembers,
+  entities,
+  entityOwners,
+  externalBeneficiaries,
+  beneficiaryDesignations,
+  gifts,
+} from "@/db/schema";
+import { eq, and, asc, inArray, notInArray } from "drizzle-orm";
+import { getOrgId } from "@/lib/db-helpers";
+import FamilyView, {
+  FamilyMember,
+  Entity,
+  NamePctRow,
+  PrimaryInfo,
+  ExternalBeneficiary,
+  AccountLite,
+  Designation,
+} from "@/components/family-view";
+import OpenItemsPanel from "@/components/open-items/open-items-panel";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+
+interface FamilyContentProps {
+  clientId: string;
+  scenarioParam: string | undefined;
+}
+
+export async function FamilyContent({ clientId: id, scenarioParam }: FamilyContentProps) {
+  const firmId = await getOrgId();
+
+  const [client] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+
+  if (!client) notFound();
+
+  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
+    await Promise.all([
+      db
+        .select()
+        .from(familyMembers)
+        .where(
+          and(
+            eq(familyMembers.clientId, id),
+            notInArray(familyMembers.role, ["client", "spouse"]),
+          ),
+        )
+        .orderBy(asc(familyMembers.relationship), asc(familyMembers.firstName)),
+      db
+        .select()
+        .from(familyMembers)
+        .where(eq(familyMembers.clientId, id)),
+      db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+      db
+        .select()
+        .from(externalBeneficiaries)
+        .where(eq(externalBeneficiaries.clientId, id))
+        .orderBy(asc(externalBeneficiaries.name)),
+      db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.clientId, id))
+        .orderBy(asc(beneficiaryDesignations.tier), asc(beneficiaryDesignations.sortOrder)),
+      db
+        .select()
+        .from(gifts)
+        .where(eq(gifts.clientId, id))
+        .orderBy(asc(gifts.year), asc(gifts.createdAt)),
+      loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    ]);
+
+  const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
+  const effectiveClient = effectiveTree.client;
+
+  const entityIds = entityRows.map((e) => e.id);
+  const ownerRows = entityIds.length > 0
+    ? await db.select().from(entityOwners).where(inArray(entityOwners.entityId, entityIds))
+    : [];
+  const ownersByEntity = new Map<string, { kind: "family_member"; familyMemberId: string; percent: number }[]>();
+  for (const o of ownerRows) {
+    const arr = ownersByEntity.get(o.entityId) ?? [];
+    arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
+    ownersByEntity.set(o.entityId, arr);
+  }
+
+  const members: FamilyMember[] = memberRows.map((m) => ({
+    id: m.id,
+    firstName: m.firstName,
+    lastName: m.lastName ?? null,
+    relationship: m.relationship,
+    role: m.role,
+    dateOfBirth: m.dateOfBirth ?? null,
+    notes: m.notes ?? null,
+    domesticPartner: m.domesticPartner,
+    inheritanceClassOverride: m.inheritanceClassOverride ?? {},
+  }));
+
+  const ents: Entity[] = entityRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    entityType: e.entityType,
+    notes: e.notes ?? null,
+    includeInPortfolio: e.includeInPortfolio,
+    isGrantor: e.isGrantor,
+    value: String(e.value ?? "0"),
+    basis: String(e.basis ?? "0"),
+    owners: ownersByEntity.get(e.id) ?? [],
+    owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
+    grantor: (e.grantor as "client" | "spouse" | null) ?? null,
+    beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
+    trustSubType: e.trustSubType ?? null,
+    isIrrevocable: e.isIrrevocable ?? null,
+    trustee: e.trustee ?? null,
+    trustEnds: (e.trustEnds as "client_death" | "spouse_death" | "survivorship" | null) ?? null,
+    distributionMode: (e.distributionMode as "fixed" | "pct_liquid" | "pct_income" | null) ?? null,
+    distributionAmount: e.distributionAmount != null ? parseFloat(String(e.distributionAmount)) : null,
+    distributionPercent: e.distributionPercent != null ? parseFloat(String(e.distributionPercent)) : null,
+    taxTreatment: e.taxTreatment ?? undefined,
+    distributionPolicyPercent: e.distributionPolicyPercent != null
+      ? Number(e.distributionPolicyPercent)
+      : null,
+    flowMode: e.flowMode,
+    valueGrowthRate: e.valueGrowthRate != null ? Number(e.valueGrowthRate) : null,
+  }));
+
+  const externals: ExternalBeneficiary[] = externalRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    kind: e.kind,
+    notes: e.notes ?? null,
+  }));
+
+  const accts: AccountLite[] = accountRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category,
+    ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
+    ownerEntityId: controllingEntity(a) ?? null,
+  }));
+
+  // Full asset data for the trust Assets tab
+  const fullAccounts = (effectiveTree.accounts ?? []).map((a) => ({
+    id: a.id,
+    name: a.name,
+    value: a.value,
+    subType: a.subType,
+    isDefaultChecking: a.isDefaultChecking,
+    owners: a.owners,
+  }));
+  const fullLiabilities = (effectiveTree.liabilities ?? []).map((l) => ({
+    id: l.id,
+    name: l.name,
+    balance: l.balance,
+    owners: l.owners,
+  }));
+  const fullIncomes = (effectiveTree.incomes ?? []).map((i) => ({
+    id: i.id,
+    name: i.name,
+    annualAmount: i.annualAmount,
+    cashAccountId: i.cashAccountId,
+    ownerEntityId: i.ownerEntityId ?? null,
+    startYear: i.startYear,
+    endYear: i.endYear,
+    growthRate: i.growthRate,
+    growthSource: i.growthSource ?? null,
+    inflationStartYear: i.inflationStartYear ?? null,
+  }));
+  const fullExpenses = (effectiveTree.expenses ?? []).map((e) => ({
+    id: e.id,
+    name: e.name,
+    annualAmount: e.annualAmount,
+    cashAccountId: e.cashAccountId,
+    ownerEntityId: e.ownerEntityId ?? null,
+    startYear: e.startYear,
+    endYear: e.endYear,
+    growthRate: e.growthRate,
+    growthSource: e.growthSource ?? null,
+    inflationStartYear: e.inflationStartYear ?? null,
+  }));
+  const assetFamilyMembers = allMemberRows.map((m) => ({
+    id: m.id,
+    role: (m.role as "client" | "spouse" | "child" | "other"),
+    firstName: m.firstName,
+  }));
+
+  const designations: Designation[] = designationRows.map((d) => ({
+    id: d.id,
+    targetKind: d.targetKind,
+    accountId: d.accountId,
+    entityId: d.entityId,
+    tier: d.tier,
+    familyMemberId: d.familyMemberId,
+    externalBeneficiaryId: d.externalBeneficiaryId,
+    entityIdRef: d.entityIdRef ?? null,
+    householdRole: (d.householdRole as "client" | "spouse" | null) ?? null,
+    distributionForm: d.distributionForm ?? null,
+    percentage: parseFloat(d.percentage),
+    sortOrder: d.sortOrder,
+  }));
+
+  // FamilyView's gift list shows cash gifts only
+  const giftsList = giftRows
+    .filter((g) => g.amount != null)
+    .map((g) => ({
+      id: g.id,
+      year: g.year,
+      amount: parseFloat(g.amount as string),
+      grantor: g.grantor,
+      recipientEntityId: g.recipientEntityId ?? null,
+      recipientFamilyMemberId: g.recipientFamilyMemberId ?? null,
+      recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
+      useCrummeyPowers: g.useCrummeyPowers,
+      notes: g.notes ?? null,
+    }));
+
+  const primary: PrimaryInfo = {
+    firstName: effectiveClient.firstName,
+    lastName: effectiveClient.lastName,
+    dateOfBirth: effectiveClient.dateOfBirth,
+    retirementAge: effectiveClient.retirementAge,
+    retirementMonth: client.retirementMonth ?? 1,
+    lifeExpectancy: effectiveClient.lifeExpectancy ?? client.lifeExpectancy,
+    filingStatus: effectiveClient.filingStatus,
+    spouseName: effectiveClient.spouseName ?? null,
+    spouseLastName: client.spouseLastName ?? null,
+    spouseDob: effectiveClient.spouseDob ?? null,
+    spouseRetirementAge: effectiveClient.spouseRetirementAge ?? null,
+    spouseRetirementMonth: client.spouseRetirementMonth ?? null,
+    spouseLifeExpectancy: effectiveClient.spouseLifeExpectancy ?? null,
+  };
+
+  return (
+    <>
+      <FamilyView
+        clientId={id}
+        primary={primary}
+        initialMembers={members}
+        initialEntities={ents}
+        initialExternalBeneficiaries={externals}
+        initialAccounts={accts}
+        initialDesignations={designations}
+        initialGifts={giftsList}
+        initialFullAccounts={fullAccounts}
+        initialFullLiabilities={fullLiabilities}
+        initialFullIncomes={fullIncomes}
+        initialFullExpenses={fullExpenses}
+        initialAssetFamilyMembers={assetFamilyMembers}
+      />
+      <OpenItemsPanel clientId={id} firmId={firmId} />
+    </>
+  );
+}

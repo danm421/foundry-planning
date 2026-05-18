@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import MonteCarloSkeleton from "@/app/(app)/clients/[id]/cashflow/monte-carlo/loading-skeleton";
 import { ReportHeader } from "./monte-carlo/report-header";
 import { KpiBand } from "./monte-carlo/kpi-band";
 import { FanChart } from "./monte-carlo/fan-chart";
@@ -221,12 +222,7 @@ export default function MonteCarloReport({ clientId }: Props) {
   }
 
   if (!clientData || !mcPayload) {
-    return (
-      <div className="p-8">
-        <h1 className="text-xl font-semibold mb-2">Monte Carlo Simulation</h1>
-        <div className="text-gray-400">Loading plan data…</div>
-      </div>
-    );
+    return <MonteCarloSkeleton />;
   }
 
   return (

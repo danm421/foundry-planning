@@ -1,11 +1,12 @@
+import { Suspense } from "react";
 import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
-import { listClientImports } from "@/lib/imports/list";
+import { ImportContent } from "./import-content";
+import ImportListSkeleton from "./loading-skeleton";
 import ClientDataPageShell from "@/components/client-data-page-shell";
-import DraftsList from "./drafts-list";
 
 interface ImportPageProps {
   params: Promise<{ id: string }>;
@@ -24,18 +25,11 @@ export default async function ImportPage({ params, searchParams }: ImportPagePro
 
   if (!client) redirect("/clients");
 
-  const { inProgress, completed } = await listClientImports({
-    clientId: id,
-    firmId,
-  });
-
   return (
     <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
-      <DraftsList
-        clientId={id}
-        inProgress={inProgress}
-        completed={completed}
-      />
+      <Suspense fallback={<ImportListSkeleton />}>
+        <ImportContent clientId={id} />
+      </Suspense>
     </ClientDataPageShell>
   );
 }

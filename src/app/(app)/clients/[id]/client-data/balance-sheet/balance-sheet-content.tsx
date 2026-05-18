@@ -1,0 +1,338 @@
+import { notFound } from "next/navigation";
+import { db } from "@/db";
+import {
+  clients,
+  scenarios,
+  accounts,
+  liabilities,
+  entities,
+  entityOwners,
+  familyMembers,
+  planSettings,
+  modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
+  clientCmaOverrides,
+} from "@/db/schema";
+import { eq, and, asc, inArray } from "drizzle-orm";
+import { getOrgId } from "@/lib/db-helpers";
+import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
+import { buildClientMilestones } from "@/lib/milestones";
+import { resolveInflationRate } from "@/lib/inflation";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+
+interface BalanceSheetContentProps {
+  clientId: string;
+  scenarioParam: string | undefined;
+}
+
+export async function BalanceSheetContent({ clientId: id, scenarioParam }: BalanceSheetContentProps) {
+  const firmId = await getOrgId();
+
+  const [client] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+
+  if (!client) notFound();
+
+  const [scenario] = await db
+    .select()
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
+
+  if (!scenario) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
+    );
+  }
+
+  const [
+    accountMetaRows,
+    liabilityMetaRows,
+    entityRows,
+    familyMemberRows,
+    settingsRows,
+    portfolioRows,
+    allocationRows,
+    assetClassRows,
+    { effectiveTree },
+  ] = await Promise.all([
+    db
+      .select({
+        id: accounts.id,
+        growthSource: accounts.growthSource,
+        modelPortfolioId: accounts.modelPortfolioId,
+        turnoverPct: accounts.turnoverPct,
+        overridePctOi: accounts.overridePctOi,
+        overridePctLtCg: accounts.overridePctLtCg,
+        overridePctQdiv: accounts.overridePctQdiv,
+        overridePctTaxExempt: accounts.overridePctTaxExempt,
+        annualPropertyTax: accounts.annualPropertyTax,
+        propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
+        propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
+      })
+      .from(accounts)
+      .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
+    db
+      .select({
+        id: liabilities.id,
+        termUnit: liabilities.termUnit,
+      })
+      .from(liabilities)
+      .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
+    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+    db
+      .select({ id: familyMembers.id, role: familyMembers.role, firstName: familyMembers.firstName })
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, id))
+      .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
+    db
+      .select()
+      .from(planSettings)
+      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+    db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+    db.select().from(modelPortfolioAllocations),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+  ]);
+
+  const accountMetaById = new Map(accountMetaRows.map((r) => [r.id, r]));
+  const liabilityMetaById = new Map(liabilityMetaRows.map((r) => [r.id, r]));
+
+  // Compute blended returns for each model portfolio
+  const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
+
+  const assetClassOptions = assetClassRows.map((ac) => ({
+    id: ac.id,
+    name: ac.name,
+    slug: ac.slug,
+    geometricReturn: parseFloat(ac.geometricReturn),
+  }));
+
+  const portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]> = {};
+  for (const alloc of allocationRows) {
+    const list = portfolioAllocationsMap[alloc.modelPortfolioId] ?? [];
+    list.push({ assetClassId: alloc.assetClassId, weight: parseFloat(alloc.weight) });
+    portfolioAllocationsMap[alloc.modelPortfolioId] = list;
+  }
+
+  const modelPortfolioOptions = portfolioRows.map((p) => {
+    const allocs = allocationRows.filter((a) => a.modelPortfolioId === p.id);
+    let blendedReturn = 0;
+    for (const alloc of allocs) {
+      const ac = acMap.get(alloc.assetClassId);
+      if (ac) blendedReturn += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
+    }
+    return { id: p.id, name: p.name, blendedReturn };
+  });
+
+  const settings = settingsRows[0];
+
+  // Resolve inflation rate for the account growth-source dropdown
+  const firmInflationAc = assetClassRows.find((ac) => ac.slug === "inflation") ?? null;
+  let clientInflationOverride: { geometricReturn: string } | null = null;
+  if (settings?.useCustomCma && firmInflationAc) {
+    const [override] = await db
+      .select({ geometricReturn: clientCmaOverrides.geometricReturn })
+      .from(clientCmaOverrides)
+      .where(and(
+        eq(clientCmaOverrides.clientId, id),
+        eq(clientCmaOverrides.sourceAssetClassId, firmInflationAc.id),
+      ));
+    if (override) clientInflationOverride = override;
+  }
+  const resolvedInflationRate = resolveInflationRate(
+    {
+      inflationRateSource: settings?.inflationRateSource ?? "custom",
+      inflationRate: settings?.inflationRate ?? "0",
+    },
+    firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
+    clientInflationOverride,
+  );
+
+  // Build milestones for MilestoneYearPicker in the savings sub-form
+  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
+  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
+
+  // Derive owner key for UI display from owners[].
+  const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const _spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+  function _ownerKeyOf(acct: (typeof effectiveTree.accounts)[number]): string {
+    const cfm = controllingFamilyMember(acct);
+    if (cfm === _spouseFmId && _spouseFmId != null) return "spouse";
+    if (cfm === _clientFmId && _clientFmId != null) return "client";
+    return "joint";
+  }
+
+  const accountProps: AccountRow[] = effectiveTree.accounts.map((a) => {
+    const meta = accountMetaById.get(a.id);
+    return {
+      id: a.id,
+      name: a.name,
+      category: a.category as AccountRow["category"],
+      subType: a.subType,
+      owner: _ownerKeyOf(a),
+      value: String(a.value),
+      basis: String(a.basis),
+      rothValue: a.rothValue != null ? String(a.rothValue) : null,
+      growthRate: a.growthRate == null ? null : String(a.growthRate),
+      rmdEnabled: a.rmdEnabled ?? null,
+      priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
+      ownerEntityId: controllingEntity(a) ?? null,
+      growthSource: meta?.growthSource ?? "default",
+      modelPortfolioId: meta?.modelPortfolioId ?? null,
+      turnoverPct: meta?.turnoverPct == null ? null : String(meta.turnoverPct),
+      overridePctOi: meta?.overridePctOi == null ? null : String(meta.overridePctOi),
+      overridePctLtCg: meta?.overridePctLtCg == null ? null : String(meta.overridePctLtCg),
+      overridePctQdiv: meta?.overridePctQdiv == null ? null : String(meta.overridePctQdiv),
+      overridePctTaxExempt:
+        meta?.overridePctTaxExempt == null ? null : String(meta.overridePctTaxExempt),
+      annualPropertyTax: meta?.annualPropertyTax == null ? null : String(meta.annualPropertyTax),
+      propertyTaxGrowthRate:
+        meta?.propertyTaxGrowthRate == null ? null : String(meta.propertyTaxGrowthRate),
+      propertyTaxGrowthSource: meta?.propertyTaxGrowthSource ?? "custom",
+      isDefaultChecking: a.isDefaultChecking ?? false,
+      owners: a.owners,
+    };
+  });
+
+  const liabilityProps: LiabilityRow[] = effectiveTree.liabilities.map((l) => {
+    const meta = liabilityMetaById.get(l.id);
+    return {
+      id: l.id,
+      name: l.name,
+      balance: String(l.balance),
+      interestRate: String(l.interestRate),
+      monthlyPayment: String(l.monthlyPayment),
+      startYear: l.startYear,
+      startMonth: l.startMonth,
+      termMonths: l.termMonths,
+      termUnit: meta?.termUnit ?? "annual",
+      balanceAsOfMonth: l.balanceAsOfMonth ?? null,
+      balanceAsOfYear: l.balanceAsOfYear ?? null,
+      linkedPropertyId: l.linkedPropertyId ?? null,
+      ownerEntityId: controllingEntity(l) ?? null,
+      isInterestDeductible: l.isInterestDeductible ?? false,
+      owners: l.owners,
+    };
+  });
+
+  const entityIds = entityRows.map((e) => e.id);
+  const entityOwnerRows = entityIds.length > 0
+    ? await db
+        .select({
+          entityId: entityOwners.entityId,
+          familyMemberId: entityOwners.familyMemberId,
+          percent: entityOwners.percent,
+        })
+        .from(entityOwners)
+        .where(inArray(entityOwners.entityId, entityIds))
+    : [];
+  const ownersByEntity = new Map<string, { familyMemberId: string; percent: number }[]>();
+  for (const row of entityOwnerRows) {
+    const list = ownersByEntity.get(row.entityId) ?? [];
+    list.push({ familyMemberId: row.familyMemberId, percent: parseFloat(row.percent) });
+    ownersByEntity.set(row.entityId, list);
+  }
+
+  const entityOptions = entityRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    entityType: e.entityType as string,
+    value: String(e.value ?? "0"),
+    owners: ownersByEntity.get(e.id),
+  }));
+
+  // Build category default source info
+  const categoryDefaultSources: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }> = {};
+  if (settings) {
+    const investable = [
+      { category: "taxable", source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable },
+      { category: "cash", source: settings.growthSourceCash, portfolioId: settings.modelPortfolioIdCash },
+      { category: "retirement", source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement },
+    ];
+    for (const entry of investable) {
+      if (entry.source === "inflation") {
+        categoryDefaultSources[entry.category] = {
+          source: entry.source,
+          portfolioName: "Inflation",
+          blendedReturn: resolvedInflationRate,
+        };
+        continue;
+      }
+      if (entry.source === "model_portfolio" && entry.portfolioId) {
+        const mp = modelPortfolioOptions.find((p) => p.id === entry.portfolioId);
+        categoryDefaultSources[entry.category] = {
+          source: entry.source,
+          portfolioId: entry.portfolioId,
+          portfolioName: mp?.name,
+          blendedReturn: mp?.blendedReturn,
+        };
+        continue;
+      }
+      categoryDefaultSources[entry.category] = { source: entry.source };
+    }
+  }
+
+  const flatRate = (rawRate: string, source: string | undefined): string =>
+    source === "inflation" ? String(resolvedInflationRate) : String(rawRate);
+
+  const investableEffectiveRate = (
+    source: string | undefined,
+    portfolioId: string | null | undefined,
+    customRate: string,
+  ): string => {
+    if (source === "inflation") return String(resolvedInflationRate);
+    if (source === "model_portfolio" && portfolioId) {
+      const mp = modelPortfolioOptions.find((p) => p.id === portfolioId);
+      if (mp) return String(mp.blendedReturn);
+    }
+    return String(customRate);
+  };
+
+  const categoryDefaults = settings
+    ? {
+        taxable: investableEffectiveRate(settings.growthSourceTaxable, settings.modelPortfolioIdTaxable, settings.defaultGrowthTaxable),
+        cash: investableEffectiveRate(settings.growthSourceCash, settings.modelPortfolioIdCash, settings.defaultGrowthCash),
+        retirement: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
+        real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
+        business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
+        life_insurance: flatRate(settings.defaultGrowthLifeInsurance, settings.growthSourceLifeInsurance),
+      }
+    : {
+        taxable: "0.07",
+        cash: "0.02",
+        retirement: "0.07",
+        real_estate: "0.04",
+        business: "0.05",
+        life_insurance: "0.03",
+      };
+
+  return (
+    <BalanceSheetView
+      clientId={id}
+      accounts={accountProps}
+      liabilities={liabilityProps}
+      entities={entityOptions}
+      familyMembers={familyMemberRows}
+      categoryDefaults={categoryDefaults}
+      modelPortfolios={modelPortfolioOptions}
+      ownerNames={{
+        clientName: `${client.firstName} ${client.lastName}`,
+        spouseName: client.spouseName
+          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+          : null,
+      }}
+      assetClasses={assetClassOptions}
+      portfolioAllocationsMap={portfolioAllocationsMap}
+      categoryDefaultSources={categoryDefaultSources}
+      milestones={milestones}
+      resolvedInflationRate={resolvedInflationRate}
+    />
+  );
+}

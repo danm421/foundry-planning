@@ -13,6 +13,7 @@ import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
+import EstateTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-tax/loading-skeleton";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -104,7 +105,7 @@ export default function StateDeathTaxReportView({
     );
   }
   if (loading) {
-    return <div className="text-gray-300">Loading projection…</div>;
+    return <EstateTaxSkeleton />;
   }
   if (projectionYears.length === 0 || todayYear == null) {
     return (
