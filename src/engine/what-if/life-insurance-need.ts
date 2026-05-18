@@ -40,10 +40,6 @@ function birthYear(iso: string): number {
   return Number(iso.slice(0, 4));
 }
 
-function clone<T>(v: T): T {
-  return structuredClone(v);
-}
-
 /** The surviving spouse's household role — the opposite of the deceased. */
 function survivorRole(deceased: "client" | "spouse"): "client" | "spouse" {
   return deceased === "client" ? "spouse" : "client";
@@ -142,7 +138,7 @@ export function buildLifeInsuranceWhatIfData(
   input: LifeInsuranceWhatIfInput,
 ): ClientData {
   const { data, deceased, deathYear, faceValue, growthRate, finalExpenses } = input;
-  const out = clone(data);
+  const out = structuredClone(data);
 
   // 1. Premature death — set the deceased's lifeExpectancy so the engine's
   //    death-event machinery fires in `deathYear`. lifeExpectancy is an age,
@@ -150,8 +146,10 @@ export function buildLifeInsuranceWhatIfData(
   if (deceased === "client") {
     out.client.lifeExpectancy = deathYear - birthYear(out.client.dateOfBirth);
   } else {
-    out.client.spouseLifeExpectancy =
-      deathYear - birthYear(out.client.spouseDob ?? out.client.dateOfBirth);
+    if (!out.client.spouseDob) {
+      throw new Error("buildLifeInsuranceWhatIfData: deceased='spouse' requires spouseDob");
+    }
+    out.client.spouseLifeExpectancy = deathYear - birthYear(out.client.spouseDob);
   }
 
   // 2. Synthetic policy. Drop any prior assembler-injected policy first so
@@ -164,14 +162,11 @@ export function buildLifeInsuranceWhatIfData(
   // 3. Final / burial expenses override estate admin expenses.
   out.planSettings = { ...out.planSettings, estateAdminExpenses: finalExpenses };
 
-  // 4. Task 3 — survivor's living-expense-at-death override. `input.livingExpenseAtDeath`
-  //    will replace / scale the post-death living expense once Task 3 lands here.
+  // Task 3 — survivor's living-expense-at-death override (applyLivingExpenseAtDeath).
 
-  // 5. Task 4 — pay-off-debts-at-death. When `input.payOffDebtsAtDeath` is set,
-  //    Task 4 will retire household liabilities at the death year here.
+  // Task 4 — pay-off-debts-at-death override (applyDebtPayoffAtDeath).
 
-  // Task 5 — horizon coverage. Task 5 may extend `planEndYear` so the
-  //    projection runs long enough to cover the survivor's full lifetime.
+  // Task 5 — extend planEndYear to cover the survivor's life expectancy.
 
   return out;
 }

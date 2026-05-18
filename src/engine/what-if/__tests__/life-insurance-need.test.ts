@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "@/engine/projection";
-import { buildLifeInsuranceWhatIfData } from "../life-insurance-need";
+import { buildLifeInsuranceWhatIfData, SYNTHETIC_POLICY_ID } from "../life-insurance-need";
 import type { ClientData } from "@/engine/types";
 import {
   baseClient,
@@ -54,6 +54,22 @@ describe("buildLifeInsuranceWhatIfData", () => {
     expect(out.client.lifeExpectancy).toBe(60);
     // survivor (spouse) life expectancy untouched
     expect(out.client.spouseLifeExpectancy).toBe(92);
+  });
+
+  it("sets the deceased spouse's life expectancy to their age in the death year", () => {
+    const out = buildLifeInsuranceWhatIfData({
+      data: marriedBase(),
+      deceased: "spouse",
+      deathYear: 2032,
+      faceValue: 0,
+      growthRate: 0.05,
+      finalExpenses: 0,
+      livingExpenseAtDeath: null,
+      payOffDebtsAtDeath: false,
+    });
+    // spouse born 1972, dies 2032 -> age 60
+    expect(out.client.spouseLifeExpectancy).toBe(60);
+    expect(out.client.lifeExpectancy).toBe(90); // client untouched
   });
 
   it("injects a life_insurance account for the deceased with the candidate face value", () => {
@@ -127,7 +143,7 @@ describe("buildLifeInsuranceWhatIfData", () => {
     expect(delta).toBeGreaterThan(1_900_000);
 
     // The proceeds specifically land as a cash account owned by the survivor.
-    expect(proceedsRow.portfolioAssets.cash["li-solver-synthetic-policy"]).toBeGreaterThan(
+    expect(proceedsRow.portfolioAssets.cash[SYNTHETIC_POLICY_ID]).toBeGreaterThan(
       1_900_000,
     );
   });
