@@ -13,6 +13,7 @@
 import { ownersForYear } from "@/engine/ownership";
 import type { AccountOwner } from "@/engine/ownership";
 import type { ClientData, EntitySummary, GiftEvent } from "@/engine/types";
+import { resolveOwnerSlices } from "./account-owner-slices";
 import {
   familyOwnedFraction,
   inEstateWeight,
@@ -54,42 +55,19 @@ function sumAccountsWhere(
     const owners = ownersForYear(account, giftEvents, year, projectionStartYear);
     const value = accountBalances.get(account.id) ?? account.value;
 
-    // Per-account locked-share resolution mirrors balance-sheet view-model:
-    // entity slice = locked share when available; family slice = locked share
-    // when available, else (value − Σ entity locked) × percent / Σ family
-    // percents. Falls back to authored value × percent when no locked data.
-    let totalEntityShare = 0;
-    let familyPercentTotal = 0;
-    for (const o of owners) {
-      if (o.kind === "entity") {
-        const locked = entityAccountSharesEoY?.get(o.entityId)?.get(account.id);
-        totalEntityShare += locked ?? value * o.percent;
-      } else {
-        familyPercentTotal += o.percent;
-      }
-    }
-    const familyPool = Math.max(0, value - totalEntityShare);
-
-    for (const owner of owners) {
+    // Locked-share slice resolution (entity slice = locked EoY share; family
+    // members absorb the residual) — shared with the Estate Flow ownership
+    // column; mirrors the balance-sheet view-model's own copy.
+    const slices = resolveOwnerSlices(
+      account.id,
+      owners,
+      value,
+      entityAccountSharesEoY,
+      familyAccountSharesEoY,
+    );
+    for (const { owner, value: sliceValue } of slices) {
       const w = ownerWeight(owner);
       if (w <= 0) continue;
-      let sliceValue: number;
-      if (owner.kind === "entity") {
-        const locked = entityAccountSharesEoY?.get(owner.entityId)?.get(account.id);
-        sliceValue = locked ?? value * owner.percent;
-      } else {
-        const lockedFm = familyAccountSharesEoY
-          ?.get(owner.familyMemberId)
-          ?.get(account.id);
-        if (lockedFm != null) {
-          sliceValue = lockedFm;
-        } else {
-          sliceValue =
-            familyPercentTotal > 0
-              ? familyPool * (owner.percent / familyPercentTotal)
-              : value * owner.percent;
-        }
-      }
       total += sliceValue * w;
     }
   }

@@ -8,6 +8,7 @@ import {
   ownedByEntity,
 } from "@/engine/ownership";
 import type { EstateFlowGift } from "./estate-flow-gifts";
+import { resolveOwnerSlices } from "./account-owner-slices";
 
 // ── Output Types ─────────────────────────────────────────────────────────────
 
@@ -334,6 +335,23 @@ export function buildOwnershipColumn(
 
     // Mixed ownership — emit fractional rows for each family-member owner.
     // This handles the split (e.g. 60/40 client/spouse) case.
+    //
+    // Slice resolution: an entity's slice uses its locked EoY share so a
+    // household drawdown on the joint account doesn't bleed into the
+    // business's portion; the family-member owners absorb the residual. In
+    // the as-of-today view (no projected year state) this reduces to the
+    // authored percent × value. Mirrors the gross-estate and balance-sheet
+    // reports — see resolveOwnerSlices.
+    const slices = resolveOwnerSlices(
+      accountId,
+      account.owners,
+      resolveValue(accountId, account.value),
+      yearState?.entityAccountSharesEoY,
+      yearState?.familyAccountSharesEoY,
+    );
+    const sliceValueOf = (owner: AccountOwner): number =>
+      slices.find((s) => s.owner === owner)?.value ?? 0;
+
     const ownerRows = account.owners.filter(
       (o): o is Extract<AccountOwner, { kind: "family_member" }> => o.kind === "family_member",
     );
@@ -351,7 +369,7 @@ export function buildOwnershipColumn(
 
       const linkedLiabilities = buildLinkedLiabilities(data, accountId, "family_member", fmId);
       const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-      const fractionalValue = resolveValue(accountId, account.value) * percent;
+      const fractionalValue = sliceValueOf(ownerRow);
       const netValue = fractionalValue - liabilityTotal;
       const futureGifts = futureGiftsFor(accountId);
 
@@ -376,12 +394,8 @@ export function buildOwnershipColumn(
     // entity's group. Mirrors the family-member rows above. Without this an
     // entity's partial slice of a mixed account is dropped from the column.
     // (Canonical rule: a business entity's value includes its partial slices
-    // of mixed accounts.)
-    // Note: like the family-member rows, this uses the authored ownership
-    // percent (via `resolveValue`), not the engine's locked entity shares —
-    // the gross-estate and balance-sheet reports use locked shares. That
-    // divergence is intentional for this report; don't "fix" it to locked
-    // shares without aligning the family-member rows too.
+    // of mixed accounts.) Uses the same locked-share slice resolution as the
+    // family rows above so the two sides always sum to the account balance.
     const entityOwnerRows = account.owners.filter(
       (o): o is Extract<AccountOwner, { kind: "entity" }> => o.kind === "entity",
     );
@@ -408,7 +422,7 @@ export function buildOwnershipColumn(
         ownerRow.entityId,
       );
       const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-      const fractionalValue = resolveValue(accountId, account.value) * percent;
+      const fractionalValue = sliceValueOf(ownerRow);
       const netValue = fractionalValue - liabilityTotal;
       const futureGifts = futureGiftsFor(accountId);
 

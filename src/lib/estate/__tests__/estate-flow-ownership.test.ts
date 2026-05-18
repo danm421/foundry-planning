@@ -622,6 +622,67 @@ describe("buildOwnershipColumn", () => {
     expect(llc!.subtotal).toBe(30_000);
   });
 
+  it("values an entity's mixed-account slice at its locked EoY share in a projected year", () => {
+    // Savings account split 80% client / 20% an LLC. By 2035 the household
+    // drew the account down to a $70k balance, but the LLC's locked EoY
+    // share is still $20k. The entity row must show the locked $20k (not the
+    // naive $70k × 20% = $14k), and the client row absorbs the drawdown
+    // ($70k − $20k = $50k, not $70k × 80% = $56k).
+    const cd = data({
+      entities: [
+        {
+          id: "ent-llc",
+          name: "Test Bus",
+          entityType: "llc",
+          includeInPortfolio: false,
+          isGrantor: false,
+          value: 0,
+          owners: [{ familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      accounts: [
+        {
+          id: "acc-savings",
+          name: "Savings Account",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.8 },
+            { kind: "entity", entityId: "ent-llc", percent: 0.2 },
+          ],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+
+    const projection = {
+      years: [
+        {
+          year: 2035,
+          accountLedgers: { "acc-savings": { endingValue: 70_000 } },
+          entityAccountSharesEoY: new Map([
+            ["ent-llc", new Map([["acc-savings", 20_000]])],
+          ]),
+        },
+      ],
+    } as unknown as ProjectionResult;
+
+    const out = buildOwnershipColumn(cd, { projection, asOfYear: 2035 });
+
+    const llc = out.groups.find((g) => g.key === "entity:ent-llc")!;
+    const llcSavings = llc.assets.find(
+      (a) => a.accountId === "acc-savings" && a.rowKind === "account",
+    )!;
+    expect(llcSavings.value).toBeCloseTo(20_000, 2);
+
+    const client = out.groups.find((g) => g.kind === "client")!;
+    const clientSavings = client.assets.find((a) => a.accountId === "acc-savings")!;
+    expect(clientSavings.value).toBeCloseTo(50_000, 2);
+  });
+
   it("includes orphan-entity-owned account in a fallback group and grandTotal", () => {
     const cd = data({
       entities: [],
