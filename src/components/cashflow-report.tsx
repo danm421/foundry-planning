@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CashFlowSkeleton from "@/app/(app)/clients/[id]/cashflow/loading-skeleton";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -1973,11 +1974,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-gray-300">
-        Loading projection...
-      </div>
-    );
+    return <CashFlowSkeleton />;
   }
 
   if (error) {
