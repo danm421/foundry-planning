@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { applyReinvestments } from "../reinvestments";
+import { runProjection } from "../projection";
+import { buildClientData, basePlanSettings } from "./fixtures";
+import { LEGACY_FM_CLIENT } from "../ownership";
 import type { Account, Reinvestment } from "../types";
 
 function taxableAccount(id: string): Account {
@@ -183,5 +186,79 @@ describe("applyReinvestments", () => {
     });
     expect(result.capitalGains).toBe(0);
     expect(basisMap.a1).toBe(60_000);
+  });
+});
+
+describe("reinvestment capital gains in a full projection", () => {
+  it("surfaces LTCG in the reinvestment year and nowhere before it", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-brokerage",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 100_000,
+          basis: 60_000,
+          growthRate: 0.05,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+          // No turnover-driven realization: the only LTCG source is the
+          // reinvestment switch itself.
+          realization: {
+            pctOrdinaryIncome: 0,
+            pctLtCapitalGains: 0,
+            pctQualifiedDividends: 0,
+            pctTaxExempt: 0,
+            turnoverPct: 0,
+          },
+        },
+        {
+          id: "acct-checking",
+          name: "Checking",
+          category: "cash",
+          subType: "checking",
+          value: 50_000,
+          basis: 50_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+          isDefaultChecking: true,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      reinvestments: [
+        {
+          id: "ri-1",
+          name: "Shift to conservative",
+          accountIds: ["acct-brokerage"],
+          year: 2030,
+          newGrowthRate: 0.04,
+          newRealization: {
+            pctOrdinaryIncome: 0,
+            pctLtCapitalGains: 0,
+            pctQualifiedDividends: 0,
+            pctTaxExempt: 0,
+            turnoverPct: 0,
+          },
+          realizeTaxesOnSwitch: true,
+          soldFractionByAccount: { "acct-brokerage": 0.5 },
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2032 },
+    });
+    const result = runProjection(data);
+
+    const switchYear = result.find((y) => y.year === 2030)!;
+    const priorYear = result.find((y) => y.year === 2029)!;
+
+    // The reinvestment realizes LTCG on the brokerage account in 2030.
+    expect(switchYear.taxDetail!.capitalGains).toBeGreaterThan(0);
+    // No other LTCG source: the year before the switch is zero.
+    expect(priorYear.taxDetail!.capitalGains).toBe(0);
   });
 });

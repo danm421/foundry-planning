@@ -18,8 +18,13 @@ export interface ReinvestmentsResult {
 
 /** Apply reinvestment techniques effective in `year`. Mutates each target
  *  account's `growthRate` / `realization` in place — the change persists for
- *  all later years until another reinvestment overrides it. Phase 1 performs
- *  only the profile switch; the capital-gains branch is added in Phase 2. */
+ *  all later years until another reinvestment overrides it. When
+ *  `realizeTaxesOnSwitch` is set, also realizes long-term capital gains on
+ *  taxable accounts, returning the gain in `capitalGains`.
+ *
+ *  A taxed switch is value-neutral: it steps up `basisMap` and realizes gain
+ *  but does NOT change `accountBalances` or `accountLedgers` — the proceeds are
+ *  immediately reinvested. */
 export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResult {
   const { reinvestments, accounts, year } = input;
   let capitalGains = 0;

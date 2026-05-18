@@ -1247,6 +1247,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       realizationSTCG +
       transferResult.taxableOrdinaryIncome +
       transferResult.capitalGains +
+      reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
@@ -1378,7 +1379,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
     taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
     taxDetail.capitalGains +=
-      transferResult.capitalGains + saleResult.capitalGains + grantorCarryInCapGains;
+      transferResult.capitalGains +
+      reinvestmentResult.capitalGains +
+      saleResult.capitalGains +
+      grantorCarryInCapGains;
     if (grantorCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
         type: "capital_gains",
