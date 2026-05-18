@@ -43,6 +43,19 @@ export interface HypotheticalEstateTaxInput {
   /** Per-year end-of-year account balance snapshots for gift-year value lookups.
    *  Optional; when absent, accountValueAtYear falls back to the current-year balance. */
   yearEndAccountBalances?: Map<number, Record<string, number>>;
+  /** End-of-year locked share for split-owned accounts: entityId → accountId →
+   *  entity's EoY dollar share. Threaded into the death-event pass so a
+   *  business's slice of a partly-household-owned account is valued at its
+   *  protected locked share rather than `drainedBalance × ownerPercent`.
+   *  Optional; when absent the death-event pass falls back to the legacy
+   *  fmv × pct convention. Mirrors the real death-event call sites. */
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** End-of-year locked share for jointly-held family-member accounts.
+   *  Threaded through alongside the entity carry for parity with the real
+   *  death-event call sites — currently always empty (the family carry is
+   *  reserved, not yet populated), so this is wiring for a future producer
+   *  rather than live data. */
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
 }
 
 function sumTotals(results: EstateTaxResult[]) {
@@ -88,6 +101,8 @@ function runOrdering(
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: 0,
     priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
   if (!input.isMarried) {
@@ -125,6 +140,8 @@ function runOrdering(
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: firstResult.dsueGenerated,
     priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
   return {

@@ -3495,6 +3495,32 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Snapshot end-of-year account balances for gift-year value lookups at death.
     yearEndAccountBalances.set(year, { ...accountBalances });
 
+    // Roll the locked-share carry forward for this year so both the
+    // hypothetical estate tax (below) and the real death-event call sites can
+    // pass an accurate entityAccountSharesEoY snapshot. Must run before
+    // computeHypotheticalEstateTax so year-N's hypothetical sees year-N's
+    // locked shares (not year N-1's). Recomputed every year (not just death
+    // years) because accrueLockedEntityShare needs the prior EoY present for
+    // every split-owned account.
+    for (const acct of workingAccounts) {
+      const ledger = accountLedgers[acct.id];
+      if (!ledger) continue;
+      for (const o of acct.owners) {
+        if (o.kind !== "entity") continue;
+        if (o.percent >= 1) continue; // 100%-entity needs no carry — full ledger is the share
+        const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
+        const acc = accrueLockedEntityShare({
+          carriedBoY: carried,
+          ledger: { beginningValue: ledger.beginningValue, growth: ledger.growth },
+          percent: o.percent,
+        });
+        if (!lockedEntityShareCarry.has(o.entityId)) {
+          lockedEntityShareCarry.set(o.entityId, new Map());
+        }
+        lockedEntityShareCarry.get(o.entityId)!.set(acct.id, acc.lockedEoY);
+      }
+    }
+
     // 4d-2: hypothetical estate tax — computed on the pre-real-death snapshot
     // of year-N state, so the report always displays consistent "both die in
     // year N" numbers regardless of where real deaths land. Attached to the
@@ -3520,6 +3546,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       giftEvents: data.giftEvents,
       yearEndAccountBalances,
       annualExclusionsByYear,
+      entityAccountSharesEoY: lockedEntityShareCarry,
+      familyAccountSharesEoY: lockedFamilyShareCarry,
     });
 
     // Stamp end-of-year basis onto each ledger now that all sales, growth
@@ -3621,34 +3649,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           }
         : {}),
     });
-
-    // Roll the locked-share carry forward for this year so the death-event
-    // call sites can pass an accurate entityAccountSharesEoY snapshot. We
-    // recompute it for every year (not just death years) so the carry stays
-    // monotonic — accrueLockedEntityShare relies on the prior EoY being
-    // present for every split-owned account. This is independent of the
-    // post-loop computeEntityCashFlow / computeFamilyAccountShares passes;
-    // both paths consume accrueLockedEntityShare and produce the same
-    // numbers.
-    const thisYear = years[years.length - 1];
-    for (const acct of workingAccounts) {
-      const ledger = thisYear.accountLedgers[acct.id];
-      if (!ledger) continue;
-      for (const o of acct.owners) {
-        if (o.kind !== "entity") continue;
-        if (o.percent >= 1) continue; // 100%-entity needs no carry — full ledger is the share
-        const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
-        const acc = accrueLockedEntityShare({
-          carriedBoY: carried,
-          ledger: { beginningValue: ledger.beginningValue, growth: ledger.growth },
-          percent: o.percent,
-        });
-        if (!lockedEntityShareCarry.has(o.entityId)) {
-          lockedEntityShareCarry.set(o.entityId, new Map());
-        }
-        lockedEntityShareCarry.get(o.entityId)!.set(acct.id, acc.lockedEoY);
-      }
-    }
 
     // Death event (spec 4b) — fires exactly once at the first death year.
     if (
