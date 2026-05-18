@@ -7,7 +7,6 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
-import type { Reinvestment } from "@/engine/types";
 
 /**
  * Shape passed in when editing. The card-level fields come straight from
@@ -35,10 +34,6 @@ interface AddReinvestmentFormProps {
   initialData?: ReinvestmentInitialData;
   onClose: () => void;
   onSaved: () => void;
-  /** When provided, emit the assembled Reinvestment instead of persisting.
-   *  Resolved fields (newGrowthRate / soldFractionByAccount) are placeholders;
-   *  the solver's /project route re-resolves them server-side. */
-  onSubmitDraft?: (technique: Reinvestment) => void;
 }
 
 const TARGET_OPTIONS: {
@@ -97,7 +92,6 @@ export default function AddReinvestmentForm({
   initialData,
   onClose,
   onSaved,
-  onSubmitDraft,
 }: AddReinvestmentFormProps) {
   const writer = useScenarioWriter(clientId);
 
@@ -256,31 +250,6 @@ export default function AddReinvestmentForm({
       };
 
       const newReinvestmentId = makeId();
-
-      if (onSubmitDraft) {
-        const technique: Reinvestment = {
-          id: initialData?.id ?? newReinvestmentId,
-          name: body.name,
-          accountIds: body.accountIds,
-          year: body.year,
-          realizeTaxesOnSwitch: body.realizeTaxesOnSwitch,
-          // Resolved fields — placeholders; resolveReinvestments overwrites them.
-          newGrowthRate: 0,
-          soldFractionByAccount: {},
-          // Raw resolution inputs consumed by resolveReinvestments.
-          targetType: body.targetType,
-          modelPortfolioId: body.modelPortfolioId,
-          customGrowthRate: body.customGrowthRate,
-          customPctOrdinaryIncome: body.customPctOrdinaryIncome,
-          customPctLtCapitalGains: body.customPctLtCapitalGains,
-          customPctQualifiedDividends: body.customPctQualifiedDividends,
-          customPctTaxExempt: body.customPctTaxExempt,
-          ...(body.yearRef != null ? { yearRef: body.yearRef } : {}),
-        };
-        onSubmitDraft(technique);
-        onSaved();
-        return;
-      }
 
       const res = initialData
         ? await writer.submit(

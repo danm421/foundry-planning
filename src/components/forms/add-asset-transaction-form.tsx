@@ -5,12 +5,11 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { runProjection } from "@/engine";
-import type { AssetTransaction, ClientData, ProjectionYear } from "@/engine/types";
+import type { ClientData, ProjectionYear } from "@/engine/types";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
-import { coerceAssetTransactionDraft } from "@/lib/solver/technique-form-data";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,34 +20,6 @@ type AssetCategory =
   | "real_estate"
   | "business"
   | "life_insurance";
-
-/** Shape passed in when editing an asset transaction. The form emits
- *  string-typed numeric fields; this mirrors that. */
-export interface AssetTransactionInitialData {
-  id: string;
-  name: string;
-  type: "buy" | "sell";
-  year: number;
-  accountId: string | null;
-  purchaseTransactionId: string | null;
-  fractionSold: string | null;
-  overrideSaleValue: string | null;
-  overrideBasis: string | null;
-  transactionCostPct: string | null;
-  transactionCostFlat: string | null;
-  proceedsAccountId: string | null;
-  qualifiesForHomeSaleExclusion: boolean | null;
-  assetName: string | null;
-  assetCategory: string | null;
-  assetSubType: string | null;
-  purchasePrice: string | null;
-  growthRate: string | null;
-  basis: string | null;
-  fundingAccountId: string | null;
-  mortgageAmount: string | null;
-  mortgageRate: string | null;
-  mortgageTermMonths: number | null;
-}
 
 interface AddAssetTransactionFormProps {
   clientId: string;
@@ -64,11 +35,33 @@ interface AddAssetTransactionFormProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
-  initialData?: AssetTransactionInitialData;
+  initialData?: {
+    id: string;
+    name: string;
+    type: "buy" | "sell";
+    year: number;
+    accountId: string | null;
+    purchaseTransactionId: string | null;
+    fractionSold: string | null;
+    overrideSaleValue: string | null;
+    overrideBasis: string | null;
+    transactionCostPct: string | null;
+    transactionCostFlat: string | null;
+    proceedsAccountId: string | null;
+    qualifiesForHomeSaleExclusion: boolean | null;
+    assetName: string | null;
+    assetCategory: string | null;
+    assetSubType: string | null;
+    purchasePrice: string | null;
+    growthRate: string | null;
+    basis: string | null;
+    fundingAccountId: string | null;
+    mortgageAmount: string | null;
+    mortgageRate: string | null;
+    mortgageTermMonths: number | null;
+  };
   onClose: () => void;
   onSaved: () => void;
-  /** When provided, emit the assembled AssetTransaction instead of persisting. */
-  onSubmitDraft?: (technique: AssetTransaction) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -226,7 +219,6 @@ export default function AddAssetTransactionForm({
   initialData,
   onClose,
   onSaved,
-  onSubmitDraft,
 }: AddAssetTransactionFormProps) {
   const writer = useScenarioWriter(clientId);
   const isEdit = !!initialData;
@@ -508,19 +500,6 @@ export default function AddAssetTransactionForm({
       body.mortgageTermMonths = showMortgage && mortgageTermMonths
         ? Number(mortgageTermMonths)
         : null;
-    }
-
-    if (onSubmitDraft) {
-      const id =
-        isEdit && initialData
-          ? initialData.id
-          : typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-            ? crypto.randomUUID()
-            : `tmp-${Date.now()}`;
-      onSubmitDraft(coerceAssetTransactionDraft(body, id));
-      setLoading(false);
-      onSaved();
-      return;
     }
 
     try {
