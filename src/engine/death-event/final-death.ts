@@ -24,6 +24,7 @@ import {
   computeGrossEstate,
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
+import { applyBusinessSuccession } from "./business-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { applyLiabilityBequests } from "./liability-bequests";
@@ -346,6 +347,26 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
+  // Phase 3.5 — business-interest succession (compute-only; reads pre-flip
+  // entities AND pre-chain accounts/accountBalances, same discipline as
+  // grantor-succession above). At final death survivorFmId is null — the
+  // fallback will route to children → other heirs.
+  const businessSuccession = applyBusinessSuccession({
+    deceased: prepared.deceased,
+    deceasedFmId,
+    survivorFmId: null,
+    deathOrder: 2,
+    entities: prepared.entities,
+    accounts: prepared.accounts,
+    accountBalances: prepared.accountBalances,
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    will: input.will ?? null,
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    year: input.year,
+  });
+  warnings.push(...businessSuccession.warnings);
+
   // Working state for the drain passes.
   //
   // Pipeline split (Phase B): the chain routes accounts at GROSS values, so
@@ -521,17 +542,44 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
   }
 
-  // Phase 7 — apply grantor-succession updates now that gross estate + drains
-  // have read pre-flip state. The chain and pour-out both see mutated entities.
+  // Phase 7 — apply grantor-succession updates and business-interest updates now
+  // that gross estate + drains have read pre-flip state. The chain and pour-out
+  // both see mutated entities.
   const mutatedEntities = input.entities.map((e) => {
+    let next = e;
+
+    // Existing grantor-succession entityUpdates block (unchanged).
     const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
-    if (!upd) return e;
-    return {
-      ...e,
-      ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
-      ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
-      ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
-    };
+    if (upd) {
+      next = {
+        ...next,
+        ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
+        ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
+        ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
+      };
+    }
+
+    // Business-interest owner succession: remove the deceased's row, add successor rows.
+    const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.entityId === e.id);
+    if (ownerUpd && next.owners != null) {
+      // Clone each kept row so the `existing.percent +=` merge below never
+      // mutates the original input entity's owner objects.
+      const merged = next.owners
+        .filter((o) => o.familyMemberId !== ownerUpd.removeFamilyMemberId)
+        .map((o) => ({ ...o }));
+      for (const s of ownerUpd.successors) {
+        const existing = merged.find((o) => o.familyMemberId === s.familyMemberId);
+        if (existing) existing.percent += s.percent;
+        else merged.push({ familyMemberId: s.familyMemberId, percent: s.percent });
+      }
+      next = { ...next, owners: merged };
+    }
+
+    // §1014 basis step-up on the entity's flat operating value.
+    const basisUpd = businessSuccession.basisUpdates.find((u) => u.entityId === e.id);
+    if (basisUpd) next = { ...next, basis: basisUpd.newBasis };
+
+    return next;
   });
 
   // Phase 8a — pour-out fold-in BEFORE the chain's will step runs. Trust
@@ -584,6 +632,12 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     workingLiabs = residualDist.updatedLiabilities;
     warnings.push(...residualDist.warnings);
   }
+
+  // Phase 8.55 — append business-interest transfers so they are visible to the
+  // finalDeductions recompute (charitable computation) and inheritance-tax /
+  // estate-transfer-detail downstream consumers. No marital deduction at final
+  // death, but the transfers must still appear on the ledger.
+  ledger = ledger.concat(businessSuccession.transfers);
 
   // Phase 9 — final deductions (charitable now derivable from ledger).
   const finalDeductions = computeDeductions({

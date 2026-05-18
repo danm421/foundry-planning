@@ -3,6 +3,7 @@ import { applyFinalDeath } from "../final-death";
 import type { DeathEventInput } from "../shared";
 import type {
   Account,
+  EntitySummary,
   FamilyMember,
   Liability,
   PlanSettings,
@@ -361,5 +362,59 @@ describe("applyFinalDeath — gross transfers + drain attribution (Phase B)", ()
       .filter((a) => a.recipientId === "kid-b")
       .reduce((s, a) => s + a.amount, 0);
     expect(stateOnB).toBeCloseTo(result.estateTax.stateEstateTax, 0);
+  });
+});
+
+describe("applyFinalDeath — business-interest succession integration", () => {
+  it("routes a wholly spouse-owned LLC to child via fallback and updates owners + basis", () => {
+    // The surviving spouse died (final death). $10k LLC flat value, $4k basis,
+    // owned 100% by the surviving spouse. One child, no will.
+    // Expect: business transfer → child via fallback_children; owners updated to
+    // child at 100%; basis stepped up to $10k (FMV of full share).
+    const spouseFm: FamilyMember = {
+      id: "spouse-fm",
+      role: "spouse",
+      relationship: "other",
+      firstName: "Spouse",
+      lastName: "Test",
+      dateOfBirth: "1972-01-01",
+    };
+    const llcEntity: EntitySummary = {
+      id: "e1",
+      name: "Spouse LLC",
+      entityType: "llc",
+      value: 10_000,
+      basis: 4_000,
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: false,
+      owners: [{ familyMemberId: "spouse-fm", percent: 1 }],
+    };
+
+    const input = mkInput({
+      deceased: "spouse",
+      familyMembers: [spouseFm, kidA],
+      entities: [llcEntity],
+    });
+    const result = applyFinalDeath(input);
+
+    // A business transfer exists with sourceEntityId set, recipientKind family_member,
+    // recipientId = the child (fallback_children — no surviving spouse at final death).
+    const bizTransfers = result.transfers.filter((t) => t.sourceEntityId === "e1");
+    expect(bizTransfers).toHaveLength(1);
+    expect(bizTransfers[0].recipientKind).toBe("family_member");
+    expect(bizTransfers[0].recipientId).toBe("kid-a");
+    expect(bizTransfers[0].amount).toBeCloseTo(10_000, 0);
+
+    // Entity owners updated: deceased spouse row removed, child added at 100%.
+    const updatedEntity = result.entities.find((e) => e.id === "e1");
+    expect(updatedEntity).toBeDefined();
+    expect(updatedEntity!.owners).toEqual([
+      { familyMemberId: "kid-a", percent: 1 },
+    ]);
+
+    // §1014 basis stepped up to FMV of the transferred share.
+    // newBasis = oldBasis * (1 - share) + flatValue * share = 4000 * 0 + 10000 * 1 = 10000.
+    expect(updatedEntity!.basis).toBeCloseTo(10_000, 0);
   });
 });
