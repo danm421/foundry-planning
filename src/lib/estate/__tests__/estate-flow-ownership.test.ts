@@ -574,6 +574,54 @@ describe("buildOwnershipColumn", () => {
     expect(row?.hasConflict).toBe(false);
   });
 
+  it("emits an entity's partial slice of a mixed account into the entity group", () => {
+    const cd = data({
+      entities: [
+        {
+          id: "ent-llc",
+          name: "Test Bus",
+          entityType: "llc",
+          includeInPortfolio: false,
+          isGrantor: false,
+          value: 10_000,
+          owners: [{ familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      accounts: [
+        {
+          id: "acc-savings",
+          name: "Savings Account",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.8 },
+            { kind: "entity", entityId: "ent-llc", percent: 0.2 },
+          ],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+
+    const out = buildOwnershipColumn(cd);
+
+    const client = out.groups.find((g) => g.kind === "client");
+    expect(client!.assets.find((a) => a.accountId === "acc-savings")!.value).toBe(80_000);
+
+    const llc = out.groups.find((g) => g.key === "entity:ent-llc");
+    expect(llc).toBeDefined();
+    const llcSavings = llc!.assets.find(
+      (a) => a.accountId === "acc-savings" && a.rowKind === "account",
+    );
+    expect(llcSavings!.value).toBe(20_000);
+    expect(llcSavings!.percent).toBe(0.2);
+    expect(llcSavings!.isSplit).toBe(true);
+    // Business-self row ($10k) + Savings slice ($20k) = $30k.
+    expect(llc!.subtotal).toBe(30_000);
+  });
+
   it("includes orphan-entity-owned account in a fallback group and grandTotal", () => {
     const cd = data({
       entities: [],

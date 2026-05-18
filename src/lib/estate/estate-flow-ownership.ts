@@ -371,6 +371,63 @@ export function buildOwnershipColumn(
         ...(futureGifts.length > 0 ? { futureGifts } : {}),
       });
     }
+
+    // Entity owners on a mixed account — emit a fractional row into the
+    // entity's group. Mirrors the family-member rows above. Without this an
+    // entity's partial slice of a mixed account is dropped from the column.
+    // (Canonical rule: a business entity's value includes its partial slices
+    // of mixed accounts.)
+    // Note: like the family-member rows, this uses the authored ownership
+    // percent (via `resolveValue`), not the engine's locked entity shares —
+    // the gross-estate and balance-sheet reports use locked shares. That
+    // divergence is intentional for this report; don't "fix" it to locked
+    // shares without aligning the family-member rows too.
+    const entityOwnerRows = account.owners.filter(
+      (o): o is Extract<AccountOwner, { kind: "entity" }> => o.kind === "entity",
+    );
+    for (const ownerRow of entityOwnerRows) {
+      const percent = ownerRow.percent;
+      if (percent <= 0) continue;
+
+      let group = entityGroups.get(ownerRow.entityId);
+      if (!group) {
+        group = {
+          key: `entity:${ownerRow.entityId}`,
+          kind: "business",
+          label: "Unknown entity",
+          assets: [],
+          subtotal: 0,
+        };
+        entityGroups.set(ownerRow.entityId, group);
+      }
+
+      const linkedLiabilities = buildLinkedLiabilities(
+        data,
+        accountId,
+        "entity",
+        ownerRow.entityId,
+      );
+      const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
+      const fractionalValue = resolveValue(accountId, account.value) * percent;
+      const netValue = fractionalValue - liabilityTotal;
+      const futureGifts = futureGiftsFor(accountId);
+
+      group.assets.push({
+        accountId,
+        rowKind: "account",
+        isDefaultCash: account.isDefaultChecking === true,
+        name: account.name,
+        accountType: account.category,
+        value: fractionalValue,
+        percent,
+        isSplit: true, // mixed account → always a split
+        linkedLiabilities,
+        netValue,
+        hasBeneficiaries,
+        hasConflict,
+        ...(futureGifts.length > 0 ? { futureGifts } : {}),
+      });
+    }
   }
 
   // When viewing a projected year, drop any asset whose resolved value has

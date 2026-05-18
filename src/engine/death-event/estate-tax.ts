@@ -145,6 +145,10 @@ export function computeGrossEstate(input: {
     if (solEntityId != null) {
       const ent = entityById.get(solEntityId);
       if (!ent) continue;
+      // Business entities are valued as one consolidated line below — their
+      // 100%-owned accounts must not also emit an account line. Trusts hold
+      // value through accounts, so they still emit here.
+      if (isBusinessEntity(ent)) continue;
       const pct = deceasedEntityShare(ent, input);
       if (pct <= 0) continue;
       const amount = fmv * pct;
@@ -161,7 +165,6 @@ export function computeGrossEstate(input: {
     // ── Mixed / family-only routing — accumulate per-owner contributions ──
     let amount = 0;
     let sawTrust = false;
-    let sawBusiness = false;
 
     // Family contribution
     const cfm = controllingFamilyMember(a);
@@ -188,16 +191,17 @@ export function computeGrossEstate(input: {
       // fmOwners.length === 0 → entity-only account; no family contribution.
     }
 
-    // Per-entity contributions on a mixed account, each at locked share ×
-    // the entity's gross-estate fraction.
+    // Per-entity contributions on a mixed account. Trust slices stay here;
+    // business-entity slices are excluded — they roll into the consolidated
+    // business line below.
     for (const slice of entitySlices) {
       const ent = entityById.get(slice.entityId);
       if (!ent) continue;
+      if (isBusinessEntity(ent)) continue;
       const pct = deceasedEntityShare(ent, input);
       if (pct <= 0) continue;
       amount += slice.locked * pct;
-      if (isBusinessEntity(ent)) sawBusiness = true;
-      else sawTrust = true;
+      sawTrust = true;
     }
 
     if (amount <= 0) continue;
@@ -206,11 +210,7 @@ export function computeGrossEstate(input: {
     // Suffix flags the entity contribution, not exclusivity (the line may also
     // aggregate a family pool). A trust + business mix prefers "Trust" so the
     // result never depends on owner-array order.
-    const entityNoun: EntityNoun | null = sawTrust
-      ? "Trust"
-      : sawBusiness
-        ? "Business"
-        : null;
+    const entityNoun: EntityNoun | null = sawTrust ? "Trust" : null;
     lines.push({
       label: formatLabel(a.name, effPct, entityNoun),
       accountId: a.id,
@@ -272,24 +272,37 @@ export function computeGrossEstate(input: {
     });
   }
 
-  // Business-entity flat valuations. A business (LLC / S-corp / etc.) carries
-  // operating-company worth in `entity.value` that is not held through any
-  // account, so the account loop above never sees it. Include the deceased's
-  // ownership share. Trusts and foundations hold value via accounts and carry
-  // no flat value, so isBusinessEntity gates them out.
+  // Business-entity consolidation. A business (LLC / S-corp / etc.) is valued
+  // as one unit (canonical rule): its flat operating value (`entity.value`)
+  // plus every account slice it owns — default cash and partial slices of
+  // mixed accounts included. Those account slices were deliberately excluded
+  // from the account loop above. One gross-estate line per business entity,
+  // weighted by the deceased's entity_owners share. Trusts hold value through
+  // accounts and carry no flat value, so isBusinessEntity gates them out.
   for (const ent of input.entities) {
     if (!isBusinessEntity(ent)) continue;
-    const value = ent.value ?? 0;
-    if (value <= 0) continue;
     const pct = deceasedBusinessShare(ent, input.deceasedFmId, input.deathOrder);
     if (pct <= 0) continue;
+
+    let entityTotal = ent.value ?? 0;
+    for (const a of input.accounts) {
+      const bal = input.accountBalances[a.id] ?? 0;
+      if (bal <= 0) continue;
+      for (const o of a.owners) {
+        if (o.kind !== "entity" || o.entityId !== ent.id) continue;
+        const locked = input.entityAccountSharesEoY?.get(ent.id)?.get(a.id);
+        entityTotal += locked ?? bal * o.percent;
+      }
+    }
+    if (entityTotal <= 0) continue;
+
     lines.push({
       label: formatLabel(ent.name ?? "Business", pct, "Business"),
       accountId: null,
       liabilityId: null,
       entityId: ent.id,
       percentage: pct,
-      amount: value * pct,
+      amount: entityTotal * pct,
     });
   }
 

@@ -692,7 +692,11 @@ describe("computeGrossEstate", () => {
       entityAccountSharesEoY: new Map([["sc", new Map([["mixed", 300_000]])]]),
     });
     expect(r.total).toBeCloseTo(1_000_000, 2);
-    expect(r.lines).toHaveLength(1);
+    // Family pool ($700k) is its own account line; the S-corp's $300k slice
+    // is now a separate consolidated business line.
+    expect(r.lines).toHaveLength(2);
+    expect(r.lines.find((l) => l.accountId === "mixed")!.amount).toBeCloseTo(700_000, 2);
+    expect(r.lines.find((l) => l.entityId === "sc")!.amount).toBeCloseTo(300_000, 2);
   });
 
   it("includes a business-owned liability by the deceased's ownership share", () => {
@@ -890,7 +894,7 @@ describe("computeGrossEstate", () => {
     expect(r.lines).toEqual([]);
   });
 
-  it("counts a business's flat value and its bank account as separate lines", () => {
+  it("consolidates a business's flat value and its bank account into one line", () => {
     // LLC has $250k operating value AND a $40k business bank account.
     const llc: EntitySummary = {
       id: "llc",
@@ -914,7 +918,56 @@ describe("computeGrossEstate", () => {
       survivorFmId: LEGACY_FM_SPOUSE,
     });
     expect(r.total).toBeCloseTo(290_000, 2);
-    expect(r.lines).toHaveLength(2);
+    // Flat value ($250k) + bank account ($40k) consolidate into one line.
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].entityId).toBe("llc");
+    expect(r.lines[0].amount).toBeCloseTo(290_000, 2);
+  });
+
+  it("consolidates a business: flat value + 100%-owned account + partial mixed slice into one line", () => {
+    // Test Bus LLC: $10k flat value, owns "Test Bus — Cash" 100% ($5k),
+    // and 20% of a $100k Savings Account (80% client). Client owns the LLC 100%.
+    const llc: EntitySummary = {
+      id: "llc",
+      name: "Test Bus",
+      includeInPortfolio: false,
+      isGrantor: false,
+      entityType: "llc",
+      value: 10_000,
+      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [
+        acct("llc-cash", 5_000, {
+          owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
+        }),
+        acct("savings", 100_000, {
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.8 },
+            { kind: "entity", entityId: "llc", percent: 0.2 },
+          ],
+        }),
+      ],
+      accountBalances: { "llc-cash": 5_000, savings: 100_000 },
+      liabilities: [],
+      entities: [llc],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+
+    // Family account line: only Cooper's 80% of Savings.
+    const savingsLine = r.lines.find((l) => l.accountId === "savings");
+    expect(savingsLine!.amount).toBeCloseTo(80_000, 2);
+    // No account line for the 100%-LLC-owned cash account.
+    expect(r.lines.find((l) => l.accountId === "llc-cash")).toBeUndefined();
+    // One consolidated business line: $10k flat + $5k cash + $20k savings slice.
+    const bizLine = r.lines.find((l) => l.entityId === "llc");
+    expect(bizLine!.accountId).toBeNull();
+    expect(bizLine!.amount).toBeCloseTo(35_000, 2);
+    // Total conserved: $80k + $35k = $115k = $5k + $100k + $10k.
+    expect(r.total).toBeCloseTo(115_000, 2);
   });
 
   it("excludes a 100%-revocable-trust account when the deceased is NOT the grantor", () => {
