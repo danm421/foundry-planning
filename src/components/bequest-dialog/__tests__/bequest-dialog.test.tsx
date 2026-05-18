@@ -357,6 +357,34 @@ describe("BequestDialog", () => {
     );
   });
 
+  it("selects a business entity from the picker and saves with entityId set and accountId null", async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    const bizEntity: WillsPanelEntity = { id: "biz-1", name: "Test Bus", entityType: "llc" };
+    render(
+      <BequestDialog
+        open
+        onOpenChange={() => {}}
+        primary={primary}
+        accounts={[acct]}
+        familyMembers={[fm]}
+        externalBeneficiaries={[ext]}
+        entities={[ent]}
+        businessEntities={[bizEntity]}
+        onSave={onSave}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("Asset or debt"), "entity:biz-1");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "asset",
+        entityId: "biz-1",
+        accountId: null,
+      }),
+    );
+  });
+
   it("disables Save in debt mode when recipient sum exceeds 100", async () => {
     const user = userEvent.setup();
     render(

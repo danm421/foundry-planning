@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
@@ -218,8 +218,9 @@ export default function WillsPanel(props: WillsPanelProps) {
     externalBeneficiaries,
     entities,
   } = props;
-  const businessEntities = entities.filter(
-    (e) => e.entityType != null && BUSINESS_ENTITY_TYPES.has(e.entityType),
+  const businessEntities = useMemo(
+    () => entities.filter((e) => e.entityType != null && BUSINESS_ENTITY_TYPES.has(e.entityType)),
+    [entities],
   );
   const writer = useScenarioWriter(props.clientId);
   const [wills, setWills] = useState<WillsPanelWill[]>(initialWills);
