@@ -102,7 +102,7 @@ export async function verifyCrossRefs(
       .from(entities)
       .where(and(eq(entities.clientId, clientId), inArray(entities.id, check.entityIds)));
     if (rows.length !== new Set(check.entityIds).size) {
-      return { code: "One or more entity recipientIds do not belong to this client" };
+      return { code: "One or more entity IDs (bequest or recipient) do not belong to this client" };
     }
   }
 

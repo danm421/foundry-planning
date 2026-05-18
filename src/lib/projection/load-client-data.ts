@@ -468,7 +468,7 @@ export const loadClientDataWithContext = cache(
         kind: b.kind,
         assetMode: b.assetMode ?? null,
         accountId: b.accountId,
-        entityId: b.entityId ?? null,
+        entityId: b.entityId,
         liabilityId: b.liabilityId ?? null,
         percentage: parseFloat(b.percentage),
         condition: b.condition,

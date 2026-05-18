@@ -40,7 +40,7 @@ export const willBequestAssetSchema = z
     name: z.string().trim().min(1).max(200),
     assetMode: z.enum(["specific", "all_assets"]),
     accountId: uuidSchema.nullable(),
-    entityId: z.string().uuid().nullable().default(null),
+    entityId: uuidSchema.nullable().default(null),
     liabilityId: z.null().optional(),
     percentage: z.number().gt(0).lte(100),
     condition: z.enum([
