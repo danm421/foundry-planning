@@ -24,6 +24,7 @@ import { SolverActionBar } from "./solver-action-bar";
 import { SolverPosGauge } from "./solver-pos-gauge";
 import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
+import { SolverTechniquesTab } from "./solver-techniques-tab";
 
 interface Props {
   clientId: string;
@@ -45,8 +46,8 @@ export function LiveSolverWorkspace({
   initialSourceClientData,
   initialSourceProjection,
   availableScenarios,
-  modelPortfolios: _modelPortfolios,
-  milestones: _milestones,
+  modelPortfolios,
+  milestones,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -54,6 +55,10 @@ export function LiveSolverWorkspace({
     () => new Map(),
   );
   const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
+
+  const [activeTab, setActiveTab] = useState<"retirement" | "techniques">(
+    "retirement",
+  );
 
   const [currentProjection, setCurrentProjection] = useState<ProjectionYear[]>(
     initialSourceProjection,
@@ -419,61 +424,119 @@ export function LiveSolverWorkspace({
           </div>
         }
       >
-        <SolverSection title="Goals">
-          <SolverRowRetirementAges
-            baseClient={baseClientData.client}
-            workingClient={workingTree.client}
-            onChange={pushMutation}
-            activeSolve={activeSolve}
-            onSolveStart={handleSolveStart}
-            onSolveCancel={handleSolveCancel}
-          />
-          <SolverRowLifeExpectancy
-            baseClient={baseClientData.client}
-            workingClient={workingTree.client}
-            onChange={pushMutation}
-          />
-          <SolverRowSocialSecurity
-            baseIncomes={baseClientData.incomes}
-            workingIncomes={workingTree.incomes}
-            baseClient={baseClientData.client}
-            workingClient={workingTree.client}
-            onChange={pushMutation}
-            activeSolve={activeSolve}
-            onSolveStart={handleSolveStart}
-            onSolveCancel={handleSolveCancel}
-          />
-        </SolverSection>
+        <div
+          role="tablist"
+          aria-label="Solver editing surface"
+          className="flex gap-1 border-b border-hair-2 px-3 pt-2"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "retirement"}
+            onClick={() => setActiveTab("retirement")}
+            className={
+              activeTab === "retirement"
+                ? "border-b-2 border-accent px-3 py-1.5 text-[13px] font-medium text-ink"
+                : "border-b-2 border-transparent px-3 py-1.5 text-[13px] text-ink-3 hover:text-ink"
+            }
+          >
+            Retirement
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "techniques"}
+            onClick={() => setActiveTab("techniques")}
+            className={
+              activeTab === "techniques"
+                ? "border-b-2 border-accent px-3 py-1.5 text-[13px] font-medium text-ink"
+                : "border-b-2 border-transparent px-3 py-1.5 text-[13px] text-ink-3 hover:text-ink"
+            }
+          >
+            Techniques
+          </button>
+        </div>
 
-        <SolverSection title="Income & Savings">
-          <SolverRowIncomes
-            baseClientData={baseClientData}
-            workingClientData={workingTree}
-            currentYear={currentYear}
-            onChange={pushMutation}
-          />
-          <SolverRowSavingsContributions
-            baseClientData={baseClientData}
-            workingClientData={workingTree}
-            currentYear={currentYear}
-            onChange={pushMutation}
-            activeSolve={activeSolve}
-            onSolveStart={handleSolveStart}
-            onSolveCancel={handleSolveCancel}
-          />
-        </SolverSection>
+        {activeTab === "retirement" ? (
+          <>
+            <SolverSection title="Goals">
+              <SolverRowRetirementAges
+                baseClient={baseClientData.client}
+                workingClient={workingTree.client}
+                onChange={pushMutation}
+                activeSolve={activeSolve}
+                onSolveStart={handleSolveStart}
+                onSolveCancel={handleSolveCancel}
+              />
+              <SolverRowLifeExpectancy
+                baseClient={baseClientData.client}
+                workingClient={workingTree.client}
+                onChange={pushMutation}
+              />
+              <SolverRowSocialSecurity
+                baseIncomes={baseClientData.incomes}
+                workingIncomes={workingTree.incomes}
+                baseClient={baseClientData.client}
+                workingClient={workingTree.client}
+                onChange={pushMutation}
+                activeSolve={activeSolve}
+                onSolveStart={handleSolveStart}
+                onSolveCancel={handleSolveCancel}
+              />
+            </SolverSection>
 
-        <SolverSection title="Expenses">
-          <SolverRowLivingExpenseScale
-            baseExpenses={baseClientData.expenses}
-            workingExpenses={workingTree.expenses}
-            currentYear={currentYear}
+            <SolverSection title="Income & Savings">
+              <SolverRowIncomes
+                baseClientData={baseClientData}
+                workingClientData={workingTree}
+                currentYear={currentYear}
+                onChange={pushMutation}
+              />
+              <SolverRowSavingsContributions
+                baseClientData={baseClientData}
+                workingClientData={workingTree}
+                currentYear={currentYear}
+                onChange={pushMutation}
+                activeSolve={activeSolve}
+                onSolveStart={handleSolveStart}
+                onSolveCancel={handleSolveCancel}
+              />
+            </SolverSection>
+
+            <SolverSection title="Expenses">
+              <SolverRowLivingExpenseScale
+                baseExpenses={baseClientData.expenses}
+                workingExpenses={workingTree.expenses}
+                currentYear={currentYear}
+                onChange={pushMutation}
+                activeSolve={activeSolve}
+                onSolveStart={handleSolveStart}
+                onSolveCancel={handleSolveCancel}
+              />
+            </SolverSection>
+          </>
+        ) : (
+          <SolverTechniquesTab
+            clientId={clientId}
+            baseClientData={baseClientData}
+            workingTree={workingTree}
+            accounts={(baseClientData.accounts ?? []).map((a) => ({
+              id: a.id,
+              name: a.name,
+              category: a.category,
+              subType: a.subType ?? "",
+            }))}
+            liabilities={(baseClientData.liabilities ?? []).map((l) => ({
+              id: l.id,
+              name: l.name,
+              linkedPropertyId: l.linkedPropertyId ?? null,
+              balance: String(l.balance ?? 0),
+            }))}
+            modelPortfolios={modelPortfolios}
+            milestones={milestones}
             onChange={pushMutation}
-            activeSolve={activeSolve}
-            onSolveStart={handleSolveStart}
-            onSolveCancel={handleSolveCancel}
           />
-        </SolverSection>
+        )}
       </SolverCompareGrid>
 
       <SolverActionBar

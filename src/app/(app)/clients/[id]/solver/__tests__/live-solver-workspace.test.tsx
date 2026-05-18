@@ -215,6 +215,17 @@ describe("LiveSolverWorkspace — save scenario", () => {
   });
 });
 
+describe("LiveSolverWorkspace — editing-surface tabs", () => {
+  it("switches between the Retirement and Techniques tabs", () => {
+    render(<LiveSolverWorkspace {...baseProps} />);
+    // Retirement tab is active by default — its Goals section is visible.
+    expect(screen.getByText("Goals")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /techniques/i }));
+    // Techniques tab shows the technique groups.
+    expect(screen.getByText("Roth Conversions")).toBeTruthy();
+  });
+});
+
 describe("LiveSolverWorkspace — right-column source change", () => {
   it("renders the new source's projection when the workspace is remounted by source key", () => {
     // page.tsx keys the workspace on `source`; switching the right-column
