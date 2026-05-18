@@ -8,6 +8,13 @@
 import type { AssetTransaction, RothConversion, Reinvestment } from "@/engine/types";
 import type { RothConversionInitialData } from "@/components/forms/add-roth-conversion-form";
 import type { ReinvestmentInitialData } from "@/components/forms/add-reinvestment-form";
+import type { AssetTransactionInitialData } from "@/components/forms/add-asset-transaction-form";
+
+/** The asset-transaction form receives rate fields as decimal strings and
+ *  multiplies them into percents on mount, so pass the decimal through. */
+function numToString(value: number | undefined): string | null {
+  return value != null ? String(value) : null;
+}
 
 /** Numeric fields the asset-transaction form emits as strings. */
 const NUMERIC_FIELDS = [
@@ -60,6 +67,40 @@ export function toRothConversionInitialData(
     endYearRef: rc.endYearRef ?? null,
     indexingRate: String(rc.indexingRate),
     inflationStartYear: rc.inflationStartYear ?? null,
+  };
+}
+
+/** Engine AssetTransaction → the form's string-typed initial-data shape.
+ *  Dollar fields pass through as plain numeric strings; rate fields stay as
+ *  decimal strings (the form multiplies them into percents on mount). */
+export function toAssetTransactionInitialData(
+  at: AssetTransaction,
+): AssetTransactionInitialData {
+  return {
+    id: at.id,
+    name: at.name,
+    type: at.type,
+    year: at.year,
+    accountId: at.accountId ?? null,
+    purchaseTransactionId: at.purchaseTransactionId ?? null,
+    fractionSold:
+      at.fractionSold != null ? String(at.fractionSold) : null,
+    overrideSaleValue: numToString(at.overrideSaleValue),
+    overrideBasis: numToString(at.overrideBasis),
+    transactionCostPct: numToString(at.transactionCostPct),
+    transactionCostFlat: numToString(at.transactionCostFlat),
+    proceedsAccountId: at.proceedsAccountId ?? null,
+    qualifiesForHomeSaleExclusion: at.qualifiesForHomeSaleExclusion ?? null,
+    assetName: at.assetName ?? null,
+    assetCategory: at.assetCategory ?? null,
+    assetSubType: at.assetSubType ?? null,
+    purchasePrice: numToString(at.purchasePrice),
+    growthRate: numToString(at.growthRate),
+    basis: numToString(at.basis),
+    fundingAccountId: at.fundingAccountId ?? null,
+    mortgageAmount: numToString(at.mortgageAmount),
+    mortgageRate: numToString(at.mortgageRate),
+    mortgageTermMonths: at.mortgageTermMonths ?? null,
   };
 }
 

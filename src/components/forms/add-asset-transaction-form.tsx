@@ -20,6 +20,34 @@ type AssetCategory =
   | "business"
   | "life_insurance";
 
+/** Shape passed in when editing an asset transaction. The form emits
+ *  string-typed numeric fields; this mirrors that. */
+export interface AssetTransactionInitialData {
+  id: string;
+  name: string;
+  type: "buy" | "sell";
+  year: number;
+  accountId: string | null;
+  purchaseTransactionId: string | null;
+  fractionSold: string | null;
+  overrideSaleValue: string | null;
+  overrideBasis: string | null;
+  transactionCostPct: string | null;
+  transactionCostFlat: string | null;
+  proceedsAccountId: string | null;
+  qualifiesForHomeSaleExclusion: boolean | null;
+  assetName: string | null;
+  assetCategory: string | null;
+  assetSubType: string | null;
+  purchasePrice: string | null;
+  growthRate: string | null;
+  basis: string | null;
+  fundingAccountId: string | null;
+  mortgageAmount: string | null;
+  mortgageRate: string | null;
+  mortgageTermMonths: number | null;
+}
+
 interface AddAssetTransactionFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
@@ -34,31 +62,7 @@ interface AddAssetTransactionFormProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
-  initialData?: {
-    id: string;
-    name: string;
-    type: "buy" | "sell";
-    year: number;
-    accountId: string | null;
-    purchaseTransactionId: string | null;
-    fractionSold: string | null;
-    overrideSaleValue: string | null;
-    overrideBasis: string | null;
-    transactionCostPct: string | null;
-    transactionCostFlat: string | null;
-    proceedsAccountId: string | null;
-    qualifiesForHomeSaleExclusion: boolean | null;
-    assetName: string | null;
-    assetCategory: string | null;
-    assetSubType: string | null;
-    purchasePrice: string | null;
-    growthRate: string | null;
-    basis: string | null;
-    fundingAccountId: string | null;
-    mortgageAmount: string | null;
-    mortgageRate: string | null;
-    mortgageTermMonths: number | null;
-  };
+  initialData?: AssetTransactionInitialData;
   onClose: () => void;
   onSaved: () => void;
   /** When provided, emit the assembled AssetTransaction instead of persisting. */
