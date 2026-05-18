@@ -27,7 +27,7 @@ export default async function ImportFlowPage({ params, searchParams }: PageProps
   return (
     <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
       <Suspense fallback={<ImportFlowSkeleton />}>
-        <ImportFlowContent clientId={id} importId={importId} scenarioParam={sp.scenario} />
+        <ImportFlowContent clientId={id} importId={importId} />
       </Suspense>
     </ClientDataPageShell>
   );

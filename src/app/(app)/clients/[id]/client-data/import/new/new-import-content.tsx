@@ -7,10 +7,9 @@ import ModePickerClient from "./mode-picker-client";
 
 interface NewImportContentProps {
   clientId: string;
-  scenarioParam: string | undefined;
 }
 
-export async function NewImportContent({ clientId: id, scenarioParam }: NewImportContentProps) {
+export async function NewImportContent({ clientId: id }: NewImportContentProps) {
   const firmId = await getOrgId();
 
   const [client] = await db

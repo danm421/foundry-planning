@@ -28,7 +28,7 @@ export default async function ImportPage({ params, searchParams }: ImportPagePro
   return (
     <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
       <Suspense fallback={<ImportListSkeleton />}>
-        <ImportContent clientId={id} scenarioParam={sp.scenario} />
+        <ImportContent clientId={id} />
       </Suspense>
     </ClientDataPageShell>
   );

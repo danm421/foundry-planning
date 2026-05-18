@@ -13,10 +13,9 @@ import ImportFlow from "./import-flow";
 interface ImportFlowContentProps {
   clientId: string;
   importId: string;
-  scenarioParam: string | undefined;
 }
 
-export async function ImportFlowContent({ clientId: id, importId, scenarioParam }: ImportFlowContentProps) {
+export async function ImportFlowContent({ clientId: id, importId }: ImportFlowContentProps) {
   const firmId = await getOrgId();
 
   const [client] = await db

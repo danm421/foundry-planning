@@ -8,10 +8,9 @@ import DraftsList from "./drafts-list";
 
 interface ImportContentProps {
   clientId: string;
-  scenarioParam: string | undefined;
 }
 
-export async function ImportContent({ clientId: id, scenarioParam }: ImportContentProps) {
+export async function ImportContent({ clientId: id }: ImportContentProps) {
   const firmId = await getOrgId();
 
   const [client] = await db

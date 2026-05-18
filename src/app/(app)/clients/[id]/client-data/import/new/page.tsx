@@ -27,7 +27,7 @@ export default async function NewImportPage({ params, searchParams }: PageProps)
   return (
     <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
       <Suspense fallback={<NewImportSkeleton />}>
-        <NewImportContent clientId={id} scenarioParam={sp.scenario} />
+        <NewImportContent clientId={id} />
       </Suspense>
     </ClientDataPageShell>
   );
