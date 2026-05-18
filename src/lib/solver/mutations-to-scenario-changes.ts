@@ -393,6 +393,42 @@ export function mutationsToScenarioChanges(
         accumulateSavings(m.accountId, "endYear", rule.endYear, m.year);
         break;
       }
+      case "roth-conversion-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "roth_conversion",
+          (source.rothConversions ?? []).find((r) => r.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
+      case "asset-transaction-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "asset_transaction",
+          (source.assetTransactions ?? []).find((t) => t.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
+      case "reinvestment-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "reinvestment",
+          (source.reinvestments ?? []).find((r) => r.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
     }
   }
 
@@ -449,4 +485,44 @@ function maybeDiff(
 ): void {
   if (from === to) return;
   acc[field] = { from, to };
+}
+
+/** Shallow field diff for technique edits. Ignores `id`. Uses JSON equality so
+ *  array fields (e.g. sourceAccountIds) compare by value. */
+function diffTechniqueFields(
+  from: Record<string, unknown>,
+  to: Record<string, unknown>,
+): Record<string, { from: unknown; to: unknown }> {
+  const diff: Record<string, { from: unknown; to: unknown }> = {};
+  const keys = new Set([...Object.keys(from), ...Object.keys(to)]);
+  for (const k of keys) {
+    if (k === "id") continue;
+    if (JSON.stringify(from[k]) !== JSON.stringify(to[k])) {
+      diff[k] = { from: from[k], to: to[k] };
+    }
+  }
+  return diff;
+}
+
+function pushTechniqueUpsert(
+  drafts: SolverScenarioChangeDraft[],
+  targetKind: "roth_conversion" | "asset_transaction" | "reinvestment",
+  existing: Record<string, unknown> | undefined,
+  id: string,
+  value: Record<string, unknown> | null,
+): void {
+  if (value === null) {
+    if (existing) {
+      drafts.push({ opType: "remove", targetKind, targetId: id, payload: null, orderIndex: 0 });
+    }
+    return;
+  }
+  if (!existing) {
+    drafts.push({ opType: "add", targetKind, targetId: id, payload: value, orderIndex: 0 });
+    return;
+  }
+  const diff = diffTechniqueFields(existing, value);
+  if (Object.keys(diff).length > 0) {
+    drafts.push({ opType: "edit", targetKind, targetId: id, payload: diff, orderIndex: 0 });
+  }
 }

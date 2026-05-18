@@ -406,3 +406,57 @@ describe("mutationsToScenarioChanges", () => {
     expect(drafts).toHaveLength(0);
   });
 });
+
+describe("mutationsToScenarioChanges — technique upserts", () => {
+  const rc = {
+    id: "rc-1",
+    name: "Conv",
+    destinationAccountId: "acc-roth",
+    sourceAccountIds: ["acc-trad"],
+    conversionType: "fixed_amount" as const,
+    fixedAmount: 20000,
+    startYear: 2030,
+    endYear: 2035,
+    indexingRate: 0,
+  };
+
+  it("emits an add change for a roth conversion not in the source tree", () => {
+    const src = makeSource(); // no rothConversions
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "roth-conversion-upsert", id: "rc-1", value: rc },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].opType).toBe("add");
+    expect(drafts[0].targetKind).toBe("roth_conversion");
+    expect(drafts[0].targetId).toBe("rc-1");
+    expect(drafts[0].payload).toEqual(rc);
+  });
+
+  it("emits an edit change with a field diff for an existing roth conversion", () => {
+    const src = { ...makeSource(), rothConversions: [rc] };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "roth-conversion-upsert", id: "rc-1", value: { ...rc, fixedAmount: 50000 } },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].opType).toBe("edit");
+    expect(drafts[0].payload).toEqual({ fixedAmount: { from: 20000, to: 50000 } });
+  });
+
+  it("emits a remove change when value is null and the technique exists", () => {
+    const src = { ...makeSource(), rothConversions: [rc] };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "roth-conversion-upsert", id: "rc-1", value: null },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].opType).toBe("remove");
+    expect(drafts[0].payload).toBeNull();
+  });
+
+  it("emits nothing for a no-op edit", () => {
+    const src = { ...makeSource(), rothConversions: [rc] };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "roth-conversion-upsert", id: "rc-1", value: { ...rc } },
+    ]);
+    expect(drafts).toHaveLength(0);
+  });
+});
