@@ -16,8 +16,8 @@ export async function EntitiesCashFlowContent({ id, firmId }: Props) {
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
   if (!client) {
-    // Parent layout already handles the 404 case via notFound(); this is a
-    // belt-and-suspenders fallback if scope ever drifts.
+    // page.tsx guards first; this is a belt-and-suspenders fallback in case
+    // the content component is ever used outside that guard.
     notFound();
   }
 
