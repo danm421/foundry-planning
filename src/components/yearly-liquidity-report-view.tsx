@@ -12,6 +12,7 @@ import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report
 import { YearlyLiquidityTable } from "./yearly-liquidity-table";
 import { YearlyLiquidityChart } from "./yearly-liquidity-chart";
 import type { OwnerDobs } from "./report-controls/age-helpers";
+import LiquiditySkeleton from "@/app/(app)/clients/[id]/estate-planning/liquidity/loading-skeleton";
 
 interface Props {
   clientId: string;
@@ -114,7 +115,7 @@ export default function YearlyLiquidityReportView({
     );
   }
   if (loading) {
-    return <div className="text-gray-300">Loading projection…</div>;
+    return <LiquiditySkeleton />;
   }
   if (!projection || !report) {
     return (
