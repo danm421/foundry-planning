@@ -2,6 +2,7 @@ import type {
   Account,
   BeneficiaryRef,
   ClientData,
+  Expense,
   LifeInsurancePolicy,
 } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
@@ -128,6 +129,45 @@ function syntheticPolicy(
 }
 
 /**
+ * Replace the household's living expenses from `deathYear` onward with a
+ * single survivor-adjusted amount.
+ *
+ * - Living expenses whose `endYear` >= `deathYear` are truncated to
+ *   `deathYear - 1` (they represent the pre-death household's spending).
+ * - Living expenses whose `endYear` < `deathYear` are left untouched (they
+ *   already ended before the death, so no truncation needed).
+ * - Living expenses whose `startYear` > `deathYear` are dropped: they would
+ *   create inverted ranges if truncated, and their spending is now covered by
+ *   the replacement row.
+ * - A single replacement expense is appended starting at `deathYear` and
+ *   running through `planEndYear`, growing at the plan's inflation rate.
+ */
+function applyLivingExpenseAtDeath(
+  out: ClientData,
+  deathYear: number,
+  livingExpenseAtDeath: number | null,
+): void {
+  if (livingExpenseAtDeath == null) return;
+  const horizonEnd = out.planSettings.planEndYear;
+  out.expenses = out.expenses
+    .filter((e) => !(e.type === "living" && e.startYear > deathYear))
+    .map((e): Expense =>
+      e.type === "living" && e.endYear >= deathYear
+        ? { ...e, endYear: deathYear - 1 }
+        : e,
+    );
+  out.expenses.push({
+    id: "li-solver-living-at-death",
+    type: "living",
+    name: "Living Expenses (post-death)",
+    annualAmount: livingExpenseAtDeath,
+    startYear: deathYear,
+    endYear: horizonEnd,
+    growthRate: out.planSettings.inflationRate,
+  });
+}
+
+/**
  * Assemble a what-if `ClientData` for the Life Insurance solver: a premature
  * death of `deceased` in `deathYear` plus a synthetic term policy at the
  * candidate `faceValue` whose §101 tax-free proceeds route to the survivor.
@@ -162,7 +202,8 @@ export function buildLifeInsuranceWhatIfData(
   // 3. Final / burial expenses override estate admin expenses.
   out.planSettings = { ...out.planSettings, estateAdminExpenses: finalExpenses };
 
-  // Task 3 — survivor's living-expense-at-death override (applyLivingExpenseAtDeath).
+  // Task 3 — survivor's living-expense-at-death override.
+  applyLivingExpenseAtDeath(out, deathYear, input.livingExpenseAtDeath);
 
   // Task 4 — pay-off-debts-at-death override (applyDebtPayoffAtDeath).
 

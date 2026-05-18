@@ -148,3 +148,65 @@ describe("buildLifeInsuranceWhatIfData", () => {
     );
   });
 });
+
+describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
+  it("replaces living expenses from the death year with the override amount", () => {
+    const data = marriedBase();
+    data.expenses = [
+      {
+        id: "e1",
+        type: "living",
+        name: "Lifestyle",
+        annualAmount: 120_000,
+        startYear: 2026,
+        endYear: 2070,
+        growthRate: 0,
+      },
+    ];
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      growthRate: 0.05,
+      finalExpenses: 0,
+      livingExpenseAtDeath: 80_000,
+      payOffDebtsAtDeath: false,
+    });
+    const living = out.expenses.filter((e) => e.type === "living");
+    // original ended the year before death
+    const original = living.find((e) => e.id === "e1")!;
+    expect(original.endYear).toBe(2029);
+    // replacement starts at death year at the override amount
+    const replacement = living.find((e) => e.startYear === 2030)!;
+    expect(replacement.annualAmount).toBe(80_000);
+    expect(replacement.endYear).toBeGreaterThanOrEqual(2070);
+  });
+
+  it("leaves living expenses untouched when the override is null", () => {
+    const data = marriedBase();
+    data.expenses = [
+      {
+        id: "e1",
+        type: "living",
+        name: "Lifestyle",
+        annualAmount: 120_000,
+        startYear: 2026,
+        endYear: 2070,
+        growthRate: 0,
+      },
+    ];
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      growthRate: 0.05,
+      finalExpenses: 0,
+      livingExpenseAtDeath: null,
+      payOffDebtsAtDeath: false,
+    });
+    expect(out.expenses).toHaveLength(1);
+    expect(out.expenses[0].endYear).toBe(2070);
+  });
+});
