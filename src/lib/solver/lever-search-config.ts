@@ -8,6 +8,7 @@ import type { SolverMutation } from "./types";
 import type { SolveLeverKey } from "./solve-types";
 
 export const SAVINGS_HARD_CAP = 100_000;
+export const ROTH_AMOUNT_HARD_CAP = 1_000_000;
 export const SAVINGS_ZERO_DEFAULT_HI = 50_000;
 export const SAVINGS_SOURCE_MULTIPLIER = 4;
 
@@ -40,6 +41,17 @@ export function leverSearchConfig(
           : Math.min(SAVINGS_HARD_CAP, source * SAVINGS_SOURCE_MULTIPLIER);
       return { lo: 0, hi, step: 1000, direction: 1 };
     }
+    case "roth-conversion-amount": {
+      const rc = (tree.rothConversions ?? []).find(
+        (r) => r.id === target.techniqueId,
+      );
+      const current = rc?.fixedAmount ?? 0;
+      const hi =
+        current === 0
+          ? 200_000
+          : Math.min(ROTH_AMOUNT_HARD_CAP, current * 4);
+      return { lo: 0, hi, step: 1000, direction: -1 };
+    }
   }
 }
 
@@ -47,6 +59,7 @@ export function leverSearchConfig(
 export function buildLeverMutation(
   target: SolveLeverKey,
   value: number,
+  tree: ClientData,
 ): SolverMutation {
   switch (target.kind) {
     case "retirement-age":
@@ -61,5 +74,20 @@ export function buildLeverMutation(
         accountId: target.accountId,
         annualAmount: value,
       };
+    case "roth-conversion-amount": {
+      const rc = (tree.rothConversions ?? []).find(
+        (r) => r.id === target.techniqueId,
+      );
+      if (!rc) {
+        throw new Error(
+          `roth-conversion-amount solve: no conversion ${target.techniqueId}`,
+        );
+      }
+      return {
+        kind: "roth-conversion-upsert",
+        id: rc.id,
+        value: { ...rc, fixedAmount: value },
+      };
+    }
   }
 }

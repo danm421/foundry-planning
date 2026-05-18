@@ -100,7 +100,7 @@ describe("leverSearchConfig", () => {
 
 describe("buildLeverMutation", () => {
   it("retirement-age", () => {
-    expect(buildLeverMutation({ kind: "retirement-age", person: "client" }, 67)).toEqual({
+    expect(buildLeverMutation({ kind: "retirement-age", person: "client" }, 67, emptyTree)).toEqual({
       kind: "retirement-age",
       person: "client",
       age: 67,
@@ -108,14 +108,14 @@ describe("buildLeverMutation", () => {
   });
 
   it("living-expense-scale", () => {
-    expect(buildLeverMutation({ kind: "living-expense-scale" }, 1.1)).toEqual({
+    expect(buildLeverMutation({ kind: "living-expense-scale" }, 1.1, emptyTree)).toEqual({
       kind: "living-expense-scale",
       multiplier: 1.1,
     });
   });
 
   it("ss-claim-age", () => {
-    expect(buildLeverMutation({ kind: "ss-claim-age", person: "spouse" }, 68)).toEqual({
+    expect(buildLeverMutation({ kind: "ss-claim-age", person: "spouse" }, 68, emptyTree)).toEqual({
       kind: "ss-claim-age",
       person: "spouse",
       age: 68,
@@ -124,11 +124,47 @@ describe("buildLeverMutation", () => {
 
   it("savings-contribution", () => {
     expect(
-      buildLeverMutation({ kind: "savings-contribution", accountId: "a1" }, 25_000),
+      buildLeverMutation({ kind: "savings-contribution", accountId: "a1" }, 25_000, emptyTree),
     ).toEqual({
       kind: "savings-contribution",
       accountId: "a1",
       annualAmount: 25_000,
     });
+  });
+});
+
+describe("roth-conversion-amount target", () => {
+  const rc = {
+    id: "rc-1",
+    name: "Conv",
+    destinationAccountId: "acc-roth",
+    sourceAccountIds: ["acc-trad"],
+    conversionType: "fixed_amount" as const,
+    fixedAmount: 30000,
+    startYear: 2030,
+    endYear: 2035,
+    indexingRate: 0,
+  };
+
+  it("derives a search range from the current fixedAmount", () => {
+    const tree = { rothConversions: [rc] } as unknown as import("@/engine/types").ClientData;
+    const cfg = leverSearchConfig({ kind: "roth-conversion-amount", techniqueId: "rc-1" }, tree);
+    expect(cfg.lo).toBe(0);
+    expect(cfg.hi).toBeGreaterThan(30000);
+    expect(cfg.step).toBeGreaterThan(0);
+  });
+
+  it("buildLeverMutation re-upserts the conversion with the new amount", () => {
+    const tree = { rothConversions: [rc] } as unknown as import("@/engine/types").ClientData;
+    const m = buildLeverMutation(
+      { kind: "roth-conversion-amount", techniqueId: "rc-1" },
+      75000,
+      tree,
+    );
+    expect(m.kind).toBe("roth-conversion-upsert");
+    if (m.kind === "roth-conversion-upsert") {
+      expect(m.id).toBe("rc-1");
+      expect(m.value?.fixedAmount).toBe(75000);
+    }
   });
 });

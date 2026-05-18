@@ -19,9 +19,11 @@ import {
 } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
+import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import { applyMutations } from "./apply-mutations";
 import { bisect } from "./bisect";
 import { buildLeverMutation, leverSearchConfig } from "./lever-search-config";
+import { resolveTechniqueMutations } from "./resolve-technique-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "./solve-types";
 import type { SolverMutation } from "./types";
 
@@ -37,6 +39,8 @@ export interface SolveTargetArgs {
   onProgress?: (event: SolveProgressEvent) => void;
   /** Cancellation signal forwarded to runMonteCarlo. */
   signal?: AbortSignal;
+  /** Resolution context for re-resolving reinvestments in baseline mutations. */
+  resolutionContext?: ResolutionContext;
 }
 
 export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEvent> {
@@ -51,10 +55,14 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   const evaluate = async (value: number): Promise<number> => {
     if (args.signal?.aborted) throw new Error("aborted");
     iteration += 1;
-    const tree = applyMutations(args.effectiveTree, [
+    const allMutations = [
       ...args.baselineMutations,
-      buildLeverMutation(args.target, value),
-    ]);
+      buildLeverMutation(args.target, value, args.effectiveTree),
+    ];
+    let tree = applyMutations(args.effectiveTree, allMutations);
+    if (args.resolutionContext) {
+      tree = resolveTechniqueMutations(tree, allMutations, args.resolutionContext);
+    }
     const projection = runProjection(tree);
     // Re-create return engine each iteration with the same seed so that the
     // RNG state restarts identically every time — only the lever changes.

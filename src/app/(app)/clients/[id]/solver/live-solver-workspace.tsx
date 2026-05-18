@@ -90,7 +90,7 @@ export function LiveSolverWorkspace({
       // under StrictMode would otherwise call setMutationMap twice).
       const prev = activeSolveRef.current;
       if (!prev) return;
-      const mutation = buildLeverMutation(prev.target, e.solvedValue);
+      const mutation = buildLeverMutation(prev.target, e.solvedValue, initialSourceClientData);
       setMutationMap((mm) => {
         const next = new Map(mm);
         next.set(mutationKey(mutation), mutation);
@@ -270,7 +270,7 @@ export function LiveSolverWorkspace({
       // Filter out any existing mutation for this lever; bisect iterates on it.
       // mutationKey() ignores the value, so we pass an arbitrary placeholder (0)
       // just to derive the key.
-      const targetKey = mutationKey(buildLeverMutation(target, 0));
+      const targetKey = mutationKey(buildLeverMutation(target, 0, initialSourceClientData));
       const baselineMutations = mutations.filter((m) => mutationKey(m) !== targetKey);
       void solveController.start({
         source: initialSource,

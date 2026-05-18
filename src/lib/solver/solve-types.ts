@@ -12,7 +12,8 @@ export type SolveLeverKey =
   | { kind: "retirement-age"; person: SolverPerson }
   | { kind: "living-expense-scale" }
   | { kind: "savings-contribution"; accountId: string }
-  | { kind: "ss-claim-age"; person: SolverPerson };
+  | { kind: "ss-claim-age"; person: SolverPerson }
+  | { kind: "roth-conversion-amount"; techniqueId: string };
 
 /** POST /api/clients/[id]/solver/solve body. */
 export interface SolveRequest {

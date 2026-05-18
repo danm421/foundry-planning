@@ -25,6 +25,10 @@ const TARGET = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("living-expense-scale") }),
   z.object({ kind: z.literal("savings-contribution"), accountId: z.string().min(1) }),
   z.object({ kind: z.literal("ss-claim-age"), person: z.enum(["client", "spouse"]) }),
+  z.object({
+    kind: z.literal("roth-conversion-amount"),
+    techniqueId: z.string().min(1),
+  }),
 ]);
 
 const BODY = z.object({
@@ -85,7 +89,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         controller.enqueue(encoder.encode(sseChunk(event, payload)));
       };
       try {
-        const { effectiveTree } = await loadEffectiveTree(clientId, firmId, source, {});
+        const { effectiveTree, resolutionContext } = await loadEffectiveTree(clientId, firmId, source, {});
         const mcPayload = await loadMonteCarloData(clientId, firmId);
         const result = await solveTarget({
           effectiveTree,
@@ -93,6 +97,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           baselineMutations: mutations as SolverMutation[],
           target: target as SolveLeverKey,
           targetPoS,
+          resolutionContext,
           onProgress: (p) => emit("progress", p),
           signal: abortController.signal,
         });
