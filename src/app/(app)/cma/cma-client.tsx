@@ -8,6 +8,7 @@ import {
 } from "@/lib/investments/asset-types";
 import { TrashIcon } from "@/components/icons";
 import CmaMigrationDialog from "@/components/cma-migration-dialog";
+import CmaSkeleton from "./loading-skeleton";
 
 interface AssetClass {
   id: string;
@@ -211,7 +212,7 @@ export default function CmaClient() {
   }
 
   if (loading) {
-    return <div className="py-12 text-center text-gray-300">Loading CMA data...</div>;
+    return <CmaSkeleton />;
   }
 
   return (
