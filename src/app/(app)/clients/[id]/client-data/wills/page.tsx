@@ -106,6 +106,7 @@ export default async function WillsPage({ params, searchParams }: PageProps) {
           name: b.name,
           assetMode: (b.assetMode ?? "all_assets") as WillAssetMode,
           accountId: b.accountId,
+          entityId: b.entityId ?? null,
           percentage: b.percentage,
           condition: b.condition,
           sortOrder: b.sortOrder,
@@ -144,6 +145,7 @@ export default async function WillsPage({ params, searchParams }: PageProps) {
   const ents: WillsPanelEntity[] = entityRows.map((e) => ({
     id: e.id,
     name: e.name,
+    entityType: e.entityType ?? undefined,
   }));
   const liabs: WillsPanelLiability[] = liabilityRows.map((l) => ({
     id: l.id,
