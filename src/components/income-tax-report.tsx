@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import IncomeTaxSkeleton from "@/app/(app)/clients/[id]/cashflow/income-tax/loading-skeleton";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine";
 import DialogTabs from "@/components/dialog-tabs";
@@ -167,7 +168,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
   }, [clientId, searchParams]);
 
   if (loading) {
-    return <div className="p-6 text-ink-3">Loading…</div>;
+    return <IncomeTaxSkeleton />;
   }
   if (error) {
     return <div className="p-6 text-crit">{error}</div>;
