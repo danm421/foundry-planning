@@ -141,3 +141,44 @@ describe("AddRothConversionForm — scenario mode", () => {
     expect(body.desiredFields.fixedAmount).toBe(10000);
   });
 });
+
+describe("AddRothConversionForm — draft mode", () => {
+  it("calls onSubmitDraft with a RothConversion object and does NOT call fetch", async () => {
+    const onSubmitDraft = vi.fn();
+    const onSaved = vi.fn();
+
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        onClose={() => {}}
+        onSaved={onSaved}
+        onSubmitDraft={onSubmitDraft}
+      />,
+    );
+
+    // Set fixed amount to 25000
+    const amountInput = screen.getByLabelText(/Fixed Amount/i);
+    fireEvent.change(amountInput, { target: { value: "25000" } });
+
+    // Select the source account
+    fireEvent.click(screen.getByRole("button", { name: /\+ Add/i }));
+
+    // Submit via the form element
+    fireEvent.submit(document.getElementById("roth-conversion-form")!);
+
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
+
+    const technique = onSubmitDraft.mock.calls[0][0];
+    expect(technique.conversionType).toBe("fixed_amount");
+    expect(technique.fixedAmount).toBe(25000);
+    expect(typeof technique.id).toBe("string");
+    expect(technique.id.length).toBeGreaterThan(0);
+
+    // fetch must NOT have been called for persistence
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // onSaved must have been called to close the dialog
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+});
