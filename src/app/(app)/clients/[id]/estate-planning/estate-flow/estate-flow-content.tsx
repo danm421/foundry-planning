@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import {
+  clients,
   scenarios as scenariosTable,
   gifts,
   giftSeries,
@@ -13,7 +14,6 @@ import {
   type EstateFlowGift,
 } from "@/lib/estate/estate-flow-gifts";
 import EstateFlowView from "@/components/estate-flow-view";
-import { clients } from "@/db/schema";
 
 interface Props {
   clientId: string;
