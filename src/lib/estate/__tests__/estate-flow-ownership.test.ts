@@ -617,6 +617,7 @@ describe("buildOwnershipColumn", () => {
     );
     expect(llcSavings!.value).toBe(20_000);
     expect(llcSavings!.percent).toBe(0.2);
+    expect(llcSavings!.isSplit).toBe(true);
     // Business-self row ($10k) + Savings slice ($20k) = $30k.
     expect(llc!.subtotal).toBe(30_000);
   });

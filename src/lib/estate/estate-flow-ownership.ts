@@ -415,7 +415,7 @@ export function buildOwnershipColumn(
         accountType: account.category,
         value: fractionalValue,
         percent,
-        isSplit: true,
+        isSplit: true, // mixed account → always a split
         linkedLiabilities,
         netValue,
         hasBeneficiaries,
