@@ -31,6 +31,10 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
 
   return (
     <LiveSolverWorkspace
+      // Remount when the right-column source changes. The workspace stashes
+      // initialSource* props into useState; a searchParam-only navigation
+      // preserves the instance, so without a key the chart keeps showing the
+      // previous source's projection.
       key={source}
       clientId={clientId}
       baseClientData={baseLoaded.effectiveTree}

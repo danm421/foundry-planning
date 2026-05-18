@@ -1,4 +1,4 @@
-import { LoadingLabel, SkeletonKpi, SkeletonChart, SkeletonCard } from "@/components/skeleton";
+import { LoadingLabel, SkeletonKpi, SkeletonChart } from "@/components/skeleton";
 
 export default function ComparisonSkeleton() {
   return (
@@ -13,21 +13,13 @@ export default function ComparisonSkeleton() {
       </div>
 
       <div className="grid grid-cols-1 gap-[var(--gap-grid)] md:grid-cols-2">
-        <SkeletonCard>
-          <SkeletonChart />
-        </SkeletonCard>
-        <SkeletonCard>
-          <SkeletonChart />
-        </SkeletonCard>
+        <SkeletonChart />
+        <SkeletonChart />
       </div>
 
       <div className="grid grid-cols-1 gap-[var(--gap-grid)] md:grid-cols-2">
-        <SkeletonCard>
-          <SkeletonChart />
-        </SkeletonCard>
-        <SkeletonCard>
-          <SkeletonChart />
-        </SkeletonCard>
+        <SkeletonChart />
+        <SkeletonChart />
       </div>
     </div>
   );
