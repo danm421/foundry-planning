@@ -361,27 +361,19 @@ export function computeDeductions(input: {
   // allows the marital deduction for property "passing from the decedent",
   // i.e. property in the gross estate.
   const grossByAccountId = new Map<string, number>();
-  for (const line of input.grossEstateLines ?? []) {
-    if (line.accountId == null || line.amount <= 0) continue;
-    grossByAccountId.set(
-      line.accountId,
-      (grossByAccountId.get(line.accountId) ?? 0) + line.amount,
-    );
-  }
-  // Track per-source remaining gross share so multiple spouse-routed transfers
-  // from the same source don't collectively over-claim the marital deduction.
-  const remainingGrossByAccountId = new Map(grossByAccountId);
-
   // Map source entity id → decedent's gross-estate share. Caps a spouse-routed
   // business-interest transfer's marital deduction at the includible amount.
   const grossByEntityId = new Map<string, number>();
   for (const line of input.grossEstateLines ?? []) {
-    if (line.entityId == null || line.amount <= 0) continue;
-    grossByEntityId.set(
-      line.entityId,
-      (grossByEntityId.get(line.entityId) ?? 0) + line.amount,
-    );
+    if (line.amount <= 0) continue;
+    if (line.accountId != null)
+      grossByAccountId.set(line.accountId, (grossByAccountId.get(line.accountId) ?? 0) + line.amount);
+    if (line.entityId != null)
+      grossByEntityId.set(line.entityId, (grossByEntityId.get(line.entityId) ?? 0) + line.amount);
   }
+  // Track per-source remaining gross share so multiple spouse-routed transfers
+  // from the same source don't collectively over-claim the marital deduction.
+  const remainingGrossByAccountId = new Map(grossByAccountId);
   const remainingGrossByEntityId = new Map(grossByEntityId);
 
   let maritalDeduction = 0;
@@ -395,6 +387,10 @@ export function computeDeductions(input: {
         const remaining = remainingGrossByAccountId.get(t.sourceAccountId) ?? 0;
         eligible = Math.min(eligible, Math.max(0, remaining));
         remainingGrossByAccountId.set(t.sourceAccountId, remaining - eligible);
+      // Entity transfer with no matching gross-estate line falls through both
+      // branches and stays uncapped — intentional. A missing line means 0%
+      // deceased share or an upstream omission; the deduction capper must not
+      // silently zero a legitimate transfer in that edge case.
       } else if (t.sourceEntityId != null && grossByEntityId.has(t.sourceEntityId)) {
         const remaining = remainingGrossByEntityId.get(t.sourceEntityId) ?? 0;
         eligible = Math.min(eligible, Math.max(0, remaining));
