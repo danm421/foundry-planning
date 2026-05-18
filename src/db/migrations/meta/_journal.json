@@ -701,6 +701,13 @@
       "when": 1779137724266,
       "tag": "0099_shocking_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1779147184098,
+      "tag": "0100_hard_marrow",
+      "breakpoints": true
     }
   ]
 }
