@@ -2,6 +2,7 @@ import type {
   Account, DeathTransfer, EntitySummary, FamilyMember, GrossEstateLine,
   EstateTaxResult, Liability, PlanSettings,
 } from "../types";
+import { businessConsolidatedValue } from "./business-value";
 import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import { computeStateEstateTax } from "@/lib/tax/state-estate";
 import type { USPSStateCode } from "@/lib/usps-states";
@@ -284,16 +285,9 @@ export function computeGrossEstate(input: {
     const pct = deceasedBusinessShare(ent, input.deceasedFmId, input.deathOrder);
     if (pct <= 0) continue;
 
-    let entityTotal = ent.value ?? 0;
-    for (const a of input.accounts) {
-      const bal = input.accountBalances[a.id] ?? 0;
-      if (bal <= 0) continue;
-      for (const o of a.owners) {
-        if (o.kind !== "entity" || o.entityId !== ent.id) continue;
-        const locked = input.entityAccountSharesEoY?.get(ent.id)?.get(a.id);
-        entityTotal += locked ?? bal * o.percent;
-      }
-    }
+    const entityTotal = businessConsolidatedValue(
+      ent, input.accounts, input.accountBalances, input.entityAccountSharesEoY,
+    );
     if (entityTotal <= 0) continue;
 
     lines.push({
