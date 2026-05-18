@@ -377,6 +377,11 @@ export function buildOwnershipColumn(
     // entity's partial slice of a mixed account is dropped from the column.
     // (Canonical rule: a business entity's value includes its partial slices
     // of mixed accounts.)
+    // Note: like the family-member rows, this uses the authored ownership
+    // percent (via `resolveValue`), not the engine's locked entity shares —
+    // the gross-estate and balance-sheet reports use locked shares. That
+    // divergence is intentional for this report; don't "fix" it to locked
+    // shares without aligning the family-member rows too.
     const entityOwnerRows = account.owners.filter(
       (o): o is Extract<AccountOwner, { kind: "entity" }> => o.kind === "entity",
     );
