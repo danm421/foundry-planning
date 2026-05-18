@@ -22,14 +22,27 @@ export interface ReinvestmentsResult {
  *  only the profile switch; the capital-gains branch is added in Phase 2. */
 export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResult {
   const { reinvestments, accounts, year } = input;
-  const capitalGains = 0;
+  let capitalGains = 0;
   const byReinvestment: ReinvestmentsResult["byReinvestment"] = {};
 
   for (const ri of reinvestments) {
     if (ri.year !== year) continue;
+    let byReinvestmentGains = 0;
     for (const accountId of ri.accountIds) {
       const acct = accounts.find((a) => a.id === accountId);
       if (!acct) continue; // account removed earlier this projection (sold, etc.)
+
+      if (ri.realizeTaxesOnSwitch && acct.category === "taxable") {
+        const bal = input.accountBalances[acct.id] ?? 0;
+        const basis = input.basisMap[acct.id] ?? 0;
+        const fraction = ri.soldFractionByAccount[acct.id] ?? 0;
+        const realizedGain = Math.max(0, bal - basis) * fraction;
+        if (realizedGain > 0) {
+          input.basisMap[acct.id] = basis + realizedGain; // sell-and-rebuy step-up
+          capitalGains += realizedGain;
+          byReinvestmentGains += realizedGain;
+        }
+      }
 
       acct.growthRate = ri.newGrowthRate;
       if (
@@ -39,7 +52,7 @@ export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResu
         acct.realization = ri.newRealization;
       }
     }
-    byReinvestment[ri.id] = { capitalGains: 0, label: ri.name };
+    byReinvestment[ri.id] = { capitalGains: byReinvestmentGains, label: ri.name };
   }
 
   return { capitalGains, byReinvestment };

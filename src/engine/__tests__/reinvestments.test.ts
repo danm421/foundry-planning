@@ -117,4 +117,71 @@ describe("applyReinvestments", () => {
     });
     expect(result.capitalGains).toBe(0);
   });
+
+  it("realizes LTCG on a partial switch and steps basis up", () => {
+    const acct = taxableAccount("a1"); // value 100k, basis 60k
+    const basisMap = { a1: 60_000 };
+    const result = applyReinvestments({
+      reinvestments: [
+        reinvestment({ realizeTaxesOnSwitch: true, soldFractionByAccount: { a1: 0.25 } }),
+      ],
+      accounts: [acct],
+      accountBalances: { a1: 100_000 },
+      basisMap,
+      accountLedgers: {},
+      year: 2030,
+    });
+    // unrealized gain 40k * 0.25 = 10k
+    expect(result.capitalGains).toBeCloseTo(10_000);
+    expect(basisMap.a1).toBeCloseTo(70_000);
+  });
+
+  it("realizes the full gain when soldFraction is 1", () => {
+    const basisMap = { a1: 60_000 };
+    const result = applyReinvestments({
+      reinvestments: [
+        reinvestment({ realizeTaxesOnSwitch: true, soldFractionByAccount: { a1: 1 } }),
+      ],
+      accounts: [taxableAccount("a1")],
+      accountBalances: { a1: 100_000 },
+      basisMap,
+      accountLedgers: {},
+      year: 2030,
+    });
+    expect(result.capitalGains).toBeCloseTo(40_000);
+    expect(basisMap.a1).toBeCloseTo(100_000);
+  });
+
+  it("realizes nothing when realizeTaxesOnSwitch is false", () => {
+    const basisMap = { a1: 60_000 };
+    const result = applyReinvestments({
+      reinvestments: [
+        reinvestment({ realizeTaxesOnSwitch: false, soldFractionByAccount: { a1: 1 } }),
+      ],
+      accounts: [taxableAccount("a1")],
+      accountBalances: { a1: 100_000 },
+      basisMap,
+      accountLedgers: {},
+      year: 2030,
+    });
+    expect(result.capitalGains).toBe(0);
+    expect(basisMap.a1).toBe(60_000);
+  });
+
+  it("does not realize gains on a retirement account", () => {
+    const acct = { ...taxableAccount("a1"), category: "retirement" as const };
+    const basisMap = { a1: 60_000 };
+    const result = applyReinvestments({
+      reinvestments: [
+        reinvestment({ realizeTaxesOnSwitch: true, soldFractionByAccount: { a1: 1 } }),
+      ],
+      accounts: [acct],
+      accountBalances: { a1: 100_000 },
+      basisMap,
+      accountLedgers: {},
+      year: 2030,
+    });
+    expect(result.capitalGains).toBe(0);
+    expect(basisMap.a1).toBe(60_000);
+  });
 });
