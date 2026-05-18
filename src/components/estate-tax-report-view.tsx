@@ -458,7 +458,7 @@ function DecedentBreakdown({
         >
           {tax.grossEstateLines.map((line, idx) => (
             <LineRow
-              key={`${line.accountId ?? line.liabilityId ?? "line"}-${idx}`}
+              key={`${line.accountId ?? line.liabilityId ?? line.entityId ?? "line"}-${idx}`}
               label={line.label}
               hint={line.percentage !== 1 ? pct.format(line.percentage) : undefined}
               amount={line.amount}

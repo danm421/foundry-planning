@@ -6,6 +6,7 @@ import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import { computeStateEstateTax } from "@/lib/tax/state-estate";
 import type { USPSStateCode } from "@/lib/usps-states";
 import { STATE_INHERITANCE_TAX } from "@/lib/tax/state-inheritance";
+import { isBusinessEntity } from "@/lib/estate/in-estate-weights";
 import type { ExternalBeneficiarySummary } from "./shared";
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
 import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
@@ -41,6 +42,57 @@ export function computeFederalEstateTax(input: {
 export interface GrossEstateOutput {
   lines: GrossEstateLine[];
   total: number;
+}
+
+/**
+ * Fraction of a business entity (LLC / S-corp / C-corp / partnership / other)
+ * that belongs in the deceased's gross estate. Unlike trusts, business entities
+ * have no `grantor` — inclusion is driven by per-family-member ownership from
+ * the entity_owners table (`entity.owners`).
+ *
+ * Legacy entities predating the entity_owners table have no `owners` array.
+ * They are treated as fully family-owned with no per-person split, so the joint
+ * convention applies: 50% at first death, 100% at final death — identical to an
+ * unattributed jointly-titled household account.
+ */
+function deceasedBusinessShare(
+  entity: EntitySummary,
+  deceasedFmId: string | null,
+  deathOrder: 1 | 2,
+): number {
+  if (entity.owners == null) return deathOrder === 1 ? 0.5 : 1;
+  if (deceasedFmId == null) return 0;
+  return entity.owners
+    .filter((o) => o.familyMemberId === deceasedFmId)
+    .reduce((s, o) => s + (o.percent ?? 0), 0);
+}
+
+/**
+ * Fraction of an entity-owned slice that belongs in the deceased's gross
+ * estate. Business entities are included by the deceased's entity_owners share
+ * (they have no grantor). Trusts are included 100% only when revocable AND the
+ * deceased is the grantor; ILIT / IDGT and third-party trusts contribute 0.
+ */
+function deceasedEntityShare(
+  entity: EntitySummary,
+  ctx: {
+    deceased: "client" | "spouse";
+    deceasedFmId: string | null;
+    deathOrder: 1 | 2;
+  },
+): number {
+  if (isBusinessEntity(entity)) {
+    return deceasedBusinessShare(entity, ctx.deceasedFmId, ctx.deathOrder);
+  }
+  if (entity.isIrrevocable) return 0;
+  return entity.grantor === ctx.deceased ? 1 : 0;
+}
+
+/** Suffix noun for a gross-estate line sourced from an entity. */
+type EntityNoun = "Business" | "Trust";
+
+function entityKindNoun(entity: EntitySummary): EntityNoun {
+  return isBusinessEntity(entity) ? "Business" : "Trust";
 }
 
 export function computeGrossEstate(input: {
@@ -93,14 +145,14 @@ export function computeGrossEstate(input: {
     if (solEntityId != null) {
       const ent = entityById.get(solEntityId);
       if (!ent) continue;
-      if (ent.isIrrevocable) continue; // ILIT / IDGT excluded
-      if (ent.grantor !== input.deceased) continue;
-      const amount = fmv * 1;
+      const pct = deceasedEntityShare(ent, input);
+      if (pct <= 0) continue;
+      const amount = fmv * pct;
       lines.push({
-        label: formatLabel(a.name, 1, /* inEntity */ true),
+        label: formatLabel(a.name, pct, entityKindNoun(ent)),
         accountId: a.id,
         liabilityId: null,
-        percentage: 1,
+        percentage: pct,
         amount,
       });
       continue;
@@ -108,7 +160,8 @@ export function computeGrossEstate(input: {
 
     // ── Mixed / family-only routing — accumulate per-owner contributions ──
     let amount = 0;
-    let hasEntityContribution = false;
+    let sawTrust = false;
+    let sawBusiness = false;
 
     // Family contribution
     const cfm = controllingFamilyMember(a);
@@ -135,26 +188,31 @@ export function computeGrossEstate(input: {
       // fmOwners.length === 0 → entity-only account; no family contribution.
     }
 
-    // Per-entity contributions on mixed accounts: rev-trust where deceased
-    // is grantor pulls in at locked share × 1; irrevocable trusts excluded;
-    // any other entity-grantor case is unmodeled today.
+    // Per-entity contributions on a mixed account, each at locked share ×
+    // the entity's gross-estate fraction.
     for (const slice of entitySlices) {
       const ent = entityById.get(slice.entityId);
       if (!ent) continue;
-      if (ent.isIrrevocable) continue;
-      if (ent.grantor !== input.deceased) continue;
-      amount += slice.locked;
-      hasEntityContribution = true;
+      const pct = deceasedEntityShare(ent, input);
+      if (pct <= 0) continue;
+      amount += slice.locked * pct;
+      if (isBusinessEntity(ent)) sawBusiness = true;
+      else sawTrust = true;
     }
 
     if (amount <= 0) continue;
     // fmv > 0 guaranteed by the early-out at the top of the loop.
     const effPct = amount / fmv;
+    // Suffix flags the entity contribution, not exclusivity (the line may also
+    // aggregate a family pool). A trust + business mix prefers "Trust" so the
+    // result never depends on owner-array order.
+    const entityNoun: EntityNoun | null = sawTrust
+      ? "Trust"
+      : sawBusiness
+        ? "Business"
+        : null;
     lines.push({
-      // hasEntityContribution=true adds "(Trust)" suffix. On a mixed account
-      // (family pool + rev-trust-grantor slice) the line aggregates both
-      // contributions; the suffix flags any entity contribution, not exclusivity.
-      label: formatLabel(a.name, effPct, hasEntityContribution),
+      label: formatLabel(a.name, effPct, entityNoun),
       accountId: a.id,
       liabilityId: null,
       percentage: effPct,
@@ -170,16 +228,14 @@ export function computeGrossEstate(input: {
     if (l.ownerFamilyMemberId) continue;
 
     let pct = 0;
-    let inEntity = false;
+    let liabilityEntityNoun: EntityNoun | null = null;
 
     const solEntityId = controllingEntity(l);
     if (solEntityId != null) {
-      inEntity = true;
       const ent = entityById.get(solEntityId);
       if (!ent) continue;
-      if (ent.isIrrevocable) continue;
-      if (ent.grantor === input.deceased) pct = 1;
-      else continue;
+      pct = deceasedEntityShare(ent, input);
+      liabilityEntityNoun = entityKindNoun(ent);
     } else {
       // Mirror asset logic: an explicit single family-member owner on the
       // liability is the source of truth. Only fall back to the linked
@@ -208,7 +264,7 @@ export function computeGrossEstate(input: {
 
     if (pct <= 0) continue;
     lines.push({
-      label: formatLabel(l.name, pct, inEntity),
+      label: formatLabel(l.name, pct, liabilityEntityNoun),
       accountId: null,
       liabilityId: l.id,
       percentage: pct,
@@ -216,13 +272,38 @@ export function computeGrossEstate(input: {
     });
   }
 
+  // Business-entity flat valuations. A business (LLC / S-corp / etc.) carries
+  // operating-company worth in `entity.value` that is not held through any
+  // account, so the account loop above never sees it. Include the deceased's
+  // ownership share. Trusts and foundations hold value via accounts and carry
+  // no flat value, so isBusinessEntity gates them out.
+  for (const ent of input.entities) {
+    if (!isBusinessEntity(ent)) continue;
+    const value = ent.value ?? 0;
+    if (value <= 0) continue;
+    const pct = deceasedBusinessShare(ent, input.deceasedFmId, input.deathOrder);
+    if (pct <= 0) continue;
+    lines.push({
+      label: formatLabel(ent.name ?? "Business", pct, "Business"),
+      accountId: null,
+      liabilityId: null,
+      entityId: ent.id,
+      percentage: pct,
+      amount: value * pct,
+    });
+  }
+
   const total = lines.reduce((sum, line) => sum + line.amount, 0);
   return { lines, total };
 }
 
-function formatLabel(baseName: string, pct: number, inTrust: boolean): string {
+function formatLabel(
+  baseName: string,
+  pct: number,
+  entityNoun: EntityNoun | null,
+): string {
   let label = baseName;
-  if (inTrust) label = `${label} (Trust)`;
+  if (entityNoun) label = `${label} (${entityNoun})`;
   if (pct < 1) label = `${label} (${Math.round(pct * 100)}%)`;
   return label;
 }

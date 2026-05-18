@@ -135,10 +135,13 @@ export interface DrainAttribution {
 export interface GrossEstateLine {
   /** Display label, e.g. "INV - Client 401k" or "Home (50%)". */
   label: string;
-  /** Source account id; null when this line is a liability. */
+  /** Source account id; null when this line is a liability or entity flat value. */
   accountId: string | null;
-  /** Source liability id; null when this line is an asset. */
+  /** Source liability id; null when this line is an asset or entity flat value. */
   liabilityId: string | null;
+  /** Source entity id; set only for a business entity's flat-valuation line
+   *  (`entity.value`), where accountId and liabilityId are both null. */
+  entityId?: string | null;
   /** Effective share of FMV included in this estate line (`amount / fmv`).
    *  0.5 for a pure-joint account at first death; 1.0 for a 100%-included
    *  account; intermediate values when contributions from a family pool and
