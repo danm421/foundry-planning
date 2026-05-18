@@ -334,7 +334,9 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   });
 
   // Phase 3.5 — business-interest succession (compute-only; reads pre-flip
-  // entities, same discipline as grantor-succession above).
+  // entities AND pre-chain accounts/accountBalances, same discipline as
+  // grantor-succession above — both use `prepared.*` so the 4b chain's
+  // ownership mutations don't corrupt the share calculation).
   const businessSuccession = applyBusinessSuccession({
     deceased: prepared.deceased,
     deceasedFmId,
@@ -436,7 +438,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     },
   });
 
-  const warnings = [...chainResult.warnings, ...succession.warnings, ...li.warnings];
+  const warnings = [...chainResult.warnings, ...succession.warnings, ...li.warnings, ...businessSuccession.warnings];
   for (const debit of estateTaxDrain.debits) {
     accountBalances[debit.accountId] =
       (accountBalances[debit.accountId] ?? 0) - debit.amount;
@@ -532,7 +534,6 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // Phase 10.55 — append business-interest transfers so the marital-deduction
   // grossByEntityId cap (Task 6) sees them in the finalDeductions recompute.
   ledger = ledger.concat(businessSuccession.transfers);
-  warnings.push(...businessSuccession.warnings);
 
   // Phase 10.6 — recompute deductions with the post-Phase-10.5 ledger so
   // §2056(b)(4)(B)'s extension to unlinked debts assumed by the surviving

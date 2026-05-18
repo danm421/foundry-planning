@@ -196,7 +196,14 @@ export function applyBusinessSuccession(input: {
       }
     }
 
-    if (input.deceasedFmId != null) {
+    // Only record an ownerUpdates entry when the entity actually has an owners
+    // array. Legacy entities (owners == null) use the joint convention but have
+    // no owner rows to update — the orchestrator's mutatedEntities map silently
+    // skips entries for null-owners entities anyway, but there's no point
+    // emitting a dead entry. basisUpdates is unconditional: the §1014 step-up
+    // on the deceased's share is still correct for a legacy entity even though
+    // there is no owner table to rewrite.
+    if (input.deceasedFmId != null && entity.owners != null) {
       ownerUpdates.push({
         entityId: entity.id, removeFamilyMemberId: input.deceasedFmId, successors,
       });
