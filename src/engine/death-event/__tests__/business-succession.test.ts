@@ -141,4 +141,43 @@ describe("applyBusinessSuccession", () => {
     expect(r.ownerUpdates).toHaveLength(0);
     expect(r.basisUpdates).toHaveLength(0);
   });
+
+  it("condition-gated bequest: if_spouse_predeceased at first death (spouse alive) → ignored, routes to spouse fallback", () => {
+    const will: Will = {
+      id: "w1", grantor: "client", bequests: [{
+        id: "b1", name: "LLC to child if spouse predeceased", kind: "asset", assetMode: "specific",
+        accountId: null, entityId: "e1", liabilityId: null, percentage: 100,
+        condition: "if_spouse_predeceased", sortOrder: 0,
+        recipients: [{ recipientKind: "family_member", recipientId: "fmChild", percentage: 100, sortOrder: 0 }],
+      }],
+    };
+    const r = applyBusinessSuccession({
+      deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
+      deathOrder: 1, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
+      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2030,
+    });
+    expect(r.transfers[0].recipientKind).toBe("spouse");
+    expect(r.transfers[0].recipientId).toBe("fmSpouse");
+    expect(r.ownerUpdates[0].successors).toEqual([{ familyMemberId: "fmSpouse", percent: 1 }]);
+  });
+
+  it("condition-gated bequest: if_spouse_predeceased at final death (no survivor) → fires, routes to child", () => {
+    const will: Will = {
+      id: "w1", grantor: "client", bequests: [{
+        id: "b1", name: "LLC to child if spouse predeceased", kind: "asset", assetMode: "specific",
+        accountId: null, entityId: "e1", liabilityId: null, percentage: 100,
+        condition: "if_spouse_predeceased", sortOrder: 0,
+        recipients: [{ recipientKind: "family_member", recipientId: "fmChild", percentage: 100, sortOrder: 0 }],
+      }],
+    };
+    const r = applyBusinessSuccession({
+      deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
+      deathOrder: 2, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
+      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      will, familyMembers: [cooper, child], externalBeneficiaries: [], year: 2035,
+    });
+    expect(r.transfers[0].recipientId).toBe("fmChild");
+    expect(r.ownerUpdates[0].successors).toEqual([{ familyMemberId: "fmChild", percent: 1 }]);
+  });
 });

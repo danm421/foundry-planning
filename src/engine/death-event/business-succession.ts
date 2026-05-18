@@ -143,7 +143,7 @@ export function applyBusinessSuccession(input: {
   entityAccountSharesEoY: Map<string, Map<string, number>> | undefined;
   will: Will | null;
   familyMembers: FamilyMember[];
-  externalBeneficiaries: ExternalBeneficiarySummary[];
+  externalBeneficiaries: ExternalBeneficiarySummary[]; // reserved for future external-recipient labeling; not yet consumed
   year: number;
 }): BusinessSuccessionResult {
   const transfers: DeathTransfer[] = [];
