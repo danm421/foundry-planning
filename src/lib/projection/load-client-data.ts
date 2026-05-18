@@ -992,9 +992,12 @@ export const loadClientDataWithContext = cache(
       }
     }
 
-    /** An account's BASE allocation (before any reinvestment), resolved from
-     *  its growth source — mirrors `resolveAccountFromRaw`. Returns undefined
-     *  for flat-rate / inflation / custom sources with no asset-class breakdown. */
+    /** An account's BASE allocation (before any reinvestment), derived from
+     *  the account's effective growth source. A `default` source is resolved
+     *  through the category-default model portfolio — an intentional,
+     *  allocation-correct extension that `resolveAccountFromRaw` does not make.
+     *  Returns undefined for flat-rate / inflation / custom sources with no
+     *  asset-class breakdown. */
     function accountBaseAllocMap(
       account: (typeof accountRows)[number],
     ): AllocationMap | undefined {
@@ -1026,9 +1029,10 @@ export const loadClientDataWithContext = cache(
         riByAccount.set(accountId, list);
       }
     }
+    const accountRowById = new Map(accountRows.map((a) => [a.id, a]));
     for (const [accountId, list] of riByAccount) {
       list.sort((a, b) => a.year - b.year);
-      const account = accountRows.find((a) => a.id === accountId);
+      const account = accountRowById.get(accountId);
       let prevAlloc = account ? accountBaseAllocMap(account) : undefined;
       for (const ri of list) {
         const modelPortfolioId = reinvestmentModelPortfolioId.get(ri.id);
