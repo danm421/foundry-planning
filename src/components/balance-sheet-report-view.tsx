@@ -13,6 +13,7 @@ import CenterColumn from "./balance-sheet-report/center-column";
 import EntityBreakdownPanel from "./balance-sheet-report/entity-breakdown-panel";
 import { buildViewModel } from "./balance-sheet-report/view-model";
 import type { OwnershipView } from "./balance-sheet-report/ownership-filter";
+import BalanceSheetReportSkeleton from "@/app/(app)/clients/[id]/assets/balance-sheet-report/loading-skeleton";
 
 interface EntityInfo { id: string; name: string; entityType: string }
 
@@ -190,7 +191,7 @@ export default function BalanceSheetReportView({
     }
   }
 
-  if (loading) return <div className="text-gray-300">Loading projection...</div>;
+  if (loading) return <BalanceSheetReportSkeleton />;
   if (error) {
     return (
       <div className="rounded-lg border border-red-800 bg-red-900/50 p-6 text-red-400">
