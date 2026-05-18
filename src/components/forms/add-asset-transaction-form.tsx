@@ -5,9 +5,10 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { runProjection } from "@/engine";
-import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { AssetTransaction, ClientData, ProjectionYear } from "@/engine/types";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { coerceAssetTransactionDraft } from "@/lib/solver/technique-form-data";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,8 @@ interface AddAssetTransactionFormProps {
   };
   onClose: () => void;
   onSaved: () => void;
+  /** When provided, emit the assembled AssetTransaction instead of persisting. */
+  onSubmitDraft?: (technique: AssetTransaction) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -191,6 +194,7 @@ export default function AddAssetTransactionForm({
   initialData,
   onClose,
   onSaved,
+  onSubmitDraft,
 }: AddAssetTransactionFormProps) {
   const writer = useScenarioWriter(clientId);
   const isEdit = !!initialData;
@@ -472,6 +476,19 @@ export default function AddAssetTransactionForm({
       body.mortgageTermMonths = showMortgage && mortgageTermMonths
         ? Number(mortgageTermMonths)
         : null;
+    }
+
+    if (onSubmitDraft) {
+      const id =
+        isEdit && initialData
+          ? initialData.id
+          : typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `tmp-${Date.now()}`;
+      onSubmitDraft(coerceAssetTransactionDraft(body, id));
+      setLoading(false);
+      onSaved();
+      return;
     }
 
     try {
