@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, reinvestments, reinvestmentAccounts } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { assertAccountsInClient } from "@/lib/db-scoping";
+import { assertAccountsInClient, assertModelPortfoliosInFirm } from "@/lib/db-scoping";
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import {
   toReinvestmentSnapshot,
@@ -119,35 +119,46 @@ export async function POST(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
-    const [created] = await db
-      .insert(reinvestments)
-      .values({
-        clientId: id,
-        scenarioId,
-        name,
-        year,
-        yearRef: yearRef ?? null,
-        targetType: targetType ?? "model_portfolio",
-        modelPortfolioId: modelPortfolioId ?? null,
-        customGrowthRate: customGrowthRate != null ? String(customGrowthRate) : null,
-        customPctOrdinaryIncome:
-          customPctOrdinaryIncome != null ? String(customPctOrdinaryIncome) : null,
-        customPctLtCapitalGains:
-          customPctLtCapitalGains != null ? String(customPctLtCapitalGains) : null,
-        customPctQualifiedDividends:
-          customPctQualifiedDividends != null ? String(customPctQualifiedDividends) : null,
-        customPctTaxExempt:
-          customPctTaxExempt != null ? String(customPctTaxExempt) : null,
-        realizeTaxesOnSwitch: realizeTaxesOnSwitch ?? false,
-      })
-      .returning();
+    if (modelPortfolioId != null) {
+      const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
+      if (!mpCheck.ok) {
+        return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+      }
+    }
 
-    await db.insert(reinvestmentAccounts).values(
-      accountIds.map((accountId: string) => ({
-        reinvestmentId: created.id,
-        accountId,
-      }))
-    );
+    const created = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(reinvestments)
+        .values({
+          clientId: id,
+          scenarioId,
+          name,
+          year,
+          yearRef: yearRef ?? null,
+          targetType: targetType ?? "model_portfolio",
+          modelPortfolioId: modelPortfolioId ?? null,
+          customGrowthRate: customGrowthRate != null ? String(customGrowthRate) : null,
+          customPctOrdinaryIncome:
+            customPctOrdinaryIncome != null ? String(customPctOrdinaryIncome) : null,
+          customPctLtCapitalGains:
+            customPctLtCapitalGains != null ? String(customPctLtCapitalGains) : null,
+          customPctQualifiedDividends:
+            customPctQualifiedDividends != null ? String(customPctQualifiedDividends) : null,
+          customPctTaxExempt:
+            customPctTaxExempt != null ? String(customPctTaxExempt) : null,
+          realizeTaxesOnSwitch: realizeTaxesOnSwitch ?? false,
+        })
+        .returning();
+
+      await tx.insert(reinvestmentAccounts).values(
+        accountIds.map((accountId: string) => ({
+          reinvestmentId: row.id,
+          accountId,
+        }))
+      );
+
+      return row;
+    });
 
     await recordCreate({
       action: "reinvestment.create",
@@ -203,10 +214,24 @@ export async function PUT(
       return NextResponse.json({ error: "Missing reinvestmentId" }, { status: 400 });
     }
 
+    if (Array.isArray(accountIds) && accountIds.length === 0) {
+      return NextResponse.json(
+        { error: "A reinvestment must target at least one account" },
+        { status: 400 }
+      );
+    }
+
     if (Array.isArray(accountIds) && accountIds.length > 0) {
       const acctCheck = await assertAccountsInClient(id, accountIds);
       if (!acctCheck.ok) {
         return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+      }
+    }
+
+    if (modelPortfolioId != null) {
+      const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
+      if (!mpCheck.ok) {
+        return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
       }
     }
 
@@ -219,55 +244,59 @@ export async function PUT(
       return NextResponse.json({ error: "Reinvestment not found" }, { status: 404 });
     }
 
-    const [updated] = await db
-      .update(reinvestments)
-      .set({
-        ...(name !== undefined && { name }),
-        ...(year !== undefined && { year }),
-        ...(yearRef !== undefined && { yearRef: yearRef ?? null }),
-        ...(targetType !== undefined && { targetType }),
-        ...(modelPortfolioId !== undefined && { modelPortfolioId: modelPortfolioId ?? null }),
-        ...(customGrowthRate !== undefined && {
-          customGrowthRate: customGrowthRate != null ? String(customGrowthRate) : null,
-        }),
-        ...(customPctOrdinaryIncome !== undefined && {
-          customPctOrdinaryIncome:
-            customPctOrdinaryIncome != null ? String(customPctOrdinaryIncome) : null,
-        }),
-        ...(customPctLtCapitalGains !== undefined && {
-          customPctLtCapitalGains:
-            customPctLtCapitalGains != null ? String(customPctLtCapitalGains) : null,
-        }),
-        ...(customPctQualifiedDividends !== undefined && {
-          customPctQualifiedDividends:
-            customPctQualifiedDividends != null ? String(customPctQualifiedDividends) : null,
-        }),
-        ...(customPctTaxExempt !== undefined && {
-          customPctTaxExempt: customPctTaxExempt != null ? String(customPctTaxExempt) : null,
-        }),
-        ...(realizeTaxesOnSwitch !== undefined && { realizeTaxesOnSwitch }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(reinvestments.id, reinvestmentId), eq(reinvestments.clientId, id)))
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(reinvestments)
+        .set({
+          ...(name !== undefined && { name }),
+          ...(year !== undefined && { year }),
+          ...(yearRef !== undefined && { yearRef: yearRef ?? null }),
+          ...(targetType !== undefined && { targetType }),
+          ...(modelPortfolioId !== undefined && { modelPortfolioId: modelPortfolioId ?? null }),
+          ...(customGrowthRate !== undefined && {
+            customGrowthRate: customGrowthRate != null ? String(customGrowthRate) : null,
+          }),
+          ...(customPctOrdinaryIncome !== undefined && {
+            customPctOrdinaryIncome:
+              customPctOrdinaryIncome != null ? String(customPctOrdinaryIncome) : null,
+          }),
+          ...(customPctLtCapitalGains !== undefined && {
+            customPctLtCapitalGains:
+              customPctLtCapitalGains != null ? String(customPctLtCapitalGains) : null,
+          }),
+          ...(customPctQualifiedDividends !== undefined && {
+            customPctQualifiedDividends:
+              customPctQualifiedDividends != null ? String(customPctQualifiedDividends) : null,
+          }),
+          ...(customPctTaxExempt !== undefined && {
+            customPctTaxExempt: customPctTaxExempt != null ? String(customPctTaxExempt) : null,
+          }),
+          ...(realizeTaxesOnSwitch !== undefined && { realizeTaxesOnSwitch }),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(reinvestments.id, reinvestmentId), eq(reinvestments.clientId, id)))
+        .returning();
+
+      if (Array.isArray(accountIds)) {
+        await tx
+          .delete(reinvestmentAccounts)
+          .where(eq(reinvestmentAccounts.reinvestmentId, reinvestmentId));
+
+        if (accountIds.length > 0) {
+          await tx.insert(reinvestmentAccounts).values(
+            accountIds.map((accountId: string) => ({
+              reinvestmentId,
+              accountId,
+            }))
+          );
+        }
+      }
+
+      return row;
+    });
 
     if (!updated) {
       return NextResponse.json({ error: "Reinvestment not found" }, { status: 404 });
-    }
-
-    if (Array.isArray(accountIds)) {
-      await db
-        .delete(reinvestmentAccounts)
-        .where(eq(reinvestmentAccounts.reinvestmentId, reinvestmentId));
-
-      if (accountIds.length > 0) {
-        await db.insert(reinvestmentAccounts).values(
-          accountIds.map((accountId: string) => ({
-            reinvestmentId,
-            accountId,
-          }))
-        );
-      }
     }
 
     const updatedAccounts = await db
