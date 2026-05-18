@@ -24,6 +24,7 @@ import {
   computeGrossEstate,
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
+import { applyBusinessSuccession } from "./business-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import {
@@ -332,6 +333,23 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
+  // Phase 3.5 — business-interest succession (compute-only; reads pre-flip
+  // entities, same discipline as grantor-succession above).
+  const businessSuccession = applyBusinessSuccession({
+    deceased: prepared.deceased,
+    deceasedFmId,
+    survivorFmId,
+    deathOrder: 1,
+    entities: prepared.entities,
+    accounts: prepared.accounts,
+    accountBalances: prepared.accountBalances,
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    will: input.will ?? null,
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    year: input.year,
+  });
+
   // Phase 4 — deductions (marital + charitable + admin). Pass the post-chain
   // liabilities so encumbrances that follow assets to the surviving spouse
   // reduce the marital deduction (§2056(b)(4)(B)).
@@ -431,16 +449,42 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
   }
 
-  // Phase 9 — apply grantor-succession updates now.
+  // Phase 9 — apply grantor-succession updates and business-interest updates now.
   const mutatedEntities = input.entities.map((e) => {
+    let next = e;
+
+    // Existing grantor-succession entityUpdates block (unchanged).
     const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
-    if (!upd) return e;
-    return {
-      ...e,
-      ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
-      ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
-      ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
-    };
+    if (upd) {
+      next = {
+        ...next,
+        ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
+        ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
+        ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
+      };
+    }
+
+    // Business-interest owner succession: remove the deceased's row, add successor rows.
+    const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.entityId === e.id);
+    if (ownerUpd && next.owners != null) {
+      // Clone each kept row so the `existing.percent +=` merge below never
+      // mutates the original input entity's owner objects.
+      const merged = next.owners
+        .filter((o) => o.familyMemberId !== ownerUpd.removeFamilyMemberId)
+        .map((o) => ({ ...o }));
+      for (const s of ownerUpd.successors) {
+        const existing = merged.find((o) => o.familyMemberId === s.familyMemberId);
+        if (existing) existing.percent += s.percent;
+        else merged.push({ familyMemberId: s.familyMemberId, percent: s.percent });
+      }
+      next = { ...next, owners: merged };
+    }
+
+    // §1014 basis step-up on the entity's flat operating value.
+    const basisUpd = businessSuccession.basisUpdates.find((u) => u.entityId === e.id);
+    if (basisUpd) next = { ...next, basis: basisUpd.newBasis };
+
+    return next;
   });
 
   // Phase 10 — pour-out distribution (stubbed; the common empty-queue path
@@ -484,6 +528,11 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   ledger = ledger.concat(unlinkedDist.liabilityTransfers);
   pouredLiabs = unlinkedDist.updatedLiabilities;
   warnings.push(...unlinkedDist.warnings);
+
+  // Phase 10.55 — append business-interest transfers so the marital-deduction
+  // grossByEntityId cap (Task 6) sees them in the finalDeductions recompute.
+  ledger = ledger.concat(businessSuccession.transfers);
+  warnings.push(...businessSuccession.warnings);
 
   // Phase 10.6 — recompute deductions with the post-Phase-10.5 ledger so
   // §2056(b)(4)(B)'s extension to unlinked debts assumed by the surviving

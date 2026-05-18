@@ -3,6 +3,7 @@ import { applyFirstDeath } from "../first-death";
 import type { DeathEventInput } from "../shared";
 import type {
   Account,
+  EntitySummary,
   FamilyMember,
   PlanSettings,
   Will,
@@ -203,5 +204,48 @@ describe("applyFirstDeath — gross transfers + drain attribution (Phase B)", ()
     const onKidA = stateAttribs.find((a) => a.recipientId === "kid-a");
     expect(onSpouse).toBeUndefined();
     expect(onKidA?.amount).toBeCloseTo(result.estateTax.stateEstateTax, 0);
+  });
+});
+
+describe("applyFirstDeath — business-interest succession integration", () => {
+  it("routes a wholly client-owned LLC to spouse via fallback, applies marital deduction, and updates owners + basis", () => {
+    // $10k flat value, $4k basis, client owns 100%. Spouse survives, no will.
+    const llcEntity: EntitySummary = {
+      id: "e1",
+      name: "Client LLC",
+      entityType: "llc",
+      value: 10_000,
+      basis: 4_000,
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: false,
+      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+
+    const input = mkInput({
+      entities: [llcEntity],
+    });
+    const result = applyFirstDeath(input);
+
+    // Transfer: business interest passes to surviving spouse via fallback.
+    const bizTransfers = result.transfers.filter((t) => t.sourceEntityId === "e1");
+    expect(bizTransfers).toHaveLength(1);
+    expect(bizTransfers[0].recipientKind).toBe("spouse");
+    expect(bizTransfers[0].amount).toBeCloseTo(10_000, 0);
+
+    // Marital deduction covers the $10k business value — no estate tax.
+    expect(result.estateTax.maritalDeduction).toBeGreaterThanOrEqual(10_000 - 1);
+    expect(result.estateTax.federalEstateTax).toBeCloseTo(0, 0);
+
+    // Entity owners updated: deceased client row removed, spouse added at 100%.
+    const updatedEntity = result.entities.find((e) => e.id === "e1");
+    expect(updatedEntity).toBeDefined();
+    expect(updatedEntity!.owners).toEqual([
+      { familyMemberId: LEGACY_FM_SPOUSE, percent: 1 },
+    ]);
+
+    // §1014 basis stepped up to FMV of the transferred share.
+    // newBasis = oldBasis * (1 - share) + flatValue * share = 4000 * 0 + 10000 * 1 = 10000.
+    expect(updatedEntity!.basis).toBeCloseTo(10_000, 0);
   });
 });
