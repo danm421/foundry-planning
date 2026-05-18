@@ -33,6 +33,8 @@ import {
   savingsScheduleOverrides,
   scenarios,
   taxYearParameters,
+  reinvestments,
+  reinvestmentAccounts,
   rothConversions,
   rothConversionSources,
   transfers,
@@ -44,10 +46,12 @@ import {
   withdrawalStrategies,
 } from "@/db/schema";
 import type {
+  Account,
   BeneficiaryRef,
   ClientData,
   EntityFlowOverride,
   GiftEvent,
+  Reinvestment,
   Will,
   WillBequest,
   WillResiduaryRecipient,
@@ -128,6 +132,8 @@ export const loadClientDataWithContext = cache(
       extraPaymentRows,
       transferRows,
       transferScheduleRows,
+      reinvestmentRows,
+      reinvestmentAccountRows,
       rothConversionRows,
       rothConversionSourceRows,
       assetTransactionRows,
@@ -150,6 +156,8 @@ export const loadClientDataWithContext = cache(
       db.select().from(extraPayments),
       db.select().from(transfers).where(and(eq(transfers.clientId, id), eq(transfers.scenarioId, scenario.id))),
       db.select().from(transferSchedules),
+      db.select().from(reinvestments).where(and(eq(reinvestments.clientId, id), eq(reinvestments.scenarioId, scenario.id))),
+      db.select().from(reinvestmentAccounts),
       db.select().from(rothConversions).where(and(eq(rothConversions.clientId, id), eq(rothConversions.scenarioId, scenario.id))),
       db.select().from(rothConversionSources),
       db.select().from(assetTransactions).where(and(eq(assetTransactions.clientId, id), eq(assetTransactions.scenarioId, scenario.id))),
@@ -894,6 +902,52 @@ export const loadClientDataWithContext = cache(
       };
     });
 
+    const mappedReinvestments: Reinvestment[] = reinvestmentRows.map((r) => {
+      const accountIds = reinvestmentAccountRows
+        .filter((ra) => ra.reinvestmentId === r.id)
+        .map((ra) => ra.accountId);
+      let newGrowthRate: number;
+      let newRealization: Account["realization"] | undefined;
+      if (r.targetType === "model_portfolio" && r.modelPortfolioId) {
+        const p = resolver.resolvePortfolio(r.modelPortfolioId);
+        newGrowthRate = p.geoReturn;
+        newRealization = {
+          pctOrdinaryIncome: p.pctOi,
+          pctLtCapitalGains: p.pctLtcg,
+          pctQualifiedDividends: p.pctQdiv,
+          pctTaxExempt: p.pctTaxEx,
+          turnoverPct: 0,
+        };
+      } else {
+        newGrowthRate = parseFloat(r.customGrowthRate ?? "0");
+        newRealization = {
+          pctOrdinaryIncome:
+            r.customPctOrdinaryIncome != null ? parseFloat(r.customPctOrdinaryIncome) : 1,
+          pctLtCapitalGains:
+            r.customPctLtCapitalGains != null ? parseFloat(r.customPctLtCapitalGains) : 0,
+          pctQualifiedDividends:
+            r.customPctQualifiedDividends != null
+              ? parseFloat(r.customPctQualifiedDividends)
+              : 0,
+          pctTaxExempt:
+            r.customPctTaxExempt != null ? parseFloat(r.customPctTaxExempt) : 0,
+          turnoverPct: 0,
+        };
+      }
+      return {
+        id: r.id,
+        name: r.name,
+        accountIds,
+        year: resolvedStart(r.yearRef ?? null, r.year),
+        newGrowthRate,
+        newRealization,
+        realizeTaxesOnSwitch: r.realizeTaxesOnSwitch,
+        soldFractionByAccount: {},
+        yearRef: r.yearRef ?? null,
+        targetType: r.targetType,
+      } satisfies Reinvestment;
+    });
+
     const mappedRothConversions = rothConversionRows.map((c) => {
       const sources = rothConversionSourceRows
         .filter((s) => s.rothConversionId === c.id)
@@ -1100,6 +1154,7 @@ export const loadClientDataWithContext = cache(
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,
       transfers: mappedTransfers,
+      reinvestments: mappedReinvestments,
       rothConversions: mappedRothConversions,
       assetTransactions: mappedAssetTransactions,
       gifts: mappedGifts,

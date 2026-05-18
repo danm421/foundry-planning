@@ -173,6 +173,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     "taxEngineMode": "bracket",
     "taxInflationRate": null,
   },
+  "reinvestments": [],
   "rothConversions": [],
   "savingsRules": [
     {
