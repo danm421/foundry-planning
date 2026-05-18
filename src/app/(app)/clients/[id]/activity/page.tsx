@@ -1,12 +1,9 @@
 import type { ReactElement } from "react";
+import { Suspense } from "react";
 import { requireOrgId } from "@/lib/db-helpers";
-import {
-  listClientActivity,
-  type ActionKind,
-  type DateRange,
-} from "@/lib/activity/list-client-activity";
-import { resolveActors } from "@/lib/activity/resolve-actors";
-import ActivityPage from "@/components/activity/activity-page";
+import type { ActionKind, DateRange } from "@/lib/activity/list-client-activity";
+import { ActivityContent } from "./activity-content";
+import ActivitySkeleton from "./loading-skeleton";
 
 const VALID_KINDS: ActionKind[] = ["create", "update", "delete", "other"];
 const VALID_RANGES: DateRange[] = ["7d", "30d", "90d", "all"];
@@ -34,36 +31,24 @@ export default async function ActivityRoute({
   const kindRaw = get("kind");
   const rangeRaw = get("range");
 
-  const filters = {
-    actorId: get("actor"),
-    resourceType: get("entity"),
-    actionKind: VALID_KINDS.includes(kindRaw as ActionKind)
-      ? (kindRaw as ActionKind)
-      : null,
-    range: (VALID_RANGES.includes(rangeRaw as DateRange)
-      ? (rangeRaw as DateRange)
-      : "90d") as DateRange,
-  };
-
-  const { rows, nextCursor } = await listClientActivity({
-    clientId,
-    firmId,
-    filters,
-    cursor: null,
-    limit: 50,
-  });
-
-  const actorMap = await resolveActors(rows.map((r) => r.actorId));
-
   return (
-    <ActivityPage
-      clientId={clientId}
-      filters={filters}
-      initialRows={rows.map((r) => ({
-        ...r,
-        actor: actorMap.get(r.actorId) ?? { name: "Unknown", isSystem: false },
-      }))}
-      initialNextCursor={nextCursor}
-    />
+    <Suspense fallback={<ActivitySkeleton />}>
+      <ActivityContent
+        clientId={clientId}
+        firmId={firmId}
+        actorId={get("actor")}
+        resourceType={get("entity")}
+        actionKind={
+          VALID_KINDS.includes(kindRaw as ActionKind)
+            ? (kindRaw as ActionKind)
+            : null
+        }
+        range={
+          (VALID_RANGES.includes(rangeRaw as DateRange)
+            ? (rangeRaw as DateRange)
+            : "90d") as DateRange
+        }
+      />
+    </Suspense>
   );
 }
