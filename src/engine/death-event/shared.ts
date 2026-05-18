@@ -143,7 +143,8 @@ export interface MixedAccountPartition {
  * The family pool keeps the original account id (the chain loop deletes and
  * re-adds balance/basis maps by that id). Entity slices get synthetic ids.
  * Slice value = locked entityAccountSharesEoY share when available, else
- * balance × percent; slice basis is proportional to percent.
+ * balance × percent; slice basis is proportional to locked / balance when a
+ * locked share is available, else proportional to percent.
  */
 export function partitionMixedAccount(
   account: Account,

@@ -136,7 +136,6 @@ describe("partitionMixedAccount — chain integration at final death", () => {
       mkFinalDeathInput({
         accounts: [mixedAcct],
         entities: [llcEntity],
-        familyMembers: [kidFm],
       }),
     );
 
