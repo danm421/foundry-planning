@@ -1406,6 +1406,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: item.capitalGain };
       }
     }
+    for (const [rid, info] of Object.entries(reinvestmentResult.byReinvestment)) {
+      if (info.capitalGains > 0) {
+        taxDetail.bySource[`reinvestment:${rid}`] = { type: "capital_gains", amount: info.capitalGains };
+      }
+    }
 
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:

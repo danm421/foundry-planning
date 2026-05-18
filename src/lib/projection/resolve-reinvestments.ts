@@ -61,6 +61,10 @@ export function resolveReinvestments(
   // 1. Resolve newGrowthRate + newRealization per reinvestment.
   const resolved: Reinvestment[] = reinvestments.map((r) => {
     let newGrowthRate: number;
+    // `turnoverPct` below is a placeholder. Turnover is an account-level
+    // property the resolver cannot know (model portfolios / custom inputs
+    // don't carry it); `applyReinvestments` overrides it per target account
+    // with that account's own existing turnover.
     let newRealization: Account["realization"] | undefined;
 
     if (r.targetType === "model_portfolio" && r.modelPortfolioId) {

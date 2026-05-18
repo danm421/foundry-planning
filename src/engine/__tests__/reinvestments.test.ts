@@ -171,6 +171,45 @@ describe("applyReinvestments", () => {
     expect(basisMap.a1).toBe(60_000);
   });
 
+  it("preserves the account's turnoverPct across a switch but replaces the mix", () => {
+    // Account carries a non-zero turnover (an account-level property the
+    // reinvestment resolver cannot know). The reinvestment's newRealization
+    // carries turnoverPct: 0 (the resolver placeholder).
+    const acct: Account = {
+      ...taxableAccount("a1"),
+      realization: {
+        pctOrdinaryIncome: 0.2,
+        pctLtCapitalGains: 0.8,
+        pctQualifiedDividends: 0,
+        pctTaxExempt: 0,
+        turnoverPct: 0.3,
+      },
+    };
+    applyReinvestments({
+      reinvestments: [
+        reinvestment({
+          newRealization: {
+            pctOrdinaryIncome: 0.5,
+            pctLtCapitalGains: 0.5,
+            pctQualifiedDividends: 0,
+            pctTaxExempt: 0,
+            turnoverPct: 0,
+          },
+        }),
+      ],
+      accounts: [acct],
+      accountBalances: { a1: 100_000 },
+      basisMap: { a1: 60_000 },
+      accountLedgers: {},
+      year: 2030,
+    });
+    // turnover is account-level — preserved, not zeroed by the switch.
+    expect(acct.realization?.turnoverPct).toBe(0.3);
+    // the OI/LTCG mix is replaced with the reinvestment's values.
+    expect(acct.realization?.pctOrdinaryIncome).toBe(0.5);
+    expect(acct.realization?.pctLtCapitalGains).toBe(0.5);
+  });
+
   it("does not realize gains on a retirement account", () => {
     const acct = { ...taxableAccount("a1"), category: "retirement" as const };
     const basisMap = { a1: 60_000 };

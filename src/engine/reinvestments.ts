@@ -54,7 +54,13 @@ export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResu
         (acct.category === "taxable" || acct.category === "cash") &&
         ri.newRealization
       ) {
-        acct.realization = ri.newRealization;
+        // Replace the realization MIX but carry through the account's own
+        // turnoverPct — turnover is an account-level property; `ri.newRealization`
+        // carries a placeholder 0 the resolver could not know.
+        acct.realization = {
+          ...ri.newRealization,
+          turnoverPct: acct.realization?.turnoverPct ?? 0,
+        };
       }
     }
     byReinvestment[ri.id] = { capitalGains: byReinvestmentGains, label: ri.name };
