@@ -7,6 +7,8 @@ import { PercentInput } from "@/components/percent-input";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
+import DialogShell from "@/components/dialog-shell";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -112,15 +114,42 @@ const FUNDING_SPECIAL_OPTIONS = [
   { value: "__from_sale_proceeds__", label: "From Sale Proceeds" },
 ];
 
-// ── Shared class names ────────────────────────────────────────────────────────
+// ── Inline icons ──────────────────────────────────────────────────────────────
 
-const INPUT_CLASS =
-  "mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+/** Chevron that rotates 90° when its section is expanded. */
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M4.5 2.5 8 6l-3.5 3.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
-const SELECT_CLASS =
-  "mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-
-const LABEL_CLASS = "block text-sm font-medium text-gray-300";
+/** 12×12 check glyph for selectable cards. */
+function CheckIcon() {
+  return (
+    <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path
+        d="M2.5 6.2 5 8.7l4.5-5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -155,22 +184,21 @@ function CollapsibleSection({
   accentColor: "red" | "green";
   children: React.ReactNode;
 }) {
-  const borderColor = accentColor === "red" ? "border-red-800/40" : "border-green-800/40";
-  const bgColor = accentColor === "red" ? "bg-red-950/20" : "bg-green-950/20";
-  const textColor = accentColor === "red" ? "text-red-300" : "text-green-300";
+  const surfaceClass =
+    accentColor === "red"
+      ? "border-crit/30 bg-crit/5"
+      : "border-good/30 bg-good/5";
+  const headerTextClass = accentColor === "red" ? "text-crit" : "text-good";
 
   return (
-    <div className={`rounded-md border ${borderColor} ${bgColor}`}>
+    <div className={`rounded-[var(--radius-sm)] border ${surfaceClass}`}>
       <button
         type="button"
         onClick={onToggle}
-        className={`flex w-full items-center gap-2 px-4 py-2.5 text-sm font-medium ${textColor} hover:brightness-125`}
+        aria-expanded={expanded}
+        className={`flex w-full items-center gap-2 px-4 py-2.5 text-[13px] font-semibold ${headerTextClass}`}
       >
-        <span
-          className={`inline-block text-xs transition-transform ${expanded ? "rotate-90" : ""}`}
-        >
-          ▶
-        </span>
+        <ChevronIcon expanded={expanded} />
         {title}
       </button>
       {expanded && <div className="px-4 pb-4">{children}</div>}
@@ -525,39 +553,43 @@ export default function AddAssetTransactionForm({
   const isSellRealEstate = sellAccount?.category === "real_estate";
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <DialogShell
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={isEdit ? "Edit Transaction" : "Add Asset Transaction"}
+      size="lg"
+      primaryAction={{
+        label: isEdit ? "Save Changes" : "Save",
+        form: "asset-transaction-form",
+        loading: loading,
+        disabled:
+          loading ||
+          (!sellHasData && !buyHasData) ||
+          (isOrphan && !sellAccountId && !sellPurchaseTransactionId) ||
+          yearBeforeBuy,
+      }}
     >
       <form
+        id="asset-transaction-form"
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
+        className="space-y-5"
       >
-        {/* Header */}
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-100">
-            {isEdit ? "Edit Transaction" : "Add Asset Transaction"}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-300"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
         {error && (
-          <p className="mb-4 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
+          <p
+            role="alert"
+            className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+          >
+            {error}
+          </p>
         )}
 
         {/* ── Common fields ──────────────────────────────────────────────── */}
-        <div className="mb-5 space-y-4">
+        <div className="space-y-4">
           <div>
-            <label className={LABEL_CLASS} htmlFor="txn-name">
-              Transaction Name <span className="text-red-500">*</span>
+            <label className={fieldLabelClassName} htmlFor="txn-name">
+              Transaction Name <span className="text-crit">*</span>
             </label>
             <input
               id="txn-name"
@@ -566,7 +598,7 @@ export default function AddAssetTransactionForm({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Sell Home A, Buy Rental Property"
-              className={INPUT_CLASS}
+              className={inputClassName}
             />
           </div>
 
@@ -586,8 +618,8 @@ export default function AddAssetTransactionForm({
               />
             ) : (
               <>
-                <label className={LABEL_CLASS} htmlFor="txn-year">
-                  Year <span className="text-red-500">*</span>
+                <label className={fieldLabelClassName} htmlFor="txn-year">
+                  Year <span className="text-crit">*</span>
                 </label>
                 <input
                   id="txn-year"
@@ -596,12 +628,12 @@ export default function AddAssetTransactionForm({
                   min={minSellYear}
                   value={year}
                   onChange={(e) => { setYear(Number(e.target.value)); setYearRef(null); }}
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                 />
               </>
             )}
             {linkedBuy && yearBeforeBuy && (
-              <p className="mt-1 text-xs text-red-400">
+              <p className="mt-1 text-[12px] text-crit">
                 Sell year must be after buy year ({linkedBuy.year}).
               </p>
             )}
@@ -620,15 +652,15 @@ export default function AddAssetTransactionForm({
           >
             <div className="space-y-4">
               {isOrphan && (
-                <p className="rounded border border-red-800 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-                  ⚠ Source removed — please re-select. The buy transaction this
+                <p className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
+                  Source removed — please re-select. The buy transaction this
                   sell referenced was deleted.
                 </p>
               )}
 
               {/* Account to sell */}
               <div>
-                <label className={LABEL_CLASS} htmlFor="sellAccountId">
+                <label className={fieldLabelClassName} htmlFor="sellAccountId">
                   Account to Sell
                 </label>
                 <select
@@ -649,7 +681,7 @@ export default function AddAssetTransactionForm({
                       setSellPurchaseTransactionId("");
                     }
                   }}
-                  className={SELECT_CLASS}
+                  className={selectClassName}
                 >
                   <option value="">-- Select source --</option>
                   <optgroup label="Existing accounts">
@@ -675,40 +707,44 @@ export default function AddAssetTransactionForm({
 
               {/* Sell amount mode */}
               <div>
-                <label className={LABEL_CLASS}>Sell amount</label>
-                <div className="mt-1 flex gap-1 text-xs">
-                  {(["full", "percent", "dollar"] as SellAmountMode[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setSellAmountMode(m)}
-                      className={
-                        "rounded-md border px-2 py-1 text-xs font-medium transition-colors " +
-                        (sellAmountMode === m
-                          ? "border-accent bg-accent/15 text-accent"
-                          : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800")
-                      }
-                    >
-                      {m === "full"
-                        ? "Full sale"
-                        : m === "percent"
-                        ? "% of asset"
-                        : "$ amount"}
-                    </button>
-                  ))}
+                <label className={fieldLabelClassName}>Sell amount</label>
+                <div className="flex gap-1.5">
+                  {(["full", "percent", "dollar"] as SellAmountMode[]).map((m) => {
+                    const active = sellAmountMode === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setSellAmountMode(m)}
+                        aria-pressed={active}
+                        className={
+                          "rounded-[var(--radius-sm)] border px-2.5 py-1 text-[12px] font-medium transition-colors " +
+                          (active
+                            ? "border-accent/50 bg-accent/10 text-accent-ink"
+                            : "border-hair bg-card-2 text-ink-2 hover:border-hair-2")
+                        }
+                      >
+                        {m === "full"
+                          ? "Full sale"
+                          : m === "percent"
+                          ? "% of asset"
+                          : "$ amount"}
+                      </button>
+                    );
+                  })}
                 </div>
                 {sellAmountMode === "percent" && (
                   <div className="mt-2">
                     <PercentInput
                       value={fractionSoldPct}
                       onChange={(raw) => setFractionSoldPct(raw)}
-                      className="w-32 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      className={`${inputClassName} w-32`}
                     />
                   </div>
                 )}
                 {selectedHasMortgage && sellAmountMode !== "full" && (
-                  <p className="mt-2 text-xs text-yellow-400">
-                    ⚠ Linked mortgage will not be paid off on a partial sale.
+                  <p className="mt-2 text-[12px] text-warn">
+                    Linked mortgage will not be paid off on a partial sale.
                   </p>
                 )}
               </div>
@@ -716,7 +752,7 @@ export default function AddAssetTransactionForm({
               {/* Sell value: dollar amount inline, otherwise hidden under "More overrides" */}
               {sellAmountMode === "dollar" ? (
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
+                  <label className={fieldLabelClassName} htmlFor="overrideSaleValue">
                     Sell amount ($)
                   </label>
                   <CurrencyInput
@@ -724,18 +760,18 @@ export default function AddAssetTransactionForm({
                     value={overrideSaleValue}
                     onChange={(raw) => setOverrideSaleValue(raw)}
                     placeholder="Leave blank for projected"
-                    className={INPUT_CLASS.replace("px-3", "pr-3")}
+                    className={inputClassName.replace("px-3", "pr-3")}
                   />
                   {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
-                    <p className="mt-1 text-xs text-gray-400">
+                    <p className="mt-1 text-[12px] text-ink-3">
                       Projected value in {year}:{" "}
-                      <span className="text-gray-300">
+                      <span className="text-ink-2 tabular">
                         {formatCurrency(projectedSellInfo.projectedValue)}
                       </span>
                     </p>
                   )}
                   <div className="mt-3">
-                    <label className={LABEL_CLASS} htmlFor="overrideBasis">
+                    <label className={fieldLabelClassName} htmlFor="overrideBasis">
                       Override Basis ($)
                     </label>
                     <CurrencyInput
@@ -743,12 +779,12 @@ export default function AddAssetTransactionForm({
                       value={overrideBasis}
                       onChange={(raw) => setOverrideBasis(raw)}
                       placeholder="Leave blank for projected"
-                      className={INPUT_CLASS.replace("px-3", "pr-3")}
+                      className={inputClassName.replace("px-3", "pr-3")}
                     />
                     {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
-                      <p className="mt-1 text-xs text-gray-400">
+                      <p className="mt-1 text-[12px] text-ink-3">
                         Projected basis in {year}:{" "}
-                        <span className="text-gray-300">
+                        <span className="text-ink-2 tabular">
                           {formatCurrency(projectedSellInfo.projectedBasis)}
                         </span>
                       </p>
@@ -756,13 +792,13 @@ export default function AddAssetTransactionForm({
                   </div>
                 </div>
               ) : (
-                <details className="rounded border border-gray-700 bg-gray-900 px-3 py-2">
-                  <summary className="cursor-pointer text-sm text-gray-300">
+                <details className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2">
+                  <summary className="cursor-pointer text-[13px] text-ink-2">
                     More overrides
                   </summary>
                   <div className="mt-2 grid grid-cols-2 gap-4">
                     <div>
-                      <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
+                      <label className={fieldLabelClassName} htmlFor="overrideSaleValue">
                         Override Sale Value ($)
                       </label>
                       <CurrencyInput
@@ -770,19 +806,19 @@ export default function AddAssetTransactionForm({
                         value={overrideSaleValue}
                         onChange={(raw) => setOverrideSaleValue(raw)}
                         placeholder="Leave blank for projected"
-                        className={INPUT_CLASS.replace("px-3", "pr-3")}
+                        className={inputClassName.replace("px-3", "pr-3")}
                       />
                       {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-1 text-[12px] text-ink-3">
                           Projected value in {year}:{" "}
-                          <span className="text-gray-300">
+                          <span className="text-ink-2 tabular">
                             {formatCurrency(projectedSellInfo.projectedValue)}
                           </span>
                         </p>
                       )}
                     </div>
                     <div>
-                      <label className={LABEL_CLASS} htmlFor="overrideBasis">
+                      <label className={fieldLabelClassName} htmlFor="overrideBasis">
                         Override Basis ($)
                       </label>
                       <CurrencyInput
@@ -790,12 +826,12 @@ export default function AddAssetTransactionForm({
                         value={overrideBasis}
                         onChange={(raw) => setOverrideBasis(raw)}
                         placeholder="Leave blank for projected"
-                        className={INPUT_CLASS.replace("px-3", "pr-3")}
+                        className={inputClassName.replace("px-3", "pr-3")}
                       />
                       {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-1 text-[12px] text-ink-3">
                           Projected basis in {year}:{" "}
-                          <span className="text-gray-300">
+                          <span className="text-ink-2 tabular">
                             {formatCurrency(projectedSellInfo.projectedBasis)}
                           </span>
                         </p>
@@ -808,7 +844,7 @@ export default function AddAssetTransactionForm({
               {/* Transaction Costs */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="transactionCostPct">
+                  <label className={fieldLabelClassName} htmlFor="transactionCostPct">
                     Transaction Cost (%)
                   </label>
                   <PercentInput
@@ -816,11 +852,11 @@ export default function AddAssetTransactionForm({
                     value={transactionCostPct}
                     onChange={(raw) => setTransactionCostPct(raw)}
                     placeholder="Optional"
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                   />
                 </div>
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="transactionCostFlat">
+                  <label className={fieldLabelClassName} htmlFor="transactionCostFlat">
                     Transaction Cost ($)
                   </label>
                   <CurrencyInput
@@ -828,25 +864,27 @@ export default function AddAssetTransactionForm({
                     value={transactionCostFlat}
                     onChange={(raw) => setTransactionCostFlat(raw)}
                     placeholder="Optional"
-                    className={INPUT_CLASS.replace("px-3", "pr-3")}
+                    className={inputClassName.replace("px-3", "pr-3")}
                   />
                 </div>
               </div>
 
               {/* Linked mortgage display for real estate */}
               {isSellRealEstate && linkedMortgage && (
-                <div className="rounded-md border border-amber-700/40 bg-amber-900/20 px-3 py-2 text-sm text-amber-300">
+                <div className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
                   <div>
                     <span className="font-medium">Linked Mortgage:</span>{" "}
                     {linkedMortgage.name}
                   </div>
                   <div className="mt-0.5">
                     Projected balance in {year}:{" "}
-                    {formatCurrency(
-                      projectedMortgageBalance ?? parseNum(linkedMortgage.balance)
-                    )}
+                    <span className="tabular">
+                      {formatCurrency(
+                        projectedMortgageBalance ?? parseNum(linkedMortgage.balance)
+                      )}
+                    </span>
                   </div>
-                  <div className="mt-0.5 text-amber-400/70">
+                  <div className="mt-0.5 text-warn/70">
                     Will be paid off at sale
                   </div>
                 </div>
@@ -854,22 +892,36 @@ export default function AddAssetTransactionForm({
 
               {/* IRC §121 home-sale exclusion — real estate sells only */}
               {isSellRealEstate && (
-                <label className="flex items-start gap-2 rounded-md border border-gray-800 bg-gray-900/60 p-3 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={qualifiesForHomeSaleExclusion}
-                    onChange={(e) => setQualifiesForHomeSaleExclusion(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-1 focus:ring-accent"
-                  />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQualifiesForHomeSaleExclusion((v) => !v)
+                  }
+                  aria-pressed={qualifiesForHomeSaleExclusion}
+                  className={`flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left transition-colors ${
+                    qualifiesForHomeSaleExclusion
+                      ? "border-accent/50 bg-accent/10"
+                      : "border-hair bg-card-2 hover:border-hair-2"
+                  }`}
+                >
+                  <span
+                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                      qualifiesForHomeSaleExclusion
+                        ? "border-accent bg-accent text-accent-on"
+                        : "border-hair-2 bg-card"
+                    }`}
+                  >
+                    {qualifiesForHomeSaleExclusion && <CheckIcon />}
+                  </span>
                   <span>
-                    <span className="font-medium text-gray-200">
+                    <span className="text-[13px] font-medium text-ink">
                       Qualifies for home-sale gain exclusion (§121)
                     </span>
-                    <span className="block text-xs text-gray-400">
+                    <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
                       Excludes up to $250k single / $500k married-joint of capital gain on this sale. Advisor confirms 2-of-5-year eligibility.
                     </span>
                   </span>
-                </label>
+                </button>
               )}
             </div>
           </CollapsibleSection>
@@ -884,7 +936,7 @@ export default function AddAssetTransactionForm({
             <div className="space-y-4">
               {/* Asset Name */}
               <div>
-                <label className={LABEL_CLASS} htmlFor="assetName">
+                <label className={fieldLabelClassName} htmlFor="assetName">
                   Asset Name
                 </label>
                 <input
@@ -893,14 +945,14 @@ export default function AddAssetTransactionForm({
                   value={assetName}
                   onChange={(e) => setAssetName(e.target.value)}
                   placeholder="e.g., 123 Main St"
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                 />
               </div>
 
               {/* Category + Sub-Type */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="assetCategory">
+                  <label className={fieldLabelClassName} htmlFor="assetCategory">
                     Asset Category
                   </label>
                   <select
@@ -911,7 +963,7 @@ export default function AddAssetTransactionForm({
                       setAssetCategory(newCat);
                       setAssetSubType(SUB_TYPE_BY_CATEGORY[newCat][0]);
                     }}
-                    className={SELECT_CLASS}
+                    className={selectClassName}
                   >
                     {(Object.keys(CATEGORY_LABELS) as AssetCategory[]).map((cat) => (
                       <option key={cat} value={cat}>
@@ -921,14 +973,14 @@ export default function AddAssetTransactionForm({
                   </select>
                 </div>
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="assetSubType">
+                  <label className={fieldLabelClassName} htmlFor="assetSubType">
                     Sub-Type
                   </label>
                   <select
                     id="assetSubType"
                     value={assetSubType}
                     onChange={(e) => setAssetSubType(e.target.value)}
-                    className={SELECT_CLASS}
+                    className={selectClassName}
                   >
                     {SUB_TYPE_BY_CATEGORY[assetCategory].map((t) => (
                       <option key={t} value={t}>
@@ -942,18 +994,18 @@ export default function AddAssetTransactionForm({
               {/* Purchase Price + Growth Rate */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="purchasePrice">
+                  <label className={fieldLabelClassName} htmlFor="purchasePrice">
                     Purchase Price ($)
                   </label>
                   <CurrencyInput
                     id="purchasePrice"
                     value={purchasePrice}
                     onChange={(raw) => setPurchasePrice(raw)}
-                    className={INPUT_CLASS.replace("px-3", "pr-3")}
+                    className={inputClassName.replace("px-3", "pr-3")}
                   />
                 </div>
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="buyGrowthRate">
+                  <label className={fieldLabelClassName} htmlFor="buyGrowthRate">
                     Growth Rate (%)
                   </label>
                   <PercentInput
@@ -961,7 +1013,7 @@ export default function AddAssetTransactionForm({
                     value={buyGrowthRate}
                     onChange={(raw) => setBuyGrowthRate(raw)}
                     placeholder="e.g., 3.5"
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                   />
                 </div>
               </div>
@@ -969,7 +1021,7 @@ export default function AddAssetTransactionForm({
               {/* Basis + Funding Source */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="buyBasis">
+                  <label className={fieldLabelClassName} htmlFor="buyBasis">
                     Basis ($)
                   </label>
                   <CurrencyInput
@@ -977,18 +1029,18 @@ export default function AddAssetTransactionForm({
                     value={buyBasis}
                     onChange={(raw) => setBuyBasis(raw)}
                     placeholder="Optional"
-                    className={INPUT_CLASS.replace("px-3", "pr-3")}
+                    className={inputClassName.replace("px-3", "pr-3")}
                   />
                 </div>
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="fundingAccountId">
+                  <label className={fieldLabelClassName} htmlFor="fundingAccountId">
                     Funding Source
                   </label>
                   <select
                     id="fundingAccountId"
                     value={fundingAccountId}
                     onChange={(e) => setFundingAccountId(e.target.value)}
-                    className={SELECT_CLASS}
+                    className={selectClassName}
                   >
                     {FUNDING_SPECIAL_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -1009,31 +1061,28 @@ export default function AddAssetTransactionForm({
                 <button
                   type="button"
                   onClick={() => setShowMortgage((v) => !v)}
-                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-gray-200"
+                  aria-expanded={showMortgage}
+                  className="flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink"
                 >
-                  <span
-                    className={`inline-block transition-transform text-xs ${showMortgage ? "rotate-90" : ""}`}
-                  >
-                    ▶
-                  </span>
+                  <ChevronIcon expanded={showMortgage} />
                   Mortgage / Financing
                 </button>
 
                 {showMortgage && (
-                  <div className="mt-3 grid grid-cols-3 gap-4 rounded-md border border-gray-700 bg-gray-800/50 p-4">
+                  <div className="mt-3 grid grid-cols-3 gap-4 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-4">
                     <div>
-                      <label className={LABEL_CLASS} htmlFor="mortgageAmount">
+                      <label className={fieldLabelClassName} htmlFor="mortgageAmount">
                         Amount ($)
                       </label>
                       <CurrencyInput
                         id="mortgageAmount"
                         value={mortgageAmount}
                         onChange={(raw) => setMortgageAmount(raw)}
-                        className={INPUT_CLASS.replace("px-3", "pr-3")}
+                        className={inputClassName.replace("px-3", "pr-3")}
                       />
                     </div>
                     <div>
-                      <label className={LABEL_CLASS} htmlFor="mortgageRate">
+                      <label className={fieldLabelClassName} htmlFor="mortgageRate">
                         Rate (%)
                       </label>
                       <PercentInput
@@ -1041,11 +1090,11 @@ export default function AddAssetTransactionForm({
                         value={mortgageRate}
                         onChange={(raw) => setMortgageRate(raw)}
                         placeholder="e.g., 6.75"
-                        className={INPUT_CLASS}
+                        className={inputClassName}
                       />
                     </div>
                     <div>
-                      <label className={LABEL_CLASS} htmlFor="mortgageTermMonths">
+                      <label className={fieldLabelClassName} htmlFor="mortgageTermMonths">
                         Term (mo)
                       </label>
                       <input
@@ -1055,7 +1104,7 @@ export default function AddAssetTransactionForm({
                         min={1}
                         value={mortgageTermMonths}
                         onChange={(e) => setMortgageTermMonths(e.target.value)}
-                        className={INPUT_CLASS}
+                        className={inputClassName}
                       />
                     </div>
                   </div>
@@ -1067,72 +1116,72 @@ export default function AddAssetTransactionForm({
 
           {/* ── Net Summary ─────────────────────────────────────────────── */}
           {(netSummary.hasSell || netSummary.hasBuy) && (
-            <div className="rounded-md border border-gray-700 bg-gray-800/50 px-4 py-3">
-              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-300">
+            <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-4 py-3">
+              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
                 Net Summary
               </h4>
-              <div className="space-y-1 text-sm">
+              <div className="space-y-1 text-[13px]">
                 {netSummary.hasSell && (
                   <>
-                    <div className="flex justify-between text-gray-300">
+                    <div className="flex justify-between text-ink-2">
                       <span>Sale Value</span>
-                      <span>{formatCurrency(netSummary.saleValue)}</span>
+                      <span className="tabular">{formatCurrency(netSummary.saleValue)}</span>
                     </div>
                     {netSummary.transactionCosts > 0 && (
-                      <div className="flex justify-between text-gray-300">
+                      <div className="flex justify-between text-ink-2">
                         <span className="pl-3">- Transaction Costs</span>
-                        <span>{formatCurrency(netSummary.transactionCosts)}</span>
+                        <span className="tabular">{formatCurrency(netSummary.transactionCosts)}</span>
                       </div>
                     )}
                     {netSummary.mortgagePayoff > 0 && (
-                      <div className="flex justify-between text-gray-300">
+                      <div className="flex justify-between text-ink-2">
                         <span className="pl-3">- Mortgage Payoff</span>
-                        <span>{formatCurrency(netSummary.mortgagePayoff)}</span>
+                        <span className="tabular">{formatCurrency(netSummary.mortgagePayoff)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-medium text-gray-200">
+                    <div className="flex justify-between font-medium text-ink">
                       <span>Sale Proceeds</span>
-                      <span>{formatCurrency(netSummary.saleProceeds)}</span>
+                      <span className="tabular">{formatCurrency(netSummary.saleProceeds)}</span>
                     </div>
                   </>
                 )}
                 {netSummary.hasBuy && (
                   <>
                     {netSummary.hasSell && (
-                      <div className="my-1 border-t border-gray-700" />
+                      <div className="my-1 border-t border-hair" />
                     )}
-                    <div className="flex justify-between text-gray-300">
+                    <div className="flex justify-between text-ink-2">
                       <span>Purchase Price</span>
-                      <span>{formatCurrency(netSummary.purchasePrice)}</span>
+                      <span className="tabular">{formatCurrency(netSummary.purchasePrice)}</span>
                     </div>
                     {netSummary.purchaseMortgage > 0 && (
-                      <div className="flex justify-between text-gray-300">
+                      <div className="flex justify-between text-ink-2">
                         <span className="pl-3">- Mortgage</span>
-                        <span>{formatCurrency(netSummary.purchaseMortgage)}</span>
+                        <span className="tabular">{formatCurrency(netSummary.purchaseMortgage)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-medium text-gray-200">
+                    <div className="flex justify-between font-medium text-ink">
                       <span>Cash Needed</span>
-                      <span>{formatCurrency(netSummary.purchaseCost)}</span>
+                      <span className="tabular">{formatCurrency(netSummary.purchaseCost)}</span>
                     </div>
                   </>
                 )}
                 {netSummary.hasSell && netSummary.hasBuy && (
                   <>
-                    <div className="my-1 border-t border-gray-700" />
+                    <div className="my-1 border-t border-hair" />
                     <div
                       className={`flex justify-between font-semibold ${
-                        netSummary.net >= 0 ? "text-green-400" : "text-red-400"
+                        netSummary.net >= 0 ? "text-good" : "text-crit"
                       }`}
                     >
                       <span>Net</span>
-                      <span>
+                      <span className="tabular">
                         {netSummary.net >= 0 ? "+" : ""}
                         {formatCurrency(netSummary.net)}
                       </span>
                     </div>
                     {netSummary.net < 0 && fundingAccountId && (
-                      <p className="mt-1 text-xs text-gray-400">
+                      <p className="mt-1 text-[12px] text-ink-3">
                         Deficit will be funded from{" "}
                         {fundingAccountId === "__from_sale_proceeds__"
                           ? "sale proceeds"
@@ -1140,7 +1189,7 @@ export default function AddAssetTransactionForm({
                       </p>
                     )}
                     {netSummary.net > 0 && (
-                      <p className="mt-1 text-xs text-gray-400">
+                      <p className="mt-1 text-[12px] text-ink-3">
                         Surplus will go to{" "}
                         {proceedsAccountId
                           ? accounts.find((a) => a.id === proceedsAccountId)?.name ?? "selected account"
@@ -1156,14 +1205,14 @@ export default function AddAssetTransactionForm({
           {/* ── Proceeds Destination (when surplus or sell-only) ────────── */}
           {sellHasData && (netSummary.net > 0 || !buyHasData) && (
             <div>
-              <label className={LABEL_CLASS} htmlFor="proceedsAccountId">
+              <label className={fieldLabelClassName} htmlFor="proceedsAccountId">
                 Proceeds Destination
               </label>
               <select
                 id="proceedsAccountId"
                 value={proceedsAccountId}
                 onChange={(e) => setProceedsAccountId(e.target.value)}
-                className={SELECT_CLASS}
+                className={selectClassName}
               >
                 <option value="">Default Checking</option>
                 {accounts.map((a) => (
@@ -1175,30 +1224,7 @@ export default function AddAssetTransactionForm({
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        <div className="mt-6 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 hover:border-gray-500 hover:text-gray-100"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={
-              loading ||
-              (!sellHasData && !buyHasData) ||
-              (isOrphan && !sellAccountId && !sellPurchaseTransactionId) ||
-              yearBeforeBuy
-            }
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
-          >
-            {loading ? "Saving..." : isEdit ? "Save Changes" : "Save"}
-          </button>
-        </div>
       </form>
-    </div>
+    </DialogShell>
   );
 }
