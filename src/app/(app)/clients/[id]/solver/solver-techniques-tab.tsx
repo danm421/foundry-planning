@@ -28,6 +28,9 @@ import { SolverTechniqueRow } from "./solver-technique-row";
 
 type TechniqueKind = "roth" | "asset" | "reinvestment";
 
+/** Target probability-of-success a Roth-amount solve aims for by default. */
+const DEFAULT_SOLVE_POS = 0.9;
+
 interface EditorState {
   kind: TechniqueKind;
   /** undefined = add; otherwise the id of the technique being edited. */
@@ -48,6 +51,12 @@ interface Props {
   modelPortfolios: { id: string; name: string }[];
   milestones?: ClientMilestones;
   onChange: (m: SolverMutation) => void;
+  /** Wired by the workspace. Starts a goal-seek solve on a roth conversion's
+   *  fixed amount. Optional so the component renders in isolation in tests. */
+  onSolveStart?: (
+    target: { kind: "roth-conversion-amount"; techniqueId: string },
+    targetPoS: number,
+  ) => void;
 }
 
 /**
@@ -61,12 +70,15 @@ function TechniqueGroup<T extends { id: string; name: string }>({
   summarize,
   onEdit,
   onRemove,
+  renderExtraAction,
 }: {
   base: T[];
   working: T[];
   summarize: (t: T) => string;
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Working-side-only per-row control (e.g. a Solve button). */
+  renderExtraAction?: (t: T) => ReactNode;
 }) {
   const side = useSolverSide();
   const rows = side === "base" ? base : working;
@@ -89,6 +101,7 @@ function TechniqueGroup<T extends { id: string; name: string }>({
             summary={summarize(t)}
             onEdit={() => onEdit(t.id)}
             onRemove={() => onRemove(t.id)}
+            extraAction={renderExtraAction?.(t)}
           />
         ),
       )}
@@ -105,6 +118,7 @@ export function SolverTechniquesTab({
   modelPortfolios,
   milestones,
   onChange,
+  onSolveStart,
 }: Props) {
   const [editor, setEditor] = useState<EditorState | null>(null);
 
@@ -205,6 +219,22 @@ export function SolverTechniquesTab({
           onEdit={(id) => setEditor({ kind: "roth", editId: id })}
           onRemove={(id) =>
             onChange({ kind: "roth-conversion-upsert", id, value: null })
+          }
+          renderExtraAction={(rc) =>
+            onSolveStart && rc.conversionType === "fixed_amount" ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onSolveStart(
+                    { kind: "roth-conversion-amount", techniqueId: rc.id },
+                    DEFAULT_SOLVE_POS,
+                  )
+                }
+                className="rounded-md border border-hair-2 px-2 py-1 text-[12px] text-accent hover:border-accent/60"
+              >
+                Solve
+              </button>
+            ) : null
           }
         />
       </SolverSection>

@@ -63,4 +63,26 @@ describe("SolverTechniquesTab", () => {
       value: null,
     });
   });
+
+  it("shows a Solve control only for fixed-amount roth conversions and fires onSolveStart", () => {
+    const onSolveStart = vi.fn();
+    const fixedRc = { ...rc, id: "rc-fixed", conversionType: "fixed_amount" as const };
+    const fullRc = { ...rc, id: "rc-full", conversionType: "full_account" as const };
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        baseClientData={tree([])}
+        workingTree={tree([fixedRc, fullRc] as (typeof rc)[])}
+        onChange={vi.fn()}
+        onSolveStart={onSolveStart}
+      />,
+    );
+    const solveButtons = screen.getAllByRole("button", { name: /solve/i });
+    expect(solveButtons).toHaveLength(1); // only the fixed-amount conversion
+    fireEvent.click(solveButtons[0]);
+    expect(onSolveStart).toHaveBeenCalledWith(
+      { kind: "roth-conversion-amount", techniqueId: "rc-fixed" },
+      expect.any(Number),
+    );
+  });
 });

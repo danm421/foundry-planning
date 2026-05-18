@@ -8,9 +8,11 @@ interface Props {
   onRemove?: () => void;
   /** Diff badge vs base: "Added" | "Edited" | "Removed". Optional. */
   badge?: "Added" | "Edited" | "Removed";
+  /** Extra control rendered before Edit (e.g. a Solve button). */
+  extraAction?: React.ReactNode;
 }
 
-export function SolverTechniqueRow({ name, summary, onEdit, onRemove, badge }: Props) {
+export function SolverTechniqueRow({ name, summary, onEdit, onRemove, badge, extraAction }: Props) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-hair-2 bg-card-2 px-3 py-2">
       <div className="min-w-0">
@@ -24,8 +26,9 @@ export function SolverTechniqueRow({ name, summary, onEdit, onRemove, badge }: P
         </div>
         <div className="truncate text-[12px] text-ink-3">{summary}</div>
       </div>
-      {onEdit || onRemove ? (
+      {onEdit || onRemove || extraAction ? (
         <div className="flex shrink-0 items-center gap-1.5">
+          {extraAction}
           {onEdit ? (
             <button
               type="button"

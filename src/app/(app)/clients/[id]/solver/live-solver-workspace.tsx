@@ -99,7 +99,10 @@ export function LiveSolverWorkspace({
       // under StrictMode would otherwise call setMutationMap twice).
       const prev = activeSolveRef.current;
       if (!prev) return;
-      const mutation = buildLeverMutation(prev.target, e.solvedValue, initialSourceClientData);
+      // Apply the solved value against the live working tree so lever
+      // mutations that depend on tree state (e.g. roth-conversion-amount,
+      // which needs the technique's other fields) resolve correctly.
+      const mutation = buildLeverMutation(prev.target, e.solvedValue, workingTree);
       setMutationMap((mm) => {
         const next = new Map(mm);
         next.set(mutationKey(mutation), mutation);
@@ -535,6 +538,7 @@ export function LiveSolverWorkspace({
             modelPortfolios={modelPortfolios}
             milestones={milestones}
             onChange={pushMutation}
+            onSolveStart={handleSolveStart}
           />
         )}
       </SolverCompareGrid>
