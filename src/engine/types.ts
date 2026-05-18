@@ -40,6 +40,11 @@ export interface WillBequest {
   assetMode: "specific" | "all_assets" | null;
   /** Non-null iff kind === "asset" AND assetMode === "specific". */
   accountId: string | null;
+  /** Non-null iff kind === "asset" AND assetMode === "specific" AND the
+   *  bequest names a business entity rather than an account. Exactly one of
+   *  accountId / entityId is set on a specific asset bequest. Resolves only
+   *  against business entities (see business-succession.ts). */
+  entityId: string | null;
   /** Non-null iff kind === "liability". */
   liabilityId: string | null;
   /** Unused for liability bequests (recipients carry the split). */

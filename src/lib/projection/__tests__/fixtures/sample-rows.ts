@@ -376,6 +376,7 @@ export const willBequestRow = {
   kind: "asset" as const,
   assetMode: "specific" as const,
   accountId: FIXTURE_ACCOUNT_ID_1,
+  entityId: null,
   liabilityId: null,
   percentage: "100.00",
   condition: "always" as const,

@@ -30,6 +30,7 @@ type DbState = {
     name: string;
     assetMode: string | null;
     accountId: string | null;
+    entityId: string | null;
     liabilityId: string | null;
     percentage: string;
     condition: string;
@@ -190,6 +191,7 @@ vi.mock("@/db", async () => {
                 name: (row.name as string) ?? "",
                 assetMode: null,
                 accountId: null,
+                entityId: null,
                 liabilityId: liabId,
                 percentage: "100",
                 condition: (row.condition as string) ?? "always",
@@ -261,6 +263,7 @@ vi.mock("@/db", async () => {
                     name: (row.name as string) ?? "",
                     assetMode: null,
                     accountId: null,
+                    entityId: null,
                     liabilityId: liabId,
                     percentage: "100",
                     condition: (row.condition as string) ?? "always",

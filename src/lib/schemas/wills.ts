@@ -40,6 +40,7 @@ export const willBequestAssetSchema = z
     name: z.string().trim().min(1).max(200),
     assetMode: z.enum(["specific", "all_assets"]),
     accountId: uuidSchema.nullable(),
+    entityId: z.string().uuid().nullable().default(null),
     liabilityId: z.null().optional(),
     percentage: z.number().gt(0).lte(100),
     condition: z.enum([
@@ -51,16 +52,28 @@ export const willBequestAssetSchema = z
     recipients: z.array(willBequestRecipientSchema).min(1),
   })
   .superRefine((b, ctx) => {
-    if (b.assetMode === "specific" && b.accountId === null) {
+    if (b.assetMode === "specific" && b.accountId === null && b.entityId === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "accountId is required when assetMode='specific'",
+        message: "accountId or entityId is required when assetMode='specific'",
+      });
+    }
+    if (b.assetMode === "specific" && b.accountId !== null && b.entityId !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "only one of accountId or entityId may be set on a specific asset bequest",
       });
     }
     if (b.assetMode === "all_assets" && b.accountId !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "accountId must be null when assetMode='all_assets'",
+      });
+    }
+    if (b.assetMode === "all_assets" && b.entityId !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "entityId must be null when assetMode='all_assets'",
       });
     }
     const sum = b.recipients.reduce((s, r) => s + r.percentage, 0);
@@ -79,6 +92,7 @@ export const willBequestLiabilitySchema = z
     liabilityId: uuidSchema,
     assetMode: z.null().optional(),
     accountId: z.null().optional(),
+    entityId: z.null().optional(),
     condition: z.literal("always"),
     sortOrder: z.number().int().min(0),
     recipients: z.array(willBequestRecipientSchema).min(1),

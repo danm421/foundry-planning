@@ -1546,6 +1546,9 @@ export const willBequests = pgTable(
     accountId: uuid("account_id").references(() => accounts.id, {
       onDelete: "cascade",
     }),
+    entityId: uuid("entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
     liabilityId: uuid("liability_id").references(() => liabilities.id, {
       onDelete: "cascade",
     }),

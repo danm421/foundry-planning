@@ -15,7 +15,7 @@ function specificBequest(id: string, accountId: string): WillBequest {
     kind: "asset",
     assetMode: "specific",
     accountId,
-    liabilityId: null,
+    liabilityId: null, entityId: null,
     percentage: 100,
     condition: "always",
     sortOrder: 0,

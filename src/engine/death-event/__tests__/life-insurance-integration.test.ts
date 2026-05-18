@@ -137,7 +137,7 @@ function mkSpouseWill(grantor: "client" | "spouse"): Will {
         kind: "asset",
         assetMode: "all_assets",
         accountId: null,
-        liabilityId: null,
+        liabilityId: null, entityId: null,
         percentage: 100,
         condition: "always",
         sortOrder: 0,

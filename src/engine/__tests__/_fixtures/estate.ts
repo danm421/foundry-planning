@@ -49,7 +49,7 @@ export function buildMinimalEstateScenario(opts: { priorClient: number; priorSpo
       id: "w-client", grantor: "client",
       bequests: [{
         id: "beq-c", name: "Residual to kid",
-        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }],
       }],
@@ -58,7 +58,7 @@ export function buildMinimalEstateScenario(opts: { priorClient: number; priorSpo
       id: "w-spouse", grantor: "spouse",
       bequests: [{
         id: "beq-s", name: "Residual to kid",
-        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }],
       }],

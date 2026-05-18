@@ -53,6 +53,7 @@ function willWithEmptyBequest(accountId: string): Will {
         kind: "asset",
         assetMode: "specific",
         accountId,
+        entityId: null,
         liabilityId: null,
         percentage: 100,
         condition: "always",

@@ -104,7 +104,7 @@ describe("upsertWills", () => {
           kind: "asset",
           assetMode: "specific",
           accountId: "acc-1",
-          liabilityId: null,
+          liabilityId: null, entityId: null,
           percentage: 100,
           condition: "always",
           sortOrder: 0,
