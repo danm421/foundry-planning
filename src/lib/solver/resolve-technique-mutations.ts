@@ -1,5 +1,3 @@
-// src/lib/solver/resolve-technique-mutations.ts
-//
 // After applyMutations, re-resolve reinvestments so a solver-added or -edited
 // reinvestment carries correct newGrowthRate / newRealization /
 // soldFractionByAccount. resolveReinvestments is idempotent, so unchanged base

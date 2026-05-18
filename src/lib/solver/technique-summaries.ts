@@ -1,5 +1,3 @@
-// src/lib/solver/technique-summaries.ts
-//
 // Pure one-line summaries for technique rows in the solver Techniques tab.
 
 import type {

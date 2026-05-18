@@ -1,5 +1,3 @@
-// src/lib/solver/technique-form-data.ts
-//
 // Conversions between the engine technique types and the shapes the
 // `add-*-form` components produce / consume. The asset-transaction form emits
 // string-typed numeric fields (the persisting API normally coerces them);
