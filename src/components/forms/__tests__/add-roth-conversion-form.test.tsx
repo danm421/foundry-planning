@@ -41,7 +41,7 @@ async function fillFormAndSubmit() {
   // Pick the only available source account
   fireEvent.click(screen.getByRole("button", { name: /\+ Add/i }));
   // Trigger submit
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Conversion" }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 }
 
@@ -158,7 +158,7 @@ describe("AddRothConversionForm — scenario mode", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     const [url, init] = fetchMock.mock.calls[0];

@@ -5,16 +5,13 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
+import DialogShell from "@/components/dialog-shell";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { RothConversionType, RothConversion } from "@/engine/types";
 
 const ROTH_SUBTYPES = new Set(["roth_ira"]);
 const TAX_DEFERRED_SUBTYPES = new Set(["traditional_ira", "401k", "403b", "sep_ira", "simple_ira"]);
-
-const INPUT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none";
 
 const CONVERSION_TYPE_OPTIONS: { value: RothConversionType; label: string; sub: string }[] = [
   { value: "fixed_amount", label: "Fixed Amount", sub: "Convert a set dollar amount each year" },
@@ -247,39 +244,33 @@ export default function AddRothConversionForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <DialogShell
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={initialData ? "Edit Roth Conversion" : "New Roth Conversion"}
+      size="lg"
+      primaryAction={{
+        label: initialData ? "Save Changes" : "Add Conversion",
+        form: "roth-conversion-form",
+        loading: submitting,
+        disabled: submitting || rothAccounts.length === 0,
+      }}
     >
-      <form
-        onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl space-y-4 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-5 shadow-xl"
-        style={{ maxHeight: "90vh", overflowY: "auto" }}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">
-            {initialData ? "Edit Roth Conversion" : "New Roth Conversion"}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xl text-gray-300 hover:text-gray-200"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
+      <form id="roth-conversion-form" onSubmit={handleSubmit} className="space-y-5">
         {/* Name */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Name</label>
+          <label className={fieldLabelClassName} htmlFor="rc-name">
+            Name
+          </label>
           <input
+            id="rc-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Roth Conversion 1"
             required
-            className={INPUT_CLASS}
+            className={inputClassName}
           />
         </div>
 
@@ -301,14 +292,15 @@ export default function AddRothConversionForm({
               />
             ) : (
               <>
-                <label className="block text-xs font-medium text-gray-300">Starts</label>
+                <label className={fieldLabelClassName} htmlFor="rc-startYear">Starts</label>
                 <input
+                  id="rc-startYear"
                   type="number"
                   min={2000}
                   max={2100}
                   value={startYear}
                   onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                 />
               </>
             )}
@@ -330,14 +322,15 @@ export default function AddRothConversionForm({
               />
             ) : (
               <>
-                <label className="block text-xs font-medium text-gray-300">Ends</label>
+                <label className={fieldLabelClassName} htmlFor="rc-endYear">Ends</label>
                 <input
+                  id="rc-endYear"
                   type="number"
                   min={2000}
                   max={2100}
                   value={endYear}
                   onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                  className={INPUT_CLASS}
+                  className={inputClassName}
                 />
               </>
             )}
@@ -346,16 +339,17 @@ export default function AddRothConversionForm({
 
         {/* Destination */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Destination Account</label>
+          <label className={fieldLabelClassName} htmlFor="rc-destination">Destination Account</label>
           {rothAccounts.length === 0 ? (
-            <p className="mt-1 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1.5 text-xs text-amber-300">
+            <p className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
               No Roth account on this plan yet. Add a Roth IRA or Roth 401(k) account first.
             </p>
           ) : (
             <select
+              id="rc-destination"
               value={destinationAccountId}
               onChange={(e) => setDestinationAccountId(e.target.value)}
-              className={SELECT_CLASS}
+              className={selectClassName}
               required
             >
               {rothAccounts.map((a) => (
@@ -365,10 +359,10 @@ export default function AddRothConversionForm({
           )}
         </div>
 
-        {/* Conversion type — segmented */}
+        {/* Conversion type — segmented control */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Conversion Type</label>
-          <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <label className={fieldLabelClassName}>Conversion Type</label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {CONVERSION_TYPE_OPTIONS.map((opt) => {
               const active = conversionType === opt.value;
               return (
@@ -376,14 +370,23 @@ export default function AddRothConversionForm({
                   key={opt.value}
                   type="button"
                   onClick={() => setConversionType(opt.value)}
-                  className={`rounded border px-2 py-1.5 text-left transition-colors ${
+                  aria-pressed={active}
+                  className={`rounded-[var(--radius-sm)] border px-3 py-2 text-left transition-colors ${
                     active
-                      ? "border-accent bg-accent/15 text-accent-ink"
-                      : "border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-600 hover:text-gray-200"
+                      ? "border-accent/50 bg-accent/10"
+                      : "border-hair bg-card-2 hover:border-hair-2"
                   }`}
                 >
-                  <div className="text-xs font-semibold">{opt.label}</div>
-                  <div className="mt-0.5 text-[10px] leading-tight text-gray-400">{opt.sub}</div>
+                  <div
+                    className={`text-[13px] font-semibold ${
+                      active ? "text-accent-ink" : "text-ink-2"
+                    }`}
+                  >
+                    {opt.label}
+                  </div>
+                  <div className="mt-0.5 text-[11px] leading-tight text-ink-3">
+                    {opt.sub}
+                  </div>
                 </button>
               );
             })}
@@ -393,13 +396,13 @@ export default function AddRothConversionForm({
         {/* Fixed amount */}
         {showFixedAmount && (
           <div>
-            <label htmlFor="rc-fixedAmount" className="block text-xs font-medium text-gray-300">Fixed Amount ($/yr)</label>
+            <label htmlFor="rc-fixedAmount" className={fieldLabelClassName}>Fixed Amount ($/yr)</label>
             <CurrencyInput
               id="rc-fixedAmount"
               value={fixedAmount}
               onChange={(raw) => setFixedAmount(raw)}
               required
-              className={INPUT_CLASS.replace("px-2", "pr-2")}
+              className={inputClassName}
             />
           </div>
         )}
@@ -407,17 +410,18 @@ export default function AddRothConversionForm({
         {/* Bracket selector */}
         {showBracketSelect && (
           <div>
-            <label className="block text-xs font-medium text-gray-300">Fill Up To</label>
+            <label className={fieldLabelClassName} htmlFor="rc-bracket">Fill Up To</label>
             <select
+              id="rc-bracket"
               value={fillUpBracket}
               onChange={(e) => setFillUpBracket(parseFloat(e.target.value))}
-              className={SELECT_CLASS}
+              className={selectClassName}
             >
               {BRACKET_OPTIONS.map((b) => (
                 <option key={b.value} value={b.value}>{b.label}</option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-gray-400">
+            <p className="mt-1.5 text-[12px] text-ink-3">
               Each year, convert just enough to top out the selected ordinary-income bracket.
             </p>
           </div>
@@ -427,19 +431,21 @@ export default function AddRothConversionForm({
         {showIndexing && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-300">Indexed At (% / yr)</label>
+              <label className={fieldLabelClassName} htmlFor="rc-indexingRate">Indexed At (% / yr)</label>
               <PercentInput
+                id="rc-indexingRate"
                 value={indexingRate}
                 onChange={(raw) => setIndexingRate(raw)}
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-300">Start Indexing</label>
+              <label className={fieldLabelClassName} htmlFor="rc-indexingMode">Start Indexing</label>
               <select
+                id="rc-indexingMode"
                 value={startIndexingMode}
                 onChange={(e) => setStartIndexingMode(e.target.value as "immediately" | "at_start")}
-                className={SELECT_CLASS}
+                className={selectClassName}
               >
                 <option value="immediately">Immediately</option>
                 <option value="at_start">At Start Year</option>
@@ -450,18 +456,18 @@ export default function AddRothConversionForm({
 
         {/* Accounts to convert */}
         <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="block text-xs font-medium text-gray-300">Accounts to Convert</label>
-            <span className="text-[10px] text-gray-400">
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label className="block text-[13px] font-medium text-ink-2">Accounts to Convert</label>
+            <span className="text-[11px] text-ink-3">
               Drained in order. Use ↑ ↓ to reorder.
             </span>
           </div>
           {eligibleSources.length === 0 ? (
-            <p className="rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1.5 text-xs text-amber-300">
+            <p className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
               No Traditional IRA / 401(k) / SEP / SIMPLE accounts available.
             </p>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {/* Selected sources, in order */}
               {sourceAccountIds.map((id, idx) => {
                 const a = accountMap.get(id);
@@ -469,32 +475,32 @@ export default function AddRothConversionForm({
                 return (
                   <div
                     key={id}
-                    className="flex items-center justify-between rounded border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-gray-100"
+                    className="flex items-center justify-between rounded-[var(--radius-sm)] border border-accent/50 bg-accent/10 px-3 py-2 text-[13px] text-ink"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-400">{idx + 1}.</span>
-                      <span>{a.name}</span>
-                      <span className="text-[10px] text-gray-400">({a.subType})</span>
+                      <span className="text-ink-3">{idx + 1}.</span>
+                      <span className="text-accent-ink">{a.name}</span>
+                      <span className="text-[11px] text-ink-3">({a.subType})</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         disabled={idx === 0}
                         onClick={() => moveSource(id, -1)}
-                        className="px-1 text-gray-400 hover:text-gray-200 disabled:opacity-30"
+                        className="px-1 text-ink-3 hover:text-ink disabled:opacity-30"
                         aria-label="Move up"
                       >↑</button>
                       <button
                         type="button"
                         disabled={idx === sourceAccountIds.length - 1}
                         onClick={() => moveSource(id, 1)}
-                        className="px-1 text-gray-400 hover:text-gray-200 disabled:opacity-30"
+                        className="px-1 text-ink-3 hover:text-ink disabled:opacity-30"
                         aria-label="Move down"
                       >↓</button>
                       <button
                         type="button"
                         onClick={() => toggleSource(id)}
-                        className="px-1 text-red-400 hover:text-red-300"
+                        className="px-1 text-crit hover:opacity-80"
                         aria-label="Remove"
                       >×</button>
                     </div>
@@ -509,36 +515,19 @@ export default function AddRothConversionForm({
                     type="button"
                     key={a.id}
                     onClick={() => toggleSource(a.id)}
-                    className="flex w-full items-center justify-between rounded border border-gray-700 bg-gray-900 px-2 py-1 text-left text-xs text-gray-300 hover:border-gray-600 hover:text-gray-100"
+                    className="flex w-full items-center justify-between rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-left text-[13px] text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
                   >
                     <span>
                       {a.name}{" "}
-                      <span className="text-[10px] text-gray-500">({a.subType})</span>
+                      <span className="text-[11px] text-ink-3">({a.subType})</span>
                     </span>
-                    <span className="text-accent">+ Add</span>
+                    <span className="text-accent-ink">+ Add</span>
                   </button>
                 ))}
             </div>
           )}
         </div>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-200"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || rothAccounts.length === 0}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
-          >
-            {submitting ? "Saving..." : "Save"}
-          </button>
-        </div>
       </form>
-    </div>
+    </DialogShell>
   );
 }

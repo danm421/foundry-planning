@@ -110,6 +110,7 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
       residuaryRecipients: w.residuaryRecipients?.map((r) => ({
         recipientKind: r.recipientKind,
         recipientId: r.recipientId,
+        tier: r.tier,
         percentage: r.percentage,
         sortOrder: r.sortOrder,
       })),

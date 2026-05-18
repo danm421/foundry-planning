@@ -4,6 +4,8 @@ import { useState, useEffect, FormEvent } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
+import DialogShell from "@/components/dialog-shell";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { Reinvestment } from "@/engine/types";
 
@@ -39,10 +41,22 @@ interface AddReinvestmentFormProps {
   onSubmitDraft?: (technique: Reinvestment) => void;
 }
 
-const INPUT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none";
+const TARGET_OPTIONS: {
+  value: "model_portfolio" | "custom";
+  label: string;
+  sub: string;
+}[] = [
+  {
+    value: "model_portfolio",
+    label: "Model portfolio",
+    sub: "Reallocate to a saved model",
+  },
+  {
+    value: "custom",
+    label: "Custom growth rate",
+    sub: "Set an explicit return assumption",
+  },
+];
 
 function makeId(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -56,6 +70,21 @@ function toPercentString(value: number | string | null | undefined): string {
   const num = typeof value === "string" ? parseFloat(value) : value;
   if (isNaN(num)) return "";
   return String(num * 100);
+}
+
+/** 12×12 check glyph for the account selector rows. */
+function CheckIcon() {
+  return (
+    <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path
+        d="M2.5 6.2 5 8.7l4.5-5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export default function AddReinvestmentForm({
@@ -153,6 +182,17 @@ export default function AddReinvestmentForm({
     );
   }
 
+  // Live realization-split feedback. When any percent is entered, all four
+  // must sum to 100% — surface the running total inline so the user sees the
+  // gap before submitting.
+  const realizationValues = [pctOrdinary, pctLtGains, pctQualifiedDiv, pctTaxExempt];
+  const anyRealizationEntered = realizationValues.some((v) => v !== "");
+  const realizationTotal = realizationValues.reduce(
+    (sum, v) => sum + (parseFloat(v) || 0),
+    0,
+  );
+  const realizationBalanced = Math.abs(realizationTotal - 100) < 1e-6;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -173,8 +213,6 @@ export default function AddReinvestmentForm({
 
     // Custom realization split: if any percent is entered, all four must
     // be present and sum to 100%.
-    const realizationEntries = [pctOrdinary, pctLtGains, pctQualifiedDiv, pctTaxExempt];
-    const anyRealizationEntered = realizationEntries.some((v) => v !== "");
     let customRealization:
       | {
           customPctOrdinaryIncome: number;
@@ -185,7 +223,7 @@ export default function AddReinvestmentForm({
       | null = null;
 
     if (targetType === "custom" && anyRealizationEntered) {
-      const nums = realizationEntries.map((v) => (parseFloat(v) || 0) / 100);
+      const nums = realizationValues.map((v) => (parseFloat(v) || 0) / 100);
       const sum = nums.reduce((a, b) => a + b, 0);
       if (Math.abs(sum - 1) > 1e-6) {
         setError("Realization percentages must sum to 100%.");
@@ -286,63 +324,83 @@ export default function AddReinvestmentForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <DialogShell
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={initialData ? "Edit Reinvestment" : "Add Reinvestment"}
+      size="md"
+      primaryAction={{
+        label: initialData ? "Save Changes" : "Add Reinvestment",
+        form: "reinvestment-form",
+        loading: submitting,
+        disabled: submitting,
+      }}
     >
-      <form
-        onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg space-y-3 rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-5 shadow-xl"
-        style={{ maxHeight: "90vh", overflowY: "auto" }}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">
-            {initialData ? "Edit Reinvestment" : "Add Reinvestment"}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xl text-gray-300 hover:text-gray-200"
-            aria-label="Close"
+      <form id="reinvestment-form" onSubmit={handleSubmit} className="space-y-5">
+        {error && (
+          <p
+            role="alert"
+            className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
           >
-            ×
-          </button>
-        </div>
+            {error}
+          </p>
+        )}
 
         {/* Name */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Name</label>
+          <label className={fieldLabelClassName} htmlFor="reinvestment-name">
+            Name <span className="text-crit">*</span>
+          </label>
           <input
+            id="reinvestment-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Shift to growth portfolio at retirement"
             required
-            className={INPUT_CLASS}
+            className={inputClassName}
           />
         </div>
 
         {/* Accounts */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Accounts</label>
+          <label className={fieldLabelClassName}>
+            Accounts <span className="text-crit">*</span>
+          </label>
           {liquidAccounts.length === 0 ? (
-            <p className="mt-1 text-xs text-gray-400">No eligible accounts.</p>
+            <p className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink-3">
+              No eligible accounts.
+            </p>
           ) : (
-            <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded border border-gray-700 bg-gray-900 p-2">
-              {liquidAccounts.map((a) => (
-                <label
-                  key={a.id}
-                  className="flex items-center gap-2 text-sm text-gray-200"
-                >
-                  <input
-                    type="checkbox"
-                    checked={accountIds.includes(a.id)}
-                    onChange={() => toggleAccount(a.id)}
-                    className="rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                  />
-                  {a.name}
-                </label>
-              ))}
+            <div className="max-h-44 space-y-1.5 overflow-y-auto pr-0.5">
+              {liquidAccounts.map((a) => {
+                const selected = accountIds.includes(a.id);
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => toggleAccount(a.id)}
+                    aria-pressed={selected}
+                    className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-[13px] transition-colors ${
+                      selected
+                        ? "border-accent/50 bg-accent/10 text-ink"
+                        : "border-hair bg-card-2 text-ink-2 hover:border-hair-2 hover:text-ink"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                        selected
+                          ? "border-accent bg-accent text-accent-on"
+                          : "border-hair-2 bg-card"
+                      }`}
+                    >
+                      {selected && <CheckIcon />}
+                    </span>
+                    <span className="truncate">{a.name}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -367,8 +425,11 @@ export default function AddReinvestmentForm({
             />
           ) : (
             <>
-              <label className="block text-xs font-medium text-gray-300">Year</label>
+              <label className={fieldLabelClassName} htmlFor="reinvestment-year">
+                Year
+              </label>
               <input
+                id="reinvestment-year"
                 type="number"
                 min={2000}
                 max={2100}
@@ -378,54 +439,65 @@ export default function AddReinvestmentForm({
                   setYearRef(null);
                 }}
                 required
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </>
           )}
         </div>
 
-        {/* Target type */}
+        {/* Target type — segmented control */}
         <div>
-          <label className="block text-xs font-medium text-gray-300">Target</label>
-          <div className="mt-1 flex gap-4">
-            <label className="flex items-center gap-2 text-sm text-gray-200">
-              <input
-                type="radio"
-                name="targetType"
-                checked={targetType === "model_portfolio"}
-                onChange={() => setTargetType("model_portfolio")}
-                className="text-accent focus:ring-accent"
-              />
-              Model portfolio
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-200">
-              <input
-                type="radio"
-                name="targetType"
-                checked={targetType === "custom"}
-                onChange={() => setTargetType("custom")}
-                className="text-accent focus:ring-accent"
-              />
-              Custom growth rate
-            </label>
+          <label className={fieldLabelClassName}>Target</label>
+          <div className="grid grid-cols-2 gap-2">
+            {TARGET_OPTIONS.map((opt) => {
+              const active = targetType === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setTargetType(opt.value)}
+                  aria-pressed={active}
+                  className={`rounded-[var(--radius-sm)] border px-3 py-2 text-left transition-colors ${
+                    active
+                      ? "border-accent/50 bg-accent/10"
+                      : "border-hair bg-card-2 hover:border-hair-2"
+                  }`}
+                >
+                  <div
+                    className={`text-[13px] font-semibold ${
+                      active ? "text-accent-ink" : "text-ink-2"
+                    }`}
+                  >
+                    {opt.label}
+                  </div>
+                  <div className="mt-0.5 text-[11px] leading-tight text-ink-3">
+                    {opt.sub}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Model portfolio dropdown */}
         {targetType === "model_portfolio" && (
           <div>
-            <label className="block text-xs font-medium text-gray-300">
-              Model portfolio
+            <label
+              className={fieldLabelClassName}
+              htmlFor="reinvestment-model-portfolio"
+            >
+              Model portfolio <span className="text-crit">*</span>
             </label>
             {modelPortfolios.length === 0 ? (
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
                 No model portfolios available.
               </p>
             ) : (
               <select
+                id="reinvestment-model-portfolio"
                 value={modelPortfolioId}
                 onChange={(e) => setModelPortfolioId(e.target.value)}
-                className={SELECT_CLASS}
+                className={selectClassName}
               >
                 {modelPortfolios.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -441,59 +513,78 @@ export default function AddReinvestmentForm({
         {targetType === "custom" && (
           <>
             <div>
-              <label className="block text-xs font-medium text-gray-300">
-                Growth rate (% / yr)
+              <label
+                className={fieldLabelClassName}
+                htmlFor="reinvestment-growth-rate"
+              >
+                Growth rate (% / yr) <span className="text-crit">*</span>
               </label>
               <PercentInput
+                id="reinvestment-growth-rate"
                 value={customGrowthRate}
                 onChange={(raw) => setCustomGrowthRate(raw)}
-                className={INPUT_CLASS}
+                className={inputClassName}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-300">
-                Realization split (optional)
-              </label>
-              <p className="mt-0.5 text-xs text-gray-400">
-                Defaults to 100% ordinary income.
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <span className="text-[13px] font-medium text-ink-2">
+                  Realization split{" "}
+                  <span className="text-ink-4">(optional)</span>
+                </span>
+                {anyRealizationEntered && (
+                  <span
+                    className={`tabular text-[12px] font-medium ${
+                      realizationBalanced ? "text-good" : "text-crit"
+                    }`}
+                  >
+                    Total {realizationTotal}%
+                  </span>
+                )}
+              </div>
+              <p className="-mt-1 mb-2 text-[12px] text-ink-3">
+                Leave blank to default to 100% ordinary income. When set, the
+                four shares must total 100%.
               </p>
-              <div className="mt-1 grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400">
+                  <label className="mb-1 block text-[12px] text-ink-3">
                     Ordinary income
                   </label>
                   <PercentInput
                     value={pctOrdinary}
                     onChange={(raw) => setPctOrdinary(raw)}
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400">
+                  <label className="mb-1 block text-[12px] text-ink-3">
                     LT capital gains
                   </label>
                   <PercentInput
                     value={pctLtGains}
                     onChange={(raw) => setPctLtGains(raw)}
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400">
+                  <label className="mb-1 block text-[12px] text-ink-3">
                     Qualified dividends
                   </label>
                   <PercentInput
                     value={pctQualifiedDiv}
                     onChange={(raw) => setPctQualifiedDiv(raw)}
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400">Tax-exempt</label>
+                  <label className="mb-1 block text-[12px] text-ink-3">
+                    Tax-exempt
+                  </label>
                   <PercentInput
                     value={pctTaxExempt}
                     onChange={(raw) => setPctTaxExempt(raw)}
-                    className={INPUT_CLASS}
+                    className={inputClassName}
                   />
                 </div>
               </div>
@@ -502,43 +593,36 @@ export default function AddReinvestmentForm({
         )}
 
         {/* Apply taxes on switch */}
-        <div>
-          <label className="flex items-start gap-2 text-sm text-gray-200">
-            <input
-              type="checkbox"
-              checked={realizeTaxesOnSwitch}
-              onChange={(e) => setRealizeTaxesOnSwitch(e.target.checked)}
-              className="mt-0.5 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-            />
-            <span>
+        <button
+          type="button"
+          onClick={() => setRealizeTaxesOnSwitch((v) => !v)}
+          aria-pressed={realizeTaxesOnSwitch}
+          className={`flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left transition-colors ${
+            realizeTaxesOnSwitch
+              ? "border-accent/50 bg-accent/10"
+              : "border-hair bg-card-2 hover:border-hair-2"
+          }`}
+        >
+          <span
+            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+              realizeTaxesOnSwitch
+                ? "border-accent bg-accent text-accent-on"
+                : "border-hair-2 bg-card"
+            }`}
+          >
+            {realizeTaxesOnSwitch && <CheckIcon />}
+          </span>
+          <span>
+            <span className="text-[13px] font-medium text-ink">
               Apply taxes on switch
-              <span className="mt-0.5 block text-xs text-gray-400">
-                Taxable accounts realize capital gains for the portion of
-                holdings the reallocation sells.
-              </span>
             </span>
-          </label>
-        </div>
-
-        {error && <p className="text-xs font-medium text-red-400">{error}</p>}
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-200"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
-          >
-            {submitting ? "Saving..." : "Save"}
-          </button>
-        </div>
+            <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
+              Taxable accounts realize capital gains for the portion of holdings
+              the reallocation sells.
+            </span>
+          </span>
+        </button>
       </form>
-    </div>
+    </DialogShell>
   );
 }
