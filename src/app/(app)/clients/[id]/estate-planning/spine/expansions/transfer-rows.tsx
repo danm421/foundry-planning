@@ -59,6 +59,11 @@ export function TransferRows({
                   <span className="truncate text-ink-2">
                     {t.sourceAccountName ?? t.sourceLiabilityName ?? "—"}
                   </span>
+                  {t.sourceEntityId != null && (
+                    <span className="rounded-sm bg-card px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-ink-3">
+                      business
+                    </span>
+                  )}
                   <span className="rounded-sm bg-card px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-ink-3">
                     {MECH_LABEL[t.via]}
                   </span>
