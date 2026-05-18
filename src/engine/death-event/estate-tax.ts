@@ -372,6 +372,18 @@ export function computeDeductions(input: {
   // from the same source don't collectively over-claim the marital deduction.
   const remainingGrossByAccountId = new Map(grossByAccountId);
 
+  // Map source entity id → decedent's gross-estate share. Caps a spouse-routed
+  // business-interest transfer's marital deduction at the includible amount.
+  const grossByEntityId = new Map<string, number>();
+  for (const line of input.grossEstateLines ?? []) {
+    if (line.entityId == null || line.amount <= 0) continue;
+    grossByEntityId.set(
+      line.entityId,
+      (grossByEntityId.get(line.entityId) ?? 0) + line.amount,
+    );
+  }
+  const remainingGrossByEntityId = new Map(grossByEntityId);
+
   let maritalDeduction = 0;
   let charitableDeduction = 0;
 
@@ -383,6 +395,10 @@ export function computeDeductions(input: {
         const remaining = remainingGrossByAccountId.get(t.sourceAccountId) ?? 0;
         eligible = Math.min(eligible, Math.max(0, remaining));
         remainingGrossByAccountId.set(t.sourceAccountId, remaining - eligible);
+      } else if (t.sourceEntityId != null && grossByEntityId.has(t.sourceEntityId)) {
+        const remaining = remainingGrossByEntityId.get(t.sourceEntityId) ?? 0;
+        eligible = Math.min(eligible, Math.max(0, remaining));
+        remainingGrossByEntityId.set(t.sourceEntityId, remaining - eligible);
       }
       const encumbrance = t.resultingAccountId
         ? encumbranceByAssetId.get(t.resultingAccountId) ?? 0

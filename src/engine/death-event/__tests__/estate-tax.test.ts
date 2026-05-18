@@ -1170,6 +1170,98 @@ describe("computeDeductions", () => {
     expect(r.maritalDeduction).toBeCloseTo(53_673, 2);
   });
 
+  it("covers a spouse-routed business transfer with the marital deduction", () => {
+    // Business entity "e1" has $30k in the gross estate. The ledger routes
+    // $30k to the spouse (fallback_spouse). The marital deduction must be
+    // capped at the gross-estate amount ($30k), not the full transfer amount.
+    // This also verifies that entity-sourced transfers (sourceAccountId=null,
+    // sourceEntityId set) aren't ignored by the account-cap branch.
+    const grossEstateLines: GrossEstateLine[] = [
+      {
+        label: "Test Bus (Business)",
+        accountId: null,
+        liabilityId: null,
+        entityId: "e1",
+        percentage: 1,
+        amount: 30_000,
+      },
+    ];
+    const transferLedger: DeathTransfer[] = [
+      {
+        year: 2030,
+        deathOrder: 1,
+        deceased: "client",
+        sourceAccountId: null,
+        sourceAccountName: "Test Bus",
+        sourceLiabilityId: null,
+        sourceLiabilityName: null,
+        sourceEntityId: "e1",
+        via: "fallback_spouse",
+        recipientKind: "spouse",
+        recipientId: "fmSpouse",
+        recipientLabel: "Spouse",
+        amount: 30_000,
+        basis: 10_000,
+        resultingAccountId: null,
+        resultingLiabilityId: null,
+      },
+    ];
+    const d = computeDeductions({
+      transferLedger,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+      grossEstateLines,
+    });
+    expect(d.maritalDeduction).toBe(30_000);
+  });
+
+  it("caps marital deduction at gross-estate share for a spouse-routed business transfer (§2056)", () => {
+    // Business "e1": gross estate shows $30k (deceased's 60% share of entity).
+    // Transfer ledger routes $50k to spouse — this shouldn't happen in normal
+    // operation, but the cap must prevent over-claiming the marital deduction
+    // beyond what actually passed from the decedent. Without grossByEntityId,
+    // eligible = t.amount = $50k and maritalDeduction = $50k (over-claimed).
+    const grossEstateLines: GrossEstateLine[] = [
+      {
+        label: "Test Bus (Business) (60%)",
+        accountId: null,
+        liabilityId: null,
+        entityId: "e1",
+        percentage: 0.6,
+        amount: 30_000,
+      },
+    ];
+    const transferLedger: DeathTransfer[] = [
+      {
+        year: 2030,
+        deathOrder: 1,
+        deceased: "client",
+        sourceAccountId: null,
+        sourceAccountName: "Test Bus",
+        sourceLiabilityId: null,
+        sourceLiabilityName: null,
+        sourceEntityId: "e1",
+        via: "fallback_spouse",
+        recipientKind: "spouse",
+        recipientId: "fmSpouse",
+        recipientLabel: "Spouse",
+        amount: 50_000,
+        basis: 10_000,
+        resultingAccountId: null,
+        resultingLiabilityId: null,
+      },
+    ];
+    const d = computeDeductions({
+      transferLedger,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+      grossEstateLines,
+    });
+    expect(d.maritalDeduction).toBe(30_000);
+  });
+
   it("charitable deduction = sum of external_beneficiary transfers whose kind is charity", () => {
     const ledger = [
       transfer({ recipientKind: "external_beneficiary", recipientId: "eb1", amount: 50_000 }),
