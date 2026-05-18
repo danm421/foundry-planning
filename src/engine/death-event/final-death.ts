@@ -77,10 +77,16 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   const residuaryTier = selectResiduaryTier(2, predeceasedFmId != null);
 
   // Defensive: no joint accounts can exist at 4c. Entity/family-member-owned
-  // (ownerFamilyMemberId heir-distribution) accounts are exempt.
+  // (ownerFamilyMemberId heir-distribution) accounts are exempt. Mixed
+  // family+entity accounts (e.g. client 80% + LLC 20%) are also NOT joint —
+  // they'll be partitioned in the loop below — so exclude them from this guard.
   for (const a of accounts) {
     const cfm = controllingFamilyMember(a);
-    const isJoint = ownedByHousehold(a) > 0.0001 && cfm == null && !isFullyEntityOwned(a);
+    const hasMixedEntityFm =
+      a.owners.some((o) => o.kind === "entity") &&
+      a.owners.some((o) => o.kind === "family_member");
+    const isJoint =
+      ownedByHousehold(a) > 0.0001 && cfm == null && !isFullyEntityOwned(a) && !hasMixedEntityFm;
     if (isJoint) {
       throw new Error(
         `applyFinalDeath invariant: account ${a.id} still has joint ownership at final death (should have been retitled at 4b)`,
@@ -99,7 +105,18 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
 
   for (const acct of accounts) {
     const cfm = controllingFamilyMember(acct);
-    const touchedByDeceased = cfm === deceasedFmId && deceasedFmId != null;
+    // Mixed family+entity account: controllingFamilyMember returns null whenever
+    // any entity owner is present (by design — no sole controlling FM). Guard
+    // must also catch the case where the deceased FM owns a slice alongside an
+    // entity, otherwise the partition block below is unreachable for this common
+    // scenario.
+    const isMixedDeceased =
+      acct.owners.some((o) => o.kind === "entity") &&
+      acct.owners.some(
+        (o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId,
+      );
+    const touchedByDeceased =
+      (cfm === deceasedFmId && deceasedFmId != null) || isMixedDeceased;
     // isHeirOwned: sole FM owner is not a household principal (already distributed to an heir FM)
     const isHeirOwned = cfm != null && cfm !== deceasedFmId;
     if (!touchedByDeceased || isFullyEntityOwned(acct) || isHeirOwned) {

@@ -32,5 +32,9 @@ describe("partitionMixedAccount", () => {
     const r = partitionMixedAccount(savings, 100_000, 40_000, locked);
     expect(r.entitySlices[0].value).toBe(25_000);
     expect(r.familyPool.value).toBe(75_000);
+    // Basis fraction tracks locked value (25k/100k = 25%), not the nominal 20% percent.
+    // Entity slice basis = 40_000 × 0.25 = 10_000; family pool basis = 30_000.
+    expect(r.entitySlices[0].basis).toBeCloseTo(10_000, 0);
+    expect(r.familyPool.basis).toBeCloseTo(30_000, 0);
   });
 });

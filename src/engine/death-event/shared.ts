@@ -159,7 +159,12 @@ export function partitionMixedAccount(
     if (o.kind !== "entity") continue;
     const locked = entityAccountSharesEoY?.get(o.entityId)?.get(account.id);
     const sliceValue = locked ?? balance * o.percent;
-    const sliceBasis = basis * o.percent;
+    // When a locked dollar value is supplied it may differ from balance×percent.
+    // Use the value-proportional fraction so the entity slice basis tracks the
+    // locked share; the family pool absorbs the remainder. Without this, a
+    // material lock-vs-percent difference mis-states both slice and pool bases.
+    const sliceBasisFraction = locked != null && balance > 0 ? locked / balance : o.percent;
+    const sliceBasis = basis * sliceBasisFraction;
     entityValueTotal += sliceValue;
     entityBasisTotal += sliceBasis;
     entitySlices.push({
