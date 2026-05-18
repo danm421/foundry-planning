@@ -123,6 +123,47 @@ describe("deriveBeneficiaryDetail — direct receipts", () => {
     expect(detail.fromSecondDeath.drains.federal_estate_tax).toBe(0);
     expect(detail.fromSecondDeath.net).toBeCloseTo(100_000);
   });
+
+  it("business-interest transfer (sourceEntityId set, sourceAccountId null) is not dropped and is labelled correctly", () => {
+    // A business-interest DeathTransfer has sourceEntityId set, sourceAccountId null,
+    // resultingAccountId null, and sourceAccountName carrying the business name.
+    // deriveBeneficiaryDetail keys on recipientKind/recipientId — it must not
+    // silently drop these rows.
+    const businessTransfer = transfer({
+      sourceAccountId: null,
+      sourceAccountName: "Test Bus",
+      sourceEntityId: "biz-1",
+      resultingAccountId: null,
+      recipientKind: "spouse",
+      recipientId: null,
+      recipientLabel: "Spouse",
+      amount: 500_000,
+    });
+
+    const spouseRecipient = {
+      kind: "spouse" as const,
+      id: null,
+      name: "Spouse",
+      relationship: null,
+    };
+
+    const detail = deriveBeneficiaryDetail({
+      recipient: spouseRecipient,
+      firstTransfers: [businessTransfer],
+      secondTransfers: [],
+      firstDrainAttributions: [],
+      secondDrainAttributions: [],
+      tree: emptyTree(),
+    });
+
+    // The transfer must appear in fromFirstDeath and carry the correct gross.
+    expect(detail.fromFirstDeath.gross).toBeCloseTo(500_000);
+    expect(detail.fromFirstDeath.transfers).toHaveLength(1);
+    // The surviving transfer row must carry the business name as sourceAccountName.
+    expect(detail.fromFirstDeath.transfers[0].sourceAccountName).toBe("Test Bus");
+    // The transfer must not be dropped.
+    expect(detail.fromFirstDeath.net).toBeCloseTo(500_000);
+  });
 });
 
 describe("deriveBeneficiaryDetail — trust pass-through", () => {

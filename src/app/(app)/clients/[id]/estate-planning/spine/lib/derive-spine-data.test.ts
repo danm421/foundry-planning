@@ -232,7 +232,7 @@ function twoGrantorWithTrustFixture(): ClientData {
         kind: "asset",
         assetMode: "specific",
         accountId: accountToTrust.id,
-        liabilityId: null,
+        liabilityId: null, entityId: null,
         percentage: 100,
         condition: "if_spouse_survives",
         sortOrder: 0,

@@ -369,6 +369,7 @@ export function CanvasDndProvider({
         name: bequest.name,
         assetMode: bequest.assetMode ?? "specific",
         accountId: bequest.accountId,
+        entityId: bequest.entityId,
         percentage: bequest.percentage,
         condition: bequest.condition,
         sortOrder: bequest.sortOrder,

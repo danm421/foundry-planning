@@ -48,7 +48,7 @@ describe("applyLiabilityBequests — happy path", () => {
       kind: "liability",
       assetMode: null,
       accountId: null,
-      liabilityId: liab.id,
+      liabilityId: liab.id, entityId: null,
       percentage: 100,
       condition: "always",
       sortOrder: 0,
@@ -98,7 +98,7 @@ describe("applyLiabilityBequests — partial bequest", () => {
     const fam = baseFam();
     const will = baseWill([{
       id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
-      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 60, sortOrder: 0 }],
     }]);
 
@@ -126,7 +126,7 @@ describe("applyLiabilityBequests — multi-recipient split", () => {
     const fam2 = baseFam({ id: "fam-2", firstName: "Sarah", lastName: null });
     const will = baseWill([{
       id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
-      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
       recipients: [
         { recipientKind: "family_member", recipientId: fam1.id, percentage: 50, sortOrder: 0 },
         { recipientKind: "family_member", recipientId: fam2.id, percentage: 50, sortOrder: 1 },
@@ -162,7 +162,7 @@ describe("applyLiabilityBequests — entity recipient", () => {
     };
     const will = baseWill([{
       id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
-      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "entity", recipientId: entity.id, percentage: 100, sortOrder: 0 }],
     }]);
 
@@ -183,7 +183,7 @@ describe("applyLiabilityBequests — defensive skip cases", () => {
     const fam = baseFam();
     const will = baseWill([{
       id: "beq-1", name: "Mortgage", kind: "liability", assetMode: null, accountId: null,
-      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 100, sortOrder: 0 }],
     }]);
     const result = applyLiabilityBequests({
@@ -199,7 +199,7 @@ describe("applyLiabilityBequests — defensive skip cases", () => {
     const fam = baseFam();
     const will = baseWill([{
       id: "beq-1", name: "Trust debt", kind: "liability", assetMode: null, accountId: null,
-      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 100, sortOrder: 0 }],
     }]);
     const result = applyLiabilityBequests({
@@ -213,7 +213,7 @@ describe("applyLiabilityBequests — defensive skip cases", () => {
     const fam = baseFam();
     const will = baseWill([{
       id: "beq-1", name: "Gone", kind: "liability", assetMode: null, accountId: null,
-      liabilityId: "ghost-liab", percentage: 100, condition: "always", sortOrder: 0,
+      liabilityId: "ghost-liab", entityId: null, percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 100, sortOrder: 0 }],
     }]);
     const result = applyLiabilityBequests({
@@ -228,7 +228,7 @@ describe("applyLiabilityBequests — defensive skip cases", () => {
     const liab = baseLiability();
     const will = baseWill([{
       id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
-      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
       recipients: [],
     }]);
     const result = applyLiabilityBequests({
@@ -253,7 +253,7 @@ describe("applyLiabilityBequests — defensive skip cases", () => {
       id: "will-1", grantor: "client",
       bequests: [{
         id: "beq-1", name: "Home", kind: "asset", assetMode: "specific",
-        accountId: "acct-1", liabilityId: null, percentage: 100, condition: "always",
+        accountId: "acct-1", liabilityId: null, entityId: null, percentage: 100, condition: "always",
         sortOrder: 0, recipients: [],
       }],
     };

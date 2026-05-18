@@ -68,6 +68,7 @@ describe("BequestDialog", () => {
           name: "To kids",
           assetMode: "specific",
           accountId: "a1",
+          entityId: null,
           percentage: 50,
           condition: "always",
           sortOrder: 0,
@@ -96,6 +97,7 @@ describe("BequestDialog", () => {
           name: "Bad split",
           assetMode: "specific",
           accountId: "a1",
+          entityId: null,
           percentage: 100,
           condition: "always",
           sortOrder: 0,
@@ -126,6 +128,7 @@ describe("BequestDialog", () => {
           name: "ignored",
           assetMode: "specific",
           accountId: "a1",
+          entityId: null,
           percentage: 100,
           condition: "always",
           sortOrder: 0,
@@ -166,6 +169,7 @@ describe("BequestDialog", () => {
           name: "ignored",
           assetMode: "specific",
           accountId: "a1",
+          entityId: null,
           percentage: 100,
           condition: "always",
           sortOrder: 0,
@@ -202,6 +206,7 @@ describe("BequestDialog", () => {
           name: "Missing account",
           assetMode: "specific",
           accountId: null,
+          entityId: null,
           percentage: 100,
           condition: "always",
           sortOrder: 0,
@@ -275,6 +280,7 @@ describe("BequestDialog", () => {
           name: "Residual",
           assetMode: "specific",
           accountId: "a1",
+          entityId: null,
           percentage: 100,
           condition: "always",
           sortOrder: 0,
@@ -347,6 +353,34 @@ describe("BequestDialog", () => {
         liabilityId: "l1",
         percentage: 100,
         condition: "always",
+      }),
+    );
+  });
+
+  it("selects a business entity from the picker and saves with entityId set and accountId null", async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    const bizEntity: WillsPanelEntity = { id: "biz-1", name: "Test Bus", entityType: "llc" };
+    render(
+      <BequestDialog
+        open
+        onOpenChange={() => {}}
+        primary={primary}
+        accounts={[acct]}
+        familyMembers={[fm]}
+        externalBeneficiaries={[ext]}
+        entities={[ent]}
+        businessEntities={[bizEntity]}
+        onSave={onSave}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("Asset or debt"), "entity:biz-1");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "asset",
+        entityId: "biz-1",
+        accountId: null,
       }),
     );
   });

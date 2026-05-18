@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { BUSINESS_ENTITY_TYPES } from "@/lib/estate/in-estate-weights";
 
 export type WillGrantor = "client" | "spouse";
 export type WillAssetMode = "specific" | "all_assets";
@@ -29,6 +30,7 @@ export interface WillsPanelAssetBequest {
   name: string;
   assetMode: WillAssetMode;
   accountId: string | null;
+  entityId?: string | null;
   percentage: number;
   condition: WillCondition;
   sortOrder: number;
@@ -94,6 +96,7 @@ export interface WillsPanelExternal {
 export interface WillsPanelEntity {
   id: string;
   name: string;
+  entityType?: string;
 }
 
 interface WillsPanelProps {
@@ -152,6 +155,7 @@ function bequestToDraft(b: WillsPanelBequest): BequestDraft {
       name: b.name,
       assetMode: b.assetMode,
       accountId: b.accountId,
+      entityId: b.entityId ?? null,
       percentage: b.percentage,
       condition: b.condition,
       sortOrder: b.sortOrder,
@@ -186,6 +190,7 @@ function draftToBequest(draft: BequestDraft): WillsPanelBequest {
       name: draft.name,
       assetMode: draft.assetMode,
       accountId: draft.accountId,
+      entityId: draft.entityId,
       percentage: draft.percentage,
       condition: draft.condition,
       sortOrder: draft.sortOrder,
@@ -213,6 +218,10 @@ export default function WillsPanel(props: WillsPanelProps) {
     externalBeneficiaries,
     entities,
   } = props;
+  const businessEntities = useMemo(
+    () => entities.filter((e) => e.entityType != null && BUSINESS_ENTITY_TYPES.has(e.entityType)),
+    [entities],
+  );
   const writer = useScenarioWriter(props.clientId);
   const [wills, setWills] = useState<WillsPanelWill[]>(initialWills);
   // When the page re-renders after `router.refresh()` (scenario writes do
@@ -507,8 +516,9 @@ export default function WillsPanel(props: WillsPanelProps) {
                       const assetLabel =
                         b.assetMode === "all_assets"
                           ? "Remaining Estate Value"
-                          : accounts.find((a) => a.id === b.accountId)?.name ??
-                            "(unknown account)";
+                          : b.entityId
+                            ? (entities.find((e) => e.id === b.entityId)?.name ?? "(unknown entity)")
+                            : (accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)");
                       detailLine = (
                         <p className="text-sm text-gray-300">
                           {b.percentage}% of {assetLabel}
@@ -658,6 +668,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                 familyMembers={familyMembers}
                 externalBeneficiaries={externalBeneficiaries}
                 entities={entities}
+                businessEntities={businessEntities}
                 editing={dialogEditing}
                 saving={saving}
                 onSave={async (draft) => {

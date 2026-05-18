@@ -324,6 +324,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
           "accountId": "00000000-0000-0000-0000-000000000020",
           "assetMode": "specific",
           "condition": "always",
+          "entityId": null,
           "id": "00000000-0000-0000-0000-000000000121",
           "kind": "asset",
           "liabilityId": null,

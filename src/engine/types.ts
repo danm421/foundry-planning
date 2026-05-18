@@ -40,6 +40,11 @@ export interface WillBequest {
   assetMode: "specific" | "all_assets" | null;
   /** Non-null iff kind === "asset" AND assetMode === "specific". */
   accountId: string | null;
+  /** Non-null iff kind === "asset" AND assetMode === "specific" AND the
+   *  bequest names a business entity rather than an account. Exactly one of
+   *  accountId / entityId is set on a specific asset bequest. Resolves only
+   *  against business entities (see business-succession.ts). */
+  entityId: string | null;
   /** Non-null iff kind === "liability". */
   liabilityId: string | null;
   /** Unused for liability bequests (recipients carry the split). */
@@ -82,6 +87,11 @@ export interface DeathTransfer {
   sourceLiabilityId: string | null;
   /** Frozen at event time. Null for asset transfers. */
   sourceLiabilityName: string | null;
+  /** Source business-entity id for a consolidated business-interest transfer.
+   *  Null/undefined for account and liability transfers. When set,
+   *  sourceAccountId and resultingAccountId are null and sourceAccountName
+   *  carries the business name. */
+  sourceEntityId?: string | null;
   via:
     | "titling"
     | "beneficiary_designation"

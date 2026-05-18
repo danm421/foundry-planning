@@ -1,0 +1,2 @@
+ALTER TABLE "will_bequests" ADD COLUMN "entity_id" uuid;--> statement-breakpoint
+ALTER TABLE "will_bequests" ADD CONSTRAINT "will_bequests_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE cascade ON UPDATE no action;

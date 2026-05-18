@@ -61,7 +61,7 @@ const wills: Will[] = [
     id: "w-client", grantor: "client",
     bequests: [{
       id: "beq-c", name: "All to spouse",
-      kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null,
+      kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, entityId: null,
       percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
     }],
@@ -70,7 +70,7 @@ const wills: Will[] = [
     id: "w-spouse", grantor: "spouse",
     bequests: [{
       id: "beq-s", name: "All to kid",
-      kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null,
+      kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, entityId: null,
       percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
     }],

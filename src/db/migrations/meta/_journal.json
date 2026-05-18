@@ -694,6 +694,13 @@
       "when": 1779117214706,
       "tag": "0098_ancient_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1779137724266,
+      "tag": "0099_shocking_norrin_radd",
+      "breakpoints": true
     }
   ]
 }

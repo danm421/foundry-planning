@@ -52,6 +52,7 @@ function withAssetBequest(
     kind: "asset",
     assetMode: "specific",
     accountId: account.id,
+    entityId: null,
     liabilityId: null,
     percentage: 100,
     condition,

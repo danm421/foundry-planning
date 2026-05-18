@@ -168,7 +168,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to spouse",
-        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -212,7 +212,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "Split 50/50 spouse + kid",
-        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [
           { recipientKind: "spouse", recipientId: null, percentage: 50, sortOrder: 0 },
@@ -263,7 +263,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to kid-a",
-        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
       }],
@@ -378,7 +378,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to spouse",
-        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -456,21 +456,21 @@ describe("4d integration — first death estate tax", () => {
         {
           id: "b-ira", name: "IRA → spouse",
           kind: "asset" as const, assetMode: "specific" as const,
-          accountId: "ira", liabilityId: null,
+          accountId: "ira", liabilityId: null, entityId: null,
           percentage: 100, condition: "always", sortOrder: 0,
           recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
         },
         {
           id: "b-home", name: "Home → spouse",
           kind: "asset" as const, assetMode: "specific" as const,
-          accountId: "home", liabilityId: null,
+          accountId: "home", liabilityId: null, entityId: null,
           percentage: 100, condition: "always", sortOrder: 1,
           recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
         },
         {
           id: "b-schwab", name: "Schwab 50/50 spouse + kid",
           kind: "asset" as const, assetMode: "specific" as const,
-          accountId: "schwab", liabilityId: null,
+          accountId: "schwab", liabilityId: null, entityId: null,
           percentage: 100, condition: "always", sortOrder: 2,
           recipients: [
             { recipientKind: "spouse", recipientId: null, percentage: 50, sortOrder: 0 },
@@ -599,7 +599,7 @@ describe("4d integration — final death estate tax", () => {
         id: "w-client", grantor: "client",
         bequests: [{
           id: "beq-c", name: "Residual to spouse",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always", sortOrder: 0,
           recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
         }],
@@ -609,7 +609,7 @@ describe("4d integration — final death estate tax", () => {
         id: "w-spouse", grantor: "spouse",
         bequests: [{
           id: "beq-s", name: "Residual to kid",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always", sortOrder: 0,
           recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
         }],
@@ -981,7 +981,7 @@ function mkVisaBequest(pct: number, recipientKind: "family_member" | "entity", r
   return {
     id: "beq-visa", name: "Visa bequest",
     kind: "liability" as const, assetMode: null, accountId: null,
-    liabilityId: "visa",
+    liabilityId: "visa", entityId: null,
     percentage: 100, condition: "always" as const, sortOrder: 0,
     recipients: [{ recipientKind, recipientId, percentage: pct, sortOrder: 0 }],
   };
@@ -1009,7 +1009,7 @@ describe("4e — liability bequests at final death", () => {
         mkVisaBequest(100, "family_member", tomJr.id),
         {
           id: "beq-assets", name: "All to Tom Jr.",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always" as const, sortOrder: 1,
           recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
         },
@@ -1065,7 +1065,7 @@ describe("4e — liability bequests at final death", () => {
         mkVisaBequest(60, "family_member", tomJr.id),
         {
           id: "beq-assets", name: "Residual to Tom Jr.",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always" as const, sortOrder: 1,
           recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
         },
@@ -1122,7 +1122,7 @@ describe("4e — liability bequests at final death", () => {
         mkVisaBequest(60, "family_member", tomJr.id),
         {
           id: "beq-assets", name: "Residual to Tom Jr.",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always" as const, sortOrder: 1,
           recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
         },
@@ -1184,7 +1184,7 @@ describe("4e — liability bequests at final death", () => {
         mkVisaBequest(100, "entity", irrevocableTrust.id),
         {
           id: "beq-assets", name: "Residual to Tom Jr.",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always" as const, sortOrder: 1,
           recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
         },
@@ -1239,13 +1239,13 @@ describe("4e — liability bequests at final death", () => {
         {
           id: "beq-entity-debt", name: "Entity debt bequest",
           kind: "liability" as const, assetMode: null, accountId: null,
-          liabilityId: entityOwnedLiab.id,
+          liabilityId: entityOwnedLiab.id, entityId: null,
           percentage: 100, condition: "always" as const, sortOrder: 0,
           recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
         },
         {
           id: "beq-assets", name: "Residual to Tom Jr.",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always" as const, sortOrder: 1,
           recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
         },
@@ -1323,13 +1323,13 @@ describe("4e — liability bequests at final death", () => {
           {
             id: "beq-visa-spouse", name: "Spouse bequeaths Visa to Tom Jr.",
             kind: "liability" as const, assetMode: null, accountId: null,
-            liabilityId: "visa",
+            liabilityId: "visa", entityId: null,
             percentage: 100, condition: "always" as const, sortOrder: 0,
             recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
           },
           {
             id: "beq-assets-spouse", name: "All to client",
-            kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+            kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
             percentage: 100, condition: "always" as const, sortOrder: 1,
             recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
           },
@@ -1340,7 +1340,7 @@ describe("4e — liability bequests at final death", () => {
         id: "w-client", grantor: "client",
         bequests: [{
           id: "beq-assets-client", name: "All to Tom Jr.",
-          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, entityId: null,
           percentage: 100, condition: "always" as const, sortOrder: 0,
           recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
         }],

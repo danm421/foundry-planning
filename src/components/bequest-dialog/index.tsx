@@ -31,6 +31,7 @@ export interface AssetBequestDraft {
   name: string;
   assetMode: "specific" | "all_assets";
   accountId: string | null;
+  entityId: string | null;
   percentage: number;
   condition: WillCondition;
   sortOrder: number;
@@ -60,6 +61,8 @@ interface BequestDialogProps {
   familyMembers: WillsPanelFamilyMember[];
   externalBeneficiaries: WillsPanelExternal[];
   entities: WillsPanelEntity[];
+  /** Business entities available as the subject of a specific asset bequest. */
+  businessEntities?: WillsPanelEntity[];
   editing?: BequestDraft;
   saving?: boolean;
   onSave: (draft: BequestDraft) => void;
@@ -72,6 +75,7 @@ const emptyAssetDraft = (hasSpouse: boolean): AssetBequestDraft => ({
   name: "",
   assetMode: "specific",
   accountId: null,
+  entityId: null,
   percentage: 100,
   condition: "always",
   sortOrder: 0,
@@ -93,6 +97,7 @@ const CONDITION_OPTIONS: ReadonlyArray<{ value: WillCondition; label: string }> 
 
 const RESIDUAL_VALUE = "__residual__";
 const ASSET_PREFIX = "asset:";
+const ENTITY_PREFIX = "entity:";
 const DEBT_PREFIX = "debt:";
 
 function selectorValue(draft: BequestDraft): string {
@@ -100,6 +105,7 @@ function selectorValue(draft: BequestDraft): string {
     return draft.liabilityId ? `${DEBT_PREFIX}${draft.liabilityId}` : "";
   }
   if (draft.assetMode === "all_assets") return RESIDUAL_VALUE;
+  if (draft.entityId) return `${ENTITY_PREFIX}${draft.entityId}`;
   return draft.accountId ? `${ASSET_PREFIX}${draft.accountId}` : "";
 }
 
@@ -107,12 +113,17 @@ function deriveBequestName(
   draft: BequestDraft,
   accounts: WillsPanelAccount[],
   liabilities: WillsPanelLiability[],
+  businessEntities: WillsPanelEntity[],
 ): string {
   if (draft.kind === "liability") {
     const l = liabilities.find((x) => x.id === draft.liabilityId);
     return l?.name?.trim() || "(unnamed liability)";
   }
   if (draft.assetMode === "all_assets") return "Remaining Estate Value";
+  if (draft.entityId) {
+    const ent = businessEntities.find((e) => e.id === draft.entityId);
+    return ent?.name?.trim() || "Business interest bequest";
+  }
   const acct = accounts.find((a) => a.id === draft.accountId);
   return acct?.name?.trim() || "Asset bequest";
 }
@@ -127,6 +138,7 @@ export default function BequestDialog({
   familyMembers,
   externalBeneficiaries,
   entities,
+  businessEntities = [],
   editing,
   saving = false,
   onSave,
@@ -163,7 +175,7 @@ export default function BequestDialog({
   const targetSelected =
     draft.kind === "liability"
       ? draft.liabilityId != null
-      : draft.assetMode === "all_assets" || draft.accountId != null;
+      : draft.assetMode === "all_assets" || draft.accountId != null || draft.entityId != null;
 
   const canSave = recipientSumOk && targetSelected && recipientsHaveIds && !saving;
 
@@ -175,7 +187,7 @@ export default function BequestDialog({
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canSave) return;
-    onSave({ ...draft, name: deriveBequestName(draft, accounts, liabilities) });
+    onSave({ ...draft, name: deriveBequestName(draft, accounts, liabilities, businessEntities) });
   }
 
   function handleSelectorChange(value: string) {
@@ -185,6 +197,7 @@ export default function BequestDialog({
         name: "",
         assetMode: "all_assets",
         accountId: null,
+        entityId: null,
         percentage: 100,
         condition: "always",
         sortOrder: draft.sortOrder,
@@ -203,6 +216,36 @@ export default function BequestDialog({
         name: "",
         assetMode: "specific",
         accountId: id,
+        entityId: null,
+        percentage: fromDebt ? 100 : draft.kind === "asset" ? draft.percentage : 100,
+        condition: fromDebt
+          ? "always"
+          : draft.kind === "asset"
+            ? draft.condition
+            : "always",
+        sortOrder: draft.sortOrder,
+        recipients: fromDebt
+          ? [
+              {
+                recipientKind: hasSpouse ? "spouse" : "family_member",
+                recipientId: hasSpouse ? null : familyMembers[0]?.id ?? null,
+                percentage: 100,
+                sortOrder: 0,
+              },
+            ]
+          : draft.recipients,
+      });
+      return;
+    }
+    if (value.startsWith(ENTITY_PREFIX)) {
+      const id = value.slice(ENTITY_PREFIX.length);
+      const fromDebt = draft.kind === "liability";
+      setDraft({
+        kind: "asset",
+        name: "",
+        assetMode: "specific",
+        accountId: null,
+        entityId: id,
         percentage: fromDebt ? 100 : draft.kind === "asset" ? draft.percentage : 100,
         condition: fromDebt
           ? "always"
@@ -277,6 +320,15 @@ export default function BequestDialog({
                   {accounts.map((a) => (
                     <option key={a.id} value={`${ASSET_PREFIX}${a.id}`}>
                       {a.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {businessEntities.length > 0 && (
+                <optgroup label="Business interests">
+                  {businessEntities.map((e) => (
+                    <option key={e.id} value={`${ENTITY_PREFIX}${e.id}`}>
+                      {e.name}
                     </option>
                   ))}
                 </optgroup>

@@ -34,7 +34,7 @@ describe("step-up end-to-end: death + future sale → correct cap-gains", () => 
     bequests: [{
       id: "b1", name: "All to spouse",
       kind: "asset", assetMode: "all_assets",
-      accountId: null, liabilityId: null,
+      accountId: null, liabilityId: null, entityId: null,
       percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
     }],

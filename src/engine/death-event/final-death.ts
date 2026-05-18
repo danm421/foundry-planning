@@ -11,6 +11,7 @@ import {
   applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
+  partitionMixedAccount,
   selectResiduaryTier,
   runPourOut,
   type DeathEventInput,
@@ -23,6 +24,7 @@ import {
   computeGrossEstate,
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
+import { applyBusinessSuccession } from "./business-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { applyLiabilityBequests } from "./liability-bequests";
@@ -76,10 +78,16 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   const residuaryTier = selectResiduaryTier(2, predeceasedFmId != null);
 
   // Defensive: no joint accounts can exist at 4c. Entity/family-member-owned
-  // (ownerFamilyMemberId heir-distribution) accounts are exempt.
+  // (ownerFamilyMemberId heir-distribution) accounts are exempt. Mixed
+  // family+entity accounts (e.g. client 80% + LLC 20%) are also NOT joint —
+  // they'll be partitioned in the loop below — so exclude them from this guard.
   for (const a of accounts) {
     const cfm = controllingFamilyMember(a);
-    const isJoint = ownedByHousehold(a) > 0.0001 && cfm == null && !isFullyEntityOwned(a);
+    const hasMixedEntityFm =
+      a.owners.some((o) => o.kind === "entity") &&
+      a.owners.some((o) => o.kind === "family_member");
+    const isJoint =
+      ownedByHousehold(a) > 0.0001 && cfm == null && !isFullyEntityOwned(a) && !hasMixedEntityFm;
     if (isJoint) {
       throw new Error(
         `applyFinalDeath invariant: account ${a.id} still has joint ownership at final death (should have been retitled at 4b)`,
@@ -98,7 +106,18 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
 
   for (const acct of accounts) {
     const cfm = controllingFamilyMember(acct);
-    const touchedByDeceased = cfm === deceasedFmId && deceasedFmId != null;
+    // Mixed family+entity account: controllingFamilyMember returns null whenever
+    // any entity owner is present (by design — no sole controlling FM). Guard
+    // must also catch the case where the deceased FM owns a slice alongside an
+    // entity, otherwise the partition block below is unreachable for this common
+    // scenario.
+    const isMixedDeceased =
+      acct.owners.some((o) => o.kind === "entity") &&
+      acct.owners.some(
+        (o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId,
+      );
+    const touchedByDeceased =
+      (cfm === deceasedFmId && deceasedFmId != null) || isMixedDeceased;
     // isHeirOwned: sole FM owner is not a household principal (already distributed to an heir FM)
     const isHeirOwned = cfm != null && cfm !== deceasedFmId;
     if (!touchedByDeceased || isFullyEntityOwned(acct) || isHeirOwned) {
@@ -115,13 +134,37 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
         `applyFinalDeath: missing accountBalances/basisMap entry for ${acct.id}`,
       );
     }
+
+    // Mixed family+entity account: peel off entity slices (retained,
+    // unchanged) and route only the family pool. Without this the chain
+    // treats the account as joint and sweeps the entity's slice into the
+    // transfer — double-counting it against the consolidated business line.
+    let routedAcct = acct;
+    let routedBalance = balance;
+    let routedBasis = originalBasis;
+    const hasEntityOwner = acct.owners.some((o) => o.kind === "entity");
+    const hasFamilyOwner = acct.owners.some((o) => o.kind === "family_member");
+    if (hasEntityOwner && hasFamilyOwner) {
+      const part = partitionMixedAccount(
+        acct, balance, originalBasis, input.entityAccountSharesEoY,
+      );
+      for (const slice of part.entitySlices) {
+        nextAccounts.push(slice);
+        nextAccountBalances[slice.id] = slice.value;
+        nextBasisMap[slice.id] = slice.basis;
+      }
+      routedAcct = part.familyPool;
+      routedBalance = part.familyPool.value;
+      routedBasis = part.familyPool.basis;
+    }
+
     // §1014 step-up. No joint accounts survive into final-death (first-
     // death titling consumed them), so isJointAtFirstDeath is always false.
     const steppedBasis = computeSteppedUpBasis(
-      acct.category, balance, originalBasis,
+      routedAcct.category, routedBalance, routedBasis,
       { isJointAtFirstDeath: false },
     );
-    const effectiveAcct: Account = { ...acct, value: balance, basis: steppedBasis };
+    const effectiveAcct: Account = { ...routedAcct, value: routedBalance, basis: steppedBasis };
 
     let undisposed = 1;
     let anySpecificClauseTouched = false;
@@ -304,6 +347,26 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
+  // Phase 3.5 — business-interest succession (compute-only; reads pre-flip
+  // entities AND pre-chain accounts/accountBalances, same discipline as
+  // grantor-succession above). At final death survivorFmId is null — the
+  // fallback will route to children → other heirs.
+  const businessSuccession = applyBusinessSuccession({
+    deceased: prepared.deceased,
+    deceasedFmId,
+    survivorFmId: null,
+    deathOrder: 2,
+    entities: prepared.entities,
+    accounts: prepared.accounts,
+    accountBalances: prepared.accountBalances,
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    will: input.will ?? null,
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    year: input.year,
+  });
+  warnings.push(...businessSuccession.warnings);
+
   // Working state for the drain passes.
   //
   // Pipeline split (Phase B): the chain routes accounts at GROSS values, so
@@ -479,17 +542,44 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
   }
 
-  // Phase 7 — apply grantor-succession updates now that gross estate + drains
-  // have read pre-flip state. The chain and pour-out both see mutated entities.
+  // Phase 7 — apply grantor-succession updates and business-interest updates now
+  // that gross estate + drains have read pre-flip state. The chain and pour-out
+  // both see mutated entities.
   const mutatedEntities = input.entities.map((e) => {
+    let next = e;
+
+    // Existing grantor-succession entityUpdates block (unchanged).
     const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
-    if (!upd) return e;
-    return {
-      ...e,
-      ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
-      ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
-      ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
-    };
+    if (upd) {
+      next = {
+        ...next,
+        ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
+        ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
+        ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
+      };
+    }
+
+    // Business-interest owner succession: remove the deceased's row, add successor rows.
+    const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.entityId === e.id);
+    if (ownerUpd && next.owners != null) {
+      // Clone each kept row so the `existing.percent +=` merge below never
+      // mutates the original input entity's owner objects.
+      const merged = next.owners
+        .filter((o) => o.familyMemberId !== ownerUpd.removeFamilyMemberId)
+        .map((o) => ({ ...o }));
+      for (const s of ownerUpd.successors) {
+        const existing = merged.find((o) => o.familyMemberId === s.familyMemberId);
+        if (existing) existing.percent += s.percent;
+        else merged.push({ familyMemberId: s.familyMemberId, percent: s.percent });
+      }
+      next = { ...next, owners: merged };
+    }
+
+    // §1014 basis step-up on the entity's flat operating value.
+    const basisUpd = businessSuccession.basisUpdates.find((u) => u.entityId === e.id);
+    if (basisUpd) next = { ...next, basis: basisUpd.newBasis };
+
+    return next;
   });
 
   // Phase 8a — pour-out fold-in BEFORE the chain's will step runs. Trust
@@ -542,6 +632,12 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     workingLiabs = residualDist.updatedLiabilities;
     warnings.push(...residualDist.warnings);
   }
+
+  // Phase 8.55 — append business-interest transfers so they are visible to the
+  // finalDeductions recompute (charitable computation) and inheritance-tax /
+  // estate-transfer-detail downstream consumers. No marital deduction at final
+  // death, but the transfers must still appear on the ledger.
+  ledger = ledger.concat(businessSuccession.transfers);
 
   // Phase 9 — final deductions (charitable now derivable from ledger).
   const finalDeductions = computeDeductions({
