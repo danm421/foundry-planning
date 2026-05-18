@@ -807,6 +807,20 @@ export interface Reinvestment {
   // View-only metadata. Engine math ignores these.
   yearRef?: string | null;
   targetType?: "model_portfolio" | "custom";
+  // ── Resolution INPUTS ──────────────────────────────────────────────
+  // The raw form/DB-shaped fields the resolver consumes to (re)compute
+  // `newGrowthRate`, `newRealization`, and `soldFractionByAccount`. The
+  // engine's projection math NEVER reads these — they exist purely so the
+  // scenario overlay can re-resolve the resolved fields above after
+  // `applyScenarioChanges` merges a raw-shaped scenario payload onto the
+  // effective tree. Carried as metadata, exactly like `targetType`/`yearRef`;
+  // no new imports, so engine purity is preserved.
+  modelPortfolioId?: string | null;
+  customGrowthRate?: number | null;
+  customPctOrdinaryIncome?: number | null;
+  customPctLtCapitalGains?: number | null;
+  customPctQualifiedDividends?: number | null;
+  customPctTaxExempt?: number | null;
 }
 
 export type RothConversionType =

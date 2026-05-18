@@ -238,6 +238,47 @@ export function createGrowthSourceResolver(ctx: {
     return lookup[category] ?? "custom";
   }
 
+  /** Category-default model portfolio id, or null when the category default
+   *  is not a model-portfolio source. */
+  function categoryDefaultPortfolioId(category: string): string | null {
+    const s = ctx.planSettings;
+    switch (category) {
+      case "taxable":
+        return s.modelPortfolioIdTaxable;
+      case "cash":
+        return s.modelPortfolioIdCash;
+      case "retirement":
+        return s.modelPortfolioIdRetirement;
+      default:
+        return null;
+    }
+  }
+
+  /** Asset-class → fractional-weight map for a model portfolio. Returns
+   *  undefined when the portfolio has no allocation rows. Used by the
+   *  reinvestment soldFraction precompute. */
+  function portfolioAllocMap(portfolioId: string): Map<string, number> | undefined {
+    const allocs = allocsByPortfolio.get(portfolioId);
+    if (!allocs || allocs.length === 0) return undefined;
+    const map = new Map<string, number>();
+    for (const a of allocs) {
+      map.set(a.assetClassId, (map.get(a.assetClassId) ?? 0) + parseFloat(a.weight));
+    }
+    return map.size > 0 ? map : undefined;
+  }
+
+  /** Asset-class → fractional-weight map for an account's own asset mix.
+   *  Returns undefined when the account has no allocation rows. */
+  function accountAllocMap(accountId: string): Map<string, number> | undefined {
+    const allocs = allocsByAccount.get(accountId);
+    if (!allocs || allocs.length === 0) return undefined;
+    const map = new Map<string, number>();
+    for (const a of allocs) {
+      map.set(a.assetClassId, (map.get(a.assetClassId) ?? 0) + parseFloat(a.weight));
+    }
+    return map.size > 0 ? map : undefined;
+  }
+
   return {
     resolveAccount,
     resolvePortfolio,
@@ -245,5 +286,8 @@ export function createGrowthSourceResolver(ctx: {
     resolveCategoryDefault,
     resolveInflation,
     getCategoryGrowthSource,
+    categoryDefaultPortfolioId,
+    portfolioAllocMap,
+    accountAllocMap,
   };
 }

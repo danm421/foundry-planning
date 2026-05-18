@@ -70,7 +70,16 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
   client_deduction: ["annualAmount", "growthRate"],
   roth_conversion: ["fixedAmount", "fillUpBracket", "indexingRate"],
   asset_transaction: ["fractionSold"],
-  reinvestment: ["newGrowthRate"],
+  // Scenario reinvestment payloads are RAW-shaped (the engine `Reinvestment`
+  // type carries the raw resolution inputs). `year` is an integer, so it is
+  // omitted — consistent with how `roth_conversion` omits `startYear`.
+  reinvestment: [
+    "customGrowthRate",
+    "customPctOrdinaryIncome",
+    "customPctLtCapitalGains",
+    "customPctQualifiedDividends",
+    "customPctTaxExempt",
+  ],
 };
 
 function toNumberIfNumericString(v: unknown): unknown {

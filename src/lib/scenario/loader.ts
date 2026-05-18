@@ -21,6 +21,7 @@ import type {
   ToggleGroup,
   ToggleState,
 } from "@/engine/scenario/types";
+import { resolveReinvestments } from "@/lib/projection/resolve-reinvestments";
 import { resolveRefYears } from "@/lib/year-refs";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
@@ -70,12 +71,25 @@ export interface LoadEffectiveTreeResult {
  * the persisted-scenario reload path has to do the same — otherwise a saved
  * "retire at 67" scenario reloads with stale age-65 windows and projects
  * identically to base.
+ *
+ * Reinvestment re-resolution: a scenario `add`/`edit` merges a RAW-shaped
+ * reinvestment payload (modelPortfolioId / customGrowthRate / customPct*)
+ * onto the effective tree without resolving it. After `applyScenarioChanges`,
+ * the effective tree's reinvestments are re-run through `resolveReinvestments`
+ * — using the `resolutionContext` from the base load — so that added, edited,
+ * and unchanged reinvestments all carry correct `newGrowthRate` /
+ * `newRealization` / `soldFractionByAccount`. `resolveReinvestments` is
+ * idempotent, so unchanged base reinvestments resolve to the same values.
+ * When `resolutionContext` is omitted (e.g. unit tests that exercise only the
+ * year-ref reshift), reinvestments are left as `applyScenarioChanges` produced
+ * them.
  */
 export function applyScenarioChangesWithRefs(
   treeForChanges: ClientData,
   changes: ScenarioChange[],
   toggleState: ToggleState,
   groups: ToggleGroup[],
+  resolutionContext?: ResolutionContext,
 ): LoadEffectiveTreeResult {
   const { effectiveTree, warnings } = applyScenarioChanges(
     treeForChanges,
@@ -83,7 +97,18 @@ export function applyScenarioChangesWithRefs(
     toggleState,
     groups,
   );
-  return { effectiveTree: resolveRefYears(effectiveTree), warnings };
+
+  const refResolved = resolveRefYears(effectiveTree);
+
+  if (resolutionContext && refResolved.reinvestments) {
+    refResolved.reinvestments = resolveReinvestments(refResolved.reinvestments, {
+      resolver: resolutionContext.resolver,
+      accountBaseAllocByAccountId:
+        resolutionContext.accountBaseAllocByAccountId ?? new Map(),
+    });
+  }
+
+  return { effectiveTree: refResolved, warnings };
 }
 
 export const loadEffectiveTree = cache(
@@ -186,6 +211,7 @@ export const loadEffectiveTree = cache(
       resolvedChanges,
       toggleState,
       groups,
+      resolutionContext,
     );
   },
 );
