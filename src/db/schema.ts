@@ -1040,6 +1040,10 @@ export const accountOwners = pgTable(
     entityId: uuid("entity_id").references(() => entities.id, {
       onDelete: "cascade",
     }),
+    externalBeneficiaryId: uuid("external_beneficiary_id").references(
+      () => externalBeneficiaries.id,
+      { onDelete: "cascade" },
+    ),
     percent: decimal("percent", { precision: 6, scale: 4 }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1047,10 +1051,12 @@ export const accountOwners = pgTable(
   (t) => ({
     exactlyOneOwner: check(
       "account_owners_one_owner",
-      sql`(${t.familyMemberId} IS NOT NULL)::int + (${t.entityId} IS NOT NULL)::int = 1`,
+      sql`(${t.familyMemberId} IS NOT NULL)::int
+        + (${t.entityId} IS NOT NULL)::int
+        + (${t.externalBeneficiaryId} IS NOT NULL)::int = 1`,
     ),
     uniqOwner: unique("account_owners_uniq")
-      .on(t.accountId, t.familyMemberId, t.entityId)
+      .on(t.accountId, t.familyMemberId, t.entityId, t.externalBeneficiaryId)
       .nullsNotDistinct(),
   }),
 );

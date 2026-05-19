@@ -3,6 +3,8 @@ import { db } from "@/db";
 import {
   clients,
   accounts,
+  accountOwners,
+  familyMembers,
   lifeInsurancePolicies,
   lifeInsuranceCashValueSchedule,
 } from "@/db/schema";
@@ -10,6 +12,10 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { insurancePolicyUpdateSchema } from "@/lib/schemas/insurance-policies";
+import {
+  ownerRefToAccountOwnerRows,
+  type OwnerRef,
+} from "@/lib/insurance-policies/owner-ref";
 
 export const dynamic = "force-dynamic";
 
@@ -84,8 +90,7 @@ export async function PATCH(
       name: string;
       policyType: "term" | "whole" | "universal" | "variable";
       insuredPerson: "client" | "spouse" | "joint";
-      owner: "client" | "spouse" | "joint";
-      ownerEntityId: string | null;
+      ownerRef: OwnerRef;
       faceValue: number;
       cashValue: number;
       costBasis: number;
@@ -100,14 +105,18 @@ export async function PATCH(
       cashValueSchedule: { year: number; cashValue: number }[];
     }>;
 
+    // Look up FM ids for the OwnerRef → account_owners translation.
+    const fmRows = await db
+      .select({ id: familyMembers.id, role: familyMembers.role })
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, id));
+    const clientFmId = fmRows.find((f) => f.role === "client")?.id ?? null;
+    const spouseFmId = fmRows.find((f) => f.role === "spouse")?.id ?? null;
+
     await db.transaction(async (tx) => {
-      // --- accounts row updates ---
+      // --- accounts row updates (ownership is NOT stored here) ---
       const acctUpdates: Record<string, unknown> = {};
       if (input.name !== undefined) acctUpdates.name = input.name;
-      if (input.owner !== undefined) acctUpdates.owner = input.owner;
-      if (input.ownerEntityId !== undefined) {
-        acctUpdates.ownerEntityId = input.ownerEntityId ?? null;
-      }
       if (input.insuredPerson !== undefined) {
         acctUpdates.insuredPerson = input.insuredPerson;
       }
@@ -123,6 +132,28 @@ export async function PATCH(
           .update(accounts)
           .set(acctUpdates)
           .where(and(eq(accounts.id, policyId), eq(accounts.clientId, id)));
+      }
+
+      // --- account_owners: full replacement when ownerRef is in the patch ---
+      if (input.ownerRef !== undefined) {
+        await tx
+          .delete(accountOwners)
+          .where(eq(accountOwners.accountId, policyId));
+        const ownerRows = ownerRefToAccountOwnerRows(
+          input.ownerRef as OwnerRef,
+          { clientFmId, spouseFmId },
+        );
+        if (ownerRows.length > 0) {
+          await tx.insert(accountOwners).values(
+            ownerRows.map((r) => ({
+              accountId: policyId,
+              familyMemberId: r.familyMemberId,
+              entityId: r.entityId,
+              externalBeneficiaryId: r.externalBeneficiaryId,
+              percent: r.percent,
+            })),
+          );
+        }
       }
 
       // --- life_insurance_policies row updates ---

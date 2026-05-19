@@ -303,9 +303,21 @@ export const loadClientDataWithContext = cache(
     // Build owners lookup maps
     const ownersByAccountId = new Map<string, AccountOwner[]>();
     for (const r of accountOwnerRows) {
-      const owner: AccountOwner = r.familyMemberId
-        ? { kind: "family_member", familyMemberId: r.familyMemberId, percent: parseFloat(r.percent) }
-        : { kind: "entity", entityId: r.entityId!, percent: parseFloat(r.percent) };
+      // The DB CHECK guarantees exactly one of family_member_id / entity_id /
+      // external_beneficiary_id is set. Check external_beneficiary first so the
+      // new kind takes precedence when set.
+      let owner: AccountOwner;
+      if (r.externalBeneficiaryId != null) {
+        owner = {
+          kind: "external_beneficiary",
+          externalBeneficiaryId: r.externalBeneficiaryId,
+          percent: parseFloat(r.percent),
+        };
+      } else if (r.familyMemberId) {
+        owner = { kind: "family_member", familyMemberId: r.familyMemberId, percent: parseFloat(r.percent) };
+      } else {
+        owner = { kind: "entity", entityId: r.entityId!, percent: parseFloat(r.percent) };
+      }
       const arr = ownersByAccountId.get(r.accountId) ?? [];
       arr.push(owner);
       ownersByAccountId.set(r.accountId, arr);

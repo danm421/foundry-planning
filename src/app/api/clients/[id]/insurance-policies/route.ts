@@ -14,6 +14,10 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { insurancePolicyCreateSchema } from "@/lib/schemas/insurance-policies";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import {
+  ownerRefToAccountOwnerRows,
+  type OwnerRef,
+} from "@/lib/insurance-policies/owner-ref";
 
 export const dynamic = "force-dynamic";
 
@@ -151,42 +155,23 @@ export async function POST(
         })
         .returning({ id: accounts.id, name: accounts.name });
 
-      // Synthesize account_owners from legacy owner/ownerEntityId fields.
-      if (input.ownerEntityId) {
-        await tx.insert(accountOwners).values({
-          accountId: acct.id,
-          entityId: input.ownerEntityId,
-          familyMemberId: null,
-          percent: "1.0000",
-        });
-      } else if (input.owner === "client" && clientFmId) {
-        await tx.insert(accountOwners).values({
-          accountId: acct.id,
-          familyMemberId: clientFmId,
-          entityId: null,
-          percent: "1.0000",
-        });
-      } else if (input.owner === "spouse" && spouseFmId) {
-        await tx.insert(accountOwners).values({
-          accountId: acct.id,
-          familyMemberId: spouseFmId,
-          entityId: null,
-          percent: "1.0000",
-        });
-      } else if (input.owner === "joint") {
-        // Joint: both client and spouse own 50%.
-        if (clientFmId) await tx.insert(accountOwners).values({
-          accountId: acct.id,
-          familyMemberId: clientFmId,
-          entityId: null,
-          percent: "0.5000",
-        });
-        if (spouseFmId) await tx.insert(accountOwners).values({
-          accountId: acct.id,
-          familyMemberId: spouseFmId,
-          entityId: null,
-          percent: "0.5000",
-        });
+      // Insert account_owners rows via the OwnerRef translation helper —
+      // the single source of truth shared with PATCH. `joint` produces two
+      // family rows at 0.5 each; everything else is one row at 1.0.
+      const ownerRows = ownerRefToAccountOwnerRows(
+        input.ownerRef as OwnerRef,
+        { clientFmId, spouseFmId },
+      );
+      if (ownerRows.length > 0) {
+        await tx.insert(accountOwners).values(
+          ownerRows.map((r) => ({
+            accountId: acct.id,
+            familyMemberId: r.familyMemberId,
+            entityId: r.entityId,
+            externalBeneficiaryId: r.externalBeneficiaryId,
+            percent: r.percent,
+          })),
+        );
       }
 
       await tx.insert(lifeInsurancePolicies).values({

@@ -2,7 +2,8 @@ import type { GiftEvent } from "./types";
 
 export type AccountOwner =
   | { kind: "family_member"; familyMemberId: string; percent: number }
-  | { kind: "entity"; entityId: string; percent: number };
+  | { kind: "entity"; entityId: string; percent: number }
+  | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number };
 
 /** Minimal account shape used by the year-aware ownership helpers. Structurally
  *  satisfied by the full `Account` type from engine/types. */
@@ -87,6 +88,17 @@ export function ownedByEntity(a: OwnedThing, entityId: string): number {
 export function ownedByFamilyMember(a: OwnedThing, familyMemberId: string): number {
   const row = a.owners.find(
     (o) => o.kind === "family_member" && o.familyMemberId === familyMemberId,
+  );
+  return row ? row.percent : 0;
+}
+
+export function ownedByExternalBeneficiary(
+  a: OwnedThing,
+  externalBeneficiaryId: string,
+): number {
+  const row = a.owners.find(
+    (o) => o.kind === "external_beneficiary" &&
+      o.externalBeneficiaryId === externalBeneficiaryId,
   );
   return row ? row.percent : 0;
 }

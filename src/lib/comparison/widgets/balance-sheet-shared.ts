@@ -62,6 +62,9 @@ export function distribute(
   if (list.length === 0 || !value) return out;
   if (list.length === 1 && (list[0].percent ?? 1) >= 0.999) {
     const o = list[0];
+    // external_beneficiary owners aren't current balance-sheet owners (they're
+    // life-insurance death-benefit recipients); skip them in distribute().
+    if (o.kind === "external_beneficiary") return out;
     const key = o.kind === "entity" ? `ent:${o.entityId}` : `fm:${o.familyMemberId}`;
     out[key] = value;
     return out;
@@ -72,6 +75,7 @@ export function distribute(
     return out;
   }
   for (const o of list) {
+    if (o.kind === "external_beneficiary") continue;
     const key = o.kind === "entity" ? `ent:${o.entityId}` : `fm:${o.familyMemberId}`;
     out[key] = (out[key] ?? 0) + value * (o.percent ?? 0);
   }

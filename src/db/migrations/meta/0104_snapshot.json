@@ -1,6 +1,6 @@
 {
-  "id": "a8d1c558-df31-4b01-98bf-0c0f8b819621",
-  "prevId": "2f2119f5-04e1-4b57-bebf-7641cd6d1186",
+  "id": "ddb06eae-d2e5-43a1-bc22-8797242c075c",
+  "prevId": "a8d1c558-df31-4b01-98bf-0c0f8b819621",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -401,6 +401,14 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'custom'"
+        },
+        "titling_type": {
+          "name": "titling_type",
+          "type": "titling_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'jtwros'"
         },
         "source": {
           "name": "source",
@@ -9488,6 +9496,14 @@
       "values": [
         "flat",
         "bracket"
+      ]
+    },
+    "public.titling_type": {
+      "name": "titling_type",
+      "schema": "public",
+      "values": [
+        "jtwros",
+        "community_property"
       ]
     },
     "public.transfer_mode": {
