@@ -35,6 +35,7 @@ const baseRow: typeof accounts.$inferSelect = {
   annualPropertyTax: "0",
   propertyTaxGrowthRate: "0.03",
   propertyTaxGrowthSource: "custom",
+  titlingType: "jtwros",
   source: "manual",
   accountNumberLast4: null,
   custodian: null,
@@ -71,6 +72,7 @@ describe("toAccountSnapshot", () => {
       annualPropertyTax: 0,
       propertyTaxGrowthRate: 0.03,
       propertyTaxGrowthSource: "custom",
+      titlingType: "jtwros",
       source: "manual",
     });
     expect(snap).not.toHaveProperty("id");

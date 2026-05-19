@@ -411,6 +411,82 @@ d("Account owners[] API — POST and PUT", () => {
     expect(rows[0].familyMemberId).toBe(clientFmId);
   });
 
+  // ── titlingType ───────────────────────────────────────────────────────────
+
+  it("POST persists titlingType when provided", async () => {
+    const { clientId, clientFmId, spouseFmId } = await setupClient();
+
+    const res = await POST(
+      makePostReq(clientId, {
+        name: "Community Property Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        owner: "joint",
+        titlingType: "community_property",
+        owners: [
+          { kind: "family_member", familyMemberId: clientFmId, percent: 0.5 },
+          { kind: "family_member", familyMemberId: spouseFmId!, percent: 0.5 },
+        ],
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.titlingType).toBe("community_property");
+  });
+
+  it("POST defaults titlingType to jtwros when omitted", async () => {
+    const { clientId, clientFmId } = await setupClient();
+
+    const res = await POST(
+      makePostReq(clientId, {
+        name: "Default Titling Account",
+        category: "taxable",
+        subType: "brokerage",
+        owner: "client",
+        owners: [{ kind: "family_member", familyMemberId: clientFmId, percent: 1.0 }],
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.titlingType).toBe("jtwros");
+  });
+
+  it("PUT updates titlingType", async () => {
+    const { clientId, clientFmId, spouseFmId } = await setupClient();
+
+    // Create with jtwros (default).
+    const postRes = await POST(
+      makePostReq(clientId, {
+        name: "Switchable Titling",
+        category: "taxable",
+        subType: "brokerage",
+        owner: "joint",
+        owners: [
+          { kind: "family_member", familyMemberId: clientFmId, percent: 0.5 },
+          { kind: "family_member", familyMemberId: spouseFmId!, percent: 0.5 },
+        ],
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(postRes.status).toBe(201);
+    const created = await postRes.json();
+    expect(created.titlingType).toBe("jtwros");
+
+    // PUT to community_property.
+    const putRes = await PUT(
+      makePutReq(clientId, created.id, { titlingType: "community_property" }) as never,
+      { params: Promise.resolve({ id: clientId, accountId: created.id }) },
+    );
+
+    expect(putRes.status).toBe(200);
+    const updated = await putRes.json();
+    expect(updated.titlingType).toBe("community_property");
+  });
+
   it("8. PUT IRA with 2 owners → 400", async () => {
     const { clientId, clientFmId, spouseFmId } = await setupClient();
 
