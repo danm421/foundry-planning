@@ -851,6 +851,7 @@ describe("computeEntityCashFlow integration via runProjection", () => {
     name: "Household Checking",
     category: "cash",
     subType: "checking",
+    titlingType: "jtwros",
     value: 100_000,
     basis: 100_000,
     growthRate: 0,

@@ -202,6 +202,7 @@ describe("splitAccount", () => {
     name: "Joint Brokerage",
     category: "taxable",
     subType: "brokerage",
+    titlingType: "jtwros",
     value: 300000,
     basis: 200000,
     growthRate: 0.06,
@@ -413,6 +414,7 @@ describe("splitAccount", () => {
     const acct: Account = {
       id: "acct-cf", name: "Carry Forward Acct",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 100000, basis: 50000,
       growthRate: 0.05, rmdEnabled: false,
       owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
@@ -438,6 +440,7 @@ describe("splitAccount", () => {
     const acct: Account = {
       id: "acct-nocf", name: "No Carry Forward",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 100000, basis: 50000,
       growthRate: 0.05, rmdEnabled: false,
       beneficiaries: [{ id: "b-old", tier: "primary", percentage: 100, familyMemberId: "fm-client", sortOrder: 0 }],
@@ -464,6 +467,7 @@ describe("applyTitling (Step 1)", () => {
     name: "Joint Brokerage",
     category: "taxable",
     subType: "brokerage",
+    titlingType: "jtwros",
     value: 400000,
     basis: 250000,
     growthRate: 0.06,
@@ -512,6 +516,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     name: "John Traditional IRA",
     category: "retirement",
     subType: "traditional_ira",
+    titlingType: "jtwros",
     value: 500000,
     basis: 0,
     growthRate: 0.07,
@@ -926,6 +931,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
   const brokerage: Account = {
     id: "acct-brok", name: "Taxable Brokerage",
     category: "taxable", subType: "brokerage",
+    titlingType: "jtwros",
     value: 200000, basis: 150000,
     growthRate: 0.06, rmdEnabled: false,
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1041,6 +1047,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
   const cash: Account = {
     id: "acct-cash", name: "Savings",
     category: "cash", subType: "savings",
+    titlingType: "jtwros",
     value: 50000, basis: 50000,
     growthRate: 0.04, rmdEnabled: false,
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1106,6 +1113,7 @@ describe("applyFallback (Step 4)", () => {
   const source: Account = {
     id: "acct-x", name: "Leftover",
     category: "taxable", subType: "brokerage",
+    titlingType: "jtwros",
     value: 100000, basis: 80000,
     growthRate: 0.05, rmdEnabled: false,
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1242,6 +1250,7 @@ describe("applyFirstDeath orchestrator", () => {
       id: "joint-brok",
       name: "Joint Brokerage",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 400000, basis: 250000,
       growthRate: 0.06, rmdEnabled: false,
       owners: [
@@ -1253,6 +1262,7 @@ describe("applyFirstDeath orchestrator", () => {
       id: "client-ira",
       name: "John IRA",
       category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros",
       value: 600000, basis: 0,
       growthRate: 0.07, rmdEnabled: true,
       beneficiaries: [
@@ -1264,6 +1274,7 @@ describe("applyFirstDeath orchestrator", () => {
       id: "client-cash",
       name: "John Savings",
       category: "cash", subType: "savings",
+      titlingType: "jtwros",
       value: 100000, basis: 100000,
       growthRate: 0.04, rmdEnabled: false,
       owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
@@ -1351,6 +1362,7 @@ describe("applyFirstDeath orchestrator", () => {
       id: "client-self-bene",
       name: "John Brokerage",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 200000, basis: 120000,
       growthRate: 0.05, rmdEnabled: false,
       beneficiaries: [
@@ -1478,6 +1490,7 @@ describe("applyFirstDeath orchestrator", () => {
     const joint_re: Account = {
       id: "joint-home", name: "Home",
       category: "real_estate", subType: "primary_residence",
+      titlingType: "jtwros",
       value: 800_000, basis: 300_000,
       growthRate: 0.04, rmdEnabled: false,
       owners: [
@@ -1500,6 +1513,7 @@ describe("applyFirstDeath orchestrator", () => {
     const brok: Account = {
       id: "client-brok", name: "John Brokerage",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 500_000, basis: 200_000,
       growthRate: 0.06, rmdEnabled: false,
       owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
@@ -1542,6 +1556,7 @@ describe("applyFirstDeath orchestrator", () => {
     const trustBrok: Account = {
       id: "rev-brok", name: "Revocable Trust Brokerage",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 1_000_000, basis: 400_000,
       growthRate: 0.06, rmdEnabled: false,
       owners: [{ kind: "entity", entityId: "rev-trust-1", percent: 1 }],
@@ -1582,6 +1597,7 @@ describe("applyFirstDeath orchestrator", () => {
     const trustIra: Account = {
       id: "rev-ira", name: "Trust-Owned IRA",
       category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros",
       value: 500_000, basis: 50_000,
       growthRate: 0.07, rmdEnabled: true,
       owners: [{ kind: "entity", entityId: "rev-trust-2", percent: 1 }],
@@ -1612,6 +1628,7 @@ describe("applyFirstDeath orchestrator", () => {
     const trustBrok: Account = {
       id: "ilit-brok", name: "ILIT Brokerage",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 2_000_000, basis: 500_000,
       growthRate: 0.06, rmdEnabled: false,
       owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
@@ -1686,6 +1703,7 @@ describe("applyFirstDeath orchestrator", () => {
     const home: Account = {
       id: "acc-home", name: "Home",
       category: "real_estate", subType: "primary_residence",
+      titlingType: "jtwros",
       value: 950_000, basis: 500_000,
       growthRate: 0.03, rmdEnabled: false,
       owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
@@ -1996,6 +2014,7 @@ describe("distributeFirstDeathUnlinkedLiabilities", () => {
 describe("applyFinalDeath orchestrator", () => {
   const mkAccount = (over: Partial<Account> = {}): Account => ({
     id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+    titlingType: "jtwros",
     value: 100_000, basis: 60_000,
     growthRate: 0.05, rmdEnabled: false,
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -2149,6 +2168,7 @@ describe("applyFinalDeath orchestrator", () => {
     const home = mkAccount({
       id: "home", name: "Primary Home",
       category: "real_estate", subType: "primary_residence",
+      titlingType: "jtwros",
       value: 500_000, basis: 400_000, growthRate: 0.03,
     });
     const liabilities: Liability[] = [
@@ -2235,6 +2255,7 @@ describe("applyFinalDeath orchestrator", () => {
     const brok: Account = {
       id: "surv-brok", name: "Survivor Brokerage",
       category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 800_000, basis: 300_000,
       growthRate: 0.06, rmdEnabled: false,
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -2268,6 +2289,7 @@ describe("applyFinalDeath orchestrator", () => {
     const ira: Account = {
       id: "surv-ira", name: "Survivor IRA",
       category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros",
       value: 500_000, basis: 0,
       growthRate: 0.07, rmdEnabled: true,
       beneficiaries: [
@@ -2293,6 +2315,7 @@ describe("applyFinalDeath orchestrator", () => {
     const roth: Account = {
       id: "surv-roth", name: "Survivor Roth",
       category: "retirement", subType: "roth_ira",
+      titlingType: "jtwros",
       value: 400_000, basis: 150_000,
       growthRate: 0.07, rmdEnabled: false,
       beneficiaries: [
@@ -2346,6 +2369,7 @@ describe("applyFinalDeath orchestrator", () => {
     const janeIra: Account = {
       id: "jane-ira", name: "Jane IRA",
       category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros",
       value: 600000, basis: 0,
       growthRate: 0.07, rmdEnabled: true,
       beneficiaries: [

@@ -4,7 +4,7 @@ import { planSupplementalWithdrawal } from "../withdrawal";
 import type { Account, WithdrawalPriority } from "../types";
 
 const acct = (id: string, overrides: Partial<Account>): Account => ({
-  id, name: id, category: "cash", subType: "savings",
+  id, name: id, category: "cash", subType: "savings", titlingType: "jtwros",
   value: 0, basis: 0, growthRate: 0, rmdEnabled: false, owners: [],
   ...overrides,
 });

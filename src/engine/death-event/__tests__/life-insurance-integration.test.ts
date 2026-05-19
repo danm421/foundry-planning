@@ -101,6 +101,7 @@ function mkPolicyAccount(
     name: `Life Policy ${id}`,
     category: "life_insurance",
     subType: "whole",
+    titlingType: "jtwros",
     insuredPerson: "client",
     value: 50_000,   // cash value (pre-payout)
     basis: 0,

@@ -13,14 +13,17 @@ function makeLedger(value: number): AccountLedger {
 
 const iraA: Account = {
   id: "ira-a", name: "IRA A", category: "retirement", subType: "traditional_ira",
+  titlingType: "jtwros",
   value: 400000, basis: 0, growthRate: 0.07, rmdEnabled: false, owners: [],
 };
 const iraB: Account = {
   id: "ira-b", name: "IRA B", category: "retirement", subType: "traditional_ira",
+  titlingType: "jtwros",
   value: 200000, basis: 0, growthRate: 0.07, rmdEnabled: false, owners: [],
 };
 const rothDest: Account = {
   id: "roth-1", name: "Roth IRA", category: "retirement", subType: "roth_ira",
+  titlingType: "jtwros",
   value: 0, basis: 0, growthRate: 0.07, rmdEnabled: false, owners: [],
 };
 

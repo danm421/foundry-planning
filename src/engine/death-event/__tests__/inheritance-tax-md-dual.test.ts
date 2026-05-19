@@ -124,6 +124,7 @@ describe("MD dual estate + inheritance interaction — helper", () => {
     const lifeIns: Account = {
       id: "acct-life", name: "Term policy", category: "life_insurance",
       subType: "term", value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [],
     };
     const childMember: FamilyMember = {

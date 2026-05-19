@@ -41,6 +41,7 @@ const accounts: Account[] = [
   {
     id: "client-brok", name: "Client Brokerage",
     category: "taxable", subType: "brokerage",
+    titlingType: "jtwros",
     value: 1_000_000, basis: 700_000,
     growthRate: 0, rmdEnabled: false,
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -48,6 +49,7 @@ const accounts: Account[] = [
   {
     id: "spouse-cash", name: "Spouse Cash",
     category: "cash", subType: "savings",
+    titlingType: "jtwros",
     value: 500_000, basis: 500_000,
     growthRate: 0, rmdEnabled: false,
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],

@@ -16,6 +16,7 @@ import type { Account } from "../types";
 // pctLtCapitalGains only and the engine derives stcg from it.
 const taxableWithRealization: Account = {
   id: "acct-brokerage", name: "Brokerage", category: "taxable", subType: "brokerage",
+  titlingType: "jtwros",
   value: 100000, basis: 100000, growthRate: 0.07, rmdEnabled: false,
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   realization: {
@@ -29,6 +30,7 @@ const taxableWithRealization: Account = {
 
 const tradIraWithRealization: Account = {
   id: "acct-ira", name: "Trad IRA", category: "retirement", subType: "traditional_ira",
+  titlingType: "jtwros",
   value: 100000, basis: 0, growthRate: 0.07, rmdEnabled: false,
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   realization: {
@@ -88,6 +90,7 @@ describe("F1: realized growth feeds cost basis", () => {
   it("basis identity includes withdrawalDetail.basisReturn under fresh-basis ordering", () => {
     const checking = {
       id: "chk", name: "Checking", category: "cash" as const, subType: "checking",
+      titlingType: "jtwros" as const,
       value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
       isDefaultChecking: true,
       owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],

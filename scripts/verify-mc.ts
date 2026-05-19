@@ -120,6 +120,7 @@ const accounts: Account[] = accountRows.map((a: any) => {
     category: a.category as Account["category"],
     subType: a.sub_type,
     owner: a.owner as "client" | "spouse" | "joint",
+    titlingType: "jtwros",
     value: parseFloat(a.value),
     basis: parseFloat(a.basis),
     growthRate,

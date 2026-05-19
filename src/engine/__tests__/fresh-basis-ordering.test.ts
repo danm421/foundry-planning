@@ -6,6 +6,7 @@ import type { Account, Expense, WithdrawalPriority } from "../types";
 
 const checking: Account = {
   id: "chk", name: "Checking", category: "cash", subType: "checking",
+  titlingType: "jtwros",
   value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
   isDefaultChecking: true,
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -13,6 +14,7 @@ const checking: Account = {
 
 const taxable60LTCG: Account = {
   id: "tx", name: "Taxable", category: "taxable", subType: "brokerage",
+  titlingType: "jtwros",
   value: 1_000_000, basis: 700_000, growthRate: 0.06, rmdEnabled: false,
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   realization: {

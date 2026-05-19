@@ -56,6 +56,7 @@ describe("scenario-added account grows in projection", () => {
         name: "Scenario Brokerage",
         category: "taxable",
         subType: "individual",
+        titlingType: "jtwros",
         value: "100000",
         basis: "100000",
         growthSource: "default",
@@ -109,6 +110,7 @@ describe("scenario-added account grows in projection", () => {
       name: "Broken Brokerage",
       category: "taxable" as const,
       subType: "individual",
+      titlingType: "jtwros" as const,
       value: 100000,
       basis: 100000,
       // Engine reads this directly at projection.ts:824-828; null * value = 0.

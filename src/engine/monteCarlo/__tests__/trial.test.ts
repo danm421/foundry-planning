@@ -92,6 +92,7 @@ describe("runTrial — success/failure classification (PDF p.11)", () => {
           name: "Household Checking",
           category: "cash" as const,
           subType: "checking",
+          titlingType: "jtwros",
           value: 0,
           basis: 0,
           growthRate: 0,

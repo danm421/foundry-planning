@@ -25,18 +25,21 @@ function buildSinglePersonClient(birthYear: number): FamilyMember[] {
 
 const checking: Account = {
   id: "acct-checking", name: "Checking", category: "cash", subType: "checking",
+  titlingType: "jtwros",
   value: 5000, basis: 5000, growthRate: 0, rmdEnabled: false, isDefaultChecking: true,
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 const tradIra: Account = {
   id: "acct-ira", name: "Trad IRA", category: "retirement", subType: "traditional_ira",
+  titlingType: "jtwros",
   value: 500000, basis: 0, growthRate: 0, rmdEnabled: false,
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 const rothIra: Account = {
   id: "acct-roth", name: "Roth IRA", category: "retirement", subType: "roth_ira",
+  titlingType: "jtwros",
   value: 200000, basis: 200000, growthRate: 0, rmdEnabled: false,
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };

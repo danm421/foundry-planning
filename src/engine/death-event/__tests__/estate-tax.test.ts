@@ -82,6 +82,7 @@ function acct(id: string, value: number, extras: Partial<Account> = {}): Account
     name: `Account ${id}`,
     category: "cash",
     subType: "generic",
+    titlingType: "jtwros",
     value,
     basis: value,
     growthRate: 0,

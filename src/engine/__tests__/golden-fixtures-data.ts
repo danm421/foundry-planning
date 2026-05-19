@@ -236,6 +236,7 @@ export const g4ClientData: ClientData = {
       name: "Alex 401(k)",
       category: "retirement",
       subType: "401k",
+      titlingType: "jtwros",
       value: 100_000,
       rothValue: 0,
       basis: 100_000,
