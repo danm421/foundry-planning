@@ -14,6 +14,7 @@ import type { AccountOwner } from "@/engine/ownership";
 // between the two household principals.
 export type ColumnKey = string;
 export const JOINT_COL: ColumnKey = "joint";
+export const COMMUNITY_PROPERTY_COL: ColumnKey = "community_property";
 
 export interface ColumnSpec {
   key: ColumnKey;
@@ -46,11 +47,15 @@ export function isHouseholdPrincipalSplit(
 
 /** Distribute `value` across columns according to ownership. Single-owner
  *  accounts land entirely in one column; client+spouse splits collapse to the
- *  Joint/ROS column; any other multi-owner shape splits proportionally. */
+ *  Joint/ROS column (or Community Property when `titlingType` says so); any
+ *  other multi-owner shape splits proportionally. `titlingType` defaults to
+ *  `"jtwros"` so callers without a titling field (e.g. liabilities) keep their
+ *  existing behavior. */
 export function distribute(
   value: number,
   owners: AccountOwner[] | undefined,
   familyById: Map<string, FamilyMember>,
+  titlingType: "jtwros" | "community_property" = "jtwros",
 ): Record<ColumnKey, number> {
   const out: Record<ColumnKey, number> = {};
   const list = owners ?? [];
@@ -65,7 +70,8 @@ export function distribute(
     return out;
   }
   if (isHouseholdPrincipalSplit(list, familyById)) {
-    out[JOINT_COL] = value;
+    const bucket = titlingType === "community_property" ? COMMUNITY_PROPERTY_COL : JOINT_COL;
+    out[bucket] = value;
     return out;
   }
   for (const o of list) {
@@ -101,6 +107,9 @@ export function buildColumns(
     cols.push({ key: `fm:${spouse.id}`, label: spouse.firstName || "Spouse" });
   }
   if (used.has(JOINT_COL)) cols.push({ key: JOINT_COL, label: "Joint/ROS" });
+  if (used.has(COMMUNITY_PROPERTY_COL)) {
+    cols.push({ key: COMMUNITY_PROPERTY_COL, label: "Community Property" });
+  }
   for (const fm of familyMembers) {
     if (fm.role === "client" || fm.role === "spouse") continue;
     if (used.has(`fm:${fm.id}`)) {

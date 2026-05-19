@@ -9,6 +9,7 @@ function acct(id: string, category: Account["category"], value: number, ownerKin
     name: `Account ${id}`,
     category,
     subType: "generic",
+    titlingType: "jtwros",
     value,
     basis: value,
     growthRate: 0,

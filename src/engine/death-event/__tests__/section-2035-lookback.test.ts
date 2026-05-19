@@ -40,6 +40,7 @@ const policyAccount: Account = {
   owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
   insuredPerson: "client",
   lifeInsurance: mkPolicy(),
+  titlingType: "jtwros",
 };
 
 function assetGift(

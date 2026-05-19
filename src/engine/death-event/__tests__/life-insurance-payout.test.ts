@@ -23,6 +23,7 @@ const mkAccount = (over: Partial<Account> = {}): Account => ({
   name: "Whole life policy",
   category: "life_insurance",
   subType: "whole_life",
+  titlingType: "jtwros",
   value: 50_000,
   basis: 0,
   growthRate: 0.04,
@@ -214,6 +215,7 @@ describe("prepareLifeInsurancePayouts", () => {
     const pol = mkAccount({ insuredPerson: "client" });
     const cash: Account = {
       id: "cash-1", name: "Checking", category: "cash", subType: "checking",
+      titlingType: "jtwros",
       value: 20_000, basis: 20_000, growthRate: 0.005, rmdEnabled: false,
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };

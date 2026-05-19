@@ -89,7 +89,7 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
       id: a.id,
       name: a.name,
       value,
-      dist: distribute(value, a.owners, familyById),
+      dist: distribute(value, a.owners, familyById, a.titlingType),
     };
   });
   const liabilityRows: MatrixRow[] = liabilities.map((l) => {

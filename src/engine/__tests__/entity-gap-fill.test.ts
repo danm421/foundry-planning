@@ -105,6 +105,7 @@ function trustChecking(value: number): Account {
     name: "Trust Checking",
     category: "cash",
     subType: "checking",
+    titlingType: "jtwros",
     value,
     basis: value,
     growthRate: 0,
@@ -120,6 +121,7 @@ function trustTaxable(value: number, basis: number): Account {
     name: "Trust Brokerage",
     category: "taxable",
     subType: "brokerage",
+    titlingType: "jtwros",
     value,
     basis,
     growthRate: 0,
@@ -264,23 +266,27 @@ describe("Entity gap-fill (step 12c)", () => {
     const trustBId = "trust-b";
     const trustACash: Account = {
       id: "a-checking", name: "A Checking", category: "cash", subType: "checking",
+      titlingType: "jtwros",
       value: 100_000, basis: 100_000, growthRate: 0, rmdEnabled: false,
       owners: [{ kind: "entity", entityId: trustAId, percent: 1 }],
       isDefaultChecking: true,
     };
     const trustATaxable: Account = {
       id: "a-taxable", name: "A Brokerage", category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 50_000, basis: 50_000, growthRate: 0, rmdEnabled: false,
       owners: [{ kind: "entity", entityId: trustAId, percent: 1 }],
     };
     const trustBCash: Account = {
       id: "b-checking", name: "B Checking", category: "cash", subType: "checking",
+      titlingType: "jtwros",
       value: 200_000, basis: 200_000, growthRate: 0, rmdEnabled: false,
       owners: [{ kind: "entity", entityId: trustBId, percent: 1 }],
       isDefaultChecking: true,
     };
     const trustBTaxable: Account = {
       id: "b-taxable", name: "B Brokerage", category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
       value: 100_000, basis: 100_000, growthRate: 0, rmdEnabled: false,
       owners: [{ kind: "entity", entityId: trustBId, percent: 1 }],
     };
@@ -378,6 +384,7 @@ describe("Entity gap-fill (step 12c)", () => {
       name: "Trust Real Estate",
       category: "real_estate",
       subType: "investment_property",
+      titlingType: "jtwros",
       value: 200_000,
       basis: 100_000,
       growthRate: 0,

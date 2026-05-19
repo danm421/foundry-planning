@@ -235,6 +235,7 @@ function whole(opts: {
     name: opts.id,
     category: "life_insurance",
     subType: "whole",
+    titlingType: "jtwros",
     value: 0,
     basis: 0,
     growthRate: 0,
@@ -273,6 +274,7 @@ function term(opts: {
       insuredPerson: opts.insuredPerson,
     }),
     subType: "term",
+    titlingType: "jtwros",
     lifeInsurance: {
       ...whole({
         id: opts.id,
@@ -456,6 +458,7 @@ function plainAccount(opts: {
     name: opts.id,
     category: opts.category,
     subType: "x",
+    titlingType: "jtwros",
     value: opts.value,
     basis: 0,
     growthRate: 0,

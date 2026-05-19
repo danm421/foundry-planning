@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { computeSteppedUpBasis } from "../shared";
 
 describe("computeSteppedUpBasis", () => {
-  const noJoint = { isJointAtFirstDeath: false };
-  const joint = { isJointAtFirstDeath: true };
+  const noJoint = { isJointAtFirstDeath: false, titlingType: "jtwros" as const };
+  const joint = { isJointAtFirstDeath: true, titlingType: "jtwros" as const };
 
   it("taxable, single-owner → returns FMV", () => {
     expect(computeSteppedUpBasis("taxable", 500_000, 200_000, noJoint)).toBe(500_000);
@@ -49,5 +49,29 @@ describe("computeSteppedUpBasis", () => {
     // Not a step-down per se — both halves get averaged. Survivor half keeps
     // their $150k portion, decedent half resets to FMV $50k. Total $200k.
     expect(computeSteppedUpBasis("taxable", 100_000, 300_000, joint)).toBe(200_000);
+  });
+
+  const jointJtwros = { isJointAtFirstDeath: true, titlingType: "jtwros" as const };
+  const jointCp = { isJointAtFirstDeath: true, titlingType: "community_property" as const };
+  const soloCp = { isJointAtFirstDeath: false, titlingType: "community_property" as const };
+
+  it("taxable, joint + community_property → returns FMV (full step-up)", () => {
+    expect(computeSteppedUpBasis("taxable", 500_000, 200_000, jointCp)).toBe(500_000);
+  });
+
+  it("real_estate, joint + community_property → returns FMV (full step-up)", () => {
+    expect(computeSteppedUpBasis("real_estate", 800_000, 300_000, jointCp)).toBe(800_000);
+  });
+
+  it("retirement, joint + community_property → returns originalBasis (IRD rule wins)", () => {
+    expect(computeSteppedUpBasis("retirement", 400_000, 0, jointCp)).toBe(0);
+  });
+
+  it("taxable, non-joint + community_property → returns FMV (titling is a no-op when not joint)", () => {
+    expect(computeSteppedUpBasis("taxable", 500_000, 200_000, soloCp)).toBe(500_000);
+  });
+
+  it("taxable, joint + jtwros → still returns (FMV + basis) / 2 (existing behavior preserved)", () => {
+    expect(computeSteppedUpBasis("taxable", 500_000, 200_000, jointJtwros)).toBe(350_000);
   });
 });

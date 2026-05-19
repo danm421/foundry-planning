@@ -149,6 +149,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "brokerage", name: "Joint Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 2_000_000, basis: 1_500_000,
         growthRate: 0.06, rmdEnabled: false,
         owners: [
@@ -159,6 +160,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 500_000, basis: 500_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -203,6 +205,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 1_000_000, basis: 600_000,
         growthRate: 0.05, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -247,6 +250,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 5_000_000, basis: 3_000_000,
         growthRate: 0.05, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -254,6 +258,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 2_000_000, basis: 2_000_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -313,6 +318,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "trust-acct", name: "Trust Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 1_000_000, basis: 700_000,
         growthRate: 0.05, rmdEnabled: false,
         // Entity-owned by the revocable trust (entity ownership is the canonical model)
@@ -360,6 +366,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "ilit-policy", name: "ILIT Life Policy",
         category: "life_insurance", subType: "term",
+        titlingType: "jtwros",
         value: 3_000_000, basis: 0,
         growthRate: 0, rmdEnabled: false,
         // Owned by the ILIT entity — irrevocable trust excludes from gross estate
@@ -368,6 +375,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 200_000, basis: 200_000,
         growthRate: 0.02, rmdEnabled: false,
         // Client-owned cash (in gross estate; marital deduction covers it)
@@ -413,6 +421,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "ira", name: "IRA",
         category: "retirement", subType: "traditional_ira",
+        titlingType: "jtwros",
         value: 400_000, basis: 0,
         growthRate: 0.05, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -420,6 +429,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "home", name: "Home",
         category: "real_estate", subType: "primary_residence",
+        titlingType: "jtwros",
         value: 950_000, basis: 600_000,
         growthRate: 0.03, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -427,6 +437,7 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "schwab", name: "Schwab Ind. Account",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 750_000, basis: 500_000,
         growthRate: 0.05, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -520,6 +531,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 30_000_000, basis: 15_000_000,
         growthRate: 0.05, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -527,6 +539,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 10_000_000, basis: 10_000_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -580,6 +593,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "client-brok", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 1_000_000, basis: 700_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -587,6 +601,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 200_000, basis: 200_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -662,6 +677,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 500_000, basis: 500_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -702,6 +718,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "home", name: "Primary Home",
         category: "real_estate", subType: "primary_residence",
+        titlingType: "jtwros",
         value: 500_000, basis: 400_000,
         growthRate: 0.03, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -741,6 +758,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "home", name: "Primary Home",
         category: "real_estate", subType: "primary_residence",
+        titlingType: "jtwros",
         value: 40_000_000, basis: 10_000_000,
         growthRate: 0.03, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -748,6 +766,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 10_000, basis: 10_000,
         growthRate: 0.01, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -783,6 +802,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "trust-acct", name: "Trust Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 1_000_000, basis: 700_000,
         growthRate: 0.05, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -790,6 +810,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "personal-cash", name: "Personal Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
@@ -831,6 +852,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "joint-in-trust", name: "Joint Trust Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 500_000, basis: 400_000,
         growthRate: 0.05, rmdEnabled: false,
         // Entity-owned — verifies that entity-owned accounts pass through 4c
@@ -842,6 +864,7 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "personal-cash", name: "Personal Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "entity", entityId: "irrev-trust", percent: 1 }],
@@ -869,6 +892,7 @@ describe("4d integration — state estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 5_000_000, basis: 3_000_000,
         growthRate: 0.05, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -892,6 +916,7 @@ describe("4d integration — state estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 2_000_000, basis: 1_500_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -917,6 +942,7 @@ describe("4d integration — state estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 4_250_000, basis: 3_000_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -941,6 +967,7 @@ describe("4d integration — state estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
         value: 1_000_000, basis: 750_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -997,6 +1024,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 200_000, basis: 200_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1053,6 +1081,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1103,6 +1132,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 1_000, basis: 1_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1110,6 +1140,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-home", name: "Primary Home",
         category: "real_estate", subType: "primary_residence",
+        titlingType: "jtwros",
         value: 200_000, basis: 150_000,
         growthRate: 0.03, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1172,6 +1203,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1228,6 +1260,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 50_000, basis: 50_000,
         growthRate: 0.02, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1303,6 +1336,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 100_000, basis: 100_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -1310,6 +1344,7 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "spouse-cash", name: "Spouse Cash",
         category: "cash", subType: "savings",
+        titlingType: "jtwros",
         value: 50_000, basis: 50_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],

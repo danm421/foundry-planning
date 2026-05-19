@@ -138,7 +138,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
 
     const steppedBasis = computeSteppedUpBasis(
       routedAcct.category, routedBalance, routedBasis,
-      { isJointAtFirstDeath: routedIsJoint },
+      { isJointAtFirstDeath: routedIsJoint, titlingType: routedAcct.titlingType },
     );
     const effectiveAcct: Account = { ...routedAcct, value: routedBalance, basis: steppedBasis };
 

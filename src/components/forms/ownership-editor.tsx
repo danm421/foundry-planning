@@ -21,11 +21,15 @@ export interface OwnershipEditorProps {
   entities: { id: string; name: string }[];
   value: AccountOwner[];
   onChange: (next: AccountOwner[]) => void;
+  /** Required for joint-eligible accounts so the editor can offer Community
+   *  Property. Liability and retirement consumers pass "jtwros" + a no-op. */
+  titlingType: "jtwros" | "community_property";
+  onTitlingTypeChange: (next: "jtwros" | "community_property") => void;
   retirementMode?: boolean;
   label?: string;
 }
 
-type OwnershipMode = "client" | "spouse" | "joint" | "custom";
+type OwnershipMode = "client" | "spouse" | "joint" | "community_property" | "custom";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +39,7 @@ function deriveMode(
   value: AccountOwner[],
   clientId: string | undefined,
   spouseId: string | undefined,
+  titlingType: "jtwros" | "community_property",
 ): OwnershipMode {
   if (value.length === 1) {
     const [r] = value;
@@ -49,7 +54,9 @@ function deriveMode(
       a.kind === "family_member" && a.familyMemberId === clientId && Math.abs(a.percent - 0.5) < EPSILON;
     const isSpouseB =
       b.kind === "family_member" && b.familyMemberId === spouseId && Math.abs(b.percent - 0.5) < EPSILON;
-    if (isClientA && isSpouseB) return "joint";
+    if (isClientA && isSpouseB) {
+      return titlingType === "community_property" ? "community_property" : "joint";
+    }
   }
   return "custom";
 }
@@ -255,6 +262,8 @@ export function OwnershipEditor({
   entities,
   value,
   onChange,
+  titlingType,
+  onTitlingTypeChange,
   retirementMode = false,
   label = "Owner(s)",
 }: OwnershipEditorProps) {
@@ -262,8 +271,8 @@ export function OwnershipEditor({
   const spouseFm = familyMembers.find((fm) => fm.role === "spouse");
 
   const derivedMode = useMemo(
-    () => deriveMode(value, clientFm?.id, spouseFm?.id),
-    [value, clientFm?.id, spouseFm?.id],
+    () => deriveMode(value, clientFm?.id, spouseFm?.id, titlingType),
+    [value, clientFm?.id, spouseFm?.id, titlingType],
   );
 
   // forceCustom: true when the user explicitly clicked "Custom" while a preset
@@ -299,6 +308,17 @@ export function OwnershipEditor({
   function handlePresetJoint() {
     if (!clientFm || !spouseFm) return;
     setForceCustom(false);
+    onTitlingTypeChange("jtwros");
+    onChange([
+      { kind: "family_member", familyMemberId: clientFm.id, percent: 0.5 },
+      { kind: "family_member", familyMemberId: spouseFm.id, percent: 0.5 },
+    ]);
+  }
+
+  function handlePresetCommunityProperty() {
+    if (!clientFm || !spouseFm) return;
+    setForceCustom(false);
+    onTitlingTypeChange("community_property");
     onChange([
       { kind: "family_member", familyMemberId: clientFm.id, percent: 0.5 },
       { kind: "family_member", familyMemberId: spouseFm.id, percent: 0.5 },
@@ -375,6 +395,13 @@ export function OwnershipEditor({
             label="Joint 50/50"
             active={derivedMode === "joint" && !forceCustom}
             onClick={handlePresetJoint}
+          />
+        )}
+        {showSpousePresets && (
+          <PresetButton
+            label="Community Property"
+            active={derivedMode === "community_property" && !forceCustom}
+            onClick={handlePresetCommunityProperty}
           />
         )}
         <PresetButton

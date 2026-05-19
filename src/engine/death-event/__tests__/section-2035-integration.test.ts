@@ -102,6 +102,7 @@ function mkIlitPolicy(
     growthRate: 0,
     rmdEnabled: false,
     owners: [{ kind: "entity", entityId: trustId, percent: 1 }],
+    titlingType: "jtwros",
     lifeInsurance: {
       faceValue: 1_000_000,
       costBasis: 0,

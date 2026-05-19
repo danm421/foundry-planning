@@ -56,6 +56,7 @@ const baseRawAccount = {
   overridePctTaxExempt: null,
   priorYearEndValue: null,
   insuredPerson: null,
+  titlingType: "jtwros" as const,
   owners: [],
 };
 
@@ -181,6 +182,44 @@ describe("resolveAccountFromRaw", () => {
       makeCtx(),
     );
     expect(acct.growthRate).toBeCloseTo(0.09);
+  });
+
+  it("propagates titlingType from raw to Account (community_property)", () => {
+    const acct = resolveAccountFromRaw(
+      {
+        ...baseRawAccount,
+        id: "a7",
+        name: "Brokerage CP",
+        category: "taxable",
+        subType: "individual",
+        value: "100000",
+        basis: "100000",
+        growthSource: "default",
+        growthRate: null,
+        titlingType: "community_property",
+      },
+      makeCtx(),
+    );
+    expect(acct.titlingType).toBe("community_property");
+  });
+
+  it("propagates titlingType from raw to Account (jtwros)", () => {
+    const acct = resolveAccountFromRaw(
+      {
+        ...baseRawAccount,
+        id: "a8",
+        name: "Brokerage JT",
+        category: "taxable",
+        subType: "individual",
+        value: "100000",
+        basis: "100000",
+        growthSource: "default",
+        growthRate: null,
+        titlingType: "jtwros",
+      },
+      makeCtx(),
+    );
+    expect(acct.titlingType).toBe("jtwros");
   });
 });
 

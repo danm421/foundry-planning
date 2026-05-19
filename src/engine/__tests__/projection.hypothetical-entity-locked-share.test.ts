@@ -56,6 +56,7 @@ const savings: Account = {
   name: "Savings Account",
   category: "cash",
   subType: "savings",
+  titlingType: "jtwros",
   value: 100_000,
   basis: 100_000,
   growthRate: 0,

@@ -27,6 +27,7 @@ export const ACCOUNT_FIELD_LABELS: FieldLabels = {
   annualPropertyTax: { label: "Annual property tax", format: "currency" },
   propertyTaxGrowthRate: { label: "Property tax growth", format: "percent" },
   propertyTaxGrowthSource: { label: "Property tax growth source", format: "text" },
+  titlingType: { label: "Titling type", format: "text" },
   source: { label: "Source", format: "text" },
 };
 
@@ -52,6 +53,7 @@ export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot
     annualPropertyTax: Number(row.annualPropertyTax),
     propertyTaxGrowthRate: Number(row.propertyTaxGrowthRate),
     propertyTaxGrowthSource: row.propertyTaxGrowthSource,
+    titlingType: row.titlingType,
     source: row.source,
   };
 }

@@ -21,6 +21,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "rmdEnabled": false,
       "rothValue": 0,
       "subType": "brokerage",
+      "titlingType": "jtwros",
       "value": 250000,
     },
     {
@@ -47,6 +48,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "rmdEnabled": false,
       "rothValue": 0,
       "subType": "checking",
+      "titlingType": "jtwros",
       "value": 30000,
     },
   ],

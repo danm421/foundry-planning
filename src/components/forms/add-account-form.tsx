@@ -58,6 +58,8 @@ export interface AccountFormInitial {
   priorYearEndValue?: string | null;
   ownerEntityId?: string | null;
   owners?: AccountOwner[];
+  /** Joint-titling regime. Drives §1014(b)(6) full step-up vs §2040(b) 50/50. */
+  titlingType?: "jtwros" | "community_property";
   annualPropertyTax?: string;
   propertyTaxGrowthRate?: string;
   propertyTaxGrowthSource?: string;
@@ -341,6 +343,9 @@ export default function AddAccountForm({
   const [owners, setOwners] = useState<AccountOwner[]>(
     initial?.owners && initial.owners.length > 0 ? initial.owners : defaultOwners,
   );
+  const [titlingType, setTitlingType] = useState<"jtwros" | "community_property">(
+    initial?.titlingType ?? "jtwros",
+  );
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
@@ -540,6 +545,7 @@ export default function AddAccountForm({
       category: data.get("category") as string,
       subType: data.get("subType") as string,
       owners,
+      titlingType,
       value: data.get("value") as string,
       // Cost basis is meaningless for 401k/403b; force 0 so any leftover
       // pre-migration value can't influence engine math.
@@ -896,6 +902,8 @@ export default function AddAccountForm({
                 entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
                 value={owners}
                 onChange={setOwners}
+                titlingType={titlingType}
+                onTitlingTypeChange={setTitlingType}
                 retirementMode={isRetirementSubType(subType)}
               />
             </div>

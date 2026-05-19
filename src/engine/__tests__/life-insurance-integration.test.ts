@@ -69,6 +69,7 @@ function mkPolicyAccount(
     name: `Policy ${id}`,
     category: "life_insurance",
     subType: policy.policyType,
+    titlingType: "jtwros",
     insuredPerson: "client",
     value: 0,
     basis: 0,

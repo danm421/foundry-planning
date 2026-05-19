@@ -256,6 +256,51 @@ describe("applyScenarioChanges — edit", () => {
     expect(result.effectiveTree.accounts[0].value).toBe(350000);
   });
 
+  it("scenario overlay can flip an account's titlingType to community_property", () => {
+    // Community-property titling is a string field on Account that the engine
+    // consults at first death to decide between a half (jtwros) and full
+    // (community_property) basis step-up. It rides through the generic
+    // field-merge path — no entry in NUMERIC_FIELDS_BY_KIND, no whitelist.
+    const base = minimalClientData();
+    const baseAccount: Account = {
+      id: "a1",
+      clientId: "c1",
+      scenarioId: "s-base",
+      name: "Joint Brokerage",
+      category: "taxable",
+      subType: "individual",
+      owner: "joint",
+      titlingType: "jtwros",
+      owners: [
+        { ownerKind: "client", ownerId: null, percentage: 50 },
+        { ownerKind: "spouse", ownerId: null, percentage: 50 },
+      ],
+      value: 500000,
+      basis: 200000,
+    } as unknown as Account;
+    base.accounts = [baseAccount];
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "account",
+      targetId: "a1",
+      payload: {
+        titlingType: { from: "jtwros", to: "community_property" },
+      },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.accounts[0].titlingType).toBe(
+      "community_property",
+    );
+    // Base must remain untouched — applyScenarioChanges deep-clones.
+    expect(baseAccount.titlingType).toBe("jtwros");
+  });
+
   it("applies edit to plan_settings (singleton)", () => {
     const base = minimalClientData();
     base.planSettings = { taxBracketCap: 0.24 } as unknown as ClientData["planSettings"];

@@ -729,6 +729,13 @@
       "when": 1779227151387,
       "tag": "0103_elite_morlocks",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1779234373738,
+      "tag": "0104_stale_johnny_blaze",
+      "breakpoints": true
     }
   ]
 }

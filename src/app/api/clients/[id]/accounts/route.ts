@@ -98,6 +98,7 @@ export async function POST(
       overridePctLtCg,
       overridePctQdiv,
       overridePctTaxExempt,
+      titlingType,
     } = body;
 
     if (!name || !category) {
@@ -176,6 +177,7 @@ export async function POST(
           annualPropertyTax: body.annualPropertyTax ?? "0",
           propertyTaxGrowthRate: body.propertyTaxGrowthRate ?? "0.03",
           propertyTaxGrowthSource: body.propertyTaxGrowthSource ?? "custom",
+          titlingType: titlingType ?? "jtwros",
         })
         .returning();
       account = inserted;

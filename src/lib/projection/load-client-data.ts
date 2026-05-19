@@ -601,6 +601,7 @@ export const loadClientDataWithContext = cache(
           overridePctTaxExempt: a.overridePctTaxExempt,
           priorYearEndValue: a.priorYearEndValue,
           insuredPerson: a.insuredPerson,
+          titlingType: a.titlingType,
         },
         resolutionCtx,
       ),

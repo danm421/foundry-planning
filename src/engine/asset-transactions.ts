@@ -336,6 +336,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
       name: purchase.assetName ?? purchase.name,
       category: purchase.assetCategory ?? "taxable",
       subType: purchase.assetSubType ?? "other",
+      titlingType: "jtwros",
       value: purchasePrice,
       basis: assetBasis,
       growthRate: purchase.growthRate ?? 0,

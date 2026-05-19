@@ -12,6 +12,7 @@ describe("step-up end-to-end: death + future sale → correct cap-gains", () => 
   const jointBrok: Account = {
     id: "joint-brok", name: "Joint Brokerage",
     category: "taxable", subType: "brokerage",
+    titlingType: "jtwros",
     value: 500_000, basis: 200_000,
     growthRate: 0.05, rmdEnabled: false,
     owners: [
@@ -22,6 +23,7 @@ describe("step-up end-to-end: death + future sale → correct cap-gains", () => 
   const cashForProceeds: Account = {
     id: "cash", name: "Joint Checking",
     category: "cash", subType: "checking",
+    titlingType: "jtwros",
     value: 10_000, basis: 10_000,
     growthRate: 0, rmdEnabled: false,
     owners: [

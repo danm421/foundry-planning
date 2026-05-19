@@ -8,6 +8,7 @@ const baseAccount = (overrides: Partial<Account>): Account => ({
   name: "Test",
   category: "cash",
   subType: "checking",
+  titlingType: "jtwros",
   value: 100_000,
   basis: 100_000,
   growthRate: 0,

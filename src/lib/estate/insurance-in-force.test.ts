@@ -12,6 +12,7 @@ function termPolicy(opts: {
     name: "Term",
     category: "life_insurance",
     subType: "term",
+    titlingType: "jtwros",
     value: 0,
     basis: 0,
     growthRate: 0,
@@ -38,6 +39,7 @@ function wholePolicy(opts: { endsAtInsuredRetirement?: boolean } = {}): Account 
   return {
     ...termPolicy({ termIssueYear: null, termLengthYears: null }),
     subType: "whole",
+    titlingType: "jtwros",
     lifeInsurance: {
       ...termPolicy({ termIssueYear: null, termLengthYears: null }).lifeInsurance!,
       policyType: "whole",
@@ -117,6 +119,7 @@ describe("isPolicyInForce", () => {
       name: "Brokerage",
       category: "taxable",
       subType: "brokerage",
+      titlingType: "jtwros",
       value: 100_000,
       basis: 0,
       growthRate: 0,

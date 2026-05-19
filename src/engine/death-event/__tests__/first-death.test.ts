@@ -104,6 +104,7 @@ describe("applyFirstDeath — gross transfers + drain attribution (Phase B)", ()
       basis: 500_000,
       growthRate: 0,
       rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [
         { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
       ],
@@ -139,6 +140,7 @@ describe("applyFirstDeath — gross transfers + drain attribution (Phase B)", ()
       basis: 1_000_000,
       growthRate: 0,
       rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [
         { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
       ],
@@ -247,5 +249,71 @@ describe("applyFirstDeath — business-interest succession integration", () => {
     // §1014 basis stepped up to FMV of the transferred share.
     // newBasis = oldBasis * (1 - share) + flatValue * share = 4000 * 0 + 10000 * 1 = 10000.
     expect(updatedEntity!.basis).toBeCloseTo(10_000, 0);
+  });
+});
+
+describe("applyFirstDeath — community-property step-up integration", () => {
+  // Joint 50/50 client+spouse taxable account, $1M FMV, $400k basis.
+  // At first death the titling step routes 100% to the surviving spouse.
+  // §1014(b)(6) → community_property gets a full step-up (basis = FMV = $1M);
+  // jtwros gets the half step-up ((FMV + basis)/2 = $700k).
+  const buildJointBrokerage = (
+    titlingType: "community_property" | "jtwros",
+  ): Account => ({
+    id: "acct-joint",
+    name: "Joint Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    value: 1_000_000,
+    basis: 400_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    titlingType,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
+  });
+
+  it("community_property joint taxable account gets full step-up at first death", () => {
+    const input = mkInput({
+      accounts: [buildJointBrokerage("community_property")],
+    });
+    const result = applyFirstDeath(input);
+
+    const titling = result.transfers.find(
+      (t) => t.sourceAccountId === "acct-joint" && t.via === "titling",
+    );
+    expect(titling).toBeDefined();
+    expect(titling!.recipientKind).toBe("spouse");
+
+    const resultingAcct = result.accounts.find(
+      (a) => a.id === titling!.resultingAccountId,
+    );
+    expect(resultingAcct).toBeDefined();
+    expect(resultingAcct!.value).toBe(1_000_000);
+    // §1014(b)(6) full step-up: both halves reset to FMV.
+    expect(resultingAcct!.basis).toBe(1_000_000);
+  });
+
+  it("jtwros joint taxable account gets half step-up at first death (regression)", () => {
+    const input = mkInput({
+      accounts: [buildJointBrokerage("jtwros")],
+    });
+    const result = applyFirstDeath(input);
+
+    const titling = result.transfers.find(
+      (t) => t.sourceAccountId === "acct-joint" && t.via === "titling",
+    );
+    expect(titling).toBeDefined();
+    expect(titling!.recipientKind).toBe("spouse");
+
+    const resultingAcct = result.accounts.find(
+      (a) => a.id === titling!.resultingAccountId,
+    );
+    expect(resultingAcct).toBeDefined();
+    expect(resultingAcct!.value).toBe(1_000_000);
+    // §1014 half step-up: (FMV + basis) / 2 = (1_000_000 + 400_000) / 2 = 700_000.
+    expect(resultingAcct!.basis).toBe(700_000);
   });
 });

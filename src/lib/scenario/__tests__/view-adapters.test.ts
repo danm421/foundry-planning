@@ -128,6 +128,7 @@ describe("view-adapters", () => {
         name: "Brokerage",
         category: "taxable",
         subType: "individual",
+        titlingType: "jtwros",
         value: 500_000,
         basis: 250_000,
         growthRate: 0.07,

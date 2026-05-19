@@ -182,6 +182,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       propertyTaxGrowthSource: meta?.propertyTaxGrowthSource ?? "custom",
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
+      titlingType: a.titlingType,
     };
   });
 

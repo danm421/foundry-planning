@@ -180,6 +180,7 @@ function syntheticPolicy(
     name: "Life Insurance Need (solver)",
     category: "life_insurance",
     subType: "term",
+    titlingType: "jtwros",
     value: 0,
     basis: 0,
     growthRate: 0,
