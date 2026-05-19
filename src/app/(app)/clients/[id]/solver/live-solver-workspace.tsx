@@ -25,6 +25,8 @@ import { SolverPosGauge } from "./solver-pos-gauge";
 import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
+import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
+import type { LiAssumptions } from "@/lib/life-insurance/schema";
 
 interface Props {
   clientId: string;
@@ -36,6 +38,7 @@ interface Props {
   availableScenarios: { id: string; name: string }[];
   modelPortfolios: { id: string; name: string }[];
   milestones: import("@/lib/milestones").ClientMilestones;
+  lifeInsuranceSettings: LiAssumptions;
 }
 
 export function LiveSolverWorkspace({
@@ -48,6 +51,7 @@ export function LiveSolverWorkspace({
   availableScenarios,
   modelPortfolios,
   milestones,
+  lifeInsuranceSettings,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -56,9 +60,9 @@ export function LiveSolverWorkspace({
   );
   const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
 
-  const [activeTab, setActiveTab] = useState<"retirement" | "techniques">(
-    "retirement",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "retirement" | "techniques" | "life_insurance"
+  >("retirement");
 
   const [currentProjection, setCurrentProjection] = useState<ProjectionYear[]>(
     initialSourceProjection,
@@ -458,9 +462,22 @@ export function LiveSolverWorkspace({
           >
             Techniques
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "life_insurance"}
+            onClick={() => setActiveTab("life_insurance")}
+            className={
+              activeTab === "life_insurance"
+                ? "border-b-2 border-accent px-3 py-1.5 text-[13px] font-medium text-ink"
+                : "border-b-2 border-transparent px-3 py-1.5 text-[13px] text-ink-3 hover:text-ink"
+            }
+          >
+            Life Insurance
+          </button>
         </div>
 
-        {activeTab === "retirement" ? (
+        {activeTab === "retirement" && (
           <>
             <SolverSection title="Goals">
               <SolverRowRetirementAges
@@ -518,7 +535,9 @@ export function LiveSolverWorkspace({
               />
             </SolverSection>
           </>
-        ) : (
+        )}
+
+        {activeTab === "techniques" && (
           <SolverTechniquesTab
             clientId={clientId}
             baseClientData={baseClientData}
@@ -539,6 +558,13 @@ export function LiveSolverWorkspace({
             milestones={milestones}
             onChange={pushMutation}
             onSolveStart={handleSolveStart}
+          />
+        )}
+
+        {activeTab === "life_insurance" && (
+          <SolverTabLifeInsurance
+            clientId={clientId}
+            settings={lifeInsuranceSettings}
           />
         )}
       </SolverCompareGrid>
