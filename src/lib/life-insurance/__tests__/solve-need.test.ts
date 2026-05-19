@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { solveLifeInsuranceNeed, TOLERANCE_FOR_TEST } from "../solve-need";
-import { marriedBase, assumptions } from "./test-helpers";
+import { marriedBase, assumptions, highNetWorthBase, hnwAssumptions } from "./test-helpers";
+import { computeEstateTaxAddend } from "../estate-tax-addend";
 
 describe("solveLifeInsuranceNeed", () => {
   it("solves a face value so the survivor's ending portfolio meets the target", () => {
@@ -44,5 +45,46 @@ describe("solveLifeInsuranceNeed convergence", () => {
         assumptions.leaveToHeirsAmount;
       expect(relError).toBeLessThanOrEqual(TOLERANCE_FOR_TEST);
     }
+  });
+});
+
+describe("solveLifeInsuranceNeed — cover estate taxes", () => {
+  // The HNW fixture's survivor portfolio at faceValue=0 is ~$66.9M, so we
+  // use a target above that to force a genuine positive baseline face value.
+  // 80_000_000 was validated to produce baseline.faceValue ≈ $2.5M.
+  const hnwTarget = 80_000_000;
+
+  it("raises the solved face value when the estate-tax addend is folded in", () => {
+    const tree = highNetWorthBase();
+    const addend = computeEstateTaxAddend(tree, "client", hnwAssumptions);
+    expect(addend).toBeGreaterThan(0);
+
+    const assumptionsWithTarget = { ...hnwAssumptions, leaveToHeirsAmount: hnwTarget };
+    const baseline = solveLifeInsuranceNeed(tree, "client", assumptionsWithTarget);
+    const covered = solveLifeInsuranceNeed(tree, "client", {
+      ...assumptionsWithTarget,
+      leaveToHeirsAmount: hnwTarget + addend,
+    });
+
+    expect(baseline.status).toBe("solved");
+    expect(covered.status).toBe("solved");
+    // The augmented target is strictly larger, so the solved coverage is too.
+    expect(covered.faceValue).toBeGreaterThan(baseline.faceValue);
+    // The covered solve lands its ending portfolio on the augmented target.
+    expect(covered.achievedEndingPortfolio).toBeGreaterThan(
+      baseline.achievedEndingPortfolio,
+    );
+  });
+
+  it("leaves the solved need unchanged when the addend is zero", () => {
+    const tree = highNetWorthBase();
+    const assumptionsWithTarget = { ...hnwAssumptions, leaveToHeirsAmount: hnwTarget };
+    const baseline = solveLifeInsuranceNeed(tree, "client", assumptionsWithTarget);
+    // Addend of 0 (toggle off) means the target is untouched.
+    const covered = solveLifeInsuranceNeed(tree, "client", {
+      ...assumptionsWithTarget,
+      leaveToHeirsAmount: hnwTarget + 0,
+    });
+    expect(covered.faceValue).toBe(baseline.faceValue);
   });
 });
