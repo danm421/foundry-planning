@@ -19,7 +19,6 @@ import { LiAssumptionsPanel } from "./li-assumptions-panel";
 import { LiMcSolve } from "./li-mc-solve";
 import { LiNeedCards } from "./li-need-cards";
 import { LiOverTimeSection } from "./li-over-time-section";
-import { LiSurvivorChart } from "./li-survivor-chart";
 
 /** One decedent's solved need + the survivor's projection (Task 11 reads this). */
 export interface LiSolveCase {
@@ -174,8 +173,8 @@ export function SolverTabLifeInsurance({
       ) : null}
 
       {/* Layout: assumptions → straight-line need cards → Monte Carlo solve
-          block → survivor chart. The two solved needs read adjacently, then
-          the chart. The over-time section (Phase 3) slots in below the chart. */}
+          block → over-time section. The two solved needs read adjacently,
+          then the MC block, then the need-over-time panel. */}
       {solveResult ? (
         <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
           <LiNeedCards
@@ -191,13 +190,6 @@ export function SolverTabLifeInsurance({
               clientName={clientName}
               spouseName={spouseName}
               onScoreChange={handleScoreChange}
-            />
-          </div>
-          <div className="mt-4">
-            <LiSurvivorChart
-              result={solveResult}
-              clientName={clientName}
-              spouseName={spouseName}
             />
           </div>
           <div className="mt-4">

@@ -15,6 +15,7 @@
 // debounced straight-line solve, which is fine.
 import { useCallback, useRef, useState } from "react";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import { roundUpTo50k } from "@/lib/life-insurance/round";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 
 /** One decedent's MC solve outcome (mirrors `NeedMcResult` in solve-need-mc.ts). */
@@ -310,7 +311,7 @@ function McResultCard({ name, mcCase }: { name: string; mcCase: NeedMcResult }) 
           exceedsCap ? "text-warn" : "text-ink"
         }`}
       >
-        {exceedsCap ? CAP_LABEL : formatCurrency(mcCase.faceValue)}
+        {exceedsCap ? CAP_LABEL : formatCurrency(roundUpTo50k(mcCase.faceValue))}
       </div>
       <div className="mt-1.5 text-[11px] text-ink-3">
         {exceedsCap
