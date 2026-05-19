@@ -28,14 +28,14 @@ export interface NeedResult {
 /** Maximum face value the solver will try before declaring exceeds-cap. */
 const CAP = 20_000_000;
 
-/** Bisection stops when the achieved portfolio is within 0.5% of the target. */
+/** The solver stops when the achieved portfolio is within 0.5% of the target. */
 const TOLERANCE = 0.005;
 
 /** Exported for tests — the relative tolerance the solver converges to. */
 export const TOLERANCE_FOR_TEST = TOLERANCE;
 
 /**
- * Bisect on `faceValue` to find the minimum death benefit such that the
+ * Solve for the minimum `faceValue` such that the
  * survivor's ending portfolio (liquid assets at their projected death year)
  * meets `a.leaveToHeirsAmount`.
  *
