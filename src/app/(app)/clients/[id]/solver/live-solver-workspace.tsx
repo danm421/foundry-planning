@@ -68,6 +68,11 @@ export function LiveSolverWorkspace({
     "retirement" | "techniques" | "life_insurance"
   >("retirement");
 
+  // LI assumptions live here so a sibling chart panel can read them while the
+  // Life Insurance tab is mounted; SolverTabLifeInsurance is a controlled view.
+  const [liAssumptions, setLiAssumptions] =
+    useState<LiAssumptions>(lifeInsuranceSettings);
+
   const [currentProjection, setCurrentProjection] = useState<ProjectionYear[]>(
     initialSourceProjection,
   );
@@ -568,7 +573,8 @@ export function LiveSolverWorkspace({
         {activeTab === "life_insurance" && (
           <SolverTabLifeInsurance
             clientId={clientId}
-            settings={lifeInsuranceSettings}
+            assumptions={liAssumptions}
+            onAssumptionsChange={setLiAssumptions}
             clientName={clientName}
             spouseName={spouseName}
             liabilities={(baseClientData.liabilities ?? []).map((l) => ({
