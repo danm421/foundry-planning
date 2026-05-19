@@ -163,4 +163,75 @@ describe("buildEstateTransferReportData — insurance pour-out at second death",
       .assets.find((a) => a.sourceAccountId === "pol-1")!;
     expect(assetRow.amount).toBe(5_000);
   });
+
+  it("carries distributionForm from the trust's remainderBeneficiaries", () => {
+    const projection = makeProjection({ deathYear: 2030, pourOutAmount: 5_000 });
+
+    const out = buildEstateTransferReportData({
+      projection,
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData,
+      ownerNames: { clientName: "Alice", spouseName: "Bob" },
+    });
+
+    const assetRow = out
+      .secondDeath!.recipients.find((r) => r.recipientId === "fm-child")!
+      .byMechanism.find((m) => m.mechanism === "trust_pour_out")!
+      .assets.find((a) => a.sourceAccountId === "pol-1")!;
+    expect(assetRow.distributionForm).toBe("outright");
+  });
+
+  it("renders distributionForm='in_trust' when the trust says so", () => {
+    const inTrustClient = {
+      ...clientData,
+      entities: [
+        {
+          ...(clientData.entities as any)[0],
+          remainderBeneficiaries: [
+            { familyMemberId: "fm-child", percentage: 100, distributionForm: "in_trust" },
+          ],
+        },
+      ],
+    };
+    const projection = makeProjection({ deathYear: 2030, pourOutAmount: 5_000 });
+
+    const out = buildEstateTransferReportData({
+      projection,
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: inTrustClient as any,
+      ownerNames: { clientName: "Alice", spouseName: "Bob" },
+    });
+
+    const assetRow = out
+      .secondDeath!.recipients.find((r) => r.recipientId === "fm-child")!
+      .byMechanism.find((m) => m.mechanism === "trust_pour_out")!
+      .assets.find((a) => a.sourceAccountId === "pol-1")!;
+    expect(assetRow.distributionForm).toBe("in_trust");
+  });
+
+  it("omits distributionForm when the trust has no matching remainder bene", () => {
+    const noRemainderClient = {
+      ...clientData,
+      entities: [
+        { ...(clientData.entities as any)[0], remainderBeneficiaries: [] },
+      ],
+    };
+    const projection = makeProjection({ deathYear: 2030, pourOutAmount: 5_000 });
+
+    const out = buildEstateTransferReportData({
+      projection,
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: noRemainderClient as any,
+      ownerNames: { clientName: "Alice", spouseName: "Bob" },
+    });
+
+    const assetRow = out
+      .secondDeath!.recipients.find((r) => r.recipientId === "fm-child")!
+      .byMechanism.find((m) => m.mechanism === "trust_pour_out")!
+      .assets.find((a) => a.sourceAccountId === "pol-1")!;
+    expect(assetRow.distributionForm).toBeUndefined();
+  });
 });

@@ -151,6 +151,11 @@ export interface AssetTransferLine {
   amount: number;
   basis: number;
   conflictIds: string[];
+  /** "Outright" / "In trust" form when the line came from a trust_pour_out
+   *  whose source trust has a matching `remainderBeneficiaryRef` for this
+   *  recipient. Omitted otherwise (primary/contingent-only beneficiary, or
+   *  any non-pour-out mechanism). */
+  distributionForm?: "in_trust" | "outright";
 }
 
 export interface ReductionsLine {
@@ -348,6 +353,43 @@ function buildDeathSection(
   const decedentName =
     payload.decedent === "client" ? ownerNames.clientName : ownerNames.spouseName ?? "Spouse";
 
+  // Function-scope account / entity lookups — shared by the second-death face-
+  // value override (deathOrder=2) and the `distributionForm` resolver (any
+  // deathOrder).
+  const accountsById = new Map(
+    (clientData.accounts ?? []).map((a) => [a.id, a] as const),
+  );
+  const entitiesById = new Map(
+    (clientData.entities ?? []).map((e) => [e.id, e] as const),
+  );
+
+  // Resolve "Outright" / "In trust" for a trust_pour_out transfer by looking
+  // up the source trust's `remainderBeneficiaries` for an entry that matches
+  // this pour-out's recipient. One-level look-through — consistent with
+  // `deriveBeneficiaryDistributionForm`. Returns `undefined` when:
+  //   - not a trust_pour_out
+  //   - source account has no entity owner
+  //   - the trust has no remainderBeneficiaries (or no matching entry)
+  function resolveDistributionForm(
+    t: DeathTransfer,
+  ): "in_trust" | "outright" | undefined {
+    if (t.via !== "trust_pour_out" || t.sourceAccountId == null) return undefined;
+    const account = accountsById.get(t.sourceAccountId);
+    if (!account) return undefined;
+    const entityOwner = (account.owners ?? []).find((o) => o.kind === "entity");
+    if (!entityOwner || entityOwner.kind !== "entity") return undefined;
+    const entity = entitiesById.get(entityOwner.entityId);
+    const remainder = entity?.remainderBeneficiaries ?? [];
+    const match = remainder.find((r) => {
+      if (t.recipientKind === "family_member") return r.familyMemberId === t.recipientId;
+      if (t.recipientKind === "external_beneficiary")
+        return r.externalBeneficiaryId === t.recipientId;
+      if (t.recipientKind === "entity") return r.entityIdRef === t.recipientId;
+      return false;
+    });
+    return match?.distributionForm;
+  }
+
   // Group by recipient → mechanism. Asset transfers only (positive amounts);
   // negative-amount liability transfers reduce the recipient's net.
   type GroupKey = string;
@@ -421,9 +463,6 @@ function buildDeathSection(
   // for drain (see `needsRegross`) and the override semantics differ.
   const faceValueOverrideByIdx = new Map<number, number>();
   if (payload.estateTax.deathOrder === 2) {
-    const accountsById = new Map(
-      (clientData.accounts ?? []).map((a) => [a.id, a] as const),
-    );
     const parseBirthYearFromDob = (dob: string | null | undefined): number | null => {
       if (!dob) return null;
       const y = Number(dob.slice(0, 4));
@@ -503,6 +542,7 @@ function buildDeathSection(
       group.byMechanism.push(mech);
     }
     mech.total += displayAmount;
+    const distributionForm = resolveDistributionForm(t);
     mech.assets.push({
       sourceAccountId: t.sourceAccountId,
       sourceLiabilityId: t.sourceLiabilityId,
@@ -510,6 +550,7 @@ function buildDeathSection(
       amount: displayAmount,
       basis: t.basis,
       conflictIds: [],
+      ...(distributionForm ? { distributionForm } : {}),
     });
   });
 
