@@ -59,4 +59,9 @@ describe("defaultAssumptions", () => {
     const a = defaultAssumptions(fakeData());
     expect(a.livingExpenseAtDeath).toBeNull();
   });
+
+  it("defaults coverEstateTaxes to false", () => {
+    const a = defaultAssumptions(fakeData());
+    expect(a.coverEstateTaxes).toBe(false);
+  });
 });

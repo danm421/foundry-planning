@@ -1,0 +1,1 @@
+ALTER TABLE "life_insurance_solver_settings" ADD COLUMN "cover_estate_taxes" boolean DEFAULT false NOT NULL;

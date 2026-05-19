@@ -86,6 +86,7 @@ const baseProps = {
     livingExpenseAtDeath: null,
     payoffLiabilityIds: [],
     mcTargetScore: 0.9,
+    coverEstateTaxes: false,
   },
   clientName: "Client",
   spouseName: "Spouse",

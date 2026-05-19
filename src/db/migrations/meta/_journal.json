@@ -715,6 +715,13 @@
       "when": 1779201828597,
       "tag": "0101_complete_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1779223229586,
+      "tag": "0102_rapid_colossus",
+      "breakpoints": true
     }
   ]
 }

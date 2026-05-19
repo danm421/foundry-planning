@@ -2580,6 +2580,7 @@ export const lifeInsuranceSolverSettings = pgTable("life_insurance_solver_settin
     .notNull()
     .default([]),
   mcTargetScore: decimal("mc_target_score", { precision: 5, scale: 4 }).notNull().default("0.9"),
+  coverEstateTaxes: boolean("cover_estate_taxes").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

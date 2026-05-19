@@ -23,6 +23,7 @@ export function defaultAssumptions(data: ClientData): LiAssumptions {
     livingExpenseAtDeath: null,
     payoffLiabilityIds: [],
     mcTargetScore: 0.9,
+    coverEstateTaxes: false,
   };
 }
 
@@ -42,6 +43,7 @@ export async function loadLifeInsuranceSettings(
       row.livingExpenseAtDeath == null ? null : Number(row.livingExpenseAtDeath),
     payoffLiabilityIds: row.payoffLiabilityIds ?? [],
     mcTargetScore: Number(row.mcTargetScore),
+    coverEstateTaxes: row.coverEstateTaxes ?? false,
   };
 }
 
@@ -58,6 +60,7 @@ export async function saveLifeInsuranceSettings(
       a.livingExpenseAtDeath == null ? null : String(a.livingExpenseAtDeath),
     payoffLiabilityIds: a.payoffLiabilityIds,
     mcTargetScore: String(a.mcTargetScore),
+    coverEstateTaxes: a.coverEstateTaxes,
     updatedAt: new Date(),
   };
   await db

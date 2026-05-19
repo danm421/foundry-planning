@@ -20,6 +20,10 @@ export const LI_ASSUMPTIONS_SCHEMA = z.object({
   livingExpenseAtDeath: z.number().min(0).nullable(),
   payoffLiabilityIds: z.array(z.string()),
   mcTargetScore: z.number().min(0.01).max(0.99),
+  /** When true, the solve target gains the household's estate-tax addend
+   *  (federal + state estate tax + IRD income tax). `.default(false)` keeps
+   *  older request bodies — and the over-time route — parsing unchanged. */
+  coverEstateTaxes: z.boolean().default(false),
 });
 
 export type LiAssumptions = z.infer<typeof LI_ASSUMPTIONS_SCHEMA>;
