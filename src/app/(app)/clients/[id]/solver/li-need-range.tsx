@@ -28,6 +28,9 @@ interface NeedMcResult {
   faceValue: number;
   achievedScore: number;
   iterations: number;
+  /** Federal + state estate tax + IRD folded into the solve target; `0`
+   *  when the "Cover estate taxes" toggle is off. */
+  estateTaxAddend: number;
 }
 
 /** Terminal `result` SSE payload from the solve-mc route. */

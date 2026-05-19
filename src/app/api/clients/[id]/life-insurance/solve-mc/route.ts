@@ -18,6 +18,7 @@ import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { solveLifeInsuranceNeedMc } from "@/lib/life-insurance/solve-need-mc";
+import { computeEstateTaxAddend } from "@/lib/life-insurance/estate-tax-addend";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import {
   loadLiProceedsGrowth,
@@ -95,10 +96,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         const mcPayload = await loadMonteCarloData(clientId, firmId, [
           { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
         ]);
-        // The survivor must end with at least the leave-to-heirs target — the
-        // MC solver reads this floor off the payload (see solve-need-mc.ts).
-        mcPayload.requiredMinimumAssetLevel = assumptions.leaveToHeirsAmount;
-
         const solveAssumptions: LifeInsuranceAssumptions & { mcTargetScore: number } = {
           deathYear: assumptions.deathYear,
           proceedsGrowthRate: proceeds.rate,
@@ -113,7 +110,23 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         const isMarried =
           filingStatus === "married_joint" || filingStatus === "married_separate";
 
-        const client = await solveLifeInsuranceNeedMc(
+        // Per-decedent estate-tax addend (0 when the toggle is off).
+        const clientAddend = assumptions.coverEstateTaxes
+          ? computeEstateTaxAddend(effectiveTree, "client", solveAssumptions)
+          : 0;
+
+        const spouseAddend =
+          assumptions.coverEstateTaxes && isMarried
+            ? computeEstateTaxAddend(effectiveTree, "spouse", solveAssumptions)
+            : 0;
+
+        // The survivor must end with at least the leave-to-heirs target plus
+        // the estate-tax addend — the MC solver reads this floor off the
+        // payload (see solve-need-mc.ts). Set per case before each solve.
+        mcPayload.requiredMinimumAssetLevel =
+          assumptions.leaveToHeirsAmount + clientAddend;
+
+        const clientResult = await solveLifeInsuranceNeedMc(
           effectiveTree,
           "client",
           solveAssumptions,
@@ -124,20 +137,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             signal: abortController.signal,
           },
         );
+        const client = { ...clientResult, estateTaxAddend: clientAddend };
 
-        const spouse = isMarried
-          ? await solveLifeInsuranceNeedMc(
-              effectiveTree,
-              "spouse",
-              solveAssumptions,
-              mcPayload,
-              {
-                onProgress: (done, total) =>
-                  emit("progress", { case: "spouse", done, total }),
-                signal: abortController.signal,
-              },
-            )
-          : null;
+        let spouse: (typeof client) | null = null;
+        if (isMarried) {
+          mcPayload.requiredMinimumAssetLevel =
+            assumptions.leaveToHeirsAmount + spouseAddend;
+          const spouseResult = await solveLifeInsuranceNeedMc(
+            effectiveTree,
+            "spouse",
+            solveAssumptions,
+            mcPayload,
+            {
+              onProgress: (done, total) =>
+                emit("progress", { case: "spouse", done, total }),
+              signal: abortController.signal,
+            },
+          );
+          spouse = { ...spouseResult, estateTaxAddend: spouseAddend };
+        }
 
         emit("result", { isMarried, client, spouse });
       } catch (err) {
