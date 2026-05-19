@@ -3646,11 +3646,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       currentEntities = deathResult.entities;
       rebuildEntityMap();
 
-      // The §13 snapshot above was taken pre-death. Recompute it against the
-      // post-death account state so the life-insurance payout (and every other
-      // death-event transfer) shows in the death year itself.
-      const thisYearForPortfolio = years[years.length - 1];
-      thisYearForPortfolio.portfolioAssets = computePortfolioSnapshot({
+      // Attach to the just-built ProjectionYear
+      const thisYear = years[years.length - 1];
+      // The §13 snapshot was taken pre-death. Recompute against the post-death
+      // account state so the life-insurance payout (and every other death-event
+      // transfer) shows in the death year itself.
+      thisYear.portfolioAssets = computePortfolioSnapshot({
         workingAccounts,
         accountBalances,
         giftEvents: data.giftEvents,
@@ -3658,16 +3659,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         planStartYear: planSettings.planStartYear,
         entityMap,
       });
-
-      // Stash DSUE for the final-death call (portability per §2010(c)(4)).
-      stashedDSUE = deathResult.dsueGenerated;
-
-      // Attach to the just-built ProjectionYear
-      const thisYear = years[years.length - 1];
       thisYear.deathTransfers = deathResult.transfers;
       thisYear.deathWarnings = deathResult.warnings;
       thisYear.estateTax = deathResult.estateTax;
       foldLifeInsurancePayoutsIntoIncome(thisYear, deathResult.lifeInsurancePayouts);
+
+      // Stash DSUE for the final-death call (portability per §2010(c)(4)).
+      stashedDSUE = deathResult.dsueGenerated;
     }
 
     // Final-death event (spec 4c) — fires at the final death year. For

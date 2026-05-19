@@ -2,10 +2,20 @@ import type { Account, GiftEvent, ProjectionYear } from "./types";
 import { ownersForYear } from "./ownership";
 
 /** Minimal entity metadata the portfolio snapshot needs. The projection's
- *  entityMap rows are wider; this structural type keeps the helper decoupled. */
+ *  entityMap rows (EntitySummary) are wider and always populate both fields;
+ *  this structural type keeps the helper decoupled and unit-testable. */
 type PortfolioEntityMeta = {
   includeInPortfolio?: boolean;
   accessibleToClient?: boolean;
+};
+
+const categoryToKey: Record<string, "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance"> = {
+  taxable: "taxable",
+  cash: "cash",
+  retirement: "retirement",
+  real_estate: "realEstate",
+  business: "business",
+  life_insurance: "lifeInsurance",
 };
 
 /**
@@ -43,18 +53,16 @@ export function computePortfolioSnapshot(args: {
     accessibleTrustAssetsTotal: 0,
     total: 0,
   };
-  const categoryToKey: Record<string, "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance"> = {
-    taxable: "taxable",
-    cash: "cash",
-    retirement: "retirement",
-    real_estate: "realEstate",
-    business: "business",
-    life_insurance: "lifeInsurance",
-  };
   for (const acct of workingAccounts) {
     const val = accountBalances[acct.id] ?? 0;
+    // T7: use year-aware helper so gift events that transfer ownership to an
+    // entity are reflected in the correct year's balance-sheet snapshot.
+    // T9: also use year-aware owners for the entity-side loop so
+    // includeInPortfolio entities that receive ownership via a gift are
+    // counted starting the gift year.
     const portfolioYearOwners = ownersForYear(acct, giftEvents ?? [], year, planStartYear);
 
+    // ── Pass 1: existing in-portfolio share (household + IIP entity) by category ──
     let inPortfolioFraction = portfolioYearOwners
       .filter((o) => o.kind === "family_member")
       .reduce((s, o) => s + o.percent, 0);
@@ -70,6 +78,10 @@ export function computePortfolioSnapshot(args: {
       const totalKey = `${key}Total` as keyof typeof portfolioAssets;
       (portfolioAssets[totalKey] as number) += inPortfolioVal;
 
+      // Mirror household + IIP-entity *business-category* shares into the
+      // "Trusts and Businesses" bucket so the column reflects all directly-
+      // held business interests too. (Real estate stays in its own column —
+      // only category=business mirrors here.)
       if (key === "business") {
         portfolioAssets.trustsAndBusinesses[acct.id] =
           (portfolioAssets.trustsAndBusinesses[acct.id] ?? 0) + inPortfolioVal;
@@ -77,10 +89,11 @@ export function computePortfolioSnapshot(args: {
       }
     }
 
+    // ── Pass 2: non-IIP entity shares — route by accessibleToClient ──
     for (const owner of portfolioYearOwners) {
       if (owner.kind !== "entity") continue;
       const entity = entityMap[owner.entityId];
-      if (!entity || entity.includeInPortfolio) continue;
+      if (!entity || entity.includeInPortfolio) continue; // already counted above
       const share = val * owner.percent;
       if (share <= 0) continue;
       const bucket = entity.accessibleToClient
