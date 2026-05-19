@@ -58,9 +58,6 @@ export function SolverTabLifeInsurance({
   settings,
   clientName,
   spouseName,
-  // Wired through here in Task 14; consumed by the assumptions panel in
-  // Tasks 15-17 (per-liability payoff picker, estate-cost display, LI-proceeds
-  // growth picker). Destructured now so the workspace contract is stable.
   liabilities,
   estateAdminExpenses,
   modelPortfolios,
@@ -155,7 +152,13 @@ export function SolverTabLifeInsurance({
       </div>
 
       {/* (1) Assumptions panel. */}
-      <LiAssumptionsPanel assumptions={assumptions} onChange={setAssumptions} />
+      <LiAssumptionsPanel
+        assumptions={assumptions}
+        onChange={setAssumptions}
+        liabilities={liabilities}
+        estateAdminExpenses={estateAdminExpenses}
+        modelPortfolios={modelPortfolios}
+      />
 
       {errorMessage ? (
         <div

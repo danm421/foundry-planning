@@ -15,9 +15,27 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
 interface Props {
   assumptions: LiAssumptions;
   onChange(next: LiAssumptions): void;
+  /** Household liabilities for the per-liability payoff checklist. */
+  liabilities: { id: string; name: string; balance: number }[];
+  /** Estate settlement cost from Details > Assumptions (read-only display). */
+  estateAdminExpenses: number;
+  /** Firm model portfolios for the LI-proceeds growth picker. */
+  modelPortfolios: { id: string; name: string }[];
 }
 
-export function LiAssumptionsPanel({ assumptions, onChange }: Props) {
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+export function LiAssumptionsPanel({
+  assumptions,
+  onChange,
+  liabilities,
+  estateAdminExpenses,
+  modelPortfolios,
+}: Props) {
   const livingKeepUnchanged = assumptions.livingExpenseAtDeath == null;
 
   return (
@@ -33,13 +51,26 @@ export function LiAssumptionsPanel({ assumptions, onChange }: Props) {
           />
         </Field>
 
-        <Field label="LI growth rate" htmlFor="li-growth-rate">
-          <PercentInput
-            id="li-growth-rate"
-            label="LI growth rate"
-            decimal={assumptions.growthRate}
-            onCommit={(v) => onChange({ ...assumptions, growthRate: v })}
-          />
+        <Field label="LI proceeds portfolio" htmlFor="li-model-portfolio">
+          <select
+            id="li-model-portfolio"
+            value={assumptions.modelPortfolioId ?? ""}
+            onChange={(e) =>
+              onChange({
+                ...assumptions,
+                modelPortfolioId: e.target.value === "" ? null : e.target.value,
+              })
+            }
+            className="h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            aria-label="LI proceeds model portfolio"
+          >
+            <option value="">Plan default rate</option>
+            {modelPortfolios.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </Field>
 
         <Field label="Leave to heirs" htmlFor="li-leave-heirs">
@@ -51,14 +82,10 @@ export function LiAssumptionsPanel({ assumptions, onChange }: Props) {
           />
         </Field>
 
-        <Field label="Final expenses" htmlFor="li-final-expenses">
-          <CurrencyAmountInput
-            id="li-final-expenses"
-            label="Final expenses"
-            value={assumptions.finalExpenses}
-            onCommit={(v) => onChange({ ...assumptions, finalExpenses: v })}
-          />
-        </Field>
+        <div className="col-span-2 flex items-center justify-between rounded-md border border-hair bg-card-2 px-3 py-2 text-[11px] text-ink-3">
+          <span>Final expenses use the plan&apos;s estate settlement cost.</span>
+          <span className="tabular text-ink-2">{usd.format(estateAdminExpenses)}</span>
+        </div>
 
         <div className="col-span-2">
           <Field label="Living expenses at death" htmlFor="li-living-expense">
@@ -91,17 +118,42 @@ export function LiAssumptionsPanel({ assumptions, onChange }: Props) {
         </div>
 
         <div className="col-span-2">
-          <label className="flex items-center gap-1.5 text-[13px] text-ink-2">
-            <input
-              type="checkbox"
-              checked={assumptions.payOffDebtsAtDeath}
-              onChange={(e) =>
-                onChange({ ...assumptions, payOffDebtsAtDeath: e.target.checked })
-              }
-              className="h-3.5 w-3.5 rounded border-hair-2 text-accent focus:ring-2 focus:ring-accent/30"
-            />
-            Pay off debts at death
-          </label>
+          <div className="text-[11px] text-ink-3">Pay off at death</div>
+          {liabilities.length === 0 ? (
+            <p className="mt-1 text-[11px] text-ink-4">No household liabilities.</p>
+          ) : (
+            <div className="mt-1.5 space-y-1.5">
+              {liabilities.map((l) => {
+                const checked = assumptions.payoffLiabilityIds.includes(l.id);
+                return (
+                  <label
+                    key={l.id}
+                    className="flex items-center justify-between gap-2 text-[12px] text-ink-2"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          onChange({
+                            ...assumptions,
+                            payoffLiabilityIds: e.target.checked
+                              ? [...assumptions.payoffLiabilityIds, l.id]
+                              : assumptions.payoffLiabilityIds.filter(
+                                  (id) => id !== l.id,
+                                ),
+                          })
+                        }
+                        className="h-3.5 w-3.5 rounded border-hair-2 text-accent focus:ring-2 focus:ring-accent/30"
+                      />
+                      {l.name}
+                    </span>
+                    <span className="tabular text-ink-3">{usd.format(l.balance)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -156,54 +208,6 @@ function YearInput({
       className="h-9 w-24 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
       aria-label={label}
     />
-  );
-}
-
-/**
- * Percent input — the user types whole/decimal percents (`5`, `5.5`) and the
- * value is stored as the decimal in `LiAssumptions.growthRate` (`0.05`).
- */
-function PercentInput({
-  id,
-  label,
-  decimal,
-  onCommit,
-}: {
-  id: string;
-  label: string;
-  decimal: number;
-  onCommit: (v: number) => void;
-}) {
-  const [display, setDisplay] = useState<string>(
-    String(Math.round(decimal * 10000) / 100),
-  );
-
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const raw = e.target.value.replace(/[^\d.]/g, "");
-    setDisplay(raw);
-    if (raw === "" || raw === ".") return;
-    const pct = Number(raw);
-    if (Number.isNaN(pct)) return;
-    const next = pct / 100;
-    if (next < 0 || next > 0.2) return;
-    onCommit(next);
-  }
-
-  return (
-    <div className="relative">
-      <input
-        id={id}
-        type="text"
-        inputMode="decimal"
-        value={display}
-        onChange={handleChange}
-        className="h-9 w-24 rounded-md border border-hair-2 bg-card-2 pl-2.5 pr-6 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-        aria-label={label}
-      />
-      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
-        %
-      </span>
-    </div>
   );
 }
 
