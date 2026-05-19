@@ -34,9 +34,11 @@ export function resolveOwnerSlices(
     if (o.kind === "entity") {
       const locked = entityAccountSharesEoY?.get(o.entityId)?.get(accountId);
       totalEntityShare += locked ?? value * o.percent;
-    } else {
+    } else if (o.kind === "family_member") {
       familyPercentTotal += o.percent;
     }
+    // external_beneficiary rows carry no current balance-sheet value — they
+    // describe death-benefit payouts, not present ownership.
   }
   const familyPool = Math.max(0, value - totalEntityShare);
 
@@ -44,6 +46,9 @@ export function resolveOwnerSlices(
     if (owner.kind === "entity") {
       const locked = entityAccountSharesEoY?.get(owner.entityId)?.get(accountId);
       return { owner, value: locked ?? value * owner.percent };
+    }
+    if (owner.kind === "external_beneficiary") {
+      return { owner, value: 0 };
     }
     const lockedFm = familyAccountSharesEoY
       ?.get(owner.familyMemberId)
