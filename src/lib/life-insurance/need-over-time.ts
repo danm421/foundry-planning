@@ -21,9 +21,18 @@ export interface NeedOverTimeRow {
 /** Progress callback fired once per year after that year's solve(s) complete. */
 export type NeedOverTimeProgress = (done: number, total: number) => void;
 
-function isMarried(data: ClientData): boolean {
+/**
+ * Whether the spouse-death solve can run for this client.
+ *
+ * The engine's `runLifeInsuranceWhatIf` throws when `deceased === "spouse"` and
+ * `spouseDob` is absent, so a married `filingStatus` alone is not enough — the
+ * solve also requires `spouseDob`. `spouseDob` presence is the spouse-existence
+ * signal used elsewhere in the life-insurance code.
+ */
+function hasSpouse(data: ClientData): boolean {
   const status = data.client.filingStatus;
-  return status === "married_joint" || status === "married_separate";
+  const married = status === "married_joint" || status === "married_separate";
+  return married && Boolean(data.client.spouseDob);
 }
 
 /**
@@ -42,7 +51,7 @@ export function computeNeedOverTime(
   onProgress?: NeedOverTimeProgress,
 ): NeedOverTimeRow[] {
   const { planStartYear, planEndYear } = data.planSettings;
-  const married = isMarried(data);
+  const married = hasSpouse(data);
   const rows: NeedOverTimeRow[] = [];
   const total = planEndYear - planStartYear + 1;
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { LEGACY_FM_CLIENT } from "@/engine/ownership";
 import { computeNeedOverTime } from "../need-over-time";
 import { marriedBase } from "./test-helpers";
 
@@ -50,6 +51,35 @@ describe("computeNeedOverTime", () => {
       livingExpenseAtDeath: null,
       payOffDebtsAtDeath: false,
     });
+    for (const row of rows) {
+      expect(row.spouseNeed).toBeNull();
+      expect(row.spouseStatus).toBeNull();
+    }
+  });
+
+  it("does not run the spouse solve when filingStatus is married but spouseDob is absent", () => {
+    // filingStatus and spouseDob disagree: the engine's whatIf throws on a
+    // spouse death when spouseDob is missing, so the spouse solve must be
+    // gated on spouseDob presence, not filingStatus alone. Accounts are
+    // re-titled to the client so the client-death solve itself is valid —
+    // this isolates the spouse-solve gating from any spouse-owned assets.
+    const data = marriedBase();
+    data.client.filingStatus = "married_joint";
+    delete data.client.spouseDob;
+    data.accounts = data.accounts.map((acct) => ({
+      ...acct,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    }));
+
+    const opts = {
+      growthRate: 0.05,
+      leaveToHeirsAmount: 500_000,
+      finalExpenses: 25_000,
+      livingExpenseAtDeath: null,
+      payOffDebtsAtDeath: false,
+    };
+    expect(() => computeNeedOverTime(data, opts)).not.toThrow();
+    const rows = computeNeedOverTime(data, opts);
     for (const row of rows) {
       expect(row.spouseNeed).toBeNull();
       expect(row.spouseStatus).toBeNull();
