@@ -14,6 +14,15 @@ export function SolverRowLifeExpectancy({ baseClient, workingClient, onChange }:
   const side = useSolverSide();
   const showSpouse = baseClient.spouseLifeExpectancy != null;
 
+  const nowYear = new Date().getFullYear();
+  const ageFromDob = (dob: string | null | undefined): number => {
+    if (!dob) return 1;
+    const birthYear = Number(String(dob).slice(0, 4));
+    return Number.isFinite(birthYear) ? Math.max(1, nowYear - birthYear) : 1;
+  };
+  const clientMinLE = ageFromDob(workingClient.dateOfBirth);
+  const spouseMinLE = ageFromDob(workingClient.spouseDob);
+
   return (
     <div className="space-y-2.5">
       <div className="text-[13px] font-medium text-ink">Life Expectancy</div>
@@ -36,7 +45,7 @@ export function SolverRowLifeExpectancy({ baseClient, workingClient, onChange }:
             id="le-client"
             label={`${workingClient.firstName}'s Life Expectancy`}
             value={workingClient.lifeExpectancy ?? 95}
-            min={70}
+            min={clientMinLE}
             max={110}
             onCommit={(v) =>
               onChange({ kind: "life-expectancy", person: "client", age: v })
@@ -47,7 +56,7 @@ export function SolverRowLifeExpectancy({ baseClient, workingClient, onChange }:
               id="le-spouse"
               label={`${workingClient.spouseName ?? "Spouse"}'s Life Expectancy`}
               value={workingClient.spouseLifeExpectancy ?? 93}
-              min={70}
+              min={spouseMinLE}
               max={110}
               onCommit={(v) =>
                 onChange({ kind: "life-expectancy", person: "spouse", age: v })

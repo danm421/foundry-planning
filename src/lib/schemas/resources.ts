@@ -33,20 +33,43 @@ export const clientCreateSchema = z
     dateOfBirth: z.string().min(1).max(40),
     retirementAge: z.coerce.number().int().min(18).max(100),
     retirementMonth: z.coerce.number().int().min(1).max(12).optional(),
-    lifeExpectancy: z.coerce.number().int().min(40).max(130),
+    lifeExpectancy: z.coerce.number().int().min(1).max(130),
     filingStatus: filingStatusSchema,
     spouseName: z.string().max(120).optional().nullable(),
     spouseLastName: z.string().max(120).optional().nullable(),
     spouseDob: z.string().max(40).optional().nullable(),
     spouseRetirementAge: z.coerce.number().int().min(18).max(100).optional().nullable(),
     spouseRetirementMonth: z.coerce.number().int().min(1).max(12).optional().nullable(),
-    spouseLifeExpectancy: z.coerce.number().int().min(40).max(130).optional().nullable(),
+    spouseLifeExpectancy: z.coerce.number().int().min(1).max(130).optional().nullable(),
     email: z.string().max(200).optional().nullable(),
     address: z.string().max(500).optional().nullable(),
     spouseEmail: z.string().max(200).optional().nullable(),
     spouseAddress: z.string().max(500).optional().nullable(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (d) => {
+      const birthYear = Number(String(d.dateOfBirth).slice(0, 4));
+      if (!Number.isFinite(birthYear)) return true; // bad DOB caught elsewhere
+      return birthYear + d.lifeExpectancy >= new Date().getFullYear();
+    },
+    {
+      message: "Life expectancy implies a death year in the past.",
+      path: ["lifeExpectancy"],
+    },
+  )
+  .refine(
+    (d) => {
+      if (d.spouseLifeExpectancy == null || !d.spouseDob) return true;
+      const birthYear = Number(String(d.spouseDob).slice(0, 4));
+      if (!Number.isFinite(birthYear)) return true;
+      return birthYear + d.spouseLifeExpectancy >= new Date().getFullYear();
+    },
+    {
+      message: "Spouse life expectancy implies a death year in the past.",
+      path: ["spouseLifeExpectancy"],
+    },
+  );
 
 export const accountCreateSchema = z
   .object({

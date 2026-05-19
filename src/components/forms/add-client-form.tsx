@@ -352,7 +352,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             id="lifeExpectancy"
             name="lifeExpectancy"
             type="number"
-            min={70}
+            min={1}
             max={120}
             defaultValue={initial?.lifeExpectancy ?? 95}
             required
@@ -459,7 +459,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
                 id="spouseLifeExpectancy"
                 name="spouseLifeExpectancy"
                 type="number"
-                min={70}
+                min={1}
                 max={120}
                 defaultValue={initial?.spouseLifeExpectancy ?? 95}
                 className={`mt-1 ${inputClassName}`}

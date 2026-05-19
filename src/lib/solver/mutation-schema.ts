@@ -79,7 +79,7 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("life-expectancy"),
     person: PERSON,
-    age: z.number().int().min(60).max(120),
+    age: z.number().int().min(1).max(120),
   }),
 
   // Social Security
