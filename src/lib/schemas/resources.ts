@@ -47,9 +47,12 @@ export const clientCreateSchema = z
     spouseAddress: z.string().max(500).optional().nullable(),
   })
   .strict()
+  // A death year equal to the current year is allowed (>=) — modeling a death
+  // this year is a valid premature-death what-if. Only a death strictly in the
+  // past is rejected.
   .refine(
     (d) => {
-      const birthYear = Number(String(d.dateOfBirth).slice(0, 4));
+      const birthYear = Number(d.dateOfBirth.slice(0, 4));
       if (!Number.isFinite(birthYear)) return true; // bad DOB caught elsewhere
       return birthYear + d.lifeExpectancy >= new Date().getFullYear();
     },
@@ -61,7 +64,7 @@ export const clientCreateSchema = z
   .refine(
     (d) => {
       if (d.spouseLifeExpectancy == null || !d.spouseDob) return true;
-      const birthYear = Number(String(d.spouseDob).slice(0, 4));
+      const birthYear = Number(d.spouseDob.slice(0, 4));
       if (!Number.isFinite(birthYear)) return true;
       return birthYear + d.spouseLifeExpectancy >= new Date().getFullYear();
     },

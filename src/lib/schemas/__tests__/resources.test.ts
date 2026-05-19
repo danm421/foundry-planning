@@ -13,7 +13,7 @@ const base = {
 describe("clientCreateSchema — life expectancy floor", () => {
   it("accepts a sub-40 life expectancy when death is in the future", () => {
     // Born 2000, lifeExpectancy 30 -> death year 2030 (future as of 2026).
-    // Current schema rejects this via min(40); the new schema must accept it.
+    // The old schema rejects this via min(40); the new schema must accept it.
     const result = clientCreateSchema.safeParse({
       ...base,
       dateOfBirth: "2000-01-01",
