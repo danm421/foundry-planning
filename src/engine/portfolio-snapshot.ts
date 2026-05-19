@@ -31,8 +31,9 @@ export function computePortfolioSnapshot(args: {
   year: number;
   planStartYear: number;
   entityMap: Record<string, PortfolioEntityMeta>;
+  principalFmIds: Set<string>;
 }): ProjectionYear["portfolioAssets"] {
-  const { workingAccounts, accountBalances, giftEvents, year, planStartYear, entityMap } = args;
+  const { workingAccounts, accountBalances, giftEvents, year, planStartYear, entityMap, principalFmIds } = args;
 
   const portfolioAssets = {
     taxable: {} as Record<string, number>,
@@ -63,9 +64,16 @@ export function computePortfolioSnapshot(args: {
     const portfolioYearOwners = ownersForYear(acct, giftEvents ?? [], year, planStartYear);
 
     // ── Pass 1: existing in-portfolio share (household + IIP entity) by category ──
-    let inPortfolioFraction = portfolioYearOwners
-      .filter((o) => o.kind === "family_member")
-      .reduce((s, o) => s + o.percent, 0);
+    // Only household principals (the client and spouse) count toward the
+    // household portfolio. Accounts owned by children or other non-principal
+    // family members — e.g. assets distributed to heirs after both spouses
+    // die — are deliberately excluded.
+    let inPortfolioFraction = 0;
+    for (const owner of portfolioYearOwners) {
+      if (owner.kind === "family_member" && principalFmIds.has(owner.familyMemberId)) {
+        inPortfolioFraction += owner.percent;
+      }
+    }
     for (const owner of portfolioYearOwners) {
       if (owner.kind !== "entity") continue;
       const entity = entityMap[owner.entityId];

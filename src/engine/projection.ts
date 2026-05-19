@@ -84,6 +84,8 @@ import {
   isFullyEntityOwned,
   controllingFamilyMember,
   controllingEntity,
+  LEGACY_FM_CLIENT,
+  LEGACY_FM_SPOUSE,
 } from "./ownership";
 import {
   computeBusinessEntityNetIncome,
@@ -579,6 +581,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // previously relied on acct.owner === "client" / "spouse".
   const clientFmId = (data.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
   const spouseFmId = (data.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+  // Household principals for portfolio-snapshot scoping. The legacy sentinel
+  // ids always denote the principal client/spouse; real FamilyMember ids add
+  // to — never replace — them, so legacy, modern, and mixed ownership data all
+  // resolve correctly.
+  const principalFmIds = new Set<string>([LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE]);
+  if (clientFmId) principalFmIds.add(clientFmId);
+  if (spouseFmId) principalFmIds.add(spouseFmId);
 
   /** Returns true if `acct` is controlled 100% by the spouse FM. */
   const isSpouseAccount = (acct: { owners: import("./ownership").AccountOwner[] }): boolean => {
@@ -3299,6 +3308,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       year,
       planStartYear: planSettings.planStartYear,
       entityMap,
+      principalFmIds,
     });
     // Note: `total` intentionally stays as the legacy IIP-only sum so existing
     // consumers (BoY portfolio lookup, etc.) keep working. The cashflow drill
@@ -3721,6 +3731,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         year,
         planStartYear: planSettings.planStartYear,
         entityMap,
+        principalFmIds,
       });
       thisYear.deathTransfers = deathResult.transfers;
       thisYear.deathWarnings = deathResult.warnings;

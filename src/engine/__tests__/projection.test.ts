@@ -2713,6 +2713,16 @@ describe("fractional ownership: balance sheet pro-rate (Task 5)", () => {
         planEndAge: 90,
         filingStatus: "single",
       },
+      familyMembers: [
+        {
+          id: "fm-client",
+          role: "client",
+          relationship: "other",
+          firstName: "Test",
+          lastName: "User",
+          dateOfBirth: "1980-01-01",
+        },
+      ],
       accounts: [
         {
           id: "acct-checking",
@@ -2782,6 +2792,16 @@ describe("fractional ownership: balance sheet year-aware pro-rate (Task 7 — Ph
         planEndAge: 90,
         filingStatus: "single",
       },
+      familyMembers: [
+        {
+          id: "fm-client",
+          role: "client",
+          relationship: "other",
+          firstName: "Test",
+          lastName: "User",
+          dateOfBirth: "1980-01-01",
+        },
+      ],
       accounts: [
         {
           id: "acct-checking",

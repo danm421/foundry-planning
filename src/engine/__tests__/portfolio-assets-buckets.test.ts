@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient, sampleFamilyMembers } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import type { Account, EntitySummary, Expense, FamilyMember, WithdrawalPriority } from "../types";
 
@@ -397,5 +397,76 @@ describe("portfolioAssets — mixed ownership preserves entity share through hou
 
     // No leak into trustsAndBusinesses for an accessible-trust slice.
     expect(year0.portfolioAssets.trustsAndBusinesses["acct-mixed-acc"] ?? 0).toBe(0);
+  });
+});
+
+describe("portfolioAssets buckets — household-principal scoping", () => {
+  const FM_CHILD = "fm-child-1";
+  const childFamilyMember: FamilyMember = {
+    id: FM_CHILD,
+    role: "child",
+    relationship: "child",
+    firstName: "Kid",
+    lastName: "Smith",
+    dateOfBirth: "2012-03-01",
+  };
+
+  it("an account owned 100% by a non-principal child is excluded from portfolio buckets", () => {
+    const childAcct: Account = {
+      id: "acct-child-utma",
+      name: "Child UTMA",
+      category: "taxable",
+      subType: "brokerage",
+      value: 100_000,
+      basis: 100_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: FM_CHILD, percent: 1 }],
+    };
+    const [year0] = runProjection(
+      buildClientData({
+        accounts: [childAcct],
+        entities,
+        incomes: [],
+        expenses: [],
+        savingsRules: [],
+        withdrawalStrategy: [],
+        liabilities: [],
+        familyMembers: [...sampleFamilyMembers, childFamilyMember],
+      }),
+    );
+    expect(year0.portfolioAssets.taxable["acct-child-utma"]).toBeUndefined();
+    expect(year0.portfolioAssets.taxableTotal).toBe(0);
+  });
+
+  it("a joint principal + child account counts only the principal's share", () => {
+    const jointAcct: Account = {
+      id: "acct-joint",
+      name: "Joint Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 100_000,
+      basis: 100_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+        { kind: "family_member", familyMemberId: FM_CHILD, percent: 0.5 },
+      ],
+    };
+    const [year0] = runProjection(
+      buildClientData({
+        accounts: [jointAcct],
+        entities,
+        incomes: [],
+        expenses: [],
+        savingsRules: [],
+        withdrawalStrategy: [],
+        liabilities: [],
+        familyMembers: [...sampleFamilyMembers, childFamilyMember],
+      }),
+    );
+    expect(year0.portfolioAssets.taxable["acct-joint"]).toBe(50_000);
+    expect(year0.portfolioAssets.taxableTotal).toBe(50_000);
   });
 });
