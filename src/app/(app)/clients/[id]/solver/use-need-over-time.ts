@@ -6,8 +6,7 @@
 // straight-line bisection solve per plan year per decedent — exposing the
 // streamed progress, the terminal result rows, and run/cancel controls.
 // The computation is expensive, so `run` only fires on an explicit caller
-// action; it never auto-runs. Lifted verbatim from the former
-// `li-over-time-section.tsx`.
+// action; it never auto-runs.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
