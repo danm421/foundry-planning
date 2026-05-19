@@ -173,13 +173,19 @@ export default function EstateFlowChangeOwnerDialog({
       });
     }
 
-    // Irrevocable trusts — gift destinations.
+    // Irrevocable trusts.
+    //   - Life insurance: direct owner (ILIT scenario — the trust was set up
+    //     to own the policy, not receive it as a future-year gift).
+    //   - All other categories: gift destinations (existing behaviour — moving
+    //     a non-insurance asset into an irrevocable trust mid-projection is
+    //     genuinely a gift event).
+    const treatIrrevAsGift = account.category !== "life_insurance";
     for (const t of irrevocableTrusts) {
       list.push({
         id: `trust:${t.id}` as DestinationId,
         label: t.name ?? t.id,
         disabled: false,
-        isGift: true,
+        ...(treatIrrevAsGift ? { isGift: true } : {}),
         entityId: t.id,
       });
     }
@@ -207,6 +213,7 @@ export default function EstateFlowChangeOwnerDialog({
 
     return list;
   }, [
+    account.category,
     clientName,
     spouseName,
     clientFmId,
