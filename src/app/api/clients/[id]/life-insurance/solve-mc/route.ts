@@ -19,7 +19,10 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { solveLifeInsuranceNeedMc } from "@/lib/life-insurance/solve-need-mc";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
-import { loadLiProceedsGrowth } from "@/lib/life-insurance/load-li-portfolio";
+import {
+  loadLiProceedsGrowth,
+  DEFAULT_LI_GROWTH,
+} from "@/lib/life-insurance/load-li-portfolio";
 import { SYNTHETIC_POLICY_ID } from "@/engine/what-if/life-insurance-need";
 import type { LifeInsuranceAssumptions } from "@/lib/life-insurance/solve-need";
 
@@ -82,7 +85,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         const proceeds = await loadLiProceedsGrowth(
           firmId,
           assumptions.modelPortfolioId,
-          0.05,
+          DEFAULT_LI_GROWTH,
         );
 
         // Inject the synthetic policy's model-portfolio mix so the §101

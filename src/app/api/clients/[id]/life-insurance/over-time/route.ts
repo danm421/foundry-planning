@@ -19,7 +19,10 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { computeNeedOverTime } from "@/lib/life-insurance/need-over-time";
-import { loadLiProceedsGrowth } from "@/lib/life-insurance/load-li-portfolio";
+import {
+  loadLiProceedsGrowth,
+  DEFAULT_LI_GROWTH,
+} from "@/lib/life-insurance/load-li-portfolio";
 import type { LifeInsuranceAssumptions } from "@/lib/life-insurance/solve-need";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 
@@ -85,7 +88,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         const proceeds = await loadLiProceedsGrowth(
           firmId,
           assumptions.modelPortfolioId,
-          0.05,
+          DEFAULT_LI_GROWTH,
         );
         const overTimeAssumptions: Omit<LifeInsuranceAssumptions, "deathYear"> = {
           proceedsGrowthRate: proceeds.rate,

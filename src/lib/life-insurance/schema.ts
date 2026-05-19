@@ -2,9 +2,10 @@
 //
 // Zod schema for the Life Insurance straight-line solver request body,
 // shared by the API route (`/api/clients/[id]/life-insurance/solve`) and
-// the solver tab UI. Keep it in sync with `LifeInsuranceAssumptions` in
-// `@/lib/life-insurance/solve-need` — `LiAssumptions` is a structural
-// superset (it adds `mcTargetScore`).
+// the solver tab UI. `LiAssumptions` is the wire/UI shape; the routes
+// transform it into the engine's `LifeInsuranceAssumptions`
+// (`@/lib/life-insurance/solve-need`) by resolving `modelPortfolioId` into
+// concrete proceeds growth via `loadLiProceedsGrowth`.
 //
 // `LiAssumptions` now carries `modelPortfolioId` (which portfolio to use
 // for the survivor's projected growth) and `payoffLiabilityIds` (debts to

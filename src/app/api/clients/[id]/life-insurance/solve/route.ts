@@ -17,7 +17,10 @@ import {
   type LifeInsuranceAssumptions,
 } from "@/lib/life-insurance/solve-need";
 import { runLifeInsuranceWhatIf } from "@/engine/what-if/life-insurance-need";
-import { loadLiProceedsGrowth } from "@/lib/life-insurance/load-li-portfolio";
+import {
+  loadLiProceedsGrowth,
+  DEFAULT_LI_GROWTH,
+} from "@/lib/life-insurance/load-li-portfolio";
 import { existingCoverageInForce } from "@/lib/life-insurance/existing-coverage";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import type { ClientData } from "@/engine/types";
@@ -25,9 +28,6 @@ import type { ClientData } from "@/engine/types";
 export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ id: string }> };
-
-/** Default flat LI-proceeds growth when no model portfolio is selected. */
-const DEFAULT_LI_GROWTH = 0.05;
 
 /** Solve one decedent's need + survivor projection + existing-coverage breakdown. */
 function solveCase(

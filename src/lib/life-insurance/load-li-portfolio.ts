@@ -4,6 +4,12 @@ import { modelPortfolios, modelPortfolioAllocations, assetClasses } from "@/db/s
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { ProceedsRealization } from "./solve-need";
 
+/**
+ * Fallback flat LI-proceeds growth rate, used when no model portfolio is
+ * selected (`modelPortfolioId` is null or resolves to no allocations).
+ */
+export const DEFAULT_LI_GROWTH = 0.05;
+
 /** Resolved LI-proceeds growth for both the straight-line and MC solvers. */
 export interface LiProceedsGrowth {
   /** Deterministic blended geometric return for the straight-line solve. */
