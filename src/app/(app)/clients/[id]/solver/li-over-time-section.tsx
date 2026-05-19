@@ -6,12 +6,13 @@
 // opens a POST fetch-stream to the over-time SSE route — which runs one
 // straight-line bisection solve per plan year per decedent — drives a progress
 // bar from the streamed `progress` events, and on the terminal `result` event
-// renders a two-series Chart.js line chart (life-insurance need by death year,
-// client vs spouse) plus a table of the rows.
+// renders a single-dataset Chart.js line chart (life-insurance need by death
+// year) whose dataset is chosen by an in-component client/spouse toggle, plus
+// a table of the rows.
 //
 // The computation is expensive, so it never auto-runs — only the explicit
 // button click triggers it. SSE-fetch + event-parsing mirrors `li-mc-solve.tsx`;
-// the chart chrome mirrors `li-survivor-chart.tsx`.
+// the chart uses a standard Chart.js Line with Tooltip and Legend registered.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Chart as ChartJS,
