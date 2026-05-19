@@ -39,6 +39,7 @@ import {
 } from "@/components/cashflow/quick-nav-utils";
 import { QuickNavDropdown } from "@/components/cashflow/quick-nav-dropdown";
 import { DrillChart } from "@/components/cashflow/charts/drill-chart";
+import { filterAllZeroColumns } from "@/components/cashflow/all-zero-columns";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import { ExportButton } from "@/components/exports/export-button";
@@ -1987,7 +1988,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return baseColumns;
   }
 
-  const columns = buildColumns();
+  const columns = filterAllZeroColumns(buildColumns(), years);
 
   // ── Table instance ─────────────────────────────────────────────────────────
 
