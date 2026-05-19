@@ -48,11 +48,10 @@ const ctx = { params: Promise.resolve({ id: CLIENT_ID }) };
 
 const VALID_BODY = {
   deathYear: 2030,
-  growthRate: 0.05,
+  modelPortfolioId: null,
   leaveToHeirsAmount: 1000000,
-  finalExpenses: 25000,
   livingExpenseAtDeath: 80000,
-  payOffDebtsAtDeath: true,
+  payoffLiabilityIds: [],
   mcTargetScore: 0.8,
 };
 
@@ -97,6 +96,14 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
     expect(solveLifeInsuranceNeed).toHaveBeenCalledTimes(2);
   });
 
+  it("attaches an existing-coverage breakdown to each case", async () => {
+    const res = await POST(makeRequest(VALID_BODY), ctx as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.client.existingPolicies)).toBe(true);
+    expect(typeof body.client.existingCoverageTotal).toBe("number");
+  });
+
   it("returns spouse: null for a single filer", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: mockTree("single"),
@@ -118,7 +125,7 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
 
   it("returns 400 when the body fails schema validation", async () => {
     const res = await POST(
-      makeRequest({ ...VALID_BODY, growthRate: 5 }),
+      makeRequest({ ...VALID_BODY, deathYear: "not-a-year" }),
       ctx as never,
     );
     expect(res.status).toBe(400);
