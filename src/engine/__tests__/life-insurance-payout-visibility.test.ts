@@ -139,6 +139,7 @@ describe("life-insurance payout — cash-flow inflow", () => {
     expect(death.income.total).toBe(1_000_000);
     expect(death.totalIncome).toBe(1_000_000);
     expect(death.income.bySource["life-insurance-proceeds:pol-1"]).toBe(1_000_000);
+    expect(death.netCashFlow).toBe(1_000_000);
   });
 
   it("surfaces the face value in death-year income (no beneficiary)", () => {
@@ -146,6 +147,9 @@ describe("life-insurance payout — cash-flow inflow", () => {
     const death = years.find((y) => y.year === 2030)!;
     expect(death.income.other).toBe(1_000_000);
     expect(death.income.bySource["life-insurance-proceeds:pol-1"]).toBe(1_000_000);
+    expect(death.income.total).toBe(1_000_000);
+    expect(death.totalIncome).toBe(1_000_000);
+    expect(death.netCashFlow).toBe(1_000_000);
   });
 
   it("does not add income in non-death years", () => {
@@ -160,7 +164,7 @@ describe("life-insurance payout — cash-flow inflow", () => {
     const years = runProjection(
       mkData({ withBeneficiary: false, insuredPerson: "joint" }),
     );
-    // Joint policy fires at final death — spouse dies ~2057.
+    // Joint policy fires at final death — spouse dies 2057.
     const finalYear = years[years.length - 1];
     expect(finalYear.income.bySource["life-insurance-proceeds:pol-1"]).toBe(
       1_000_000,

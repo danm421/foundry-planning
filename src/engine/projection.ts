@@ -226,8 +226,10 @@ export interface ProjectionOptions {
 
 /** Fold life-insurance death benefits into a year's displayed income so they
  *  surface as a cash-flow inflow — the "Other Inflows" band reads income.other,
- *  the report table/drill reads income.bySource. §101(a): proceeds are
- *  income-tax-free, so they touch income totals but never taxDetail. */
+ *  the report table/drill reads income.bySource. Keeps the P&L scalars
+ *  (income.total, totalIncome, netCashFlow) in sync since the death event
+ *  fires after the year is assembled. §101(a): proceeds are income-tax-free,
+ *  so they touch income totals but never taxDetail. */
 function foldLifeInsurancePayoutsIntoIncome(
   year: ProjectionYear,
   payouts: LifeInsurancePayout[],
@@ -236,11 +238,13 @@ function foldLifeInsurancePayoutsIntoIncome(
   let total = 0;
   for (const p of payouts) {
     total += p.faceValue;
-    year.income.bySource[`life-insurance-proceeds:${p.policyId}`] = p.faceValue;
+    const key = `life-insurance-proceeds:${p.policyId}`;
+    year.income.bySource[key] = (year.income.bySource[key] ?? 0) + p.faceValue;
   }
   year.income.other += total;
   year.income.total += total;
   year.totalIncome += total;
+  year.netCashFlow += total;
 }
 
 export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
