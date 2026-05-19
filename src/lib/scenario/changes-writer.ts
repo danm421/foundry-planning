@@ -13,7 +13,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarioChanges, scenarios } from "@/db/schema";
-import { TARGET_KIND_TO_FIELD } from "@/engine/scenario/applyChanges";
+import {
+  SINGLETON_KIND_TO_FIELD,
+  TARGET_KIND_TO_FIELD,
+} from "@/engine/scenario/applyChanges";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 import { ForbiddenError } from "@/lib/authz";
 import { findClientInFirm } from "@/lib/db-scoping";
@@ -57,10 +60,12 @@ async function assertScenarioInFirm(
 }
 
 /**
- * Look up the base-tree entity by (targetKind, targetId). Returns undefined if
- * the array is missing or the id isn't found. Throws for unsupported
- * targetKinds — singletons and nested-only targets aren't writable through
- * this helper in v1.
+ * Look up the base-tree entity by (targetKind, targetId). For singleton kinds
+ * (`client`, `plan_settings`) returns the singleton object directly — there is
+ * only one per tree, so `targetId` is not used to locate it. For list kinds
+ * returns the matching array element, or undefined if the array is missing or
+ * the id isn't found. Throws for nested-only targetKinds — those aren't
+ * writable through this helper in v1.
  */
 async function lookupBaseEntity(
   clientId: string,
@@ -68,15 +73,21 @@ async function lookupBaseEntity(
   targetKind: TargetKind,
   targetId: string,
 ): Promise<BaseEntity | undefined> {
+  const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
+
+  const singletonField = SINGLETON_KIND_TO_FIELD[targetKind];
+  if (singletonField != null) {
+    return effectiveTree[singletonField] as unknown as BaseEntity;
+  }
+
   const field = TARGET_KIND_TO_FIELD[targetKind];
   if (field == null) {
     throw new Error(
       `changes-writer: unsupported targetKind=${targetKind} ` +
-        `(singletons and nested entities are not writable via this helper)`,
+        `(nested entities are not writable via this helper)`,
     );
   }
 
-  const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
   const arr = effectiveTree[field] as unknown as BaseEntity[] | undefined;
   if (arr == null) return undefined;
   return arr.find((e) => e.id === targetId);
@@ -161,7 +172,19 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
 
   const { clientId } = await assertScenarioInFirm(scenarioId, firmId);
   const baseEntity = await lookupBaseEntity(clientId, firmId, targetKind, targetId);
-  const diff = buildFieldDiff(desiredFields, baseEntity);
+
+  // Singleton edits: the shared client form posts contact-info fields
+  // (email/address/spouse*) that aren't on the engine's `ClientInfo` singleton
+  // and so aren't scenario-overlayable. Drop any desiredField the base
+  // singleton doesn't carry — otherwise they diff as `from: undefined`,
+  // bloat the change payload, and block the idempotent revert below.
+  const editableFields =
+    SINGLETON_KIND_TO_FIELD[targetKind] != null && baseEntity != null
+      ? Object.fromEntries(
+          Object.entries(desiredFields).filter(([k]) => k in baseEntity),
+        )
+      : desiredFields;
+  const diff = buildFieldDiff(editableFields, baseEntity);
 
   // The load + delete/upsert sequence below reads the base tree and then
   // either deletes a stale edit row (if desired matches base) or upserts a

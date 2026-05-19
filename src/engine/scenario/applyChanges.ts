@@ -128,7 +128,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   gift: "gifts",
   will: "wills",
   entity: "entities",
-  // Singletons: handled specially (not a list)
+  // Singletons: handled specially (not a list) — see SINGLETON_KIND_TO_FIELD
   client: null,
   plan_settings: null,
   // The following live on parent entities, not in ClientData top level — handled
@@ -144,6 +144,19 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   transfer_schedule: null,
   will_bequest: null,
   will_bequest_recipient: null,
+};
+
+/**
+ * Singleton targetKinds — entities that live as one object on `ClientData`
+ * rather than in a top-level array. `TARGET_KIND_TO_FIELD` maps these to `null`
+ * alongside genuinely-nested entities, so this map exists to tell the two
+ * apart. Both `applyEdit` here and the scenario changes-writer consume it.
+ */
+export const SINGLETON_KIND_TO_FIELD: Partial<
+  Record<TargetKind, "client" | "planSettings">
+> = {
+  client: "client",
+  plan_settings: "planSettings",
 };
 
 export function applyScenarioChanges(
@@ -223,15 +236,11 @@ function applyAdd(tree: ClientData, change: ScenarioChange): void {
 function applyEdit(tree: ClientData, change: ScenarioChange): void {
   const diff = change.payload as Record<string, { from: unknown; to: unknown }>;
 
-  if (change.targetKind === "client") {
+  const singletonField = SINGLETON_KIND_TO_FIELD[change.targetKind];
+  if (singletonField != null) {
+    const singleton = tree[singletonField] as unknown as Record<string, unknown>;
     for (const [k, { to }] of Object.entries(diff)) {
-      (tree.client as unknown as Record<string, unknown>)[k] = to;
-    }
-    return;
-  }
-  if (change.targetKind === "plan_settings") {
-    for (const [k, { to }] of Object.entries(diff)) {
-      (tree.planSettings as unknown as Record<string, unknown>)[k] = to;
+      singleton[k] = to;
     }
     return;
   }

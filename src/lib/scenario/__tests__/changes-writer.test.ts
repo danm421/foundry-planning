@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios, scenarioChanges } from "@/db/schema";
+import { clients, scenarios, scenarioChanges } from "@/db/schema";
 import {
   applyEntityEdit,
   applyEntityAdd,
@@ -233,6 +233,119 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
           and(
             eq(scenarioChanges.scenarioId, scenarioId),
             eq(scenarioChanges.targetId, COOPER_SALARY_INCOME_ID),
+          ),
+        );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("writes a client-singleton edit row (life expectancy)", async () => {
+      // Regression: editing the primary client inside a scenario sends
+      // targetKind="client". The writer used to throw `unsupported
+      // targetKind=client` because `client` is a singleton (no top-level
+      // array), even though the engine's applyEdit handles it.
+      const [c] = await db
+        .select({ lifeExpectancy: clients.lifeExpectancy })
+        .from(clients)
+        .where(eq(clients.id, COOPER_CLIENT_ID));
+      const baseLE = c.lifeExpectancy;
+      const newLE = baseLE + 1;
+
+      await applyEntityEdit({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "client",
+        targetId: COOPER_CLIENT_ID,
+        desiredFields: { lifeExpectancy: newLE },
+      });
+
+      const rows = await db
+        .select()
+        .from(scenarioChanges)
+        .where(
+          and(
+            eq(scenarioChanges.scenarioId, scenarioId),
+            eq(scenarioChanges.targetKind, "client"),
+          ),
+        );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].opType).toBe("edit");
+      expect(rows[0].payload).toEqual({
+        lifeExpectancy: { from: baseLE, to: newLE },
+      });
+    });
+
+    it("drops non-overlayable fields (email/address) from a client edit", async () => {
+      // The shared client form posts contact-info fields that aren't on the
+      // engine's ClientInfo singleton. They aren't scenario-overlayable, so the
+      // writer must keep them out of the change payload.
+      const [c] = await db
+        .select({ lifeExpectancy: clients.lifeExpectancy })
+        .from(clients)
+        .where(eq(clients.id, COOPER_CLIENT_ID));
+      const newLE = c.lifeExpectancy + 2;
+
+      await applyEntityEdit({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "client",
+        targetId: COOPER_CLIENT_ID,
+        desiredFields: {
+          lifeExpectancy: newLE,
+          email: "scenario@example.com",
+          address: "123 Scenario St",
+        },
+      });
+
+      const [row] = await db
+        .select()
+        .from(scenarioChanges)
+        .where(
+          and(
+            eq(scenarioChanges.scenarioId, scenarioId),
+            eq(scenarioChanges.targetKind, "client"),
+          ),
+        );
+
+      expect(row.payload).toEqual({
+        lifeExpectancy: { from: c.lifeExpectancy, to: newLE },
+      });
+    });
+
+    it("idempotent revert: deletes a client edit row when desired matches base", async () => {
+      const [c] = await db
+        .select({ lifeExpectancy: clients.lifeExpectancy })
+        .from(clients)
+        .where(eq(clients.id, COOPER_CLIENT_ID));
+
+      await applyEntityEdit({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "client",
+        targetId: COOPER_CLIENT_ID,
+        desiredFields: { lifeExpectancy: c.lifeExpectancy + 3 },
+      });
+      // Re-submit with the base value (plus a non-overlayable field, which is
+      // filtered out) — the edit row should be deleted, not left behind.
+      await applyEntityEdit({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "client",
+        targetId: COOPER_CLIENT_ID,
+        desiredFields: {
+          lifeExpectancy: c.lifeExpectancy,
+          email: "scenario@example.com",
+        },
+      });
+
+      const rows = await db
+        .select()
+        .from(scenarioChanges)
+        .where(
+          and(
+            eq(scenarioChanges.scenarioId, scenarioId),
+            eq(scenarioChanges.targetKind, "client"),
           ),
         );
 
