@@ -160,9 +160,11 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
 
     // §1014 step-up. No joint accounts survive into final-death (first-
     // death titling consumed them), so isJointAtFirstDeath is always false.
+    // titlingType is a no-op when isJointAtFirstDeath is false, but the
+    // helper signature requires it — pass through the account's value.
     const steppedBasis = computeSteppedUpBasis(
       routedAcct.category, routedBalance, routedBasis,
-      { isJointAtFirstDeath: false },
+      { isJointAtFirstDeath: false, titlingType: routedAcct.titlingType },
     );
     const effectiveAcct: Account = { ...routedAcct, value: routedBalance, basis: steppedBasis };
 

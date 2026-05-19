@@ -196,22 +196,30 @@ export function partitionMixedAccount(
  *  asset that was owned (in whole or in part) by the decedent.
  *  Categories that are income-in-respect-of-a-decedent (`retirement`)
  *  or have no cost-basis concept (`life_insurance`) do not step up.
- *  Joint accounts at first death receive a half step-up — the
- *  decedent's half resets to FMV, the survivor's half retains its
- *  basis. Common-law JTWROS only; community-property double step-up
- *  is deferred. `fmv < originalBasis` (a depreciated asset) still
- *  returns FMV — §1014 allows step-*down* as well as step-up.
+ *
+ *  Joint accounts at first death:
+ *    - `jtwros`              → half step-up (decedent's 50% → FMV,
+ *                              survivor's 50% retains original basis)
+ *    - `community_property`  → full step-up (§1014(b)(6) — both halves
+ *                              reset to FMV)
+ *
+ *  `fmv < originalBasis` (a depreciated asset) still returns FMV in the
+ *  non-joint and CP cases — §1014 allows step-*down* as well as step-up.
  */
 export function computeSteppedUpBasis(
   category: Account["category"],
   fmv: number,
   originalBasis: number,
-  opts: { isJointAtFirstDeath: boolean },
+  opts: {
+    isJointAtFirstDeath: boolean;
+    titlingType: "jtwros" | "community_property";
+  },
 ): number {
   if (category === "retirement" || category === "life_insurance") {
     return originalBasis;
   }
   if (opts.isJointAtFirstDeath) {
+    if (opts.titlingType === "community_property") return fmv;
     return originalBasis * 0.5 + fmv * 0.5;
   }
   return fmv;
@@ -1592,7 +1600,7 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
       const originalBasis = input.basisMap[acct.id] ?? acct.basis;
       const steppedBasis = computeSteppedUpBasis(
         acct.category, balance, originalBasis,
-        { isJointAtFirstDeath: false },
+        { isJointAtFirstDeath: false, titlingType: acct.titlingType },
       );
 
       if (bens.length === 0 || totalPct === 0) {
