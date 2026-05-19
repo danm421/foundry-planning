@@ -113,6 +113,44 @@ describe("diffWorkingCopy", () => {
     expect(Object.keys(changes[0].edit.desiredFields ?? {}).sort()).toEqual(["beneficiaries", "owners"]);
   });
 
+  it("ignores account beneficiary id churn — the /beneficiaries PUT route regenerates ids on every save", () => {
+    // After a base-case save, the account /beneficiaries PUT route
+    // delete+re-inserts every designation, so the reloaded `original` carries
+    // fresh ids while the in-memory `working` copy still holds the pre-save
+    // ids. The beneficiary *content* is identical — this must NOT be reported
+    // as an unsaved change, or the "Unsaved changes" banner can never clear.
+    const beneficiary = (id: string) => ({
+      id,
+      tier: "primary",
+      percentage: 100,
+      householdRole: "spouse",
+      sortOrder: 0,
+    });
+    const original = cd([
+      { id: "a1", name: "Checking", owners: BASE_ACCOUNT.owners, beneficiaries: [beneficiary("reloaded-id")] },
+    ]);
+    const working = cd([
+      { id: "a1", name: "Checking", owners: BASE_ACCOUNT.owners, beneficiaries: [beneficiary("stale-id")] },
+    ]);
+    expect(diffWorkingCopy(original, working)).toEqual([]);
+  });
+
+  it("ignores entity beneficiary id churn — the entity /beneficiaries PUT route regenerates ids on every save", () => {
+    const beneficiary = (id: string) => ({
+      id,
+      tier: "primary",
+      percentage: 100,
+      sortOrder: 0,
+    });
+    const original = cd([], [
+      { id: "e1", name: "Trust", owners: [], beneficiaries: [beneficiary("reloaded-id")] },
+    ]);
+    const working = cd([], [
+      { id: "e1", name: "Trust", owners: [], beneficiaries: [beneficiary("stale-id")] },
+    ]);
+    expect(diffWorkingCopy(original, working)).toEqual([]);
+  });
+
   it("skips an account present only in the working copy (add — not handled in v1)", () => {
     const original = cd([]);
     const working = cd([{ id: "a1", name: "New", owners: [], beneficiaries: [] }]);

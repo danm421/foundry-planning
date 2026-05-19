@@ -1,4 +1,4 @@
-import type { ClientData, WillBequest } from "@/engine/types";
+import type { BeneficiaryRef, ClientData, WillBequest } from "@/engine/types";
 import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,26 @@ function bequestContent(bequests: WillBequest[] | undefined) {
   });
 }
 
+/**
+ * Beneficiary-designation content with the persistence-only `id` dropped.
+ *
+ * Both the account and entity `/beneficiaries` PUT routes apply edits by
+ * delete+re-inserting every designation, so the database hands back fresh
+ * `id`s on every save. Comparing raw beneficiaries would then see those
+ * churned ids as a change and flag the account/entity as permanently dirty
+ * after a save — the "Unsaved changes" banner could never clear, so a saved
+ * beneficiary edit looks like it "did not save". The diff only cares about
+ * the designation *content*, so the id is stripped before comparison.
+ * Mirrors `bequestContent` for the will PATCH route.
+ */
+function beneficiaryContent(beneficiaries: BeneficiaryRef[] | undefined) {
+  return (beneficiaries ?? []).map((b) => {
+    const copy: Partial<BeneficiaryRef> = { ...b };
+    delete copy.id;
+    return copy;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
@@ -103,7 +123,8 @@ export function diffWorkingCopy(
 
     const desiredFields: Record<string, unknown> = {};
     if (!eq(o.owners, a.owners)) desiredFields.owners = a.owners;
-    if (!eq(o.beneficiaries, a.beneficiaries)) desiredFields.beneficiaries = a.beneficiaries;
+    if (!eq(beneficiaryContent(o.beneficiaries), beneficiaryContent(a.beneficiaries)))
+      desiredFields.beneficiaries = a.beneficiaries;
 
     if (Object.keys(desiredFields).length === 0) continue;
 
@@ -125,7 +146,8 @@ export function diffWorkingCopy(
 
     const desiredFields: Record<string, unknown> = {};
     if (!eq(o.owners, e.owners)) desiredFields.owners = e.owners;
-    if (!eq(o.beneficiaries, e.beneficiaries)) desiredFields.beneficiaries = e.beneficiaries;
+    if (!eq(beneficiaryContent(o.beneficiaries), beneficiaryContent(e.beneficiaries)))
+      desiredFields.beneficiaries = e.beneficiaries;
 
     if (Object.keys(desiredFields).length === 0) continue;
 
