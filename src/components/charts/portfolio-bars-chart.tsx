@@ -12,6 +12,14 @@ import {
 import { Bar } from "react-chartjs-2";
 import { useMemo } from "react";
 import type { ProjectionYear } from "@/engine";
+import {
+  buildPortfolioDeltaSegments,
+  buildPortfolioSingleSeries,
+  liquidPortfolioTotal,
+} from "./portfolio-bars-data";
+
+// Re-exported for existing importers (solver, monte-carlo report, etc.).
+export { liquidPortfolioTotal };
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -80,21 +88,6 @@ function fmtNum(v: number) {
   return fmt.format(v);
 }
 
-/**
- * Liquid portfolio total for cash-flow framing: taxable + cash + retirement
- * + life insurance cash value. Excludes real estate and business assets —
- * advisors think of cash flow against the investable portfolio, not the
- * household's outside-the-estate holdings.
- */
-export function liquidPortfolioTotal(y: ProjectionYear): number {
-  return (
-    y.portfolioAssets.taxableTotal +
-    y.portfolioAssets.cashTotal +
-    y.portfolioAssets.retirementTotal +
-    y.portfolioAssets.lifeInsuranceTotal
-  );
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export interface PortfolioBarsChartProps {
@@ -126,7 +119,10 @@ export function PortfolioBarsChart({
     );
   }, [current, yearRange]);
 
-  const chartLabels = visibleYears.map((y) => String(y.year));
+  const chartLabels = useMemo(
+    () => visibleYears.map((y) => String(y.year)),
+    [visibleYears],
+  );
 
   // Build a year → liquid-total map for the baseline so we can compute deltas.
   const baseLiquidByYear = useMemo(() => {
@@ -138,59 +134,64 @@ export function PortfolioBarsChart({
 
   const showDelta = baseLiquidByYear !== null;
 
-  const chartData = showDelta
-    ? {
-        labels: chartLabels,
-        datasets: [
-          {
-            label: "Common floor (vs base case)",
-            data: visibleYears.map((y) => {
-              const scenario = liquidPortfolioTotal(y);
-              const base = baseLiquidByYear.get(y.year) ?? scenario;
-              return Math.min(scenario, base);
-            }),
-            backgroundColor: "#2563eb",
-            stack: "portfolio",
-          },
-          {
-            label: "Scenario ahead of base",
-            data: visibleYears.map((y) => {
-              const scenario = liquidPortfolioTotal(y);
-              const base = baseLiquidByYear.get(y.year) ?? scenario;
-              return Math.max(0, scenario - base);
-            }),
-            backgroundColor: "#059669",
-            stack: "portfolio",
-          },
-          {
-            label: "Base case ahead of scenario",
-            data: visibleYears.map((y) => {
-              const scenario = liquidPortfolioTotal(y);
-              const base = baseLiquidByYear.get(y.year) ?? scenario;
-              return Math.max(0, base - scenario);
-            }),
-            backgroundColor: "#9ca3af",
-            stack: "portfolio",
-          },
-        ],
-      }
-    : {
+  // Years whose scenario liquid total is negative render as a flat (0-height)
+  // bar — the tooltip surfaces the real negative number on hover. `scenarioTotals`
+  // carries the raw values (negatives included) for that tooltip.
+  const { chartData, scenarioTotals } = useMemo(() => {
+    if (baseLiquidByYear) {
+      const seg = buildPortfolioDeltaSegments(visibleYears, baseLiquidByYear);
+      return {
+        scenarioTotals: seg.scenarioTotals,
+        chartData: {
+          labels: chartLabels,
+          datasets: [
+            {
+              label: "Common floor (vs base case)",
+              data: seg.floor,
+              backgroundColor: "#2563eb",
+              stack: "portfolio",
+            },
+            {
+              label: "Scenario ahead of base",
+              data: seg.scenarioAhead,
+              backgroundColor: "#059669",
+              stack: "portfolio",
+            },
+            {
+              label: "Base case ahead of scenario",
+              data: seg.baseAhead,
+              backgroundColor: "#9ca3af",
+              stack: "portfolio",
+            },
+          ],
+        },
+      };
+    }
+    const series = buildPortfolioSingleSeries(visibleYears);
+    return {
+      scenarioTotals: series.scenarioTotals,
+      chartData: {
         labels: chartLabels,
         datasets: [
           {
             label: "Total Portfolio Assets",
-            data: visibleYears.map(liquidPortfolioTotal),
+            data: series.data,
             backgroundColor: "#2563eb",
             borderColor: "#2563eb",
             borderWidth: 1,
           },
         ],
-      };
+      },
+    };
+  }, [visibleYears, baseLiquidByYear, chartLabels]);
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     layout: { padding: { top: 20 } },
+    // Index mode keeps the tooltip reachable on flat (0-height) underwater
+    // years, where there is no bar to hover.
+    interaction: { mode: "index" as const, intersect: false },
     plugins: {
       legend: {
         display: true,
@@ -201,9 +202,34 @@ export function PortfolioBarsChart({
         titleColor: "#f3f4f6",
         bodyColor: "#d1d5db",
         callbacks: {
-          label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
-            `${ctx.dataset.label}: ${fmtNum(Number(ctx.raw))}`,
+          label: (ctx: {
+            dataIndex: number;
+            dataset: { label?: string };
+            raw: unknown;
+          }) => {
+            const total = scenarioTotals[ctx.dataIndex];
+            // Base view: an underwater year's lone bar is flat — relabel it to
+            // the real negative total (delta view handles this via afterBody).
+            if (!showDelta && total < 0) {
+              return `Total Portfolio Assets: ${fmtNum(total)}`;
+            }
+            return `${ctx.dataset.label}: ${fmtNum(Number(ctx.raw))}`;
+          },
+          afterBody: (items: { dataIndex: number }[]) => {
+            if (!showDelta) return [];
+            const idx = items[0]?.dataIndex;
+            const total = idx == null ? 0 : scenarioTotals[idx];
+            // Delta view: the flat blue floor is filtered out — note the
+            // depleted scenario beside the still-full-height base-case bar.
+            return total < 0
+              ? [`Scenario portfolio depleted: ${fmtNum(total)}`]
+              : [];
+          },
         },
+        // Drop zero-height segments so the tooltip stays uncluttered. Base view
+        // always keeps its single row (its label carries the underwater value).
+        filter: (ctx: { raw: unknown }) =>
+          showDelta ? Number(ctx.raw) !== 0 : true,
       },
       // Typed via `as any` to satisfy chart.js plugin options extension.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
