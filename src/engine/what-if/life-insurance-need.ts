@@ -136,9 +136,11 @@ function syntheticPolicy(
  *   `deathYear - 1` (they represent the pre-death household's spending).
  * - Living expenses whose `endYear` < `deathYear` are left untouched (they
  *   already ended before the death, so no truncation needed).
- * - Living expenses whose `startYear` > `deathYear` are dropped: they would
- *   create inverted ranges if truncated, and their spending is now covered by
- *   the replacement row.
+ * - Living expenses whose `startYear` >= `deathYear` are dropped: a
+ *   `startYear === deathYear` expense would have its `endYear` truncated to
+ *   `deathYear - 1`, producing an inverted range, and its spending is fully
+ *   subsumed by the replacement row. Expenses starting strictly after
+ *   `deathYear` are also dropped for the same reason.
  * - A single replacement expense is appended starting at `deathYear` and
  *   running through `planEndYear`, growing at the plan's inflation rate.
  */
@@ -150,7 +152,7 @@ function applyLivingExpenseAtDeath(
   if (livingExpenseAtDeath == null) return;
   const horizonEnd = out.planSettings.planEndYear;
   out.expenses = out.expenses
-    .filter((e) => !(e.type === "living" && e.startYear > deathYear))
+    .filter((e) => !(e.type === "living" && e.startYear >= deathYear))
     .map((e): Expense =>
       e.type === "living" && e.endYear >= deathYear
         ? { ...e, endYear: deathYear - 1 }

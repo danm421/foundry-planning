@@ -180,7 +180,8 @@ describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
     // replacement starts at death year at the override amount
     const replacement = living.find((e) => e.startYear === 2030)!;
     expect(replacement.annualAmount).toBe(80_000);
-    expect(replacement.endYear).toBeGreaterThanOrEqual(2070);
+    expect(replacement.growthRate).toBe(basePlanSettings.inflationRate);
+    expect(replacement.endYear).toBe(2070);
   });
 
   it("leaves living expenses untouched when the override is null", () => {
