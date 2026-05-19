@@ -7,6 +7,7 @@ import type {
 } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import { runProjection } from "@/engine/projection";
+import type { ProjectionYear } from "@/engine/types";
 
 /**
  * Inputs to the Life Insurance solver's what-if assembler. Each field is a
@@ -40,6 +41,42 @@ export const SYNTHETIC_POLICY_ID = "li-solver-synthetic-policy";
 
 function birthYear(iso: string): number {
   return Number(iso.slice(0, 4));
+}
+
+/** Default life expectancy (in years) when the household record omits one. */
+const DEFAULT_LIFE_EXPECTANCY = 95;
+
+/**
+ * The calendar year the SURVIVOR is projected to die — the year the what-if
+ * projection must run through so the survivor's full post-death retirement is
+ * captured. (A premature death shortens the *deceased's* horizon, but the
+ * survivor may outlive the plan's original `planEndYear`.)
+ *
+ * When `deceased === "client"` the survivor is the spouse; when
+ * `deceased === "spouse"` the survivor is the client.
+ *
+ * Single-filer fallback: if `deceased === "client"` on a plan with no spouse
+ * (`spouseDob` absent), there is no survivor at all. Rather than throw, we fall
+ * back to the deceased client's own projected death year. The horizon never
+ * shrinks (the caller only ever *extends* `planEndYear`), so a single-filer
+ * what-if simply keeps its existing horizon — a sane no-op.
+ */
+function survivorDeathYear(
+  data: ClientData,
+  deceased: "client" | "spouse",
+): number {
+  if (deceased === "client") {
+    if (data.client.spouseDob) {
+      const le = data.client.spouseLifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY;
+      return birthYear(data.client.spouseDob) + le;
+    }
+    // No spouse — no survivor. Fall back to the deceased's own horizon.
+    const le = data.client.lifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY;
+    return birthYear(data.client.dateOfBirth) + le;
+  }
+  // Deceased is the spouse — the surviving principal is the client.
+  const le = data.client.lifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY;
+  return birthYear(data.client.dateOfBirth) + le;
 }
 
 /** The surviving spouse's household role — the opposite of the deceased. */
@@ -262,7 +299,57 @@ export function buildLifeInsuranceWhatIfData(
   // Task 4 — pay-off-debts-at-death override.
   applyDebtPayoffAtDeath(out, data, deathYear, input.payOffDebtsAtDeath);
 
-  // Task 5 — extend planEndYear to cover the survivor's life expectancy.
+  // Task 5 — extend planEndYear to cover the survivor's life expectancy. A
+  // premature death shortens the deceased's horizon, but the survivor may
+  // outlive the plan's original end year; the projection must run long enough
+  // to capture the survivor's full retirement. The horizon is only ever
+  // extended, never shortened.
+  const survivorEnd = survivorDeathYear(out, deceased);
+  if (out.planSettings.planEndYear < survivorEnd) {
+    out.planSettings = { ...out.planSettings, planEndYear: survivorEnd };
+  }
 
   return out;
+}
+
+/**
+ * Build the what-if `ClientData` for `input` and run the projection engine
+ * over it. The convenience entry point Task 6's bisection sweeps: each
+ * candidate `faceValue` is one `runLifeInsuranceWhatIf` call.
+ */
+export function runLifeInsuranceWhatIf(
+  input: LifeInsuranceWhatIfInput,
+): ProjectionYear[] {
+  return runProjection(buildLifeInsuranceWhatIfData(input));
+}
+
+/**
+ * The survivor's liquid portfolio assets in the final projection year of their
+ * life — the metric the solver reports as "ending portfolio assets".
+ *
+ * Returns the SAME derivation the solver's "Ending Portfolio Assets" KPI
+ * displays: `liquidPortfolioTotal` from
+ * `@/components/charts/portfolio-bars-chart` — taxable + cash + retirement +
+ * life-insurance cash value, excluding real estate and business assets. That
+ * derivation is replicated inline here rather than imported because
+ * `src/engine/` must stay framework-free (no imports from `src/components/`).
+ *
+ * The row is the projection year matching the survivor's projected death year;
+ * if the projection does not reach that year (it should, given the horizon
+ * extension in `buildLifeInsuranceWhatIfData`), the final projected year is
+ * used as a fallback.
+ */
+export function survivorEndingPortfolio(
+  projection: ProjectionYear[],
+  deceased: "client" | "spouse",
+  data: ClientData,
+): number {
+  const end = survivorDeathYear(data, deceased);
+  const row =
+    projection.find((y) => y.year === end) ??
+    projection[projection.length - 1];
+  const p = row.portfolioAssets;
+  return (
+    p.taxableTotal + p.cashTotal + p.retirementTotal + p.lifeInsuranceTotal
+  );
 }

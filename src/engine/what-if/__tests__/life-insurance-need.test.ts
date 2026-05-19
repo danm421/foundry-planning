@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "@/engine/projection";
-import { buildLifeInsuranceWhatIfData, SYNTHETIC_POLICY_ID } from "../life-insurance-need";
+import {
+  buildLifeInsuranceWhatIfData,
+  runLifeInsuranceWhatIf,
+  survivorEndingPortfolio,
+  SYNTHETIC_POLICY_ID,
+} from "../life-insurance-need";
 import type { ClientData } from "@/engine/types";
 import {
   baseClient,
@@ -253,5 +258,47 @@ describe("buildLifeInsuranceWhatIfData — pay off debts at death", () => {
     });
     expect(out.liabilities).toHaveLength(1);
     expect(out.expenses.find((e) => e.id === "li-solver-debt-payoff")).toBeUndefined();
+  });
+});
+
+describe("runLifeInsuranceWhatIf + survivorEndingPortfolio", () => {
+  it("ending portfolio is monotonically increasing in face value", () => {
+    const base = {
+      data: marriedBase(),
+      deceased: "client" as const,
+      deathYear: 2030,
+      growthRate: 0.05,
+      finalExpenses: 25_000,
+      livingExpenseAtDeath: null,
+      payOffDebtsAtDeath: false,
+    };
+    const low = survivorEndingPortfolio(
+      runLifeInsuranceWhatIf({ ...base, faceValue: 500_000 }),
+      base.deceased,
+      base.data,
+    );
+    const high = survivorEndingPortfolio(
+      runLifeInsuranceWhatIf({ ...base, faceValue: 3_000_000 }),
+      base.deceased,
+      base.data,
+    );
+    expect(high).toBeGreaterThan(low);
+  });
+
+  it("extends the plan horizon to cover the survivor's life expectancy", () => {
+    const data = marriedBase();
+    data.planSettings.planEndYear = 2040; // shorter than survivor's LE year
+    const projection = runLifeInsuranceWhatIf({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 1_000_000,
+      growthRate: 0.05,
+      finalExpenses: 0,
+      livingExpenseAtDeath: null,
+      payOffDebtsAtDeath: false,
+    });
+    // spouse born 1972, LE 92 -> dies 2064
+    expect(projection[projection.length - 1].year).toBeGreaterThanOrEqual(2064);
   });
 });
