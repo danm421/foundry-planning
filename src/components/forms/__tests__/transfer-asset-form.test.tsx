@@ -134,6 +134,30 @@ describe("TransferAssetForm", () => {
     expect(screen.getByRole("option", { name: /Personal Brokerage/i })).toBeInTheDocument();
   });
 
+  // Regression guard for the Phase-2 LI-gifting use case (ILIT funding via policy
+  // transfer). Life-insurance policies are accounts like any other — their
+  // `value` is the cash-value field, which is the correct gift-tax measure for
+  // an asset transfer. None of the eligibility predicates (retirement subtype,
+  // default-checking, 100%-trust-owned, other-entity-pinned) excludes them, so
+  // they should appear in the picker. If this test ever fails, something
+  // upstream added a `category === "life_insurance"` exclusion — remove it.
+  it("includes life-insurance policies as transferable assets", () => {
+    const props = {
+      ...defaultProps(),
+      accounts: [
+        makeAccount({ id: "acc-term", name: "Term Policy", subType: "term" }),
+        makeAccount({ id: "acc-whole", name: "Whole Life Policy", subType: "whole_life" }),
+        makeAccount({ id: "acc-ul", name: "Universal Life Policy", subType: "universal_life" }),
+        makeAccount({ id: "acc-vul", name: "Variable Life Policy", subType: "variable_life" }),
+      ],
+    };
+    render(<TransferAssetForm {...props} />);
+    expect(screen.getByRole("option", { name: /Term Policy/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Whole Life Policy/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Universal Life Policy/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Variable Life Policy/i })).toBeInTheDocument();
+  });
+
   it("detects and announces a linked liability", () => {
     const props = {
       ...defaultProps([

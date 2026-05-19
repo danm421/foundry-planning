@@ -33,6 +33,9 @@ export function entityById(
 /** In-estate weight (0–1) for an account-level owner slice. */
 export function inEstateWeight(tree: ClientData, owner: AccountOwner): number {
   if (owner.kind === "family_member") return 1;
+  // external_beneficiary owners represent death-benefit recipients, not present
+  // ownership — they carry no current value into the gross estate.
+  if (owner.kind === "external_beneficiary") return 0;
   const entity = entityById(tree, owner.entityId);
   if (!entity) return 0;
   if (entity.entityType === "trust") return entity.isIrrevocable ? 0 : 1;
@@ -46,6 +49,9 @@ export function outOfEstateWeight(
   owner: AccountOwner,
 ): number {
   if (owner.kind === "family_member") return 0;
+  // external_beneficiary owners carry no current value — neither in nor out
+  // of the household estate.
+  if (owner.kind === "external_beneficiary") return 0;
   const entity = entityById(tree, owner.entityId);
   if (!entity) return 0;
   if (entity.entityType === "trust") return entity.isIrrevocable ? 1 : 0;

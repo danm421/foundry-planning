@@ -8,6 +8,7 @@ import type {
   entities,
   familyMembers,
 } from "@/db/schema";
+import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
 import InsurancePolicyDialog from "./insurance-policy-dialog";
 
 type AccountRow = typeof accounts.$inferSelect;
@@ -19,9 +20,8 @@ export interface InsurancePanelAccount {
   name: string;
   category: AccountRow["category"];
   subType: AccountRow["subType"] | null;
-  /** Display owner label derived from owners[]. */
-  owner: "client" | "spouse" | "joint";
-  ownerEntityId: string | null;
+  /** Discriminated reference to the policy's single owner. */
+  ownerRef: OwnerRef;
   insuredPerson: AccountRow["insuredPerson"];
   value: string; // decimal-as-string from DB
 }
@@ -121,23 +121,28 @@ export default function InsurancePanel(props: InsurancePanelProps) {
     ? `${props.clientFirstName} & ${props.spouseFirstName}`
     : "Joint";
 
-  function personLabel(p: "client" | "spouse" | "joint"): string {
+  function insuredLabel(p: "client" | "spouse" | "joint" | null): string {
+    if (p === null) return "—";
     if (p === "client") return props.clientFirstName;
     if (p === "spouse") return spouseLabel;
     return jointLabel;
   }
 
-  function insuredLabel(p: "client" | "spouse" | "joint" | null): string {
-    if (p === null) return "—";
-    return personLabel(p);
-  }
-
   function ownerLabel(account: InsurancePanelAccount): string {
-    if (account.ownerEntityId) {
-      const ent = props.entities.find((e) => e.id === account.ownerEntityId);
-      return ent ? ent.name : "Entity";
+    const ref = account.ownerRef;
+    if (ref.kind === "joint") return jointLabel;
+    if (ref.kind === "family") {
+      const fm = props.familyMembers.find((f) => f.id === ref.id);
+      if (!fm) return "Owner";
+      if (fm.role === "client") return props.clientFirstName;
+      if (fm.role === "spouse") return spouseLabel;
+      return `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`;
     }
-    return personLabel(account.owner);
+    if (ref.kind === "entity") {
+      return props.entities.find((e) => e.id === ref.id)?.name ?? "Entity";
+    }
+    // ref.kind === "external"
+    return props.externalBeneficiaries.find((x) => x.id === ref.id)?.name ?? "External";
   }
 
   return (

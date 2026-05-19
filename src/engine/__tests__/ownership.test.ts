@@ -6,6 +6,7 @@ import {
   isFullyEntityOwned,
   isFullyHouseholdOwned,
   controllingFamilyMember,
+  controllingEntity,
   type AccountOwner,
 } from "../ownership";
 
@@ -57,5 +58,38 @@ describe("ownership helpers", () => {
     expect(controllingFamilyMember({ owners: [fmClient(0.5), fmSpouse(0.5)] })).toBe(null);
     expect(controllingFamilyMember({ owners: [entTrust(1.0)] })).toBe(null);
     expect(controllingFamilyMember({ owners: [fmClient(0.7), entTrust(0.3)] })).toBe(null);
+  });
+});
+
+describe("external_beneficiary owner kind", () => {
+  it("contributes 0 to ownedByHousehold", () => {
+    const owners: AccountOwner[] = [
+      { kind: "external_beneficiary", externalBeneficiaryId: "x1", percent: 1 },
+    ];
+    expect(ownedByHousehold({ owners })).toBe(0);
+  });
+
+  it("makes controllingEntity and controllingFamilyMember null", () => {
+    const owners: AccountOwner[] = [
+      { kind: "external_beneficiary", externalBeneficiaryId: "x1", percent: 1 },
+    ];
+    expect(controllingEntity({ owners })).toBeNull();
+    expect(controllingFamilyMember({ owners })).toBeNull();
+  });
+
+  it("isFullyEntityOwned and isFullyHouseholdOwned both return false", () => {
+    const owners: AccountOwner[] = [
+      { kind: "external_beneficiary", externalBeneficiaryId: "x1", percent: 1 },
+    ];
+    expect(isFullyEntityOwned({ owners })).toBe(false);
+    expect(isFullyHouseholdOwned({ owners })).toBe(false);
+  });
+
+  it("sum-to-1 validation still passes alongside an external owner", () => {
+    const owners: AccountOwner[] = [
+      { kind: "family_member", familyMemberId: "fm1", percent: 0.5 },
+      { kind: "external_beneficiary", externalBeneficiaryId: "x1", percent: 0.5 },
+    ];
+    expect(ownedByHousehold({ owners })).toBeCloseTo(0.5);
   });
 });

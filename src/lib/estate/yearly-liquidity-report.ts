@@ -261,9 +261,10 @@ function computePortfolioAssets(args: PortfolioArgs): number {
       if (o.kind === "entity") {
         const locked = yearRow.entityAccountSharesEoY?.get(o.entityId)?.get(account.id);
         totalEntityShare += locked ?? balance * o.percent;
-      } else {
+      } else if (o.kind === "family_member") {
         familyPercentTotal += o.percent;
       }
+      // external_beneficiary owners carry no current value — skip them.
     }
     const familyPool = Math.max(0, balance - totalEntityShare);
 
@@ -274,7 +275,7 @@ function computePortfolioAssets(args: PortfolioArgs): number {
       if (owner.kind === "entity") {
         const locked = yearRow.entityAccountSharesEoY?.get(owner.entityId)?.get(account.id);
         sliceValue = locked ?? balance * owner.percent;
-      } else {
+      } else if (owner.kind === "family_member") {
         const lockedFm = yearRow.familyAccountSharesEoY
           ?.get(owner.familyMemberId)
           ?.get(account.id);
@@ -286,6 +287,10 @@ function computePortfolioAssets(args: PortfolioArgs): number {
               ? familyPool * (owner.percent / familyPercentTotal)
               : balance * owner.percent;
         }
+      } else {
+        // external_beneficiary — no current value, defensive guard
+        // (inEstateWeight already returned 0 above).
+        continue;
       }
       total += sliceValue * w;
     }

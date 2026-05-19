@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LifeInsurancePolicy } from "@/engine/types";
+import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
 import type {
   InsurancePanelAccount,
   InsurancePanelEntity,
@@ -24,8 +25,7 @@ export interface PolicyFormState {
   name: string;
   policyType: "term" | "whole" | "universal" | "variable";
   insuredPerson: "client" | "spouse" | "joint";
-  owner: "client" | "spouse" | "joint";
-  ownerEntityId: string | null;
+  ownerRef: OwnerRef;
   faceValue: number;
   cashValue: number;
   costBasis: number;
@@ -66,19 +66,37 @@ const POLICY_TYPE_LABELS: Record<PolicyFormState["policyType"], string> = {
   variable: "Variable Life",
 };
 
-function makeDefaultPolicyName(
-  owner: PolicyFormState["owner"],
-  policyType: PolicyFormState["policyType"],
+export function formatOwnerLabel(
+  ref: OwnerRef,
+  familyMembers: InsurancePanelFamilyMember[],
+  entities: InsurancePanelEntity[],
+  externals: InsurancePanelExternal[],
   clientFirstName: string,
   spouseFirstName: string | null,
 ): string {
-  const ownerLabel =
-    owner === "client"
-      ? clientFirstName
-      : owner === "spouse"
-        ? (spouseFirstName ?? "Spouse")
-        : "Joint";
-  return `${ownerLabel} - ${POLICY_TYPE_LABELS[policyType]}`;
+  if (ref.kind === "joint") {
+    return spouseFirstName ? `${clientFirstName} & ${spouseFirstName}` : "Joint";
+  }
+  if (ref.kind === "family") {
+    const fm = familyMembers.find((f) => f.id === ref.id);
+    if (!fm) return "Owner";
+    if (fm.role === "client") return clientFirstName;
+    if (fm.role === "spouse") return spouseFirstName ?? "Spouse";
+    return fm.firstName;
+  }
+  if (ref.kind === "entity") {
+    return entities.find((e) => e.id === ref.id)?.name ?? "Entity";
+  }
+  // ref.kind === "external"
+  return externals.find((x) => x.id === ref.id)?.name ?? "External";
+}
+
+function makeDefaultPolicyName(
+  ownerRef: OwnerRef,
+  policyType: PolicyFormState["policyType"],
+  ownerLabel: (ref: OwnerRef) => string,
+): string {
+  return `${ownerLabel(ownerRef)} - ${POLICY_TYPE_LABELS[policyType]}`;
 }
 
 type TabKey = "details" | "beneficiaries" | "cash_value";
@@ -87,8 +105,7 @@ const DEFAULT_STATE: PolicyFormState = {
   name: "",
   policyType: "term",
   insuredPerson: "client",
-  owner: "client",
-  ownerEntityId: null,
+  ownerRef: { kind: "family", id: "" }, // populated to the client FM id by the dialog before render
   faceValue: 0,
   cashValue: 0,
   costBasis: 0,
@@ -112,8 +129,7 @@ function seedStateFromRecord(
     name: account.name,
     policyType: policy.policyType,
     insuredPerson: account.insuredPerson ?? "client",
-    owner: account.owner,
-    ownerEntityId: account.ownerEntityId ?? null,
+    ownerRef: account.ownerRef,
     faceValue: policy.faceValue,
     cashValue: Number(account.value) || 0,
     costBasis: policy.costBasis,
@@ -175,8 +191,7 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     name: state.name.trim(),
     policyType: state.policyType,
     insuredPerson: state.insuredPerson,
-    owner: state.owner,
-    ownerEntityId: state.ownerEntityId,
+    ownerRef: state.ownerRef,
     faceValue: state.faceValue,
     cashValue: state.cashValue,
     costBasis: state.costBasis,
@@ -211,10 +226,17 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
       return {
         ...DEFAULT_STATE,
         name: makeDefaultPolicyName(
-          DEFAULT_STATE.owner,
+          DEFAULT_STATE.ownerRef,
           DEFAULT_STATE.policyType,
-          clientFirstName,
-          spouseFirstName,
+          (ref) =>
+            formatOwnerLabel(
+              ref,
+              props.familyMembers,
+              props.entities,
+              props.externalBeneficiaries,
+              clientFirstName,
+              spouseFirstName,
+            ),
         ),
       };
     }
@@ -223,7 +245,17 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     const policy = props.policies[policyId];
     if (!account || !policy) return null;
     return seedStateFromRecord(account, policy);
-  }, [mode, policyId, props.accounts, props.policies, clientFirstName, spouseFirstName]);
+  }, [
+    mode,
+    policyId,
+    props.accounts,
+    props.policies,
+    props.familyMembers,
+    props.entities,
+    props.externalBeneficiaries,
+    clientFirstName,
+    spouseFirstName,
+  ]);
 
   const [state, setState] = useState<PolicyFormState>(
     seededState ?? DEFAULT_STATE,
@@ -304,10 +336,17 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
       const next = { ...prev, ...adjusted };
       if (!nameTouchedRef.current) {
         next.name = makeDefaultPolicyName(
-          next.owner,
+          next.ownerRef,
           next.policyType,
-          clientFirstName,
-          spouseFirstName,
+          (ref) =>
+            formatOwnerLabel(
+              ref,
+              props.familyMembers,
+              props.entities,
+              props.externalBeneficiaries,
+              clientFirstName,
+              spouseFirstName,
+            ),
         );
       }
       return next;
@@ -440,7 +479,9 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
             <InsurancePolicyDetailsTab
               state={state}
               onChange={handlePatch}
+              familyMembers={props.familyMembers}
               entities={props.entities}
+              externalBeneficiaries={props.externalBeneficiaries}
               modelPortfolios={props.modelPortfolios}
               resolvedInflationRate={props.resolvedInflationRate}
               mode={effectiveMode}
