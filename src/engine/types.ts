@@ -620,6 +620,15 @@ export interface Account {
     pctTaxExempt: number;
     turnoverPct: number;
   };
+  /**
+   * Titling form for joint-household accounts. Determines basis step-up
+   * behavior at first death — `jtwros` gives a half step-up (decedent's
+   * 50% → FMV), `community_property` gives a full step-up on both halves
+   * (§1014(b)(6)). Ignored for solo-owned or entity-owned accounts; the
+   * engine only consults it when `isJointHousehold(a)` is true. Required
+   * (not optional) so call sites never silently default.
+   */
+  titlingType: "jtwros" | "community_property";
   owners: AccountOwner[];
 }
 
