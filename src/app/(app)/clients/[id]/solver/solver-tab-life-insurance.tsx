@@ -18,6 +18,7 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
 import { LiMcSolve } from "./li-mc-solve";
 import { LiNeedCards } from "./li-need-cards";
+import { LiOverTimeSection } from "./li-over-time-section";
 import { LiSurvivorChart } from "./li-survivor-chart";
 
 /** One decedent's solved need + the survivor's projection (Task 11 reads this). */
@@ -176,6 +177,15 @@ export function SolverTabLifeInsurance({
           <div className="mt-4">
             <LiSurvivorChart
               result={solveResult}
+              clientName={clientName}
+              spouseName={spouseName}
+            />
+          </div>
+          <div className="mt-4">
+            <LiOverTimeSection
+              clientId={clientId}
+              assumptions={assumptions}
+              isMarried={solveResult.isMarried}
               clientName={clientName}
               spouseName={spouseName}
             />
