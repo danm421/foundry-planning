@@ -63,11 +63,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  // `computeNeedOverTime` solves every plan year, supplying its own `deathYear`
-  // per year — strip the request's `deathYear` so it cannot mislead. The extra
-  // `mcTargetScore` key is unused by the straight-line solver and harmless.
-  const { deathYear: _deathYear, ...assumptions } = parsed.data;
-  void _deathYear;
+  // `computeNeedOverTime` supplies its own per-year `deathYear`; its
+  // `Omit<LifeInsuranceAssumptions, "deathYear">` parameter ignores the
+  // request's `deathYear` (and the MC-only `mcTargetScore`) structurally.
+  const assumptions = parsed.data;
 
   const encoder = new TextEncoder();
 

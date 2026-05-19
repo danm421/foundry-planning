@@ -36,12 +36,6 @@ ChartJS.register(
   Legend,
 );
 
-const fmtNum = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
 /** Streamed `progress` SSE payload from the over-time route. */
 interface OverTimeProgressPayload {
   done: number;
@@ -344,7 +338,7 @@ function OverTimeResult({
         bodyColor: "#d1d5db",
         callbacks: {
           label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
-            `${ctx.dataset.label}: ${fmtNum.format(Number(ctx.raw))}`,
+            `${ctx.dataset.label}: ${formatCurrency(Number(ctx.raw))}`,
         },
       },
     },
@@ -356,7 +350,7 @@ function OverTimeResult({
       y: {
         ticks: {
           color: "#9ca3af",
-          callback: (value: unknown) => fmtNum.format(Number(value)),
+          callback: (value: unknown) => formatCurrency(Number(value)),
         },
         grid: { color: "#374151" },
       },
