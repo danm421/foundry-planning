@@ -86,6 +86,16 @@ export function EstateTransferRecipientCard({
                         Conflict
                       </span>
                     )}
+                    {a.distributionForm === "outright" && (
+                      <span className="rounded bg-gray-800/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-gray-300">
+                        Outright
+                      </span>
+                    )}
+                    {a.distributionForm === "in_trust" && (
+                      <span className="rounded bg-indigo-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-indigo-200">
+                        In trust
+                      </span>
+                    )}
                   </span>
                   <span className="tabular-nums text-gray-200">
                     {fmt.format(a.amount)}
