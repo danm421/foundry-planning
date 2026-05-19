@@ -252,6 +252,7 @@ export function LiNeedRange({
           deathYear={deathYear}
           straightLine={solveResult.client}
           mc={mcResult?.client ?? null}
+          showEstateTaxes={assumptions.coverEstateTaxes}
         />
         {solveResult.isMarried && solveResult.spouse ? (
           <RangeCard
@@ -259,6 +260,7 @@ export function LiNeedRange({
             deathYear={deathYear}
             straightLine={solveResult.spouse}
             mc={mcResult?.spouse ?? null}
+            showEstateTaxes={assumptions.coverEstateTaxes}
           />
         ) : null}
       </div>
@@ -276,11 +278,13 @@ function RangeCard({
   deathYear,
   straightLine,
   mc,
+  showEstateTaxes,
 }: {
   name: string;
   deathYear: number;
   straightLine: LiSolveCase;
   mc: NeedMcResult | null;
+  showEstateTaxes: boolean;
 }) {
   const slExceedsCap = straightLine.status === "exceeds-cap";
   const slNeed = roundUpTo50k(straightLine.faceValue);
@@ -356,6 +360,20 @@ function RangeCard({
       </div>
 
       <div className="mt-3 border-t border-hair pt-2.5">
+        {showEstateTaxes ? (
+          <div className="mb-2 flex items-center justify-between text-[11px]">
+            <span className="flex items-center gap-1 text-ink-2">
+              Estate taxes
+              <HelpHint
+                ariaLabel="What do estate taxes include?"
+                text="Federal + state estate tax plus income tax on IRD (retirement accounts inherited as income in respect of a decedent), summed across both deaths. Added to the coverage target."
+              />
+            </span>
+            <span className="tabular text-ink-2">
+              {formatCurrency(straightLine.estateTaxAddend)}
+            </span>
+          </div>
+        ) : null}
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-ink-2">Existing coverage in force</span>
           <span className="tabular text-ink-2">{formatCurrency(existing)}</span>
