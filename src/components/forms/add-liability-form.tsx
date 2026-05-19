@@ -588,11 +588,15 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
 
       {/* Row 6: Ownership */}
       <div>
+        {/* Liabilities have no titling concept; pass fixed jtwros so the editor's
+            required prop is satisfied, and a no-op handler. */}
         <OwnershipEditor
           familyMembers={familyMembers}
           entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
           value={owners}
           onChange={setOwners}
+          titlingType="jtwros"
+          onTitlingTypeChange={() => {}}
         />
       </div>
 

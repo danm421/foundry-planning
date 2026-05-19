@@ -301,11 +301,15 @@ export default function BusinessForm({
           </div>
 
           <div className="col-span-2">
+            {/* Business entity ownership is not a joint personal account; CP titling
+                does not apply. Pass fixed jtwros + no-op to satisfy the required prop. */}
             <OwnershipEditor
               familyMembers={familyMembers}
               entities={(otherEntities ?? []).filter((e) => e.id !== editing?.id)}
               value={owners}
               onChange={setOwners}
+              titlingType="jtwros"
+              onTitlingTypeChange={() => {}}
             />
           </div>
 
