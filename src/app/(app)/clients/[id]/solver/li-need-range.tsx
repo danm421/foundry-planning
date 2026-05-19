@@ -369,6 +369,8 @@ function RangeCard({
                 text="Federal + state estate tax plus income tax on IRD (retirement accounts inherited as income in respect of a decedent), summed across both deaths. Added to the coverage target."
               />
             </span>
+            {/* Same addend lives on `mc.estateTaxAddend`; reading from `straightLine` because
+             *  it is always populated (the MC solve may still be running). */}
             <span className="tabular text-ink-2">
               {formatCurrency(straightLine.estateTaxAddend)}
             </span>

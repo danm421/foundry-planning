@@ -22,6 +22,20 @@ function irdTax(year: ProjectionYear): number {
     .reduce((sum, a) => sum + a.amount, 0);
 }
 
+// NOTE on death-event years: this sums across BOTH the insured's premature
+// death and the survivor's final death. At the first death, the engine drains
+// `portfolioAssets` by the first-death estate tax before the survivor's
+// projection continues (projection.ts:~3727), so the solver — even with the
+// toggle OFF — already raises coverage to overcome that drain. Adding the
+// first-death tax to the addend therefore double-counts that component.
+//
+// In the common married case the unlimited marital deduction zeroes the first-
+// death estate tax (and retirement accounts roll over to the spouse with no
+// IRD income tax at first death), so the double-count is numerically zero.
+// In edge cases (large first-death non-spousal estate, blended families) it
+// remains a known accepted approximation. A future refinement could filter to
+// the survivor's final-death year only — see future-work/engine.md.
+
 /**
  * Total estate taxes — federal + state estate tax + IRD income tax — owed
  * across the death-event years of `deceased`'s what-if projection (the

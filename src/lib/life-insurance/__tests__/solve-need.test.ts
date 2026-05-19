@@ -76,15 +76,4 @@ describe("solveLifeInsuranceNeed — cover estate taxes", () => {
     );
   });
 
-  it("leaves the solved need unchanged when the addend is zero", () => {
-    const tree = highNetWorthBase();
-    const assumptionsWithTarget = { ...hnwAssumptions, leaveToHeirsAmount: hnwTarget };
-    const baseline = solveLifeInsuranceNeed(tree, "client", assumptionsWithTarget);
-    // Addend of 0 (toggle off) means the target is untouched.
-    const covered = solveLifeInsuranceNeed(tree, "client", {
-      ...assumptionsWithTarget,
-      leaveToHeirsAmount: hnwTarget + 0,
-    });
-    expect(covered.faceValue).toBe(baseline.faceValue);
-  });
 });

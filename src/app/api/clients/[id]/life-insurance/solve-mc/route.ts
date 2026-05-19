@@ -96,6 +96,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         const mcPayload = await loadMonteCarloData(clientId, firmId, [
           { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
         ]);
+        // `coverEstateTaxes` is handled at the route level — the addend is computed
+        // (below) and folded into `mcPayload.requiredMinimumAssetLevel`; the engine
+        // solver does not see `coverEstateTaxes` itself.
         const solveAssumptions: LifeInsuranceAssumptions & { mcTargetScore: number } = {
           deathYear: assumptions.deathYear,
           proceedsGrowthRate: proceeds.rate,
