@@ -202,7 +202,11 @@ function buildDefaultWithdrawalStrategy(
  *  never drawn, so retirement assets liquidate ahead of available proceeds.
  *  Proceeds land in the taxable tier: strictly after every existing cash /
  *  taxable account, strictly before retirement. Mutates `strategy` in place;
- *  skips ids already present (idempotent across re-entry). */
+ *  skips ids already present (idempotent across re-entry).
+ *
+ *  Correctness depends on an invariant enforced in `life-insurance-payout.ts`:
+ *  the payout transform produces a `category: "taxable"` account whose id is
+ *  unchanged from the original policy. The taxable-tier placement assumes that. */
 export function appendProceedsToWithdrawalStrategy(
   strategy: WithdrawalPriority[],
   proceedsAccountIds: string[],
@@ -210,6 +214,7 @@ export function appendProceedsToWithdrawalStrategy(
   deathYear: number,
   planEndYear: number,
 ): void {
+  if (proceedsAccountIds.length === 0) return;
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   // Highest priorityOrder among cash/taxable entries already in the strategy;
   // baseline 1 (the cash tier) when none exist.
