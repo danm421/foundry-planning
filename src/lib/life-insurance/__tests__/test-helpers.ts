@@ -64,3 +64,24 @@ export const assumptions: LifeInsuranceAssumptions = {
   livingExpenseAtDeath: null,
   payoffLiabilityIds: [],
 };
+
+/**
+ * Married fixture scaled to a high net worth — accounts are 8× the base
+ * fixture so the household's estate clears the federal exemption at the
+ * survivor's projected death and a genuine estate tax (and IRD on the
+ * traditional retirement accounts) is owed. Used by the estate-tax-addend
+ * tests and the cover-estate-taxes integration test.
+ */
+export function highNetWorthBase(): ClientData {
+  const base = marriedBase();
+  return {
+    ...base,
+    accounts: base.accounts.map((a) => ({ ...a, value: a.value * 8 })),
+  };
+}
+
+/** Assumptions for the high-net-worth fixture (same knobs as `assumptions`). */
+export const hnwAssumptions: LifeInsuranceAssumptions = {
+  ...assumptions,
+  leaveToHeirsAmount: 5_000_000,
+};
