@@ -64,6 +64,7 @@ type RawAccount = {
   overridePctTaxExempt: string | null;
   priorYearEndValue: string | number | null;
   insuredPerson: string | null;
+  titlingType: "jtwros" | "community_property";
   owners?: AccountOwner[];
   beneficiaries?: BeneficiaryRef[];
   lifeInsurance?: Account["lifeInsurance"];
@@ -179,6 +180,7 @@ export function resolveAccountFromRaw(
       raw.lifeInsurance ?? ctx.policiesByAccount?.[raw.id],
       ctx.resolver,
     ),
+    titlingType: raw.titlingType,
     owners: raw.owners ?? ctx.ownersByAccountId?.get(raw.id) ?? [],
   };
 }
