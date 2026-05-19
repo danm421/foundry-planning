@@ -1,4 +1,4 @@
-import type { ClientData, EntitySummary, Will } from "@/engine/types";
+import type { Account, ClientData, EntitySummary, Will } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import {
   type AccountOwner,
@@ -9,6 +9,7 @@ import {
 } from "@/engine/ownership";
 import type { EstateFlowGift } from "./estate-flow-gifts";
 import { resolveOwnerSlices } from "./account-owner-slices";
+import { isPolicyInForce, insuredRetirementYearFor } from "./insurance-in-force";
 
 // ── Output Types ─────────────────────────────────────────────────────────────
 
@@ -200,6 +201,43 @@ export function buildOwnershipColumn(
     return yearState?.accountLedgers[accountId]?.endingValue ?? baseValue;
   };
 
+  const displayYear =
+    options.asOfYear ?? options.todayYear ?? new Date().getFullYear();
+
+  const parseBirthYearFromDob = (dob: string | null | undefined): number | null => {
+    if (!dob) return null;
+    const y = Number(dob.slice(0, 4));
+    return Number.isFinite(y) ? y : null;
+  };
+  const clientBirthYear = parseBirthYearFromDob(data.client.dateOfBirth);
+  const spouseBirthYear = parseBirthYearFromDob(data.client.spouseDob);
+  const clientRetirementYear =
+    clientBirthYear != null ? clientBirthYear + data.client.retirementAge : null;
+  const spouseRetirementYear =
+    spouseBirthYear != null && data.client.spouseRetirementAge != null
+      ? spouseBirthYear + data.client.spouseRetirementAge
+      : null;
+
+  /**
+   * Insurance policies show their face value (death benefit) in the Ownership
+   * column when in force, falling back to the cash-value `resolveValue` for
+   * lapsed term / post-retirement policies. Non-insurance accounts return
+   * `resolveValue` unchanged — purely additive behavior.
+   */
+  const displayValueFor = (account: Account, projected: number): number => {
+    if (account.category !== "life_insurance" || !account.lifeInsurance) {
+      return projected;
+    }
+    const retYear = insuredRetirementYearFor(
+      account,
+      clientRetirementYear,
+      spouseRetirementYear,
+    );
+    return isPolicyInForce(account, displayYear, retYear)
+      ? account.lifeInsurance.faceValue
+      : projected;
+  };
+
   /**
    * Asset-once gifts dated strictly after the as-of year that will move
    * (part of) this account out. Empty unless `asOfYear` is set.
@@ -297,7 +335,7 @@ export function buildOwnershipColumn(
       }
       const linkedLiabilities = buildLinkedLiabilities(data, accountId, "entity", soloEntityId);
       const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-      const resolvedValue = resolveValue(accountId, account.value);
+      const resolvedValue = displayValueFor(account, resolveValue(accountId, account.value));
       const netValue = resolvedValue - liabilityTotal;
       const futureGifts = futureGiftsFor(accountId);
       group.assets.push({
@@ -327,7 +365,7 @@ export function buildOwnershipColumn(
         const ownerKind = "family_member" as const;
         const linkedLiabilities = buildLinkedLiabilities(data, accountId, ownerKind, soloFmId);
         const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-        const resolvedValue = resolveValue(accountId, account.value);
+        const resolvedValue = displayValueFor(account, resolveValue(accountId, account.value));
         const netValue = resolvedValue - liabilityTotal;
         const futureGifts = futureGiftsFor(accountId);
         targetGroup.assets.push({
@@ -358,10 +396,14 @@ export function buildOwnershipColumn(
     // the as-of-today view (no projected year state) this reduces to the
     // authored percent × value. Mirrors the gross-estate and balance-sheet
     // reports — see resolveOwnerSlices.
+    const accountValueForSlicing = displayValueFor(
+      account,
+      resolveValue(accountId, account.value),
+    );
     const slices = resolveOwnerSlices(
       accountId,
       account.owners,
-      resolveValue(accountId, account.value),
+      accountValueForSlicing,
       yearState?.entityAccountSharesEoY,
       yearState?.familyAccountSharesEoY,
     );
