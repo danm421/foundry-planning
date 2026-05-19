@@ -574,11 +574,11 @@ export interface LifeInsurancePolicy {
   cashValueSchedule: LifeInsuranceCashValueScheduleRow[];
 }
 
-/** A life-insurance death benefit paid out by a death event. The policy
- *  account id is unchanged across the payout transform. faceValue is the
- *  §101(a) income-tax-free benefit amount. */
+/** A life-insurance death benefit paid out by a death event. */
 export interface LifeInsurancePayout {
+  /** The policy account id — unchanged across the payout transform. */
   policyId: string;
+  /** Face value paid. §101(a): the benefit is income-tax-free. */
   faceValue: number;
 }
 

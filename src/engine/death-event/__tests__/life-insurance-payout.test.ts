@@ -227,14 +227,12 @@ describe("prepareLifeInsurancePayouts", () => {
     expect(result.accountBalances["cash-1"]).toBe(20_000);
     expect(result.basisMap["cash-1"]).toBe(20_000);
   });
-});
 
-describe("prepareLifeInsurancePayouts — lifeInsurancePayouts list", () => {
   it("reports each triggered policy's id and face value", () => {
     const acct = mkAccount({
       id: "pol-1",
       insuredPerson: "client",
-      lifeInsurance: mkPolicy({ faceValue: 1_000_000 }),
+      lifeInsurance: mkPolicy({ faceValue: 500_000 }),
     });
     const result = prepareLifeInsurancePayouts({
       year: 2040,
@@ -246,7 +244,7 @@ describe("prepareLifeInsurancePayouts — lifeInsurancePayouts list", () => {
       entities: [],
     });
     expect(result.lifeInsurancePayouts).toEqual([
-      { policyId: "pol-1", faceValue: 1_000_000 },
+      { policyId: "pol-1", faceValue: 500_000 },
     ]);
   });
 
