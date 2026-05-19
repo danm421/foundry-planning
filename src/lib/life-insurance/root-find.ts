@@ -51,8 +51,8 @@ export function findRoot(
   input: RootFindInput,
   f: (x: number) => number,
 ): RootFindResult {
-  let { lo, hi, flo, fhi } = input;
-  const { target, tol, maxIterations } = input;
+  let { lo, hi } = input;
+  const { flo, fhi, target, tol, maxIterations } = input;
 
   // Work in g(x) = f(x) - target space; the root is g(x) = 0.
   let glo = flo - target;
@@ -101,8 +101,8 @@ export async function findRootAsync(
   input: RootFindInput,
   f: (x: number) => Promise<number>,
 ): Promise<RootFindResult> {
-  let { lo, hi, flo, fhi } = input;
-  const { target, tol, maxIterations } = input;
+  let { lo, hi } = input;
+  const { flo, fhi, target, tol, maxIterations } = input;
 
   let glo = flo - target;
   let ghi = fhi - target;
