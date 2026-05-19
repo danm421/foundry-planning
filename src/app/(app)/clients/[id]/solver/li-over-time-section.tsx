@@ -12,7 +12,7 @@
 // The computation is expensive, so it never auto-runs — only the explicit
 // button click triggers it. SSE-fetch + event-parsing mirrors `li-mc-solve.tsx`;
 // the chart chrome mirrors `li-survivor-chart.tsx`.
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -102,6 +102,18 @@ export function LiOverTimeSection({
     abortRef.current?.abort();
   }, []);
 
+  // Abort any in-flight run when the component unmounts.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Collapsing the panel unmounts the streaming subtree (and the Cancel
+  // button), so abort the run when toggling from open to closed.
+  const handleToggle = useCallback(() => {
+    setIsOpen((open) => {
+      if (open) abortRef.current?.abort();
+      return !open;
+    });
+  }, []);
+
   const handleRun = useCallback(async () => {
     // Tear down any prior run before starting a fresh one.
     abortRef.current?.abort();
@@ -175,7 +187,7 @@ export function LiOverTimeSection({
     <div className="rounded-lg border border-hair bg-card">
       <button
         type="button"
-        onClick={() => setIsOpen((v) => !v)}
+        onClick={handleToggle}
         aria-expanded={isOpen}
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
       >
