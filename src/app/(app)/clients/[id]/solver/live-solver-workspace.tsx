@@ -571,6 +571,13 @@ export function LiveSolverWorkspace({
             settings={lifeInsuranceSettings}
             clientName={clientName}
             spouseName={spouseName}
+            liabilities={(baseClientData.liabilities ?? []).map((l) => ({
+              id: l.id,
+              name: l.name,
+              balance: l.balance,
+            }))}
+            estateAdminExpenses={baseClientData.planSettings.estateAdminExpenses ?? 0}
+            modelPortfolios={modelPortfolios}
           />
         )}
       </SolverCompareGrid>

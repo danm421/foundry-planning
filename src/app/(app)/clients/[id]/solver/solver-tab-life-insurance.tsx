@@ -43,6 +43,12 @@ interface Props {
   clientName: string;
   /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
   spouseName: string;
+  /** Household liabilities for the per-liability payoff picker. */
+  liabilities: { id: string; name: string; balance: number }[];
+  /** Estate settlement cost from Details > Assumptions (read-only display). */
+  estateAdminExpenses: number;
+  /** Firm model portfolios for the LI-proceeds growth picker. */
+  modelPortfolios: { id: string; name: string }[];
 }
 
 const DEBOUNCE_MS = 600;
@@ -52,6 +58,12 @@ export function SolverTabLifeInsurance({
   settings,
   clientName,
   spouseName,
+  // Wired through here in Task 14; consumed by the assumptions panel in
+  // Tasks 15-17 (per-liability payoff picker, estate-cost display, LI-proceeds
+  // growth picker). Destructured now so the workspace contract is stable.
+  liabilities,
+  estateAdminExpenses,
+  modelPortfolios,
 }: Props) {
   const [assumptions, setAssumptions] = useState<LiAssumptions>(settings);
   const [solveResult, setSolveResult] = useState<LiSolveResult | null>(null);
