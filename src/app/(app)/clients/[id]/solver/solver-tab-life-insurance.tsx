@@ -2,25 +2,23 @@
 
 // Life Insurance solver tab.
 //
-// Task 10: renders the assumptions panel and wires the debounced solve +
-// autosave loop. Editing an input updates `assumptions`; after a ~600ms
-// debounce a solve request fires (POST .../life-insurance/solve) and the
-// assumptions are persisted (PUT .../life-insurance/settings). Stale
-// in-flight solves are discarded via a request-sequence guard so a slow
-// earlier solve never overwrites a newer result.
+// Wires the debounced solve + autosave loop: editing an input updates
+// `assumptions`; after a ~600ms debounce a solve request fires (POST
+// .../life-insurance/solve) and the assumptions are persisted (PUT
+// .../life-insurance/settings). Stale in-flight solves are discarded via a
+// request-sequence guard so a slow earlier solve never overwrites a newer
+// result.
 //
-// Task 11: renders the straight-line need cards from the solve response,
-// followed by the Monte Carlo solve block. The tab is a single centered
-// column — keep the stack order extensible. Assumptions are owned by
-// LiveSolverWorkspace (this is a controlled component).
+// Renders the solved need range (straight-line lower bound → Monte Carlo
+// upper bound) above the assumptions panel. The tab is a single centered
+// column; assumptions are owned by LiveSolverWorkspace (controlled component).
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
-import { LiMcSolve } from "./li-mc-solve";
-import { LiNeedCards } from "./li-need-cards";
+import { LiNeedRange } from "./li-need-range";
 
-/** One decedent's solved need + the survivor's projection (Task 11 reads this). */
+/** One decedent's solved need + the survivor's projection. */
 export interface LiSolveCase {
   status: string;
   faceValue: number;
@@ -166,38 +164,13 @@ export function SolverTabLifeInsurance({
         ) : null}
       </div>
 
-      {/* (1) Assumptions panel. */}
-      <LiAssumptionsPanel
-        assumptions={assumptions}
-        onChange={onAssumptionsChange}
-        liabilities={liabilities}
-        estateAdminExpenses={estateAdminExpenses}
-        modelPortfolios={modelPortfolios}
-      />
-
-      {errorMessage ? (
-        <div
-          role="alert"
-          className="rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit"
-        >
-          {errorMessage}
-        </div>
-      ) : null}
-
-      {/* Layout: assumptions → straight-line need cards → Monte Carlo solve
-          block. The two solved needs read adjacently, then the MC block. */}
+      {/* Layout: solved need range (straight-line ↔ Monte Carlo) sits above
+          the assumptions that drive it. */}
       {solveResult ? (
-        <div
-          className={`space-y-4 ${isSolving ? "opacity-60 transition-opacity" : ""}`}
-        >
-          <LiNeedCards
-            result={solveResult}
-            deathYear={assumptions.deathYear}
-            clientName={clientName}
-            spouseName={spouseName}
-          />
-          <LiMcSolve
+        <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
+          <LiNeedRange
             clientId={clientId}
+            solveResult={solveResult}
             assumptions={assumptions}
             clientName={clientName}
             spouseName={spouseName}
@@ -209,6 +182,23 @@ export function SolverTabLifeInsurance({
           {isSolving ? "Solving life insurance need…" : "No solve results yet."}
         </div>
       )}
+
+      {errorMessage ? (
+        <div
+          role="alert"
+          className="rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit"
+        >
+          {errorMessage}
+        </div>
+      ) : null}
+
+      <LiAssumptionsPanel
+        assumptions={assumptions}
+        onChange={onAssumptionsChange}
+        liabilities={liabilities}
+        estateAdminExpenses={estateAdminExpenses}
+        modelPortfolios={modelPortfolios}
+      />
     </div>
   );
 }

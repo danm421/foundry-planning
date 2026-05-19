@@ -3,32 +3,24 @@
 // Life-insurance need-over-time view — rendered as the "Life Insurance Need"
 // tab inside the solver's top chart panel. Presentational: it receives the
 // solve state from `useNeedOverTime` (owned by SolverChartPanel) and renders
-// the Run/Cancel controls, progress bar, and a single-dataset Chart.js line
+// the Run/Cancel controls, progress bar, and a single-dataset Chart.js bar
 // chart whose series is chosen by a married-only client/spouse toggle.
 import { useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  LineElement,
-  PointElement,
+  BarElement,
   Tooltip,
   Legend,
 } from "chart.js";
-import { Line } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { roundUpTo50k } from "@/lib/life-insurance/round";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
 import type { OverTimeProgress } from "./use-need-over-time";
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  LineElement,
-  PointElement,
-  Tooltip,
-  Legend,
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 interface Props {
   rows: NeedOverTimeRow[] | null;
@@ -111,7 +103,7 @@ export function LiNeedOverTimeView({
 
       {rows && !isRunning ? (
         <div className="mt-3" style={{ height: 300 }}>
-          <Line
+          <Bar
             data={buildChartData(rows, activeDeathOf, clientName, spouseName)}
             options={CHART_OPTIONS}
           />
@@ -140,20 +132,16 @@ function buildChartData(
         ? {
             label: `${spouseName} dies`,
             data: rows.map((r) => roundUpTo50k(r.spouseNeed ?? 0)),
-            borderColor: "#d97706",
             backgroundColor: "#d97706",
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.3,
+            borderColor: "#d97706",
+            borderWidth: 1,
           }
         : {
             label: `${clientName} dies`,
             data: rows.map((r) => roundUpTo50k(r.clientNeed)),
-            borderColor: "#2563eb",
             backgroundColor: "#2563eb",
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.3,
+            borderColor: "#2563eb",
+            borderWidth: 1,
           },
     ],
   };

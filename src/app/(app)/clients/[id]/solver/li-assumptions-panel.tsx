@@ -7,9 +7,9 @@
 // preserved untouched) to the parent via `onChange`. `mcTargetScore` is NOT
 // surfaced here — it belongs to the Monte Carlo block.
 //
-// Rendered as a card to match the need / Monte Carlo / over-time blocks below
-// it. Inputs fill their grid column (`w-full`) so the panel reads as a tidy
-// form rather than tiny fields floating in dead space.
+// Rendered as a compact card beneath the solved need range. Inputs fill their
+// grid column (`w-full`) so the panel reads as a tidy data-entry form rather
+// than tiny fields floating in dead space.
 import { useState } from "react";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
@@ -35,13 +35,10 @@ export function LiAssumptionsPanel({
   const livingKeepUnchanged = assumptions.livingExpenseAtDeath == null;
 
   return (
-    <div className="rounded-lg border border-hair bg-card p-4">
+    <div className="rounded-lg border border-hair bg-card p-3">
       <div className="text-[13px] font-medium text-ink">Assumptions</div>
-      <p className="mt-0.5 text-[11px] text-ink-3">
-        Inputs that drive the solved life insurance need.
-      </p>
 
-      <div className="mt-3 grid grid-cols-1 gap-x-5 gap-y-3.5 sm:grid-cols-2">
+      <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
         <Field label="Death year" htmlFor="li-death-year">
           <YearInput
             id="li-death-year"
@@ -111,7 +108,7 @@ export function LiAssumptionsPanel({
           </label>
         </div>
 
-        <div className="flex items-center justify-between rounded-md border border-hair bg-card-2 px-3 py-2 text-[11px] text-ink-3 sm:col-span-2">
+        <div className="flex items-center justify-between rounded-md border border-hair bg-card-2 px-2.5 py-1.5 text-[11px] text-ink-3 sm:col-span-2">
           <span>Final expenses use the plan&apos;s estate settlement cost.</span>
           <span className="tabular text-ink-2">{formatCurrency(estateAdminExpenses)}</span>
         </div>
@@ -127,7 +124,7 @@ export function LiAssumptionsPanel({
                 return (
                   <label
                     key={l.id}
-                    className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-[12px] text-ink-2 transition-colors hover:bg-card-hover"
+                    className="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-[12px] text-ink-2 transition-colors hover:bg-card-hover"
                   >
                     <span className="flex items-center gap-2">
                       <Checkbox
