@@ -756,6 +756,18 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         techniqueExpenseIds.push(purchaseKey);
       }
     }
+
+    // Life-insurance death-benefit proceeds. The projection engine emits
+    // `bySource["life-insurance-proceeds:<policyId>"] = faceValue` in the
+    // death year (see foldLifeInsurancePayoutsIntoIncome). Register each
+    // life-insurance policy account so the "Other Inflows" column + drill
+    // surface the payout, matching how technique sale-proceeds are handled.
+    for (const acct of clientData.accounts) {
+      if (acct.category !== "life_insurance") continue;
+      const proceedsKey = `life-insurance-proceeds:${acct.id}`;
+      incomeNames[proceedsKey] = `Life Insurance Proceeds: ${acct.name}`;
+      techniqueIncomeIds.push(proceedsKey);
+    }
   }
 
   // accountsByCategory: segment key → array of account IDs with that category
