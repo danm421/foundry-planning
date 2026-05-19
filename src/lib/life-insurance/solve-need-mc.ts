@@ -97,10 +97,10 @@ export async function solveLifeInsuranceNeedMc(
       deceased,
       deathYear: assumptions.deathYear,
       faceValue,
-      growthRate: assumptions.growthRate,
-      finalExpenses: assumptions.finalExpenses,
+      proceedsGrowthRate: assumptions.proceedsGrowthRate,
+      proceedsRealization: assumptions.proceedsRealization,
       livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
-      payOffDebtsAtDeath: assumptions.payOffDebtsAtDeath,
+      payoffLiabilityIds: assumptions.payoffLiabilityIds,
     });
     const returnEngine = createReturnEngine({
       indices: mcPayload.indices,
