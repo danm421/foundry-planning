@@ -351,6 +351,11 @@ export function LiveSolverWorkspace({
         baseProjection={baseProjection}
         workingTree={workingTree}
         computeStatus={computeStatus}
+        clientId={clientId}
+        liAssumptions={liAssumptions}
+        clientName={clientName}
+        spouseName={spouseName}
+        showLifeInsuranceTab={activeTab === "life_insurance"}
       />
 
       {errorMessage ? (
