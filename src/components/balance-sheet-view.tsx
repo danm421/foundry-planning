@@ -42,6 +42,10 @@ export interface AccountRow {
   propertyTaxGrowthSource?: string;
   isDefaultChecking?: boolean;
   owners?: AccountOwner[];
+  /** Joint-titling regime. Drives §1014(b)(6) full step-up vs §2040(b) 50/50.
+   * Hydrated from `accounts.titling_type` so the edit form round-trips the
+   * value instead of silently defaulting to "jtwros". */
+  titlingType?: "jtwros" | "community_property";
 }
 
 export interface LiabilityRow {
@@ -173,6 +177,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     propertyTaxGrowthSource: a.propertyTaxGrowthSource,
     isDefaultChecking: a.isDefaultChecking ?? false,
     owners: a.owners,
+    titlingType: a.titlingType,
   };
 }
 

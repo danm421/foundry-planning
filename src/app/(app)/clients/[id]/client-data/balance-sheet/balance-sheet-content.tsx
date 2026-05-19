@@ -198,6 +198,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       propertyTaxGrowthSource: meta?.propertyTaxGrowthSource ?? "custom",
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
+      titlingType: a.titlingType,
     };
   });
 
