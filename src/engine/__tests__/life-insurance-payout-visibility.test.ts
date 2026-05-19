@@ -10,6 +10,7 @@ import type {
   Account,
   ClientData,
   ClientInfo,
+  Expense,
   FamilyMember,
   LifeInsurancePolicy,
   PlanSettings,
@@ -185,16 +186,76 @@ describe("life-insurance payout — cash-flow inflow", () => {
 });
 
 describe("life-insurance payout — portfolio asset", () => {
-  it("shows the face value as cash in the death year itself", () => {
+  it("shows the face value as a taxable asset in the death year itself", () => {
     const years = runProjection(mkData({ withBeneficiary: true }));
     const death = years.find((y) => y.year === 2030)!;
-    expect(death.portfolioAssets.cash["pol-1"]).toBe(1_000_000);
-    expect(death.portfolioAssets.cashTotal).toBe(1_000_000);
+    expect(death.portfolioAssets.taxable["pol-1"]).toBe(1_000_000);
+    expect(death.portfolioAssets.taxableTotal).toBe(1_000_000);
   });
 
   it("keeps the proceeds visible the year after death", () => {
     const years = runProjection(mkData({ withBeneficiary: true }));
     const after = years.find((y) => y.year === 2031)!;
-    expect(after.portfolioAssets.cashTotal).toBe(1_000_000);
+    expect(after.portfolioAssets.taxableTotal).toBe(1_000_000);
+  });
+});
+
+describe("life-insurance proceeds — liquidation order", () => {
+  // Client dies 2030. A $1M term policy on the client pays out; a $2M IRA is
+  // owned by the surviving spouse. Post-death living expenses force annual
+  // supplemental withdrawals. The proceeds (taxable) must liquidate before the
+  // retirement account.
+  function mkLiquidationData(): ClientData {
+    const policy = mkPolicy({ withBeneficiary: true, insuredPerson: "client" });
+    const ira: Account = {
+      id: "ret-1",
+      name: "Traditional IRA",
+      category: "retirement",
+      subType: "traditional_ira",
+      value: 2_000_000,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+    };
+    const livingExpense: Expense = {
+      id: "exp-1",
+      type: "living",
+      name: "Living expenses",
+      annualAmount: 150_000,
+      startYear: 2031,
+      endYear: 2060,
+      growthRate: 0,
+    };
+    return {
+      client: { ...CLIENT, lifeExpectancy: 70 },
+      accounts: [policy, ira],
+      incomes: [],
+      expenses: [livingExpense],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: PLAN,
+      familyMembers: [CLIENT_FM, SPOUSE_FM],
+      giftEvents: [],
+    };
+  }
+
+  it("draws life-insurance proceeds before retirement assets", () => {
+    const years = runProjection(mkLiquidationData());
+    // 2033 — three years post-death. The $1M proceeds still cover the
+    // $150k/yr shortfall, so the IRA must be completely untouched.
+    const y2033 = years.find((y) => y.year === 2033)!;
+    expect(y2033.portfolioAssets.retirementTotal).toBe(2_000_000);
+    expect(y2033.portfolioAssets.taxableTotal).toBeGreaterThan(0);
+    expect(y2033.portfolioAssets.taxableTotal).toBeLessThan(1_000_000);
+  });
+
+  it("falls through to retirement once proceeds are exhausted", () => {
+    const years = runProjection(mkLiquidationData());
+    // 2045 — proceeds ($1M / $150k ≈ 7 yrs) are long gone; the IRA is drawn.
+    const y2045 = years.find((y) => y.year === 2045)!;
+    expect(y2045.portfolioAssets.taxableTotal).toBe(0);
+    expect(y2045.portfolioAssets.retirementTotal).toBeLessThan(2_000_000);
   });
 });

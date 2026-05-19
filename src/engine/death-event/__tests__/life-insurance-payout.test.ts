@@ -45,7 +45,7 @@ describe("prepareLifeInsurancePayouts", () => {
     });
     expect(result.accountBalances["pol-1"]).toBe(1_000_000);
     expect(result.basisMap["pol-1"]).toBe(1_000_000);
-    expect(result.accounts[0].category).toBe("cash");
+    expect(result.accounts[0].category).toBe("taxable");
     expect(result.accounts[0].subType).toBe("life_insurance_proceeds");
     expect(result.accounts[0].lifeInsurance).toBeUndefined();
     expect(result.accounts[0].insuredPerson).toBeUndefined();
@@ -87,7 +87,7 @@ describe("prepareLifeInsurancePayouts", () => {
       entities: [],
     });
     expect(final.accountBalances["pol-1"]).toBe(1_000_000);
-    expect(final.accounts[0].category).toBe("cash");
+    expect(final.accounts[0].category).toBe("taxable");
   });
 
   it("preserves entity ownership and beneficiaries on the transformed account", () => {
@@ -148,7 +148,7 @@ describe("prepareLifeInsurancePayouts", () => {
     expect(result.basisMap["pol-1"]).toBe(1_000_000);
   });
 
-  it("standalone-mode without model portfolio still produces a cash account (no realization)", () => {
+  it("standalone-mode without model portfolio produces a taxable account with no realization", () => {
     const acct = mkAccount({
       lifeInsurance: mkPolicy({ postPayoutGrowthRate: 0.05 }),
     });
@@ -160,7 +160,8 @@ describe("prepareLifeInsurancePayouts", () => {
       entities: [],
     });
     const transformed = result.accounts.find((a) => a.id === "pol-1");
-    expect(transformed?.category).toBe("cash");
+    expect(transformed?.category).toBe("taxable");
+    expect(transformed?.subType).toBe("life_insurance_proceeds");
     expect(transformed?.realization).toBeUndefined();
     expect(transformed?.growthRate).toBeCloseTo(0.05, 6);
   });

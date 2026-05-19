@@ -319,11 +319,11 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
   it("cross-owned policy (owner = client, insured = spouse) is unchanged when spouse dies", () => {
     /**
      * Phase 0 DOES trigger payout when insuredPerson === deceased (spouse), regardless
-     * of who owns the policy. The policy transforms to a cash-equivalent account owned
+     * of who owns the policy. The policy transforms to a taxable proceeds account owned
      * by "client". The 4b precedence chain then skips it (only processes accounts
      * touched by the deceased, i.e. owner === "spouse" or owner === "joint"). So:
      *   - No transfer is emitted (chain skips client-owned accounts).
-     *   - Account category becomes "cash" / subType "life_insurance_proceeds".
+     *   - Account category becomes "taxable" / subType "life_insurance_proceeds".
      *   - §2042: The transformed account is owned by client (survivor), so it is NOT
      *     in the gross estate of the deceased (spouse).
      */
@@ -347,11 +347,11 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
     const policyTransfer = result.transfers.find((t) => t.sourceAccountId === "pol-6");
     expect(policyTransfer).toBeUndefined();
 
-    // Policy account still present but transformed to cash (payout triggered in Phase 0)
+    // Policy account still present but transformed to taxable (payout triggered in Phase 0)
     const policyAcct = result.accounts.find((a) => a.id === "pol-6");
     expect(policyAcct).toBeDefined();
-    // Phase 0 reclassifies the triggering policy to cash/life_insurance_proceeds
-    expect(policyAcct!.category).toBe("cash");
+    // Phase 0 reclassifies the triggering policy to taxable/life_insurance_proceeds
+    expect(policyAcct!.category).toBe("taxable");
     expect(policyAcct!.subType).toBe("life_insurance_proceeds");
     // Phase 0 standalone mode must substitute faceValue for value
     expect(policyAcct!.value).toBe(1_000_000);

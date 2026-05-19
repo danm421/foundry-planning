@@ -777,6 +777,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   if (clientData) {
     for (const acc of clientData.accounts) {
       accountCategoryById[acc.id] = acc.category;
+      // Don't seed a household-drill column straight from an entity-owned
+      // account here. A non-IIP entity account is routed by the snapshot to the
+      // trustsAndBusinesses bucket and never appears in a household primary
+      // bucket, so skipping it keeps it out of the household Cash / Taxable /
+      // etc. drills (where it would otherwise be a stray $0 column). An
+      // includeInPortfolio (IIP) entity account *does* land in a household
+      // primary bucket and belongs in the household total — the synthetic-
+      // recovery loop below re-adds it from that bucket, so skipping it here is
+      // harmless. Net: column membership follows where the balance actually
+      // lands, not raw ownership.
+      if (isFullyEntityOwned(acc)) continue;
       const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
         ([, c]) => c === acc.category
       )?.[0];
@@ -803,16 +814,23 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       const map = (y.portfolioAssets as Record<string, unknown>)[bucket];
       if (!map || typeof map !== "object") continue;
       for (const id of Object.keys(map as Record<string, number>)) {
+        // Recover the category for engine-minted synthetic accounts that aren't
+        // in clientData.accounts. Keep the first-seen category — don't override.
         if (!(id in accountCategoryById)) {
           accountCategoryById[id] = category;
-          const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
-            ([, c]) => c === category,
-          )?.[0];
-          if (segmentKey) {
-            if (!accountsByCategory[segmentKey]) accountsByCategory[segmentKey] = [];
-            if (!accountsByCategory[segmentKey].includes(id)) {
-              accountsByCategory[segmentKey].push(id);
-            }
+        }
+        // An account can move between segments mid-projection — a life-insurance
+        // policy becomes a taxable `life_insurance_proceeds` account after a
+        // death event. Ensure the id is listed under every segment whose
+        // portfolioAssets bucket it appears in, so the drill-down renders a
+        // column for it there (e.g. the proceeds surface under Taxable).
+        const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
+          ([, c]) => c === category,
+        )?.[0];
+        if (segmentKey) {
+          if (!accountsByCategory[segmentKey]) accountsByCategory[segmentKey] = [];
+          if (!accountsByCategory[segmentKey].includes(id)) {
+            accountsByCategory[segmentKey].push(id);
           }
         }
       }

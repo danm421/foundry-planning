@@ -11,9 +11,9 @@ export interface PreparePayoutsInput {
 }
 
 export interface PreparePayoutsResult {
-  /** Accounts list with triggering policies replaced by cash-equivalents
-   *  (or taxable accounts when a model-portfolio realization mix is resolved).
-   *  All other accounts unchanged. */
+  /** Accounts list with triggering policies replaced by taxable proceeds
+   *  accounts (subType `life_insurance_proceeds`). All other accounts
+   *  unchanged. */
   accounts: Account[];
   /** Balances map. Triggering policy IDs now hold faceValue. */
   accountBalances: Record<string, number>;
@@ -66,24 +66,27 @@ export function prepareLifeInsurancePayouts(
     const { faceValue, postPayoutGrowthRate } = policy;
     const policyId = account.id;
 
-    // Default: cash-equivalent at the policy's flat growth rate.
-    // Model-portfolio path: when the loader resolved a model portfolio for
-    // this policy, the policy carries `postPayoutRealization` and a
-    // portfolio-derived `postPayoutGrowthRate` — we transform into a taxable
-    // account so realization (OI / LTCG / QDiv / tax-exempt) flows through
-    // the projection's tax engine instead of being treated as interest.
+    // §101(a): proceeds are income-tax-free, so basis = faceValue. The account
+    // is always transformed to `taxable` so the proceeds — and any growth above
+    // face value — flow through the projection's withdrawal/tax engine like any
+    // other brokerage asset. (A `cash`-category account is 0%-tax / 100%-basis
+    // on withdrawal, so its growth would escape taxation entirely.) When the
+    // loader resolved a model portfolio for this policy it carries
+    // `postPayoutRealization` (the OI / LTCG / QDiv / tax-exempt mix) — attach
+    // it so growth is taxed annually per that mix. Without one, the account is
+    // a deferred-gain taxable account: growth is recognized as a capital gain
+    // when the account is drawn down.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { lifeInsurance, insuredPerson, ...rest } = account;
-    const useTaxable = policy.postPayoutRealization != null;
     const transformed: Account = {
       ...rest,
-      category: useTaxable ? "taxable" : "cash",
+      category: "taxable",
       subType: "life_insurance_proceeds",
       value: faceValue,
       basis: faceValue,
       growthRate: postPayoutGrowthRate,
       rmdEnabled: false,
-      ...(useTaxable
+      ...(policy.postPayoutRealization != null
         ? { realization: policy.postPayoutRealization }
         : {}),
     };

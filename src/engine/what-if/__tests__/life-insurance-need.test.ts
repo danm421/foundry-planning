@@ -199,8 +199,8 @@ describe("buildLifeInsuranceWhatIfData", () => {
     const delta = proceedsRow.portfolioAssets.total - baselineRow.portfolioAssets.total;
     expect(delta).toBeGreaterThan(1_900_000);
 
-    // The proceeds specifically land as a cash account owned by the survivor.
-    expect(proceedsRow.portfolioAssets.cash[SYNTHETIC_POLICY_ID]).toBeGreaterThan(
+    // The proceeds specifically land as a taxable account owned by the survivor.
+    expect(proceedsRow.portfolioAssets.taxable[SYNTHETIC_POLICY_ID]).toBeGreaterThan(
       1_900_000,
     );
   });

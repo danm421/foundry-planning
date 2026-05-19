@@ -195,6 +195,50 @@ function buildDefaultWithdrawalStrategy(
   return strategy;
 }
 
+/** Insert just-paid-out life-insurance proceeds accounts into the effective
+ *  withdrawal strategy. The strategy is snapshotted at projection start from
+ *  `data.accounts`, where these accounts were still `life_insurance` (no
+ *  withdrawal priority via `categoryWithdrawalPriority`). Without this they are
+ *  never drawn, so retirement assets liquidate ahead of available proceeds.
+ *  Proceeds land in the taxable tier: strictly after every existing cash /
+ *  taxable account, strictly before retirement. Mutates `strategy` in place;
+ *  skips ids already present (idempotent across re-entry).
+ *
+ *  Correctness depends on an invariant enforced in `life-insurance-payout.ts`:
+ *  the payout transform produces a `category: "taxable"` account whose id is
+ *  unchanged from the original policy. The taxable-tier placement assumes that. */
+export function appendProceedsToWithdrawalStrategy(
+  strategy: WithdrawalPriority[],
+  proceedsAccountIds: string[],
+  accounts: ReadonlyArray<Pick<Account, "id" | "category">>,
+  deathYear: number,
+  planEndYear: number,
+): void {
+  if (proceedsAccountIds.length === 0) return;
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  // Highest priorityOrder among cash/taxable entries already in the strategy;
+  // baseline 1 (the cash tier) when none exist.
+  let maxLiquidPriority = 1;
+  for (const entry of strategy) {
+    const acct = accountById.get(entry.accountId);
+    if (acct && (acct.category === "cash" || acct.category === "taxable")) {
+      maxLiquidPriority = Math.max(maxLiquidPriority, entry.priorityOrder);
+    }
+  }
+  // +0.5 → sorts strictly after existing liquid accounts, strictly before
+  // retirement (priorityOrder 3 in the default strategy).
+  const proceedsPriority = maxLiquidPriority + 0.5;
+  for (const accountId of proceedsAccountIds) {
+    if (strategy.some((s) => s.accountId === accountId)) continue;
+    strategy.push({
+      accountId,
+      priorityOrder: proceedsPriority,
+      startYear: deathYear,
+      endYear: planEndYear,
+    });
+  }
+}
+
 // Build a per-year §2503(b) annual gift exclusion lookup from the loaded tax-year
 // rows. Drizzle returns pg-numeric columns as strings; we coerce to number once at
 // the engine boundary so the death-event module can keep its pure shape
@@ -305,9 +349,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // to a tax-efficient default: Cash → Taxable → Tax-Deferred → Roth. Illiquid
   // categories (real estate, business, life insurance) and default-checking accounts
   // are skipped. The household checking is always the target, never a source.
-  const effectiveWithdrawalStrategy =
+  // Copy the configured strategy (or build the default) into a fresh array we
+  // own. Death events append life-insurance proceeds accounts to it mid-run
+  // (see appendProceedsToWithdrawalStrategy); we must not mutate the caller's
+  // `data.withdrawalStrategy`.
+  const effectiveWithdrawalStrategy: WithdrawalPriority[] =
     data.withdrawalStrategy.length > 0
-      ? data.withdrawalStrategy
+      ? [...data.withdrawalStrategy]
       : buildDefaultWithdrawalStrategy(data.accounts, planSettings);
 
   // Default checking accounts — household and one per entity. When present, all
@@ -3645,6 +3693,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // subsequent year, so the next iteration picks up the flipped state.
       currentEntities = deathResult.entities;
       rebuildEntityMap();
+
+      // Life-insurance payouts transformed policy accounts into taxable proceeds
+      // accounts. `effectiveWithdrawalStrategy` was snapshotted at projection
+      // start when those accounts were still `life_insurance` (no withdrawal
+      // priority), so without this they are never drawn — retirement assets
+      // liquidate ahead of available proceeds. Insert each into the taxable
+      // tier. (Final-death payouts need no entry: the projection terminates
+      // that year, so there are no further withdrawals to satisfy.)
+      appendProceedsToWithdrawalStrategy(
+        effectiveWithdrawalStrategy,
+        deathResult.lifeInsurancePayouts.map((p) => p.policyId),
+        workingAccounts,
+        year,
+        planSettings.planEndYear,
+      );
 
       // Attach to the just-built ProjectionYear
       const thisYear = years[years.length - 1];
