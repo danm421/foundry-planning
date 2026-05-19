@@ -113,6 +113,23 @@ export function LiAssumptionsPanel({
           <span className="tabular text-ink-2">{formatCurrency(estateAdminExpenses)}</span>
         </div>
 
+        <label className="flex cursor-pointer items-center gap-2 rounded-md border border-hair bg-card-2 px-2.5 py-2 text-[12px] text-ink-2 transition-colors hover:bg-card-hover sm:col-span-2">
+          <Checkbox
+            checked={assumptions.coverEstateTaxes}
+            ariaLabel="Cover estate taxes"
+            onChange={(next) =>
+              onChange({ ...assumptions, coverEstateTaxes: next })
+            }
+          />
+          <span>
+            Cover estate taxes
+            <span className="ml-1 text-[11px] text-ink-3">
+              — solve for coverage that also funds federal + state estate tax
+              and IRD income tax.
+            </span>
+          </span>
+        </label>
+
         <div className="sm:col-span-2">
           <div className="text-[11px] text-ink-3">Pay off at death</div>
           {liabilities.length === 0 ? (
