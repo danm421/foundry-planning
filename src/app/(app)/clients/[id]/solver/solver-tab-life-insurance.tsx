@@ -27,6 +27,10 @@ export interface LiSolveCase {
   faceValue: number;
   achievedEndingPortfolio: number;
   projection: ProjectionYear[];
+  /** In-force policies on the decedent active in the death year (not rounded). */
+  existingPolicies: { name: string; faceValue: number }[];
+  /** Sum of `existingPolicies` face values (not rounded). */
+  existingCoverageTotal: number;
 }
 
 /** Shape of the POST .../life-insurance/solve response. */
