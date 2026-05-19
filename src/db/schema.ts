@@ -1348,7 +1348,7 @@ export const withdrawalStrategies = pgTable("withdrawal_strategies", {
 
 // ── Relations ────────────────────────────────────────────────────────────────
 
-export const clientsRelations = relations(clients, ({ many }) => ({
+export const clientsRelations = relations(clients, ({ one, many }) => ({
   scenarios: many(scenarios),
   accounts: many(accounts),
   incomes: many(incomes),
@@ -1359,6 +1359,10 @@ export const clientsRelations = relations(clients, ({ many }) => ({
   planSettings: many(planSettings),
   entities: many(entities),
   familyMembers: many(familyMembers),
+  lifeInsuranceSolverSettings: one(lifeInsuranceSolverSettings, {
+    fields: [clients.id],
+    references: [lifeInsuranceSolverSettings.clientId],
+  }),
 }));
 
 export const entitiesRelations = relations(entities, ({ one, many }) => ({
@@ -2554,3 +2558,37 @@ export const comparisonTemplates = pgTable(
 );
 export type ComparisonTemplateRow = InferSelectModel<typeof comparisonTemplates>;
 export type NewComparisonTemplateRow = InferInsertModel<typeof comparisonTemplates>;
+
+// ============================================================================
+// Life Insurance Solver Settings (per-client, global — not scenario-scoped)
+// ============================================================================
+
+export const lifeInsuranceSolverSettings = pgTable("life_insurance_solver_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .unique()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  deathYear: integer("death_year").notNull(),
+  liGrowthRate: decimal("li_growth_rate", { precision: 5, scale: 4 }).notNull(),
+  leaveToHeirsAmount: decimal("leave_to_heirs_amount", { precision: 15, scale: 2 }).notNull(),
+  finalExpenses: decimal("final_expenses", { precision: 15, scale: 2 }).notNull(),
+  livingExpenseAtDeath: decimal("living_expense_at_death", { precision: 15, scale: 2 }),
+  payOffDebtsAtDeath: boolean("pay_off_debts_at_death").notNull().default(false),
+  mcTargetScore: decimal("mc_target_score", { precision: 5, scale: 4 }).notNull().default("0.9"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const lifeInsuranceSolverSettingsRelations = relations(
+  lifeInsuranceSolverSettings,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [lifeInsuranceSolverSettings.clientId],
+      references: [clients.id],
+    }),
+  }),
+);
+
+export type LifeInsuranceSolverSettingsRow = InferSelectModel<typeof lifeInsuranceSolverSettings>;
+export type NewLifeInsuranceSolverSettingsRow = InferInsertModel<typeof lifeInsuranceSolverSettings>;

@@ -79,6 +79,17 @@ const baseProps = {
     clientRetirement: 2030,
     clientEnd: 2060,
   },
+  lifeInsuranceSettings: {
+    deathYear: 2027,
+    growthRate: 0.05,
+    leaveToHeirsAmount: 0,
+    finalExpenses: 25_000,
+    livingExpenseAtDeath: null,
+    payOffDebtsAtDeath: false,
+    mcTargetScore: 0.9,
+  },
+  clientName: "Client",
+  spouseName: "Spouse",
 };
 
 function makeSseStream(events: Array<{ event: string; data: unknown }>): Response {

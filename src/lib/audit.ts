@@ -103,6 +103,7 @@ export type AuditAction =
   | "insurance_policy.create"
   | "insurance_policy.update"
   | "insurance_policy.delete"
+  | "life_insurance_solver_settings.update"
   // CMA (firm-level, admin-gated)
   | "cma.asset_class.create"
   | "cma.asset_class.update"

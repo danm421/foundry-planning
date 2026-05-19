@@ -162,6 +162,14 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/solver/solve/route.ts":
     "SSE goal-seek — read-only on DB, no mutation; allowlisted for parity with other solver routes",
+  "src/app/api/clients/[id]/life-insurance/solve/route.ts":
+    "life-insurance solver — read-only on DB, no mutation; parity with solver/solve",
+  "src/app/api/clients/[id]/life-insurance/solve-mc/route.ts":
+    "life-insurance MC solver (SSE) — read-only on DB, no mutation; parity with solver/solve",
+  "src/app/api/clients/[id]/life-insurance/over-time/route.ts":
+    "life-insurance need-over-time compute (SSE) — read-only on DB, no mutation; parity with solver/solve",
+  "src/app/api/clients/[id]/life-insurance/settings/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/snapshots/[snapId]/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/snapshots/route.ts":

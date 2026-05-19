@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { scenarios, modelPortfolios } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { buildClientMilestones } from "@/lib/milestones";
+import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
 
 interface Props {
@@ -42,6 +43,17 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
     baseLoaded.effectiveTree.planSettings.planEndYear,
   );
 
+  const lifeInsuranceSettings = await loadLifeInsuranceSettings(
+    clientId,
+    baseLoaded.effectiveTree,
+  );
+
+  // Display names for the Life Insurance tab's need cards / survivor chart.
+  // Fall back to generic labels when a name is missing.
+  const baseClient = baseLoaded.effectiveTree.client;
+  const clientName = baseClient.firstName?.trim() || "Client";
+  const spouseName = baseClient.spouseName?.trim() || "Spouse";
+
   return (
     <LiveSolverWorkspace
       // Remount when the right-column source changes. The workspace stashes
@@ -58,6 +70,9 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       availableScenarios={scenarioRows}
       modelPortfolios={modelPortfolioRows}
       milestones={milestones}
+      lifeInsuranceSettings={lifeInsuranceSettings}
+      clientName={clientName}
+      spouseName={spouseName}
     />
   );
 }
