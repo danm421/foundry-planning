@@ -479,7 +479,9 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
             <InsurancePolicyDetailsTab
               state={state}
               onChange={handlePatch}
+              familyMembers={props.familyMembers}
               entities={props.entities}
+              externalBeneficiaries={props.externalBeneficiaries}
               modelPortfolios={props.modelPortfolios}
               resolvedInflationRate={props.resolvedInflationRate}
               mode={effectiveMode}

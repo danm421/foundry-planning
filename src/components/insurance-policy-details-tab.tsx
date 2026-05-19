@@ -4,9 +4,12 @@ import { useEffect, useRef } from "react";
 import { CurrencyInput } from "./currency-input";
 import type {
   InsurancePanelEntity,
+  InsurancePanelFamilyMember,
+  InsurancePanelExternal,
   InsurancePanelModelPortfolio,
 } from "./insurance-panel";
 import type { PolicyFormState } from "./insurance-policy-dialog";
+import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
 import {
   inputClassName,
   selectClassName,
@@ -16,7 +19,9 @@ import {
 interface InsurancePolicyDetailsTabProps {
   state: PolicyFormState;
   onChange: (patch: Partial<PolicyFormState>) => void;
+  familyMembers: InsurancePanelFamilyMember[];
   entities: InsurancePanelEntity[];
+  externalBeneficiaries: InsurancePanelExternal[];
   modelPortfolios: InsurancePanelModelPortfolio[];
   resolvedInflationRate: number;
   mode: "create" | "edit";
@@ -48,7 +53,9 @@ const gridTwoCls = "grid grid-cols-1 gap-3 sm:grid-cols-2";
 export default function InsurancePolicyDetailsTab({
   state,
   onChange,
+  familyMembers,
   entities,
+  externalBeneficiaries,
   modelPortfolios,
   resolvedInflationRate,
   mode,
@@ -57,8 +64,24 @@ export default function InsurancePolicyDetailsTab({
   nameInvalid,
 }: InsurancePolicyDetailsTabProps) {
   const isTerm = state.policyType === "term";
-  const trustEntities = entities.filter((e) => e.entityType === "trust");
   const spouseLabel = spouseFirstName ?? "Spouse";
+
+  // Build the unified owner option list.
+  //   Each option's `value` is a JSON-encoded OwnerRef so React can use a
+  //   plain `<option value>` and we don't need a parallel id lookup. Keys
+  //   in the JSON are stable across renders so React's reconciliation works.
+  const clientFm = familyMembers.find((f) => f.role === "client") ?? null;
+  const spouseFm = familyMembers.find((f) => f.role === "spouse") ?? null;
+  const otherFms = familyMembers.filter(
+    (f) => f.role !== "client" && f.role !== "spouse",
+  );
+
+  function refToValue(ref: OwnerRef): string {
+    return JSON.stringify(ref);
+  }
+  function valueToRef(v: string): OwnerRef {
+    return JSON.parse(v) as OwnerRef;
+  }
 
   // Auto-focus + select-all the Name input on create so the advisor can start
   // typing to replace the auto-default ("{Owner} - {Type}") immediately.
@@ -192,7 +215,7 @@ export default function InsurancePolicyDetailsTab({
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className={gridTwoCls}>
             <label className="block">
               <span className={fieldLabelClassName}>Insured person</span>
               <select
@@ -212,37 +235,60 @@ export default function InsurancePolicyDetailsTab({
             <label className="block">
               <span className={fieldLabelClassName}>Owner</span>
               <select
-                value={state.owner}
-                onChange={(e) =>
-                  onChange({ owner: e.target.value as PolicyFormState["owner"] })
-                }
+                value={refToValue(state.ownerRef)}
+                onChange={(e) => onChange({ ownerRef: valueToRef(e.target.value) })}
                 className={selectClassName}
               >
-                <option value="client">{clientFirstName}</option>
-                <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
-                <option value="joint">Joint</option>
+                <optgroup label="Individuals">
+                  {clientFm && (
+                    <option value={refToValue({ kind: "family", id: clientFm.id })}>
+                      {clientFirstName}
+                    </option>
+                  )}
+                  {spouseFm && (
+                    <option value={refToValue({ kind: "family", id: spouseFm.id })}>
+                      {spouseLabel}
+                    </option>
+                  )}
+                  {clientFm && spouseFm && (
+                    <option value={refToValue({ kind: "joint" })}>
+                      Joint ({clientFirstName} & {spouseLabel})
+                    </option>
+                  )}
+                  {otherFms.map((fm) => (
+                    <option
+                      key={fm.id}
+                      value={refToValue({ kind: "family", id: fm.id })}
+                    >
+                      {fm.firstName}{fm.lastName ? ` ${fm.lastName}` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+                {externalBeneficiaries.length > 0 && (
+                  <optgroup label="External beneficiaries">
+                    {externalBeneficiaries.map((x) => (
+                      <option
+                        key={x.id}
+                        value={refToValue({ kind: "external", id: x.id })}
+                      >
+                        {x.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {entities.length > 0 && (
+                  <optgroup label="Entities">
+                    {entities.map((en) => (
+                      <option
+                        key={en.id}
+                        value={refToValue({ kind: "entity", id: en.id })}
+                      >
+                        {en.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
-            </label>
-            <label className="block">
-              <span className={fieldLabelClassName}>Owning entity (trust)</span>
-              <select
-                value={state.ownerEntityId ?? ""}
-                onChange={(e) =>
-                  onChange({ ownerEntityId: e.target.value || null })
-                }
-                disabled={trustEntities.length === 0}
-                className={selectClassName}
-              >
-                <option value="">Individual owner</option>
-                {trustEntities.map((en) => (
-                  <option key={en.id} value={en.id}>
-                    {en.name}
-                  </option>
-                ))}
-              </select>
-              {trustEntities.length === 0 && (
-                <p className={helpCls}>No trusts available</p>
-              )}
             </label>
           </div>
 
