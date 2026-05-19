@@ -190,6 +190,25 @@ describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
     expect(replacement.endYear).toBe(2070);
   });
 
+  it("the post-death living expense covers the extended survivor horizon", () => {
+    const data = marriedBase();
+    data.planSettings.planEndYear = 2040; // shorter than survivor's death year (2064)
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      growthRate: 0.05,
+      finalExpenses: 0,
+      livingExpenseAtDeath: 80_000,
+      payOffDebtsAtDeath: false,
+    });
+    const replacement = out.expenses.find((e) => e.id === "li-solver-living-at-death")!;
+    // spouse born 1972 + LE 92 -> dies 2064; the replacement must run through
+    // the EXTENDED horizon, not the original short planEndYear (2040).
+    expect(replacement.endYear).toBe(2064);
+  });
+
   it("leaves living expenses untouched when the override is null", () => {
     const data = marriedBase();
     data.expenses = [

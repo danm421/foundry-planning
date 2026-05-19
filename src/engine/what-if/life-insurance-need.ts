@@ -293,21 +293,31 @@ export function buildLifeInsuranceWhatIfData(
   // 3. Final / burial expenses override estate admin expenses.
   out.planSettings = { ...out.planSettings, estateAdminExpenses: finalExpenses };
 
-  // Task 3 — survivor's living-expense-at-death override.
-  applyLivingExpenseAtDeath(out, deathYear, input.livingExpenseAtDeath);
-
-  // Task 4 — pay-off-debts-at-death override.
-  applyDebtPayoffAtDeath(out, data, deathYear, input.payOffDebtsAtDeath);
-
-  // Task 5 — extend planEndYear to cover the survivor's life expectancy. A
-  // premature death shortens the deceased's horizon, but the survivor may
-  // outlive the plan's original end year; the projection must run long enough
-  // to capture the survivor's full retirement. The horizon is only ever
-  // extended, never shortened.
+  // 4. Task 5 — extend planEndYear to cover the survivor's life expectancy. A
+  //    premature death shortens the deceased's horizon, but the survivor may
+  //    outlive the plan's original end year; the projection must run long
+  //    enough to capture the survivor's full retirement. The horizon is only
+  //    ever extended, never shortened.
+  //
+  //    This MUST run before `applyLivingExpenseAtDeath` (step 5): the
+  //    replacement living expense's `endYear` is pinned to the CURRENT
+  //    `planEndYear`, so the horizon must already be extended or the survivor
+  //    has zero modelled living expenses for the extended years. The extension
+  //    only reads the survivor's untouched life-expectancy fields (set in
+  //    step 1) and `planSettings.planEndYear` — it does not depend on the
+  //    living-expense or debt transforms.
   const survivorEnd = survivorDeathYear(out, deceased);
   if (out.planSettings.planEndYear < survivorEnd) {
     out.planSettings = { ...out.planSettings, planEndYear: survivorEnd };
   }
+
+  // 5. Task 3 — survivor's living-expense-at-death override. Reads the
+  //    (now extended) `planEndYear` as the replacement expense's `endYear`.
+  applyLivingExpenseAtDeath(out, deathYear, input.livingExpenseAtDeath);
+
+  // 6. Task 4 — pay-off-debts-at-death override. The balance pre-pass still
+  //    runs against the original pre-transform `data`.
+  applyDebtPayoffAtDeath(out, data, deathYear, input.payOffDebtsAtDeath);
 
   return out;
 }
@@ -333,6 +343,12 @@ export function runLifeInsuranceWhatIf(
  * life-insurance cash value, excluding real estate and business assets. That
  * derivation is replicated inline here rather than imported because
  * `src/engine/` must stay framework-free (no imports from `src/components/`).
+ *
+ * WARNING: do NOT substitute the engine's own `liquidPortfolioTotal` from
+ * `src/engine/monteCarlo/trial.ts` — that one sums only 3 fields (no
+ * `lifeInsuranceTotal`, per the eMoney whitepaper "liquid assets" definition).
+ * This helper must match the solver's 4-field "Ending Portfolio Assets" KPI,
+ * which uses the chart version above.
  *
  * The row is the projection year matching the survivor's projected death year;
  * if the projection does not reach that year (it should, given the horizon
