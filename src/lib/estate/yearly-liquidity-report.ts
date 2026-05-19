@@ -10,7 +10,7 @@ import type {
   ProjectionYear,
 } from "@/engine/types";
 import { inEstateWeight, outOfEstateWeight } from "./in-estate-weights";
-import { isPolicyInForce } from "./insurance-in-force";
+import { insuredRetirementYearFor, isPolicyInForce } from "./insurance-in-force";
 
 export interface YearlyLiquidityReportInput {
   /** Only `.years` is read — accepts a full ProjectionResult or a bare
@@ -200,7 +200,7 @@ function computeInsurance(args: InsuranceArgs): {
   for (const account of clientData.accounts) {
     if (account.category !== "life_insurance" || !account.lifeInsurance) continue;
 
-    const insuredRetirementYear = resolveInsuredRetirementYear(
+    const insuredRetirementYear = insuredRetirementYearFor(
       account,
       clientRetirementYear,
       spouseRetirementYear,
@@ -296,26 +296,6 @@ function computePortfolioAssets(args: PortfolioArgs): number {
     }
   }
   return total;
-}
-
-function resolveInsuredRetirementYear(
-  account: Account,
-  clientRetirementYear: number | null,
-  spouseRetirementYear: number | null,
-): number | null {
-  switch (account.insuredPerson) {
-    case "client":
-      return clientRetirementYear;
-    case "spouse":
-      return spouseRetirementYear;
-    case "joint":
-      // Policy lapses only when BOTH have retired, so use the later year.
-      if (clientRetirementYear == null) return spouseRetirementYear;
-      if (spouseRetirementYear == null) return clientRetirementYear;
-      return Math.max(clientRetirementYear, spouseRetirementYear);
-    default:
-      return null;
-  }
 }
 
 function transferCost(branch: HypotheticalEstateTaxOrdering): number {

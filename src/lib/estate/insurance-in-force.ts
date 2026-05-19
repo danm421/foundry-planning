@@ -52,3 +52,40 @@ export function isPolicyInForce(
 
   return true;
 }
+
+/**
+ * Resolve the retirement year of an insurance policy's insured person. Used by
+ * callers of `isPolicyInForce` to gate the `endsAtInsuredRetirement` rule.
+ *
+ * Takes pre-computed retirement years for the client and spouse (the caller
+ * derives these from `ownerDobs` + `clientData.client.retirementAge` /
+ * `spouseRetirementAge`) and selects the right one for `account.insuredPerson`:
+ *
+ * - `"client"` → `clientRetirementYear`
+ * - `"spouse"` → `spouseRetirementYear`
+ * - `"joint"` → the later of the two (policy lapses only when both have
+ *   retired); falls back to whichever side is non-null if the other is null
+ * - anything else (including `null`/`undefined`) → `null`
+ *
+ * Callers treat `null` as "no retirement bound" and continue applying any
+ * explicit term-length rule.
+ */
+export function insuredRetirementYearFor(
+  account: Account,
+  clientRetirementYear: number | null,
+  spouseRetirementYear: number | null,
+): number | null {
+  switch (account.insuredPerson) {
+    case "client":
+      return clientRetirementYear;
+    case "spouse":
+      return spouseRetirementYear;
+    case "joint":
+      // Policy lapses only when BOTH have retired, so use the later year.
+      if (clientRetirementYear == null) return spouseRetirementYear;
+      if (spouseRetirementYear == null) return clientRetirementYear;
+      return Math.max(clientRetirementYear, spouseRetirementYear);
+    default:
+      return null;
+  }
+}
