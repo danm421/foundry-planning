@@ -24,7 +24,7 @@ import InsurancePanel, {
   type InsurancePanelModelPortfolio,
 } from "@/components/insurance-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 
 interface InsuranceContentProps {
   clientId: string;
@@ -132,25 +132,27 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
     .map((a) => a.id);
   const policies = await loadPoliciesByAccountIds(lifeAccountIds);
 
-  const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
-  const _spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
-  function _ownerLabel(a: (typeof accountRows)[number]): "client" | "spouse" | "joint" {
-    const cfm = controllingFamilyMember(a);
-    if (cfm === _spouseFmId && _spouseFmId != null) return "spouse";
-    if (cfm === _clientFmId && _clientFmId != null) return "client";
-    return "joint";
-  }
+  const clientFmId =
+    (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const spouseFmId =
+    (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
 
-  const accts: InsurancePanelAccount[] = accountRows.map((a) => ({
-    id: a.id,
-    name: a.name,
-    category: a.category,
-    subType: (a.subType ?? null) as InsurancePanelAccount["subType"],
-    owner: _ownerLabel(a),
-    ownerEntityId: controllingEntity(a) ?? null,
-    insuredPerson: a.insuredPerson ?? null,
-    value: String(a.value),
-  }));
+  const accts: InsurancePanelAccount[] = accountRows.map((a) => {
+    const ref = ownerRefFromOwners(a.owners, { clientFmId, spouseFmId });
+    // Defensive fallback: if the legacy / synthetic shape isn't a known
+    // OwnerRef, render as joint so the panel still displays. (This should
+    // never fire for policies created through this editor — only for
+    // legacy multi-owner fixtures.)
+    return {
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      subType: (a.subType ?? null) as InsurancePanelAccount["subType"],
+      ownerRef: ref ?? { kind: "joint" },
+      insuredPerson: a.insuredPerson ?? null,
+      value: String(a.value),
+    };
+  });
   const fams: InsurancePanelFamilyMember[] = familyRows.map((f) => ({
     id: f.id,
     firstName: f.firstName,
