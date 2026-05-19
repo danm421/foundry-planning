@@ -22,6 +22,7 @@ import {
   DEFAULT_LI_GROWTH,
 } from "@/lib/life-insurance/load-li-portfolio";
 import { existingCoverageInForce } from "@/lib/life-insurance/existing-coverage";
+import { computeEstateTaxAddend } from "@/lib/life-insurance/estate-tax-addend";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import type { ClientData } from "@/engine/types";
 
@@ -34,8 +35,16 @@ function solveCase(
   tree: ClientData,
   deceased: "client" | "spouse",
   a: LifeInsuranceAssumptions,
+  coverEstateTaxes: boolean,
 ) {
-  const need = solveLifeInsuranceNeed(tree, deceased, a);
+  const estateTaxAddend = coverEstateTaxes
+    ? computeEstateTaxAddend(tree, deceased, a)
+    : 0;
+  const augmented: LifeInsuranceAssumptions = {
+    ...a,
+    leaveToHeirsAmount: a.leaveToHeirsAmount + estateTaxAddend,
+  };
+  const need = solveLifeInsuranceNeed(tree, deceased, augmented);
   const projection = runLifeInsuranceWhatIf({
     data: tree,
     deceased,
@@ -52,6 +61,7 @@ function solveCase(
     projection,
     existingPolicies: coverage.policies,
     existingCoverageTotal: coverage.total,
+    estateTaxAddend,
   };
 }
 
@@ -91,8 +101,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const isMarried =
       filingStatus === "married_joint" || filingStatus === "married_separate";
 
-    const client = solveCase(effectiveTree, "client", a);
-    const spouse = isMarried ? solveCase(effectiveTree, "spouse", a) : null;
+    const client = solveCase(effectiveTree, "client", a, body.coverEstateTaxes);
+    const spouse = isMarried
+      ? solveCase(effectiveTree, "spouse", a, body.coverEstateTaxes)
+      : null;
 
     return NextResponse.json({ isMarried, client, spouse });
   } catch (err) {

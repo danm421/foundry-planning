@@ -28,6 +28,9 @@ export interface LiSolveCase {
   existingPolicies: { name: string; faceValue: number }[];
   /** Sum of `existingPolicies` face values (not rounded). */
   existingCoverageTotal: number;
+  /** Federal + state estate tax + IRD added to the solve target when the
+   *  "Cover estate taxes" toggle is on; `0` when the toggle is off. */
+  estateTaxAddend: number;
 }
 
 /** Shape of the POST .../life-insurance/solve response. */
