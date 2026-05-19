@@ -110,4 +110,48 @@ describe("SolverChartPanel", () => {
     expect(tab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
   });
+
+  it("auto-selects LI tab on enter, keeps it switchable, hides it on leave", async () => {
+    const baseProps = {
+      currentProjection: [] as ProjectionYear[],
+      baseProjection: [] as ProjectionYear[],
+      workingTree,
+      computeStatus: "fresh" as const,
+      clientId: "client-1",
+      liAssumptions,
+      clientName: "Pat",
+      spouseName: "Spouse",
+    };
+
+    // 1. Start with LI tab hidden — Portfolio chart is shown, no LI tab present.
+    const { rerender } = render(
+      <SolverChartPanel {...baseProps} showLifeInsuranceTab={false} />,
+    );
+    expect(
+      screen.queryByRole("tab", { name: "Life Insurance Need" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
+
+    // 2. Show LI tab — it should be auto-selected and its chart rendered.
+    rerender(<SolverChartPanel {...baseProps} showLifeInsuranceTab={true} />);
+    const liTab = screen.getByRole("tab", { name: "Life Insurance Need" });
+    expect(liTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
+
+    // 3. While LI tab is visible, user manually switches to Portfolio — proves the
+    //    LI tab is auto-selected on enter but not locked.
+    await userEvent.click(screen.getByRole("tab", { name: "Portfolio" }));
+    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Life Insurance Need" }),
+    ).toHaveAttribute("aria-selected", "false");
+
+    // 4. Hide LI tab — user was on Portfolio, so no revert needed; Portfolio
+    //    chart remains and the LI tab disappears entirely.
+    rerender(<SolverChartPanel {...baseProps} showLifeInsuranceTab={false} />);
+    expect(
+      screen.queryByRole("tab", { name: "Life Insurance Need" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
+  });
 });
