@@ -33,15 +33,25 @@ describe("filterAllZeroColumns", () => {
     expect(filterAllZeroColumns(cols, rows)).toHaveLength(0);
   });
 
-  it("never drops year, ages, total, or wd_pct columns even when all-zero", () => {
-    const cols = ["year", "ages", "taxable_total", "wd_pct"].map((id) =>
-      fakeCol(id, () => 0),
+  it("never drops year, ages, total, wd_pct, or portfolio_boy columns even when all-zero", () => {
+    const cols = ["year", "ages", "taxable_total", "wd_pct", "portfolio_boy"].map(
+      (id) => fakeCol(id, () => 0),
     );
     expect(filterAllZeroColumns(cols, rows).map((c) => c.id)).toEqual([
       "year",
       "ages",
       "taxable_total",
       "wd_pct",
+      "portfolio_boy",
+    ]);
+  });
+
+  it("keeps portfolio_boy (the wd_pct denominator) even when zero every year", () => {
+    // A plan with no investable portfolio reads BoY 0 in every year; keeping it
+    // ensures the force-kept wd_pct ratio's denominator stays visible.
+    const cols = [fakeCol("portfolio_boy", () => 0)];
+    expect(filterAllZeroColumns(cols, rows).map((c) => c.id)).toEqual([
+      "portfolio_boy",
     ]);
   });
 
