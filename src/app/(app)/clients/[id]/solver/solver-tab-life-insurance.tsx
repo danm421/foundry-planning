@@ -9,19 +9,22 @@
 // in-flight solves are discarded via a request-sequence guard so a slow
 // earlier solve never overwrites a newer result.
 //
-// The <pre> debug dump below is intentional scaffolding — Task 11 replaces
-// it with real need-result cards + a survivor projection chart, reading
-// `solveResult.isMarried`, `solveResult.client`, `solveResult.spouse`.
+// Task 11: renders the need-result cards + survivor projection chart from
+// the solve response. Phases 2–3 slot a Monte Carlo block and an over-time
+// section below the chart — keep the layout extensible.
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
+import { LiNeedCards } from "./li-need-cards";
+import { LiSurvivorChart } from "./li-survivor-chart";
 
 /** One decedent's solved need + the survivor's projection (Task 11 reads this). */
 export interface LiSolveCase {
   status: string;
   faceValue: number;
   achievedEndingPortfolio: number;
-  projection: unknown;
+  projection: ProjectionYear[];
 }
 
 /** Shape of the POST .../life-insurance/solve response. */
@@ -34,11 +37,20 @@ export interface LiSolveResult {
 interface Props {
   clientId: string;
   settings: LiAssumptions;
+  /** Display name for the client; falls back to "Client" upstream when unknown. */
+  clientName: string;
+  /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
+  spouseName: string;
 }
 
 const DEBOUNCE_MS = 600;
 
-export function SolverTabLifeInsurance({ clientId, settings }: Props) {
+export function SolverTabLifeInsurance({
+  clientId,
+  settings,
+  clientName,
+  spouseName,
+}: Props) {
   const [assumptions, setAssumptions] = useState<LiAssumptions>(settings);
   const [solveResult, setSolveResult] = useState<LiSolveResult | null>(null);
   const [isSolving, setIsSolving] = useState(false);
@@ -132,14 +144,29 @@ export function SolverTabLifeInsurance({ clientId, settings }: Props) {
         </div>
       ) : null}
 
-      {/* (2) Need result cards — filled in by Task 11. */}
-
-      {/* (3) Need-over-time chart — filled in by Task 11. */}
-
-      {/* Debug dump — confirms the solve wiring; removed by Task 11. */}
-      <pre className="overflow-x-auto rounded-md border border-hair-2 bg-card-2 p-3 text-[12px] text-ink-3">
-        {JSON.stringify({ clientId, assumptions, solveResult }, null, 2)}
-      </pre>
+      {/* Need result cards + survivor projection. The Monte Carlo block
+          (Phase 2) and the over-time section (Phase 3) slot in below. */}
+      {solveResult ? (
+        <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
+          <LiNeedCards
+            result={solveResult}
+            deathYear={assumptions.deathYear}
+            clientName={clientName}
+            spouseName={spouseName}
+          />
+          <div className="mt-4">
+            <LiSurvivorChart
+              result={solveResult}
+              clientName={clientName}
+              spouseName={spouseName}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
+          {isSolving ? "Solving life insurance need…" : "No solve results yet."}
+        </div>
+      )}
     </div>
   );
 }

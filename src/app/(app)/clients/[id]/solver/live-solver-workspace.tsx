@@ -39,6 +39,8 @@ interface Props {
   modelPortfolios: { id: string; name: string }[];
   milestones: import("@/lib/milestones").ClientMilestones;
   lifeInsuranceSettings: LiAssumptions;
+  clientName: string;
+  spouseName: string;
 }
 
 export function LiveSolverWorkspace({
@@ -52,6 +54,8 @@ export function LiveSolverWorkspace({
   modelPortfolios,
   milestones,
   lifeInsuranceSettings,
+  clientName,
+  spouseName,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -565,6 +569,8 @@ export function LiveSolverWorkspace({
           <SolverTabLifeInsurance
             clientId={clientId}
             settings={lifeInsuranceSettings}
+            clientName={clientName}
+            spouseName={spouseName}
           />
         )}
       </SolverCompareGrid>

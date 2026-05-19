@@ -88,6 +88,8 @@ const baseProps = {
     payOffDebtsAtDeath: false,
     mcTargetScore: 0.9,
   },
+  clientName: "Client",
+  spouseName: "Spouse",
 };
 
 function makeSseStream(events: Array<{ event: string; data: unknown }>): Response {
