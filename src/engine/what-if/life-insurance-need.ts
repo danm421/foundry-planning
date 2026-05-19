@@ -21,7 +21,7 @@ export interface ProceedsRealization {
 
 /**
  * Inputs to the Life Insurance solver's what-if assembler. Each field is a
- * solver knob — Task 6's bisection sweeps `faceValue`, the rest stay fixed for
+ * solver knob — the bisection sweeps `faceValue`, the rest stay fixed for
  * a given run.
  */
 export interface LifeInsuranceWhatIfInput {
@@ -31,7 +31,7 @@ export interface LifeInsuranceWhatIfInput {
   deceased: "client" | "spouse";
   /** Calendar year of the premature death. */
   deathYear: number;
-  /** Candidate death benefit. Task 6 bisects on this value. */
+  /** Candidate death benefit. The bisection sweeps this value. */
   faceValue: number;
   /** Deterministic blended growth rate for the proceeds once they land in the
    *  survivor's portfolio (drives the §101 account's growth). */
@@ -314,13 +314,13 @@ export function buildLifeInsuranceWhatIfData(
   }
 
   // 2. Synthetic policy. Drop any prior assembler-injected policy first so
-  //    re-running the assembler (e.g. the Task 6 bisection) replaces it.
+  //    re-running the assembler (e.g. the bisection) replaces it.
   out.accounts = [
     ...out.accounts.filter((a) => a.id !== SYNTHETIC_POLICY_ID),
     syntheticPolicy(deceased, faceValue, proceedsGrowthRate, proceedsRealization, out),
   ];
 
-  // 3. Task 5 — extend planEndYear to cover the survivor's life expectancy. A
+  // 3. Extend planEndYear to cover the survivor's life expectancy. A
   //    premature death shortens the deceased's horizon, but the survivor may
   //    outlive the plan's original end year; the projection must run long
   //    enough to capture the survivor's full retirement. The horizon is only
@@ -338,11 +338,11 @@ export function buildLifeInsuranceWhatIfData(
     out.planSettings = { ...out.planSettings, planEndYear: survivorEnd };
   }
 
-  // 4. Task 3 — survivor's living-expense-at-death override. Reads the
+  // 4. Survivor's living-expense-at-death override. Reads the
   //    (now extended) `planEndYear` as the replacement expense's `endYear`.
   applyLivingExpenseAtDeath(out, deathYear, input.livingExpenseAtDeath);
 
-  // 5. Task 4 — selective debt payoff at death. The balance pre-pass still
+  // 5. Selective debt payoff at death. The balance pre-pass still
   //    runs against the original pre-transform `data`.
   applyDebtPayoffAtDeath(out, data, deathYear, input.payoffLiabilityIds);
 
@@ -351,7 +351,7 @@ export function buildLifeInsuranceWhatIfData(
 
 /**
  * Build the what-if `ClientData` for `input` and run the projection engine
- * over it. The convenience entry point Task 6's bisection sweeps: each
+ * over it. The convenience entry point the bisection sweeps — each
  * candidate `faceValue` is one `runLifeInsuranceWhatIf` call.
  */
 export function runLifeInsuranceWhatIf(

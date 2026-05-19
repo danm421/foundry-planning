@@ -38,19 +38,18 @@ export async function loadLiProceedsGrowth(
     .where(and(eq(modelPortfolios.id, modelPortfolioId), eq(modelPortfolios.firmId, firmId)));
   if (!portfolio) return { rate: fallbackRate, mix: [] };
 
-  const allocRows = await db
-    .select({
-      assetClassId: modelPortfolioAllocations.assetClassId,
-      weight: modelPortfolioAllocations.weight,
-    })
-    .from(modelPortfolioAllocations)
-    .where(eq(modelPortfolioAllocations.modelPortfolioId, modelPortfolioId));
+  const [allocRows, acRows] = await Promise.all([
+    db
+      .select({
+        assetClassId: modelPortfolioAllocations.assetClassId,
+        weight: modelPortfolioAllocations.weight,
+      })
+      .from(modelPortfolioAllocations)
+      .where(eq(modelPortfolioAllocations.modelPortfolioId, modelPortfolioId)),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+  ]);
   if (allocRows.length === 0) return { rate: fallbackRate, mix: [] };
 
-  const acRows = await db
-    .select()
-    .from(assetClasses)
-    .where(eq(assetClasses.firmId, firmId));
   const acMap = new Map(acRows.map((ac) => [ac.id, ac]));
 
   let rate = 0;

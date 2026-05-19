@@ -80,13 +80,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         controller.enqueue(encoder.encode(sseChunk(event, payload)));
       };
       try {
-        const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
-
-        const proceeds = await loadLiProceedsGrowth(
-          firmId,
-          assumptions.modelPortfolioId,
-          DEFAULT_LI_GROWTH,
-        );
+        const [{ effectiveTree }, proceeds] = await Promise.all([
+          loadEffectiveTree(clientId, firmId, "base", {}),
+          loadLiProceedsGrowth(
+            firmId,
+            assumptions.modelPortfolioId,
+            DEFAULT_LI_GROWTH,
+          ),
+        ]);
 
         // Inject the synthetic policy's model-portfolio mix so the §101
         // proceeds randomize through Monte Carlo. The transformed payout

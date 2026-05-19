@@ -1,6 +1,6 @@
 "use client";
 
-// Life Insurance solver — Monte Carlo solve block (Task 14).
+// Life Insurance solver — Monte Carlo solve block.
 //
 // On-demand companion to the straight-line need cards. The advisor sets a
 // probability-of-success target and clicks "Solve for score"; this opens a

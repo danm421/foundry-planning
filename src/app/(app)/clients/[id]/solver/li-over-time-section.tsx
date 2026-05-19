@@ -1,6 +1,6 @@
 "use client";
 
-// Life Insurance solver — need-over-time section (Task 17).
+// Life Insurance solver — need-over-time section.
 //
 // A collapsible panel at the bottom of the LI tab. On "Run need over time" it
 // opens a POST fetch-stream to the over-time SSE route — which runs one
@@ -302,12 +302,16 @@ function OverTimeResult({
   // married; for a single plan it stays "client" and there's no spouse series.
   const [deathOf, setDeathOf] = useState<"client" | "spouse">("client");
 
+  // A non-married plan has no spouse series — never plot it regardless of the
+  // (hidden) toggle state.
+  const activeDeathOf = isMarried ? deathOf : "client";
+
   const labels = rows.map((r) => String(r.year));
 
   const chartData = {
     labels,
     datasets: [
-      deathOf === "spouse"
+      activeDeathOf === "spouse"
         ? {
             label: `${spouseName} dies`,
             data: rows.map((r) => roundUpTo50k(r.spouseNeed ?? 0)),

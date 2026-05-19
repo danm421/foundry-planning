@@ -74,13 +74,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
     const body = parsed.data;
 
-    const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
-
-    const proceeds = await loadLiProceedsGrowth(
-      firmId,
-      body.modelPortfolioId,
-      DEFAULT_LI_GROWTH,
-    );
+    const [{ effectiveTree }, proceeds] = await Promise.all([
+      loadEffectiveTree(clientId, firmId, "base", {}),
+      loadLiProceedsGrowth(firmId, body.modelPortfolioId, DEFAULT_LI_GROWTH),
+    ]);
     const a: LifeInsuranceAssumptions = {
       deathYear: body.deathYear,
       proceedsGrowthRate: proceeds.rate,

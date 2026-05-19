@@ -1,6 +1,6 @@
 "use client";
 
-// Life Insurance solver — need-result cards (Task 11 / Task 16).
+// Life Insurance solver — need-result cards.
 //
 // Two KPI cards summarizing the straight-line solve: how much *additional*
 // life insurance each spouse needs if they die in `deathYear`, the existing

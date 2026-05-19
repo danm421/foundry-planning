@@ -1,16 +1,17 @@
 "use client";
 
-// Life Insurance solver — assumptions input panel (Task 10).
+// Life Insurance solver — assumptions input panel.
 //
 // Controlled inputs for the shared LI assumptions. On any change the panel
-// lifts the FULL updated `LiAssumptions` object (all 7 fields, `mcTargetScore`
+// lifts the FULL updated `LiAssumptions` object (all 6 fields, `mcTargetScore`
 // preserved untouched) to the parent via `onChange`. `mcTargetScore` is NOT
-// surfaced here — it belongs to the Monte Carlo block (Task 14).
+// surfaced here — it belongs to the Monte Carlo block.
 //
 // Styling matches the compact solver-row inputs (see solver-row-*.tsx):
 // 9px-tall card-2 inputs, accent left border, 11px ink-3 labels.
 import { useState } from "react";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import { formatCurrency } from "@/components/monte-carlo/lib/format";
 
 interface Props {
   assumptions: LiAssumptions;
@@ -22,12 +23,6 @@ interface Props {
   /** Firm model portfolios for the LI-proceeds growth picker. */
   modelPortfolios: { id: string; name: string }[];
 }
-
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
 
 export function LiAssumptionsPanel({
   assumptions,
@@ -84,7 +79,7 @@ export function LiAssumptionsPanel({
 
         <div className="col-span-2 flex items-center justify-between rounded-md border border-hair bg-card-2 px-3 py-2 text-[11px] text-ink-3">
           <span>Final expenses use the plan&apos;s estate settlement cost.</span>
-          <span className="tabular text-ink-2">{usd.format(estateAdminExpenses)}</span>
+          <span className="tabular text-ink-2">{formatCurrency(estateAdminExpenses)}</span>
         </div>
 
         <div className="col-span-2">
@@ -148,7 +143,7 @@ export function LiAssumptionsPanel({
                       />
                       {l.name}
                     </span>
-                    <span className="tabular text-ink-3">{usd.format(l.balance)}</span>
+                    <span className="tabular text-ink-3">{formatCurrency(l.balance)}</span>
                   </label>
                 );
               })}
