@@ -10,15 +10,15 @@
 // earlier solve never overwrites a newer result.
 //
 // Task 11: renders the straight-line need cards from the solve response,
-// followed by the Monte Carlo solve block and the need-over-time section.
-// The tab is a single centered column — keep the stack order extensible.
+// followed by the Monte Carlo solve block. The tab is a single centered
+// column — keep the stack order extensible. Assumptions are owned by
+// LiveSolverWorkspace (this is a controlled component).
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
 import { LiMcSolve } from "./li-mc-solve";
 import { LiNeedCards } from "./li-need-cards";
-import { LiOverTimeSection } from "./li-over-time-section";
 
 /** One decedent's solved need + the survivor's projection (Task 11 reads this). */
 export interface LiSolveCase {
@@ -41,7 +41,10 @@ export interface LiSolveResult {
 
 interface Props {
   clientId: string;
-  settings: LiAssumptions;
+  /** Current LI assumptions — owned by LiveSolverWorkspace. */
+  assumptions: LiAssumptions;
+  /** Update the lifted assumptions (drives the debounced solve + autosave). */
+  onAssumptionsChange: (next: LiAssumptions) => void;
   /** Display name for the client; falls back to "Client" upstream when unknown. */
   clientName: string;
   /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
@@ -58,14 +61,14 @@ const DEBOUNCE_MS = 600;
 
 export function SolverTabLifeInsurance({
   clientId,
-  settings,
+  assumptions,
+  onAssumptionsChange,
   clientName,
   spouseName,
   liabilities,
   estateAdminExpenses,
   modelPortfolios,
 }: Props) {
-  const [assumptions, setAssumptions] = useState<LiAssumptions>(settings);
   const [solveResult, setSolveResult] = useState<LiSolveResult | null>(null);
   const [isSolving, setIsSolving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -114,18 +117,27 @@ export function SolverTabLifeInsurance({
 
   // Initial solve on mount — show results immediately on first open.
   useEffect(() => {
-    void runSolveAndSave(settings);
+    void runSolveAndSave(assumptions);
     // Intentionally only on mount; later solves are debounced via `assumptions`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Mirrors the latest `assumptions` prop so callbacks can spread the current
+  // value without re-creating on every change (restores the pre-lift
+  // state-updater safety).
+  const assumptionsRef = useRef(assumptions);
+  assumptionsRef.current = assumptions;
 
   // Lift an updated MC target score from the MC block. Changing the score must
   // NOT trigger an MC solve (it's expensive — that runs only on the explicit
   // button click), but it does ride the cheap debounced straight-line solve +
   // settings autosave below, which is how the score gets persisted.
-  const handleScoreChange = useCallback((mcTargetScore: number) => {
-    setAssumptions((prev) => ({ ...prev, mcTargetScore }));
-  }, []);
+  const handleScoreChange = useCallback(
+    (mcTargetScore: number) => {
+      onAssumptionsChange({ ...assumptionsRef.current, mcTargetScore });
+    },
+    [onAssumptionsChange],
+  );
 
   // Debounced solve + autosave on any assumptions edit.
   const isFirstRun = useRef(true);
@@ -157,7 +169,7 @@ export function SolverTabLifeInsurance({
       {/* (1) Assumptions panel. */}
       <LiAssumptionsPanel
         assumptions={assumptions}
-        onChange={setAssumptions}
+        onChange={onAssumptionsChange}
         liabilities={liabilities}
         estateAdminExpenses={estateAdminExpenses}
         modelPortfolios={modelPortfolios}
@@ -173,8 +185,7 @@ export function SolverTabLifeInsurance({
       ) : null}
 
       {/* Layout: assumptions → straight-line need cards → Monte Carlo solve
-          block → over-time section. The two solved needs read adjacently,
-          then the MC block, then the need-over-time panel. */}
+          block. The two solved needs read adjacently, then the MC block. */}
       {solveResult ? (
         <div
           className={`space-y-4 ${isSolving ? "opacity-60 transition-opacity" : ""}`}
@@ -191,13 +202,6 @@ export function SolverTabLifeInsurance({
             clientName={clientName}
             spouseName={spouseName}
             onScoreChange={handleScoreChange}
-          />
-          <LiOverTimeSection
-            clientId={clientId}
-            assumptions={assumptions}
-            isMarried={solveResult.isMarried}
-            clientName={clientName}
-            spouseName={spouseName}
           />
         </div>
       ) : (

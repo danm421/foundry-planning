@@ -29,7 +29,7 @@ export type NeedOverTimeProgress = (done: number, total: number) => void;
  * solve also requires `spouseDob`. `spouseDob` presence is the spouse-existence
  * signal used elsewhere in the life-insurance code.
  */
-function hasSpouse(data: ClientData): boolean {
+export function hasSpouse(data: ClientData): boolean {
   const status = data.client.filingStatus;
   const married = status === "married_joint" || status === "married_separate";
   return married && Boolean(data.client.spouseDob);

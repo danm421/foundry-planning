@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ClientData, ProjectionYear } from "@/engine";
+import type { LiAssumptions } from "@/lib/life-insurance/schema";
 
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({
   PortfolioBarsChart: () => <div data-testid="chart-portfolio" />,
@@ -19,6 +20,9 @@ vi.mock("@/components/yearly-liquidity-chart", () => ({
 vi.mock("@/lib/estate/yearly-liquidity-report", () => ({
   buildYearlyLiquidityReport: () => ({ rows: [] }),
 }));
+vi.mock("../li-need-over-time-view", () => ({
+  LiNeedOverTimeView: () => <div data-testid="chart-li-need" />,
+}));
 
 import { SolverChartPanel } from "../solver-chart-panel";
 
@@ -30,13 +34,20 @@ const workingTree = {
   },
 } as unknown as ClientData;
 
-function renderPanel() {
+const liAssumptions = {} as LiAssumptions;
+
+function renderPanel(overrides: { showLifeInsuranceTab?: boolean } = {}) {
   return render(
     <SolverChartPanel
       currentProjection={[] as ProjectionYear[]}
       baseProjection={[] as ProjectionYear[]}
       workingTree={workingTree}
       computeStatus="fresh"
+      clientId="client-1"
+      liAssumptions={liAssumptions}
+      clientName="Pat"
+      spouseName="Spouse"
+      showLifeInsuranceTab={overrides.showLifeInsuranceTab ?? false}
     />,
   );
 }
@@ -76,8 +87,71 @@ describe("SolverChartPanel", () => {
         baseProjection={[] as ProjectionYear[]}
         workingTree={workingTree}
         computeStatus="computing"
+        clientId="client-1"
+        liAssumptions={liAssumptions}
+        clientName="Pat"
+        spouseName="Spouse"
+        showLifeInsuranceTab={false}
       />,
     );
     expect(screen.getByText(/recalculating/i)).toBeInTheDocument();
+  });
+
+  it("hides the Life Insurance Need tab when not on the LI solver tab", () => {
+    renderPanel({ showLifeInsuranceTab: false });
+    expect(
+      screen.queryByRole("tab", { name: "Life Insurance Need" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows and auto-selects the Life Insurance Need tab when active", () => {
+    renderPanel({ showLifeInsuranceTab: true });
+    const tab = screen.getByRole("tab", { name: "Life Insurance Need" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
+  });
+
+  it("auto-selects LI tab on enter, keeps it switchable, hides it on leave", async () => {
+    const baseProps = {
+      currentProjection: [] as ProjectionYear[],
+      baseProjection: [] as ProjectionYear[],
+      workingTree,
+      computeStatus: "fresh" as const,
+      clientId: "client-1",
+      liAssumptions,
+      clientName: "Pat",
+      spouseName: "Spouse",
+    };
+
+    // 1. Start with LI tab hidden — Portfolio chart is shown, no LI tab present.
+    const { rerender } = render(
+      <SolverChartPanel {...baseProps} showLifeInsuranceTab={false} />,
+    );
+    expect(
+      screen.queryByRole("tab", { name: "Life Insurance Need" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
+
+    // 2. Show LI tab — it should be auto-selected and its chart rendered.
+    rerender(<SolverChartPanel {...baseProps} showLifeInsuranceTab={true} />);
+    const liTab = screen.getByRole("tab", { name: "Life Insurance Need" });
+    expect(liTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
+
+    // 3. While LI tab is visible, user manually switches to Portfolio — proves the
+    //    LI tab is auto-selected on enter but not locked.
+    await userEvent.click(screen.getByRole("tab", { name: "Portfolio" }));
+    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Life Insurance Need" }),
+    ).toHaveAttribute("aria-selected", "false");
+
+    // 4. Hide LI tab — user was on Portfolio, so no revert needed; Portfolio
+    //    chart remains and the LI tab disappears entirely.
+    rerender(<SolverChartPanel {...baseProps} showLifeInsuranceTab={false} />);
+    expect(
+      screen.queryByRole("tab", { name: "Life Insurance Need" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
   });
 });

@@ -1,25 +1,41 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
+import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import { SolverCashFlowChart } from "@/components/charts/solver-cash-flow-chart";
 import { YearlyLiquidityChart } from "@/components/yearly-liquidity-chart";
+import { LiNeedOverTimeView } from "./li-need-over-time-view";
+import { useNeedOverTime } from "./use-need-over-time";
+import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 
-type ChartTab = "portfolio" | "cashflow" | "liquidity";
+type ChartTab = "portfolio" | "cashflow" | "liquidity" | "lifeInsurance";
 
-const TABS: { id: ChartTab; label: string }[] = [
+const BASE_TABS: { id: ChartTab; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
   { id: "cashflow", label: "Cash Flow" },
   { id: "liquidity", label: "Liquidity" },
 ];
+
+const LI_TAB: { id: ChartTab; label: string } = {
+  id: "lifeInsurance",
+  label: "Life Insurance Need",
+};
 
 interface Props {
   currentProjection: ProjectionYear[];
   baseProjection: ProjectionYear[];
   workingTree: ClientData;
   computeStatus: "fresh" | "stale" | "computing" | "error";
+  clientId: string;
+  /** Lifted LI assumptions — POSTed verbatim by the over-time solve. */
+  liAssumptions: LiAssumptions;
+  clientName: string;
+  spouseName: string;
+  /** True while the Life Insurance solver tab is active below the grid. */
+  showLifeInsuranceTab: boolean;
 }
 
 export function SolverChartPanel({
@@ -27,9 +43,49 @@ export function SolverChartPanel({
   baseProjection,
   workingTree,
   computeStatus,
+  clientId,
+  liAssumptions,
+  clientName,
+  spouseName,
+  showLifeInsuranceTab,
 }: Props) {
-  const [tab, setTab] = useState<ChartTab>("portfolio");
+  const [tab, setTab] = useState<ChartTab>(
+    showLifeInsuranceTab ? "lifeInsurance" : "portfolio",
+  );
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
+
+  const overTime = useNeedOverTime(clientId);
+  const { cancel: cancelOverTime } = overTime;
+
+  // Auto-select the LI Need tab when the LI solver tab opens, and revert to
+  // Portfolio when it closes — adjusted during render via a previous-prop
+  // tracker (React's "store info from previous renders" pattern). Doing this
+  // in render rather than an effect avoids the cascading-render lint rule,
+  // while still leaving `tab` as real user-controllable state between the
+  // open/close transitions.
+  const [prevShowLiTab, setPrevShowLiTab] = useState(showLifeInsuranceTab);
+  if (showLifeInsuranceTab !== prevShowLiTab) {
+    setPrevShowLiTab(showLifeInsuranceTab);
+    setTab((t) =>
+      showLifeInsuranceTab
+        ? "lifeInsurance"
+        : t === "lifeInsurance"
+          ? "portfolio"
+          : t,
+    );
+  }
+
+  // Aborting an in-flight over-time fetch is a genuine external-system
+  // teardown, so it stays in an effect — it does not call setState.
+  useEffect(() => {
+    if (!showLifeInsuranceTab) cancelOverTime();
+  }, [showLifeInsuranceTab, cancelOverTime]);
+
+  const tabs = showLifeInsuranceTab ? [...BASE_TABS, LI_TAB] : BASE_TABS;
+  // Toggle visibility must match the over-time engine's own spouse check
+  // (need-over-time.ts `hasSpouse`) so the client/spouse toggle never offers
+  // a series the engine returned as null, nor hides one it computed.
+  const isMarried = hasSpouse(workingTree);
 
   // Built only when the Liquidity tab is active — avoids running the estate
   // report on every recompute (and against fixtures that lack estate data).
@@ -58,7 +114,7 @@ export function SolverChartPanel({
           aria-label="Chart view"
           className="inline-flex rounded-md border border-hair-2 bg-card-2 p-0.5"
         >
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -105,6 +161,19 @@ export function SolverChartPanel({
         <YearlyLiquidityChart
           rows={liquidityRows}
           showPortfolio={showPortfolioAssets}
+        />
+      ) : null}
+      {tab === "lifeInsurance" ? (
+        <LiNeedOverTimeView
+          rows={overTime.rows}
+          isRunning={overTime.isRunning}
+          progress={overTime.progress}
+          errorMessage={overTime.errorMessage}
+          onRun={() => overTime.run(liAssumptions)}
+          onCancel={overTime.cancel}
+          isMarried={isMarried}
+          clientName={clientName}
+          spouseName={spouseName}
         />
       ) : null}
 
