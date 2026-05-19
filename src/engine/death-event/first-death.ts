@@ -27,6 +27,7 @@ import { applyGrantorSuccession } from "./grantor-succession";
 import { applyBusinessSuccession } from "./business-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
+import { computeSection2035Lookback } from "./section-2035-lookback";
 import {
   assertDrainAttributionsReconcile,
   attributeDrainsToLedger,
@@ -333,6 +334,31 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
+  // Phase 3.1 — §2035 three-year lookback for life-insurance policies
+  // gifted to irrevocable trusts (ILITs). When the deceased gifted a policy
+  // on their own life within 3 years of death, the face value pulls back
+  // into the gross estate. The reversal of the prior gift-value contribution
+  // to adjusted taxable gifts happens in Phase 5 (below) by filtering the
+  // §2035-pulled asset gifts out of the giftEvents passed to
+  // computeAdjustedTaxableGifts.
+  //
+  // IMPORTANT: read from `input.accounts` (pre-Phase-0), not `prepared.accounts`.
+  // Phase 0 transforms triggering policies into `taxable`/`life_insurance_proceeds`
+  // accounts and strips the `lifeInsurance` block — but the helper needs to
+  // match on `category === "life_insurance"` and read `lifeInsurance.faceValue`
+  // to identify the policy and its face value.
+  const section2035 = computeSection2035Lookback({
+    deceased: prepared.deceased,
+    deathYear: input.year,
+    giftEvents: input.giftEvents ?? [],
+    accounts: input.accounts,
+    entities: prepared.entities,
+  });
+  if (section2035.addBackLines.length > 0) {
+    gross.lines.push(...section2035.addBackLines);
+    gross.total += section2035.addBackLines.reduce((s, l) => s + l.amount, 0);
+  }
+
   // Phase 3.5 — business-interest succession (compute-only; reads pre-flip
   // entities AND pre-chain accounts/accountBalances, same discipline as
   // grantor-succession above — both use `prepared.*` so the 4b chain's
@@ -377,13 +403,33 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Fallback: death-year balance (preserves current behavior when no per-year history).
     return deathYearBalances[accountId] ?? 0;
   };
+  // §2035 reversal: exclude asset-gift events for policies pulled back into
+  // the gross estate. Without this we'd double-tax — the gift-year value
+  // would still consume lifetime exemption AND the face value would be in
+  // the gross estate. The cash-only `gifts` list is unaffected (§2035 only
+  // applies to gifted policies, which are asset events).
+  const giftedPolicyIds = new Set(
+    section2035.addBackLines
+      .map((l) => l.accountId)
+      .filter((id): id is string => id != null),
+  );
+  const giftEventsForAtg = giftedPolicyIds.size === 0
+    ? (input.giftEvents ?? [])
+    : (input.giftEvents ?? []).filter(
+        (ev) =>
+          !(
+            ev.kind === "asset" &&
+            ev.grantor === input.deceased &&
+            giftedPolicyIds.has(ev.accountId)
+          ),
+      );
   const inPlanCumulative = computeAdjustedTaxableGifts(
     input.deceased,
     input.gifts,
     input.entities,
     input.annualExclusionsByYear,
     accountValueAtYear,
-    input.giftEvents ?? [],
+    giftEventsForAtg,
   );
   const adjustedGifts = inPlanCumulative + input.priorTaxableGifts[input.deceased];
   const taxInflation =
