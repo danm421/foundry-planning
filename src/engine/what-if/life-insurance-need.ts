@@ -6,6 +6,7 @@ import type {
   LifeInsurancePolicy,
 } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
+import { runProjection } from "@/engine/projection";
 
 /**
  * Inputs to the Life Insurance solver's what-if assembler. Each field is a
@@ -170,6 +171,57 @@ function applyLivingExpenseAtDeath(
 }
 
 /**
+ * Sum the projected remaining balances of all liabilities at the beginning of
+ * `deathYear` by running a pre-pass projection on the pre-transform `data`.
+ *
+ * Uses `ProjectionYear.liabilityBalancesBoY` (a `Record<string, number>` keyed
+ * by liability id) — the per-liability balance at the start of each year,
+ * before that year's amortisation runs. If no projection row exists for
+ * `deathYear` (e.g. deathYear is before planStartYear), we fall back to the
+ * sum of starting balances from `data.liabilities`.
+ */
+function liabilityBalancesAtDeathYear(data: ClientData, deathYear: number): number {
+  const projection = runProjection(data);
+  const row = projection.find((y) => y.year === deathYear);
+  if (row) {
+    return Object.values(row.liabilityBalancesBoY).reduce((s, v) => s + v, 0);
+  }
+  // Fallback: sum starting balances (conservative; accurate when deathYear is
+  // before planStartYear or all loans have already terminated).
+  return data.liabilities.reduce((s, l) => s + l.balance, 0);
+}
+
+/**
+ * When `enabled`, wipe all household liabilities from the what-if clone and
+ * book a one-time `"other"` expense in `deathYear` equal to the projected
+ * outstanding debt — modelling life insurance proceeds retiring all debts at
+ * the insured's death so the survivor inherits a debt-free household.
+ *
+ * The balance pre-pass runs against `baseForBalances` (the ORIGINAL,
+ * pre-transform data) so projections of the actual plan — not the what-if
+ * overrides — determine payoff amounts.
+ */
+function applyDebtPayoffAtDeath(
+  out: ClientData,
+  baseForBalances: ClientData,
+  deathYear: number,
+  enabled: boolean,
+): void {
+  if (!enabled || out.liabilities.length === 0) return;
+  const payoff = liabilityBalancesAtDeathYear(baseForBalances, deathYear);
+  out.liabilities = [];
+  out.expenses.push({
+    id: "li-solver-debt-payoff",
+    type: "other",
+    name: "Debt Payoff at Death",
+    annualAmount: payoff,
+    startYear: deathYear,
+    endYear: deathYear,
+    growthRate: 0,
+  });
+}
+
+/**
  * Assemble a what-if `ClientData` for the Life Insurance solver: a premature
  * death of `deceased` in `deathYear` plus a synthetic term policy at the
  * candidate `faceValue` whose §101 tax-free proceeds route to the survivor.
@@ -207,7 +259,8 @@ export function buildLifeInsuranceWhatIfData(
   // Task 3 — survivor's living-expense-at-death override.
   applyLivingExpenseAtDeath(out, deathYear, input.livingExpenseAtDeath);
 
-  // Task 4 — pay-off-debts-at-death override (applyDebtPayoffAtDeath).
+  // Task 4 — pay-off-debts-at-death override.
+  applyDebtPayoffAtDeath(out, data, deathYear, input.payOffDebtsAtDeath);
 
   // Task 5 — extend planEndYear to cover the survivor's life expectancy.
 

@@ -7,6 +7,7 @@ import {
   basePlanSettings,
   sampleAccounts,
   sampleFamilyMembers,
+  sampleLiabilities,
 } from "@/engine/__tests__/fixtures";
 
 /** Married household fixture. lifeExpectancy / spouseLifeExpectancy are set so
@@ -209,5 +210,48 @@ describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
     });
     expect(out.expenses).toHaveLength(1);
     expect(out.expenses[0].endYear).toBe(2070);
+  });
+});
+
+describe("buildLifeInsuranceWhatIfData — pay off debts at death", () => {
+  it("clears liabilities and books a death-year payoff outflow when enabled", () => {
+    const data = marriedBase();
+    // Use sampleLiabilities fixture (mortgage, 300k balance, starts 2026)
+    data.liabilities = [{ ...sampleLiabilities[0] }];
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      growthRate: 0.05,
+      finalExpenses: 0,
+      livingExpenseAtDeath: null,
+      payOffDebtsAtDeath: true,
+    });
+    // liabilities cleared so the survivor carries no debt past death
+    expect(out.liabilities).toHaveLength(0);
+    // a one-time death-year "other" expense covers the payoff
+    const payoff = out.expenses.find((e) => e.id === "li-solver-debt-payoff");
+    expect(payoff).toBeDefined();
+    expect(payoff!.startYear).toBe(2030);
+    expect(payoff!.endYear).toBe(2030);
+    expect(payoff!.annualAmount).toBeGreaterThan(0);
+  });
+
+  it("leaves liabilities in place when the toggle is off", () => {
+    const data = marriedBase();
+    data.liabilities = [{ ...sampleLiabilities[0] }];
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      growthRate: 0.05,
+      finalExpenses: 0,
+      livingExpenseAtDeath: null,
+      payOffDebtsAtDeath: false,
+    });
+    expect(out.liabilities).toHaveLength(1);
+    expect(out.expenses.find((e) => e.id === "li-solver-debt-payoff")).toBeUndefined();
   });
 });
