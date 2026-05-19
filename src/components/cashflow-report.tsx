@@ -777,6 +777,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   if (clientData) {
     for (const acc of clientData.accounts) {
       accountCategoryById[acc.id] = acc.category;
+      // Fully entity-owned accounts (trust / business) belong to the entity
+      // drill-downs, not the household segment drill-downs. The household
+      // portfolio totals already exclude them (the snapshot routes them to the
+      // trustsAndBusinesses bucket); skip them here so they don't render as
+      // stray $0 columns inside the household Cash / Taxable / etc. drills.
+      if (isFullyEntityOwned(acc)) continue;
       const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
         ([, c]) => c === acc.category
       )?.[0];
@@ -803,16 +809,23 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       const map = (y.portfolioAssets as Record<string, unknown>)[bucket];
       if (!map || typeof map !== "object") continue;
       for (const id of Object.keys(map as Record<string, number>)) {
+        // Recover the category for engine-minted synthetic accounts that aren't
+        // in clientData.accounts. Keep the first-seen category — don't override.
         if (!(id in accountCategoryById)) {
           accountCategoryById[id] = category;
-          const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
-            ([, c]) => c === category,
-          )?.[0];
-          if (segmentKey) {
-            if (!accountsByCategory[segmentKey]) accountsByCategory[segmentKey] = [];
-            if (!accountsByCategory[segmentKey].includes(id)) {
-              accountsByCategory[segmentKey].push(id);
-            }
+        }
+        // An account can move between segments mid-projection — a life-insurance
+        // policy becomes a taxable `life_insurance_proceeds` account after a
+        // death event. Ensure the id is listed under every segment whose
+        // portfolioAssets bucket it appears in, so the drill-down renders a
+        // column for it there (e.g. the proceeds surface under Taxable).
+        const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
+          ([, c]) => c === category,
+        )?.[0];
+        if (segmentKey) {
+          if (!accountsByCategory[segmentKey]) accountsByCategory[segmentKey] = [];
+          if (!accountsByCategory[segmentKey].includes(id)) {
+            accountsByCategory[segmentKey].push(id);
           }
         }
       }
