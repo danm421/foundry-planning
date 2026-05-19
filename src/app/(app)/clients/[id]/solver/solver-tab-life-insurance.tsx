@@ -122,15 +122,21 @@ export function SolverTabLifeInsurance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mirrors the latest `assumptions` prop so callbacks can spread the current
+  // value without re-creating on every change (restores the pre-lift
+  // state-updater safety).
+  const assumptionsRef = useRef(assumptions);
+  assumptionsRef.current = assumptions;
+
   // Lift an updated MC target score from the MC block. Changing the score must
   // NOT trigger an MC solve (it's expensive — that runs only on the explicit
   // button click), but it does ride the cheap debounced straight-line solve +
   // settings autosave below, which is how the score gets persisted.
   const handleScoreChange = useCallback(
     (mcTargetScore: number) => {
-      onAssumptionsChange({ ...assumptions, mcTargetScore });
+      onAssumptionsChange({ ...assumptionsRef.current, mcTargetScore });
     },
-    [assumptions, onAssumptionsChange],
+    [onAssumptionsChange],
   );
 
   // Debounced solve + autosave on any assumptions edit.
