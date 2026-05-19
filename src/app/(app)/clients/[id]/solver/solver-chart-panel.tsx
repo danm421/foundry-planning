@@ -48,27 +48,34 @@ export function SolverChartPanel({
   spouseName,
   showLifeInsuranceTab,
 }: Props) {
-  // The user-selected base tab. When the LI solver tab is active, the LI Need
-  // chart is auto-selected via `tab` below — but this state remembers what to
-  // fall back to once the LI tab closes.
-  const [tab, setTab] = useState<ChartTab>("portfolio");
+  const [tab, setTab] = useState<ChartTab>(
+    showLifeInsuranceTab ? "lifeInsurance" : "portfolio",
+  );
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
 
   const overTime = useNeedOverTime(clientId);
   const { cancel: cancelOverTime } = overTime;
 
-  // Derived during render — no effect-synced state. Entering the LI solver
-  // tab forces the LI Need chart; leaving it reverts to the user's chosen
-  // base tab. Because "lifeInsurance" can only ever be reached while the LI
-  // tab is open, it can't strand the panel once that tab closes.
-  const activeTab: ChartTab = showLifeInsuranceTab
-    ? "lifeInsurance"
-    : tab === "lifeInsurance"
-      ? "portfolio"
-      : tab;
+  // Auto-select the LI Need tab when the LI solver tab opens, and revert to
+  // Portfolio when it closes — adjusted during render via a previous-prop
+  // tracker (React's "store info from previous renders" pattern). Doing this
+  // in render rather than an effect avoids the cascading-render lint rule,
+  // while still leaving `tab` as real user-controllable state between the
+  // open/close transitions.
+  const [prevShowLiTab, setPrevShowLiTab] = useState(showLifeInsuranceTab);
+  if (showLifeInsuranceTab !== prevShowLiTab) {
+    setPrevShowLiTab(showLifeInsuranceTab);
+    setTab((t) =>
+      showLifeInsuranceTab
+        ? "lifeInsurance"
+        : t === "lifeInsurance"
+          ? "portfolio"
+          : t,
+    );
+  }
 
-  // Leaving the LI solver tab cancels any in-flight over-time solve — a
-  // genuine external-system teardown, the legitimate use of an effect.
+  // Aborting an in-flight over-time fetch is a genuine external-system
+  // teardown, so it stays in an effect — it does not call setState.
   useEffect(() => {
     if (!showLifeInsuranceTab) cancelOverTime();
   }, [showLifeInsuranceTab, cancelOverTime]);
@@ -79,7 +86,7 @@ export function SolverChartPanel({
   // Built only when the Liquidity tab is active — avoids running the estate
   // report on every recompute (and against fixtures that lack estate data).
   const liquidityRows = useMemo(() => {
-    if (activeTab !== "liquidity") return [];
+    if (tab !== "liquidity") return [];
     const c = workingTree.client;
     return buildYearlyLiquidityReport({
       projection: { years: currentProjection },
@@ -93,7 +100,7 @@ export function SolverChartPanel({
         spouseDob: c.spouseDob ?? null,
       },
     }).rows;
-  }, [activeTab, currentProjection, workingTree]);
+  }, [tab, currentProjection, workingTree]);
 
   return (
     <div className="rounded-lg border border-hair bg-card p-4">
@@ -108,10 +115,10 @@ export function SolverChartPanel({
               key={t.id}
               type="button"
               role="tab"
-              aria-selected={activeTab === t.id}
+              aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
-                activeTab === t.id
+                tab === t.id
                   ? "bg-accent/20 text-ink"
                   : "text-ink-3 hover:text-ink"
               }`}
@@ -120,7 +127,7 @@ export function SolverChartPanel({
             </button>
           ))}
         </div>
-        {activeTab === "liquidity" ? (
+        {tab === "liquidity" ? (
           <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
             <input
               type="checkbox"
@@ -133,7 +140,7 @@ export function SolverChartPanel({
         ) : null}
       </div>
 
-      {activeTab === "portfolio" ? (
+      {tab === "portfolio" ? (
         <div style={{ height: 300 }}>
           <PortfolioBarsChart
             current={currentProjection}
@@ -141,18 +148,18 @@ export function SolverChartPanel({
           />
         </div>
       ) : null}
-      {activeTab === "cashflow" ? (
+      {tab === "cashflow" ? (
         <div style={{ height: 300 }}>
           <SolverCashFlowChart years={currentProjection} />
         </div>
       ) : null}
-      {activeTab === "liquidity" ? (
+      {tab === "liquidity" ? (
         <YearlyLiquidityChart
           rows={liquidityRows}
           showPortfolio={showPortfolioAssets}
         />
       ) : null}
-      {activeTab === "lifeInsurance" ? (
+      {tab === "lifeInsurance" ? (
         <LiNeedOverTimeView
           rows={overTime.rows}
           isRunning={overTime.isRunning}
