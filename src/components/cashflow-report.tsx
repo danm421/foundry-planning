@@ -777,11 +777,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   if (clientData) {
     for (const acc of clientData.accounts) {
       accountCategoryById[acc.id] = acc.category;
-      // Fully entity-owned accounts (trust / business) belong to the entity
-      // drill-downs, not the household segment drill-downs. The household
-      // portfolio totals already exclude them (the snapshot routes them to the
-      // trustsAndBusinesses bucket); skip them here so they don't render as
-      // stray $0 columns inside the household Cash / Taxable / etc. drills.
+      // Don't seed a household-drill column straight from an entity-owned
+      // account here. A non-IIP entity account is routed by the snapshot to the
+      // trustsAndBusinesses bucket and never appears in a household primary
+      // bucket, so skipping it keeps it out of the household Cash / Taxable /
+      // etc. drills (where it would otherwise be a stray $0 column). An
+      // includeInPortfolio (IIP) entity account *does* land in a household
+      // primary bucket and belongs in the household total — the synthetic-
+      // recovery loop below re-adds it from that bucket, so skipping it here is
+      // harmless. Net: column membership follows where the balance actually
+      // lands, not raw ownership.
       if (isFullyEntityOwned(acc)) continue;
       const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
         ([, c]) => c === acc.category
