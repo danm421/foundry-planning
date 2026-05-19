@@ -130,6 +130,35 @@ describe("computeGrossEstate", () => {
     expect(r.lines[0].label).toContain("(50%)");
   });
 
+  it("community_property joint account still includes 50% in decedent's gross estate at first death", () => {
+    // Regression guard against a subtle conflation: §1014(b)(6) gives BOTH halves
+    // a full basis step-up at the first spouse's death, but only the decedent's
+    // half is included in their gross estate — same as JTWROS. CP changes basis,
+    // not gross-estate inclusion.
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("cp1", 2_000_000, {
+        basis: 800_000,
+        titlingType: "community_property",
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+        ],
+      })],
+      accountBalances: { cp1: 2_000_000 },
+      liabilities: [],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+    // Decedent's gross estate = 50% of $2M = $1M (NOT $2M).
+    expect(r.total).toBeCloseTo(1_000_000, 2);
+    expect(r.lines[0].amount).toBeCloseTo(1_000_000, 2);
+    expect(r.lines[0].percentage).toBe(0.5);
+    expect(r.lines[0].label).toContain("(50%)");
+  });
+
   it("excludes spouse-owned accounts", () => {
     const r = computeGrossEstate({
       deceased: "client",
