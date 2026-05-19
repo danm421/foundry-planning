@@ -722,6 +722,13 @@
       "when": 1779223229586,
       "tag": "0102_rapid_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1779228389327,
+      "tag": "0103_magical_starbolt",
+      "breakpoints": true
     }
   ]
 }

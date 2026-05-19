@@ -77,6 +77,11 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
 
 export const ownerEnum = pgEnum("owner", ["client", "spouse", "joint"]);
 
+export const titlingTypeEnum = pgEnum("titling_type", [
+  "jtwros",
+  "community_property",
+]);
+
 export const insuredPersonEnum = pgEnum("insured_person", [
   "client",
   "spouse",
@@ -1016,6 +1021,7 @@ export const accounts = pgTable("accounts", {
   // substitutes the plan's resolved inflation rate at projection time;
   // the rate column is then a fallback / display value only.
   propertyTaxGrowthSource: itemGrowthSourceEnum("property_tax_growth_source").notNull().default("custom"),
+  titlingType: titlingTypeEnum("titling_type").notNull().default("jtwros"),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
