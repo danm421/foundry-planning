@@ -3,9 +3,9 @@ import { controllingFamilyMember, controllingEntity } from "@/engine/ownership";
 
 /** A source-side grouping node for the estate flow chart. */
 export interface OwnerBucket {
-  /** "client" | "spouse" | "joint" | `entity:<id>` */
+  /** "client" | "spouse" | "joint" | "community_property" | `entity:<id>` */
   id: string;
-  kind: "client" | "spouse" | "joint" | "trust" | "business";
+  kind: "client" | "spouse" | "joint" | "community_property" | "trust" | "business";
   label: string;
 }
 
@@ -40,6 +40,13 @@ export function classifyAccountOwner(
   }
   if (fmId !== null && fmId === spouseFm?.id) {
     return { id: "spouse", kind: "spouse", label: spouseFm.firstName ?? "Spouse" };
+  }
+  // The remaining case is a mixed family-member account (typically a joint
+  // household 50/50 split). Differentiate JTWROS from community property by
+  // the account's titlingType — survivorship behavior at first death is the
+  // same, but the source-rail label differs.
+  if (account.titlingType === "community_property") {
+    return { id: "community_property", kind: "community_property", label: "Community Property" };
   }
   return { id: "joint", kind: "joint", label: "Joint" };
 }

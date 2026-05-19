@@ -39,12 +39,26 @@ describe("classifyAccountOwner", () => {
   it("classifies a mixed family-member account as the joint bucket", () => {
     const data = baseData();
     const account = { id: "a3", name: "Home", category: "real_estate", value: 800,
+      titlingType: "jtwros",
       owners: [
         { kind: "family_member", familyMemberId: "fm-c", percent: 0.6 },
         { kind: "family_member", familyMemberId: "fm-s", percent: 0.4 },
       ] };
     expect(classifyAccountOwner(data, account as never)).toEqual({
       id: "joint", kind: "joint", label: "Joint",
+    });
+  });
+
+  it("classifies a community-property joint account as the community_property bucket", () => {
+    const data = baseData();
+    const account = { id: "a5", name: "CP Brokerage", category: "taxable", value: 400,
+      titlingType: "community_property",
+      owners: [
+        { kind: "family_member", familyMemberId: "fm-c", percent: 0.5 },
+        { kind: "family_member", familyMemberId: "fm-s", percent: 0.5 },
+      ] };
+    expect(classifyAccountOwner(data, account as never)).toEqual({
+      id: "community_property", kind: "community_property", label: "Community Property",
     });
   });
 
