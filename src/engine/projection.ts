@@ -13,6 +13,7 @@ import type {
   Expense,
   EstateTaxResult,
   HypotheticalEstateTax,
+  LifeInsurancePayout,
 } from "./types";
 import { computeEntityCashFlow, type EntityMetadata } from "./entity-cashflow";
 import { accrueLockedEntityShare } from "./locked-shares";
@@ -221,6 +222,25 @@ export interface ProjectionOptions {
    * path is byte-identical.
    */
   returnsOverride?: (year: number, accountId: string) => number | undefined;
+}
+
+/** Fold life-insurance death benefits into a year's displayed income so they
+ *  surface as a cash-flow inflow — the "Other Inflows" band reads income.other,
+ *  the report table/drill reads income.bySource. §101(a): proceeds are
+ *  income-tax-free, so they touch income totals but never taxDetail. */
+function foldLifeInsurancePayoutsIntoIncome(
+  year: ProjectionYear,
+  payouts: LifeInsurancePayout[],
+): void {
+  if (payouts.length === 0) return;
+  let total = 0;
+  for (const p of payouts) {
+    total += p.faceValue;
+    year.income.bySource[`life-insurance-proceeds:${p.policyId}`] = p.faceValue;
+  }
+  year.income.other += total;
+  year.income.total += total;
+  year.totalIncome += total;
 }
 
 export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
@@ -3710,6 +3730,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       thisYear.deathTransfers = deathResult.transfers;
       thisYear.deathWarnings = deathResult.warnings;
       thisYear.estateTax = deathResult.estateTax;
+      foldLifeInsurancePayoutsIntoIncome(thisYear, deathResult.lifeInsurancePayouts);
     }
 
     // Final-death event (spec 4c) — fires at the final death year. For
@@ -3775,6 +3796,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ...finalResult.warnings,
       ];
       thisYear.estateTax = finalResult.estateTax;
+      foldLifeInsurancePayoutsIntoIncome(thisYear, finalResult.lifeInsurancePayouts);
 
       break;
     }
