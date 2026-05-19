@@ -108,7 +108,7 @@ export function ChangesPanelLeafRow({
       <button
         type="button"
         onClick={handleRevert}
-        className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 text-[#7a5b29] hover:text-[#c87a7a] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded p-1 shrink-0"
+        className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 text-white hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded p-1 shrink-0"
         aria-label="Revert change"
         title="Revert this change"
       >

@@ -432,7 +432,7 @@ function AssetClassRow({
       <td className="px-3 py-2">
         <button
           onClick={() => onDelete(ac.id)}
-          className="rounded p-1 text-gray-400 hover:bg-red-500/10 hover:text-red-400"
+          className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
           title="Delete asset class"
           aria-label="Delete asset class"
         >
@@ -543,7 +543,7 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
               <span className="truncate font-medium">{p.name}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); deletePortfolio(p.id); }}
-                className="rounded p-1 text-gray-400 hover:bg-red-500/10 hover:text-red-400"
+                className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
                 title="Delete portfolio"
                 aria-label="Delete portfolio"
               >
@@ -685,7 +685,7 @@ function PortfolioAllocationEditor({
                   <td className="px-3 py-2">
                     <button
                       onClick={() => removeRow(idx)}
-                      className="rounded p-1 text-gray-400 hover:bg-red-500/10 hover:text-red-400"
+                      className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
                       title="Remove asset class from portfolio"
                       aria-label="Remove asset class from portfolio"
                     >

@@ -203,7 +203,7 @@ export default function BeneficiaryRowList({
             <button
               type="button"
               onClick={() => remove(idx)}
-              className="text-xs text-ink-4 hover:text-red-400"
+              className="text-xs text-white hover:text-white"
               aria-label={`Remove beneficiary ${idx + 1}`}
             >
               ✕

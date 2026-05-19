@@ -240,7 +240,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                       <td className="whitespace-nowrap px-6 py-4 text-right">
                         <button
                           onClick={() => setDeleting(client)}
-                          className="text-gray-400 hover:text-red-400"
+                          className="text-white hover:text-white"
                           aria-label={`Delete ${client.firstName} ${client.lastName}`}
                           title="Delete client"
                         >

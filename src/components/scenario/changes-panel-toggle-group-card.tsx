@@ -116,7 +116,7 @@ export function ToggleGroupCard({
           onClick={() => setConfirmingDelete(true)}
           aria-label={`Delete technique ${group.name}`}
           title="Delete technique"
-          className="opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-[#7a5b29] hover:text-[#c87a7a] flex items-center justify-center rounded p-1 shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a]"
+          className="opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-white hover:text-white flex items-center justify-center rounded p-1 shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a]"
         >
           <TrashIcon width={16} height={16} aria-hidden="true" />
         </button>

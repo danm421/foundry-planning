@@ -220,7 +220,7 @@ export default function WillRecipientList({
               type="button"
               aria-label={`Remove ${recipientAriaLabel}`}
               onClick={() => remove(row.key)}
-              className="text-[12px] text-ink-4 hover:text-crit transition-colors"
+              className="text-[12px] text-white hover:text-white transition-colors"
             >
               ✕
             </button>

@@ -121,7 +121,7 @@ export default function ReviewStepLiabilities({
                 </div>
                 <button
                   onClick={() => removeRow(i)}
-                  className="pb-1 text-gray-400 hover:text-red-400"
+                  className="pb-1 text-white hover:text-white"
                   title="Remove"
                 >
                   <TrashIcon />

@@ -211,7 +211,7 @@ export default function BequestRecipientList({
               type="button"
               aria-label={`Remove recipient ${idx + 1}`}
               onClick={() => remove(idx)}
-              className="text-xs text-ink-4 hover:text-red-400"
+              className="text-xs text-white hover:text-white"
             >
               ✕
             </button>

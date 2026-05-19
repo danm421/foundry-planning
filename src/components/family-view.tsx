@@ -481,7 +481,7 @@ export default function FamilyView({
                               e.stopPropagation();
                               setDeletingMember(m);
                             }}
-                            className="text-gray-400 hover:text-red-400"
+                            className="text-white hover:text-white"
                             aria-label={`Delete ${m.firstName}`}
                           >
                             <TrashIcon />
@@ -565,7 +565,7 @@ export default function FamilyView({
                             ev.stopPropagation();
                             setDeletingEntity(e);
                           }}
-                          className="text-gray-400 hover:text-red-400"
+                          className="text-white hover:text-white"
                           aria-label={`Delete ${e.name}`}
                         >
                           <TrashIcon />
@@ -1202,7 +1202,7 @@ function ExternalBeneficiariesSection({
                             e.stopPropagation();
                             setDeleting(x);
                           }}
-                          className="text-gray-400 hover:text-red-400"
+                          className="text-white hover:text-white"
                           aria-label={`Delete ${x.name}`}
                         >
                           <TrashIcon />

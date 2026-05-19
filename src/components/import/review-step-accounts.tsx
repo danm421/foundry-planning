@@ -347,7 +347,7 @@ export default function ReviewStepAccounts({
                   </label>
                   <button
                     onClick={() => removeRow(i)}
-                    className="ml-auto pb-1 text-gray-400 hover:text-red-400"
+                    className="ml-auto pb-1 text-white hover:text-white"
                     title="Remove"
                   >
                     <TrashIcon />

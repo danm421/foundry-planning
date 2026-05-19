@@ -436,7 +436,7 @@ export default function WithdrawalStrategySection({
                       e.stopPropagation();
                       setDeleting(ws);
                     }}
-                    className="text-gray-400 hover:text-red-400"
+                    className="text-white hover:text-white"
                     aria-label={`Delete ${accountMap[ws.accountId]?.name ?? ws.accountId}`}
                   >
                     <TrashIcon />

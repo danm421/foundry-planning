@@ -295,7 +295,7 @@ export default function ReviewStepFamily({
                       </select>
                       <button
                         onClick={() => removeDependent(i)}
-                        className="pb-1 text-gray-400 hover:text-red-400"
+                        className="pb-1 text-white hover:text-white"
                         title="Remove"
                       >
                         <TrashIcon />

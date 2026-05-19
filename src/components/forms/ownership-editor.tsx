@@ -197,7 +197,7 @@ function OwnerRow({
       <button
         type="button"
         onClick={() => onRemove(idx)}
-        className="text-ink-4 hover:text-crit"
+        className="text-white hover:text-white"
         aria-label={`Remove owner ${idx + 1}`}
       >
         <TrashIcon className="w-4 h-4" />

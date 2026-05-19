@@ -285,7 +285,7 @@ function AccountBeneficiaryEditor({
               <button
                 type="button"
                 onClick={() => removeRow(r.id)}
-                className="text-xs text-red-400 hover:text-red-300"
+                className="text-xs text-white hover:text-white"
               >
                 remove
               </button>

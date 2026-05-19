@@ -1832,7 +1832,7 @@ function Row({
               e.stopPropagation();
               onDelete();
             }}
-            className="text-gray-400 hover:text-red-400"
+            className="text-white hover:text-white"
             aria-label={`Delete ${label}`}
           >
             <TrashIcon />
