@@ -220,31 +220,43 @@ function applyLivingExpenseAtDeath(
 }
 
 /**
- * Sum the projected remaining balances of all liabilities at the beginning of
- * `deathYear` by running a pre-pass projection on the pre-transform `data`.
+ * Sum the projected beginning-of-year balances at `deathYear` for the
+ * liabilities in `ids`, by running a pre-pass projection on the pre-transform
+ * `data`.
  *
  * Uses `ProjectionYear.liabilityBalancesBoY` (a `Record<string, number>` keyed
  * by liability id) — the per-liability balance at the start of each year,
- * before that year's amortisation runs. If no projection row exists for
- * `deathYear` (e.g. deathYear is before planStartYear), we fall back to the
- * sum of starting balances from `data.liabilities`.
+ * before that year's amortisation runs. Falls back to starting balances when
+ * no projection row exists for `deathYear` (e.g. deathYear precedes
+ * planStartYear).
  */
-function liabilityBalancesAtDeathYear(data: ClientData, deathYear: number): number {
+function liabilityBalancesAtDeathYear(
+  data: ClientData,
+  deathYear: number,
+  ids: ReadonlySet<string>,
+): number {
   const projection = runProjection(data);
   const row = projection.find((y) => y.year === deathYear);
   if (row) {
-    return Object.values(row.liabilityBalancesBoY).reduce((s, v) => s + v, 0);
+    let sum = 0;
+    for (const [id, bal] of Object.entries(row.liabilityBalancesBoY)) {
+      if (ids.has(id)) sum += bal;
+    }
+    return sum;
   }
   // Fallback: sum starting balances (conservative; accurate when deathYear is
   // before planStartYear or all loans have already terminated).
-  return data.liabilities.reduce((s, l) => s + l.balance, 0);
+  return data.liabilities
+    .filter((l) => ids.has(l.id))
+    .reduce((s, l) => s + l.balance, 0);
 }
 
 /**
- * When `enabled`, wipe all household liabilities from the what-if clone and
- * book a one-time `"other"` expense in `deathYear` equal to the projected
- * outstanding debt — modelling life insurance proceeds retiring all debts at
- * the insured's death so the survivor inherits a debt-free household.
+ * Retire the selected household liabilities at the insured's death: remove
+ * them from the what-if clone and book a one-time `"other"` expense in
+ * `deathYear` equal to their projected outstanding balance — modelling life
+ * insurance proceeds retiring debts so the survivor inherits a lighter
+ * household. Ids absent from `out.liabilities` are ignored.
  *
  * The balance pre-pass runs against `baseForBalances` (the ORIGINAL,
  * pre-transform data) so projections of the actual plan — not the what-if
@@ -254,11 +266,16 @@ function applyDebtPayoffAtDeath(
   out: ClientData,
   baseForBalances: ClientData,
   deathYear: number,
-  enabled: boolean,
+  payoffLiabilityIds: readonly string[],
 ): void {
-  if (!enabled || out.liabilities.length === 0) return;
-  const payoff = liabilityBalancesAtDeathYear(baseForBalances, deathYear);
-  out.liabilities = [];
+  const present = new Set(
+    out.liabilities
+      .filter((l) => payoffLiabilityIds.includes(l.id))
+      .map((l) => l.id),
+  );
+  if (present.size === 0) return;
+  const payoff = liabilityBalancesAtDeathYear(baseForBalances, deathYear, present);
+  out.liabilities = out.liabilities.filter((l) => !present.has(l.id));
   out.expenses.push({
     id: "li-solver-debt-payoff",
     type: "other",
