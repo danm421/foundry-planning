@@ -61,6 +61,20 @@ describe("solveLifeInsuranceNeedMc", () => {
     expect(r.achievedScore).toBeGreaterThanOrEqual(0.83);
   }, 30_000);
 
+  it("converges in far fewer evaluations than the old 24-iteration bisection", async () => {
+    const r = await solveLifeInsuranceNeedMc(
+      marriedBase(),
+      "client",
+      { ...assumptions, leaveToHeirsAmount: 8_000_000, mcTargetScore: 0.85 },
+      { ...mcPayload(), requiredMinimumAssetLevel: 8_000_000 },
+      { trials: 150 },
+    );
+    expect(r.status).toBe("solved");
+    // 2 endpoint probes + a handful of root-finder iterations -- well under
+    // the old fixed budget of MAX_ITERATIONS + 2 = 26.
+    expect(r.iterations).toBeLessThanOrEqual(14);
+  }, 30_000);
+
   it("reports exceeds-cap when even the 20M cap cannot meet the target", async () => {
     const r = await solveLifeInsuranceNeedMc(
       marriedBase(),

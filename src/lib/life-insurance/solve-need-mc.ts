@@ -21,6 +21,7 @@ import type { ClientData } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import { buildLifeInsuranceWhatIfData } from "@/engine/what-if/life-insurance-need";
 import type { LifeInsuranceAssumptions } from "./solve-need";
+import { findRootAsync } from "./root-find";
 
 /** Maximum face value the solver will try before declaring exceeds-cap.
  *  Matches the straight-line solver's cap (solve-need.ts). */
@@ -80,8 +81,12 @@ export async function solveLifeInsuranceNeedMc(
   const trials = opts.trials ?? DEFAULT_TRIALS;
   const target = assumptions.mcTargetScore;
   const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
-  // +2 for the two endpoint probes (faceValue 0 and CAP) before bisection.
-  const total = MAX_ITERATIONS + 2;
+  // The Illinois root-finder converges in far fewer probes than the old fixed
+  // bisection, so size the progress bar to the expected probe count (2
+  // endpoint probes + ~8 root-finder iterations) rather than the worst-case
+  // cap. `done` is clamped to `total` so a rare long run never overflows it.
+  const EXPECTED_EVALUATIONS = 10;
+  const total = EXPECTED_EVALUATIONS;
 
   let iterations = 0;
 
@@ -116,7 +121,7 @@ export async function solveLifeInsuranceNeedMc(
       signal: opts.signal,
       yieldEvery: 50,
     });
-    opts.onProgress?.(iterations, total);
+    opts.onProgress?.(Math.min(iterations, total), total);
     return mc.successRate;
   };
 
@@ -133,24 +138,28 @@ export async function solveLifeInsuranceNeedMc(
     return { status: "exceeds-cap", faceValue: CAP, achievedScore: atCap, iterations };
   }
 
-  // Binary search for the minimum face value that meets the target score.
-  let lo = 0;
-  let hi = CAP;
-  let mid = hi;
-  let achieved = atCap;
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    if (opts.signal?.aborted) throw new Error("aborted");
-    mid = (lo + hi) / 2;
-    achieved = await evaluate(mid);
-    if (Math.abs(achieved - target) <= SCORE_TOLERANCE) break;
-    if (achieved < target) lo = mid;
-    else hi = mid;
-  }
+  // Bracket is valid: atZero < target <= atCap. Solve via Illinois-modified
+  // false position. The success-rate objective is monotonic in face value
+  // (fixed seed every evaluation), so the same bracketing guarantees as the
+  // deterministic solver hold; `iterations` already counts the two endpoint
+  // probes plus every root-finder evaluation.
+  const root = await findRootAsync(
+    {
+      lo: 0,
+      flo: atZero,
+      hi: CAP,
+      fhi: atCap,
+      target,
+      tol: SCORE_TOLERANCE,
+      maxIterations: MAX_ITERATIONS,
+    },
+    evaluate,
+  );
 
   return {
     status: "solved",
-    faceValue: Math.round(mid),
-    achievedScore: achieved,
+    faceValue: Math.round(root.x),
+    achievedScore: root.fx,
     iterations,
   };
 }
