@@ -228,3 +228,39 @@ describe("prepareLifeInsurancePayouts", () => {
     expect(result.basisMap["cash-1"]).toBe(20_000);
   });
 });
+
+describe("prepareLifeInsurancePayouts — lifeInsurancePayouts list", () => {
+  it("reports each triggered policy's id and face value", () => {
+    const acct = mkAccount({
+      id: "pol-1",
+      insuredPerson: "client",
+      lifeInsurance: mkPolicy({ faceValue: 1_000_000 }),
+    });
+    const result = prepareLifeInsurancePayouts({
+      year: 2040,
+      deceased: "client",
+      eventKind: "first_death",
+      accounts: [acct],
+      accountBalances: { "pol-1": 50_000 },
+      basisMap: { "pol-1": 0 },
+      entities: [],
+    });
+    expect(result.lifeInsurancePayouts).toEqual([
+      { policyId: "pol-1", faceValue: 1_000_000 },
+    ]);
+  });
+
+  it("returns an empty list when no policy triggers", () => {
+    const acct = mkAccount({ id: "pol-1", insuredPerson: "spouse" });
+    const result = prepareLifeInsurancePayouts({
+      year: 2040,
+      deceased: "client",
+      eventKind: "first_death",
+      accounts: [acct],
+      accountBalances: { "pol-1": 50_000 },
+      basisMap: { "pol-1": 0 },
+      entities: [],
+    });
+    expect(result.lifeInsurancePayouts).toEqual([]);
+  });
+});

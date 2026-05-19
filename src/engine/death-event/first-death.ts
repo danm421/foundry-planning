@@ -619,6 +619,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     warnings,
     estateTax,
     dsueGenerated: estateTax.dsueGenerated,
+    lifeInsurancePayouts: li.lifeInsurancePayouts,
     entities: mutatedEntities,
   };
 }

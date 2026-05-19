@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, GiftEvent, BeneficiaryRef } from "../types";
+import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, GiftEvent, BeneficiaryRef, LifeInsurancePayout } from "../types";
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
@@ -1403,6 +1403,8 @@ export interface DeathEventResult {
   warnings: string[];
   estateTax: EstateTaxResult;
   dsueGenerated: number;   // first-death only; always 0 at final death
+  /** Per-policy life-insurance death benefits triggered by this event. */
+  lifeInsurancePayouts: LifeInsurancePayout[];
   /** Mutated entity list after grantor-succession updates have been applied.
    *  Caller threads this forward so trust-tax classification (grantor vs.
    *  non-grantor) re-evaluates against post-death state in subsequent years.

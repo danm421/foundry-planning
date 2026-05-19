@@ -1,4 +1,4 @@
-import type { Account, EntitySummary } from "../types";
+import type { Account, EntitySummary, LifeInsurancePayout } from "../types";
 
 export interface PreparePayoutsInput {
   year: number;
@@ -21,6 +21,8 @@ export interface PreparePayoutsResult {
   basisMap: Record<string, number>;
   /** Policy account IDs transformed this pass (diagnostic / reporting). */
   retiredPolicyIds: string[];
+  /** Per-policy face-value payouts triggered this pass. */
+  lifeInsurancePayouts: LifeInsurancePayout[];
   /** Engine warnings — currently only `life_insurance_no_beneficiaries:<policyId>`. */
   warnings: string[];
 }
@@ -45,6 +47,7 @@ export function prepareLifeInsurancePayouts(
   const accountBalances: Record<string, number> = { ...input.accountBalances };
   const basisMap: Record<string, number> = { ...input.basisMap };
   const retiredPolicyIds: string[] = [];
+  const lifeInsurancePayouts: LifeInsurancePayout[] = [];
   const warnings: string[] = [];
   const resultAccounts: Account[] = [];
 
@@ -89,6 +92,7 @@ export function prepareLifeInsurancePayouts(
     accountBalances[policyId] = faceValue;
     basisMap[policyId] = faceValue;
     retiredPolicyIds.push(policyId);
+    lifeInsurancePayouts.push({ policyId, faceValue });
 
     const hasPrimary = account.beneficiaries?.some((b) => b.tier === "primary") ?? false;
     if (!hasPrimary) {
@@ -101,6 +105,7 @@ export function prepareLifeInsurancePayouts(
     accountBalances,
     basisMap,
     retiredPolicyIds,
+    lifeInsurancePayouts,
     warnings,
   };
 }
