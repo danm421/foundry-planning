@@ -19,6 +19,9 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { solveLifeInsuranceNeedMc } from "@/lib/life-insurance/solve-need-mc";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
+import { loadLiProceedsGrowth } from "@/lib/life-insurance/load-li-portfolio";
+import { SYNTHETIC_POLICY_ID } from "@/engine/what-if/life-insurance-need";
+import type { LifeInsuranceAssumptions } from "@/lib/life-insurance/solve-need";
 
 export const dynamic = "force-dynamic";
 
@@ -75,10 +78,32 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       };
       try {
         const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
-        const mcPayload = await loadMonteCarloData(clientId, firmId);
+
+        const proceeds = await loadLiProceedsGrowth(
+          firmId,
+          assumptions.modelPortfolioId,
+          0.05,
+        );
+
+        // Inject the synthetic policy's model-portfolio mix so the §101
+        // proceeds randomize through Monte Carlo. The transformed payout
+        // account keeps id === SYNTHETIC_POLICY_ID.
+        const mcPayload = await loadMonteCarloData(clientId, firmId, [
+          { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
+        ]);
         // The survivor must end with at least the leave-to-heirs target — the
         // MC solver reads this floor off the payload (see solve-need-mc.ts).
         mcPayload.requiredMinimumAssetLevel = assumptions.leaveToHeirsAmount;
+
+        const solveAssumptions: LifeInsuranceAssumptions & { mcTargetScore: number } = {
+          deathYear: assumptions.deathYear,
+          proceedsGrowthRate: proceeds.rate,
+          proceedsRealization: proceeds.realization,
+          leaveToHeirsAmount: assumptions.leaveToHeirsAmount,
+          livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
+          payoffLiabilityIds: assumptions.payoffLiabilityIds,
+          mcTargetScore: assumptions.mcTargetScore,
+        };
 
         const filingStatus = effectiveTree.client.filingStatus;
         const isMarried =
@@ -87,7 +112,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         const client = await solveLifeInsuranceNeedMc(
           effectiveTree,
           "client",
-          assumptions,
+          solveAssumptions,
           mcPayload,
           {
             onProgress: (done, total) =>
@@ -100,7 +125,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           ? await solveLifeInsuranceNeedMc(
               effectiveTree,
               "spouse",
-              assumptions,
+              solveAssumptions,
               mcPayload,
               {
                 onProgress: (done, total) =>
