@@ -28,7 +28,13 @@ describe("computeEstateTaxAddend", () => {
       payoffLiabilityIds: hnwAssumptions.payoffLiabilityIds,
     });
     const addend = computeEstateTaxAddend(tree, "client", hnwAssumptions);
+    // Parity: addend must equal the independent re-derivation from the projection.
     expect(addend).toBe(expectedAddend(projection));
+    // Regression guard: pin the concrete dollar value so a future engine change
+    // that silently shifts estate-tax math is caught here. Tolerance ±$1 000
+    // (toBeCloseTo exponent -3 means nearest 10^3 = 1000).
+    // Value observed 2026-05-19: ~$12 638 270.
+    expect(addend).toBeCloseTo(12_638_270, -3);
   });
 
   it("returns a positive addend for a high-net-worth estate", () => {
