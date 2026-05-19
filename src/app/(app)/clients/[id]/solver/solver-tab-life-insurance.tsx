@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
+import { LiMcSolve } from "./li-mc-solve";
 import { LiNeedCards } from "./li-need-cards";
 import { LiSurvivorChart } from "./li-survivor-chart";
 
@@ -105,6 +106,14 @@ export function SolverTabLifeInsurance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Lift an updated MC target score from the MC block. Changing the score must
+  // NOT trigger an MC solve (it's expensive — that runs only on the explicit
+  // button click), but it does ride the cheap debounced straight-line solve +
+  // settings autosave below, which is how the score gets persisted.
+  const handleScoreChange = useCallback((mcTargetScore: number) => {
+    setAssumptions((prev) => ({ ...prev, mcTargetScore }));
+  }, []);
+
   // Debounced solve + autosave on any assumptions edit.
   const isFirstRun = useRef(true);
   useEffect(() => {
@@ -144,8 +153,9 @@ export function SolverTabLifeInsurance({
         </div>
       ) : null}
 
-      {/* Need result cards + survivor projection. The Monte Carlo block
-          (Phase 2) and the over-time section (Phase 3) slot in below. */}
+      {/* Layout: assumptions → straight-line need cards → Monte Carlo solve
+          block → survivor chart. The two solved needs read adjacently, then
+          the chart. The over-time section (Phase 3) slots in below the chart. */}
       {solveResult ? (
         <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
           <LiNeedCards
@@ -154,6 +164,15 @@ export function SolverTabLifeInsurance({
             clientName={clientName}
             spouseName={spouseName}
           />
+          <div className="mt-4">
+            <LiMcSolve
+              clientId={clientId}
+              assumptions={assumptions}
+              clientName={clientName}
+              spouseName={spouseName}
+              onScoreChange={handleScoreChange}
+            />
+          </div>
           <div className="mt-4">
             <LiSurvivorChart
               result={solveResult}
