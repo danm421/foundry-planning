@@ -14,7 +14,7 @@ describe("OwnershipEditor", () => {
   it("Client preset writes one row at 100%", () => {
     const onChange = vi.fn();
     render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
-      value={[]} onChange={onChange} />);
+      value={[]} onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
     fireEvent.click(screen.getByText("Alice"));
     expect(onChange).toHaveBeenCalledWith([
       { kind: "family_member", familyMemberId: "fm-c", percent: 1 },
@@ -24,7 +24,7 @@ describe("OwnershipEditor", () => {
   it("Joint 50/50 preset writes two rows", () => {
     const onChange = vi.fn();
     render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
-      value={[]} onChange={onChange} />);
+      value={[]} onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
     fireEvent.click(screen.getByText("Joint 50/50"));
     expect(onChange).toHaveBeenCalledWith([
       { kind: "family_member", familyMemberId: "fm-c", percent: 0.5 },
@@ -35,7 +35,7 @@ describe("OwnershipEditor", () => {
   it("Joint 50/50 preset hidden when no spouse FM", () => {
     const onChange = vi.fn();
     render(<OwnershipEditor familyMembers={[familyMembers[0], familyMembers[2]]} entities={entities}
-      value={[]} onChange={onChange} />);
+      value={[]} onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
     expect(screen.queryByText("Joint 50/50")).not.toBeInTheDocument();
     expect(screen.queryByText("Spouse")).not.toBeInTheDocument();
   });
@@ -43,7 +43,7 @@ describe("OwnershipEditor", () => {
   it("Retirement mode shows single-owner caption + hides multi-owner presets", () => {
     render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
       value={[{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]}
-      onChange={vi.fn()} retirementMode={true} />);
+      onChange={vi.fn()} titlingType="jtwros" onTitlingTypeChange={() => {}} retirementMode={true} />);
     expect(screen.queryByText("Joint 50/50")).not.toBeInTheDocument();
     expect(screen.queryByText("Custom")).not.toBeInTheDocument();
     expect(screen.getByText(/IRS rules require a single owner/i)).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe("OwnershipEditor", () => {
         { kind: "family_member", familyMemberId: "fm-c", percent: 0.4 },
         { kind: "family_member", familyMemberId: "fm-s", percent: 0.4 },
       ]}
-      onChange={vi.fn()} />);
+      onChange={vi.fn()} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
     // 80% — should show "must equal 100%" hint
     expect(screen.getByText(/must equal 100%/i)).toBeInTheDocument();
 
@@ -64,7 +64,7 @@ describe("OwnershipEditor", () => {
         { kind: "family_member", familyMemberId: "fm-c", percent: 0.5 },
         { kind: "family_member", familyMemberId: "fm-s", percent: 0.5 },
       ]}
-      onChange={vi.fn()} />);
+      onChange={vi.fn()} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
     expect(screen.queryByText(/must equal 100%/i)).not.toBeInTheDocument();
   });
 
@@ -76,7 +76,7 @@ describe("OwnershipEditor", () => {
         { kind: "family_member", familyMemberId: "fm-c", percent: 0.4 },
         { kind: "family_member", familyMemberId: "fm-s", percent: 0.4 },
       ]}
-      onChange={onChange} />);
+      onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
 
     fireEvent.click(screen.getByText(/\+ Add owner/i));
 
@@ -100,6 +100,8 @@ describe("OwnershipEditor", () => {
         entities={entities}
         value={[{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]}
         onChange={vi.fn()}
+        titlingType="jtwros"
+        onTitlingTypeChange={() => {}}
       />,
     );
     // Sanity: "+ Add owner" is not visible while in Client preset mode
@@ -117,6 +119,8 @@ describe("OwnershipEditor", () => {
         entities={entities}
         value={[{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]}
         onChange={vi.fn()}
+        titlingType="jtwros"
+        onTitlingTypeChange={() => {}}
       />,
     );
     expect(screen.getByText("Alice").closest("button")).toHaveAttribute("aria-pressed", "true");
@@ -135,9 +139,99 @@ describe("OwnershipEditor", () => {
           { kind: "family_member", familyMemberId: "fm-s", percent: 0.4999999 },
         ]}
         onChange={vi.fn()}
+        titlingType="jtwros"
+        onTitlingTypeChange={() => {}}
       />,
     );
     expect(screen.getByText("Joint 50/50").closest("button")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Alice").closest("button")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  // ── Community Property preset (Task 9) ────────────────────────────────────
+
+  it("renders the Community Property preset when a spouse exists", () => {
+    render(
+      <OwnershipEditor
+        familyMembers={familyMembers}
+        entities={entities}
+        value={[]}
+        onChange={() => {}}
+        titlingType="jtwros"
+        onTitlingTypeChange={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /community property/i })).toBeInTheDocument();
+  });
+
+  it("hides Community Property preset when no spouse exists", () => {
+    render(
+      <OwnershipEditor
+        familyMembers={[familyMembers[0]]} // client only — no spouse
+        entities={entities}
+        value={[]}
+        onChange={() => {}}
+        titlingType="jtwros"
+        onTitlingTypeChange={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /community property/i })).toBeNull();
+  });
+
+  it("clicking Community Property sets owners 50/50 and titlingType=community_property", () => {
+    const onChange = vi.fn();
+    const onTitlingTypeChange = vi.fn();
+    render(
+      <OwnershipEditor
+        familyMembers={familyMembers}
+        entities={entities}
+        value={[{ kind: "family_member", familyMemberId: familyMembers[0].id, percent: 1 }]}
+        onChange={onChange}
+        titlingType="jtwros"
+        onTitlingTypeChange={onTitlingTypeChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /community property/i }));
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ kind: "family_member", percent: 0.5 }),
+      expect.objectContaining({ kind: "family_member", percent: 0.5 }),
+    ]);
+    expect(onTitlingTypeChange).toHaveBeenCalledWith("community_property");
+  });
+
+  it("clicking Joint 50/50 resets titlingType to jtwros", () => {
+    const onTitlingTypeChange = vi.fn();
+    render(
+      <OwnershipEditor
+        familyMembers={familyMembers}
+        entities={entities}
+        value={[
+          { kind: "family_member", familyMemberId: familyMembers[0].id, percent: 0.5 },
+          { kind: "family_member", familyMemberId: familyMembers[1].id, percent: 0.5 },
+        ]}
+        onChange={() => {}}
+        titlingType="community_property"
+        onTitlingTypeChange={onTitlingTypeChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /joint 50\/50/i }));
+    expect(onTitlingTypeChange).toHaveBeenCalledWith("jtwros");
+  });
+
+  it("with 50/50 ownership and titlingType=community_property, Community Property preset is active and Joint 50/50 is inactive", () => {
+    render(
+      <OwnershipEditor
+        familyMembers={familyMembers}
+        entities={entities}
+        value={[
+          { kind: "family_member", familyMemberId: familyMembers[0].id, percent: 0.5 },
+          { kind: "family_member", familyMemberId: familyMembers[1].id, percent: 0.5 },
+        ]}
+        onChange={() => {}}
+        titlingType="community_property"
+        onTitlingTypeChange={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /community property/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /joint 50\/50/i })).toHaveAttribute("aria-pressed", "false");
   });
 });
