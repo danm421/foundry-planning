@@ -10,6 +10,7 @@ import type {
 } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { resolveRecipientLabel } from "./recipient-label";
+import { isPolicyInForce, insuredRetirementYearFor } from "./insurance-in-force";
 
 // ── CLUT termination surfacing ───────────────────────────────────────────────
 
@@ -414,6 +415,45 @@ function buildDeathSection(
     }
   }
 
+  // Insurance face-value override at second death. When a trust_pour_out
+  // source account is an in-force life-insurance policy, swap in the death
+  // benefit. First-death pour-outs are unchanged — that path already re-grosses
+  // for drain (see `needsRegross`) and the override semantics differ.
+  const faceValueOverrideByIdx = new Map<number, number>();
+  if (payload.estateTax.deathOrder === 2) {
+    const accountsById = new Map(
+      (clientData.accounts ?? []).map((a) => [a.id, a] as const),
+    );
+    const parseBirthYearFromDob = (dob: string | null | undefined): number | null => {
+      if (!dob) return null;
+      const y = Number(dob.slice(0, 4));
+      return Number.isFinite(y) ? y : null;
+    };
+    const clientProfile = clientData.client;
+    const clientBirthYear = parseBirthYearFromDob(clientProfile?.dateOfBirth);
+    const spouseBirthYear = parseBirthYearFromDob(clientProfile?.spouseDob);
+    const clientRetirementYear =
+      clientBirthYear != null && clientProfile?.retirementAge != null
+        ? clientBirthYear + clientProfile.retirementAge
+        : null;
+    const spouseRetirementYear =
+      spouseBirthYear != null && clientProfile?.spouseRetirementAge != null
+        ? spouseBirthYear + clientProfile.spouseRetirementAge
+        : null;
+    payload.transfers.forEach((t, idx) => {
+      if (t.via !== "trust_pour_out" || t.sourceAccountId == null) return;
+      const account = accountsById.get(t.sourceAccountId);
+      if (!account || account.category !== "life_insurance" || !account.lifeInsurance) return;
+      const retYear = insuredRetirementYearFor(
+        account,
+        clientRetirementYear,
+        spouseRetirementYear,
+      );
+      if (!isPolicyInForce(account, payload.year, retYear)) return;
+      faceValueOverrideByIdx.set(idx, account.lifeInsurance.faceValue);
+    });
+  }
+
   payload.transfers.forEach((t, idx) => {
     const key: GroupKey = `${t.recipientKind}|${t.recipientId ?? ""}`;
     const resolved = resolveRecipientLabel(t, clientData);
@@ -441,8 +481,14 @@ function buildDeathSection(
       groups.set(key, group);
     }
 
+    const faceOverride = faceValueOverrideByIdx.get(idx);
     const regross = pourOutRegrossByIdx.get(idx) ?? 0;
-    const displayAmount = needsRegross(t) ? t.amount + regross : t.amount;
+    const displayAmount =
+      faceOverride !== undefined
+        ? faceOverride
+        : needsRegross(t)
+          ? t.amount + regross
+          : t.amount;
 
     group.total += displayAmount;
 
@@ -532,8 +578,10 @@ function buildDeathSection(
   let assetCount = 0;
   payload.transfers.forEach((t, idx) => {
     if (t.amount > 0 && t.sourceAccountId != null) {
+      const faceOverride = faceValueOverrideByIdx.get(idx);
       const regross = needsRegross(t) ? pourOutRegrossByIdx.get(idx) ?? 0 : 0;
-      assetEstateValue += t.amount + regross;
+      const value = faceOverride !== undefined ? faceOverride : t.amount + regross;
+      assetEstateValue += value;
       assetCount += 1;
     }
     if (t.sourceLiabilityId != null) {
