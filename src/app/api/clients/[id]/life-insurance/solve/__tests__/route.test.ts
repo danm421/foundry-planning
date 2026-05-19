@@ -91,8 +91,10 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
     expect(body.isMarried).toBe(true);
     expect(body.client.faceValue).toBe(500000);
     expect(body.client.projection).toEqual([{ year: 2026 }, { year: 2027 }]);
+    expect(body.client.estateTaxAddend).toBe(0);
     expect(body.spouse).not.toBeNull();
     expect(body.spouse.projection).toEqual([{ year: 2026 }, { year: 2027 }]);
+    expect(body.spouse.estateTaxAddend).toBe(0);
     expect(solveLifeInsuranceNeed).toHaveBeenCalledTimes(2);
   });
 
