@@ -4,6 +4,7 @@ import {
   runLifeInsuranceWhatIf,
   survivorEndingPortfolio,
 } from "@/engine/what-if/life-insurance-need";
+import { findRoot } from "./root-find";
 
 export type { ProceedsRealization };
 
@@ -29,6 +30,9 @@ const CAP = 20_000_000;
 
 /** Bisection stops when the achieved portfolio is within 0.5% of the target. */
 const TOLERANCE = 0.005;
+
+/** Exported for tests — the relative tolerance the solver converges to. */
+export const TOLERANCE_FOR_TEST = TOLERANCE;
 
 /**
  * Bisect on `faceValue` to find the minimum death benefit such that the
@@ -78,18 +82,25 @@ export function solveLifeInsuranceNeed(
     return { status: "exceeds-cap", faceValue: CAP, achievedEndingPortfolio: atCap };
   }
 
-  // Binary search for the minimum face value that satisfies the target.
-  let lo = 0;
-  let hi = CAP;
-  let mid = hi;
-  let achieved = atCap;
-  for (let i = 0; i < 24; i++) {
-    mid = (lo + hi) / 2;
-    achieved = ending(mid);
-    if (Math.abs(achieved - target) <= target * TOLERANCE) break;
-    if (achieved < target) lo = mid;
-    else hi = mid;
-  }
+  // Bracket is valid: atZero < target <= atCap (guaranteed by the two early
+  // returns above). Solve for the minimum face value via Illinois-modified
+  // false position -- converges in ~4-6 probes vs bisection's ~24.
+  const root = findRoot(
+    {
+      lo: 0,
+      flo: atZero,
+      hi: CAP,
+      fhi: atCap,
+      target,
+      tol: target * TOLERANCE,
+      maxIterations: 24,
+    },
+    ending,
+  );
 
-  return { status: "solved", faceValue: Math.round(mid), achievedEndingPortfolio: achieved };
+  return {
+    status: "solved",
+    faceValue: Math.round(root.x),
+    achievedEndingPortfolio: root.fx,
+  };
 }
