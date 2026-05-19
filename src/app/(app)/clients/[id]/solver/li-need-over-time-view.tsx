@@ -65,7 +65,7 @@ export function LiNeedOverTimeView({
           type="button"
           onClick={onRun}
           disabled={isRunning}
-          className="h-9 rounded-md bg-accent px-3.5 text-[12px] font-medium text-white hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-9 rounded-md bg-accent px-3.5 text-[12px] font-medium text-accent-on hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Run need over time
         </button>
