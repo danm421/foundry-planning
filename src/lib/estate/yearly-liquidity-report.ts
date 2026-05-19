@@ -1,4 +1,4 @@
-import { ownersForYear } from "@/engine/ownership";
+import { ownersForYearOrHousehold } from "./owners-or-household";
 import type {
   Account,
   ClientData,
@@ -207,7 +207,7 @@ function computeInsurance(args: InsuranceArgs): {
     );
     if (!isPolicyInForce(account, yearRow.year, insuredRetirementYear)) continue;
 
-    const owners = ownersForYear(
+    const owners = ownersForYearOrHousehold(
       account,
       giftEvents,
       yearRow.year,
@@ -244,7 +244,7 @@ function computePortfolioAssets(args: PortfolioArgs): number {
     const ledger = yearRow.accountLedgers?.[account.id];
     const balance = ledger?.endingValue ?? 0;
     if (balance === 0) continue;
-    const owners = ownersForYear(
+    const owners = ownersForYearOrHousehold(
       account,
       giftEvents,
       yearRow.year,

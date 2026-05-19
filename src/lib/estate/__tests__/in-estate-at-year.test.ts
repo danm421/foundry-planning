@@ -187,6 +187,45 @@ describe("computeOutOfEstateAtYear", () => {
   });
 });
 
+describe("accounts with no owner rows", () => {
+  // Default-checking accounts (`is_default_checking`) are created without
+  // account_owners rows — they're pooled household cash. The estate
+  // computation must treat them as fully in-estate, not crash.
+  it("treats an account with no owner rows as fully in-estate", () => {
+    const tree = {
+      accounts: [
+        {
+          id: "acc-cash",
+          name: "Household Cash",
+          category: "cash",
+          value: 50_000,
+          owners: [],
+        },
+      ],
+      entities: [],
+    } as unknown as ClientData;
+    const balances = new Map([["acc-cash", 50_000]]);
+
+    const inE = computeInEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: balances,
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: balances,
+    });
+
+    expect(inE).toBe(50_000);
+    expect(outE).toBe(0);
+  });
+});
+
 describe("non-trust (business) entities", () => {
   const LLC_FAMILY = "llc-family";
   const LLC_LEGACY = "llc-legacy";

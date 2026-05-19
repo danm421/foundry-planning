@@ -10,10 +10,10 @@
  * Composes Phase 3's `ownersForYear` to get year-resolved ownership.
  */
 
-import { ownersForYear } from "@/engine/ownership";
 import type { AccountOwner } from "@/engine/ownership";
 import type { ClientData, EntitySummary, GiftEvent } from "@/engine/types";
 import { resolveOwnerSlices } from "./account-owner-slices";
+import { ownersForYearOrHousehold } from "./owners-or-household";
 import {
   familyOwnedFraction,
   inEstateWeight,
@@ -52,7 +52,12 @@ function sumAccountsWhere(
   } = args;
   let total = 0;
   for (const account of tree.accounts) {
-    const owners = ownersForYear(account, giftEvents, year, projectionStartYear);
+    const owners = ownersForYearOrHousehold(
+      account,
+      giftEvents,
+      year,
+      projectionStartYear,
+    );
     const value = accountBalances.get(account.id) ?? account.value;
 
     // Locked-share slice resolution (entity slice = locked EoY share; family

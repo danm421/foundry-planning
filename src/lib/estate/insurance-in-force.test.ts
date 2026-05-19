@@ -67,9 +67,23 @@ describe("isPolicyInForce", () => {
     expect(isPolicyInForce(p, 2025, null)).toBe(false);
   });
 
-  it("term policy with null termLengthYears is not in force", () => {
+  it("term policy with null termLengthYears and no retirement rule is not in force", () => {
     const p = termPolicy({ termIssueYear: 2020, termLengthYears: null });
     expect(isPolicyInForce(p, 2025, null)).toBe(false);
+  });
+
+  it("term-to-retirement policy (null termLengthYears, endsAtInsuredRetirement) is in force until retirement", () => {
+    // Real config: a term policy whose duration is "until the insured retires"
+    // carries no fixed termLengthYears. It must still count as in force.
+    const p = termPolicy({
+      termIssueYear: 2026,
+      termLengthYears: null,
+      endsAtInsuredRetirement: true,
+    });
+    expect(isPolicyInForce(p, 2025, 2040)).toBe(false); // before issue
+    expect(isPolicyInForce(p, 2026, 2040)).toBe(true); // issue year
+    expect(isPolicyInForce(p, 2039, 2040)).toBe(true); // before retirement
+    expect(isPolicyInForce(p, 2040, 2040)).toBe(false); // at retirement
   });
 
   it("whole policy is always in force when endsAtInsuredRetirement is false", () => {
