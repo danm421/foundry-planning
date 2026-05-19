@@ -2570,11 +2570,15 @@ export const lifeInsuranceSolverSettings = pgTable("life_insurance_solver_settin
     .unique()
     .references(() => clients.id, { onDelete: "cascade" }),
   deathYear: integer("death_year").notNull(),
-  liGrowthRate: decimal("li_growth_rate", { precision: 5, scale: 4 }).notNull(),
+  modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
+    onDelete: "set null",
+  }),
   leaveToHeirsAmount: decimal("leave_to_heirs_amount", { precision: 15, scale: 2 }).notNull(),
-  finalExpenses: decimal("final_expenses", { precision: 15, scale: 2 }).notNull(),
   livingExpenseAtDeath: decimal("living_expense_at_death", { precision: 15, scale: 2 }),
-  payOffDebtsAtDeath: boolean("pay_off_debts_at_death").notNull().default(false),
+  payoffLiabilityIds: jsonb("payoff_liability_ids")
+    .$type<string[]>()
+    .notNull()
+    .default([]),
   mcTargetScore: decimal("mc_target_score", { precision: 5, scale: 4 }).notNull().default("0.9"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

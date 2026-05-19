@@ -1,16 +1,21 @@
 import type { ClientData } from "@/engine/types";
+import type { ProceedsRealization } from "@/engine/what-if/life-insurance-need";
 import {
   runLifeInsuranceWhatIf,
   survivorEndingPortfolio,
 } from "@/engine/what-if/life-insurance-need";
 
+export type { ProceedsRealization };
+
 export interface LifeInsuranceAssumptions {
   deathYear: number;
-  growthRate: number;
+  /** Deterministic blended growth rate for the LI proceeds. */
+  proceedsGrowthRate: number;
+  /** Realization mix — present when a model portfolio backs the proceeds. */
+  proceedsRealization?: ProceedsRealization;
   leaveToHeirsAmount: number;
-  finalExpenses: number;
   livingExpenseAtDeath: number | null;
-  payOffDebtsAtDeath: boolean;
+  payoffLiabilityIds: string[];
 }
 
 export interface NeedResult {
@@ -49,10 +54,10 @@ export function solveLifeInsuranceNeed(
         deceased,
         deathYear: a.deathYear,
         faceValue,
-        growthRate: a.growthRate,
-        finalExpenses: a.finalExpenses,
+        proceedsGrowthRate: a.proceedsGrowthRate,
+        proceedsRealization: a.proceedsRealization,
         livingExpenseAtDeath: a.livingExpenseAtDeath,
-        payOffDebtsAtDeath: a.payOffDebtsAtDeath,
+        payoffLiabilityIds: a.payoffLiabilityIds,
       }),
       deceased,
       data,

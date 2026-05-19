@@ -19,6 +19,11 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { computeNeedOverTime } from "@/lib/life-insurance/need-over-time";
+import {
+  loadLiProceedsGrowth,
+  DEFAULT_LI_GROWTH,
+} from "@/lib/life-insurance/load-li-portfolio";
+import type { LifeInsuranceAssumptions } from "@/lib/life-insurance/solve-need";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 
 export const dynamic = "force-dynamic";
@@ -63,9 +68,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  // `computeNeedOverTime` supplies its own per-year `deathYear`; its
-  // `Omit<LifeInsuranceAssumptions, "deathYear">` parameter ignores the
-  // request's `deathYear` (and the MC-only `mcTargetScore`) structurally.
   const assumptions = parsed.data;
 
   const encoder = new TextEncoder();
@@ -76,14 +78,23 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         controller.enqueue(encoder.encode(sseChunk(event, payload)));
       };
       try {
-        const { effectiveTree } = await loadEffectiveTree(
-          clientId,
-          firmId,
-          "base",
-          {},
-        );
+        const [{ effectiveTree }, proceeds] = await Promise.all([
+          loadEffectiveTree(clientId, firmId, "base", {}),
+          loadLiProceedsGrowth(
+            firmId,
+            assumptions.modelPortfolioId,
+            DEFAULT_LI_GROWTH,
+          ),
+        ]);
+        const overTimeAssumptions: Omit<LifeInsuranceAssumptions, "deathYear"> = {
+          proceedsGrowthRate: proceeds.rate,
+          proceedsRealization: proceeds.realization,
+          leaveToHeirsAmount: assumptions.leaveToHeirsAmount,
+          livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
+          payoffLiabilityIds: assumptions.payoffLiabilityIds,
+        };
 
-        const rows = computeNeedOverTime(effectiveTree, assumptions, (done, total) =>
+        const rows = computeNeedOverTime(effectiveTree, overTimeAssumptions, (done, total) =>
           emit("progress", { done, total }),
         );
 

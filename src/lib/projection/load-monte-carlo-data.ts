@@ -33,7 +33,11 @@ function generateSeed(): number {
 }
 
 export const loadMonteCarloData = cache(
-  async (clientId: string, firmId: string): Promise<MonteCarloPayload> => {
+  async (
+    clientId: string,
+    firmId: string,
+    extraAccountMixes: ReadonlyArray<{ accountId: string; mix: AccountAssetMix[] }> = [],
+  ): Promise<MonteCarloPayload> => {
     const [client] = await db
       .select()
       .from(clients)
@@ -144,6 +148,12 @@ export const loadMonteCarloData = cache(
         mix = allocs.map((a) => ({ assetClassId: a.assetClassId, weight: parseFloat(a.weight) }));
       }
       if (mix.length > 0) accountMixes.push({ accountId: acct.id, mix });
+    }
+
+    // LI solver: a synthetic (non-DB) account mix whose asset classes must also
+    // feed the indices / correlation matrix below.
+    for (const extra of extraAccountMixes) {
+      if (extra.mix.length > 0) accountMixes.push({ accountId: extra.accountId, mix: extra.mix });
     }
 
     // ── Used asset classes ────────────────────────────────────────────────

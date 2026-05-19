@@ -9,9 +9,19 @@ import type { AccountOwner } from "@/engine/ownership";
 import { runProjection } from "@/engine/projection";
 import type { ProjectionYear } from "@/engine/types";
 
+/** Tax-realization mix for model-portfolio-backed LI proceeds. Mirrors
+ *  `LifeInsurancePolicy.postPayoutRealization`. */
+export interface ProceedsRealization {
+  pctOrdinaryIncome: number;
+  pctLtCapitalGains: number;
+  pctQualifiedDividends: number;
+  pctTaxExempt: number;
+  turnoverPct: number;
+}
+
 /**
  * Inputs to the Life Insurance solver's what-if assembler. Each field is a
- * solver knob — Task 6's bisection sweeps `faceValue`, the rest stay fixed for
+ * solver knob — the bisection sweeps `faceValue`, the rest stay fixed for
  * a given run.
  */
 export interface LifeInsuranceWhatIfInput {
@@ -21,18 +31,18 @@ export interface LifeInsuranceWhatIfInput {
   deceased: "client" | "spouse";
   /** Calendar year of the premature death. */
   deathYear: number;
-  /** Candidate death benefit. Task 6 bisects on this value. */
+  /** Candidate death benefit. The bisection sweeps this value. */
   faceValue: number;
-  /** Post-payout growth rate for the proceeds once they land in the
-   *  survivor's portfolio (drives the §101 cash account's growth). */
-  growthRate: number;
-  /** One-time final / burial expenses charged at death. Overrides
-   *  `planSettings.estateAdminExpenses`. */
-  finalExpenses: number;
-  /** Survivor's annual living expense after the death — Task 3. */
+  /** Deterministic blended growth rate for the proceeds once they land in the
+   *  survivor's portfolio (drives the §101 account's growth). */
+  proceedsGrowthRate: number;
+  /** Tax-realization mix — present when a model portfolio backs the proceeds.
+   *  When set, the transformed payout account is `taxable`, not `cash`. */
+  proceedsRealization?: ProceedsRealization;
+  /** Survivor's annual living expense after the death. */
   livingExpenseAtDeath: number | null;
-  /** Whether household debts are retired at death — Task 4. */
-  payOffDebtsAtDeath: boolean;
+  /** Ids of household liabilities retired at the insured's death. */
+  payoffLiabilityIds: string[];
 }
 
 /** Stable id for the assembler-injected policy. Re-running the assembler
@@ -133,7 +143,8 @@ function buildInsuredOwner(
 function syntheticPolicy(
   deceased: "client" | "spouse",
   faceValue: number,
-  growthRate: number,
+  proceedsGrowthRate: number,
+  proceedsRealization: ProceedsRealization | undefined,
   data: ClientData,
 ): Account {
   const policy: LifeInsurancePolicy = {
@@ -146,7 +157,8 @@ function syntheticPolicy(
     termLengthYears: null,
     endsAtInsuredRetirement: false,
     cashValueGrowthMode: "basic",
-    postPayoutGrowthRate: growthRate,
+    postPayoutGrowthRate: proceedsGrowthRate,
+    ...(proceedsRealization ? { postPayoutRealization: proceedsRealization } : {}),
     cashValueSchedule: [],
   };
   const owners = buildInsuredOwner(deceased, data);
@@ -208,31 +220,43 @@ function applyLivingExpenseAtDeath(
 }
 
 /**
- * Sum the projected remaining balances of all liabilities at the beginning of
- * `deathYear` by running a pre-pass projection on the pre-transform `data`.
+ * Sum the projected beginning-of-year balances at `deathYear` for the
+ * liabilities in `ids`, by running a pre-pass projection on the pre-transform
+ * `data`.
  *
  * Uses `ProjectionYear.liabilityBalancesBoY` (a `Record<string, number>` keyed
  * by liability id) — the per-liability balance at the start of each year,
- * before that year's amortisation runs. If no projection row exists for
- * `deathYear` (e.g. deathYear is before planStartYear), we fall back to the
- * sum of starting balances from `data.liabilities`.
+ * before that year's amortisation runs. Falls back to starting balances when
+ * no projection row exists for `deathYear` (e.g. deathYear precedes
+ * planStartYear).
  */
-function liabilityBalancesAtDeathYear(data: ClientData, deathYear: number): number {
+function liabilityBalancesAtDeathYear(
+  data: ClientData,
+  deathYear: number,
+  ids: ReadonlySet<string>,
+): number {
   const projection = runProjection(data);
   const row = projection.find((y) => y.year === deathYear);
   if (row) {
-    return Object.values(row.liabilityBalancesBoY).reduce((s, v) => s + v, 0);
+    let sum = 0;
+    for (const [id, bal] of Object.entries(row.liabilityBalancesBoY)) {
+      if (ids.has(id)) sum += bal;
+    }
+    return sum;
   }
   // Fallback: sum starting balances (conservative; accurate when deathYear is
   // before planStartYear or all loans have already terminated).
-  return data.liabilities.reduce((s, l) => s + l.balance, 0);
+  return data.liabilities
+    .filter((l) => ids.has(l.id))
+    .reduce((s, l) => s + l.balance, 0);
 }
 
 /**
- * When `enabled`, wipe all household liabilities from the what-if clone and
- * book a one-time `"other"` expense in `deathYear` equal to the projected
- * outstanding debt — modelling life insurance proceeds retiring all debts at
- * the insured's death so the survivor inherits a debt-free household.
+ * Retire the selected household liabilities at the insured's death: remove
+ * them from the what-if clone and book a one-time `"other"` expense in
+ * `deathYear` equal to their projected outstanding balance — modelling life
+ * insurance proceeds retiring debts so the survivor inherits a lighter
+ * household. Ids absent from `out.liabilities` are ignored.
  *
  * The balance pre-pass runs against `baseForBalances` (the ORIGINAL,
  * pre-transform data) so projections of the actual plan — not the what-if
@@ -242,11 +266,16 @@ function applyDebtPayoffAtDeath(
   out: ClientData,
   baseForBalances: ClientData,
   deathYear: number,
-  enabled: boolean,
+  payoffLiabilityIds: readonly string[],
 ): void {
-  if (!enabled || out.liabilities.length === 0) return;
-  const payoff = liabilityBalancesAtDeathYear(baseForBalances, deathYear);
-  out.liabilities = [];
+  const present = new Set(
+    out.liabilities
+      .filter((l) => payoffLiabilityIds.includes(l.id))
+      .map((l) => l.id),
+  );
+  if (present.size === 0) return;
+  const payoff = liabilityBalancesAtDeathYear(baseForBalances, deathYear, present);
+  out.liabilities = out.liabilities.filter((l) => !present.has(l.id));
   out.expenses.push({
     id: "li-solver-debt-payoff",
     type: "other",
@@ -268,7 +297,8 @@ function applyDebtPayoffAtDeath(
 export function buildLifeInsuranceWhatIfData(
   input: LifeInsuranceWhatIfInput,
 ): ClientData {
-  const { data, deceased, deathYear, faceValue, growthRate, finalExpenses } = input;
+  const { data, deceased, deathYear, faceValue, proceedsGrowthRate, proceedsRealization } =
+    input;
   const out = structuredClone(data);
 
   // 1. Premature death — set the deceased's lifeExpectancy so the engine's
@@ -284,22 +314,19 @@ export function buildLifeInsuranceWhatIfData(
   }
 
   // 2. Synthetic policy. Drop any prior assembler-injected policy first so
-  //    re-running the assembler (e.g. the Task 6 bisection) replaces it.
+  //    re-running the assembler (e.g. the bisection) replaces it.
   out.accounts = [
     ...out.accounts.filter((a) => a.id !== SYNTHETIC_POLICY_ID),
-    syntheticPolicy(deceased, faceValue, growthRate, out),
+    syntheticPolicy(deceased, faceValue, proceedsGrowthRate, proceedsRealization, out),
   ];
 
-  // 3. Final / burial expenses override estate admin expenses.
-  out.planSettings = { ...out.planSettings, estateAdminExpenses: finalExpenses };
-
-  // 4. Task 5 — extend planEndYear to cover the survivor's life expectancy. A
+  // 3. Extend planEndYear to cover the survivor's life expectancy. A
   //    premature death shortens the deceased's horizon, but the survivor may
   //    outlive the plan's original end year; the projection must run long
   //    enough to capture the survivor's full retirement. The horizon is only
   //    ever extended, never shortened.
   //
-  //    This MUST run before `applyLivingExpenseAtDeath` (step 5): the
+  //    This MUST run before `applyLivingExpenseAtDeath` (step 4): the
   //    replacement living expense's `endYear` is pinned to the CURRENT
   //    `planEndYear`, so the horizon must already be extended or the survivor
   //    has zero modelled living expenses for the extended years. The extension
@@ -311,20 +338,20 @@ export function buildLifeInsuranceWhatIfData(
     out.planSettings = { ...out.planSettings, planEndYear: survivorEnd };
   }
 
-  // 5. Task 3 — survivor's living-expense-at-death override. Reads the
+  // 4. Survivor's living-expense-at-death override. Reads the
   //    (now extended) `planEndYear` as the replacement expense's `endYear`.
   applyLivingExpenseAtDeath(out, deathYear, input.livingExpenseAtDeath);
 
-  // 6. Task 4 — pay-off-debts-at-death override. The balance pre-pass still
+  // 5. Selective debt payoff at death. The balance pre-pass still
   //    runs against the original pre-transform `data`.
-  applyDebtPayoffAtDeath(out, data, deathYear, input.payOffDebtsAtDeath);
+  applyDebtPayoffAtDeath(out, data, deathYear, input.payoffLiabilityIds);
 
   return out;
 }
 
 /**
  * Build the what-if `ClientData` for `input` and run the projection engine
- * over it. The convenience entry point Task 6's bisection sweeps: each
+ * over it. The convenience entry point the bisection sweeps — each
  * candidate `faceValue` is one `runLifeInsuranceWhatIf` call.
  */
 export function runLifeInsuranceWhatIf(

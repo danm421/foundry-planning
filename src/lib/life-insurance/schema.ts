@@ -2,18 +2,23 @@
 //
 // Zod schema for the Life Insurance straight-line solver request body,
 // shared by the API route (`/api/clients/[id]/life-insurance/solve`) and
-// the solver tab UI (Tasks 9–11). Keep it in sync with
-// `LifeInsuranceAssumptions` in `@/lib/life-insurance/solve-need` —
-// `LiAssumptions` is a structural superset (it adds `mcTargetScore`).
+// the solver tab UI. `LiAssumptions` is the wire/UI shape; the routes
+// transform it into the engine's `LifeInsuranceAssumptions`
+// (`@/lib/life-insurance/solve-need`) by resolving `modelPortfolioId` into
+// concrete proceeds growth via `loadLiProceedsGrowth`.
+//
+// `LiAssumptions` now carries `modelPortfolioId` (which portfolio to use
+// for the survivor's projected growth) and `payoffLiabilityIds` (debts to
+// extinguish at death). The old `growthRate`, `finalExpenses`, and
+// `payOffDebtsAtDeath` boolean have been removed.
 import { z } from "zod";
 
 export const LI_ASSUMPTIONS_SCHEMA = z.object({
   deathYear: z.number().int().min(1900).max(2200),
-  growthRate: z.number().min(0).max(0.2),
+  modelPortfolioId: z.string().uuid().nullable(),
   leaveToHeirsAmount: z.number().min(0),
-  finalExpenses: z.number().min(0),
   livingExpenseAtDeath: z.number().min(0).nullable(),
-  payOffDebtsAtDeath: z.boolean(),
+  payoffLiabilityIds: z.array(z.string()),
   mcTargetScore: z.number().min(0.01).max(0.99),
 });
 

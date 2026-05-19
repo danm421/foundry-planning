@@ -1,17 +1,18 @@
 "use client";
 
-// Life Insurance solver — need-over-time section (Task 17).
+// Life Insurance solver — need-over-time section.
 //
 // A collapsible panel at the bottom of the LI tab. On "Run need over time" it
 // opens a POST fetch-stream to the over-time SSE route — which runs one
 // straight-line bisection solve per plan year per decedent — drives a progress
 // bar from the streamed `progress` events, and on the terminal `result` event
-// renders a two-series Chart.js line chart (life-insurance need by death year,
-// client vs spouse) plus a table of the rows.
+// renders a single-dataset Chart.js line chart (life-insurance need by death
+// year) whose dataset is chosen by an in-component client/spouse toggle, plus
+// a table of the rows.
 //
 // The computation is expensive, so it never auto-runs — only the explicit
 // button click triggers it. SSE-fetch + event-parsing mirrors `li-mc-solve.tsx`;
-// the chart chrome mirrors `li-survivor-chart.tsx`.
+// the chart uses a standard Chart.js Line with Tooltip and Legend registered.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Chart as ChartJS,
@@ -24,6 +25,7 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import { roundUpTo50k } from "@/lib/life-insurance/round";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
 
@@ -296,32 +298,40 @@ function OverTimeResult({
   clientName: string;
   spouseName: string;
 }) {
+  // Which decedent's need the chart plots. The toggle only renders when
+  // married; for a single plan it stays "client" and there's no spouse series.
+  const [deathOf, setDeathOf] = useState<"client" | "spouse">("client");
+
+  // A non-married plan has no spouse series — never plot it regardless of the
+  // (hidden) toggle state.
+  const activeDeathOf = isMarried ? deathOf : "client";
+
   const labels = rows.map((r) => String(r.year));
 
-  const datasets = [
-    {
-      label: `${clientName} dies`,
-      data: rows.map((r) => r.clientNeed),
-      borderColor: "#2563eb",
-      backgroundColor: "#2563eb",
-      borderWidth: 2,
-      pointRadius: 0,
-      tension: 0.3,
-    },
-  ];
-  if (isMarried) {
-    datasets.push({
-      label: `${spouseName} dies`,
-      data: rows.map((r) => r.spouseNeed ?? 0),
-      borderColor: "#d97706",
-      backgroundColor: "#d97706",
-      borderWidth: 2,
-      pointRadius: 0,
-      tension: 0.3,
-    });
-  }
-
-  const chartData = { labels, datasets };
+  const chartData = {
+    labels,
+    datasets: [
+      activeDeathOf === "spouse"
+        ? {
+            label: `${spouseName} dies`,
+            data: rows.map((r) => roundUpTo50k(r.spouseNeed ?? 0)),
+            borderColor: "#d97706",
+            backgroundColor: "#d97706",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.3,
+          }
+        : {
+            label: `${clientName} dies`,
+            data: rows.map((r) => roundUpTo50k(r.clientNeed)),
+            borderColor: "#2563eb",
+            backgroundColor: "#2563eb",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.3,
+          },
+    ],
+  };
 
   const chartOptions = {
     responsive: true,
@@ -359,8 +369,28 @@ function OverTimeResult({
 
   return (
     <div className="mt-4">
-      <div className="text-[11px] text-ink-3">
-        Life insurance need by year of death.
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] text-ink-3">
+          Life insurance need by year of death.
+        </div>
+        {isMarried ? (
+          <div
+            role="tablist"
+            aria-label="Death scenario"
+            className="inline-flex rounded-md border border-hair-2 bg-card-2 p-0.5"
+          >
+            <ToggleButton
+              label={`${clientName} dies`}
+              selected={deathOf === "client"}
+              onClick={() => setDeathOf("client")}
+            />
+            <ToggleButton
+              label={`${spouseName} dies`}
+              selected={deathOf === "spouse"}
+              onClick={() => setDeathOf("spouse")}
+            />
+          </div>
+        ) : null}
       </div>
       <div className="mt-2" style={{ height: 300 }}>
         <Line data={chartData} options={chartOptions} />
@@ -422,5 +452,30 @@ function NeedCell({
   if (status === "exceeds-cap") {
     return <span className="text-warn">exceeds cap</span>;
   }
-  return <span>{formatCurrency(value)}</span>;
+  return <span>{formatCurrency(roundUpTo50k(value))}</span>;
+}
+
+/** Segmented toggle button — mirrors the solver tab's tab styling. */
+function ToggleButton({
+  label,
+  selected,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onClick}
+      className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
+        selected ? "bg-accent/20 text-ink" : "text-ink-3 hover:text-ink"
+      }`}
+    >
+      {label}
+    </button>
+  );
 }

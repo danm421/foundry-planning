@@ -14,6 +14,24 @@ import {
   sampleFamilyMembers,
   sampleLiabilities,
 } from "@/engine/__tests__/fixtures";
+import type { Liability } from "@/engine/types";
+
+/** Liability fixture for selective-debt-payoff tests. Matches the real
+ *  `Liability` shape. */
+function makeLiability(over: { id: string; balance: number }): Liability {
+  return {
+    id: over.id,
+    name: over.id,
+    balance: over.balance,
+    interestRate: 0.05,
+    monthlyPayment: 1_000,
+    startYear: 2020,
+    startMonth: 1,
+    termMonths: 360,
+    extraPayments: [],
+    owners: [],
+  };
+}
 
 /** Married household fixture. lifeExpectancy / spouseLifeExpectancy are set so
  *  the engine's death-event machinery has a death year to fire on. The
@@ -51,10 +69,9 @@ describe("buildLifeInsuranceWhatIfData", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 1_000_000,
-      growthRate: 0.05,
-      finalExpenses: 25_000,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     // born 1970, dies 2030 -> age 60
     expect(out.client.lifeExpectancy).toBe(60);
@@ -68,10 +85,9 @@ describe("buildLifeInsuranceWhatIfData", () => {
       deceased: "spouse",
       deathYear: 2032,
       faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     // spouse born 1972, dies 2032 -> age 60
     expect(out.client.spouseLifeExpectancy).toBe(60);
@@ -84,10 +100,9 @@ describe("buildLifeInsuranceWhatIfData", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 1_000_000,
-      growthRate: 0.05,
-      finalExpenses: 25_000,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     const policy = out.accounts.find((a) => a.category === "life_insurance");
     expect(policy).toBeDefined();
@@ -96,18 +111,56 @@ describe("buildLifeInsuranceWhatIfData", () => {
     expect(policy!.lifeInsurance!.postPayoutGrowthRate).toBe(0.05);
   });
 
-  it("overrides estate admin expenses with the final-expenses input", () => {
+  it("does not override planSettings.estateAdminExpenses", () => {
+    const data = marriedBase();
+    data.planSettings.estateAdminExpenses = 31_000;
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 1_000_000,
+      proceedsGrowthRate: 0.05,
+      livingExpenseAtDeath: null,
+      payoffLiabilityIds: [],
+    });
+    expect(out.planSettings.estateAdminExpenses).toBe(31_000);
+  });
+
+  it("sets the synthetic policy's postPayoutGrowthRate from proceedsGrowthRate", () => {
     const out = buildLifeInsuranceWhatIfData({
       data: marriedBase(),
-      deceased: "spouse",
-      deathYear: 2032,
-      faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 40_000,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 1_000_000,
+      proceedsGrowthRate: 0.062,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
-    expect(out.planSettings.estateAdminExpenses).toBe(40_000);
+    const synthetic = out.accounts.find((a) => a.id === SYNTHETIC_POLICY_ID)!;
+    expect(synthetic.lifeInsurance!.postPayoutGrowthRate).toBe(0.062);
+    expect(synthetic.lifeInsurance!.postPayoutRealization).toBeUndefined();
+  });
+
+  it("attaches postPayoutRealization when proceedsRealization is supplied", () => {
+    const realization = {
+      pctOrdinaryIncome: 0.1,
+      pctLtCapitalGains: 0.7,
+      pctQualifiedDividends: 0.15,
+      pctTaxExempt: 0.05,
+      turnoverPct: 0,
+    };
+    const out = buildLifeInsuranceWhatIfData({
+      data: marriedBase(),
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 1_000_000,
+      proceedsGrowthRate: 0.062,
+      proceedsRealization: realization,
+      livingExpenseAtDeath: null,
+      payoffLiabilityIds: [],
+    });
+    const synthetic = out.accounts.find((a) => a.id === SYNTHETIC_POLICY_ID)!;
+    expect(synthetic.lifeInsurance!.postPayoutRealization).toEqual(realization);
   });
 
   it("pays the synthetic policy out to the survivor at the death year", () => {
@@ -120,20 +173,18 @@ describe("buildLifeInsuranceWhatIfData", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     const out = buildLifeInsuranceWhatIfData({
       data,
       deceased: "client",
       deathYear: 2030,
       faceValue: 2_000_000,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
 
     // The death event reclassifies the policy at end-of-death-year; the
@@ -174,10 +225,9 @@ describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: 80_000,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     const living = out.expenses.filter((e) => e.type === "living");
     // original ended the year before death
@@ -198,10 +248,9 @@ describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: 80_000,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     const replacement = out.expenses.find((e) => e.id === "li-solver-living-at-death")!;
     // spouse born 1972 + LE 92 -> dies 2064; the replacement must run through
@@ -227,10 +276,9 @@ describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     expect(out.expenses).toHaveLength(1);
     expect(out.expenses[0].endYear).toBe(2070);
@@ -238,7 +286,7 @@ describe("buildLifeInsuranceWhatIfData — living expenses at death", () => {
 });
 
 describe("buildLifeInsuranceWhatIfData — pay off debts at death", () => {
-  it("clears liabilities and books a death-year payoff outflow when enabled", () => {
+  it("clears the selected liability and books a death-year payoff outflow", () => {
     const data = marriedBase();
     // Use sampleLiabilities fixture (mortgage, 300k balance, starts 2026)
     data.liabilities = [{ ...sampleLiabilities[0] }];
@@ -247,10 +295,9 @@ describe("buildLifeInsuranceWhatIfData — pay off debts at death", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: true,
+      payoffLiabilityIds: ["liab-mortgage"],
     });
     // liabilities cleared so the survivor carries no debt past death
     expect(out.liabilities).toHaveLength(0);
@@ -262,7 +309,7 @@ describe("buildLifeInsuranceWhatIfData — pay off debts at death", () => {
     expect(payoff!.annualAmount).toBeGreaterThan(0);
   });
 
-  it("leaves liabilities in place when the toggle is off", () => {
+  it("leaves liabilities in place when the id list is empty", () => {
     const data = marriedBase();
     data.liabilities = [{ ...sampleLiabilities[0] }];
     const out = buildLifeInsuranceWhatIfData({
@@ -270,13 +317,67 @@ describe("buildLifeInsuranceWhatIfData — pay off debts at death", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 0,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     expect(out.liabilities).toHaveLength(1);
     expect(out.expenses.find((e) => e.id === "li-solver-debt-payoff")).toBeUndefined();
+  });
+});
+
+describe("buildLifeInsuranceWhatIfData — selective debt payoff", () => {
+  it("retires only the selected liabilities and leaves the rest", () => {
+    const data = marriedBase();
+    data.liabilities = [
+      makeLiability({ id: "loan-a", balance: 100_000 }),
+      makeLiability({ id: "loan-b", balance: 250_000 }),
+    ];
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      proceedsGrowthRate: 0.05,
+      livingExpenseAtDeath: null,
+      payoffLiabilityIds: ["loan-a"],
+    });
+    expect(out.liabilities.map((l) => l.id)).toEqual(["loan-b"]);
+    const payoff = out.expenses.find((e) => e.id === "li-solver-debt-payoff");
+    expect(payoff).toBeDefined();
+    expect(payoff!.startYear).toBe(2030);
+  });
+
+  it("books no payoff and removes nothing when the list is empty", () => {
+    const data = marriedBase();
+    data.liabilities = [makeLiability({ id: "loan-a", balance: 100_000 })];
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      proceedsGrowthRate: 0.05,
+      livingExpenseAtDeath: null,
+      payoffLiabilityIds: [],
+    });
+    expect(out.liabilities).toHaveLength(1);
+    expect(out.expenses.find((e) => e.id === "li-solver-debt-payoff")).toBeUndefined();
+  });
+
+  it("ignores ids that no longer exist", () => {
+    const data = marriedBase();
+    data.liabilities = [makeLiability({ id: "loan-a", balance: 100_000 })];
+    const out = buildLifeInsuranceWhatIfData({
+      data,
+      deceased: "client",
+      deathYear: 2030,
+      faceValue: 0,
+      proceedsGrowthRate: 0.05,
+      livingExpenseAtDeath: null,
+      payoffLiabilityIds: ["loan-a", "ghost-loan"],
+    });
+    expect(out.liabilities).toHaveLength(0);
+    expect(out.expenses.find((e) => e.id === "li-solver-debt-payoff")).toBeDefined();
   });
 });
 
@@ -286,10 +387,9 @@ describe("runLifeInsuranceWhatIf + survivorEndingPortfolio", () => {
       data: marriedBase(),
       deceased: "client" as const,
       deathYear: 2030,
-      growthRate: 0.05,
-      finalExpenses: 25_000,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     };
     const low = survivorEndingPortfolio(
       runLifeInsuranceWhatIf({ ...base, faceValue: 500_000 }),
@@ -312,10 +412,9 @@ describe("runLifeInsuranceWhatIf + survivorEndingPortfolio", () => {
       deceased: "client",
       deathYear: 2030,
       faceValue: 1_000_000,
-      growthRate: 0.05,
-      finalExpenses: 0,
+      proceedsGrowthRate: 0.05,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     // spouse born 1972, LE 92 -> dies 2064
     expect(projection[projection.length - 1].year).toBeGreaterThanOrEqual(2064);

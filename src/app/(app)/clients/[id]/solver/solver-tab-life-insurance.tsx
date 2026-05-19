@@ -19,7 +19,6 @@ import { LiAssumptionsPanel } from "./li-assumptions-panel";
 import { LiMcSolve } from "./li-mc-solve";
 import { LiNeedCards } from "./li-need-cards";
 import { LiOverTimeSection } from "./li-over-time-section";
-import { LiSurvivorChart } from "./li-survivor-chart";
 
 /** One decedent's solved need + the survivor's projection (Task 11 reads this). */
 export interface LiSolveCase {
@@ -27,6 +26,10 @@ export interface LiSolveCase {
   faceValue: number;
   achievedEndingPortfolio: number;
   projection: ProjectionYear[];
+  /** In-force policies on the decedent active in the death year (not rounded). */
+  existingPolicies: { name: string; faceValue: number }[];
+  /** Sum of `existingPolicies` face values (not rounded). */
+  existingCoverageTotal: number;
 }
 
 /** Shape of the POST .../life-insurance/solve response. */
@@ -43,6 +46,12 @@ interface Props {
   clientName: string;
   /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
   spouseName: string;
+  /** Household liabilities for the per-liability payoff picker. */
+  liabilities: { id: string; name: string; balance: number }[];
+  /** Estate settlement cost from Details > Assumptions (read-only display). */
+  estateAdminExpenses: number;
+  /** Firm model portfolios for the LI-proceeds growth picker. */
+  modelPortfolios: { id: string; name: string }[];
 }
 
 const DEBOUNCE_MS = 600;
@@ -52,6 +61,9 @@ export function SolverTabLifeInsurance({
   settings,
   clientName,
   spouseName,
+  liabilities,
+  estateAdminExpenses,
+  modelPortfolios,
 }: Props) {
   const [assumptions, setAssumptions] = useState<LiAssumptions>(settings);
   const [solveResult, setSolveResult] = useState<LiSolveResult | null>(null);
@@ -143,7 +155,13 @@ export function SolverTabLifeInsurance({
       </div>
 
       {/* (1) Assumptions panel. */}
-      <LiAssumptionsPanel assumptions={assumptions} onChange={setAssumptions} />
+      <LiAssumptionsPanel
+        assumptions={assumptions}
+        onChange={setAssumptions}
+        liabilities={liabilities}
+        estateAdminExpenses={estateAdminExpenses}
+        modelPortfolios={modelPortfolios}
+      />
 
       {errorMessage ? (
         <div
@@ -155,8 +173,8 @@ export function SolverTabLifeInsurance({
       ) : null}
 
       {/* Layout: assumptions → straight-line need cards → Monte Carlo solve
-          block → survivor chart. The two solved needs read adjacently, then
-          the chart. The over-time section (Phase 3) slots in below the chart. */}
+          block → over-time section. The two solved needs read adjacently,
+          then the MC block, then the need-over-time panel. */}
       {solveResult ? (
         <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
           <LiNeedCards
@@ -172,13 +190,6 @@ export function SolverTabLifeInsurance({
               clientName={clientName}
               spouseName={spouseName}
               onScoreChange={handleScoreChange}
-            />
-          </div>
-          <div className="mt-4">
-            <LiSurvivorChart
-              result={solveResult}
-              clientName={clientName}
-              spouseName={spouseName}
             />
           </div>
           <div className="mt-4">

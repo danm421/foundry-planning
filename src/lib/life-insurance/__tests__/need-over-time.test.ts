@@ -7,11 +7,10 @@ describe("computeNeedOverTime", () => {
   it("returns a client and spouse need value for each plan year", () => {
     const data = marriedBase();
     const rows = computeNeedOverTime(data, {
-      growthRate: 0.05,
+      proceedsGrowthRate: 0.05,
       leaveToHeirsAmount: 500_000,
-      finalExpenses: 25_000,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     expect(rows.length).toBe(
       data.planSettings.planEndYear - data.planSettings.planStartYear + 1,
@@ -24,11 +23,10 @@ describe("computeNeedOverTime", () => {
   it("uses each plan year as the deathYear and reports the year on each row", () => {
     const data = marriedBase();
     const rows = computeNeedOverTime(data, {
-      growthRate: 0.05,
+      proceedsGrowthRate: 0.05,
       leaveToHeirsAmount: 500_000,
-      finalExpenses: 25_000,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     expect(rows[0].year).toBe(data.planSettings.planStartYear);
     expect(rows[rows.length - 1].year).toBe(data.planSettings.planEndYear);
@@ -45,11 +43,10 @@ describe("computeNeedOverTime", () => {
     const data = marriedBase();
     data.client.filingStatus = "single";
     const rows = computeNeedOverTime(data, {
-      growthRate: 0.05,
+      proceedsGrowthRate: 0.05,
       leaveToHeirsAmount: 500_000,
-      finalExpenses: 25_000,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     });
     for (const row of rows) {
       expect(row.spouseNeed).toBeNull();
@@ -72,11 +69,10 @@ describe("computeNeedOverTime", () => {
     }));
 
     const opts = {
-      growthRate: 0.05,
+      proceedsGrowthRate: 0.05,
       leaveToHeirsAmount: 500_000,
-      finalExpenses: 25_000,
       livingExpenseAtDeath: null,
-      payOffDebtsAtDeath: false,
+      payoffLiabilityIds: [],
     };
     expect(() => computeNeedOverTime(data, opts)).not.toThrow();
     const rows = computeNeedOverTime(data, opts);
@@ -92,11 +88,10 @@ describe("computeNeedOverTime", () => {
     const rows = computeNeedOverTime(
       data,
       {
-        growthRate: 0.05,
+        proceedsGrowthRate: 0.05,
         leaveToHeirsAmount: 500_000,
-        finalExpenses: 25_000,
         livingExpenseAtDeath: null,
-        payOffDebtsAtDeath: false,
+        payoffLiabilityIds: [],
       },
       (done, total) => calls.push({ done, total }),
     );

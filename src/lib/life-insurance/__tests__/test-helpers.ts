@@ -3,10 +3,9 @@
  *
  * WHY these assumption values:
  *   - deathYear: 2030 (4 years from planStartYear=2026, early-death scenario)
- *   - growthRate: 0.05 (5% post-payout growth rate on proceeds)
- *   - finalExpenses: 25_000 (modest burial/estate costs)
+ *   - proceedsGrowthRate: 0.05 (5% post-payout growth rate on proceeds)
  *   - livingExpenseAtDeath: null (no override; survivor keeps base expenses)
- *   - payOffDebtsAtDeath: false (no debts in base fixture)
+ *   - payoffLiabilityIds: [] (no debts in base fixture)
  *
  *   leaveToHeirsAmount: 15_000_000 chosen because:
  *     - ending(0) ≈ $8,362,733 — survivor's portfolio without any insurance.
@@ -60,9 +59,8 @@ export function marriedBase(): ClientData {
  */
 export const assumptions: LifeInsuranceAssumptions = {
   deathYear: 2030,
-  growthRate: 0.05,
+  proceedsGrowthRate: 0.05,
   leaveToHeirsAmount: 15_000_000,
-  finalExpenses: 25_000,
   livingExpenseAtDeath: null,
-  payOffDebtsAtDeath: false,
+  payoffLiabilityIds: [],
 };

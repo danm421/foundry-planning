@@ -12,19 +12,28 @@ import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { solveLifeInsuranceNeed } from "@/lib/life-insurance/solve-need";
+import {
+  solveLifeInsuranceNeed,
+  type LifeInsuranceAssumptions,
+} from "@/lib/life-insurance/solve-need";
 import { runLifeInsuranceWhatIf } from "@/engine/what-if/life-insurance-need";
-import { LI_ASSUMPTIONS_SCHEMA, type LiAssumptions } from "@/lib/life-insurance/schema";
+import {
+  loadLiProceedsGrowth,
+  DEFAULT_LI_GROWTH,
+} from "@/lib/life-insurance/load-li-portfolio";
+import { existingCoverageInForce } from "@/lib/life-insurance/existing-coverage";
+import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
+import type { ClientData } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-/** Solve the need for one decedent and attach the survivor's projection. */
+/** Solve one decedent's need + survivor projection + existing-coverage breakdown. */
 function solveCase(
-  tree: Parameters<typeof solveLifeInsuranceNeed>[0],
+  tree: ClientData,
   deceased: "client" | "spouse",
-  a: LiAssumptions,
+  a: LifeInsuranceAssumptions,
 ) {
   const need = solveLifeInsuranceNeed(tree, deceased, a);
   const projection = runLifeInsuranceWhatIf({
@@ -32,12 +41,18 @@ function solveCase(
     deceased,
     deathYear: a.deathYear,
     faceValue: need.faceValue,
-    growthRate: a.growthRate,
-    finalExpenses: a.finalExpenses,
+    proceedsGrowthRate: a.proceedsGrowthRate,
+    proceedsRealization: a.proceedsRealization,
     livingExpenseAtDeath: a.livingExpenseAtDeath,
-    payOffDebtsAtDeath: a.payOffDebtsAtDeath,
+    payoffLiabilityIds: a.payoffLiabilityIds,
   });
-  return { ...need, projection };
+  const coverage = existingCoverageInForce(tree, deceased, a.deathYear);
+  return {
+    ...need,
+    projection,
+    existingPolicies: coverage.policies,
+    existingCoverageTotal: coverage.total,
+  };
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
@@ -57,9 +72,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const a = parsed.data;
+    const body = parsed.data;
 
-    const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
+    const [{ effectiveTree }, proceeds] = await Promise.all([
+      loadEffectiveTree(clientId, firmId, "base", {}),
+      loadLiProceedsGrowth(firmId, body.modelPortfolioId, DEFAULT_LI_GROWTH),
+    ]);
+    const a: LifeInsuranceAssumptions = {
+      deathYear: body.deathYear,
+      proceedsGrowthRate: proceeds.rate,
+      proceedsRealization: proceeds.realization,
+      leaveToHeirsAmount: body.leaveToHeirsAmount,
+      livingExpenseAtDeath: body.livingExpenseAtDeath,
+      payoffLiabilityIds: body.payoffLiabilityIds,
+    };
 
     const filingStatus = effectiveTree.client.filingStatus;
     const isMarried =
