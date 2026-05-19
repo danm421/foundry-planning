@@ -5,6 +5,10 @@
 // clientId). `loadLifeInsuranceSettings` falls back to
 // `defaultAssumptions` when no row exists yet. Decimal columns round-trip
 // through `string` in drizzle, so we convert on both edges.
+//
+// Note: `modelPortfolioId` is not available on `ClientData.planSettings`
+// (PlanSettings carries plan-year / tax-rate fields only). It defaults to
+// null and is set explicitly by the user via the solver UI.
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { lifeInsuranceSolverSettings } from "@/db/schema";
@@ -14,11 +18,10 @@ import type { LiAssumptions } from "./schema";
 export function defaultAssumptions(data: ClientData): LiAssumptions {
   return {
     deathYear: data.planSettings.planStartYear + 1,
-    growthRate: 0.05,
+    modelPortfolioId: null,
     leaveToHeirsAmount: 0,
-    finalExpenses: data.planSettings.estateAdminExpenses ?? 25_000,
     livingExpenseAtDeath: null,
-    payOffDebtsAtDeath: false,
+    payoffLiabilityIds: [],
     mcTargetScore: 0.9,
   };
 }
@@ -33,12 +36,11 @@ export async function loadLifeInsuranceSettings(
   if (!row) return defaultAssumptions(data);
   return {
     deathYear: row.deathYear,
-    growthRate: Number(row.liGrowthRate),
+    modelPortfolioId: row.modelPortfolioId,
     leaveToHeirsAmount: Number(row.leaveToHeirsAmount),
-    finalExpenses: Number(row.finalExpenses),
     livingExpenseAtDeath:
       row.livingExpenseAtDeath == null ? null : Number(row.livingExpenseAtDeath),
-    payOffDebtsAtDeath: row.payOffDebtsAtDeath,
+    payoffLiabilityIds: row.payoffLiabilityIds ?? [],
     mcTargetScore: Number(row.mcTargetScore),
   };
 }
@@ -50,12 +52,11 @@ export async function saveLifeInsuranceSettings(
   const values = {
     clientId,
     deathYear: a.deathYear,
-    liGrowthRate: String(a.growthRate),
+    modelPortfolioId: a.modelPortfolioId,
     leaveToHeirsAmount: String(a.leaveToHeirsAmount),
-    finalExpenses: String(a.finalExpenses),
     livingExpenseAtDeath:
       a.livingExpenseAtDeath == null ? null : String(a.livingExpenseAtDeath),
-    payOffDebtsAtDeath: a.payOffDebtsAtDeath,
+    payoffLiabilityIds: a.payoffLiabilityIds,
     mcTargetScore: String(a.mcTargetScore),
     updatedAt: new Date(),
   };
