@@ -7,8 +7,9 @@
 // preserved untouched) to the parent via `onChange`. `mcTargetScore` is NOT
 // surfaced here — it belongs to the Monte Carlo block.
 //
-// Styling matches the compact solver-row inputs (see solver-row-*.tsx):
-// 9px-tall card-2 inputs, accent left border, 11px ink-3 labels.
+// Rendered as a card to match the need / Monte Carlo / over-time blocks below
+// it. Inputs fill their grid column (`w-full`) so the panel reads as a tidy
+// form rather than tiny fields floating in dead space.
 import { useState } from "react";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
@@ -34,9 +35,13 @@ export function LiAssumptionsPanel({
   const livingKeepUnchanged = assumptions.livingExpenseAtDeath == null;
 
   return (
-    <div className="space-y-2.5">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="text-[13px] font-medium text-ink">Assumptions</div>
-      <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+      <p className="mt-0.5 text-[11px] text-ink-3">
+        Inputs that drive the solved life insurance need.
+      </p>
+
+      <div className="mt-3 grid grid-cols-1 gap-x-5 gap-y-3.5 sm:grid-cols-2">
         <Field label="Death year" htmlFor="li-death-year">
           <YearInput
             id="li-death-year"
@@ -77,12 +82,7 @@ export function LiAssumptionsPanel({
           />
         </Field>
 
-        <div className="col-span-2 flex items-center justify-between rounded-md border border-hair bg-card-2 px-3 py-2 text-[11px] text-ink-3">
-          <span>Final expenses use the plan&apos;s estate settlement cost.</span>
-          <span className="tabular text-ink-2">{formatCurrency(estateAdminExpenses)}</span>
-        </div>
-
-        <div className="col-span-2">
+        <div>
           <Field label="Living expenses at death" htmlFor="li-living-expense">
             <CurrencyAmountInput
               id="li-living-expense"
@@ -94,52 +94,55 @@ export function LiAssumptionsPanel({
               }
             />
           </Field>
-          <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-3">
-            <input
-              type="checkbox"
+          <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[11px] text-ink-3">
+            <Checkbox
               checked={livingKeepUnchanged}
-              onChange={(e) =>
+              ariaLabel="Keep current living expenses unchanged"
+              onChange={(next) =>
                 onChange({
                   ...assumptions,
-                  livingExpenseAtDeath: e.target.checked
+                  livingExpenseAtDeath: next
                     ? null
                     : (assumptions.livingExpenseAtDeath ?? 0),
                 })
               }
-              className="h-3.5 w-3.5 rounded border-hair-2 text-accent focus:ring-2 focus:ring-accent/30"
             />
             Keep current living expenses unchanged
           </label>
         </div>
 
-        <div className="col-span-2">
+        <div className="flex items-center justify-between rounded-md border border-hair bg-card-2 px-3 py-2 text-[11px] text-ink-3 sm:col-span-2">
+          <span>Final expenses use the plan&apos;s estate settlement cost.</span>
+          <span className="tabular text-ink-2">{formatCurrency(estateAdminExpenses)}</span>
+        </div>
+
+        <div className="sm:col-span-2">
           <div className="text-[11px] text-ink-3">Pay off at death</div>
           {liabilities.length === 0 ? (
             <p className="mt-1 text-[11px] text-ink-4">No household liabilities.</p>
           ) : (
-            <div className="mt-1.5 space-y-1.5">
+            <div className="mt-1.5 divide-y divide-hair rounded-md border border-hair bg-card-2">
               {liabilities.map((l) => {
                 const checked = assumptions.payoffLiabilityIds.includes(l.id);
                 return (
                   <label
                     key={l.id}
-                    className="flex items-center justify-between gap-2 text-[12px] text-ink-2"
+                    className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-[12px] text-ink-2 transition-colors hover:bg-card-hover"
                   >
-                    <span className="flex items-center gap-1.5">
-                      <input
-                        type="checkbox"
+                    <span className="flex items-center gap-2">
+                      <Checkbox
                         checked={checked}
-                        onChange={(e) =>
+                        ariaLabel={`Pay off ${l.name} at death`}
+                        onChange={(next) =>
                           onChange({
                             ...assumptions,
-                            payoffLiabilityIds: e.target.checked
+                            payoffLiabilityIds: next
                               ? [...assumptions.payoffLiabilityIds, l.id]
                               : assumptions.payoffLiabilityIds.filter(
                                   (id) => id !== l.id,
                                 ),
                           })
                         }
-                        className="h-3.5 w-3.5 rounded border-hair-2 text-accent focus:ring-2 focus:ring-accent/30"
                       />
                       {l.name}
                     </span>
@@ -166,11 +169,52 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-[11px] text-ink-3 truncate" htmlFor={htmlFor}>
+      <label className="block truncate text-[11px] text-ink-3" htmlFor={htmlFor}>
         {label}
       </label>
       <div className="mt-1">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Themed checkbox — the native control is hidden (`appearance-none`) and styled
+ * directly: a card-2 box with a hair border that fills accent with a white
+ * check when on. Matches the dark solver theme; native checkboxes do not.
+ */
+function Checkbox({
+  checked,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        aria-label={ariaLabel}
+        className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-hair-2 bg-card-2 transition-colors hover:border-accent/60 checked:border-accent checked:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 12 12"
+        className="pointer-events-none absolute h-3 w-3 text-white opacity-0 transition-opacity peer-checked:opacity-100"
+      >
+        <path
+          d="M2.5 6.25 5 8.75l4.5-5.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
   );
 }
 
@@ -200,7 +244,7 @@ function YearInput({
         const n = parseInt(e.target.value, 10);
         if (!Number.isNaN(n) && n >= MIN && n <= MAX) onCommit(n);
       }}
-      className="h-9 w-24 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+      className="h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
       aria-label={label}
     />
   );
@@ -248,7 +292,7 @@ function CurrencyAmountInput({
         value={display}
         onChange={handleChange}
         disabled={disabled}
-        className="h-9 w-32 rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-9 w-full rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50"
         aria-label={label}
       />
     </div>

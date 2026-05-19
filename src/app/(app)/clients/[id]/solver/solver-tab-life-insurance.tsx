@@ -9,9 +9,9 @@
 // in-flight solves are discarded via a request-sequence guard so a slow
 // earlier solve never overwrites a newer result.
 //
-// Task 11: renders the need-result cards + survivor projection chart from
-// the solve response. Phases 2–3 slot a Monte Carlo block and an over-time
-// section below the chart — keep the layout extensible.
+// Task 11: renders the straight-line need cards from the solve response,
+// followed by the Monte Carlo solve block and the need-over-time section.
+// The tab is a single centered column — keep the stack order extensible.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
@@ -144,7 +144,7 @@ export function SolverTabLifeInsurance({
   }, [assumptions, runSolveAndSave]);
 
   return (
-    <div className="space-y-4 px-3 py-4">
+    <div className="mx-auto max-w-5xl space-y-4 px-5 py-5">
       <div className="flex items-center gap-2">
         <h2 className="text-[15px] font-medium text-ink">Life Insurance Need</h2>
         {isSolving ? (
@@ -176,31 +176,29 @@ export function SolverTabLifeInsurance({
           block → over-time section. The two solved needs read adjacently,
           then the MC block, then the need-over-time panel. */}
       {solveResult ? (
-        <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
+        <div
+          className={`space-y-4 ${isSolving ? "opacity-60 transition-opacity" : ""}`}
+        >
           <LiNeedCards
             result={solveResult}
             deathYear={assumptions.deathYear}
             clientName={clientName}
             spouseName={spouseName}
           />
-          <div className="mt-4">
-            <LiMcSolve
-              clientId={clientId}
-              assumptions={assumptions}
-              clientName={clientName}
-              spouseName={spouseName}
-              onScoreChange={handleScoreChange}
-            />
-          </div>
-          <div className="mt-4">
-            <LiOverTimeSection
-              clientId={clientId}
-              assumptions={assumptions}
-              isMarried={solveResult.isMarried}
-              clientName={clientName}
-              spouseName={spouseName}
-            />
-          </div>
+          <LiMcSolve
+            clientId={clientId}
+            assumptions={assumptions}
+            clientName={clientName}
+            spouseName={spouseName}
+            onScoreChange={handleScoreChange}
+          />
+          <LiOverTimeSection
+            clientId={clientId}
+            assumptions={assumptions}
+            isMarried={solveResult.isMarried}
+            clientName={clientName}
+            spouseName={spouseName}
+          />
         </div>
       ) : (
         <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
