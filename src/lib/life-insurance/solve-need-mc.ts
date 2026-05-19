@@ -36,6 +36,12 @@ const SCORE_TOLERANCE = 0.02;
 /** Maximum bisection iterations — 24 halvings of [0, 20M] resolves to <$2. */
 const MAX_ITERATIONS = 24;
 
+/** Expected total evaluations used to size the progress bar. The Illinois
+ *  root-finder converges in far fewer probes than the old fixed bisection
+ *  (2 endpoint probes + ~8 root-finder iterations); `done` is clamped to
+ *  this value so a rare long run never overflows the bar. */
+const EXPECTED_EVALUATIONS = 10;
+
 export interface NeedMcResult {
   status: "solved" | "exceeds-cap";
   faceValue: number;
@@ -47,8 +53,9 @@ export interface SolveLifeInsuranceNeedMcOptions {
   /** Monte Carlo trials per candidate evaluation. Defaults to 250. Tests
    *  pass a low count (100–200) to stay within their time budget. */
   trials?: number;
-  /** Called once per candidate evaluation with the running iteration count
-   *  and the total bisection budget (MAX_ITERATIONS + 2 endpoint probes). */
+  /** Called once per candidate evaluation with the running evaluation count
+   *  and a fixed estimated total (`EXPECTED_EVALUATIONS`). `done` is clamped
+   *  so it never exceeds `total`, even on a rare long run. */
   onProgress?: (done: number, total: number) => void;
   /** Cancellation signal. Checked between bisection iterations and forwarded
    *  to `runMonteCarlo` so an in-flight trial loop can also bail. */
@@ -81,11 +88,6 @@ export async function solveLifeInsuranceNeedMc(
   const trials = opts.trials ?? DEFAULT_TRIALS;
   const target = assumptions.mcTargetScore;
   const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
-  // The Illinois root-finder converges in far fewer probes than the old fixed
-  // bisection, so size the progress bar to the expected probe count (2
-  // endpoint probes + ~8 root-finder iterations) rather than the worst-case
-  // cap. `done` is clamped to `total` so a rare long run never overflows it.
-  const EXPECTED_EVALUATIONS = 10;
   const total = EXPECTED_EVALUATIONS;
 
   let iterations = 0;

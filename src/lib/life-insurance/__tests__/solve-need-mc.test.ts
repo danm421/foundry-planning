@@ -73,6 +73,9 @@ describe("solveLifeInsuranceNeedMc", () => {
     // 2 endpoint probes + a handful of root-finder iterations -- well under
     // the old fixed budget of MAX_ITERATIONS + 2 = 26.
     expect(r.iterations).toBeLessThanOrEqual(14);
+    // Also assert solution quality: a fast-but-wrong convergence (e.g. a bug
+    // reconstructing f(x) from g-space) would pass the iteration bound alone.
+    expect(r.achievedScore).toBeGreaterThanOrEqual(0.83);
   }, 30_000);
 
   it("reports exceeds-cap when even the 20M cap cannot meet the target", async () => {
