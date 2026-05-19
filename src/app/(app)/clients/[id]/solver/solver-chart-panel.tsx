@@ -9,6 +9,7 @@ import { SolverCashFlowChart } from "@/components/charts/solver-cash-flow-chart"
 import { YearlyLiquidityChart } from "@/components/yearly-liquidity-chart";
 import { LiNeedOverTimeView } from "./li-need-over-time-view";
 import { useNeedOverTime } from "./use-need-over-time";
+import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 
 type ChartTab = "portfolio" | "cashflow" | "liquidity" | "lifeInsurance";
 
@@ -81,7 +82,10 @@ export function SolverChartPanel({
   }, [showLifeInsuranceTab, cancelOverTime]);
 
   const tabs = showLifeInsuranceTab ? [...BASE_TABS, LI_TAB] : BASE_TABS;
-  const isMarried = Boolean(workingTree.client.spouseName);
+  // Toggle visibility must match the over-time engine's own spouse check
+  // (need-over-time.ts `hasSpouse`) so the client/spouse toggle never offers
+  // a series the engine returned as null, nor hides one it computed.
+  const isMarried = hasSpouse(workingTree);
 
   // Built only when the Liquidity tab is active — avoids running the estate
   // report on every recompute (and against fixtures that lack estate data).
