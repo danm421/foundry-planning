@@ -1,11 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { runProjection } from "@/engine/projection";
+import * as projectionModule from "@/engine/projection";
 import {
   buildLifeInsuranceWhatIfData,
   runLifeInsuranceWhatIf,
   survivorEndingPortfolio,
   SYNTHETIC_POLICY_ID,
 } from "../life-insurance-need";
+import { solveLifeInsuranceNeed } from "@/lib/life-insurance/solve-need";
+import { assumptions } from "@/lib/life-insurance/__tests__/test-helpers";
 import type { ClientData } from "@/engine/types";
 import {
   baseClient,
@@ -418,5 +421,53 @@ describe("runLifeInsuranceWhatIf + survivorEndingPortfolio", () => {
     });
     // spouse born 1972, LE 92 -> dies 2064
     expect(projection[projection.length - 1].year).toBeGreaterThanOrEqual(2064);
+  });
+});
+
+/** marriedBase() with one mortgage, so applyDebtPayoffAtDeath -> the base
+ *  projection path actually runs. */
+function clientWithDebt(): ClientData {
+  const data = marriedBase();
+  const loan: Liability = {
+    id: "mortgage-1",
+    name: "Mortgage",
+    balance: 400_000,
+    interestRate: 0.05,
+    monthlyPayment: 2_400,
+    startYear: 2020,
+    startMonth: 1,
+    termMonths: 360,
+    extraPayments: [],
+    owners: [],
+  };
+  data.liabilities = [loan];
+  return data;
+}
+
+describe("liabilityBalancesAtDeathYear base-projection memo", () => {
+  it("runs the base projection exactly once per ClientData, not once per probe", () => {
+    const data = clientWithDebt();
+    const a = { ...assumptions, payoffLiabilityIds: ["mortgage-1"] };
+    const spy = vi.spyOn(projectionModule, "runProjection");
+
+    try {
+      solveLifeInsuranceNeed(data, "client", a);
+
+      // Base-data projections carry NO synthetic policy; what-if projections
+      // do. Filtering by its absence isolates the base-projection calls.
+      const baseCalls = spy.mock.calls.filter(
+        ([d]) => !d.accounts.some((acc) => acc.id === SYNTHETIC_POLICY_ID),
+      ).length;
+      expect(baseCalls).toBe(1);
+
+      // A second solve on the SAME data object hits the memo: still 1.
+      solveLifeInsuranceNeed(data, "client", { ...a, deathYear: a.deathYear + 1 });
+      const baseCallsAfterSecond = spy.mock.calls.filter(
+        ([d]) => !d.accounts.some((acc) => acc.id === SYNTHETIC_POLICY_ID),
+      ).length;
+      expect(baseCallsAfterSecond).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

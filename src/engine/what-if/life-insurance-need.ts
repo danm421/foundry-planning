@@ -9,6 +9,19 @@ import type { AccountOwner } from "@/engine/ownership";
 import { runProjection } from "@/engine/projection";
 import type { ProjectionYear } from "@/engine/types";
 
+/**
+ * Per-`ClientData` memo of the base (pre-transform) projection.
+ *
+ * `liabilityBalancesAtDeathYear` runs `runProjection` on the *untouched* base
+ * data; within a solve session the same `data` reference is reused across
+ * every bisection probe and every plan year, so the result is identical every
+ * time. `buildLifeInsuranceWhatIfData` treats `data` as immutable
+ * (`structuredClone`, never mutates input), so keying on object identity is
+ * safe. A WeakMap lets entries be GC'd when the request's `data` is dropped --
+ * no TTL, no eviction.
+ */
+const baseProjectionMemo = new WeakMap<ClientData, ProjectionYear[]>();
+
 /** Tax-realization mix for model-portfolio-backed LI proceeds. Mirrors
  *  `LifeInsurancePolicy.postPayoutRealization`. */
 export interface ProceedsRealization {
@@ -235,7 +248,11 @@ function liabilityBalancesAtDeathYear(
   deathYear: number,
   ids: ReadonlySet<string>,
 ): number {
-  const projection = runProjection(data);
+  let projection = baseProjectionMemo.get(data);
+  if (!projection) {
+    projection = runProjection(data);
+    baseProjectionMemo.set(data, projection);
+  }
   const row = projection.find((y) => y.year === deathYear);
   if (row) {
     let sum = 0;
