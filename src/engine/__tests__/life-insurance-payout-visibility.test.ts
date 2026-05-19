@@ -183,3 +183,18 @@ describe("life-insurance payout — cash-flow inflow", () => {
     );
   });
 });
+
+describe("life-insurance payout — portfolio asset", () => {
+  it("shows the face value as cash in the death year itself", () => {
+    const years = runProjection(mkData({ withBeneficiary: true }));
+    const death = years.find((y) => y.year === 2030)!;
+    expect(death.portfolioAssets.cash["pol-1"]).toBe(1_000_000);
+    expect(death.portfolioAssets.cashTotal).toBe(1_000_000);
+  });
+
+  it("keeps the proceeds visible the year after death", () => {
+    const years = runProjection(mkData({ withBeneficiary: true }));
+    const after = years.find((y) => y.year === 2031)!;
+    expect(after.portfolioAssets.cashTotal).toBe(1_000_000);
+  });
+});
