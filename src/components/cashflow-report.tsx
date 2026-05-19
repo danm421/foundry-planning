@@ -44,6 +44,7 @@ import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import { ExportButton } from "@/components/exports/export-button";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import type { PortfolioBarsTimelineMarker } from "@/components/charts/portfolio-bars-chart";
+import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -176,11 +177,17 @@ function numCol(
   id: string,
   header: ColumnDef<ProjectionYear>["header"],
   accessorFn: (row: ProjectionYear, idx: number) => number,
-  bold = false
+  bold = false,
+  negativeRed = false
 ): ColumnDef<ProjectionYear> {
   return col(id, header, accessorFn, (info) => {
-    const v = fmtNum(info.getValue() as number);
-    return bold ? <strong>{v}</strong> : v;
+    const raw = info.getValue() as number;
+    const v = fmtNum(raw);
+    const inner = bold ? <strong>{v}</strong> : v;
+    if (negativeRed && raw < 0) {
+      return <span className="text-red-400">{inner}</span>;
+    }
+    return inner;
   });
 }
 
@@ -511,16 +518,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       },
     },
   };
-
-  // Liquid portfolio total for cash-flow framing: taxable + cash + retirement
-  // + life insurance cash value. Excludes real estate and business assets —
-  // advisors think of cash flow against the investable portfolio, not the
-  // household's outside-the-estate holdings.
-  const liquidPortfolioTotal = (y: ProjectionYear) =>
-    y.portfolioAssets.taxableTotal +
-    y.portfolioAssets.cashTotal +
-    y.portfolioAssets.retirementTotal +
-    y.portfolioAssets.lifeInsuranceTotal;
 
   const hasAnyAccessible = visibleYears.some(
     (y) => y.portfolioAssets.accessibleTrustAssetsTotal > 0,
@@ -1189,7 +1186,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           () => <DrillBtn segment="activity" label="Portfolio Activity" />,
           (r) => additionsTotal(r) - distributionsTotal(r)
         ),
-        numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, liquidPortfolioTotal),
+        numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, liquidPortfolioTotal, false, true),
       ];
     }
 
@@ -1946,7 +1943,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
         numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
-        numCol("portfolio_subtotal", "Total Portfolio Assets", liquidPortfolioTotal, true),
+        numCol("portfolio_subtotal", "Total Portfolio Assets", liquidPortfolioTotal, true, true),
         numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
         ...(hasAnyAccessible
           ? [numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal)]
