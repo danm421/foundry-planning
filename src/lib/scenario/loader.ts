@@ -218,6 +218,27 @@ export const loadEffectiveTree = cache(
       groups,
       resolutionContext,
     );
+
+    // Filter notes_receivable by ToggleState. Notes with toggleGroupId === null
+    // always pass; otherwise the row passes iff its group resolves "on" in the
+    // active toggle state (toggleState wins; falls back to group.defaultOn).
+    // applyScenarioChangesWithRefs does not currently overlay notesReceivable,
+    // so this runs against whatever the base tree provided.
+    if (result.effectiveTree.notesReceivable) {
+      const groupOn = new Map<string, boolean>();
+      for (const g of groups) {
+        const explicit = toggleState[g.id];
+        groupOn.set(g.id, explicit ?? g.defaultOn);
+      }
+      result.effectiveTree = {
+        ...result.effectiveTree,
+        notesReceivable: result.effectiveTree.notesReceivable.filter(
+          (n) =>
+            n.toggleGroupId == null || groupOn.get(n.toggleGroupId) === true,
+        ),
+      };
+    }
+
     return { ...result, resolutionContext };
   },
 );
