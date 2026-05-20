@@ -1387,10 +1387,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // income and credit principal to the holder's default checking. The note's
     // own balance steps down to the year-end outstanding principal via
     // accountBalances. Trust-side outflow (when the note is linked to a trust)
-    // is handled separately — see Task 11.
+    // is handled inline below (Task 11).
     //
     // Only family-owned (household-held) notes flow into household 1040 here.
     // Entity-held notes are handled by their owner-entity's tax pass.
+    const noteShortfallWarnings: TrustWarning[] = [];
     for (const noteAcct of workingAccounts) {
       if (noteAcct.subType !== "promissory_note") continue;
       const row = noteIncomeForYear(noteAcct, year);
@@ -1416,6 +1417,52 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               label: `Note payment from ${noteAcct.name}`,
               sourceId: noteAcct.id,
             });
+          }
+        }
+        // 2b. Trust-side outflow when the note is linked to a trust entity.
+        //     The trust is the debtor — drain its cash accounts pro-rata by
+        //     current balance (effective: accountBalances + pending cashDelta
+        //     since this block runs before the step-11 flush). If the trust's
+        //     cash can't cover the payment, emit a `trust_note_cash_shortfall`
+        //     warning. The negative checking that may result will be picked up
+        //     by the entity-overdraft gap-fill in step 12c.
+        if (noteAcct.noteLinkedTrustEntityId != null) {
+          const trustId = noteAcct.noteLinkedTrustEntityId;
+          const trust = entityMap[trustId];
+          const payment = row.interest + row.principal;
+          if (trust && payment > 0) {
+            const trustCashAccounts = workingAccounts.filter(
+              (acc) =>
+                acc.category === "cash" &&
+                controllingEntity(acc) === trustId,
+            );
+            const effectiveBalanceOf = (id: string) =>
+              (accountBalances[id] ?? 0) + (cashDelta[id] ?? 0);
+            const cashAvailable = trustCashAccounts.reduce(
+              (s, c) => s + Math.max(0, effectiveBalanceOf(c.id)),
+              0,
+            );
+            const paid = Math.min(cashAvailable, payment);
+            if (paid > 0 && cashAvailable > 0) {
+              const ratio = paid / cashAvailable;
+              for (const c of trustCashAccounts) {
+                const bal = Math.max(0, effectiveBalanceOf(c.id));
+                if (bal <= 0) continue;
+                creditCash(c.id, -bal * ratio, {
+                  category: "expense",
+                  label: `Note payment to ${noteAcct.name}`,
+                  sourceId: noteAcct.id,
+                });
+              }
+            }
+            if (paid < payment) {
+              noteShortfallWarnings.push({
+                code: "trust_note_cash_shortfall",
+                entityId: trustId,
+                year,
+                shortfall: payment - paid,
+              });
+            }
           }
         }
       }
@@ -3692,6 +3739,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ...(trustPassResult != null
        || grantorDistributionWarnings.length > 0
        || entityGapFillWarnings.length > 0
+       || noteShortfallWarnings.length > 0
        || convergenceWarning != null
         ? {
             ...(trustPassResult != null ? {
@@ -3707,6 +3755,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ...(trustPassResult?.warnings ?? []),
                 ...grantorDistributionWarnings,
                 ...entityGapFillWarnings,
+                ...noteShortfallWarnings,
                 ...(convergenceWarning != null ? [convergenceWarning] : []),
               ];
               return all.length > 0 ? all : undefined;
