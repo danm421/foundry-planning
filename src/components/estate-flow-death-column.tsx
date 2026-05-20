@@ -64,6 +64,11 @@ const DRAIN_KINDS: ReadonlyArray<keyof RecipientGroup["drainsByKind"]> = [
   "ird_tax",
 ];
 
+const DISTRIBUTION_FORM_CHIP = {
+  outright: { className: "bg-gray-800/70 text-gray-300", label: "Outright" },
+  in_trust: { className: "bg-indigo-900/40 text-indigo-200", label: "In trust" },
+} as const;
+
 // ── Mechanism tags ────────────────────────────────────────────────────────────
 // Asset rows are listed flat under each recipient (no per-mechanism subsections);
 // each row carries a compact tag naming how the asset passes. Short forms of the
@@ -267,6 +272,13 @@ function ClickableRecipientGroup({
                       title={`${a.conflictIds.length} configuration conflict(s) on this asset`}
                     >
                       Conflict
+                    </span>
+                  )}
+                  {a.distributionForm && (
+                    <span
+                      className={`shrink-0 rounded ${DISTRIBUTION_FORM_CHIP[a.distributionForm].className} px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider`}
+                    >
+                      {DISTRIBUTION_FORM_CHIP[a.distributionForm].label}
                     </span>
                   )}
                 </span>

@@ -1,4 +1,4 @@
-import type { Account } from "@/engine/types";
+import type { Account, ClientInfo } from "@/engine/types";
 
 /**
  * Returns true if the policy would pay out its face value if death occurred
@@ -51,4 +51,67 @@ export function isPolicyInForce(
   }
 
   return true;
+}
+
+/**
+ * Resolve the retirement year of an insurance policy's insured person. Used by
+ * callers of `isPolicyInForce` to gate the `endsAtInsuredRetirement` rule.
+ *
+ * Takes pre-computed retirement years for the client and spouse (the caller
+ * derives these from `ownerDobs` + `clientData.client.retirementAge` /
+ * `spouseRetirementAge`) and selects the right one for `account.insuredPerson`:
+ *
+ * - `"client"` → `clientRetirementYear`
+ * - `"spouse"` → `spouseRetirementYear`
+ * - `"joint"` → the later of the two (policy lapses only when both have
+ *   retired); falls back to whichever side is non-null if the other is null
+ * - anything else (including `null`/`undefined`) → `null`
+ *
+ * Callers treat `null` as "no retirement bound" and continue applying any
+ * explicit term-length rule.
+ */
+export function insuredRetirementYearFor(
+  account: Account,
+  clientRetirementYear: number | null,
+  spouseRetirementYear: number | null,
+): number | null {
+  switch (account.insuredPerson) {
+    case "client":
+      return clientRetirementYear;
+    case "spouse":
+      return spouseRetirementYear;
+    case "joint":
+      // Policy lapses only when BOTH have retired, so use the later year.
+      if (clientRetirementYear == null) return spouseRetirementYear;
+      if (spouseRetirementYear == null) return clientRetirementYear;
+      return Math.max(clientRetirementYear, spouseRetirementYear);
+    default:
+      return null;
+  }
+}
+
+function parseBirthYearFromDob(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const y = Number(dob.slice(0, 4));
+  return Number.isFinite(y) ? y : null;
+}
+
+/**
+ * Derive `clientRetirementYear` / `spouseRetirementYear` from a `ClientInfo`
+ * record — feeds `insuredRetirementYearFor`. Returns `null` per side when the
+ * relevant DOB or retirement-age field is missing.
+ */
+export function resolveOwnerRetirementYears(
+  client: ClientInfo,
+): { clientRetirementYear: number | null; spouseRetirementYear: number | null } {
+  const clientBirthYear = parseBirthYearFromDob(client.dateOfBirth);
+  const spouseBirthYear = parseBirthYearFromDob(client.spouseDob);
+  return {
+    clientRetirementYear:
+      clientBirthYear != null ? clientBirthYear + client.retirementAge : null,
+    spouseRetirementYear:
+      spouseBirthYear != null && client.spouseRetirementAge != null
+        ? spouseBirthYear + client.spouseRetirementAge
+        : null,
+  };
 }
