@@ -1285,6 +1285,55 @@ export const extraPayments = pgTable("extra_payments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const notesReceivable = pgTable("notes_receivable", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id),
+  scenarioId: uuid("scenario_id").notNull().references(() => scenarios.id),
+  name: text("name").notNull(),
+  faceValue: decimal("face_value", { precision: 15, scale: 2 }).notNull(),
+  basis: decimal("basis", { precision: 15, scale: 2 }).notNull(),
+  asOfBalance: decimal("as_of_balance", { precision: 15, scale: 2 }),
+  balanceAsOfMonth: integer("balance_as_of_month"),
+  balanceAsOfYear: integer("balance_as_of_year"),
+  interestRate: decimal("interest_rate", { precision: 7, scale: 4 }).notNull().default("0"),
+  paymentType: notePaymentTypeEnum("payment_type").notNull(),
+  monthlyPayment: decimal("monthly_payment", { precision: 15, scale: 2 }),
+  startYear: integer("start_year").notNull(),
+  startMonth: integer("start_month").notNull().default(1),
+  startYearRef: yearRefEnum("start_year_ref"),
+  termMonths: integer("term_months").notNull(),
+  linkedTrustEntityId: uuid("linked_trust_entity_id").references(
+    () => entities.id, { onDelete: "set null" }
+  ),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const noteExtraPayments = pgTable("note_extra_payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  noteReceivableId: uuid("note_receivable_id")
+    .notNull()
+    .references(() => notesReceivable.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  type: extraPaymentTypeEnum("type").notNull(),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const noteReceivableOwners = pgTable("note_receivable_owners", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  noteReceivableId: uuid("note_receivable_id")
+    .notNull()
+    .references(() => notesReceivable.id, { onDelete: "cascade" }),
+  familyMemberId: uuid("family_member_id").references(() => familyMembers.id),
+  entityId: uuid("entity_id").references(() => entities.id),
+  externalBeneficiaryId: uuid("external_beneficiary_id").references(
+    () => externalBeneficiaries.id,
+  ),
+  percent: decimal("percent", { precision: 5, scale: 2 }).notNull(),
+});
+
 export const savingsRules = pgTable("savings_rules", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
