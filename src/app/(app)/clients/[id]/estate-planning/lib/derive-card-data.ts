@@ -1,5 +1,6 @@
 import type { ClientData, FamilyMember, Account, WillBequest, Gift } from "@/engine/types";
 import { beaForYear } from "@/lib/tax/estate";
+import { amortizeNote } from "@/engine/notes/note-amortization";
 import {
   rowsForFamilyMember,
   rowsForEntity,
@@ -24,6 +25,12 @@ export interface ClientCardData {
   total: number;
 }
 
+export interface LinkedNoteRow {
+  accountId: string;
+  name: string;
+  annualPayment: number;
+}
+
 export interface TrustCardData {
   entityId: string;
   name: string;
@@ -36,6 +43,10 @@ export interface TrustCardData {
   exemptionConsumed: number;
   exemptionAvailable: number;
   breach: boolean;
+  /** When set, grantor-trust treatment ends after this year. */
+  grantorStatusEndYear?: number;
+  /** Promissory notes where this trust is the debtor (noteLinkedTrustEntityId === entityId). */
+  linkedNotes: LinkedNoteRow[];
   /**
    * Split-interest snapshot for CLUT/CLAT trusts. Populated only when
    * trustSubType = 'clut'. Drives the "Split-interest details" card panel.
@@ -168,6 +179,24 @@ export function deriveClientCardData(
   return cards;
 }
 
+function noteAnnualPayment(a: Account): number {
+  if (
+    a.noteInterestRate == null ||
+    a.noteTermMonths == null ||
+    a.noteStartYear == null ||
+    a.notePaymentType == null
+  ) return 0;
+  const sched = amortizeNote({
+    principal: a.value,
+    rate: a.noteInterestRate,
+    termMonths: a.noteTermMonths,
+    startYear: a.noteStartYear,
+    paymentType: a.notePaymentType,
+  });
+  if (sched.length === 0) return 0;
+  return Math.round(sched[0].interest + sched[0].principal);
+}
+
 export function deriveTrustCardData(
   tree: ClientData,
   asOfYear: number,
@@ -198,6 +227,13 @@ export function deriveTrustCardData(
           originalRemainderInterest: Number(si.originalRemainderInterest),
         }
       : undefined;
+    const linkedNotes: LinkedNoteRow[] = (tree.accounts ?? [])
+      .filter((a) => a.subType === "promissory_note" && a.noteLinkedTrustEntityId === e.id)
+      .map((a) => ({
+        accountId: a.id,
+        name: a.name,
+        annualPayment: noteAnnualPayment(a),
+      }));
     return {
       entityId: e.id,
       name: e.name ?? "(unnamed trust)",
@@ -210,6 +246,8 @@ export function deriveTrustCardData(
       exemptionConsumed: e.exemptionConsumed ?? 0,
       exemptionAvailable: bea,
       breach: recipientBreaches?.get(`entity:${e.id}`) ?? false,
+      ...(e.grantorStatusEndYear != null ? { grantorStatusEndYear: e.grantorStatusEndYear } : {}),
+      linkedNotes,
       ...(splitInterest ? { splitInterest } : {}),
     };
   });

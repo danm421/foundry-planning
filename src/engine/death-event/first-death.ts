@@ -311,6 +311,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // Phase 2 — compute grantor-succession updates (not yet applied).
   const succession = applyGrantorSuccession({
     deceased: prepared.deceased,
+    deathYear: input.year,
     entities: prepared.entities,
   });
 
@@ -648,7 +649,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     drainAttributions: [...drainAttributions, ...irdAttributions],
   };
 
-  assertFirstDeathInvariants(estateTax, mutatedEntities, input.deceased);
+  assertFirstDeathInvariants(estateTax, mutatedEntities, input.deceased, input.year);
   assertPrecedenceChainInvariants({
     transfers: chainResult.transfers,
     accounts: chainResult.accounts,
@@ -741,6 +742,7 @@ function assertFirstDeathInvariants(
   estateTax: EstateTaxResult,
   entities: EntitySummary[],
   deceased: "client" | "spouse",
+  deathYear?: number,
 ): void {
   // grossEstate can be negative when the deceased owns no individual assets
   // but proportional household-debt attribution lands on them (4d-2 hypothetical
@@ -755,7 +757,18 @@ function assertFirstDeathInvariants(
   }
   for (const e of entities) {
     if (e.isIrrevocable && e.isGrantor && e.grantor === deceased) {
-      throw new Error(`first-death: post-event entity ${e.id} still grantor-flipped for deceased`);
+      // If grantorStatusEndYear already lapsed before the death year, the
+      // effective flip already happened via effectiveIsGrantor — the entity's
+      // isGrantor flag stays true (it's only a virtual flip), so the
+      // post-event check should skip it.  This mirrors the skip logic in
+      // applyGrantorSuccession that prevents a duplicate flip.
+      const alreadyVirtuallyFlipped =
+        deathYear != null &&
+        e.grantorStatusEndYear != null &&
+        deathYear > e.grantorStatusEndYear;
+      if (!alreadyVirtuallyFlipped) {
+        throw new Error(`first-death: post-event entity ${e.id} still grantor-flipped for deceased`);
+      }
     }
     if (!e.isIrrevocable && e.grantor === deceased) {
       throw new Error(`first-death: revocable entity ${e.id} grantor=deceased was not flipped`);

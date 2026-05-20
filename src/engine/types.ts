@@ -398,6 +398,8 @@ export interface EntitySummary {
   accessibleToClient?: boolean;
   // When true, taxes on the entity's income and RMDs are paid at the household rate.
   isGrantor: boolean;
+  /** Trust-only. When set, grantor-trust treatment applies only through this year (inclusive). */
+  grantorStatusEndYear?: number;
   beneficiaries?: BeneficiaryRef[];
   // Item 2 additions (data-only; no engine rule reads these yet):
   trustSubType?: TrustSubType;
@@ -629,6 +631,13 @@ export interface Account {
    * (not optional) so call sites never silently default.
    */
   titlingType: "jtwros" | "community_property";
+  /** Promissory-note fields. Present only when subType === 'promissory_note'. */
+  noteInterestRate?: number;
+  noteTermMonths?: number;
+  noteStartYear?: number;
+  notePaymentType?: "amortizing" | "interest_only_balloon";
+  /** When set, this trust entity is the debtor — engine derives a matching outflow. */
+  noteLinkedTrustEntityId?: string;
   owners: AccountOwner[];
 }
 

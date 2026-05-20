@@ -95,6 +95,7 @@ const baseEntityFields = {
   includeInPortfolio: z.boolean().optional(),
   accessibleToClient: z.boolean().optional(),
   isGrantor: z.boolean().optional(),
+  grantorStatusEndYear: z.number().int().nullable().optional(),
   value: z.union([z.string(), z.number()]).optional(),
   basis: z.union([z.string(), z.number()]).optional(),
   owner: z.enum(["client", "spouse", "joint"]).nullish(),

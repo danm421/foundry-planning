@@ -330,6 +330,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // application until after gross-estate + drains read pre-flip state.
   const succession = applyGrantorSuccession({
     deceased: prepared.deceased,
+    deathYear: input.year,
     entities: prepared.entities,
   });
   warnings.push(...succession.warnings);

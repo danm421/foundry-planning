@@ -61,6 +61,7 @@ export interface Entity {
   notes: string | null;
   includeInPortfolio: boolean;
   isGrantor: boolean;
+  grantorStatusEndYear?: number | null;
   value: string;
   basis: string;
   /** Multi-owner allocation for business entities. Empty for trusts. */

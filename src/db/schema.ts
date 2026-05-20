@@ -58,6 +58,7 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "529",
   "trust",
   "other",
+  "promissory_note",
   // real_estate sub types
   "primary_residence",
   "rental_property",
@@ -204,6 +205,7 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "irrevocable",
   "ilit",
   "clut",
+  "idgt",
 ]);
 
 export const trustTermTypeEnum = pgEnum("trust_term_type", [
@@ -211,6 +213,11 @@ export const trustTermTypeEnum = pgEnum("trust_term_type", [
   "single_life",
   "joint_life",
   "shorter_of_years_or_life",
+]);
+
+export const notePaymentTypeEnum = pgEnum("note_payment_type", [
+  "amortizing",
+  "interest_only_balloon",
 ]);
 
 export const trustPayoutTypeEnum = pgEnum("trust_payout_type", [
@@ -547,6 +554,10 @@ export const entities = pgTable("entities", {
   accessibleToClient: boolean("accessible_to_client").notNull().default(false),
   // When true, taxes on the entity's income / RMDs are paid at the household (grantor trust).
   isGrantor: boolean("is_grantor").notNull().default(false),
+  // Trust-only: optional. When set and isGrantor=true, grantor-trust treatment
+  // applies only through this projection year (inclusive). Past this year, the
+  // trust files its own 1041. NULL → permanent grantor status (existing behavior).
+  grantorStatusEndYear: integer("grantor_status_end_year"),
   // For business-interest entities (LLC/S-Corp/C-Corp/Partnership/Other): flat
   // valuation that surfaces on the balance sheet's Out of Estate section.
   // Null/zero for trust/foundation rows that hold value through child accounts.
@@ -1015,6 +1026,17 @@ export const accounts = pgTable("accounts", {
   // the rate column is then a fallback / display value only.
   propertyTaxGrowthSource: itemGrowthSourceEnum("property_tax_growth_source").notNull().default("custom"),
   titlingType: titlingTypeEnum("titling_type").notNull().default("jtwros"),
+  // Promissory-note fields. Only populated when subType = 'promissory_note'.
+  noteInterestRate: decimal("note_interest_rate", { precision: 7, scale: 4 }),
+  noteTermMonths: integer("note_term_months"),
+  noteStartYear: integer("note_start_year"),
+  notePaymentType: notePaymentTypeEnum("note_payment_type"),
+  // When set, the named trust entity is the debtor. Engine derives a matching
+  // outflow on the trust equal to the holder's combined interest + principal.
+  noteLinkedTrustEntityId: uuid("note_linked_trust_entity_id").references(
+    () => entities.id,
+    { onDelete: "set null" },
+  ),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

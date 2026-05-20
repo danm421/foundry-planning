@@ -18,6 +18,9 @@ export interface AssetsTabAccount {
   subType?: string;
   isDefaultChecking?: boolean;
   owners: AccountOwner[];
+  /** Set when this promissory note is linked to a trust as the debtor.
+   *  Only populated when subType === "promissory_note". */
+  noteLinkedTrustEntityId?: string | null;
 }
 
 export interface AssetsTabLiability {

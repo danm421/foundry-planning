@@ -74,6 +74,11 @@ export interface AccountFormInitial {
    * and cannot be deleted (the projection engine uses it as the default
    * deposit/expense target). */
   isDefaultChecking?: boolean;
+  // Promissory-note fields (subType === "promissory_note")
+  noteInterestRate?: string | null;
+  noteTermMonths?: number | null;
+  noteStartYear?: number | null;
+  notePaymentType?: "amortizing" | "interest_only_balloon" | null;
 }
 
 export interface ModelPortfolioOption {
@@ -138,7 +143,7 @@ interface AddAccountFormProps {
 }
 
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
-  taxable: ["brokerage", "trust", "other"],
+  taxable: ["brokerage", "trust", "other", "promissory_note"],
   cash: ["savings", "checking", "other"],
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
@@ -156,6 +161,7 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   "403b": "403(b)",
   "529": "529 Plan",
   trust: "Trust",
+  promissory_note: "Promissory note (receivable)",
   other: "Other",
   primary_residence: "Primary Residence",
   rental_property: "Rental Property",
@@ -391,6 +397,20 @@ export default function AddAccountForm({
     initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0",
   );
 
+  // Promissory-note state (only active when subType === "promissory_note")
+  const [noteInterestRatePct, setNoteInterestRatePct] = useState<string>(
+    initial?.noteInterestRate != null ? (Number(initial.noteInterestRate) * 100).toString() : "",
+  );
+  const [noteTermMonths, setNoteTermMonths] = useState<string>(
+    initial?.noteTermMonths != null ? String(initial.noteTermMonths) : "120",
+  );
+  const [noteStartYear, setNoteStartYear] = useState<string>(
+    initial?.noteStartYear != null ? String(initial.noteStartYear) : String(new Date().getFullYear()),
+  );
+  const [notePaymentType, setNotePaymentType] = useState<"amortizing" | "interest_only_balloon">(
+    initial?.notePaymentType ?? "amortizing",
+  );
+
   const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
   const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category);
 
@@ -522,8 +542,12 @@ export default function AddAccountForm({
     // toggling Inflation ↔ Custom doesn't lose the value. The engine uses
     // `growthSource` to decide whether to substitute the resolved inflation
     // rate at projection time.
+    const isPromissoryNote = subType === "promissory_note";
     let growthRate: string | null;
-    if (category === "real_estate") {
+    if (isPromissoryNote) {
+      // Promissory notes are amortized by the engine — no market growth rate.
+      growthRate = null;
+    } else if (category === "real_estate") {
       growthRate = String(Number(realEstateGrowthRatePct) / 100);
     } else if (growthSource === "custom") {
       growthRate = String(Number(data.get("growthRate")) / 100);
@@ -540,27 +564,35 @@ export default function AddAccountForm({
       (data.get("category") as string) === "retirement" &&
       ((data.get("subType") as string) === "401k" ||
         (data.get("subType") as string) === "403b");
+    const currentValue = data.get("value") as string;
     const accountBody = {
       name: data.get("name") as string,
       category: data.get("category") as string,
       subType: data.get("subType") as string,
       owners,
       titlingType,
-      value: data.get("value") as string,
+      value: currentValue,
       // Cost basis is meaningless for 401k/403b; force 0 so any leftover
       // pre-migration value can't influence engine math.
-      basis: isMixedDeferralForBody ? "0" : (data.get("basis") as string),
+      // For promissory notes, basis equals value at issuance (full principal).
+      basis: isMixedDeferralForBody
+        ? "0"
+        : isPromissoryNote
+          ? currentValue
+          : (data.get("basis") as string),
       rothValue: isMixedDeferralForBody
         ? ((data.get("rothValue") as string) || "0")
         : "0",
       growthRate,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
-      growthSource: isInvestable
-        ? growthSource
-        : category === "real_estate"
-          ? realEstateGrowthSource
-          : "custom",
+      growthSource: isPromissoryNote
+        ? "custom"
+        : isInvestable
+          ? growthSource
+          : category === "real_estate"
+            ? realEstateGrowthSource
+            : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
       overridePctOi: toPctOrNull("overridePctOi"),
@@ -576,6 +608,17 @@ export default function AddAccountForm({
           ? String(Number(propertyTaxGrowthRate) / 100)
           : undefined,
       propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
+      // Promissory-note fields — only sent when subType is promissory_note
+      noteInterestRate: isPromissoryNote
+        ? noteInterestRatePct !== "" ? String(Number(noteInterestRatePct) / 100) : null
+        : null,
+      noteTermMonths: isPromissoryNote
+        ? noteTermMonths !== "" ? Number(noteTermMonths) : null
+        : null,
+      noteStartYear: isPromissoryNote
+        ? noteStartYear !== "" ? Number(noteStartYear) : null
+        : null,
+      notePaymentType: isPromissoryNote ? notePaymentType : null,
     };
 
     try {
@@ -741,7 +784,7 @@ export default function AddAccountForm({
             Account Details
           </button>
         )}
-        {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && (
+        {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && subType !== "promissory_note" && (
           <button
             type="button"
             onClick={() => setActiveTab("savings")}
@@ -754,7 +797,7 @@ export default function AddAccountForm({
             Savings
           </button>
         )}
-        {!lockTab && category === "taxable" && (
+        {!lockTab && category === "taxable" && subType !== "promissory_note" && (
           <button
             type="button"
             onClick={() => setActiveTab("realization")}
@@ -885,6 +928,10 @@ export default function AddAccountForm({
                       setAccountBasis(accountValue);
                     }
                   }
+                  // Savings / Realization tabs are not available for promissory notes
+                  if (newSub === "promissory_note" && (activeTab === "savings" || activeTab === "realization")) {
+                    setActiveTab("details");
+                  }
                 }}
                 className={selectClassName}
               >
@@ -948,6 +995,10 @@ export default function AddAccountForm({
                   account and is excluded from tax on withdrawal.
                 </p>
               </div>
+            ) : subType === "promissory_note" ? (
+              // Basis is not user-editable for promissory notes — it equals value at issuance
+              // (full principal). We pass it silently as `value` on submit.
+              null
             ) : (
               <div>
                 <label className={fieldLabelClassName} htmlFor="basis">
@@ -966,8 +1017,78 @@ export default function AddAccountForm({
               </div>
             )}
 
+            {/* Promissory-note fields */}
+            {subType === "promissory_note" && (
+              <>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="noteInterestRate">
+                    Interest Rate (%)
+                  </label>
+                  <PercentInput
+                    id="noteInterestRate"
+                    name="noteInterestRate"
+                    value={noteInterestRatePct}
+                    onChange={(raw) => setNoteInterestRatePct(raw)}
+                    placeholder="e.g. 5"
+                    className={inputClassName}
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="noteTermMonths">
+                    Term (months)
+                  </label>
+                  <input
+                    id="noteTermMonths"
+                    name="noteTermMonths"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={noteTermMonths}
+                    onChange={(e) => setNoteTermMonths(e.target.value)}
+                    placeholder="e.g. 120"
+                    className={inputClassName}
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="noteStartYear">
+                    Start Year
+                  </label>
+                  <input
+                    id="noteStartYear"
+                    name="noteStartYear"
+                    type="number"
+                    min={1900}
+                    max={2200}
+                    step={1}
+                    value={noteStartYear}
+                    onChange={(e) => setNoteStartYear(e.target.value)}
+                    placeholder={String(new Date().getFullYear())}
+                    className={inputClassName}
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="notePaymentType">
+                    Payment Type
+                  </label>
+                  <select
+                    id="notePaymentType"
+                    name="notePaymentType"
+                    value={notePaymentType}
+                    onChange={(e) => setNotePaymentType(e.target.value as "amortizing" | "interest_only_balloon")}
+                    className={selectClassName}
+                  >
+                    <option value="amortizing">Amortizing (level payment)</option>
+                    <option value="interest_only_balloon">Interest-only + balloon</option>
+                  </select>
+                </div>
+              </>
+            )}
+
             <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
-              {isInvestable ? (
+              {subType === "promissory_note" ? null : isInvestable ? (
                 <div>
                   <label className={fieldLabelClassName}>Growth Rate</label>
                   <select

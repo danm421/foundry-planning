@@ -743,6 +743,13 @@
       "when": 1779237363795,
       "tag": "0105_shrink_trust_sub_type_enum",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1779238704298,
+      "tag": "0106_idgt_promissory_notes",
+      "breakpoints": true
     }
   ]
 }

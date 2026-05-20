@@ -144,8 +144,13 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
     name: a.name,
     category: a.category,
     subType: a.subType,
+    value: a.value,
     isDefaultChecking: a.isDefaultChecking ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
+    noteInterestRate: a.noteInterestRate ?? null,
+    noteTermMonths: a.noteTermMonths ?? null,
+    noteStartYear: a.noteStartYear ?? null,
+    notePaymentType: a.notePaymentType ?? null,
   }));
 
   return (

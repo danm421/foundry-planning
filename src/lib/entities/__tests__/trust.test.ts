@@ -13,6 +13,7 @@ describe("TRUST_SUB_TYPES", () => {
       "irrevocable",
       "ilit",
       "clut",
+      "idgt",
     ]);
   });
 });
