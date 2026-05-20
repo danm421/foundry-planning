@@ -17,7 +17,13 @@ import type {
   BracketColumnKey,
   CellDrillContext,
 } from "@/lib/tax/cell-drill/types";
-import type { Income, Account, EntitySummary, RothConversion } from "@/engine/types";
+import type {
+  Income,
+  Account,
+  EntitySummary,
+  RothConversion,
+  NoteReceivable,
+} from "@/engine/types";
 
 interface TaxDetailModalProps {
   years: ProjectionYear[];
@@ -36,6 +42,7 @@ interface TaxDetailModalProps {
     accounts: Account[];
     entities?: EntitySummary[];
     rothConversions?: RothConversion[];
+    notesReceivable?: NoteReceivable[];
   };
 }
 
@@ -73,8 +80,21 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
         },
         {},
       ),
+      noteNames: (clientData.notesReceivable ?? []).reduce<Record<string, string>>(
+        (acc, n) => {
+          if (n.name) acc[n.id] = n.name;
+          return acc;
+        },
+        {},
+      ),
     }),
-    [clientData.accounts, clientData.incomes, clientData.entities, clientData.rothConversions],
+    [
+      clientData.accounts,
+      clientData.incomes,
+      clientData.entities,
+      clientData.rothConversions,
+      clientData.notesReceivable,
+    ],
   );
 
   const drillProps = useMemo(() => {
