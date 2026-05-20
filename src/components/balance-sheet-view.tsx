@@ -389,10 +389,7 @@ export default function BalanceSheetView({
   const accountInEstate = (a: AccountRow): boolean =>
     !a.ownerEntityId || isFamilyOwnedBusiness(a.ownerEntityId);
 
-  // Notes receivable now live in their own table. Filter legacy
-  // accounts.category === "notes_receivable" rows out of the account pipeline
-  // — they're replaced by `notesReceivable` rendered below. Phase 6 migrates
-  // any remaining legacy rows into the new table.
+  // Legacy notes_receivable accounts are sourced from `notesReceivable` now.
   const nonNoteAccounts = accounts.filter((a) => a.category !== "notes_receivable");
 
   const inEstate = nonNoteAccounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));

@@ -1094,6 +1094,16 @@ export interface ProjectionYear {
     endingBalance: number;
   }>;
 
+  /** Per-year totals across every note in `notesReceivableByNote`. Reports
+   *  read this directly instead of re-aggregating `byNote`. Present only
+   *  in years where at least one note contributed. */
+  notesReceivableTotals?: {
+    interest: number;
+    principalLTCG: number;
+    principalBasis: number;
+    totalCashIn: number;
+  };
+
   /** Technique breakdown for drill-down UI — only present in years where techniques execute. */
   techniqueBreakdown?: {
     sales: {

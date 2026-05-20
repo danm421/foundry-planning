@@ -116,11 +116,11 @@ export default function AddAccountDialog({
             if (!o) close();
           }}
           title={
-            isEdit
-              ? editingNote
-                ? "Edit Note Receivable"
-                : "Edit Account"
-              : `Add ${label ?? ""} Account`.trim()
+            !isEdit
+              ? `Add ${label ?? ""} Account`.trim()
+              : editingNote
+              ? "Edit Note Receivable"
+              : "Edit Account"
           }
           size="md"
           primaryAction={{

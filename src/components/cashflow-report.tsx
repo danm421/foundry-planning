@@ -1134,38 +1134,24 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const level = drillPath[0];
     const subLevel = drillPath[1];
 
-    // Notes-receivable per-year aggregation. Sums across all notes for a
-    // given year. The engine emits per-note interest / principalLTCG /
-    // principalBasis on ProjectionYear.notesReceivableByNote; we surface the
-    // sums as a top-level income column + 3-child drill (Interest / Principal
-    // Gain / Return of Basis). Note income is not in r.income.total — by
-    // design the new column is presented alongside, not as a sub-bucket.
-    function noteYearTotals(y: ProjectionYear): {
-      interest: number;
-      principalLTCG: number;
-      principalBasis: number;
-      total: number;
-    } {
-      const m = y.notesReceivableByNote;
-      if (!m) return { interest: 0, principalLTCG: 0, principalBasis: 0, total: 0 };
-      let interest = 0;
-      let principalLTCG = 0;
-      let principalBasis = 0;
-      for (const n of Object.values(m)) {
-        interest += n.interest;
-        principalLTCG += n.principalLTCG;
-        principalBasis += n.principalBasis;
-      }
-      return {
-        interest,
-        principalLTCG,
-        principalBasis,
-        total: interest + principalLTCG + principalBasis,
-      };
+    // Notes-receivable per-year aggregates are emitted by the engine as
+    // ProjectionYear.notesReceivableTotals. Note income is not in r.income.total
+    // — by design the new column is presented alongside, not as a sub-bucket.
+    function noteInterest(y: ProjectionYear) {
+      return y.notesReceivableTotals?.interest ?? 0;
     }
-    const hasNoteInterest = visibleYears.some((y) => noteYearTotals(y).interest > 0);
-    const hasNoteLTCG = visibleYears.some((y) => noteYearTotals(y).principalLTCG > 0);
-    const hasNoteBasis = visibleYears.some((y) => noteYearTotals(y).principalBasis > 0);
+    function noteLTCG(y: ProjectionYear) {
+      return y.notesReceivableTotals?.principalLTCG ?? 0;
+    }
+    function noteBasis(y: ProjectionYear) {
+      return y.notesReceivableTotals?.principalBasis ?? 0;
+    }
+    function noteTotal(y: ProjectionYear) {
+      return noteInterest(y) + noteLTCG(y) + noteBasis(y);
+    }
+    const hasNoteInterest = visibleYears.some((y) => noteInterest(y) > 0);
+    const hasNoteLTCG = visibleYears.some((y) => noteLTCG(y) > 0);
+    const hasNoteBasis = visibleYears.some((y) => noteBasis(y) > 0);
     const hasNoteIncome = hasNoteInterest || hasNoteLTCG || hasNoteBasis;
 
     // Always-present base columns
@@ -1404,38 +1390,21 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         return [
           ...baseColumns,
           ...(hasNoteInterest
-            ? [
-                numCol(
-                  "notes_interest",
-                  "Interest Income",
-                  (r) => noteYearTotals(r).interest,
-                ),
-              ]
+            ? [numCol("notes_interest", "Interest Income", noteInterest)]
             : []),
           ...(hasNoteLTCG
-            ? [
-                numCol(
-                  "notes_ltcg",
-                  "Principal — Gain",
-                  (r) => noteYearTotals(r).principalLTCG,
-                ),
-              ]
+            ? [numCol("notes_ltcg", "Principal — Gain", noteLTCG)]
             : []),
           ...(hasNoteBasis
             ? [
                 numCol(
                   "notes_basis",
                   "Principal — Return of Basis",
-                  (r) => noteYearTotals(r).principalBasis,
+                  noteBasis,
                 ),
               ]
             : []),
-          numCol(
-            "notes_total",
-            "Notes Receivable Total",
-            (r) => noteYearTotals(r).total,
-            true,
-          ),
+          numCol("notes_total", "Notes Receivable Total", noteTotal, true),
         ];
       }
 
@@ -1505,7 +1474,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               numCol(
                 "income_notes",
                 () => <DrillBtn segment="notes_receivable" label="Notes Receivable" />,
-                (r) => noteYearTotals(r).total,
+                noteTotal,
               ),
             ]
           : []),

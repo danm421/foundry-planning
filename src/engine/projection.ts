@@ -3767,7 +3767,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountBasisBoY,
       liabilityBalancesBoY,
       ...(Object.keys(notesReceivableByNote).length > 0
-        ? { notesReceivableByNote }
+        ? {
+            notesReceivableByNote,
+            notesReceivableTotals: {
+              interest: notesYearResult.totals.interest,
+              principalLTCG: notesYearResult.totals.principalLTCG,
+              principalBasis: notesYearResult.totals.principalBasis,
+              totalCashIn: notesYearResult.totals.totalCashIn,
+            },
+          }
         : {}),
       hypotheticalEstateTax,
       entityCashFlow: new Map(),
