@@ -63,11 +63,7 @@ const base = {
 
 export const noteReceivableCreateSchema = z.object(base);
 
-export const noteReceivableUpdateSchema = z.object(
-  Object.fromEntries(
-    Object.entries(base).map(([k, v]) => [k, (v as z.ZodTypeAny).optional()]),
-  ) as Record<string, z.ZodTypeAny>,
-);
+export const noteReceivableUpdateSchema = z.object(base).partial();
 
 export const noteReceivableExtraPaymentsReplaceSchema = z.array(extraPaymentSchema);
 
