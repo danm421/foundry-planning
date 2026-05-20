@@ -215,6 +215,11 @@ export const trustTermTypeEnum = pgEnum("trust_term_type", [
   "shorter_of_years_or_life",
 ]);
 
+export const notePaymentTypeEnum = pgEnum("note_payment_type", [
+  "amortizing",
+  "interest_only_balloon",
+]);
+
 export const trustPayoutTypeEnum = pgEnum("trust_payout_type", [
   "unitrust",
   "annuity",
@@ -1017,6 +1022,17 @@ export const accounts = pgTable("accounts", {
   // the rate column is then a fallback / display value only.
   propertyTaxGrowthSource: itemGrowthSourceEnum("property_tax_growth_source").notNull().default("custom"),
   titlingType: titlingTypeEnum("titling_type").notNull().default("jtwros"),
+  // Promissory-note fields. Only populated when subType = 'promissory_note'.
+  noteInterestRate: decimal("note_interest_rate", { precision: 7, scale: 4 }),
+  noteTermMonths: integer("note_term_months"),
+  noteStartYear: integer("note_start_year"),
+  notePaymentType: notePaymentTypeEnum("note_payment_type"),
+  // When set, the named trust entity is the debtor. Engine derives a matching
+  // outflow on the trust equal to the holder's combined interest + principal.
+  noteLinkedTrustEntityId: uuid("note_linked_trust_entity_id").references(
+    () => entities.id,
+    { onDelete: "set null" },
+  ),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
