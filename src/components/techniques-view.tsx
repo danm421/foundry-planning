@@ -584,20 +584,30 @@ function describeTransaction(
   transaction: AssetTransactionRow,
   accounts: AccountOption[],
   pastBuys: PastBuy[],
+  entities: EntityOption[],
 ): string {
   const accountMap = new Map(accounts.map((a) => [a.id, a]));
   const sellAccount = transaction.accountId ? accountMap.get(transaction.accountId) : null;
   const linkedBuy = transaction.purchaseTransactionId
     ? pastBuys.find((b) => b.id === transaction.purchaseTransactionId)
     : null;
+  const sellEntity = transaction.entityId
+    ? entities.find((e) => e.id === transaction.entityId)
+    : null;
   const isSell = transaction.type === "sell";
-  const isOrphanSell = isSell && !transaction.accountId && !transaction.purchaseTransactionId;
-  const hasSellSource = !!sellAccount || !!linkedBuy;
+  const isOrphanSell =
+    isSell &&
+    !transaction.accountId &&
+    !transaction.purchaseTransactionId &&
+    !transaction.entityId;
+  const hasSellSource = !!sellAccount || !!linkedBuy || !!sellEntity;
   const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
 
   let sellLabel: string | null = null;
   if (isOrphanSell) {
     sellLabel = "Sell — source removed";
+  } else if (sellEntity) {
+    sellLabel = `Sell ${sellEntity.name} (entity)`;
   } else if (sellAccount) {
     sellLabel = `Sell ${sellAccount.name}`;
   } else if (linkedBuy) {
@@ -693,12 +703,32 @@ const TXN_GRID =
 function txnHeadlineFigure(
   txn: AssetTransactionRow,
   liabilities: LiabilityOption[],
+  entities: EntityOption[],
   projectedSaleValue: number | null,
   projectedMortgagePayoff: number | null,
 ): { value: string; tone: "ink" | "good" | "crit"; title: string } | null {
   const hasSell = !!txn.accountId;
   const hasBuy = !!(txn.assetName || (txn.purchasePrice && parseFloat(txn.purchasePrice) > 0));
+  const isEntitySell = !!txn.entityId;
   const net = computeTransactionNet(txn, liabilities, projectedSaleValue, projectedMortgagePayoff);
+
+  // Entity sales: show overrideSaleValue (or the entity's catalog value)
+  // as the headline sale amount. Cascaded liquidations are not yet
+  // pre-projected here, so this is an operating-value-only estimate.
+  if (isEntitySell) {
+    const entity = entities.find((e) => e.id === txn.entityId);
+    const override = txn.overrideSaleValue
+      ? parseFloat(txn.overrideSaleValue)
+      : null;
+    const baseValue = override ?? entity?.value ?? 0;
+    const fraction = txn.fractionSold ? parseFloat(txn.fractionSold) : 1;
+    const operatingSale = baseValue * fraction;
+    return {
+      value: formatCurrency(operatingSale),
+      tone: "ink",
+      title: `Entity sale: ${formatCurrency(operatingSale)} (operating value, before cascade)`,
+    };
+  }
 
   if (net != null) {
     return {
@@ -740,6 +770,7 @@ function AssetTransactionsTable({
   rows,
   accounts,
   liabilities,
+  entities,
   pastBuys,
   projectedSaleValueFor,
   projectedMortgagePayoffFor,
@@ -749,6 +780,7 @@ function AssetTransactionsTable({
   rows: AssetTransactionRow[];
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
+  entities: EntityOption[];
   pastBuys: PastBuy[];
   projectedSaleValueFor: (accountId: string, year: number) => number | null;
   projectedMortgagePayoffFor: (liabilityId: string, year: number) => number | null;
@@ -782,10 +814,14 @@ function AssetTransactionsTable({
             ? projectedSaleValueFor(tx.accountId, tx.year)
             : null;
 
-          const hasSell = !!tx.accountId;
+          const isEntitySell = !!tx.entityId;
+          const hasSell = !!tx.accountId || isEntitySell;
           const hasBuy = !!(tx.assetName || (tx.purchasePrice && parseFloat(tx.purchasePrice) > 0));
           const isOrphanSell =
-            tx.type === "sell" && !tx.accountId && !tx.purchaseTransactionId;
+            tx.type === "sell" &&
+            !tx.accountId &&
+            !tx.purchaseTransactionId &&
+            !tx.entityId;
 
           let badgeLabel: string;
           let badgeClass: string;
@@ -800,8 +836,8 @@ function AssetTransactionsTable({
             badgeClass = "border-red-700/50 bg-red-900/40 text-red-300";
           }
 
-          const description = describeTransaction(tx, accounts, pastBuys);
-          const headline = txnHeadlineFigure(tx, liabilities, projectedSaleValue, projectedMortgagePayoff);
+          const description = describeTransaction(tx, accounts, pastBuys, entities);
+          const headline = txnHeadlineFigure(tx, liabilities, entities, projectedSaleValue, projectedMortgagePayoff);
           const headlineTone =
             headline?.tone === "good"
               ? "text-good"
@@ -815,6 +851,12 @@ function AssetTransactionsTable({
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span className="truncate text-sm font-medium text-ink">{tx.name}</span>
                 <Tag label={badgeLabel} className={badgeClass} />
+                {isEntitySell && (
+                  <Tag
+                    label="Entity"
+                    className="border-amber-700/50 bg-amber-900/30 text-amber-200"
+                  />
+                )}
                 {isOrphanSell && (
                   <Tag
                     label="Source removed"
@@ -1022,6 +1064,7 @@ export default function TechniquesView({
           rows={assetTransactions}
           accounts={accounts}
           liabilities={liabilities}
+          entities={entities}
           pastBuys={pastBuys}
           projectedSaleValueFor={projectedSaleValueFor}
           projectedMortgagePayoffFor={projectedMortgagePayoffFor}
