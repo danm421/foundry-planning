@@ -177,11 +177,33 @@ const AddNoteReceivableForm = forwardRef<
     initial?.owners && initial.owners.length > 0 ? initial.owners : defaultOwners,
   );
 
-  // setExtraPayments is consumed by the Extra Payments tab (Task 4.5).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [extraPayments, setExtraPayments] = useState(
     initial?.extraPayments ?? [],
   );
+
+  function addExtraPayment() {
+    setExtraPayments((prev) => [
+      ...prev,
+      { year: currentYear, type: "lump_sum" as const, amount: 0 },
+    ]);
+  }
+
+  function updateExtraPayment(
+    idx: number,
+    patch: Partial<{
+      year: number;
+      type: "per_payment" | "lump_sum";
+      amount: number;
+    }>,
+  ) {
+    setExtraPayments((prev) =>
+      prev.map((ep, i) => (i === idx ? { ...ep, ...patch } : ep)),
+    );
+  }
+
+  function removeExtraPayment(idx: number) {
+    setExtraPayments((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   const [effectiveNoteId, setEffectiveNoteId] = useState<string | null>(
     initial?.id ?? null,
@@ -823,8 +845,94 @@ const AddNoteReceivableForm = forwardRef<
         )}
 
         {activeTab === "extra-payments" && (
-          <div className="rounded border border-gray-700 p-4 text-sm text-gray-400">
-            Extra Payments editor lives here (Task 4.5).
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">
+              Lump-sum payments are applied in addition to scheduled monthly
+              payments and shorten the term. Per-payment additions are added to
+              every monthly payment that year.
+            </p>
+            {extraPayments.length === 0 ? (
+              <p className="rounded border border-dashed border-gray-700 p-4 text-sm text-gray-400">
+                No extra payments yet.
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-gray-400">
+                  <tr>
+                    <th className="px-2 py-1.5">Year</th>
+                    <th className="px-2 py-1.5">Type</th>
+                    <th className="px-2 py-1.5 text-right">Amount</th>
+                    <th className="px-2 py-1.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {extraPayments.map((ep, idx) => (
+                    <tr
+                      key={idx}
+                      className="border-t border-gray-800 align-middle"
+                    >
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          min={1900}
+                          max={2200}
+                          value={ep.year}
+                          onChange={(e) =>
+                            updateExtraPayment(idx, {
+                              year: Number(e.target.value),
+                            })
+                          }
+                          className={`${inputBaseClassName} w-24`}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <select
+                          value={ep.type}
+                          onChange={(e) =>
+                            updateExtraPayment(idx, {
+                              type: e.target.value as
+                                | "per_payment"
+                                | "lump_sum",
+                            })
+                          }
+                          className={selectClassName}
+                        >
+                          <option value="lump_sum">Lump sum</option>
+                          <option value="per_payment">Per payment</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <CurrencyInput
+                          value={String(ep.amount)}
+                          onChange={(v) =>
+                            updateExtraPayment(idx, {
+                              amount: parseFloat(v) || 0,
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => removeExtraPayment(idx)}
+                          className="text-xs text-gray-400 hover:text-red-400"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <button
+              type="button"
+              onClick={addExtraPayment}
+              className="rounded border border-gray-600 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-800"
+            >
+              + Add extra payment
+            </button>
           </div>
         )}
       </form>
