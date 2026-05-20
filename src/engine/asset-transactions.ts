@@ -691,9 +691,34 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
       );
     }
 
-    // Liability cascade — filled in Task 7.
+    // Cascade: pay off entity's share of each liability it co-owns from the
+    // entity's gross proceeds. Then rebalance the liability's owners using
+    // the same helper as accounts.
     const cascadedLiabilityIds: string[] = [];
-    const cascadedPaydown = 0;
+    let cascadedPaydown = 0;
+    for (const liability of liabilities) {
+      const entityRow = liability.owners.find(
+        (o) => o.kind === "entity" && o.entityId === entity.id,
+      );
+      if (!entityRow) continue;
+      const q = entityRow.percent;
+      const paydown = f * q * liability.balance;
+      if (paydown <= 0) continue;
+
+      liability.balance = Math.max(0, liability.balance - paydown);
+      cascadedPaydown += paydown;
+      cascadedLiabilityIds.push(liability.id);
+
+      liability.owners = rebalanceOwnersAfterEntityDisposition(
+        liability.owners,
+        entity.id,
+        f,
+      );
+
+      if (liability.balance <= 1) {
+        removedLiabilityIds.push(liability.id);
+      }
+    }
 
     // Costs apply to combined gross
     const grossProceeds = operatingGross + cascadedGross;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { applyEntitySales } from "../asset-transactions";
-import type { Account, AccountLedger, AssetTransaction } from "../types";
+import type { Account, AccountLedger, AssetTransaction, Liability } from "../types";
 import type { AccountOwner } from "../ownership";
 
 function makeChecking(id: string, balance: number): Account {
@@ -314,5 +314,136 @@ describe("applyEntitySales — account cascade", () => {
     };
     expect(entityRow.percent).toBeCloseTo(0.42 / 0.82, 4);
     expect(fmRow.percent).toBeCloseTo(0.4 / 0.82, 4);
+  });
+});
+
+describe("applyEntitySales — liability cascade", () => {
+  it("full sale pays off entity's share of a co-owned liability", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const accounts = [checking];
+    const accountBalances: Record<string, number> = { "acct-cash": 0 };
+    const basisMap: Record<string, number> = { "acct-cash": 0 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(0),
+    };
+    const liabilities: Liability[] = [
+      {
+        id: "lia-1",
+        name: "Business loan",
+        balance: 200_000,
+        interestRate: 0.05,
+        monthlyPayment: 0,
+        startYear: 2025,
+        startMonth: 1,
+        termMonths: 360,
+        isInterestDeductible: false,
+        extraPayments: [],
+        owners: [
+          { kind: "family_member", familyMemberId: "B", percent: 0.4 },
+          { kind: "entity", entityId: "E1", percent: 0.6 },
+        ],
+      },
+    ];
+
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 1,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 500_000,
+          basis: 500_000,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts,
+      liabilities,
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    // 60% of $200k = $120k paydown
+    expect(result.totalLiabilityPaydown).toBeCloseTo(120_000, 4);
+    expect(liabilities[0].balance).toBeCloseTo(80_000, 4);
+
+    // Owners rebalanced: B now sole owner of remaining 80k
+    expect(liabilities[0].owners).toHaveLength(1);
+    expect(liabilities[0].owners[0]).toEqual(
+      expect.objectContaining({
+        kind: "family_member",
+        familyMemberId: "B",
+        percent: 1,
+      }),
+    );
+
+    // Net proceeds = 500k operating - 0 costs - 120k paydown = 380k
+    expect(accountBalances["acct-cash"]).toBeCloseTo(380_000, 4);
+    expect(result.breakdown[0].cascadedLiabilityIds).toEqual(["lia-1"]);
+  });
+
+  it("full payoff of entity-only liability marks it for removal", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const liabilities: Liability[] = [
+      {
+        id: "lia-2",
+        name: "Entity-only debt",
+        balance: 50_000,
+        interestRate: 0.05,
+        monthlyPayment: 0,
+        startYear: 2025,
+        startMonth: 1,
+        termMonths: 360,
+        isInterestDeductible: false,
+        extraPayments: [],
+        owners: [{ kind: "entity", entityId: "E1", percent: 1 }],
+      },
+    ];
+
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 1,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 100_000,
+          basis: 100_000,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts: [checking],
+      liabilities,
+      accountBalances: { "acct-cash": 0 },
+      basisMap: { "acct-cash": 0 },
+      accountLedgers: { "acct-cash": makeLedger(0) },
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    expect(result.totalLiabilityPaydown).toBeCloseTo(50_000, 4);
+    expect(liabilities[0].balance).toBeCloseTo(0, 4);
+    expect(result.removedLiabilityIds).toContain("lia-2");
   });
 });
