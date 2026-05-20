@@ -1036,7 +1036,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               Account Details
             </button>
           )}
-          {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && subType !== "promissory_note" && (
+          {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && category !== "notes_receivable" && subType !== "promissory_note" && (
             <button
               type="button"
               onClick={() => handleTabClick("savings")}

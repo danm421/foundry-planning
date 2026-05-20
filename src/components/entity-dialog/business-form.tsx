@@ -59,8 +59,8 @@ interface BusinessFormProps extends EntityFormCommonProps {
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
   /** Pushed up whenever the form's dirty/can-save state changes. Drives useTabAutoSave. */
   onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
-  /** Reports the persisted entity id after a successful auto-save in create mode. */
-  onAutoSaved?: (entityId: string) => void;
+  /** Reports the saved entity after every successful auto-save (create or edit). */
+  onAutoSaved?: (entity: Entity, mode: "create" | "edit") => void;
 }
 
 /** Imperative handle the EntityDialog uses to trigger a save on tab switch. */
@@ -216,7 +216,7 @@ const BusinessForm = forwardRef<BusinessFormAutoSaveHandle, BusinessFormProps>(f
   // Pure save: validates, persists entity, resets the dirty baseline. Shared
   // between the explicit-submit path and the tab-switch auto-save path so both
   // routes use identical validation + payloads.
-  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string }> => {
+  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string; entity?: Entity }> => {
     if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
 
     // Validate ownership sum.
@@ -302,17 +302,20 @@ const BusinessForm = forwardRef<BusinessFormAutoSaveHandle, BusinessFormProps>(f
           } as unknown as Entity)
         : ((await res.json()) as Entity);
 
+      // Capture whether this was the first create BEFORE flipping effectiveEntityId.
+      const wasFirstCreate = !effectiveEntityId && !editing;
       // Flip into PUT-mode after first successful POST.
-      if (!effectiveEntityId && !editing) {
+      if (wasFirstCreate) {
         setEffectiveEntityId(saved.id);
-        onAutoSaved?.(saved.id);
       }
 
       // Reset the dirty baseline so subsequent edits are correctly tracked.
       baselineRef.current = currentSerialized;
 
-      onSaved(saved, editing ? "edit" : "create");
-      return { ok: true, recordId: saved.id };
+      // onAutoSaved fires on every successful save (autosave + explicit submit).
+      // onSaved (close-the-dialog signal) is called by handleSubmit only.
+      onAutoSaved?.(saved, wasFirstCreate ? "create" : "edit");
+      return { ok: true, recordId: saved.id, entity: saved };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     } finally {
@@ -322,15 +325,21 @@ const BusinessForm = forwardRef<BusinessFormAutoSaveHandle, BusinessFormProps>(f
     canSave, owners, effectiveEntityId, editing, clientId,
     name, entityType, notes, includeInPortfolio, isGrantor,
     value, basis, valueGrowthRate, currentSerialized,
-    writer, onAutoSaved, onSaved,
+    writer, onAutoSaved,
   ]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // Snapshot wasFirstCreate before saveAsyncImpl, which flips effectiveEntityId.
+    const wasFirstCreate = !effectiveEntityId && !editing;
     const result = await saveAsyncImpl();
     if (!result.ok) {
       setError(result.error ?? "Unknown error");
       return;
+    }
+    // onSaved fires only here — on explicit user submit (dialog-close signal).
+    if (result.entity) {
+      onSaved(result.entity, wasFirstCreate ? "create" : "edit");
     }
     onClose();
   }

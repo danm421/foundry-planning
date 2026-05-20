@@ -70,8 +70,8 @@ interface AddTrustFormProps {
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
   /** Pushed up whenever the form's dirty/can-save state changes. Drives useTabAutoSave. */
   onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
-  /** Reports the persisted entity id after a successful auto-save in create mode. */
-  onAutoSaved?: (entityId: string) => void;
+  /** Reports the saved entity after every successful auto-save (create or edit). */
+  onAutoSaved?: (entity: Entity, mode: "create" | "edit") => void;
   /** Reports live form state the dialog needs for conditional-tab visibility
    *  (e.g. whether to render Notes & sales). */
   onLiveStateChange?: (state: { trustSubType: string; isGrantor: boolean; isIrrevocable: boolean }) => void;
@@ -464,7 +464,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   // Pure save: validates, persists entity + CLUT gift ops + designations, then
   // resets the dirty baseline. Shared between the explicit-submit path and the
   // tab-switch auto-save path so both routes use identical validation + payloads.
-  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string }> => {
+  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string; entity?: Entity }> => {
     if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
 
     // Distribution mode set ⇒ ≥1 income beneficiary
@@ -587,15 +587,18 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         return { ok: false, error: j.error ?? "Failed to save beneficiaries" };
       }
 
+      // Capture whether this was the first create BEFORE flipping effectiveEntityId.
+      const wasFirstCreate = !effectiveEntityId && !editing;
       // Flip into PUT-mode after first successful POST.
-      if (!effectiveEntityId && !editing) {
+      if (wasFirstCreate) {
         setEffectiveEntityId(saved.id);
-        onAutoSaved?.(saved.id);
       }
       // Reset the dirty baseline so subsequent edits are correctly tracked.
       baselineRef.current = currentSerialized;
-      onSaved(saved, editing ? "edit" : "create");
-      return { ok: true, recordId: saved.id };
+      // onAutoSaved fires on every successful save (autosave + explicit submit).
+      // onSaved (close-the-dialog signal) is called by handleSubmit only.
+      onAutoSaved?.(saved, wasFirstCreate ? "create" : "edit");
+      return { ok: true, recordId: saved.id, entity: saved };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     } finally {
@@ -607,15 +610,21 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     name, notes, includeInPortfolio, accessibleToClient, isGrantor, grantorStatusEndYear,
     isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
     distributionAmount, distributionPercent, remainderRows,
-    originalClutFundingPicks, onAutoSaved, onSaved,
+    originalClutFundingPicks, onAutoSaved,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Snapshot wasFirstCreate before saveAsyncImpl, which flips effectiveEntityId.
+    const wasFirstCreate = !effectiveEntityId && !editing;
     const result = await saveAsyncImpl();
     if (!result.ok) {
       setError(result.error);
       return;
+    }
+    // onSaved fires only here — on explicit user submit (dialog-close signal).
+    if (result.entity) {
+      onSaved(result.entity, wasFirstCreate ? "create" : "edit");
     }
     onClose();
   }
