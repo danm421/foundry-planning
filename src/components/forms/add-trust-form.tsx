@@ -461,40 +461,37 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     }
   }, [editing, accounts, liabilities, assetFamilyMembers, clientId, scenarioWriter]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (trustSubType === "") {
-      setError("Please pick a type.");
-      return;
-    }
-    // Inline validation: distribution mode set ⇒ ≥1 income beneficiary
-    if (distributionMode != null && incomeRows.filter((r) => r.source.kind !== "empty").length === 0) {
-      setError("Distribution mode is set but no income beneficiaries are listed.");
-      return;
-    }
+  // Pure save: validates, persists entity + CLUT gift ops + designations, then
+  // resets the dirty baseline. Shared between the explicit-submit path and the
+  // tab-switch auto-save path so both routes use identical validation + payloads.
+  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string }> => {
+    if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
 
+    // Distribution mode set ⇒ ≥1 income beneficiary
+    if (distributionMode != null && incomeRows.filter((r) => r.source.kind !== "empty").length === 0) {
+      return { ok: false, error: "Distribution mode is set but no income beneficiaries are listed." };
+    }
     if (trustSubType === "clut" && splitInterest.origin === "new") {
       if (clutFundingPicks.length === 0) {
-        setError("Pick at least one funding asset or cash gift for the CLUT.");
-        return;
+        return { ok: false, error: "Pick at least one funding asset or cash gift for the CLUT." };
       }
       const bad = clutFundingPicks.find(
         (p) => (p.kind === "asset" ? p.percent <= 0 : p.amount <= 0),
       );
       if (bad) {
-        setError(
-          bad.kind === "asset"
+        return {
+          ok: false,
+          error: bad.kind === "asset"
             ? "Asset picks must have a percent greater than 0."
             : "Cash picks must have an amount greater than 0.",
-        );
-        return;
+        };
       }
     }
 
     setLoading(true);
     setError(null);
     try {
-      // Save entity row first
+      // Build entity body — mirrors the old handleSubmit payload exactly.
       const entityBody = {
         name,
         entityType: "trust",
@@ -516,14 +513,21 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         distributionPercent: showDistributionAndIncome && (distributionMode === "pct_liquid" || distributionMode === "pct_income") && distributionPercent.trim() !== "" ? Number(distributionPercent) / 100 : null,
         ...(trustSubType === "clut" && { splitInterest }),
       };
-      const isEdit = Boolean(editing);
-      const url = isEdit ? `/api/clients/${clientId}/entities/${editing!.id}` : `/api/clients/${clientId}/entities`;
+
+      // Choose POST vs PUT based on whether we have a persisted id yet.
+      const targetId = effectiveEntityId ?? editing?.id ?? null;
+      const url = targetId
+        ? `/api/clients/${clientId}/entities/${targetId}`
+        : `/api/clients/${clientId}/entities`;
       const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
+        method: targetId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entityBody),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: j.error ?? "Failed to save" };
+      }
       const saved = (await res.json()) as Entity;
 
       // Apply CLUT funding-pick changes as gift ops.
@@ -537,32 +541,32 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         });
         for (const op of ops) {
           if (op.type === "create") {
-            const res = await fetch(`/api/clients/${clientId}/gifts`, {
+            const giftRes = await fetch(`/api/clients/${clientId}/gifts`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(op.body),
             });
-            if (!res.ok) {
-              const j = (await res.json().catch(() => ({}))) as { error?: string };
-              throw new Error(j.error ?? `Failed to create gift (HTTP ${res.status})`);
+            if (!giftRes.ok) {
+              const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: j.error ?? `Failed to create gift (HTTP ${giftRes.status})` };
             }
           } else if (op.type === "update") {
-            const res = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
+            const giftRes = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(op.body),
             });
-            if (!res.ok) {
-              const j = (await res.json().catch(() => ({}))) as { error?: string };
-              throw new Error(j.error ?? `Failed to update gift (HTTP ${res.status})`);
+            if (!giftRes.ok) {
+              const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: j.error ?? `Failed to update gift (HTTP ${giftRes.status})` };
             }
           } else {
-            const res = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
+            const giftRes = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
               method: "DELETE",
             });
-            if (!res.ok) {
-              const j = (await res.json().catch(() => ({}))) as { error?: string };
-              throw new Error(j.error ?? `Failed to delete gift (HTTP ${res.status})`);
+            if (!giftRes.ok) {
+              const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: j.error ?? `Failed to delete gift (HTTP ${giftRes.status})` };
             }
           }
         }
@@ -578,16 +582,47 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(designations),
       });
-      if (!desigRes.ok) throw new Error((await desigRes.json()).error ?? "Failed to save beneficiaries");
+      if (!desigRes.ok) {
+        const j = (await desigRes.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: j.error ?? "Failed to save beneficiaries" };
+      }
 
-      onSaved(saved, isEdit ? "edit" : "create");
-      onClose();
+      // Flip into PUT-mode after first successful POST.
+      if (!effectiveEntityId && !editing) {
+        setEffectiveEntityId(saved.id);
+        onAutoSaved?.(saved.id);
+      }
+      // Reset the dirty baseline so subsequent edits are correctly tracked.
+      baselineRef.current = currentSerialized;
+      onSaved(saved, editing ? "edit" : "create");
+      return { ok: true, recordId: saved.id };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     } finally {
       setLoading(false);
     }
+  }, [
+    canSave, trustSubType, distributionMode, incomeRows, splitInterest, clutFundingPicks,
+    effectiveEntityId, editing, clientId, currentSerialized,
+    name, notes, includeInPortfolio, accessibleToClient, isGrantor, grantorStatusEndYear,
+    isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
+    distributionAmount, distributionPercent, remainderRows,
+    originalClutFundingPicks, onAutoSaved, onSaved,
+  ]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const result = await saveAsyncImpl();
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    onClose();
   }
+
+  useImperativeHandle(ref, () => ({
+    saveAsync: saveAsyncImpl,
+  }), [saveAsyncImpl]);
 
   return (
     <form id="add-trust-form" onSubmit={handleSubmit} className="space-y-4">
