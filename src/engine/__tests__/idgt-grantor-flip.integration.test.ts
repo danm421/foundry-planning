@@ -475,11 +475,9 @@ describe("IDGT grantor flip", () => {
     // trust's investable/liquid surface.
     const taxable2027 = year2027forLiquidity!.portfolioAssets.taxable;
     expect(taxable2027["idgt-2-brokerage"]).toBeGreaterThan(0); // brokerage tracked
-    // The note appears in household taxable (fallback for notes_receivable in
-    // portfolio-snapshot), not in the trust entity's portion.
-    // Its household balance is the amortized principal × 100% ownership (both
-    // client + spouse are principals).
-    const expectedNoteBalance2027 = noteBalanceAtYear(promissoryNote, 2027);
-    expect(taxable2027["idgt-2-note"]).toBeCloseTo(expectedNoteBalance2027, 0);
+    // The note is excluded from portfolioAssets entirely (notes_receivable
+    // accounts are skipped in computePortfolioSnapshot — they amortize and
+    // aren't fungible liquid wealth). It's still tracked in accountLedgers.
+    expect(taxable2027["idgt-2-note"] ?? 0).toBe(0);
   });
 });
