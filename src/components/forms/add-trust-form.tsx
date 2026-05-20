@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { forwardRef, useImperativeHandle, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
@@ -34,6 +34,7 @@ import {
 } from "@/lib/forms/clut-funding-diff";
 import type { ClutFundingPickerAccount } from "./clut-funding-picker";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
+import type { SaveResult } from "@/lib/use-tab-auto-save";
 
 interface AddTrustFormProps {
   clientId: string;
@@ -67,6 +68,18 @@ interface AddTrustFormProps {
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
   /** Forwarded to FlowsTab → FlowScheduleGrid so the dialog footer can render a Save button. */
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
+  /** Pushed up whenever the form's dirty/can-save state changes. Drives useTabAutoSave. */
+  onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
+  /** Reports the persisted entity id after a successful auto-save in create mode. */
+  onAutoSaved?: (entityId: string) => void;
+  /** Reports live form state the dialog needs for conditional-tab visibility
+   *  (e.g. whether to render Notes & sales). */
+  onLiveStateChange?: (state: { trustSubType: string; isGrantor: boolean; isIrrevocable: boolean }) => void;
+}
+
+/** Imperative handle the EntityDialog uses to trigger a save on tab switch. */
+export interface TrustFormAutoSaveHandle {
+  saveAsync: () => Promise<SaveResult & { recordId?: string }>;
 }
 
 // ── Fetch helper ─────────────────────────────────────────────────────────────
@@ -113,7 +126,7 @@ function showNotesAndSales(t: Entity): boolean {
   return Boolean(t.isIrrevocable && t.isGrantor);
 }
 
-export default function AddTrustForm({
+const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(function AddTrustForm({
   clientId, editing, household, members, externals, entities,
   initialDesignations, activeTab, accounts, liabilities, incomes, expenses,
   entityIncome, entityExpense,
@@ -123,10 +136,14 @@ export default function AddTrustForm({
   initialFlowOverrides,
   onSaved, onClose, onSubmitStateChange,
   onScheduleSaveBindingChange,
-}: AddTrustFormProps) {
+  onAutoSaveStateChange,
+  onAutoSaved,
+  onLiveStateChange,
+}, ref) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => onSubmitStateChange?.({ canSubmit: !loading, loading }), [loading, onSubmitStateChange]);
+  const [effectiveEntityId, setEffectiveEntityId] = useState<string | null>(editing?.id ?? null);
   const scenarioWriter = useScenarioWriter(clientId);
   const { scenarioId } = useScenarioState(clientId);
 
@@ -208,6 +225,12 @@ export default function AddTrustForm({
   // suppressed entirely.
   const isClut = trustSubType === "clut";
   const showDistributionAndIncome = isIrrevocable && !isClut;
+
+  // Push live state up so the parent dialog can conditionally show/hide tabs
+  // (e.g. the Notes & sales tab visibility depends on these values).
+  useEffect(() => {
+    onLiveStateChange?.({ trustSubType, isGrantor, isIrrevocable });
+  }, [trustSubType, isGrantor, isIrrevocable, onLiveStateChange]);
 
   // CLUT split-interest state. Initialized lazily so re-renders don't reset.
   const [splitInterest, setSplitInterest] = useState<TrustSplitInterestInput>(() => ({
@@ -967,7 +990,9 @@ export default function AddTrustForm({
       )}
     </form>
   );
-}
+});
+
+export default AddTrustForm;
 
 // ── LinkedNotesList ──────────────────────────────────────────────────────────
 // Tiny presentational helper for the Notes & sales tab. Small enough not to
