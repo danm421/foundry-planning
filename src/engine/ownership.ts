@@ -334,3 +334,50 @@ export function liabilityOwnedByHouseholdAtYear(
     .filter((o) => o.kind === "family_member")
     .reduce((s, o) => s + o.percent, 0);
 }
+
+/** Compute the new owners[] after an entity disposes of fraction `f` (0 < f ≤ 1)
+ *  of its current `p`-percent ownership of an account or liability. Non-entity
+ *  owners' dollar exposure is preserved; their percents scale up against the
+ *  reduced post-sale balance.
+ *
+ *  Math: entity new percent = p(1−f)/(1−fp); others scale by 1/(1−fp).
+ *  Edge case: f=1 ∧ p=1 returns []; the caller removes the row entirely.
+ *
+ *  Used by the entity-sale cascade in asset-transactions.ts. */
+export function rebalanceOwnersAfterEntityDisposition(
+  owners: AccountOwner[],
+  entityId: string,
+  f: number,
+): AccountOwner[] {
+  if (f <= 0 || f > 1) {
+    throw new Error(
+      `rebalanceOwnersAfterEntityDisposition: f must be in (0, 1], got ${f}`,
+    );
+  }
+  const entityRow = owners.find(
+    (o) => o.kind === "entity" && o.entityId === entityId,
+  );
+  if (!entityRow) {
+    throw new Error(
+      `rebalanceOwnersAfterEntityDisposition: entity ${entityId} not in owners list`,
+    );
+  }
+  const p = entityRow.percent;
+  const denom = 1 - f * p;
+
+  // Full liquidation of sole-entity ownership: caller removes the row.
+  if (denom <= 1e-9) return [];
+
+  const result: AccountOwner[] = [];
+  for (const o of owners) {
+    if (o.kind === "entity" && o.entityId === entityId) {
+      const newPercent = (p * (1 - f)) / denom;
+      if (newPercent > 1e-9) {
+        result.push({ ...o, percent: newPercent });
+      }
+      continue;
+    }
+    result.push({ ...o, percent: o.percent / denom });
+  }
+  return result;
+}
