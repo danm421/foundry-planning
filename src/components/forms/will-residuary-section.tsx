@@ -12,7 +12,6 @@ import type {
 } from "@/components/wills-panel";
 
 export interface WillResiduarySectionProps {
-  /** All residuary recipients across both tiers. */
   rows: WillsPanelRecipient[];
   onChange: (rows: WillsPanelRecipient[]) => void;
   primary: WillsPanelPrimary;
@@ -35,6 +34,20 @@ function tierRows(
       percentage: r.percentage,
       sortOrder: r.sortOrder,
     }));
+}
+
+function HelpIcon({ label }: { label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      tabIndex={0}
+      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-600 text-[10px] font-semibold text-gray-400 hover:border-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-accent/40"
+    >
+      ?
+    </span>
+  );
 }
 
 export default function WillResiduarySection({
@@ -74,48 +87,74 @@ export default function WillResiduarySection({
     onChange(combined);
   }
 
+  const column = (
+    label: string,
+    tooltip: string,
+    body: React.ReactNode,
+  ) => (
+    <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+      <div className="mb-2 flex items-center gap-1.5">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-300">
+          {label}
+        </h4>
+        <HelpIcon label={tooltip} />
+      </div>
+      {body}
+    </div>
+  );
+
   return (
     <div className="mt-6 rounded-md border border-gray-800 bg-gray-900/30 p-4">
-      <h3 className="mb-1 text-sm font-medium text-gray-300">
-        Remainder estate — where does what&apos;s left go?
-      </h3>
+      <div className="mb-3 flex items-center gap-1.5">
+        <h3 className="text-sm font-medium text-gray-300">Remainder estate</h3>
+        <HelpIcon label="Where the residue of the estate goes after specific bequests have been distributed." />
+      </div>
       {isEmpty && (
         <p className="mb-3 text-xs text-gray-400">
-          No remainder clause specified. Residual assets (after specific
-          bequests) are distributed by the default order — surviving spouse,
-          then children, then other heirs.
+          No remainder clause specified. Residual assets are distributed by the
+          default order — surviving spouse, then children, then other heirs.
         </p>
       )}
       <fieldset disabled={saving}>
-        {hasSpouse && (
-          <p className="mb-1 text-xs font-medium text-gray-400">
-            Primary — if spouse survives
-          </p>
-        )}
-        <BequestRecipientList
-          mode="residuary"
-          rows={primaryRows}
-          onChange={(next) => emit(next, contingentRows)}
-          primary={primary}
-          familyMembers={familyMembers}
-          externalBeneficiaries={externalBeneficiaries}
-          entities={entities}
-        />
-        {hasSpouse && (
-          <>
-            <p className="mb-1 mt-4 text-xs font-medium text-gray-400">
-              Contingent — if spouse predeceased
-            </p>
-            <BequestRecipientList
-              mode="residuary"
-              rows={contingentRows}
-              onChange={(next) => emit(primaryRows, next)}
-              primary={primary}
-              familyMembers={familyMembers}
-              externalBeneficiaries={externalBeneficiaries}
-              entities={entities}
-            />
-          </>
+        {hasSpouse ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {column(
+              "Primary",
+              "Used if the spouse survives the grantor.",
+              <BequestRecipientList
+                mode="residuary"
+                rows={primaryRows}
+                onChange={(next) => emit(next, contingentRows)}
+                primary={primary}
+                familyMembers={familyMembers}
+                externalBeneficiaries={externalBeneficiaries}
+                entities={entities}
+              />,
+            )}
+            {column(
+              "Contingent",
+              "Used if the spouse predeceases the grantor.",
+              <BequestRecipientList
+                mode="residuary"
+                rows={contingentRows}
+                onChange={(next) => emit(primaryRows, next)}
+                primary={primary}
+                familyMembers={familyMembers}
+                externalBeneficiaries={externalBeneficiaries}
+                entities={entities}
+              />,
+            )}
+          </div>
+        ) : (
+          <BequestRecipientList
+            mode="residuary"
+            rows={primaryRows}
+            onChange={(next) => emit(next, contingentRows)}
+            primary={primary}
+            familyMembers={familyMembers}
+            externalBeneficiaries={externalBeneficiaries}
+            entities={entities}
+          />
         )}
       </fieldset>
     </div>

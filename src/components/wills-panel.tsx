@@ -501,82 +501,107 @@ export default function WillsPanel(props: WillsPanelProps) {
               {bequests.length === 0 ? (
                 <p className="text-sm text-gray-400">No bequests yet.</p>
               ) : (
-                <ol className="space-y-2">
-                  {bequests.map((b, idx) => {
-                    const isAsset = b.kind === "asset";
-                    const tagLabel = isAsset ? "Asset" : "Debt";
-                    const tagClass = isAsset
-                      ? "border-emerald-800 bg-emerald-900/30 text-emerald-300"
-                      : "border-amber-800 bg-amber-900/30 text-amber-300";
+                <div className="overflow-hidden rounded-md border border-gray-800">
+                  <div
+                    role="row"
+                    className="hidden grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] items-center gap-3 border-b border-gray-800 bg-gray-900/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 md:grid"
+                  >
+                    <span>#</span>
+                    <span>Bequest</span>
+                    <span>Detail</span>
+                    <span>Recipients</span>
+                    <span className="text-right">Actions</span>
+                  </div>
+                  <ol className="divide-y divide-gray-800">
+                    {bequests.map((b, idx) => {
+                      const isAsset = b.kind === "asset";
+                      const tagLabel = isAsset ? "Asset" : "Debt";
+                      const tagClass = isAsset
+                        ? "border-emerald-800 bg-emerald-900/30 text-emerald-300"
+                        : "border-amber-800 bg-amber-900/30 text-amber-300";
 
-                    let detailLine: React.ReactNode = null;
-                    let conditionLine: React.ReactNode = null;
+                      let detailNode: React.ReactNode = null;
+                      let conditionNode: React.ReactNode = null;
 
-                    if (isAsset) {
-                      const assetLabel =
-                        b.assetMode === "all_assets"
-                          ? "Remaining Estate Value"
-                          : b.entityId
-                            ? (entities.find((e) => e.id === b.entityId)?.name ?? "(unknown entity)")
-                            : (accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)");
-                      detailLine = (
-                        <p className="text-sm text-gray-300">
-                          {b.percentage}% of {assetLabel}
-                        </p>
-                      );
-                      conditionLine = (
-                        <p className="mt-1 text-xs text-gray-400">
-                          {CONDITION_LABEL[b.condition]}
-                        </p>
-                      );
-                    } else {
-                      const liab = liabilities.find((l) => l.id === b.liabilityId);
-                      detailLine = liab ? (
-                        <p className="text-sm text-gray-300">
-                          Balance: ${liab.balance.toLocaleString()}
-                        </p>
-                      ) : null;
-                    }
+                      if (isAsset) {
+                        const assetLabel =
+                          b.assetMode === "all_assets"
+                            ? "Remaining Estate Value"
+                            : b.entityId
+                              ? (entities.find((e) => e.id === b.entityId)?.name ?? "(unknown entity)")
+                              : (accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)");
+                        detailNode = (
+                          <span className="text-sm text-gray-200">
+                            {b.percentage}% of {assetLabel}
+                          </span>
+                        );
+                        conditionNode = (
+                          <span
+                            title={CONDITION_LABEL[b.condition]}
+                            className="mt-1 inline-block w-fit rounded border border-gray-700 bg-gray-800/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-300"
+                          >
+                            {CONDITION_LABEL[b.condition]}
+                          </span>
+                        );
+                      } else {
+                        const liab = liabilities.find((l) => l.id === b.liabilityId);
+                        detailNode = liab ? (
+                          <span className="text-sm text-gray-200">
+                            ${liab.balance.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-500">—</span>
+                        );
+                      }
 
-                    const recipientSum = b.recipients.reduce((s, r) => s + r.percentage, 0);
-                    const remainder = Math.round((100 - recipientSum) * 100) / 100;
-                    const isPartialDebt = !isAsset && remainder > 0.009;
+                      const recipientSum = b.recipients.reduce((s, r) => s + r.percentage, 0);
+                      const remainder = Math.round((100 - recipientSum) * 100) / 100;
+                      const isPartialDebt = !isAsset && remainder > 0.009;
+                      const recipientsText = b.recipients
+                        .map(
+                          (r) =>
+                            `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary)} (${r.percentage}%)`,
+                        )
+                        .join(", ");
 
-                    return (
-                      <li
-                        key={b.id ?? `${b.kind}-${idx}`}
-                        className="rounded-md border border-gray-800 bg-gray-900 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
+                      return (
+                        <li
+                          key={b.id ?? `${b.kind}-${idx}`}
+                          className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-start gap-3 bg-gray-900/30 px-3 py-2.5 transition-colors hover:bg-gray-900/60 md:grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] md:items-center"
+                        >
+                          <span
+                            aria-hidden
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-xs font-semibold tabular-nums text-gray-300"
+                          >
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span
                                 className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${tagClass}`}
                               >
                                 {tagLabel}
                               </span>
-                              <p className="font-medium text-gray-100">{b.name}</p>
+                              <p className="truncate font-medium text-gray-100">{b.name}</p>
                             </div>
-                            {detailLine}
-                            {conditionLine}
-                            <p className="mt-1 text-xs text-gray-300">
-                              {b.recipients
-                                .map(
-                                  (r) =>
-                                    `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary)} (${r.percentage}%)`,
-                                )
-                                .join(", ")}
-                              {isPartialDebt && (
-                                <span className="ml-1 text-gray-400">
-                                  · {remainder.toFixed(2)}% to estate creditor-payoff
-                                </span>
-                              )}
-                            </p>
                           </div>
-                          <div className="flex shrink-0 items-center gap-1">
+                          <div className="col-span-2 col-start-2 flex flex-col gap-1 md:col-span-1 md:col-start-auto">
+                            {detailNode}
+                            {conditionNode}
+                          </div>
+                          <p className="col-span-2 col-start-2 truncate text-xs text-gray-300 md:col-span-1 md:col-start-auto" title={recipientsText}>
+                            {recipientsText}
+                            {isPartialDebt && (
+                              <span className="ml-1 text-gray-400">
+                                · {remainder.toFixed(2)}% to estate creditor-payoff
+                              </span>
+                            )}
+                          </p>
+                          <div className="col-span-2 col-start-2 flex shrink-0 items-center justify-end gap-1 md:col-span-1 md:col-start-auto">
                             <button
                               type="button"
                               aria-label="Move up"
+                              title="Move up"
                               disabled={idx === 0 || saving}
                               onClick={async () => {
                                 const next = [...bequests];
@@ -585,13 +610,14 @@ export default function WillsPanel(props: WillsPanelProps) {
                                 next[idx] = { ...tmp, sortOrder: idx };
                                 await saveWill(g, next);
                               }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
                             >
-                              ↑
+                              <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↑</span>
                             </button>
                             <button
                               type="button"
                               aria-label="Move down"
+                              title="Move down"
                               disabled={idx === bequests.length - 1 || saving}
                               onClick={async () => {
                                 const next = [...bequests];
@@ -600,24 +626,28 @@ export default function WillsPanel(props: WillsPanelProps) {
                                 next[idx] = { ...tmp, sortOrder: idx };
                                 await saveWill(g, next);
                               }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
                             >
-                              ↓
+                              <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↓</span>
                             </button>
                             <button
                               type="button"
+                              aria-label="Edit bequest"
+                              title="Edit"
                               disabled={saving}
                               onClick={() => {
                                 setDialogEditing(bequestToDraft(b));
                                 setEditingIndex(idx);
                                 setDialogOpenFor(g);
                               }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="ml-1 rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               Edit
                             </button>
                             <button
                               type="button"
+                              aria-label="Delete bequest"
+                              title="Delete"
                               disabled={saving}
                               onClick={async () => {
                                 const next = bequests
@@ -625,16 +655,16 @@ export default function WillsPanel(props: WillsPanelProps) {
                                   .map((x, i) => ({ ...x, sortOrder: i }));
                                 await saveWill(g, next);
                               }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-red-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded p-1 text-red-400 hover:bg-red-900/30 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              Delete
+                              <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">✕</span>
                             </button>
                           </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
               )}
             </div>
 
