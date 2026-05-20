@@ -144,6 +144,9 @@ export default function AddTrustForm({
     (editing as { accessibleToClient?: boolean } | null)?.accessibleToClient ?? false,
   );
   const [isGrantor, setIsGrantor] = useState(editing?.isGrantor ?? false);
+  const [grantorStatusEndYear, setGrantorStatusEndYear] = useState<number | "">(
+    editing?.grantorStatusEndYear != null ? editing.grantorStatusEndYear : ""
+  );
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
   // Distribution policy
@@ -405,6 +408,7 @@ export default function AddTrustForm({
         includeInPortfolio,
         accessibleToClient,
         isGrantor,
+        grantorStatusEndYear: isIrrevocable && isGrantor && grantorStatusEndYear !== "" ? grantorStatusEndYear : null,
         value: "0",
         owner: null,
         grantor: grantor || null,
@@ -676,7 +680,10 @@ export default function AddTrustForm({
             <input
               type="checkbox"
               checked={isGrantor}
-              onChange={(e) => setIsGrantor(e.target.checked)}
+              onChange={(e) => {
+                setIsGrantor(e.target.checked);
+                if (!e.target.checked) setGrantorStatusEndYear("");
+              }}
               className="mt-0.5 h-4 w-4 rounded border-hair bg-card text-accent focus:ring-1 focus:ring-accent/40"
             />
             <span className="text-sm text-ink-2">
@@ -686,6 +693,26 @@ export default function AddTrustForm({
               </span>
             </span>
           </label>
+          {isIrrevocable && isGrantor && (
+            <div>
+              <label className={fieldLabelClassName} htmlFor="grantor-status-end-year">
+                Grantor status ends after year <span className="text-ink-4 font-normal">(optional)</span>
+              </label>
+              <input
+                id="grantor-status-end-year"
+                type="number"
+                min={1900}
+                max={2200}
+                step={1}
+                value={grantorStatusEndYear}
+                onChange={(e) =>
+                  setGrantorStatusEndYear(e.target.value === "" ? "" : parseInt(e.target.value, 10))
+                }
+                placeholder="Leave blank for permanent"
+                className={inputClassName}
+              />
+            </div>
+          )}
         </div>
       </div>
 

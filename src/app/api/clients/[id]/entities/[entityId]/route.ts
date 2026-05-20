@@ -86,6 +86,7 @@ export async function PUT(
       includeInPortfolio?: boolean;
       accessibleToClient?: boolean;
       isGrantor?: boolean;
+      grantorStatusEndYear?: number | null;
       value?: string | number;
       basis?: string | number;
       owner?: "client" | "spouse" | "joint" | null;
@@ -174,6 +175,7 @@ export async function PUT(
       includeInPortfolio: patch.includeInPortfolio ?? existing.includeInPortfolio,
       accessibleToClient: patch.accessibleToClient ?? existing.accessibleToClient,
       isGrantor: patch.isGrantor ?? existing.isGrantor,
+      grantorStatusEndYear: patch.grantorStatusEndYear !== undefined ? patch.grantorStatusEndYear : existing.grantorStatusEndYear ?? null,
       value: patch.value ?? existing.value,
       basis: patch.basis ?? existing.basis,
       owner:
@@ -249,6 +251,9 @@ export async function PUT(
         }),
         ...(patch.isGrantor !== undefined && {
           isGrantor: Boolean(patch.isGrantor),
+        }),
+        ...(patch.grantorStatusEndYear !== undefined && {
+          grantorStatusEndYear: patch.grantorStatusEndYear ?? null,
         }),
         ...(patch.value !== undefined && { value: String(patch.value) }),
         ...(patch.basis !== undefined && { basis: String(patch.basis) }),

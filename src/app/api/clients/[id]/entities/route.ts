@@ -156,6 +156,7 @@ export async function POST(
         includeInPortfolio: data.includeInPortfolio ?? false,
         accessibleToClient: data.accessibleToClient ?? false,
         isGrantor: data.isGrantor ?? false,
+        grantorStatusEndYear: data.grantorStatusEndYear ?? null,
         value: data.value != null ? String(data.value) : "0",
         basis: data.basis != null ? String(data.basis) : "0",
         owner: legacyOwner,
