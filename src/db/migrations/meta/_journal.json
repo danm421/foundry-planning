@@ -764,6 +764,13 @@
       "when": 1779285878000,
       "tag": "0107b_move_promissory_notes_category",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1779297170749,
+      "tag": "0109_notes_receivable_tables",
+      "breakpoints": true
     }
   ]
 }
