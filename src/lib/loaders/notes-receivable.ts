@@ -52,6 +52,7 @@ export async function loadNotesReceivable(
     startMonth: r.startMonth,
     termMonths: r.termMonths,
     linkedTrustEntityId: r.linkedTrustEntityId,
+    toggleGroupId: r.toggleGroupId ?? null,
     extraPayments: extras
       .filter((e) => e.noteReceivableId === r.id)
       .map((e) => ({

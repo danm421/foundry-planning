@@ -26,6 +26,11 @@ export interface NoteReceivable {
   startMonth: number;
   termMonths: number;
   linkedTrustEntityId?: string | null;
+  // When set, the loader filters this note out when the named toggle group
+  // is off in the active ToggleState. Used exclusively by the IDGT
+  // sale_to_trust route in v1; user-entered notes have toggleGroupId === null
+  // (always visible).
+  toggleGroupId?: string | null;
   extraPayments: NoteExtraPayment[];
   owners: AccountOwner[];
 }
