@@ -1,6 +1,6 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
-import { LEGACY_FM_CLIENT } from "./ownership";
+import { LEGACY_FM_CLIENT, rebalanceOwnersAfterEntityDisposition } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -597,6 +597,8 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
   const {
     sales,
     entities,
+    accounts,
+    liabilities,
     accountBalances,
     basisMap,
     accountLedgers,
@@ -643,11 +645,54 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     const operatingGross = f * operatingValue;
     const operatingGain = Math.max(0, f * (operatingValue - operatingBasis));
 
-    // Cascade hooks — filled in Tasks 6 (accounts) and 7 (liabilities).
+    // Cascade: for each account the entity owns, sell f × p of the account
+    // via sellAccountFraction, then rebalance the account's owners so the
+    // remaining co-owners' dollar exposure is preserved.
     const cascadedAccountIds: string[] = [];
+    let cascadedGross = 0;
+    let cascadedGain = 0;
+    for (const account of accounts) {
+      const entityRow = account.owners.find(
+        (o) => o.kind === "entity" && o.entityId === entity.id,
+      );
+      if (!entityRow) continue;
+      const p = entityRow.percent;
+      const effectiveFraction = f * p;
+      if (effectiveFraction <= 0) continue;
+
+      const cascadeResult = sellAccountFraction({
+        accountId: account.id,
+        fraction: effectiveFraction,
+        liabilities,
+        accountBalances,
+        basisMap,
+        accountLedgers,
+        saleLabel: `Entity-cascade sale: ${entity.name}`,
+        saleId: sale.id,
+        transactionCostPct: 0,
+        transactionCostFlat: 0,
+      });
+
+      // netProceeds is already net of any linked-mortgage payoff inside the
+      // helper; that's the cash actually available to fold into the entity's
+      // gross.
+      cascadedGross += cascadeResult.netProceeds;
+      cascadedGain += cascadeResult.capitalGain;
+      cascadedAccountIds.push(account.id);
+      if (cascadeResult.removedAccountId) {
+        removedAccountIds.push(cascadeResult.removedAccountId);
+      }
+      removedLiabilityIds.push(...cascadeResult.removedLiabilityIds);
+
+      account.owners = rebalanceOwnersAfterEntityDisposition(
+        account.owners,
+        entity.id,
+        f,
+      );
+    }
+
+    // Liability cascade — filled in Task 7.
     const cascadedLiabilityIds: string[] = [];
-    const cascadedGross = 0;
-    const cascadedGain = 0;
     const cascadedPaydown = 0;
 
     // Costs apply to combined gross
