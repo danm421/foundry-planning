@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
@@ -9,6 +9,9 @@ import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "../forms/assets-tab";
 import type { FlowsTabIncome, FlowsTabExpense, ScheduleSaveBinding } from "../forms/flows-tab";
 import DialogShell from "../dialog-shell";
+import TabAutoSaveIndicator from "../tab-auto-save-indicator";
+import { useTabAutoSave } from "@/lib/use-tab-auto-save";
+import type { TrustFormAutoSaveHandle } from "../forms/add-trust-form";
 
 export interface EntityDialogProps {
   clientId: string;
@@ -122,6 +125,30 @@ export default function EntityDialog({
   const [scheduleSaveBinding, setScheduleSaveBinding] =
     useState<ScheduleSaveBinding | null>(null);
 
+  const trustFormRef = useRef<TrustFormAutoSaveHandle | null>(null);
+  const [trustAutoSaveState, setTrustAutoSaveState] = useState<{ isDirty: boolean; canSave: boolean }>({
+    isDirty: false,
+    canSave: true,
+  });
+  const [liveTrustState, setLiveTrustState] = useState<{ trustSubType: string; isGrantor: boolean; isIrrevocable: boolean }>({
+    trustSubType: editing?.trustSubType ?? "",
+    isGrantor: editing?.isGrantor ?? false,
+    isIrrevocable: editing?.isIrrevocable ?? false,
+  });
+  const [effectiveTrustId, setEffectiveTrustId] = useState<string | null>(editing?.id ?? null);
+
+  const trustSaveAsync = useCallback(async () => {
+    const handle = trustFormRef.current;
+    if (!handle) return { ok: true as const };
+    return handle.saveAsync();
+  }, []);
+
+  const trustAutoSave = useTabAutoSave({
+    isDirty: trustAutoSaveState.isDirty,
+    canSave: trustAutoSaveState.canSave,
+    saveAsync: trustSaveAsync,
+  });
+
   const scenarioId = searchParams.get("scenario");
 
   useEffect(() => {
@@ -147,7 +174,12 @@ export default function EntityDialog({
     : kind === "trust" ? "Add Trust" : "Add Business";
 
   const trustShowsNotesAndSales =
-    kind === "trust" && editing != null && showNotesAndSalesTab(editing);
+    kind === "trust" &&
+    showNotesAndSalesTab({
+      trustSubType: liveTrustState.trustSubType || null,
+      isIrrevocable: liveTrustState.isIrrevocable,
+      isGrantor: liveTrustState.isGrantor,
+    });
 
   const tabs =
     kind === "trust"
@@ -170,8 +202,11 @@ export default function EntityDialog({
 
   const activeTab = kind === "trust" ? trustTab : businessTab;
   const onTabChange = (tab: string) => {
-    if (kind === "trust") setTrustTab(tab as TrustTab);
-    else setBusinessTab(tab as BusinessTab);
+    if (kind === "trust") {
+      void trustAutoSave.interceptTabChange(tab, (next) => setTrustTab(next as TrustTab));
+    } else {
+      setBusinessTab(tab as BusinessTab);
+    }
   };
 
   // Tabs that don't own a primary form action (Assets / Transfers manage their own data inline).
@@ -205,6 +240,15 @@ export default function EntityDialog({
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={onTabChange}
+      tabBarRight={
+        kind === "trust" ? (
+          <TabAutoSaveIndicator
+            saving={trustAutoSave.saving}
+            error={trustAutoSave.saveError}
+            onDismissError={trustAutoSave.clearSaveError}
+          />
+        ) : undefined
+      }
       primaryAction={
         noPrimaryAction
           ? undefined
@@ -231,6 +275,7 @@ export default function EntityDialog({
     >
       {kind === "trust" ? (
         <AddTrustForm
+          ref={trustFormRef}
           clientId={clientId}
           editing={editing}
           household={household}
@@ -253,6 +298,9 @@ export default function EntityDialog({
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
           onScheduleSaveBindingChange={setScheduleSaveBinding}
+          onAutoSaveStateChange={setTrustAutoSaveState}
+          onAutoSaved={(id) => setEffectiveTrustId(id)}
+          onLiveStateChange={setLiveTrustState}
         />
       ) : (
         <BusinessForm
