@@ -40,7 +40,7 @@ export function nextSyntheticId(prefix: string): string {
  *  sales don't qualify for §121 and route proceeds differently.
  */
 export interface SellAccountFractionInput {
-  account: Account;
+  accountId: string;
   fraction: number; // 0 < fraction ≤ 1
   liabilities: Liability[];
   accountBalances: Record<string, number>;
@@ -73,7 +73,7 @@ export function sellAccountFraction(
   input: SellAccountFractionInput,
 ): SellAccountFractionResult {
   const {
-    account,
+    accountId,
     fraction,
     liabilities,
     accountBalances,
@@ -87,7 +87,6 @@ export function sellAccountFraction(
     transactionCostFlat,
   } = input;
 
-  const accountId = account.id;
   const currentBalance = accountBalances[accountId] ?? 0;
   const currentBasis = basisMap[accountId] ?? 0;
 
@@ -258,7 +257,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     // basis math, mortgage payoff, balance drain, and sold-account ledger
     // entry. §121 exclusion + proceeds routing stay here.
     const result = sellAccountFraction({
-      account: soldAccount ?? ({ id: accountId } as Account),
+      accountId,
       fraction,
       liabilities,
       accountBalances,
