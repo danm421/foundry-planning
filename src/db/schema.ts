@@ -1287,8 +1287,12 @@ export const extraPayments = pgTable("extra_payments", {
 
 export const notesReceivable = pgTable("notes_receivable", {
   id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").notNull().references(() => clients.id),
-  scenarioId: uuid("scenario_id").notNull().references(() => scenarios.id),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id")
+    .notNull()
+    .references(() => scenarios.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   faceValue: decimal("face_value", { precision: 15, scale: 2 }).notNull(),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull(),
@@ -1321,18 +1325,39 @@ export const noteExtraPayments = pgTable("note_extra_payments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const noteReceivableOwners = pgTable("note_receivable_owners", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  noteReceivableId: uuid("note_receivable_id")
-    .notNull()
-    .references(() => notesReceivable.id, { onDelete: "cascade" }),
-  familyMemberId: uuid("family_member_id").references(() => familyMembers.id),
-  entityId: uuid("entity_id").references(() => entities.id),
-  externalBeneficiaryId: uuid("external_beneficiary_id").references(
-    () => externalBeneficiaries.id,
-  ),
-  percent: decimal("percent", { precision: 5, scale: 2 }).notNull(),
-});
+export const noteReceivableOwners = pgTable(
+  "note_receivable_owners",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    noteReceivableId: uuid("note_receivable_id")
+      .notNull()
+      .references(() => notesReceivable.id, { onDelete: "cascade" }),
+    familyMemberId: uuid("family_member_id").references(() => familyMembers.id, {
+      onDelete: "cascade",
+    }),
+    entityId: uuid("entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    externalBeneficiaryId: uuid("external_beneficiary_id").references(
+      () => externalBeneficiaries.id,
+      { onDelete: "cascade" },
+    ),
+    percent: decimal("percent", { precision: 6, scale: 4 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    exactlyOneOwner: check(
+      "note_receivable_owners_one_owner",
+      sql`(${t.familyMemberId} IS NOT NULL)::int
+        + (${t.entityId} IS NOT NULL)::int
+        + (${t.externalBeneficiaryId} IS NOT NULL)::int = 1`,
+    ),
+    uniqOwner: unique("note_receivable_owners_uniq")
+      .on(t.noteReceivableId, t.familyMemberId, t.entityId, t.externalBeneficiaryId)
+      .nullsNotDistinct(),
+  }),
+);
 
 export const savingsRules = pgTable("savings_rules", {
   id: uuid("id").defaultRandom().primaryKey(),
