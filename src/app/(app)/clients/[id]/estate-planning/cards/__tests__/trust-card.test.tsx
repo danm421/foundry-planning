@@ -39,6 +39,7 @@ function makeTrustCardData(overrides: Partial<TrustCardData> = {}): TrustCardDat
     exemptionConsumed: 2_400_000,
     exemptionAvailable: 15_000_000,
     breach: false,
+    linkedNotes: [],
     ...overrides,
   };
 }

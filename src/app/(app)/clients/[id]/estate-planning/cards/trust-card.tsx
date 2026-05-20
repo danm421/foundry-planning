@@ -61,6 +61,11 @@ export function TrustCard({ data, defaultExpanded = false, onRemoveSlice }: Prop
                 Grantor: {data.grantorRole}
               </span>
             )}
+            {data.grantorStatusEndYear != null && (
+              <span className="rounded-sm border border-[var(--color-hair-2)] px-1.5 py-0.5 text-[9.5px] text-[var(--color-ink-3)]">
+                Grantor through {data.grantorStatusEndYear}
+              </span>
+            )}
           </span>
         </div>
         <div className="ml-auto flex flex-col items-end">
@@ -102,6 +107,23 @@ export function TrustCard({ data, defaultExpanded = false, onRemoveSlice }: Prop
               {" / "}
               <span className="tabular-nums">${data.exemptionAvailable.toLocaleString("en-US")}</span>
             </div>
+          )}
+          {data.linkedNotes.length > 0 && (
+            <section className="mt-3 border-t border-[var(--color-hair)] pt-2">
+              <h4 className="mb-1 text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-ink-3)]">
+                Linked notes (trust liabilities)
+              </h4>
+              <ul className="flex flex-col gap-0.5">
+                {data.linkedNotes.map((n) => (
+                  <li key={n.accountId} className="flex items-center justify-between text-xs text-[var(--color-ink-2)]">
+                    <span className="truncate">{n.name}</span>
+                    <span className="ml-3 shrink-0 tabular-nums text-[var(--color-ink-3)]">
+                      ${n.annualPayment.toLocaleString("en-US")} / yr
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
           {data.splitInterest && <SplitInterestPanel splitInterest={data.splitInterest} />}
         </div>
