@@ -1,0 +1,2 @@
+ALTER TABLE "notes_receivable" ADD COLUMN "toggle_group_id" uuid;--> statement-breakpoint
+ALTER TABLE "notes_receivable" ADD CONSTRAINT "notes_receivable_toggle_group_id_scenario_toggle_groups_id_fk" FOREIGN KEY ("toggle_group_id") REFERENCES "public"."scenario_toggle_groups"("id") ON DELETE set null ON UPDATE no action;

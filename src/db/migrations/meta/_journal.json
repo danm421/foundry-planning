@@ -778,6 +778,13 @@
       "when": 1779309425599,
       "tag": "0110_notes_receivable_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1779315791073,
+      "tag": "0111_strange_power_pack",
+      "breakpoints": true
     }
   ]
 }

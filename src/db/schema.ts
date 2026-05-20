@@ -1293,6 +1293,14 @@ export const notesReceivable = pgTable("notes_receivable", {
   scenarioId: uuid("scenario_id")
     .notNull()
     .references(() => scenarios.id, { onDelete: "cascade" }),
+  // toggle_group_id — nullable. When set, the loader filters this row
+  // out when the named toggle group is off in the active ToggleState. Used
+  // exclusively by the IDGT sale_to_trust route in v1; user-entered notes
+  // are toggle_group_id IS NULL (always visible).
+  toggleGroupId: uuid("toggle_group_id").references(
+    () => scenarioToggleGroups.id,
+    { onDelete: "set null" },
+  ),
   name: text("name").notNull(),
   faceValue: decimal("face_value", { precision: 15, scale: 2 }).notNull(),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull(),
