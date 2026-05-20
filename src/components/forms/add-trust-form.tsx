@@ -84,6 +84,7 @@ const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
   irrevocable: "Irrevocable (generic)",
   ilit: "ILIT",
   clut: "CLUT (Charitable Lead Unitrust)",
+  idgt: "IDGT (Intentionally Defective Grantor Trust)",
 };
 
 function ownerSummary(owners: import("@/engine/ownership").AccountOwner[]): string {
