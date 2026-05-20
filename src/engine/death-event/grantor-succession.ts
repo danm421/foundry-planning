@@ -42,6 +42,11 @@ export interface TrustSuccessionResult {
  */
 export function applyGrantorSuccession(input: {
   deceased: "client" | "spouse";
+  /** Year of the death event. Used to honor `grantorStatusEndYear`
+   *  precedence: if an IDGT's grantor-status window already lapsed before
+   *  death, the effective flip already happened and we skip the duplicate
+   *  flip + `idgt_grantor_flipped` warning. */
+  deathYear?: number;
   entities: EntitySummary[];
 }): TrustSuccessionResult {
   const entityUpdates: EntitySuccessionUpdate[] = [];
@@ -63,6 +68,16 @@ export function applyGrantorSuccession(input: {
         trustBeneficiaries: e.beneficiaries ?? [],
       });
     } else if (e.isGrantor) {
+      // If grantorStatusEndYear already elapsed before the death year, the
+      // effective flip already happened — skip the duplicate flip + warning.
+      // Implements min(grantorStatusEndYear, grantorDeathYear) precedence.
+      if (
+        input.deathYear != null &&
+        e.grantorStatusEndYear != null &&
+        input.deathYear > e.grantorStatusEndYear
+      ) {
+        continue;
+      }
       entityUpdates.push({
         entityId: e.id,
         isGrantor: false,

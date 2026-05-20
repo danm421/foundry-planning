@@ -311,6 +311,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // Phase 2 — compute grantor-succession updates (not yet applied).
   const succession = applyGrantorSuccession({
     deceased: prepared.deceased,
+    deathYear: input.year,
     entities: prepared.entities,
   });
 

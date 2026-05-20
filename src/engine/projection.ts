@@ -345,8 +345,29 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   };
   rebuildEntityMap();
 
-  const isGrantorEntity = (entityId: string | undefined): boolean =>
-    entityId != null && entityMap[entityId]?.isGrantor === true;
+  /**
+   * Year-aware "is this entity currently a grantor trust" predicate. A trust
+   * is "effectively grantor" only when {@link EntitySummary.isGrantor} is
+   * still true AND the grantor-status window has not elapsed
+   * (`grantorStatusEndYear == null` or `currentYear <= grantorStatusEndYear`).
+   * Grantor-death precedence is automatic: `applyGrantorSuccession` flips
+   * `isGrantor` to false at the death event, so the first guard handles it
+   * without reading death years here. Implements the
+   * `min(grantorStatusEndYear, grantorDeathYear)` precedence from the IDGT
+   * spec.
+   */
+  const effectiveIsGrantor = (
+    entityId: string | undefined,
+    currentYear: number
+  ): boolean => {
+    if (entityId == null) return false;
+    const e = entityMap[entityId];
+    if (e?.isGrantor !== true) return false;
+    if (e.grantorStatusEndYear != null && currentYear > e.grantorStatusEndYear) {
+      return false;
+    }
+    return true;
+  };
 
   // Effective withdrawal strategy. If the user hasn't configured anything, fall back
   // to a tax-efficient default: Cash → Taxable → Tax-Deferred → Roth. Illiquid
@@ -693,7 +714,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const nonGrantorCarryInGains: AssetTransactionGain[] = [];
     for (const g of deferredEntityLiquidationGains.splice(0)) {
       if (g.gain <= 0) continue;
-      if (isGrantorEntity(g.entityId)) {
+      if (effectiveIsGrantor(g.entityId, year)) {
         grantorCarryInCapGains += g.gain;
       } else {
         nonGrantorCarryInGains.push({ ownerEntityId: g.entityId, gain: g.gain });
@@ -722,7 +743,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       client,
       (inc) => {
         if (inc.ownerEntityId == null) return false;
-        if (!isGrantorEntity(inc.ownerEntityId)) return false;
+        if (!effectiveIsGrantor(inc.ownerEntityId, year)) return false;
         return entityMap[inc.ownerEntityId]?.entityType === "trust";
       }
     );
@@ -1093,7 +1114,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           let grantorShare = 0;
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
-            if (isGrantorEntity(owner.entityId)) grantorShare += owner.percent;
+            if (effectiveIsGrantor(owner.entityId, year)) grantorShare += owner.percent;
           }
           const householdLikeShare = householdShare + grantorShare;
 
@@ -1112,7 +1133,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // Per grantor-entity owner: track its share for pct_income distribution.
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
-            if (!isGrantorEntity(owner.entityId)) continue;
+            if (!effectiveIsGrantor(owner.entityId, year)) continue;
             const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
             if (bucket) {
               bucket.ordinary += oi * owner.percent;
@@ -1130,7 +1151,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           //                   See spec 2026-05-11-business-distribution-passthrough-design.
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
-            if (isGrantorEntity(owner.entityId)) continue;
+            if (effectiveIsGrantor(owner.entityId, year)) continue;
             const ownerEntity = entityMap[owner.entityId];
             const isTrust = ownerEntity?.entityType === "trust";
             if (isTrust) {
@@ -1288,7 +1309,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: rmdLabel,
           sourceId: acct.id,
         });
-        if (isGrantorEntity(entityOwner.entityId)) {
+        if (effectiveIsGrantor(entityOwner.entityId, year)) {
           grantorRmdTaxable += rmd;
           rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
         }
@@ -1363,7 +1384,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // non-trust; trust-tax pass for trust). Grantor BUSINESS entity rows
         // also flow through Phase 3 K-1 below — only grantor trust rows fall
         // through to the household 1040 here.
-        if (!isGrantorEntity(inc.ownerEntityId)) continue;
+        if (!effectiveIsGrantor(inc.ownerEntityId, year)) continue;
         if (entityMap[inc.ownerEntityId]?.entityType !== "trust") continue;
       }
       if (inc.type === "social_security") continue;
@@ -1626,7 +1647,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
         for (const owner of saleYearOwners) {
           if (owner.kind !== "entity") continue;
-          if (isGrantorEntity(owner.entityId)) continue;
+          if (effectiveIsGrantor(owner.entityId, year)) continue;
           assetTransactionGains.push({
             ownerEntityId: owner.entityId,
             gain: item.capitalGain * owner.percent,
@@ -1794,7 +1815,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         );
         for (const owner of grantorSaleYearOwners) {
           if (owner.kind !== "entity") continue;
-          if (!isGrantorEntity(owner.entityId)) continue;
+          if (!effectiveIsGrantor(owner.entityId, year)) continue;
           const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
           if (bucket) bucket.recognizedCapGains += item.capitalGain * owner.percent;
         }
@@ -2170,7 +2191,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             category: a.category,
             ownerEntityId: controllingEntity(a) ?? undefined,
           })),
-          isGrantorEntity,
+          (entityId) => effectiveIsGrantor(entityId, year),
           salaryByRuleId,
           cappedByRuleId
         ),
@@ -2291,7 +2312,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!acct) continue;
         const subType = acct.subType ?? "";
         if (subType !== "traditional_ira" && subType !== "401k") continue;
-        if (controllingEntity(acct) != null && !isGrantorEntity(controllingEntity(acct)!)) continue;
+        if (controllingEntity(acct) != null && !effectiveIsGrantor(controllingEntity(acct)!, year)) continue;
         aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount * ruleGate.factor };
       }
 
@@ -2329,7 +2350,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (!inc.isSelfEmployment) continue;
       const seGate = itemProrationGate(inc, year, data.client);
       if (!seGate.include) continue;
-      if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
+      if (inc.ownerEntityId != null && !effectiveIsGrantor(inc.ownerEntityId, year)) continue;
       let amount: number;
       if (inc.ownerEntityId != null) {
         // Phase 2: grantor-entity SE income uses entity overrides.
@@ -3593,7 +3614,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const inc of currentIncomes) {
       if (inc.type !== "business") continue;
       if (inc.ownerEntityId == null) continue; // household business — keep
-      if (!isGrantorEntity(inc.ownerEntityId)) continue; // non-grantor: never in bySource here
+      if (!effectiveIsGrantor(inc.ownerEntityId, year)) continue; // non-grantor: never in bySource here
       delete displayIncome.bySource[inc.id];
     }
     const totalIncome = displayIncome.total + householdRmdIncome;
