@@ -5,10 +5,12 @@ import {
   scenarios,
   planSettings,
   modelPortfolios,
+  familyMembers,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import TechniquesView from "@/components/techniques-view";
+import type { EntityOption } from "@/components/techniques-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 
@@ -40,7 +42,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     );
   }
 
-  const [planSettingsRows, { effectiveTree }, modelPortfolioRows] = await Promise.all([
+  const [planSettingsRows, { effectiveTree }, modelPortfolioRows, familyMemberRows] = await Promise.all([
     db
       .select()
       .from(planSettings)
@@ -50,6 +52,14 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)
       .where(eq(modelPortfolios.firmId, firmId)),
+    db
+      .select({
+        id: familyMembers.id,
+        firstName: familyMembers.firstName,
+        lastName: familyMembers.lastName,
+      })
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, id)),
   ]);
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
@@ -110,6 +120,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     year: tx.year,
     accountId: tx.accountId ?? null,
     purchaseTransactionId: tx.purchaseTransactionId ?? null,
+    entityId: tx.entityId ?? null,
     fractionSold: tx.fractionSold == null ? null : String(tx.fractionSold),
     overrideSaleValue: tx.overrideSaleValue == null ? null : String(tx.overrideSaleValue),
     overrideBasis: tx.overrideBasis == null ? null : String(tx.overrideBasis),
@@ -159,6 +170,74 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     balance: String(l.balance),
   }));
 
+  const familyMemberNameById = new Map(
+    familyMemberRows.map((fm) => [
+      fm.id,
+      [fm.firstName, fm.lastName].filter(Boolean).join(" "),
+    ]),
+  );
+
+  // Build the entity options the asset-transaction form needs to drive its
+  // entity-sale subform: only sellable business entities, with owners and
+  // cascaded account/liability previews assembled from effectiveTree owner
+  // arrays. Trusts are filtered out so they never appear in the dropdown.
+  const entityOptions: EntityOption[] = (effectiveTree.entities ?? [])
+    .filter(
+      (
+        e,
+      ): e is typeof e & {
+        name: string;
+        entityType: NonNullable<typeof e.entityType>;
+      } => !!e.name && !!e.entityType && e.entityType !== "trust",
+    )
+    .map((e) => {
+      const ownedAccounts = accountRows
+        .map((a) => {
+          const row = a.owners?.find(
+            (o) => o.kind === "entity" && o.entityId === e.id,
+          );
+          if (!row || row.kind !== "entity") return null;
+          return {
+            id: a.id,
+            name: a.name,
+            entityPercent: row.percent,
+            currentValue: Number(a.value ?? 0),
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null);
+
+      const ownedLiabilities = liabilityRows
+        .map((l) => {
+          const row = l.owners?.find(
+            (o) => o.kind === "entity" && o.entityId === e.id,
+          );
+          if (!row || row.kind !== "entity") return null;
+          return {
+            id: l.id,
+            name: l.name,
+            entityPercent: row.percent,
+            currentBalance: Number(l.balance ?? 0),
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null);
+
+      return {
+        id: e.id,
+        name: e.name,
+        entityType: e.entityType,
+        value: Number(e.value ?? 0),
+        basis: Number(e.basis ?? 0),
+        owners: (e.owners ?? []).map((o) => ({
+          familyMemberId: o.familyMemberId,
+          familyMemberName:
+            familyMemberNameById.get(o.familyMemberId) ?? o.familyMemberId,
+          percent: o.percent,
+        })),
+        ownedAccounts,
+        ownedLiabilities,
+      };
+    });
+
   return (
     <TechniquesView
       clientId={id}
@@ -168,6 +247,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
       rothConversions={rothConversionProps}
       accounts={accountOptions}
       liabilities={liabilityOptions}
+      entities={entityOptions}
       modelPortfolios={modelPortfolioRows}
       milestones={milestones}
       clientFirstName={client.firstName}

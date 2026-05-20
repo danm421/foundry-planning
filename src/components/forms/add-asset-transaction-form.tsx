@@ -29,6 +29,7 @@ export interface AssetTransactionInitialData {
   year: number;
   accountId: string | null;
   purchaseTransactionId: string | null;
+  entityId: string | null;
   fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
@@ -48,10 +49,43 @@ export interface AssetTransactionInitialData {
   mortgageTermMonths: number | null;
 }
 
+export interface EntitySaleOption {
+  id: string;
+  name: string;
+  entityType:
+    | "trust"
+    | "llc"
+    | "s_corp"
+    | "c_corp"
+    | "partnership"
+    | "foundation"
+    | "other";
+  value: number;
+  basis: number;
+  owners: Array<{
+    familyMemberId: string;
+    familyMemberName: string;
+    percent: number;
+  }>;
+  ownedAccounts: Array<{
+    id: string;
+    name: string;
+    entityPercent: number;
+    currentValue: number;
+  }>;
+  ownedLiabilities: Array<{
+    id: string;
+    name: string;
+    entityPercent: number;
+    currentBalance: number;
+  }>;
+}
+
 interface AddAssetTransactionFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
   liabilities: { id: string; name: string; linkedPropertyId: string | null; balance: string }[];
+  entities?: EntitySaleOption[];
   pastBuys?: {
     id: string;
     name: string;

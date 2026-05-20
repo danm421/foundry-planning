@@ -47,6 +47,8 @@ export interface AssetTransactionRow {
   year: number;
   accountId: string | null;
   purchaseTransactionId: string | null;
+  /** Set when the sell sources a business entity instead of an account. */
+  entityId: string | null;
   fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
@@ -80,6 +82,38 @@ export interface LiabilityOption {
   balance: string;
 }
 
+export interface EntityOption {
+  id: string;
+  name: string;
+  entityType:
+    | "trust"
+    | "llc"
+    | "s_corp"
+    | "c_corp"
+    | "partnership"
+    | "foundation"
+    | "other";
+  value: number;
+  basis: number;
+  owners: Array<{
+    familyMemberId: string;
+    familyMemberName: string;
+    percent: number;
+  }>;
+  ownedAccounts: Array<{
+    id: string;
+    name: string;
+    entityPercent: number;
+    currentValue: number;
+  }>;
+  ownedLiabilities: Array<{
+    id: string;
+    name: string;
+    entityPercent: number;
+    currentBalance: number;
+  }>;
+}
+
 export interface RothConversionRow {
   id: string;
   name: string;
@@ -104,6 +138,7 @@ interface TechniquesViewProps {
   rothConversions: RothConversionRow[];
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
+  entities: EntityOption[];
   modelPortfolios: { id: string; name: string }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
@@ -816,6 +851,7 @@ export default function TechniquesView({
   rothConversions,
   accounts,
   liabilities,
+  entities,
   modelPortfolios,
   milestones,
   clientFirstName,
@@ -1039,6 +1075,7 @@ export default function TechniquesView({
           clientId={clientId}
           accounts={accounts}
           liabilities={liabilities}
+          entities={entities}
           pastBuys={pastBuys}
           milestones={milestones}
           clientFirstName={clientFirstName}
