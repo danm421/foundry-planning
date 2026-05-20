@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "./dialog-shell";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
+import AddNoteReceivableForm from "./forms/add-note-receivable-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
 
@@ -113,7 +114,7 @@ export default function AddAccountDialog({
           size="md"
           primaryAction={{
             label: isEdit ? "Save Changes" : "Add Account",
-            form: "add-account-form",
+            form: category === "notes_receivable" ? "add-note-receivable-form" : "add-account-form",
             disabled: !submitState.canSubmit,
             loading: submitState.loading,
           }}
@@ -123,30 +124,49 @@ export default function AddAccountDialog({
               : undefined
           }
         >
-          <AddAccountForm
-            clientId={clientId}
-            category={category}
-            mode={isEdit ? "edit" : "create"}
-            initial={editing}
-            entities={entities}
-            familyMembers={familyMembers}
-            categoryDefaults={categoryDefaults}
-            modelPortfolios={modelPortfolios}
-            ownerNames={ownerNames}
-            assetClasses={assetClasses}
-            portfolioAllocationsMap={portfolioAllocationsMap}
-            categoryDefaultSources={categoryDefaultSources}
-            milestones={milestones}
-            clientFirstName={clientFirstName}
-            spouseFirstName={spouseFirstName}
-            existingAccountNames={existingAccountNames}
-            resolvedInflationRate={resolvedInflationRate}
-            initialTab={initialTab}
-            lockTab={lockTab}
-            onSuccess={close}
-            onSubmitStateChange={setSubmitState}
-            onAutoSaved={() => { autoSavedRef.current = true; }}
-          />
+          {category === "notes_receivable" ? (
+            <AddNoteReceivableForm
+              clientId={clientId}
+              entities={entities}
+              familyMembers={familyMembers}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
+              mode={isEdit ? "edit" : "create"}
+              onSuccess={close}
+              onSubmitStateChange={setSubmitState}
+              onAutoSaved={() => {
+                autoSavedRef.current = true;
+              }}
+            />
+          ) : (
+            <AddAccountForm
+              clientId={clientId}
+              category={category}
+              mode={isEdit ? "edit" : "create"}
+              initial={editing}
+              entities={entities}
+              familyMembers={familyMembers}
+              categoryDefaults={categoryDefaults}
+              modelPortfolios={modelPortfolios}
+              ownerNames={ownerNames}
+              assetClasses={assetClasses}
+              portfolioAllocationsMap={portfolioAllocationsMap}
+              categoryDefaultSources={categoryDefaultSources}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
+              existingAccountNames={existingAccountNames}
+              resolvedInflationRate={resolvedInflationRate}
+              initialTab={initialTab}
+              lockTab={lockTab}
+              onSuccess={close}
+              onSubmitStateChange={setSubmitState}
+              onAutoSaved={() => {
+                autoSavedRef.current = true;
+              }}
+            />
+          )}
         </DialogShell>
       )}
     </>
