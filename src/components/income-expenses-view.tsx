@@ -13,7 +13,6 @@ import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
-import { noteIncomeForYear } from "@/engine/notes/note-income";
 import { SocialSecurityCard } from "./social-security-card";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 
@@ -114,10 +113,6 @@ interface Account {
   value?: number;
   isDefaultChecking?: boolean | null;
   ownerEntityId?: string | null;
-  noteInterestRate?: number | null;
-  noteTermMonths?: number | null;
-  noteStartYear?: number | null;
-  notePaymentType?: "amortizing" | "interest_only_balloon" | null;
 }
 
 interface Entity {
@@ -1442,36 +1437,6 @@ export default function IncomeExpensesView({
                   </Group>
                 );
               })}
-
-              {(() => {
-                // "Note Income" — derived read-only rows for promissory notes.
-                const noteRows = accounts
-                  .filter((a) => a.subType === "promissory_note" && (a.value ?? 0) > 0)
-                  .flatMap((a) => {
-                    const row = noteIncomeForYear(
-                      // Cast: the local Account interface carries all required fields
-                      a as Parameters<typeof noteIncomeForYear>[0],
-                      kpiYear,
-                    );
-                    if (row == null) return [];
-                    return [{ account: a, row }];
-                  });
-                if (noteRows.length === 0) return null;
-                const noteTotal = noteRows.reduce((s, { row }) => s + row.interest + row.principal, 0);
-                return (
-                  <Group label="Note Income" total={fmt(noteTotal)}>
-                    {noteRows.map(({ account, row }) => (
-                      <Row
-                        key={account.id}
-                        editMode={false}
-                        label={`Income from note — ${account.name}`}
-                        meta={["Derived · read-only"]}
-                        value={fmt(row.interest + row.principal)}
-                      />
-                    ))}
-                  </Group>
-                );
-              })()}
 
               {(() => {
                 // "Linked Entities" — read-only rollup of incomes/expenses that

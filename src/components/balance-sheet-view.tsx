@@ -51,13 +51,6 @@ export interface AccountRow {
    * Hydrated from `accounts.titling_type` so the edit form round-trips the
    * value instead of silently defaulting to "jtwros". */
   titlingType?: "jtwros" | "community_property";
-  /** When set, this account is a promissory note owed by the named trust. */
-  noteLinkedTrustEntityId?: string | null;
-  // Promissory-note fields
-  noteInterestRate?: string | null;
-  noteTermMonths?: number | null;
-  noteStartYear?: number | null;
-  notePaymentType?: "amortizing" | "interest_only_balloon" | null;
 }
 
 export interface LiabilityRow {
@@ -194,10 +187,6 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     isDefaultChecking: a.isDefaultChecking ?? false,
     owners: a.owners,
     titlingType: a.titlingType,
-    noteInterestRate: a.noteInterestRate ?? null,
-    noteTermMonths: a.noteTermMonths ?? null,
-    noteStartYear: a.noteStartYear ?? null,
-    notePaymentType: a.notePaymentType ?? null,
   };
 }
 
@@ -615,13 +604,6 @@ export default function BalanceSheetView({
                       onDelete={() => setDeletingAccount(a)}
                       deletable={!a.isDefaultChecking}
                       label={a.name}
-                      labelBadge={
-                        a.subType === "promissory_note" && a.noteLinkedTrustEntityId ? (
-                          <span className="inline-flex shrink-0 items-center rounded-full bg-amber-900/30 px-2 py-0.5 text-xs text-amber-300">
-                            → {entityMap[a.noteLinkedTrustEntityId]?.name ?? "Trust"}
-                          </span>
-                        ) : undefined
-                      }
                       subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
                       value={fmt(a.value)}
                     />

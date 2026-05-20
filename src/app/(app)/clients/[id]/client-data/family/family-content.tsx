@@ -151,7 +151,6 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     subType: a.subType,
     isDefaultChecking: a.isDefaultChecking,
     owners: a.owners,
-    noteLinkedTrustEntityId: a.noteLinkedTrustEntityId ?? null,
   }));
   const fullLiabilities = (effectiveTree.liabilities ?? []).map((l) => ({
     id: l.id,

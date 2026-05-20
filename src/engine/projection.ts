@@ -1551,8 +1551,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // 1. Per-owner split: family_member owners route to household checking +
       //    household 1040 tax detail; entity owners route to the entity's
       //    checking (entity-side tax treatment is the owning entity's
-      //    responsibility — out of scope here for parity with the legacy
-      //    promissory-note path).
+      //    responsibility — out of scope here).
       for (const owner of note.owners) {
         if (owner.percent <= 0) continue;
         const cashShare = yr.totalCashIn * owner.percent;
@@ -1585,7 +1584,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           }
         } else if (owner.kind === "entity") {
           // Route to entity checking. Entity-level tax is not modeled here
-          // (legacy parity — promissory_note path only ran for family-owned).
+          // (entity-side tax treatment is the owning entity's responsibility).
           const entityCheckingId = entityCheckingByEntityId[owner.entityId];
           if (cashShare > 0 && entityCheckingId) {
             creditCash(entityCheckingId, cashShare, {

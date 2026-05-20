@@ -183,7 +183,6 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
       titlingType: a.titlingType,
-      noteLinkedTrustEntityId: a.noteLinkedTrustEntityId ?? null,
     };
   });
 

@@ -4,8 +4,8 @@
 // The advisor picks a family-member-owned account, sets note terms, and submits.
 // The /sale-to-trust route creates two scenario_changes (toggleable as one
 // bundle via a shared toggleGroupId): an `edit` reassigning the source
-// account's owners to the trust, and an `add` for a new promissory_note
-// account held by the original family members. See:
+// account's owners to the trust, and inserts a new note into notes_receivable
+// held by the original family members. See:
 //   src/app/api/clients/[id]/scenarios/[sid]/sale-to-trust/route.ts
 
 import { useMemo, useState } from "react";
@@ -31,13 +31,11 @@ const RETIREMENT_SET = new Set<string>(RETIREMENT_SUBTYPES);
 
 /**
  * Eligible-source filter: family-member-owned (no entity owners), not the
- * default checking account, not a retirement account, and not a promissory
- * note (selling a note to a trust would be pathological in v1).
+ * default checking account, and not a retirement account.
  */
 function isEligibleSource(a: AssetsTabAccount): boolean {
   if (a.isDefaultChecking) return false;
   if (a.subType && RETIREMENT_SET.has(a.subType)) return false;
-  if (a.subType === "promissory_note") return false;
   // No entity owners — must be family-member-owned end-to-end.
   if (a.owners.some((o) => o.kind === "entity")) return false;
   // At least one family-member owner to reassign.
