@@ -1,0 +1,1 @@
+ALTER TYPE "public"."account_category" ADD VALUE 'notes_receivable';
