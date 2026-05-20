@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { forwardRef, useImperativeHandle, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { Entity } from "../family-view";
 import type { EntityFormCommonProps } from "./types";
@@ -22,6 +22,7 @@ import FlowsTab, {
   type ScheduleSaveBinding,
 } from "../forms/flows-tab";
 import { applyAssetTabOp, type AssetTabOp } from "../forms/asset-tab-ops";
+import type { SaveResult } from "@/lib/use-tab-auto-save";
 
 type BusinessEntityType = "llc" | "s_corp" | "c_corp" | "partnership" | "other";
 
@@ -56,6 +57,15 @@ interface BusinessFormProps extends EntityFormCommonProps {
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
   /** Forwarded to FlowsTab → FlowScheduleGrid so the dialog footer can render a Save button. */
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
+  /** Pushed up whenever the form's dirty/can-save state changes. Drives useTabAutoSave. */
+  onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
+  /** Reports the persisted entity id after a successful auto-save in create mode. */
+  onAutoSaved?: (entityId: string) => void;
+}
+
+/** Imperative handle the EntityDialog uses to trigger a save on tab switch. */
+export interface BusinessFormAutoSaveHandle {
+  saveAsync: () => Promise<SaveResult & { recordId?: string }>;
 }
 
 function defaultOwners(members: AssetsTabFamilyMember[]): AccountOwner[] {
@@ -64,7 +74,7 @@ function defaultOwners(members: AssetsTabFamilyMember[]): AccountOwner[] {
   return [];
 }
 
-export default function BusinessForm({
+const BusinessForm = forwardRef<BusinessFormAutoSaveHandle, BusinessFormProps>(function BusinessForm({
   clientId,
   editing,
   onSaved,
@@ -83,7 +93,9 @@ export default function BusinessForm({
   initialFlowOverrides,
   onSubmitStateChange,
   onScheduleSaveBindingChange,
-}: BusinessFormProps) {
+  onAutoSaveStateChange,
+  onAutoSaved,
+}, ref) {
   const writer = useScenarioWriter(clientId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +126,35 @@ export default function BusinessForm({
   );
   const [notes, setNotes] = useState<string>(editing?.notes ?? "");
   const isEdit = Boolean(editing);
+
+  // ── Autosave state ─────────────────────────────────────────────────────────
+
+  // Track effective entity id — starts as editing.id (if any); flipped to the
+  // server-assigned id after the first successful POST in create mode.
+  const [effectiveEntityId, setEffectiveEntityId] = useState<string | null>(editing?.id ?? null);
+
+  // Snapshot every field sent in the entity POST/PUT body. Compared to
+  // baselineRef.current to derive isDirty without expensive deep-equality.
+  const currentSerialized = useMemo(() => JSON.stringify({
+    name, entityType, includeInPortfolio, isGrantor,
+    value, basis, valueGrowthRate, owners, notes,
+  }), [name, entityType, includeInPortfolio, isGrantor, value, basis, valueGrowthRate, owners, notes]);
+
+  // Seeded to the current snapshot on mount so a freshly-opened dialog starts clean.
+  const baselineRef = useRef<string>("");
+  useEffect(() => {
+    baselineRef.current = currentSerialized;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isDirty = currentSerialized !== baselineRef.current;
+  const canSave = name.trim().length > 0;
+
+  useEffect(() => {
+    onAutoSaveStateChange?.({ isDirty, canSave });
+  }, [isDirty, canSave, onAutoSaveStateChange]);
+
+  // ── Asset tab op handler ───────────────────────────────────────────────────
 
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
     if (!editing) return;
@@ -170,27 +211,28 @@ export default function BusinessForm({
     }
   }, [editing, accounts, liabilities, familyMembers, clientId, writer]);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  // ── Core save implementation ───────────────────────────────────────────────
+
+  // Pure save: validates, persists entity, resets the dirty baseline. Shared
+  // between the explicit-submit path and the tab-switch auto-save path so both
+  // routes use identical validation + payloads.
+  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string }> => {
+    if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
 
     // Validate ownership sum.
     const ownerSum = owners.reduce((s, o) => s + o.percent, 0);
     if (owners.length > 0 && Math.abs(ownerSum - 1) > 0.0001) {
-      setError("Owner percentages must sum to 100%.");
-      setLoading(false);
-      return;
+      return { ok: false, error: "Owner percentages must sum to 100%." };
     }
 
     // The DB schema for entity_owners only supports family_member rows today.
-    // Reject entity-on-entity ownership at the form layer with a clear message.
     const familyOnly = owners.filter((o) => o.kind === "family_member") as Extract<AccountOwner, { kind: "family_member" }>[];
     if (familyOnly.length !== owners.length) {
-      setError("Business owners must be household members.");
-      setLoading(false);
-      return;
+      return { ok: false, error: "Business owners must be household members." };
     }
+
+    setLoading(true);
+    setError(null);
 
     const body = {
       name: name.trim(),
@@ -212,21 +254,24 @@ export default function BusinessForm({
     };
 
     try {
+      // Choose POST vs PUT based on whether we have a persisted id yet.
+      const targetId = effectiveEntityId ?? editing?.id ?? null;
+
       const newEntityId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
           : `tmp-${Date.now()}`;
 
-      const res = isEdit
+      const res = targetId
         ? await writer.submit(
             {
               op: "edit",
               targetKind: "entity",
-              targetId: editing!.id,
+              targetId,
               desiredFields: body,
             },
             {
-              url: `/api/clients/${clientId}/entities/${editing!.id}`,
+              url: `/api/clients/${clientId}/entities/${targetId}`,
               method: "PUT",
               body,
             },
@@ -243,25 +288,54 @@ export default function BusinessForm({
               body,
             },
           );
+
       if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save");
+        const json = await res.json().catch(() => ({})) as { error?: string };
+        return { ok: false, error: json.error ?? "Failed to save" };
       }
+
       const saved: Entity = writer.scenarioActive
         ? ({
-            id: isEdit ? editing!.id : newEntityId,
+            id: targetId ?? newEntityId,
             ...body,
             owners: familyOnly,
           } as unknown as Entity)
         : ((await res.json()) as Entity);
-      onSaved(saved, isEdit ? "edit" : "create");
-      onClose();
+
+      // Flip into PUT-mode after first successful POST.
+      if (!effectiveEntityId && !editing) {
+        setEffectiveEntityId(saved.id);
+        onAutoSaved?.(saved.id);
+      }
+
+      // Reset the dirty baseline so subsequent edits are correctly tracked.
+      baselineRef.current = currentSerialized;
+
+      onSaved(saved, editing ? "edit" : "create");
+      return { ok: true, recordId: saved.id };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     } finally {
       setLoading(false);
     }
+  }, [
+    canSave, owners, effectiveEntityId, editing, clientId,
+    name, entityType, notes, includeInPortfolio, isGrantor,
+    value, basis, valueGrowthRate, currentSerialized,
+    writer, onAutoSaved, onSaved,
+  ]);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const result = await saveAsyncImpl();
+    if (!result.ok) {
+      setError(result.error ?? "Unknown error");
+      return;
+    }
+    onClose();
   }
+
+  useImperativeHandle(ref, () => ({ saveAsync: saveAsyncImpl }), [saveAsyncImpl]);
 
   return (
     <form id="entity-business-form" onSubmit={handleSubmit} className="space-y-4">
@@ -453,4 +527,6 @@ export default function BusinessForm({
       </div>
     </form>
   );
-}
+});
+
+export default BusinessForm;

@@ -12,6 +12,7 @@ import DialogShell from "../dialog-shell";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
 import type { TrustFormAutoSaveHandle } from "../forms/add-trust-form";
+import type { BusinessFormAutoSaveHandle } from "./business-form";
 
 export interface EntityDialogProps {
   clientId: string;
@@ -149,6 +150,24 @@ export default function EntityDialog({
     saveAsync: trustSaveAsync,
   });
 
+  const businessFormRef = useRef<BusinessFormAutoSaveHandle | null>(null);
+  const [businessAutoSaveState, setBusinessAutoSaveState] = useState<{ isDirty: boolean; canSave: boolean }>({
+    isDirty: false,
+    canSave: true,
+  });
+
+  const businessSaveAsync = useCallback(async () => {
+    const handle = businessFormRef.current;
+    if (!handle) return { ok: true as const };
+    return handle.saveAsync();
+  }, []);
+
+  const businessAutoSave = useTabAutoSave({
+    isDirty: businessAutoSaveState.isDirty,
+    canSave: businessAutoSaveState.canSave,
+    saveAsync: businessSaveAsync,
+  });
+
   const scenarioId = searchParams.get("scenario");
 
   useEffect(() => {
@@ -205,7 +224,7 @@ export default function EntityDialog({
     if (kind === "trust") {
       void trustAutoSave.interceptTabChange(tab, (next) => setTrustTab(next as TrustTab));
     } else {
-      setBusinessTab(tab as BusinessTab);
+      void businessAutoSave.interceptTabChange(tab, (next) => setBusinessTab(next as BusinessTab));
     }
   };
 
@@ -241,13 +260,11 @@ export default function EntityDialog({
       activeTab={activeTab}
       onTabChange={onTabChange}
       tabBarRight={
-        kind === "trust" ? (
-          <TabAutoSaveIndicator
-            saving={trustAutoSave.saving}
-            error={trustAutoSave.saveError}
-            onDismissError={trustAutoSave.clearSaveError}
-          />
-        ) : undefined
+        <TabAutoSaveIndicator
+          saving={kind === "trust" ? trustAutoSave.saving : businessAutoSave.saving}
+          error={kind === "trust" ? trustAutoSave.saveError : businessAutoSave.saveError}
+          onDismissError={kind === "trust" ? trustAutoSave.clearSaveError : businessAutoSave.clearSaveError}
+        />
       }
       primaryAction={
         noPrimaryAction
@@ -304,6 +321,7 @@ export default function EntityDialog({
         />
       ) : (
         <BusinessForm
+          ref={businessFormRef}
           clientId={clientId}
           editing={editing}
           activeTab={businessTab}
@@ -322,6 +340,8 @@ export default function EntityDialog({
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
           onScheduleSaveBindingChange={setScheduleSaveBinding}
+          onAutoSaveStateChange={setBusinessAutoSaveState}
+          onAutoSaved={() => { /* effectiveBusinessId handled inside BusinessForm */ }}
         />
       )}
     </DialogShell>
