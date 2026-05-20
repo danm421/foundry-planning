@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
+import { HelpTip } from "@/components/help-tip";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultWithdrawalRefs, resolveMilestone } from "@/lib/milestones";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
@@ -341,7 +342,6 @@ export default function WithdrawalStrategySection({
 }: WithdrawalStrategySectionProps) {
   const writer = useScenarioWriter(clientId);
   const [list, setList] = useState<WithdrawalStrategy[]>(initialStrategies);
-  const [editMode, setEditMode] = useState(false);
   const [dialog, setDialog] = useState<{ open: boolean; editing?: WithdrawalStrategy }>({
     open: false,
   });
@@ -367,84 +367,79 @@ export default function WithdrawalStrategySection({
     return true;
   }
 
+  // Row template: # | Account | Years | Actions
+  const ROW_GRID = "grid grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2";
+
   return (
     <section>
-      <header className="mb-3 flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
+      <header className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
             Withdrawal Strategy
           </h3>
-          <p className="mt-1 text-xs text-gray-400">
-            When household income can&apos;t cover expenses and savings, the projection pulls from
-            these accounts in priority order. If left empty, the default order is{" "}
-            <span className="font-medium text-gray-300">
-              Cash → Taxable → Tax-Deferred → Roth
-            </span>{" "}
-            (illiquid accounts are skipped).
-          </p>
+          <HelpTip text="When household income can't cover expenses and savings, the projection pulls from these accounts in priority order. If left empty, the default order is Cash → Taxable → Tax-Deferred → Roth (illiquid accounts are skipped)." />
         </div>
-        <div className="flex items-center gap-2">
-          {list.length > 0 && (
-            <button
-              onClick={() => setEditMode((v) => !v)}
-              className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
-                editMode
-                  ? "border-accent bg-accent/15 text-accent-ink"
-                  : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
-              }`}
-            >
-              {editMode ? "Done" : "Edit"}
-            </button>
-          )}
-          <button
-            onClick={() => setDialog({ open: true })}
-            disabled={accounts.length === 0}
-            className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-40"
-          >
-            + Add
-          </button>
-        </div>
+        <button
+          onClick={() => setDialog({ open: true })}
+          disabled={accounts.length === 0}
+          className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-40"
+        >
+          + Add
+        </button>
       </header>
 
-      <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
+      <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/40">
         {sorted.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-gray-400">
             No custom order set — the default tax-efficient order applies.
           </div>
         ) : (
-          <div className="divide-y divide-gray-800">
-            {sorted.map((ws) => (
-              <div
-                key={ws.id}
-                onClick={() => !editMode && setDialog({ open: true, editing: ws })}
-                className="flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-gray-800/60"
-              >
-                <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-xs font-bold text-gray-200">
-                  {ws.priorityOrder}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-gray-100">
-                    {accountMap[ws.accountId]?.name ?? ws.accountId}
-                  </div>
-                  <div className="truncate text-xs text-gray-400">
-                    {yearsDescriptor(ws.startYear, ws.endYear)}
-                  </div>
-                </div>
-                {editMode && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleting(ws);
-                    }}
-                    className="text-white hover:text-white"
-                    aria-label={`Delete ${accountMap[ws.accountId]?.name ?? ws.accountId}`}
+          <>
+            <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>
+              <span>#</span>
+              <span>Account</span>
+              <span>Years</span>
+              <span className="text-right">Actions</span>
+            </div>
+            <ol className="divide-y divide-gray-800">
+              {sorted.map((ws) => (
+                <li key={ws.id} className={`${ROW_GRID} hover:bg-gray-900/60`}>
+                  <span
+                    aria-hidden
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-xs font-semibold tabular-nums text-gray-300"
                   >
-                    <TrashIcon />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+                    {ws.priorityOrder}
+                  </span>
+                  <span className="truncate text-sm font-medium text-gray-100">
+                    {accountMap[ws.accountId]?.name ?? ws.accountId}
+                  </span>
+                  <span className="truncate text-xs tabular-nums text-gray-400">
+                    {yearsDescriptor(ws.startYear, ws.endYear)}
+                  </span>
+                  <div className="flex shrink-0 items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      title="Edit"
+                      aria-label={`Edit ${accountMap[ws.accountId]?.name ?? "entry"}`}
+                      onClick={() => setDialog({ open: true, editing: ws })}
+                      className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete"
+                      aria-label={`Delete ${accountMap[ws.accountId]?.name ?? "entry"}`}
+                      onClick={() => setDeleting(ws)}
+                      className="rounded p-1 text-red-400 hover:bg-red-900/30 hover:text-red-200"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </>
         )}
       </div>
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
+import { HelpTip } from "@/components/help-tip";
 import { STATE_ESTATE_TAX, type Bracket } from "@/lib/tax/state-estate";
 import { USPS_STATE_NAMES, USPS_STATE_CODES, type USPSStateCode } from "@/lib/usps-states";
 
@@ -49,6 +50,46 @@ const STATE_OPTIONS = USPS_STATE_CODES
     return { code, label: `${name} — ${suffix}` };
   })
   .sort((a, b) => a.label.localeCompare(b.label));
+
+const INPUT_CLS =
+  "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+
+function SectionTitle({ title, help }: { title: string; help?: string }) {
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">{title}</h3>
+      {help && <HelpTip text={help} />}
+    </div>
+  );
+}
+
+function FieldRow({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-4 px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
+        <span>{label}</span>
+        {help && <HelpTip text={help} />}
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function FieldTable({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
+      {children}
+    </div>
+  );
+}
 
 export default function TaxRatesForm({
   clientId,
@@ -131,189 +172,185 @@ export default function TaxRatesForm({
       {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
       {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
 
-      <header>
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Income Tax</h3>
-        <p className="mt-1 text-xs text-gray-400">Flat rates applied across the projection.</p>
-      </header>
-
-      <div className="mb-4">
-        <label className="block text-xs font-medium text-gray-300 mb-2">Tax calculation method</label>
-        <div className="inline-flex rounded-md bg-gray-800 p-1">
-          <button
-            type="button"
-            onClick={() => setMode("flat")}
-            className={`px-3 py-1.5 text-sm rounded ${mode === "flat" ? "bg-gray-700 text-white" : "text-gray-300"}`}
+      <section>
+        <SectionTitle
+          title="Income Tax"
+          help="Flat rates applied across the projection unless bracket mode is selected."
+        />
+        <FieldTable>
+          <FieldRow
+            label="Calculation method"
+            help="Bracket mode uses progressive federal brackets, AMT, NIIT, and FICA based on filing status. Flat mode multiplies taxable income by your federal rate."
           >
-            Flat rate
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("bracket")}
-            className={`px-3 py-1.5 text-sm rounded ${mode === "bracket" ? "bg-gray-700 text-white" : "text-gray-300"}`}
-          >
-            Bracket-based
-          </button>
-        </div>
-        <p className="mt-1 text-xs text-gray-400">
-          Bracket mode uses progressive federal brackets, AMT, NIIT, and FICA based on filing status. Flat mode multiplies taxable income by your federal rate.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        {mode === "flat" && (
-          <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="flatFederalRate">Federal rate</label>
-            <PercentInput id="flatFederalRate" name="flatFederalRate" defaultValue={pct(flatFederalRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
-          </div>
-        )}
-        <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateRate">State rate</label>
-          <PercentInput id="flatStateRate" name="flatStateRate" defaultValue={pct(flatStateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="residenceStateIncome">State of residence (income tax)</label>
-          <select
-            id="residenceStateIncome"
-            value={residenceStateValue}
-            onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          >
-            <option value="">— Use flat-rate fallback —</option>
-            {USPS_STATE_CODES.map((code) => (
-              <option key={code} value={code}>
-                {USPS_STATE_NAMES[code]}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-gray-400">
-            If selected, the bracket-mode engine computes state tax using that state&apos;s brackets,
-            deductions, and exemptions. Otherwise the flat State rate above applies. Also drives the
-            state-of-residence used by the Estate Tax engine below.
-          </p>
-        </div>
-      </div>
-
-      <header className="mt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Estate Tax</h3>
-        <p className="mt-1 text-xs text-gray-400">Applied at each death event in the projection.</p>
-      </header>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="estateAdminExpenses">Estate administrative expenses ($)</label>
-          <input
-            id="estateAdminExpenses"
-            name="estateAdminExpenses"
-            type="number"
-            min="0"
-            step="100"
-            defaultValue={estateAdminExpenses}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="residenceState">State of residence (for estate &amp; inheritance tax)</label>
-          <select
-            id="residenceState"
-            name="residenceState"
-            value={residenceStateValue}
-            onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          >
-            <option value="">— Not set —</option>
-            {STATE_OPTIONS.map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <details className="mt-2 text-xs text-gray-400">
-            <summary className="cursor-pointer">Custom flat rate (override)</summary>
-            <div className="mt-2">
-              <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateEstateRate">
-                Override rate (applied when no state is selected)
-              </label>
-              <PercentInput
-                id="flatStateEstateRate"
-                name="flatStateEstateRate"
-                defaultValue={pct(flatStateEstateRate)}
-                className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
+            <div className="inline-flex rounded-md bg-gray-800 p-0.5">
+              <button
+                type="button"
+                onClick={() => setMode("flat")}
+                className={`px-2.5 py-1 text-xs rounded ${mode === "flat" ? "bg-gray-700 text-white" : "text-gray-300"}`}
+              >
+                Flat rate
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("bracket")}
+                className={`px-2.5 py-1 text-xs rounded ${mode === "bracket" ? "bg-gray-700 text-white" : "text-gray-300"}`}
+              >
+                Bracket-based
+              </button>
             </div>
-          </details>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="irdTaxRate">IRD tax rate</label>
-          <PercentInput
-            id="irdTaxRate"
-            name="irdTaxRate"
-            defaultValue={pct(irdTaxRate)}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-          <p className="mt-1 text-xs text-gray-400">
-            Applied to pre-tax retirement assets (traditional IRA, 401(k), 403(b)) passing to a non-spouse, non-charity beneficiary at death.
-          </p>
-        </div>
-      </div>
+          </FieldRow>
+          {mode === "flat" && (
+            <FieldRow label="Federal rate">
+              <PercentInput
+                id="flatFederalRate"
+                name="flatFederalRate"
+                defaultValue={pct(flatFederalRate)}
+                className={`${INPUT_CLS} max-w-[10rem]`}
+              />
+            </FieldRow>
+          )}
+          <FieldRow label="State rate">
+            <PercentInput
+              id="flatStateRate"
+              name="flatStateRate"
+              defaultValue={pct(flatStateRate)}
+              className={`${INPUT_CLS} max-w-[10rem]`}
+            />
+          </FieldRow>
+          <FieldRow
+            label="State of residence"
+            help="If selected, the bracket-mode engine uses that state's brackets, deductions, and exemptions. Otherwise the flat state rate above applies. Also drives the state-of-residence used by the Estate Tax engine."
+          >
+            <select
+              id="residenceStateIncome"
+              value={residenceStateValue}
+              onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
+              className={INPUT_CLS}
+            >
+              <option value="">— Use flat-rate fallback —</option>
+              {USPS_STATE_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {USPS_STATE_NAMES[code]}
+                </option>
+              ))}
+            </select>
+          </FieldRow>
+        </FieldTable>
+      </section>
 
-      <header className="mt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Trust Tax</h3>
-        <p className="mt-1 text-xs text-gray-400">Applied when a non-grantor trust distributes income to a beneficiary outside the household.</p>
-      </header>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="outOfHouseholdDniRate">Out-of-household DNI tax rate</label>
-          <PercentInput
-            id="outOfHouseholdDniRate"
-            name="outOfHouseholdDniRate"
-            defaultValue={pct(outOfHouseholdDniRate)}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-          <p className="mt-1 text-xs text-gray-400">Records an estimated recipient-side tax in the plan&apos;s tax summary. Defaults to top federal bracket (37%).</p>
-        </div>
-      </div>
-
-      <header className="mt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Prior lifetime gifts</h3>
-        <p className="mt-1 text-xs text-gray-400">
-          Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709&apos;s &ldquo;prior periods&rdquo; line.
-          Joint pre-plan gifts are pre-attributed (e.g. a $200K joint gift = $100K on each spouse).
-        </p>
-      </header>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="priorTaxableGiftsClient">
-            {clientFirstName ?? "Client"} ($)
-          </label>
-          <input
-            id="priorTaxableGiftsClient"
-            name="priorTaxableGiftsClient"
-            type="number"
-            min="0"
-            step="1000"
-            defaultValue={priorTaxableGiftsClient}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
-        {hasSpouse && (
-          <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="priorTaxableGiftsSpouse">
-              {spouseFirstName ?? "Spouse"} ($)
-            </label>
+      <section>
+        <SectionTitle
+          title="Estate Tax"
+          help="Applied at each death event in the projection."
+        />
+        <FieldTable>
+          <FieldRow label="Administrative expenses ($)">
             <input
-              id="priorTaxableGiftsSpouse"
-              name="priorTaxableGiftsSpouse"
+              id="estateAdminExpenses"
+              name="estateAdminExpenses"
+              type="number"
+              min="0"
+              step="100"
+              defaultValue={estateAdminExpenses}
+              className={`${INPUT_CLS} max-w-[12rem]`}
+            />
+          </FieldRow>
+          <FieldRow
+            label="State of residence"
+            help="Selects the state estate / inheritance tax engine. Estate rules and inheritance tax flag are summarized in the option labels."
+          >
+            <select
+              id="residenceState"
+              name="residenceState"
+              value={residenceStateValue}
+              onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
+              className={INPUT_CLS}
+            >
+              <option value="">— Not set —</option>
+              {STATE_OPTIONS.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </FieldRow>
+          <FieldRow
+            label="Override rate"
+            help="Applied when no state is selected above. Leave blank to skip state estate tax entirely."
+          >
+            <PercentInput
+              id="flatStateEstateRate"
+              name="flatStateEstateRate"
+              defaultValue={pct(flatStateEstateRate)}
+              className={`${INPUT_CLS} max-w-[10rem]`}
+            />
+          </FieldRow>
+          <FieldRow
+            label="IRD tax rate"
+            help="Applied to pre-tax retirement assets (Traditional IRA, 401(k), 403(b)) passing to a non-spouse, non-charity beneficiary at death."
+          >
+            <PercentInput
+              id="irdTaxRate"
+              name="irdTaxRate"
+              defaultValue={pct(irdTaxRate)}
+              className={`${INPUT_CLS} max-w-[10rem]`}
+            />
+          </FieldRow>
+        </FieldTable>
+      </section>
+
+      <section>
+        <SectionTitle
+          title="Trust Tax"
+          help="Applied when a non-grantor trust distributes income to a beneficiary outside the household."
+        />
+        <FieldTable>
+          <FieldRow
+            label="Out-of-household DNI rate"
+            help="Records an estimated recipient-side tax in the plan's tax summary. Defaults to top federal bracket (37%)."
+          >
+            <PercentInput
+              id="outOfHouseholdDniRate"
+              name="outOfHouseholdDniRate"
+              defaultValue={pct(outOfHouseholdDniRate)}
+              className={`${INPUT_CLS} max-w-[10rem]`}
+            />
+          </FieldRow>
+        </FieldTable>
+      </section>
+
+      <section>
+        <SectionTitle
+          title="Prior lifetime gifts"
+          help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K on each spouse)."
+        />
+        <FieldTable>
+          <FieldRow label={`${clientFirstName ?? "Client"} ($)`}>
+            <input
+              id="priorTaxableGiftsClient"
+              name="priorTaxableGiftsClient"
               type="number"
               min="0"
               step="1000"
-              defaultValue={priorTaxableGiftsSpouse}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              defaultValue={priorTaxableGiftsClient}
+              className={`${INPUT_CLS} max-w-[12rem]`}
             />
-          </div>
-        )}
-      </div>
+          </FieldRow>
+          {hasSpouse && (
+            <FieldRow label={`${spouseFirstName ?? "Spouse"} ($)`}>
+              <input
+                id="priorTaxableGiftsSpouse"
+                name="priorTaxableGiftsSpouse"
+                type="number"
+                min="0"
+                step="1000"
+                defaultValue={priorTaxableGiftsSpouse}
+                className={`${INPUT_CLS} max-w-[12rem]`}
+              />
+            </FieldRow>
+          )}
+        </FieldTable>
+      </section>
 
       <div className="flex justify-end pt-2">
         <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50">

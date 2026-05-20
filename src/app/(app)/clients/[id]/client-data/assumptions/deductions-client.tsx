@@ -69,11 +69,6 @@ export function DeductionsClient({
         clientFirstName={clientFirstName}
         spouseFirstName={spouseFirstName}
       />
-
-      <p className="text-xs text-gray-400">
-        The standard deduction inflates with the tax-inflation rate (set in Assumptions).
-        Itemized deductions inflate with each row&apos;s growth rate.
-      </p>
     </div>
   );
 }

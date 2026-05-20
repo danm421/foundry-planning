@@ -1,5 +1,7 @@
 "use client";
 
+import { HelpTip } from "@/components/help-tip";
+
 // ── Row types ───────────────────────────────────────────────────────────────
 
 export interface DerivedRow {
@@ -67,7 +69,37 @@ const DEDUCTION_TYPE_LABELS: Record<string, string> = {
   property_tax: "Property tax",
 };
 
+const GROUP_HELP: Record<string, string> = {
+  "Savings (above-line)":
+    "Pulled from Traditional IRA / 401(k) contribution rules on the Savings tab. Edit there.",
+  Expenses:
+    "Pulled from expenses flagged with a tax treatment. Edit on the Expenses tab.",
+  "Mortgages (below-line)":
+    "Pulled from liabilities marked as interest-deductible. Edit on the Liabilities tab.",
+  "Real estate (SALT)":
+    "Pulled from real-estate accounts with an annual property tax. Edit on the Accounts tab. Subject to the SALT cap.",
+};
+
+const EMPTY_HINT: Record<string, string> = {
+  "Savings (above-line)":
+    "No deductible savings rules — add a Traditional IRA or 401(k) contribution on the Savings tab.",
+  Expenses:
+    "No expenses flagged as deductible — set a tax treatment on an expense to include it.",
+  "Mortgages (below-line)":
+    "No deductible mortgages — mark a liability as interest-deductible.",
+  "Real estate (SALT)":
+    "No property taxes found — set an annual property tax on a real-estate account.",
+};
+
 // ── Component ───────────────────────────────────────────────────────────────
+
+interface FlatRow {
+  group: string;
+  id: string;
+  name: string;
+  meta: string;
+  amount: number;
+}
 
 export function DeductionsDerivedSummary({
   savingsRows,
@@ -86,8 +118,7 @@ export function DeductionsDerivedSummary({
 
   const mortgageTotal = mortgageRows.reduce((s, r) => s + r.estimatedInterest, 0);
 
-  const rawSalt =
-    propertyTaxRows.reduce((s, r) => s + r.currentYearInflated, 0);
+  const rawSalt = propertyTaxRows.reduce((s, r) => s + r.currentYearInflated, 0);
   const saltCapped = Math.min(rawSalt, saltCap);
 
   const belowLineFromExpenses = expenseRows
@@ -96,181 +127,118 @@ export function DeductionsDerivedSummary({
 
   const totalItemized = mortgageTotal + saltCapped + belowLineFromExpenses;
 
+  // ── Build a single flat row list grouped by category ─────────────────────
+  const groups: { name: string; rows: FlatRow[] }[] = [
+    {
+      name: "Savings (above-line)",
+      rows: savingsRows.map((r) => ({
+        group: "Savings (above-line)",
+        id: r.id,
+        name: r.accountName,
+        meta: `${SUBTYPE_LABELS[r.subType] ?? r.subType} · ${OWNER_LABELS[r.owner]} · ${r.startYear}–${r.endYear}`,
+        amount: r.annualAmount,
+      })),
+    },
+    {
+      name: "Expenses",
+      rows: expenseRows.map((r) => ({
+        group: "Expenses",
+        id: r.id,
+        name: r.name,
+        meta: DEDUCTION_TYPE_LABELS[r.deductionType] ?? r.deductionType,
+        amount: r.annualAmount,
+      })),
+    },
+    {
+      name: "Mortgages (below-line)",
+      rows: mortgageRows.map((r) => ({
+        group: "Mortgages (below-line)",
+        id: r.id,
+        name: r.name,
+        meta: "Estimated annual interest",
+        amount: r.estimatedInterest,
+      })),
+    },
+    {
+      name: "Real estate (SALT)",
+      rows: propertyTaxRows.map((r) => ({
+        group: "Real estate (SALT)",
+        id: r.id,
+        name: r.name,
+        meta: `Base ${fmt.format(r.annualPropertyTax)} → ${currentYear} ${fmt.format(r.currentYearInflated)}`,
+        amount: r.currentYearInflated,
+      })),
+    },
+  ];
+
+  const ROW_GRID =
+    "grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.4fr)_8rem] items-center gap-3 px-3 py-1.5";
+
   return (
-    <section className="space-y-4">
-      <div className="mb-1">
-        <h2 className="text-base font-semibold text-gray-200">
+    <section className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
           Auto-derived deductions
         </h2>
-        <p className="mt-1 text-xs text-gray-400">
-          These deductions are pulled automatically from your savings, expenses,
-          mortgages, and real-estate data. Edit them on their respective tabs.
-        </p>
+        <HelpTip text="Pulled automatically from your savings, expenses, mortgages, and real-estate data. Edit on their respective tabs." />
       </div>
 
-      {/* ── 1. Savings (above-line) ──────────────────────────────────────── */}
-      <GroupCard title="From your savings (above-line)">
-        {savingsRows.length === 0 ? (
-          <EmptyState>
-            No deductible savings rules yet. Add a Traditional IRA or 401(k)
-            contribution on the Savings tab.
-          </EmptyState>
-        ) : (
-          <ItemList>
-            {savingsRows.map((r) => (
-              <Item key={r.id}>
-                <div className="flex flex-col">
-                  <span className="text-gray-200">{r.accountName}</span>
-                  <span className="text-xs text-gray-400">
-                    {SUBTYPE_LABELS[r.subType] ?? r.subType} ·{" "}
-                    {OWNER_LABELS[r.owner]} · {r.startYear}-{r.endYear}
-                  </span>
+      <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">
+        <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>
+          <span>Item</span>
+          <span>Detail</span>
+          <span className="text-right">Amount / yr</span>
+        </div>
+
+        <div className="divide-y divide-gray-800">
+          {groups.map((group) => (
+            <div key={group.name}>
+              <div className="flex items-center gap-1.5 bg-gray-900/30 px-3 py-1 text-[11px] font-medium text-gray-300">
+                <span>{group.name}</span>
+                <HelpTip text={GROUP_HELP[group.name]} />
+              </div>
+              {group.rows.length === 0 ? (
+                <div className="px-3 py-2 text-xs italic text-gray-500">
+                  {EMPTY_HINT[group.name]}
                 </div>
-                <Amount>{fmt.format(r.annualAmount)}/yr</Amount>
-              </Item>
-            ))}
-          </ItemList>
-        )}
-      </GroupCard>
+              ) : (
+                group.rows.map((r) => (
+                  <div key={`${r.group}:${r.id}`} className={`${ROW_GRID} text-sm`}>
+                    <span className="truncate text-gray-200">{r.name}</span>
+                    <span className="truncate text-xs text-gray-400">{r.meta}</span>
+                    <span className="justify-self-end tabular-nums text-gray-300">
+                      {fmt.format(r.amount)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
-      {/* ── 2. Expenses ──────────────────────────────────────────────────── */}
-      <GroupCard title="From your expenses">
-        {expenseRows.length === 0 ? (
-          <EmptyState>
-            No expenses flagged as deductible. Set a tax treatment on an expense
-            to include it here.
-          </EmptyState>
-        ) : (
-          <ItemList>
-            {expenseRows.map((r) => (
-              <Item key={r.id}>
-                <div className="flex flex-col">
-                  <span className="text-gray-200">{r.name}</span>
-                  <span className="text-xs text-gray-400">
-                    {DEDUCTION_TYPE_LABELS[r.deductionType] ?? r.deductionType}
-                  </span>
-                </div>
-                <Amount>{fmt.format(r.annualAmount)}/yr</Amount>
-              </Item>
-            ))}
-          </ItemList>
-        )}
-      </GroupCard>
-
-      {/* ── 3. Mortgages (below-line) ────────────────────────────────────── */}
-      <GroupCard title="From your mortgages (below-line)">
-        {mortgageRows.length === 0 ? (
-          <EmptyState>
-            No deductible mortgages. Mark a liability as interest-deductible to
-            include it here.
-          </EmptyState>
-        ) : (
-          <ItemList>
-            {mortgageRows.map((r) => (
-              <Item key={r.id}>
-                <span className="text-gray-200">{r.name}</span>
-                <Amount>{fmt.format(r.estimatedInterest)}/yr</Amount>
-              </Item>
-            ))}
-          </ItemList>
-        )}
-      </GroupCard>
-
-      {/* ── 4. Real estate (SALT) ────────────────────────────────────────── */}
-      <GroupCard title="From your real estate (SALT)">
-        {propertyTaxRows.length === 0 ? (
-          <EmptyState>
-            No property taxes found. Set an annual property tax on a real-estate
-            account to include it here.
-          </EmptyState>
-        ) : (
-          <ItemList>
-            {propertyTaxRows.map((r) => (
-              <Item key={r.id}>
-                <div className="flex flex-col">
-                  <span className="text-gray-200">{r.name}</span>
-                  <span className="text-xs text-gray-400">
-                    Base {fmt.format(r.annualPropertyTax)} → {currentYear}{" "}
-                    {fmt.format(r.currentYearInflated)}
-                  </span>
-                </div>
-                <Amount>{fmt.format(r.currentYearInflated)}/yr</Amount>
-              </Item>
-            ))}
-          </ItemList>
-        )}
-      </GroupCard>
-
-      {/* ── Footer totals ────────────────────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4 space-y-2 text-sm">
+      {/* Footer totals */}
+      <div className="rounded-md border border-gray-800 bg-gray-900/40 px-4 py-3 space-y-1 text-sm">
         <div className="flex justify-between">
           <span className="text-gray-300">
-            Total above-line for {currentYear}:
+            Total above-line for {currentYear}
           </span>
           <span className="tabular-nums font-semibold text-gray-100">
             {fmt.format(totalAboveLine)}
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-300">
-            Total itemized for {currentYear}:
+          <span className="flex items-center gap-1.5 text-gray-300">
+            Total itemized for {currentYear}
+            {rawSalt > saltCap && (
+              <HelpTip text={`SALT ${fmt.format(rawSalt)} capped at ${fmt.format(saltCap)}.`} />
+            )}
           </span>
           <span className="tabular-nums font-semibold text-gray-100">
             {fmt.format(totalItemized)}
-            {rawSalt > saltCap && (
-              <span className="ml-2 text-xs font-normal text-gray-400">
-                (SALT: {fmt.format(rawSalt)} → capped at{" "}
-                {fmt.format(saltCap)})
-              </span>
-            )}
           </span>
         </div>
       </div>
     </section>
-  );
-}
-
-// ── Reusable sub-components ─────────────────────────────────────────────────
-
-function GroupCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4">
-      <h3 className="mb-2 text-sm font-medium text-gray-300">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-function ItemList({ children }: { children: React.ReactNode }) {
-  return (
-    <ul className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/60">
-      {children}
-    </ul>
-  );
-}
-
-function Item({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-center justify-between px-4 py-2 text-sm">
-      {children}
-    </li>
-  );
-}
-
-function Amount({ children }: { children: React.ReactNode }) {
-  return <span className="tabular-nums text-gray-300">{children}</span>;
-}
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-md border border-gray-800 bg-gray-900/60 px-4 py-6 text-center text-sm text-gray-300">
-      {children}
-    </div>
   );
 }

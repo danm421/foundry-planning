@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
+import { HelpTip } from "@/components/help-tip";
 
 interface ModelPortfolioOption {
   id: string;
@@ -59,6 +60,18 @@ const CMA_CATEGORIES: { category: string; label: string; description: string; ra
 ];
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
+
+const INPUT_CLS =
+  "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+
+function SectionTitle({ title, help }: { title: string; help?: string }) {
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">{title}</h3>
+      {help && <HelpTip text={help} />}
+    </div>
+  );
+}
 
 export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, ...rates }: GrowthInflationFormProps) {
   const router = useRouter();
@@ -185,20 +198,26 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
     }
   }
 
+  // Shared grid template: Category | Source | Rate (60 char | 1fr | 8rem)
+  const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_8rem] items-center gap-3 px-3 py-2";
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
       {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
 
       <section>
-        <header className="mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Inflation</h3>
-          <p className="mt-1 text-xs text-gray-400">Annual inflation rate applied to expenses and incomes.</p>
-        </header>
-        <div>
-          <label className="block text-xs font-medium text-gray-300">Inflation rate</label>
-          <div className="mt-1 flex flex-col gap-2 rounded border border-gray-700 bg-gray-900 p-3">
-            <label className={`flex items-center gap-2 text-sm ${hasInflationAssetClass ? "text-gray-200" : "text-gray-400"}`}>
+        <SectionTitle
+          title="Inflation"
+          help="Annual inflation rate applied to expenses and incomes across the projection."
+        />
+        <div className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
+          <label
+            className={`flex items-center justify-between gap-3 px-3 py-2 text-sm ${
+              hasInflationAssetClass ? "text-gray-200 cursor-pointer" : "text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            <span className="flex items-center gap-2">
               <input
                 type="radio"
                 name="inflationRateSource"
@@ -207,12 +226,17 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 disabled={!hasInflationAssetClass}
                 onChange={() => setInflationRateSource("asset_class")}
               />
-              Asset class — {(resolvedInflationRate * 100).toFixed(2)}%
-            </label>
-            {!hasInflationAssetClass && (
-              <p className="pl-6 text-xs text-gray-400">No Inflation asset class configured for this firm.</p>
-            )}
-            <label className="flex items-center gap-2 text-sm text-gray-200">
+              <span>Asset class</span>
+              {!hasInflationAssetClass && (
+                <HelpTip text="No Inflation asset class is configured for this firm — set one in firm CMA to use this option." />
+              )}
+            </span>
+            <span className="tabular-nums text-xs text-gray-300">
+              {(resolvedInflationRate * 100).toFixed(2)}%
+            </span>
+          </label>
+          <label className="flex items-center justify-between gap-3 px-3 py-2 text-sm text-gray-200 cursor-pointer">
+            <span className="flex items-center gap-2">
               <input
                 type="radio"
                 name="inflationRateSource"
@@ -220,155 +244,159 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 checked={inflationRateSource === "custom"}
                 onChange={() => setInflationRateSource("custom")}
               />
-              Custom
-              <PercentInput
-                id="inflationRate"
-                name="inflationRate"
-                defaultValue={pct(rates.inflationRate)}
-                disabled={inflationRateSource !== "custom"}
-                className={`ml-2 w-28 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent${inflationRateSource !== "custom" ? " opacity-50" : ""}`}
-              />
-            </label>
-          </div>
+              <span>Custom</span>
+            </span>
+            <PercentInput
+              id="inflationRate"
+              name="inflationRate"
+              defaultValue={pct(rates.inflationRate)}
+              disabled={inflationRateSource !== "custom"}
+              className={`w-28 rounded-md border border-gray-700 bg-gray-900 px-3 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent ${inflationRateSource !== "custom" ? "opacity-50" : ""}`}
+            />
+          </label>
         </div>
       </section>
 
       <section>
-        <header className="mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Default Growth Rates</h3>
-          <p className="mt-1 text-xs text-gray-400">Applied to every account of the given category unless that account specifies its own growth rate.</p>
-        </header>
+        <SectionTitle
+          title="Default Growth Rates"
+          help="Applied to every account of the given category unless that account specifies its own growth rate."
+        />
 
-        <div className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/60">
-          {/* Investable categories — dropdown for model portfolio or custom */}
-          {CMA_CATEGORIES.map((cat) => {
-            const s = sources[cat.category];
-            const selectVal =
-              s.source === "model_portfolio" ? `mp:${s.portfolioId}` :
-              s.source === "asset_mix" ? "asset_mix" :
-              s.source === "inflation" ? "inflation" :
-              "custom";
-            return (
-              <div key={cat.category} className="px-4 py-3">
-                <div className="flex items-center justify-between gap-6">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-100">{cat.label}</p>
-                    <p className="text-xs text-gray-400">{cat.description}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectVal}
-                      onChange={(e) => setSource(cat.category, e.target.value)}
-                      className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
-                    >
-                      {modelPortfolios?.map((mp) => (
-                        <option key={mp.id} value={`mp:${mp.id}`}>
-                          {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
-                        </option>
-                      ))}
-                      <option value="inflation">Inflation ({(resolvedInflationRate * 100).toFixed(2)}%)</option>
-                      <option value="custom">Custom %</option>
-                      {(cat.category === "taxable" || cat.category === "retirement") && (
-                        <option value="asset_mix">Asset mix (per account)</option>
-                      )}
-                    </select>
-                    {s.source === "custom" && (
-                      <div className="w-28 flex-shrink-0">
-                        <PercentInput
-                          name={cat.rateKey}
-                          defaultValue={pct((rates as Record<string, string>)[cat.rateKey])}
-                          className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                        />
-                      </div>
+        <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">
+          <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>
+            <span>Category</span>
+            <span>Source</span>
+            <span className="text-right">Rate</span>
+          </div>
+
+          <div className="divide-y divide-gray-800">
+            {/* Investable categories — dropdown for model portfolio or custom */}
+            {CMA_CATEGORIES.map((cat) => {
+              const s = sources[cat.category];
+              const selectVal =
+                s.source === "model_portfolio" ? `mp:${s.portfolioId}` :
+                s.source === "asset_mix" ? "asset_mix" :
+                s.source === "inflation" ? "inflation" :
+                "custom";
+              return (
+                <div key={cat.category} className={ROW_GRID}>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-sm font-medium text-gray-100">{cat.label}</span>
+                    <HelpTip text={cat.description} />
+                    {s.source === "asset_mix" && (
+                      <HelpTip text="Each account uses its own asset mix. Accounts without a defined mix grow at the Inflation rate." />
                     )}
-                    {/* Hidden input so the rate key is always submitted even when dropdown is shown */}
-                    {s.source !== "custom" && (
-                      <input type="hidden" name={cat.rateKey} value={pct((rates as Record<string, string>)[cat.rateKey])} />
+                  </div>
+                  <select
+                    value={selectVal}
+                    onChange={(e) => setSource(cat.category, e.target.value)}
+                    className={INPUT_CLS}
+                  >
+                    {modelPortfolios?.map((mp) => (
+                      <option key={mp.id} value={`mp:${mp.id}`}>
+                        {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
+                      </option>
+                    ))}
+                    <option value="inflation">Inflation ({(resolvedInflationRate * 100).toFixed(2)}%)</option>
+                    <option value="custom">Custom %</option>
+                    {(cat.category === "taxable" || cat.category === "retirement") && (
+                      <option value="asset_mix">Asset mix (per account)</option>
+                    )}
+                  </select>
+                  <div className="justify-self-end">
+                    {s.source === "custom" ? (
+                      <PercentInput
+                        name={cat.rateKey}
+                        defaultValue={pct((rates as Record<string, string>)[cat.rateKey])}
+                        className="block w-28 rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    ) : (
+                      <>
+                        <span className="block w-28 px-1 text-right text-xs text-gray-500">—</span>
+                        <input type="hidden" name={cat.rateKey} value={pct((rates as Record<string, string>)[cat.rateKey])} />
+                      </>
                     )}
                   </div>
                 </div>
-                {s.source === "asset_mix" && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Each account uses its own asset mix. Accounts without a defined mix grow at the Inflation rate.
-                  </p>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
 
-          {/* Non-investable categories — Inflation or Custom % */}
-          {FLAT_RATE_FIELDS.map((field) => {
-            const flatSource = flatSources[field.category];
-            return (
-              <div key={field.key} className="flex items-center justify-between gap-6 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-100">{field.label}</p>
-                  <p className="text-xs text-gray-400">{field.description}</p>
-                </div>
-                <div className="flex items-center gap-2">
+            {/* Non-investable categories — Inflation or Custom % */}
+            {FLAT_RATE_FIELDS.map((field) => {
+              const flatSource = flatSources[field.category];
+              return (
+                <div key={field.key} className={ROW_GRID}>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-sm font-medium text-gray-100">{field.label}</span>
+                    <HelpTip text={field.description} />
+                  </div>
                   <select
                     value={flatSource}
                     onChange={(e) =>
                       setFlatSources((prev) => ({ ...prev, [field.category]: e.target.value as "inflation" | "custom" }))
                     }
-                    className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
+                    className={INPUT_CLS}
                   >
                     <option value="inflation">Inflation ({(resolvedInflationRate * 100).toFixed(2)}%)</option>
                     <option value="custom">Custom %</option>
                   </select>
-                  {flatSource === "custom" ? (
-                    <div className="w-28 flex-shrink-0">
+                  <div className="justify-self-end">
+                    {flatSource === "custom" ? (
                       <PercentInput
                         id={field.key}
                         name={field.key}
                         defaultValue={pct((rates as Record<string, string>)[field.key])}
-                        className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                        className="block w-28 rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                       />
-                    </div>
-                  ) : (
-                    <input type="hidden" name={field.key} value={pct((rates as Record<string, string>)[field.key])} />
-                  )}
+                    ) : (
+                      <>
+                        <span className="block w-28 px-1 text-right text-xs text-gray-500">—</span>
+                        <input type="hidden" name={field.key} value={pct((rates as Record<string, string>)[field.key])} />
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </section>
 
       <details
-        className="mt-4 rounded border border-gray-800 p-3"
+        className="rounded border border-gray-800 p-3"
         open={advancedOpen}
         onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
       >
-        <summary className="cursor-pointer text-sm text-gray-300">Advanced — separate tax &amp; SS inflation</summary>
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-gray-300">
+          Advanced — separate tax &amp; SS inflation
+        </summary>
 
-        <div className="mt-3 space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="taxInflationRate">
-              Tax bracket inflation rate (% per year)
-            </label>
+        <div className="mt-3 divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3 px-3 py-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
+              <span>Tax bracket inflation</span>
+              <HelpTip text="Used to inflate IRS-published thresholds (brackets, deductions, AMT, contribution limits) into future projection years." />
+            </div>
             <PercentInput
               id="taxInflationRate"
               name="taxInflationRate"
               defaultValue={taxInflationRate ? pct(taxInflationRate) : ""}
               placeholder={`Defaults to ${pct(rates.inflationRate)} (general)`}
-              className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100"
+              className={`${INPUT_CLS} max-w-[14rem]`}
             />
-            <p className="mt-1 text-xs text-gray-400">
-              Used to inflate IRS-published thresholds (brackets, deductions, AMT, contribution limits) into future projection years.
-            </p>
           </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="ssWageGrowthRate">
-              SS wage base growth rate (% per year)
-            </label>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3 px-3 py-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
+              <span>SS wage base growth</span>
+              <HelpTip text="Used to inflate the Social Security wage base into future projection years. Wages typically outpace CPI by ~0.5%." />
+            </div>
             <PercentInput
               id="ssWageGrowthRate"
               name="ssWageGrowthRate"
               defaultValue={ssWageGrowthRate ? pct(ssWageGrowthRate) : ""}
-              placeholder={`Defaults to ${pct(rates.inflationRate)} + 0.5% (wages typically outpace CPI)`}
-              className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100"
+              placeholder={`Defaults to ${pct(rates.inflationRate)} + 0.5%`}
+              className={`${INPUT_CLS} max-w-[14rem]`}
             />
           </div>
         </div>
