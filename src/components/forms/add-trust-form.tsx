@@ -21,6 +21,9 @@ import TransfersTab, { type TransferEvent, type TransferSeries } from "./transfe
 import TransferAssetForm, { type AccountOption as AssetAccountOption } from "./transfer-asset-form";
 import TransferCashForm from "./transfer-cash-form";
 import TransferSeriesForm from "./transfer-series-form";
+import SellToTrustDialog from "./sell-to-trust-dialog";
+import LinkExistingNoteDialog from "./link-existing-note-dialog";
+import { useScenarioState } from "@/hooks/use-scenario-state";
 import DialogShell from "../dialog-shell";
 import ClutDetailsSection from "./clut-details-section";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
@@ -39,7 +42,7 @@ interface AddTrustFormProps {
   externals: ExternalBeneficiary[];
   entities: { id: string; name: string }[];  // for remainder picker
   initialDesignations?: Designation[];        // pre-loaded for edit mode
-  activeTab: "details" | "flows" | "assets" | "transfers" | "notes";
+  activeTab: "details" | "flows" | "assets" | "transfers" | "notes" | "notes-sales";
   /** Assets tab data — when absent the tab degrades gracefully */
   accounts?: AssetsTabAccount[];
   liabilities?: AssetsTabLiability[];
@@ -97,6 +100,18 @@ function ownerSummary(owners: import("@/engine/ownership").AccountOwner[]): stri
   return `${owners.length} owners`;
 }
 
+/**
+ * The Notes & sales tab is meaningful only for trust structures that hold
+ * promissory notes as part of an IDGT-style installment sale. IDGTs are the
+ * canonical case; we also surface for any other irrevocable grantor trust so
+ * advisors can model GRAT/SLAT note structures consistently. Revocable and
+ * non-grantor trusts can't legally use this pattern, so the tab is hidden.
+ */
+function showNotesAndSales(t: Entity): boolean {
+  if (t.trustSubType === "idgt") return true;
+  return Boolean(t.isIrrevocable && t.isGrantor);
+}
+
 export default function AddTrustForm({
   clientId, editing, household, members, externals, entities,
   initialDesignations, activeTab, accounts, liabilities, incomes, expenses,
@@ -112,6 +127,7 @@ export default function AddTrustForm({
   const [error, setError] = useState<string | null>(null);
   useEffect(() => onSubmitStateChange?.({ canSubmit: !loading, loading }), [loading, onSubmitStateChange]);
   const scenarioWriter = useScenarioWriter(clientId);
+  const { scenarioId } = useScenarioState(clientId);
 
   // Form state — create-mode defaults follow the most-common shape:
   //   * irrevocable trust (revocable trusts are typically already wired to the
@@ -816,6 +832,45 @@ export default function AddTrustForm({
         <textarea id="trust-notes" rows={8} value={notes} onChange={(e) => setNotes(e.target.value)} className={textareaClassName} />
       </div>
 
+      <div className={activeTab !== "notes-sales" ? "hidden" : ""}>
+        {editing ? (
+          showNotesAndSales(editing) ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <SellToTrustDialog
+                  clientId={clientId}
+                  scenarioId={scenarioId}
+                  trust={editing}
+                  accounts={accounts ?? []}
+                />
+                <LinkExistingNoteDialog
+                  clientId={clientId}
+                  trust={editing}
+                  accounts={accounts ?? []}
+                />
+              </div>
+              {!scenarioId && (
+                <p className="text-[12px] text-ink-3">
+                  Selling assets to the trust requires an active scenario. Open
+                  this trust from a scenario view to record a sale-to-trust
+                  event.
+                </p>
+              )}
+              <LinkedNotesList trust={editing} accounts={accounts ?? []} />
+            </div>
+          ) : (
+            <p className="text-[13px] text-ink-3 text-center py-6">
+              Notes &amp; sales are available for IDGT and other irrevocable
+              grantor trusts.
+            </p>
+          )
+        ) : (
+          <p className="text-[13px] text-ink-3 text-center py-6">
+            Notes &amp; sales are available when editing an existing trust.
+          </p>
+        )}
+      </div>
+
       {/* ── Transfer modals ─────────────────────────────────────────────────── */}
       {editing && openModal === "asset" && (
         <DialogShell
@@ -887,6 +942,32 @@ export default function AddTrustForm({
         </DialogShell>
       )}
     </form>
+  );
+}
+
+// ── LinkedNotesList ──────────────────────────────────────────────────────────
+// Tiny presentational helper for the Notes & sales tab. Small enough not to
+// warrant its own file — only used here.
+function LinkedNotesList({
+  trust,
+  accounts,
+}: {
+  trust: Entity;
+  accounts: AssetsTabAccount[];
+}) {
+  const linked = accounts.filter((a) => a.noteLinkedTrustEntityId === trust.id);
+  if (linked.length === 0) return null;
+  return (
+    <section className="mt-4">
+      <h4 className="text-sm font-medium text-ink-2">Linked notes</h4>
+      <ul className="mt-1 space-y-1">
+        {linked.map((n) => (
+          <li key={n.id} className="text-xs text-ink-3">
+            {n.name} — balance ${n.value.toLocaleString()}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

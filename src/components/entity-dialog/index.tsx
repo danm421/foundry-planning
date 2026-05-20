@@ -38,8 +38,25 @@ export interface EntityDialogProps {
   primaryClientBirthYear?: number;
 }
 
-type TrustTab = "details" | "flows" | "assets" | "transfers" | "notes";
+type TrustTab =
+  | "details"
+  | "flows"
+  | "assets"
+  | "transfers"
+  | "notes"
+  | "notes-sales";
 type BusinessTab = "details" | "flows" | "assets" | "notes";
+
+/**
+ * Mirrors `showNotesAndSales` in add-trust-form.tsx — kept duplicated rather
+ * than imported to avoid pulling the giant trust form into the dialog shell.
+ * IDGTs always show the tab; other irrevocable grantor trusts (SLAT/GRAT) also
+ * qualify. Stays in lockstep with the form-side helper.
+ */
+function showNotesAndSalesTab(t: { trustSubType: string | null; isIrrevocable: boolean | null; isGrantor: boolean }): boolean {
+  if (t.trustSubType === "idgt") return true;
+  return Boolean(t.isIrrevocable && t.isGrantor);
+}
 
 /**
  * Adapt the assets-tab income/expense row (which carries optional flow-tab
@@ -129,6 +146,9 @@ export default function EntityDialog({
     ? kind === "trust" ? "Edit Trust" : "Edit Business"
     : kind === "trust" ? "Add Trust" : "Add Business";
 
+  const trustShowsNotesAndSales =
+    kind === "trust" && editing != null && showNotesAndSalesTab(editing);
+
   const tabs =
     kind === "trust"
       ? [
@@ -137,6 +157,9 @@ export default function EntityDialog({
           { id: "assets", label: "Assets" },
           { id: "transfers", label: "Transfers" },
           { id: "notes", label: "Notes" },
+          ...(trustShowsNotesAndSales
+            ? [{ id: "notes-sales", label: "Notes & sales" }]
+            : []),
         ]
       : [
           { id: "details", label: "Details" },
@@ -158,7 +181,10 @@ export default function EntityDialog({
     (kind === "trust" && trustTab === "flows") ||
     (kind === "business" && businessTab === "flows");
   const noPrimaryAction =
-    (kind === "trust" && (trustTab === "assets" || trustTab === "transfers")) ||
+    (kind === "trust" &&
+      (trustTab === "assets" ||
+        trustTab === "transfers" ||
+        trustTab === "notes-sales")) ||
     (kind === "business" && businessTab === "assets") ||
     (onFlowsTab && !scheduleSaveBinding);
 
