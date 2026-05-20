@@ -4,6 +4,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -22,6 +23,8 @@ import {
 } from "./input-styles";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
+import { buildNoteReceivableSchedule } from "@/engine/notes-receivable";
+import type { NoteReceivable } from "@/engine/notes-receivable";
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -402,6 +405,63 @@ const AddNoteReceivableForm = forwardRef<
   // for now. Future polish: filter to trusts when the prop carries it.
   const trustEntities = entities;
 
+  // ── Amortization preview ─────────────────────────────────────────────────
+  // Build a NoteReceivable from current form state and run the engine's
+  // schedule builder. Returns an empty array when inputs are insufficient.
+  const previewSchedule = useMemo(() => {
+    if (faceValueNum <= 0 || termMonthsNum <= 0) return [];
+    const previewNote: NoteReceivable = {
+      id: effectiveNoteId ?? "preview",
+      name: name || "Preview",
+      faceValue: faceValueNum,
+      basis: basisNum,
+      asOfBalance: asOfBalance === "" ? undefined : parseFloat(asOfBalance),
+      balanceAsOfMonth: asOfBalance === "" ? undefined : balanceAsOfMonth,
+      balanceAsOfYear: asOfBalance === "" ? undefined : balanceAsOfYear,
+      interestRate: (parseFloat(interestRatePct) || 0) / 100,
+      paymentType,
+      monthlyPayment:
+        monthlyPayment !== "" && isFinite(parseFloat(monthlyPayment))
+          ? parseFloat(monthlyPayment)
+          : undefined,
+      startYear,
+      startMonth,
+      termMonths: termMonthsNum,
+      extraPayments: extraPayments.map((ep, i) => ({
+        id: ep.id ?? `tmp-${i}`,
+        noteReceivableId: effectiveNoteId ?? "preview",
+        year: ep.year,
+        type: ep.type,
+        amount: ep.amount,
+      })),
+      owners: [],
+    };
+    return buildNoteReceivableSchedule(previewNote);
+  }, [
+    effectiveNoteId,
+    name,
+    faceValueNum,
+    basisNum,
+    asOfBalance,
+    balanceAsOfMonth,
+    balanceAsOfYear,
+    interestRatePct,
+    paymentType,
+    monthlyPayment,
+    startYear,
+    startMonth,
+    termMonthsNum,
+    extraPayments,
+  ]);
+
+  function formatCurrency(n: number): string {
+    return n.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    });
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
@@ -716,8 +776,49 @@ const AddNoteReceivableForm = forwardRef<
         )}
 
         {activeTab === "amortization" && (
-          <div className="rounded border border-gray-700 p-4 text-sm text-gray-400">
-            Amortization preview lives here (Task 4.4).
+          <div>
+            {previewSchedule.length === 0 ? (
+              <p className="rounded border border-gray-700 p-4 text-sm text-gray-400">
+                Enter a face value and term on the Details tab to see the
+                amortization schedule.
+              </p>
+            ) : (
+              <div className="max-h-[28rem] overflow-y-auto rounded border border-gray-700">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-900 text-left text-xs uppercase text-gray-400">
+                    <tr>
+                      <th className="px-3 py-2">Year</th>
+                      <th className="px-3 py-2 text-right">Payment</th>
+                      <th className="px-3 py-2 text-right">Interest</th>
+                      <th className="px-3 py-2 text-right">Principal</th>
+                      <th className="px-3 py-2 text-right">Ending balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewSchedule.map((row) => (
+                      <tr
+                        key={row.year}
+                        className="border-t border-gray-800 text-gray-200"
+                      >
+                        <td className="px-3 py-1.5">{row.year}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          {formatCurrency(row.scheduledPayment)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {formatCurrency(row.interest)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {formatCurrency(row.principal)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {formatCurrency(row.endingBalance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
