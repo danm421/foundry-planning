@@ -1,6 +1,6 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
-import { LEGACY_FM_CLIENT } from "./ownership";
+import { LEGACY_FM_CLIENT, rebalanceOwnersAfterEntityDisposition } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -22,6 +22,140 @@ export function _resetSyntheticIdCounter(): void {
  *  (account splits) so ids remain unique within a projection run. */
 export function nextSyntheticId(prefix: string): string {
   return `${prefix}-${++_syntheticIdCounter}`;
+}
+
+// ── sellAccountFraction ───────────────────────────────────────────────────────
+
+/** Sell `fraction` of a single account's balance. Mutates `accountBalances`,
+ *  `basisMap`, and `accountLedgers` in place; returns the per-sale numbers
+ *  the caller needs for capital-gain accumulation, proceeds routing, and
+ *  cleanup.
+ *
+ *  Pure extraction from `applyAssetSales`: behavior on a non-entity sale is
+ *  unchanged. The entity-sale cascade in `applyEntitySales` (Task 5+) calls
+ *  this once per cascaded account.
+ *
+ *  Note: this helper does NOT handle §121 home-sale exclusion or proceeds-
+ *  account routing — those stay in `applyAssetSales` because entity-cascaded
+ *  sales don't qualify for §121 and route proceeds differently.
+ */
+export interface SellAccountFractionInput {
+  accountId: string;
+  fraction: number; // 0 < fraction ≤ 1
+  liabilities: Liability[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  accountLedgers: Record<string, AccountLedger>;
+  saleLabel: string; // used in ledger entries — e.g. "Asset sale: <name>"
+  saleId: string; // sourceId for the ledger entry
+  overrideSaleValue?: number;
+  overrideBasis?: number;
+  transactionCostPct?: number;
+  transactionCostFlat?: number;
+}
+
+export interface SellAccountFractionResult {
+  saleValue: number;
+  basis: number;
+  transactionCosts: number;
+  /** Net proceeds = saleValue − transactionCosts − mortgagePaidOff. */
+  netProceeds: number;
+  /** Raw capital gain (saleValue − basis, floored at 0), before any exclusion. */
+  capitalGain: number;
+  mortgagePaidOff: number;
+  /** Set when this sale fully drained the account (fraction ≥ 1 or residual < $1). */
+  removedAccountId?: string;
+  removedLiabilityIds: string[];
+  newBalance: number;
+}
+
+export function sellAccountFraction(
+  input: SellAccountFractionInput,
+): SellAccountFractionResult {
+  const {
+    accountId,
+    fraction,
+    liabilities,
+    accountBalances,
+    basisMap,
+    accountLedgers,
+    saleLabel,
+    saleId,
+    overrideSaleValue,
+    overrideBasis,
+    transactionCostPct,
+    transactionCostFlat,
+  } = input;
+
+  const currentBalance = accountBalances[accountId] ?? 0;
+  const currentBasis = basisMap[accountId] ?? 0;
+
+  // Determine sale value and basis (use overrides when provided; else
+  // prorate by fraction).
+  const saleValue = overrideSaleValue ?? currentBalance * fraction;
+  const basis = overrideBasis ?? currentBasis * fraction;
+
+  // Calculate transaction costs
+  const costPct = (transactionCostPct ?? 0) * saleValue;
+  const costFlat = transactionCostFlat ?? 0;
+  const transactionCosts = costPct + costFlat;
+
+  // Capital gain is on full sale value minus basis (not reduced by transaction costs)
+  const capitalGain = Math.max(0, saleValue - basis);
+
+  // Net proceeds after costs
+  let netProceeds = saleValue - transactionCosts;
+
+  // Pay off linked mortgage only on full sales. Partial real-estate sales
+  // route net proceeds to checking; the mortgage continues amortizing.
+  let mortgagePaidOff = 0;
+  const removedLiabilityIds: string[] = [];
+  if (fraction >= 1) {
+    const linkedMortgage = liabilities.find((l) => l.linkedPropertyId === accountId);
+    if (linkedMortgage) {
+      const mortgageBalance = linkedMortgage.balance;
+      netProceeds -= mortgageBalance;
+      mortgagePaidOff = mortgageBalance;
+      removedLiabilityIds.push(linkedMortgage.id);
+    }
+  }
+
+  // Drain the sold portion. fraction === 1 (or remaining < $1 from float
+  // drift) zeroes the account and signals removal; partial sales leave
+  // the residual.
+  const newBalance = Math.max(0, currentBalance - saleValue);
+  const newBasis = Math.max(0, currentBasis - basis);
+  accountBalances[accountId] = newBalance;
+  basisMap[accountId] = newBasis;
+
+  let removedAccountId: string | undefined;
+  if (fraction >= 1 || newBalance < 1) {
+    removedAccountId = accountId;
+  }
+
+  // Update sold account ledger
+  if (accountLedgers[accountId]) {
+    accountLedgers[accountId].distributions -= saleValue;
+    accountLedgers[accountId].endingValue = newBalance;
+    accountLedgers[accountId].entries.push({
+      category: "withdrawal",
+      label: saleLabel,
+      amount: -saleValue,
+      sourceId: saleId,
+    });
+  }
+
+  return {
+    saleValue,
+    basis,
+    transactionCosts,
+    netProceeds,
+    capitalGain,
+    mortgagePaidOff,
+    removedAccountId,
+    removedLiabilityIds,
+    newBalance,
+  };
 }
 
 // ── applyAssetSales ───────────────────────────────────────────────────────────
@@ -90,6 +224,10 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
   for (const sale of sales) {
     if (sale.type !== "sell" || sale.year !== year) continue;
 
+    // Entity-source sales are cascaded across co-owned accounts by
+    // applyEntitySales; skip them here so we don't double-process.
+    if (sale.entityId) continue;
+
     const sourceAccountId = sale.accountId
       ?? (sale.purchaseTransactionId ? `technique-acct-${sale.purchaseTransactionId}` : null);
 
@@ -112,27 +250,44 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     }
 
     const accountId = sourceAccountId;
-    const currentBalance = accountBalances[accountId];
-    const currentBasis = basisMap[accountId] ?? 0;
-
-    // Determine sale value and basis (use overrides when provided; else
-    // prorate by fractionSold).
     const fraction = sale.fractionSold ?? 1;
-    const saleValue = sale.overrideSaleValue ?? (currentBalance * fraction);
-    const basis = sale.overrideBasis ?? (currentBasis * fraction);
+    const soldAccount = accounts.find((a) => a.id === accountId);
 
-    // Calculate transaction costs
-    const costPct = (sale.transactionCostPct ?? 0) * saleValue;
-    const costFlat = sale.transactionCostFlat ?? 0;
-    const transactionCosts = costPct + costFlat;
+    // Behavior-preserving extraction: sellAccountFraction handles the value/
+    // basis math, mortgage payoff, balance drain, and sold-account ledger
+    // entry. §121 exclusion + proceeds routing stay here.
+    const result = sellAccountFraction({
+      accountId,
+      fraction,
+      liabilities,
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      saleLabel: `Asset sale: ${sale.name}`,
+      saleId: sale.id,
+      overrideSaleValue: sale.overrideSaleValue,
+      overrideBasis: sale.overrideBasis,
+      transactionCostPct: sale.transactionCostPct,
+      transactionCostFlat: sale.transactionCostFlat,
+    });
 
-    // Capital gain is on full sale value minus basis (not reduced by transaction costs)
-    const capitalGain = Math.max(0, saleValue - basis);
+    const {
+      saleValue,
+      basis,
+      transactionCosts,
+      netProceeds,
+      capitalGain,
+      mortgagePaidOff,
+      removedAccountId,
+      removedLiabilityIds: saleRemovedLiabilityIds,
+    } = result;
+
+    if (removedAccountId) removedAccountIds.push(removedAccountId);
+    for (const id of saleRemovedLiabilityIds) removedLiabilityIds.push(id);
 
     // IRC §121 home-sale exclusion. Applied only when the flag is set AND
     // the sold account's category is "real_estate" — the category gate is a
     // safety net against an errant true on a non-real-estate transaction.
-    const soldAccount = accounts.find((a) => a.id === accountId);
     let homeSaleExclusionApplied = 0;
     if (
       sale.qualifiesForHomeSaleExclusion &&
@@ -144,47 +299,6 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     }
     const taxableCapitalGain = capitalGain - homeSaleExclusionApplied;
     totalCapitalGains += taxableCapitalGain;
-
-    // Net proceeds after costs
-    let netProceeds = saleValue - transactionCosts;
-
-    // Pay off linked mortgage only on full sales. Partial real-estate sales
-    // route net proceeds to checking; the mortgage continues amortizing.
-    let mortgagePaidOff = 0;
-    if (fraction >= 1) {
-      const linkedMortgage = liabilities.find(
-        (l) => l.linkedPropertyId === accountId
-      );
-      if (linkedMortgage) {
-        const mortgageBalance = linkedMortgage.balance;
-        netProceeds -= mortgageBalance;
-        mortgagePaidOff = mortgageBalance;
-        removedLiabilityIds.push(linkedMortgage.id);
-      }
-    }
-
-    // Drain the sold portion. fraction === 1 (or remaining < $1 from float
-    // drift) zeroes the account and signals removal; partial sales leave
-    // the residual.
-    const newBalance = Math.max(0, currentBalance - saleValue);
-    const newBasis = Math.max(0, currentBasis - basis);
-    accountBalances[accountId] = newBalance;
-    basisMap[accountId] = newBasis;
-    if (fraction >= 1 || newBalance < 1) {
-      removedAccountIds.push(accountId);
-    }
-
-    // Update sold account ledger
-    if (accountLedgers[accountId]) {
-      accountLedgers[accountId].distributions -= saleValue;
-      accountLedgers[accountId].endingValue = newBalance;
-      accountLedgers[accountId].entries.push({
-        category: "withdrawal",
-        label: `Asset sale: ${sale.name}`,
-        amount: -saleValue,
-        sourceId: sale.id,
-      });
-    }
 
     // Route net proceeds to destination account
     const proceedsAccountId = sale.proceedsAccountId ?? defaultCheckingId;
@@ -413,4 +527,310 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
   }
 
   return { newAccounts, newLiabilities, breakdown };
+}
+
+// ── applyEntitySales ──────────────────────────────────────────────────────────
+
+/** Minimal shape of an entity row consumed by entity sales. Real callers pass
+ *  EntitySummary from src/engine/types — structurally compatible. Kept local
+ *  so the engine signature stays decoupled from the broader EntitySummary
+ *  surface (which carries dozens of unrelated trust/distribution fields). */
+export interface EntitySaleInputEntity {
+  id: string;
+  name: string;
+  entityType: "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
+  value: number;
+  basis: number;
+  /** Family-member owners only — entity_owners schema has no external_beneficiary. */
+  owners: Array<{ familyMemberId: string; percent: number }>;
+}
+
+export interface EntitySaleBreakdown {
+  transactionId: string;
+  entityId: string;
+  fractionSold: number;
+  operatingSaleValue: number;
+  operatingBasis: number;
+  operatingGain: number;
+  cascadedAccountIds: string[];
+  cascadedLiabilityIds: string[];
+  cascadedCapitalGain: number;
+  totalCapitalGain: number;
+  transactionCosts: number;
+  totalLiabilityPaydown: number;
+  netProceeds: number;
+}
+
+export interface EntitySaleDiagnostic {
+  transactionId: string;
+  reason:
+    | "trust-not-sellable"
+    | "entity-not-found"
+    | "no-owners"
+    | "invalid-fraction"
+    | "owner-percents-not-summing-to-one"
+    | "no-default-checking";
+}
+
+export interface EntitySalesResult {
+  capitalGains: number;
+  capitalGainsByOwner: Record<string, number>;
+  removedAccountIds: string[];
+  removedLiabilityIds: string[];
+  removedEntityIds: string[];
+  totalLiabilityPaydown: number;
+  breakdown: EntitySaleBreakdown[];
+  diagnostics: EntitySaleDiagnostic[];
+}
+
+export interface ApplyEntitySalesInput {
+  sales: AssetTransaction[];
+  entities: EntitySaleInputEntity[];
+  accounts: Account[];
+  liabilities: Liability[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  accountLedgers: Record<string, AccountLedger>;
+  year: number;
+  defaultCheckingId: string;
+}
+
+/** Process all entity-source asset sales for `year`. Mutates the following
+ *  caller-owned working state in place:
+ *  - `accountBalances` / `basisMap` / `accountLedgers` — debited for cascaded
+ *    account sales; credited at `defaultCheckingId` for net proceeds.
+ *  - `account.owners` — rebalanced for every account the entity co-owns.
+ *  - `liability.balance` and `liability.owners` — paid down + rebalanced for
+ *    every liability the entity co-owns (excluding those already settled by
+ *    the account-cascade's helper, to avoid double-payoff of linked mortgages).
+ *  Returns aggregate results, removed IDs, breakdown, and diagnostics. */
+export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResult {
+  const {
+    sales,
+    entities,
+    accounts,
+    liabilities,
+    accountBalances,
+    basisMap,
+    accountLedgers,
+    year,
+    defaultCheckingId,
+  } = input;
+
+  let totalCapitalGains = 0;
+  const capitalGainsByOwner: Record<string, number> = {};
+  const removedAccountIds: string[] = [];
+  const removedLiabilityIdsSet = new Set<string>();
+  const removedEntityIds: string[] = [];
+  let totalLiabilityPaydown = 0;
+  const breakdown: EntitySaleBreakdown[] = [];
+  const diagnostics: EntitySaleDiagnostic[] = [];
+
+  for (const sale of sales) {
+    if (sale.type !== "sell" || sale.year !== year) continue;
+    if (!sale.entityId) continue;
+
+    const f = sale.fractionSold ?? 1;
+    if (f <= 0 || f > 1) {
+      diagnostics.push({ transactionId: sale.id, reason: "invalid-fraction" });
+      continue;
+    }
+
+    const entity = entities.find((e) => e.id === sale.entityId);
+    if (!entity) {
+      diagnostics.push({ transactionId: sale.id, reason: "entity-not-found" });
+      continue;
+    }
+    if (entity.entityType === "trust") {
+      diagnostics.push({ transactionId: sale.id, reason: "trust-not-sellable" });
+      continue;
+    }
+    if (entity.owners.length === 0) {
+      diagnostics.push({ transactionId: sale.id, reason: "no-owners" });
+      continue;
+    }
+
+    // Operating-value sale
+    const operatingValue = sale.overrideSaleValue ?? entity.value;
+    const operatingBasis = sale.overrideBasis ?? entity.basis;
+    const operatingGross = f * operatingValue;
+    const operatingGain = Math.max(0, f * (operatingValue - operatingBasis));
+
+    // Cascade: for each account the entity owns, sell f × p of the account
+    // via sellAccountFraction, then rebalance the account's owners so the
+    // remaining co-owners' dollar exposure is preserved.
+    const cascadedAccountIds: string[] = [];
+    let cascadedGross = 0;
+    let cascadedGain = 0;
+    // Track liabilities already paid off inside `sellAccountFraction` (linked
+    // mortgages on full sales) so the liability-cascade loop below doesn't
+    // double-pay them out of the entity's gross.
+    const liabilitiesSettledByAccountCascade = new Set<string>();
+    for (const account of accounts) {
+      const entityRow = account.owners.find(
+        (o) => o.kind === "entity" && o.entityId === entity.id,
+      );
+      if (!entityRow) continue;
+      const p = entityRow.percent;
+      const effectiveFraction = f * p;
+      if (effectiveFraction <= 0) continue;
+
+      const cascadeResult = sellAccountFraction({
+        accountId: account.id,
+        fraction: effectiveFraction,
+        liabilities,
+        accountBalances,
+        basisMap,
+        accountLedgers,
+        saleLabel: `Entity-cascade sale: ${entity.name}`,
+        saleId: sale.id,
+        transactionCostPct: 0,
+        transactionCostFlat: 0,
+      });
+
+      // netProceeds is already net of any linked-mortgage payoff inside the
+      // helper; that's the cash actually available to fold into the entity's
+      // gross.
+      cascadedGross += cascadeResult.netProceeds;
+      cascadedGain += cascadeResult.capitalGain;
+      cascadedAccountIds.push(account.id);
+      if (cascadeResult.removedAccountId) {
+        removedAccountIds.push(cascadeResult.removedAccountId);
+      }
+      for (const id of cascadeResult.removedLiabilityIds) {
+        removedLiabilityIdsSet.add(id);
+        liabilitiesSettledByAccountCascade.add(id);
+      }
+      // Also fold in the mortgage-paid-off into total paydown so the
+      // aggregate accounting reconciles.
+      totalLiabilityPaydown += cascadeResult.mortgagePaidOff;
+
+      account.owners = rebalanceOwnersAfterEntityDisposition(
+        account.owners,
+        entity.id,
+        f,
+      );
+    }
+
+    // Cascade: pay off entity's share of each liability it co-owns from the
+    // entity's gross proceeds. Then rebalance the liability's owners using
+    // the same helper as accounts.
+    const cascadedLiabilityIds: string[] = [];
+    let cascadedPaydown = 0;
+    for (const liability of liabilities) {
+      // Skip liabilities already settled by sellAccountFraction (e.g. a
+      // linked mortgage on a property the entity owned). Double-paying
+      // would decrement cash twice and over-report paydown.
+      if (liabilitiesSettledByAccountCascade.has(liability.id)) continue;
+      const entityRow = liability.owners.find(
+        (o) => o.kind === "entity" && o.entityId === entity.id,
+      );
+      if (!entityRow) continue;
+      const q = entityRow.percent;
+      const paydown = f * q * liability.balance;
+      if (paydown <= 0) continue;
+
+      liability.balance = Math.max(0, liability.balance - paydown);
+      cascadedPaydown += paydown;
+      cascadedLiabilityIds.push(liability.id);
+
+      liability.owners = rebalanceOwnersAfterEntityDisposition(
+        liability.owners,
+        entity.id,
+        f,
+      );
+
+      if (liability.balance <= 1) {
+        removedLiabilityIdsSet.add(liability.id);
+      }
+    }
+
+    // Costs apply to combined gross
+    const grossProceeds = operatingGross + cascadedGross;
+    const costPct = (sale.transactionCostPct ?? 0) * grossProceeds;
+    const costFlat = sale.transactionCostFlat ?? 0;
+    const transactionCosts = costPct + costFlat;
+
+    const netProceeds = grossProceeds - transactionCosts - cascadedPaydown;
+    const totalCapitalGain = operatingGain + cascadedGain;
+
+    // Distribute cap gain to owners pro-rata.
+    // Normalize against the sum of owner percents so that the per-owner shares
+    // always reconcile to `totalCapitalGain` even when `entity.owners` is from
+    // legacy/incomplete data and doesn't sum to exactly 1. Without this, the
+    // aggregate `capitalGains` and the per-owner `capitalGainsByOwner` would
+    // silently drift apart. If the drift exceeds a small epsilon, emit a
+    // diagnostic so the advisor can fix the underlying data.
+    const ownerSum = entity.owners.reduce((s, o) => s + o.percent, 0);
+    if (ownerSum > 0) {
+      if (Math.abs(ownerSum - 1) > 1e-6) {
+        diagnostics.push({
+          transactionId: sale.id,
+          reason: "owner-percents-not-summing-to-one",
+        });
+      }
+      for (const owner of entity.owners) {
+        const share = totalCapitalGain * (owner.percent / ownerSum);
+        capitalGainsByOwner[owner.familyMemberId] =
+          (capitalGainsByOwner[owner.familyMemberId] ?? 0) + share;
+      }
+    }
+    totalCapitalGains += totalCapitalGain;
+    totalLiabilityPaydown += cascadedPaydown;
+
+    // Route proceeds to household default checking. If routing is impossible
+    // (no default checking configured, or the id doesn't map to a balance),
+    // the sale still proceeds — cap gain is recognized — but cash isn't
+    // deposited. Emit a diagnostic so the advisor knows to wire up a default
+    // checking account.
+    if (defaultCheckingId && accountBalances[defaultCheckingId] !== undefined) {
+      accountBalances[defaultCheckingId] += netProceeds;
+      basisMap[defaultCheckingId] = (basisMap[defaultCheckingId] ?? 0) + netProceeds;
+      if (accountLedgers[defaultCheckingId]) {
+        accountLedgers[defaultCheckingId].contributions += netProceeds;
+        accountLedgers[defaultCheckingId].endingValue += netProceeds;
+        accountLedgers[defaultCheckingId].entries.push({
+          category: "income",
+          label: `Entity sale proceeds: ${entity.name}`,
+          amount: netProceeds,
+          sourceId: sale.id,
+        });
+      }
+    } else {
+      diagnostics.push({
+        transactionId: sale.id,
+        reason: "no-default-checking",
+      });
+    }
+
+    // Full sale → mark entity for removal
+    if (f >= 1) removedEntityIds.push(entity.id);
+
+    breakdown.push({
+      transactionId: sale.id,
+      entityId: entity.id,
+      fractionSold: f,
+      operatingSaleValue: operatingValue,
+      operatingBasis,
+      operatingGain,
+      cascadedAccountIds,
+      cascadedLiabilityIds,
+      cascadedCapitalGain: cascadedGain,
+      totalCapitalGain,
+      transactionCosts,
+      totalLiabilityPaydown: cascadedPaydown,
+      netProceeds,
+    });
+  }
+
+  return {
+    capitalGains: totalCapitalGains,
+    capitalGainsByOwner,
+    removedAccountIds,
+    removedLiabilityIds: Array.from(removedLiabilityIdsSet),
+    removedEntityIds,
+    totalLiabilityPaydown,
+    breakdown,
+    diagnostics,
+  };
 }

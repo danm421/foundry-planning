@@ -7,6 +7,7 @@ import {
   isFullyHouseholdOwned,
   controllingFamilyMember,
   controllingEntity,
+  rebalanceOwnersAfterEntityDisposition,
   type AccountOwner,
 } from "../ownership";
 
@@ -91,5 +92,60 @@ describe("external_beneficiary owner kind", () => {
       { kind: "external_beneficiary", externalBeneficiaryId: "x1", percent: 0.5 },
     ];
     expect(ownedByHousehold({ owners })).toBeCloseTo(0.5);
+  });
+});
+
+describe("rebalanceOwnersAfterEntityDisposition", () => {
+  it("full sale of sole entity owner returns empty array", () => {
+    const owners: AccountOwner[] = [{ kind: "entity", entityId: "E1", percent: 1 }];
+    expect(rebalanceOwnersAfterEntityDisposition(owners, "E1", 1)).toEqual([]);
+  });
+
+  it("full sale of 60%-owning entity scales the remaining 40% owner to 100%", () => {
+    const owners: AccountOwner[] = [
+      { kind: "family_member", familyMemberId: "B", percent: 0.4 },
+      { kind: "entity", entityId: "E1", percent: 0.6 },
+    ];
+    const out = rebalanceOwnersAfterEntityDisposition(owners, "E1", 1);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({ kind: "family_member", familyMemberId: "B", percent: 1 });
+  });
+
+  it("partial f=0.3 of p=0.6 entity: entity drops to ~0.512, other rises to ~0.488", () => {
+    const owners: AccountOwner[] = [
+      { kind: "family_member", familyMemberId: "B", percent: 0.4 },
+      { kind: "entity", entityId: "E1", percent: 0.6 },
+    ];
+    const out = rebalanceOwnersAfterEntityDisposition(owners, "E1", 0.3);
+    const entityRow = out.find((o) => o.kind === "entity") as { percent: number };
+    const fmRow = out.find((o) => o.kind === "family_member") as { percent: number };
+    expect(entityRow.percent).toBeCloseTo((0.6 * 0.7) / (1 - 0.18), 6);
+    expect(fmRow.percent).toBeCloseTo(0.4 / (1 - 0.18), 6);
+    expect(entityRow.percent + fmRow.percent).toBeCloseTo(1, 6);
+  });
+
+  it("preserves multiple non-entity owners proportionally", () => {
+    const owners: AccountOwner[] = [
+      { kind: "family_member", familyMemberId: "B", percent: 0.3 },
+      { kind: "family_member", familyMemberId: "M", percent: 0.1 },
+      { kind: "entity", entityId: "E1", percent: 0.6 },
+    ];
+    const out = rebalanceOwnersAfterEntityDisposition(owners, "E1", 1);
+    expect(out).toHaveLength(2);
+    const b = out.find(
+      (o) => "familyMemberId" in o && o.familyMemberId === "B",
+    ) as { percent: number };
+    const m = out.find(
+      (o) => "familyMemberId" in o && o.familyMemberId === "M",
+    ) as { percent: number };
+    expect(b.percent).toBeCloseTo(0.75, 6);
+    expect(m.percent).toBeCloseTo(0.25, 6);
+  });
+
+  it("throws when entityId is not present in owners", () => {
+    const owners: AccountOwner[] = [
+      { kind: "family_member", familyMemberId: "B", percent: 1 },
+    ];
+    expect(() => rebalanceOwnersAfterEntityDisposition(owners, "E1", 0.5)).toThrow();
   });
 });

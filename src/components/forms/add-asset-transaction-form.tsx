@@ -29,6 +29,7 @@ export interface AssetTransactionInitialData {
   year: number;
   accountId: string | null;
   purchaseTransactionId: string | null;
+  entityId: string | null;
   fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
@@ -48,10 +49,43 @@ export interface AssetTransactionInitialData {
   mortgageTermMonths: number | null;
 }
 
+export interface EntitySaleOption {
+  id: string;
+  name: string;
+  entityType:
+    | "trust"
+    | "llc"
+    | "s_corp"
+    | "c_corp"
+    | "partnership"
+    | "foundation"
+    | "other";
+  value: number;
+  basis: number;
+  owners: Array<{
+    familyMemberId: string;
+    familyMemberName: string;
+    percent: number;
+  }>;
+  ownedAccounts: Array<{
+    id: string;
+    name: string;
+    entityPercent: number;
+    currentValue: number;
+  }>;
+  ownedLiabilities: Array<{
+    id: string;
+    name: string;
+    entityPercent: number;
+    currentBalance: number;
+  }>;
+}
+
 interface AddAssetTransactionFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
   liabilities: { id: string; name: string; linkedPropertyId: string | null; balance: string }[];
+  entities?: EntitySaleOption[];
   pastBuys?: {
     id: string;
     name: string;
@@ -219,6 +253,7 @@ export default function AddAssetTransactionForm({
   clientId,
   accounts,
   liabilities,
+  entities,
   pastBuys: pastBuysProp,
   milestones,
   clientFirstName,
@@ -228,6 +263,7 @@ export default function AddAssetTransactionForm({
   onClose,
   onSaved,
 }: AddAssetTransactionFormProps) {
+  const entityOptions = entities ?? [];
   const writer = useScenarioWriter(clientId);
   const isEdit = !!initialData;
   const currentYear = new Date().getFullYear();
@@ -250,11 +286,20 @@ export default function AddAssetTransactionForm({
   const [buyExpanded, setBuyExpanded] = useState(initialHasBuy);
 
   // ── Sell-side state ───────────────────────────────────────────────────────
+  // Two sell modes: an account/buy-transaction source (the original) and a
+  // business-entity source (cascades to entity-owned accounts and liabilities).
+  type SellMode = "account" | "entity";
+  const [sellMode, setSellMode] = useState<SellMode>(
+    initialData?.entityId ? "entity" : "account",
+  );
   const [sellAccountId, setSellAccountId] = useState<string>(
     initialData?.accountId ?? "",
   );
   const [sellPurchaseTransactionId, setSellPurchaseTransactionId] = useState<string>(
     initialData?.purchaseTransactionId ?? "",
+  );
+  const [sellEntityId, setSellEntityId] = useState<string>(
+    initialData?.entityId ?? "",
   );
   // Sell amount mode — drives whether we submit fractionSold or overrideSaleValue.
   type SellAmountMode = "full" | "percent" | "dollar";
@@ -375,8 +420,12 @@ export default function AddAssetTransactionForm({
   }, [projectionYears, linkedMortgage, year]);
 
   // ── Net Summary calculations ──────────────────────────────────────────────
-  const sellHasData = !!(sellAccountId || sellPurchaseTransactionId);
+  const sellHasData =
+    sellMode === "entity"
+      ? !!sellEntityId
+      : !!(sellAccountId || sellPurchaseTransactionId);
   const buyHasData = !!(assetName || parseNum(purchasePrice as string) > 0);
+  const selectedEntity = entityOptions.find((e) => e.id === sellEntityId);
 
   // ── Resell/orphan/mortgage derivations ────────────────────────────────────
   // The synthetic id used by the engine when a sell points at a prior buy is
@@ -472,25 +521,47 @@ export default function AddAssetTransactionForm({
 
     // Sell-side fields (always include if sell side has data)
     if (sellHasData) {
-      body.accountId = sellAccountId || null;
-      body.purchaseTransactionId = sellPurchaseTransactionId || null;
-      // Sell-amount mode dictates exactly one of fractionSold / overrideSaleValue.
-      if (sellAmountMode === "full") {
-        body.fractionSold = null;
-        body.overrideSaleValue = null;
-      } else if (sellAmountMode === "percent") {
-        body.fractionSold = Number(fractionSoldPct) / 100;
-        body.overrideSaleValue = null;
-      } else {
-        body.fractionSold = null;
+      if (sellMode === "entity") {
+        // Entity sale: clear account/purchase sources, send entityId. Entity
+        // sales always proceed to household checking (defaultCheckingId on the
+        // engine side), so proceedsAccountId is irrelevant; §121 home-sale
+        // exclusion never applies to entity-cascaded sales.
+        body.accountId = null;
+        body.purchaseTransactionId = null;
+        body.entityId = sellEntityId;
+        // fractionSold drives both the operating sale and the cascade percentage.
+        body.fractionSold =
+          sellAmountMode === "percent"
+            ? Number(fractionSoldPct) / 100
+            : null;
         body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
+        body.overrideBasis = toOptionalString(overrideBasis as string);
+        body.transactionCostPct = toOptionalDecimal(transactionCostPct);
+        body.transactionCostFlat = toOptionalString(transactionCostFlat as string);
+        body.proceedsAccountId = null;
+        body.qualifiesForHomeSaleExclusion = false;
+      } else {
+        body.accountId = sellAccountId || null;
+        body.purchaseTransactionId = sellPurchaseTransactionId || null;
+        body.entityId = null;
+        // Sell-amount mode dictates exactly one of fractionSold / overrideSaleValue.
+        if (sellAmountMode === "full") {
+          body.fractionSold = null;
+          body.overrideSaleValue = null;
+        } else if (sellAmountMode === "percent") {
+          body.fractionSold = Number(fractionSoldPct) / 100;
+          body.overrideSaleValue = null;
+        } else {
+          body.fractionSold = null;
+          body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
+        }
+        body.overrideBasis = toOptionalString(overrideBasis as string);
+        body.transactionCostPct = toOptionalDecimal(transactionCostPct);
+        body.transactionCostFlat = toOptionalString(transactionCostFlat as string);
+        body.proceedsAccountId = toOptionalString(proceedsAccountId) || null;
+        // Belt-and-suspenders: never persist true for a non-real-estate sale.
+        body.qualifiesForHomeSaleExclusion = isSellRealEstate && qualifiesForHomeSaleExclusion;
       }
-      body.overrideBasis = toOptionalString(overrideBasis as string);
-      body.transactionCostPct = toOptionalDecimal(transactionCostPct);
-      body.transactionCostFlat = toOptionalString(transactionCostFlat as string);
-      body.proceedsAccountId = toOptionalString(proceedsAccountId) || null;
-      // Belt-and-suspenders: never persist true for a non-real-estate sale.
-      body.qualifiesForHomeSaleExclusion = isSellRealEstate && qualifiesForHomeSaleExclusion;
     }
 
     // Buy-side fields (always include if buy side has data)
@@ -675,6 +746,144 @@ export default function AddAssetTransactionForm({
                 </p>
               )}
 
+              {/* Sell-source picker: account vs business entity. Hidden when no
+                  sellable entities exist in this client. */}
+              {entityOptions.length > 0 && (
+                <div>
+                  <label className={fieldLabelClassName}>Sell source</label>
+                  <div className="flex gap-1.5">
+                    {([
+                      { id: "account", label: "Account" },
+                      { id: "entity", label: "Business entity" },
+                    ] as const).map((opt) => {
+                      const active = sellMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            setSellMode(opt.id);
+                            if (opt.id === "entity") {
+                              setSellAccountId("");
+                              setSellPurchaseTransactionId("");
+                              // $-amount mode doesn't apply to entity sales.
+                              if (sellAmountMode === "dollar") {
+                                setSellAmountMode("full");
+                              }
+                            } else {
+                              setSellEntityId("");
+                            }
+                          }}
+                          aria-pressed={active}
+                          className={
+                            "rounded-[var(--radius-sm)] border px-2.5 py-1 text-[12px] font-medium transition-colors " +
+                            (active
+                              ? "border-accent/50 bg-accent/10 text-accent-ink"
+                              : "border-hair bg-card-2 text-ink-2 hover:border-hair-2")
+                          }
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {sellMode === "entity" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="sellEntityId">
+                      Entity to Sell
+                    </label>
+                    <select
+                      id="sellEntityId"
+                      value={sellEntityId}
+                      onChange={(e) => setSellEntityId(e.target.value)}
+                      className={selectClassName}
+                    >
+                      <option value="">-- Select entity --</option>
+                      {entityOptions.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.name} ({e.entityType.replace(/_/g, " ")})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedEntity && (
+                    <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2/40 p-3 text-[12px] space-y-2">
+                      <div className="flex justify-between font-medium">
+                        <span>
+                          {selectedEntity.name} (
+                          {selectedEntity.entityType.replace(/_/g, " ")})
+                        </span>
+                        <span className="tabular-nums">
+                          Value {formatCurrency(selectedEntity.value)}
+                        </span>
+                      </div>
+                      <div className="text-ink-2">
+                        Basis{" "}
+                        <span className="tabular-nums">
+                          {formatCurrency(selectedEntity.basis)}
+                        </span>
+                      </div>
+                      {selectedEntity.owners.length > 0 && (
+                        <div>
+                          <div className="font-semibold text-ink-3 mb-1">
+                            Owners
+                          </div>
+                          <ul className="space-y-0.5">
+                            {selectedEntity.owners.map((o) => (
+                              <li key={o.familyMemberId}>
+                                {o.familyMemberName} —{" "}
+                                {(o.percent * 100).toFixed(1)}%
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {selectedEntity.ownedAccounts.length > 0 && (
+                        <div>
+                          <div className="font-semibold text-ink-3 mb-1">
+                            Cascades to accounts
+                          </div>
+                          <ul className="space-y-0.5">
+                            {selectedEntity.ownedAccounts.map((a) => (
+                              <li key={a.id} className="tabular-nums">
+                                {a.name} — {(a.entityPercent * 100).toFixed(1)}%
+                                × {formatCurrency(a.currentValue)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {selectedEntity.ownedLiabilities.length > 0 && (
+                        <div>
+                          <div className="font-semibold text-ink-3 mb-1">
+                            Cascades to liabilities
+                          </div>
+                          <ul className="space-y-0.5">
+                            {selectedEntity.ownedLiabilities.map((l) => (
+                              <li key={l.id} className="tabular-nums">
+                                {l.name} — {(l.entityPercent * 100).toFixed(1)}%
+                                × {formatCurrency(l.currentBalance)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="text-ink-3 italic">
+                        Net proceeds will be deposited to the household default
+                        checking account.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {sellMode === "account" && (
+              <>
               {/* Account to sell */}
               <div>
                 <label className={fieldLabelClassName} htmlFor="sellAccountId">
@@ -721,12 +930,20 @@ export default function AddAssetTransactionForm({
                   )}
                 </select>
               </div>
+              </>
+              )}
 
-              {/* Sell amount mode */}
+              {/* Sell amount mode. Entity sales support only "full" or
+                  "percent" in v1 — a $-amount sale doesn't compose with the
+                  cascade (each cascaded account would need its own override). */}
               <div>
                 <label className={fieldLabelClassName}>Sell amount</label>
                 <div className="flex gap-1.5">
-                  {(["full", "percent", "dollar"] as SellAmountMode[]).map((m) => {
+                  {(
+                    sellMode === "entity"
+                      ? (["full", "percent"] as SellAmountMode[])
+                      : (["full", "percent", "dollar"] as SellAmountMode[])
+                  ).map((m) => {
                     const active = sellAmountMode === m;
                     return (
                       <button
@@ -1220,7 +1437,7 @@ export default function AddAssetTransactionForm({
           )}
 
           {/* ── Proceeds Destination (when surplus or sell-only) ────────── */}
-          {sellHasData && (netSummary.net > 0 || !buyHasData) && (
+          {sellHasData && sellMode !== "entity" && (netSummary.net > 0 || !buyHasData) && (
             <div>
               <label className={fieldLabelClassName} htmlFor="proceedsAccountId">
                 Proceeds Destination

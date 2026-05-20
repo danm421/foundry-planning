@@ -55,8 +55,24 @@ const ASSET_TRANSACTION_VALUE = z
     name: z.string(),
     type: z.enum(["buy", "sell"]),
     year: YEAR,
+    accountId: z.string().min(1).optional(),
+    purchaseTransactionId: z.string().min(1).nullable().optional(),
+    entityId: z.string().min(1).optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine(
+    (t) => {
+      if (t.type !== "sell") return true;
+      const sources = [t.accountId, t.purchaseTransactionId, t.entityId].filter(
+        (v) => v != null && v !== "",
+      );
+      return sources.length <= 1;
+    },
+    {
+      message:
+        "Sell transactions may set at most one of accountId / purchaseTransactionId / entityId",
+    },
+  );
 
 const REINVESTMENT_VALUE = z
   .object({
