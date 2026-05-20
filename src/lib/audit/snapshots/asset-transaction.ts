@@ -1,6 +1,6 @@
 // src/lib/audit/snapshots/asset-transaction.ts
 import { db } from "@/db";
-import { accounts, assetTransactions, modelPortfolios } from "@/db/schema";
+import { accounts, assetTransactions, entities, modelPortfolios } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
 
@@ -30,6 +30,7 @@ export const ASSET_TRANSACTION_FIELD_LABELS: FieldLabels = {
   mortgageAmount: { label: "Mortgage amount", format: "currency" },
   mortgageRate: { label: "Mortgage rate", format: "percent" },
   mortgageTermMonths: { label: "Mortgage term (months)", format: "text" },
+  entity: { label: "Entity sold", format: "reference" },
 };
 
 type AssetTransactionRow = typeof assetTransactions.$inferSelect;
@@ -66,6 +67,17 @@ export async function toAssetTransactionSnapshot(
         }))
     : null;
 
+  const entity = row.entityId
+    ? await db
+        .select({ id: entities.id, name: entities.name })
+        .from(entities)
+        .where(inArray(entities.id, [row.entityId]))
+        .then((rows) => ({
+          id: row.entityId!,
+          display: rows[0]?.name ?? "(deleted)",
+        }))
+    : null;
+
   return {
     name: row.name,
     type: row.type,
@@ -94,5 +106,6 @@ export async function toAssetTransactionSnapshot(
       row.mortgageAmount === null ? null : Number(row.mortgageAmount),
     mortgageRate: row.mortgageRate === null ? null : Number(row.mortgageRate),
     mortgageTermMonths: row.mortgageTermMonths,
+    entity,
   };
 }
