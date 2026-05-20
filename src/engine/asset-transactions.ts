@@ -595,6 +595,15 @@ export interface ApplyEntitySalesInput {
   defaultCheckingId: string;
 }
 
+/** Process all entity-source asset sales for `year`. Mutates the following
+ *  caller-owned working state in place:
+ *  - `accountBalances` / `basisMap` / `accountLedgers` — debited for cascaded
+ *    account sales; credited at `defaultCheckingId` for net proceeds.
+ *  - `account.owners` — rebalanced for every account the entity co-owns.
+ *  - `liability.balance` and `liability.owners` — paid down + rebalanced for
+ *    every liability the entity co-owns (excluding those already settled by
+ *    the account-cascade's helper, to avoid double-payoff of linked mortgages).
+ *  Returns aggregate results, removed IDs, breakdown, and diagnostics. */
 export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResult {
   const {
     sales,
@@ -611,7 +620,7 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
   let totalCapitalGains = 0;
   const capitalGainsByOwner: Record<string, number> = {};
   const removedAccountIds: string[] = [];
-  const removedLiabilityIds: string[] = [];
+  const removedLiabilityIdsSet = new Set<string>();
   const removedEntityIds: string[] = [];
   let totalLiabilityPaydown = 0;
   const breakdown: EntitySaleBreakdown[] = [];
@@ -653,6 +662,10 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     const cascadedAccountIds: string[] = [];
     let cascadedGross = 0;
     let cascadedGain = 0;
+    // Track liabilities already paid off inside `sellAccountFraction` (linked
+    // mortgages on full sales) so the liability-cascade loop below doesn't
+    // double-pay them out of the entity's gross.
+    const liabilitiesSettledByAccountCascade = new Set<string>();
     for (const account of accounts) {
       const entityRow = account.owners.find(
         (o) => o.kind === "entity" && o.entityId === entity.id,
@@ -684,7 +697,13 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
       if (cascadeResult.removedAccountId) {
         removedAccountIds.push(cascadeResult.removedAccountId);
       }
-      removedLiabilityIds.push(...cascadeResult.removedLiabilityIds);
+      for (const id of cascadeResult.removedLiabilityIds) {
+        removedLiabilityIdsSet.add(id);
+        liabilitiesSettledByAccountCascade.add(id);
+      }
+      // Also fold in the mortgage-paid-off into total paydown so the
+      // aggregate accounting reconciles.
+      totalLiabilityPaydown += cascadeResult.mortgagePaidOff;
 
       account.owners = rebalanceOwnersAfterEntityDisposition(
         account.owners,
@@ -699,6 +718,10 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     const cascadedLiabilityIds: string[] = [];
     let cascadedPaydown = 0;
     for (const liability of liabilities) {
+      // Skip liabilities already settled by sellAccountFraction (e.g. a
+      // linked mortgage on a property the entity owned). Double-paying
+      // would decrement cash twice and over-report paydown.
+      if (liabilitiesSettledByAccountCascade.has(liability.id)) continue;
       const entityRow = liability.owners.find(
         (o) => o.kind === "entity" && o.entityId === entity.id,
       );
@@ -718,7 +741,7 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
       );
 
       if (liability.balance <= 1) {
-        removedLiabilityIds.push(liability.id);
+        removedLiabilityIdsSet.add(liability.id);
       }
     }
 
@@ -804,7 +827,7 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     capitalGains: totalCapitalGains,
     capitalGainsByOwner,
     removedAccountIds,
-    removedLiabilityIds,
+    removedLiabilityIds: Array.from(removedLiabilityIdsSet),
     removedEntityIds,
     totalLiabilityPaydown,
     breakdown,

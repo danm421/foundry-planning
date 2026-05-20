@@ -548,6 +548,112 @@ describe("applyEntitySales — account cascade", () => {
     };
     expect(entityRow.percent).toBeCloseTo(0.42 / 0.82, 4);
     expect(fmRow.percent).toBeCloseTo(0.4 / 0.82, 4);
+
+    // Breakdown shape: cascaded account ids + cap-gain reported per breakdown row.
+    expect(result.breakdown[0].cascadedAccountIds).toEqual(["acct-brok"]);
+    expect(result.breakdown[0].cascadedCapitalGain).toBeCloseTo(10_800, 4);
+  });
+});
+
+function makeProperty(
+  id: string,
+  owners: AccountOwner[],
+  balance: number,
+  basis: number,
+): Account {
+  return {
+    id,
+    name: "Property",
+    category: "real_estate",
+    subType: "residence",
+    titlingType: "jtwros",
+    value: balance,
+    basis,
+    growthRate: 0,
+    rmdEnabled: false,
+    isDefaultChecking: false,
+    owners,
+  };
+}
+
+describe("applyEntitySales — linked-mortgage double-payoff regression", () => {
+  it("entity-only ownership of property + linked mortgage avoids double-payoff", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const property = makeProperty(
+      "prop",
+      [{ kind: "entity", entityId: "E1", percent: 1 }],
+      300_000,
+      200_000,
+    );
+    const accounts = [checking, property];
+    const accountBalances: Record<string, number> = {
+      "acct-cash": 0,
+      prop: 300_000,
+    };
+    const basisMap: Record<string, number> = {
+      "acct-cash": 0,
+      prop: 200_000,
+    };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(0),
+      prop: makeLedger(300_000),
+    };
+    const liabilities: Liability[] = [
+      {
+        id: "L1",
+        name: "Mortgage",
+        balance: 50_000,
+        interestRate: 0.05,
+        monthlyPayment: 0,
+        startYear: 2025,
+        startMonth: 1,
+        termMonths: 360,
+        linkedPropertyId: "prop",
+        isInterestDeductible: false,
+        extraPayments: [],
+        owners: [{ kind: "entity", entityId: "E1", percent: 1 }],
+      },
+    ];
+
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 1,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 0,
+          basis: 0,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts,
+      liabilities,
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    // Cash increases by exactly $250k (property nets 300k - 50k mortgage payoff
+    // inside sellAccountFraction; entity itself has no operating value).
+    expect(accountBalances["acct-cash"]).toBeCloseTo(250_000, 4);
+    // Single-counted: only the helper's $50k payoff shows up.
+    expect(result.totalLiabilityPaydown).toBeCloseTo(50_000, 4);
+    // Removed-liability list contains L1 exactly once.
+    const l1Count = result.removedLiabilityIds.filter((id) => id === "L1").length;
+    expect(l1Count).toBe(1);
+    expect(result.removedAccountIds).toContain("prop");
   });
 });
 
@@ -626,6 +732,80 @@ describe("applyEntitySales — liability cascade", () => {
     // Net proceeds = 500k operating - 0 costs - 120k paydown = 380k
     expect(accountBalances["acct-cash"]).toBeCloseTo(380_000, 4);
     expect(result.breakdown[0].cascadedLiabilityIds).toEqual(["lia-1"]);
+  });
+
+  it("partial sale (f=0.5) of entity owning 60% of liability pays down 0.5×0.6×balance and renormalizes owners", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const accounts = [checking];
+    const accountBalances: Record<string, number> = { "acct-cash": 0 };
+    const basisMap: Record<string, number> = { "acct-cash": 0 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(0),
+    };
+    const liabilities: Liability[] = [
+      {
+        id: "lia-3",
+        name: "Business loan",
+        balance: 200_000,
+        interestRate: 0.05,
+        monthlyPayment: 0,
+        startYear: 2025,
+        startMonth: 1,
+        termMonths: 360,
+        isInterestDeductible: false,
+        extraPayments: [],
+        owners: [
+          { kind: "family_member", familyMemberId: "B", percent: 0.4 },
+          { kind: "entity", entityId: "E1", percent: 0.6 },
+        ],
+      },
+    ];
+
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Half-sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 0.5,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 500_000,
+          basis: 500_000,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts,
+      liabilities,
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    // 0.5 × 0.6 × 200_000 = 60_000 paydown
+    expect(result.totalLiabilityPaydown).toBeCloseTo(60_000, 4);
+    expect(liabilities[0].balance).toBeCloseTo(140_000, 4);
+
+    // Owners renormalize: entity goes 0.6×(1-0.5)=0.3 → 0.3/0.7≈0.4286;
+    // family member 0.4/0.7≈0.5714.
+    expect(liabilities[0].owners).toHaveLength(2);
+    const entityRow = liabilities[0].owners.find(
+      (o) => o.kind === "entity",
+    ) as { percent: number };
+    const fmRow = liabilities[0].owners.find(
+      (o) => o.kind === "family_member",
+    ) as { percent: number };
+    expect(entityRow.percent).toBeCloseTo(0.3 / 0.7, 4);
+    expect(fmRow.percent).toBeCloseTo(0.4 / 0.7, 4);
   });
 
   it("full payoff of entity-only liability marks it for removal", () => {
