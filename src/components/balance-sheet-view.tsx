@@ -48,6 +48,11 @@ export interface AccountRow {
   titlingType?: "jtwros" | "community_property";
   /** When set, this account is a promissory note owed by the named trust. */
   noteLinkedTrustEntityId?: string | null;
+  // Promissory-note fields
+  noteInterestRate?: string | null;
+  noteTermMonths?: number | null;
+  noteStartYear?: number | null;
+  notePaymentType?: "amortizing" | "interest_only_balloon" | null;
 }
 
 export interface LiabilityRow {
@@ -180,6 +185,10 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     isDefaultChecking: a.isDefaultChecking ?? false,
     owners: a.owners,
     titlingType: a.titlingType,
+    noteInterestRate: a.noteInterestRate ?? null,
+    noteTermMonths: a.noteTermMonths ?? null,
+    noteStartYear: a.noteStartYear ?? null,
+    notePaymentType: a.notePaymentType ?? null,
   };
 }
 

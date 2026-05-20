@@ -200,6 +200,10 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       owners: a.owners,
       titlingType: a.titlingType,
       noteLinkedTrustEntityId: a.noteLinkedTrustEntityId ?? null,
+      noteInterestRate: a.noteInterestRate != null ? String(a.noteInterestRate) : null,
+      noteTermMonths: a.noteTermMonths ?? null,
+      noteStartYear: a.noteStartYear ?? null,
+      notePaymentType: a.notePaymentType ?? null,
     };
   });
 
