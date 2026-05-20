@@ -166,6 +166,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "termMonths": 360,
     },
   ],
+  "notesReceivable": [],
   "planSettings": {
     "estateAdminExpenses": 0,
     "flatFederalRate": 0.22,

@@ -1214,6 +1214,10 @@ export const loadClientDataWithContext = cache(
       giftEvents,
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
+      // Notes receivable wiring lives in Task 2.7 — the engine consumes
+      // `data.notesReceivable` already, but the DB → engine mapper is not
+      // yet plumbed. Empty array preserves the old projection behavior.
+      notesReceivable: [],
     };
 
     return { clientData, resolutionContext: resolutionCtx };

@@ -98,7 +98,11 @@ import {
   type CharityCarryforward,
 } from "./types";
 import { computeTaxForYear } from "./year-tax";
-import { noteIncomeForYear, noteBalanceAtYear } from "./notes/note-income";
+import {
+  buildNoteReceivableSchedules,
+  computeNotesReceivable,
+  type NoteScheduleMap,
+} from "./notes-receivable";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -595,6 +599,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     return { ...l, balance: boyBalance };
   });
 
+  // Notes receivable — installment-sale promissory notes held by the household
+  // (or, for trust-side bookkeeping, with `linkedTrustEntityId` set so the
+  // payor's cash account is drained mirror-image of the household inflow).
+  // Schedules are built once at projection start (mirrors liabilitySchedules)
+  // and consulted by the per-year notes-receivable compute step.
+  const notesReceivable = data.notesReceivable ?? [];
+  const noteSchedules: NoteScheduleMap = buildNoteReceivableSchedules(notesReceivable);
+
   const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
   const spouseBirthYear = client.spouseDob
     ? parseInt(client.spouseDob.slice(0, 4), 10)
@@ -1041,10 +1053,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const acct of workingAccounts) {
       const currentBalance = accountBalances[acct.id] ?? 0;
       if (scheduleOverriddenAccounts.has(acct.id)) continue;
-      // Promissory notes don't grow via market returns — their balance is
-      // amortization-determined and is set explicitly in the note-income
-      // emission block below.
-      if (acct.subType === "promissory_note") continue;
       const overriddenRate = options?.returnsOverride?.(year, acct.id);
       const effectiveGrowthRate =
         overriddenRate != null && Number.isFinite(overriddenRate)
@@ -1404,107 +1412,145 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail.bySource[inc.id] = { type: tt, amount };
     }
 
-    // ── Promissory-note per-year emission (household side) ─────────────────
-    // For each promissory_note account, emit interest as household ordinary
-    // income and credit principal to the holder's default checking. The note's
-    // own balance steps down to the year-end outstanding principal via
-    // accountBalances. Trust-side outflow (when the note is linked to a trust)
-    // is handled inline below (Task 11).
+    // ── Notes-receivable per-year emission ─────────────────────────────────
+    // For each note receivable, run the installment-sale split (IRC §453):
+    //   - interest portion → ordinary income (per owner share)
+    //   - principal portion → LTCG share + basis-recovery share (per owner share)
+    //   - total cash → credit owner's checking (household for family_member
+    //     owners; entity checking for entity owners)
     //
-    // Only family-owned (household-held) notes flow into household 1040 here.
-    // Entity-held notes are handled by their owner-entity's tax pass.
+    // Trust-side outflow: when `linkedTrustEntityId` is set on the note, the
+    // trust is the debtor — drain its cash accounts pro-rata by current
+    // balance (effective: accountBalances + pending cashDelta since this
+    // block runs before the step-11 flush). If the trust's cash can't cover
+    // the payment, emit a `trust_note_cash_shortfall` warning. The negative
+    // checking that may result will be picked up by the entity-overdraft
+    // gap-fill in step 12c.
+    const notesYearResult = computeNotesReceivable(notesReceivable, noteSchedules, year);
     const noteShortfallWarnings: TrustWarning[] = [];
-    for (const noteAcct of workingAccounts) {
-      if (noteAcct.subType !== "promissory_note") continue;
-      const row = noteIncomeForYear(noteAcct, year);
-      if (row != null) {
-        const familyOwned = noteAcct.owners.some((o) => o.kind === "family_member");
-        if (familyOwned) {
-          // 1. Interest → household ordinary income.
-          if (row.interest > 0) {
-            taxDetail.ordinaryIncome += row.interest;
-            taxDetail.bySource[`${noteAcct.id}:interest`] = {
+    const notesReceivableByNote: Record<string, {
+      interest: number;
+      principalLTCG: number;
+      principalBasis: number;
+      totalCashIn: number;
+      endingBalance: number;
+    }> = {};
+
+    for (const note of notesReceivable) {
+      const yr = notesYearResult.byNote.get(note.id);
+      // Always record an ending-balance row so the balance-sheet UI can show
+      // pre-start and post-payoff years (both resolve to schedule boundary
+      // values inside computeNotesReceivable via the underlying schedule).
+      const schedule = noteSchedules.get(note.id) ?? [];
+      const lastRow = schedule[schedule.length - 1];
+      let endingBalance = 0;
+      if (schedule.length > 0) {
+        if (year < schedule[0].year) endingBalance = schedule[0].beginningBalance;
+        else if (year >= lastRow.year) endingBalance = lastRow.endingBalance;
+        else endingBalance = schedule.find((r) => r.year === year)?.endingBalance ?? 0;
+      }
+      notesReceivableByNote[note.id] = {
+        interest: yr?.interest ?? 0,
+        principalLTCG: yr?.principalLTCG ?? 0,
+        principalBasis: yr?.principalBasis ?? 0,
+        totalCashIn: yr?.totalCashIn ?? 0,
+        endingBalance: yr?.endingBalance ?? endingBalance,
+      };
+
+      if (yr == null || yr.totalCashIn === 0) continue;
+
+      // 1. Per-owner split: family_member owners route to household checking +
+      //    household 1040 tax detail; entity owners route to the entity's
+      //    checking (entity-side tax treatment is the owning entity's
+      //    responsibility — out of scope here for parity with the legacy
+      //    promissory-note path).
+      for (const owner of note.owners) {
+        if (owner.percent <= 0) continue;
+        const cashShare = yr.totalCashIn * owner.percent;
+        const interestShare = yr.interest * owner.percent;
+        const ltcgShare = yr.principalLTCG * owner.percent;
+
+        if (owner.kind === "family_member") {
+          if (interestShare > 0) {
+            taxDetail.ordinaryIncome += interestShare;
+            const key = `note:${note.id}:interest`;
+            taxDetail.bySource[key] = {
               type: "ordinary_income",
-              amount: row.interest,
+              amount: (taxDetail.bySource[key]?.amount ?? 0) + interestShare,
             };
           }
-          // 2. Principal + interest → credit holder's default checking via
-          //    the standard creditCash path (flushed onto accountBalances and
-          //    ledgers in step 11). Combined payment lands as cash; only the
-          //    interest portion is also taxable above.
-          const payment = row.interest + row.principal;
-          if (payment > 0) {
-            creditCash(defaultChecking?.id, payment, {
+          if (ltcgShare > 0) {
+            taxDetail.capitalGains += ltcgShare;
+            const key = `note:${note.id}:ltcg`;
+            taxDetail.bySource[key] = {
+              type: "capital_gains",
+              amount: (taxDetail.bySource[key]?.amount ?? 0) + ltcgShare,
+            };
+          }
+          if (cashShare > 0) {
+            creditCash(defaultChecking?.id, cashShare, {
               category: "income",
-              label: `Note payment from ${noteAcct.name}`,
-              sourceId: noteAcct.id,
+              label: `Note payment from ${note.name}`,
+              sourceId: note.id,
+            });
+          }
+        } else if (owner.kind === "entity") {
+          // Route to entity checking. Entity-level tax is not modeled here
+          // (legacy parity — promissory_note path only ran for family-owned).
+          const entityCheckingId = entityCheckingByEntityId[owner.entityId];
+          if (cashShare > 0 && entityCheckingId) {
+            creditCash(entityCheckingId, cashShare, {
+              category: "income",
+              label: `Note payment from ${note.name}`,
+              sourceId: note.id,
             });
           }
         }
-        // 2b. Trust-side outflow when the note is linked to a trust entity.
-        //     The trust is the debtor — drain its cash accounts pro-rata by
-        //     current balance (effective: accountBalances + pending cashDelta
-        //     since this block runs before the step-11 flush). If the trust's
-        //     cash can't cover the payment, emit a `trust_note_cash_shortfall`
-        //     warning. The negative checking that may result will be picked up
-        //     by the entity-overdraft gap-fill in step 12c.
-        if (noteAcct.noteLinkedTrustEntityId != null) {
-          const trustId = noteAcct.noteLinkedTrustEntityId;
-          const trust = entityMap[trustId];
-          const payment = row.interest + row.principal;
-          if (trust && payment > 0) {
-            const trustCashAccounts = workingAccounts.filter(
-              (acc) =>
-                acc.category === "cash" &&
-                controllingEntity(acc) === trustId,
-            );
-            const effectiveBalanceOf = (id: string) =>
-              (accountBalances[id] ?? 0) + (cashDelta[id] ?? 0);
-            const cashAvailable = trustCashAccounts.reduce(
-              (s, c) => s + Math.max(0, effectiveBalanceOf(c.id)),
-              0,
-            );
-            const paid = Math.min(cashAvailable, payment);
-            if (paid > 0 && cashAvailable > 0) {
-              const ratio = paid / cashAvailable;
-              for (const c of trustCashAccounts) {
-                const bal = Math.max(0, effectiveBalanceOf(c.id));
-                if (bal <= 0) continue;
-                creditCash(c.id, -bal * ratio, {
-                  category: "expense",
-                  label: `Note payment to ${noteAcct.name}`,
-                  sourceId: noteAcct.id,
-                });
-              }
-            }
-            if (paid < payment) {
-              noteShortfallWarnings.push({
-                code: "trust_note_cash_shortfall",
-                entityId: trustId,
-                year,
-                shortfall: payment - paid,
+      }
+
+      // 2. Trust-side outflow when the note is linked to a trust entity.
+      //    The trust is the debtor — drain its cash accounts pro-rata by
+      //    current balance. If the trust's cash can't cover the payment,
+      //    emit a `trust_note_cash_shortfall` warning. The negative checking
+      //    that may result will be picked up by the entity-overdraft gap-fill
+      //    in step 12c.
+      if (note.linkedTrustEntityId != null) {
+        const trustId = note.linkedTrustEntityId;
+        const trust = entityMap[trustId];
+        const payment = yr.totalCashIn;
+        if (trust && payment > 0) {
+          const trustCashAccounts = workingAccounts.filter(
+            (acc) =>
+              acc.category === "cash" &&
+              controllingEntity(acc) === trustId,
+          );
+          const effectiveBalanceOf = (id: string) =>
+            (accountBalances[id] ?? 0) + (cashDelta[id] ?? 0);
+          const cashAvailable = trustCashAccounts.reduce(
+            (s, c) => s + Math.max(0, effectiveBalanceOf(c.id)),
+            0,
+          );
+          const paid = Math.min(cashAvailable, payment);
+          if (paid > 0 && cashAvailable > 0) {
+            const ratio = paid / cashAvailable;
+            for (const c of trustCashAccounts) {
+              const bal = Math.max(0, effectiveBalanceOf(c.id));
+              if (bal <= 0) continue;
+              creditCash(c.id, -bal * ratio, {
+                category: "expense",
+                label: `Note payment to ${note.name}`,
+                sourceId: note.id,
               });
             }
           }
-        }
-      }
-      // 3. Step the note's balance down to the year-end outstanding principal.
-      //    Done regardless of ownership — the note's own ledger must reflect
-      //    the amortized balance. Pre-start years and post-payoff years return
-      //    the appropriate boundary value from noteBalanceAtYear.
-      const newBalance = noteBalanceAtYear(noteAcct, year);
-      const prevBalance = accountBalances[noteAcct.id] ?? 0;
-      accountBalances[noteAcct.id] = newBalance;
-      if (accountLedgers[noteAcct.id]) {
-        const delta = newBalance - prevBalance;
-        accountLedgers[noteAcct.id].endingValue = newBalance;
-        if (delta < 0) {
-          accountLedgers[noteAcct.id].distributions += -delta;
-          accountLedgers[noteAcct.id].entries.push({
-            category: "withdrawal",
-            label: "Note principal repayment",
-            amount: delta,
-          });
+          if (paid < payment) {
+            noteShortfallWarnings.push({
+              code: "trust_note_cash_shortfall",
+              entityId: trustId,
+              year,
+              shortfall: payment - paid,
+            });
+          }
         }
       }
     }
@@ -3720,6 +3766,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountLedgers,
       accountBasisBoY,
       liabilityBalancesBoY,
+      ...(Object.keys(notesReceivableByNote).length > 0
+        ? { notesReceivableByNote }
+        : {}),
       hypotheticalEstateTax,
       entityCashFlow: new Map(),
       ...(Object.keys(rothConversionResult.byConversion).length > 0
