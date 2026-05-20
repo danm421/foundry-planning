@@ -1,9 +1,32 @@
 "use client";
 
-import { forwardRef, useImperativeHandle } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
-import type { ClientMilestones } from "@/lib/milestones";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { resolveMilestone } from "@/lib/milestones";
+import MilestoneYearPicker from "../milestone-year-picker";
+import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
+import {
+  fieldLabelClassName,
+  inputBaseClassName,
+  inputClassName,
+  selectClassName,
+} from "./input-styles";
+import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 export interface NoteReceivableFormInitial {
   id: string;
@@ -19,9 +42,11 @@ export interface NoteReceivableFormInitial {
   startYear: number;
   startMonth: number;
   termMonths: number;
+  startYearRef?: string | null;
   linkedTrustEntityId?: string | null;
   owners: AccountOwner[];
   extraPayments: Array<{
+    id?: string;
     year: number;
     type: "per_payment" | "lump_sum";
     amount: number;
@@ -51,25 +76,657 @@ export interface NoteReceivableFormAutoSaveHandle {
   saveAsync: () => Promise<SaveResult & { recordId?: string }>;
 }
 
+type TabId = "details" | "amortization" | "extra-payments";
+
 const AddNoteReceivableForm = forwardRef<
   NoteReceivableFormAutoSaveHandle,
   AddNoteReceivableFormProps
->(function AddNoteReceivableForm(_props, ref) {
+>(function AddNoteReceivableForm(
+  {
+    clientId,
+    entities = [],
+    familyMembers = [],
+    milestones,
+    mode = "create",
+    initial,
+    onSuccess,
+    onSubmitStateChange,
+    onAutoSaveStateChange,
+    onAutoSaved,
+  },
+  ref,
+) {
+  const router = useRouter();
+  const isEdit = mode === "edit" && !!initial;
+  const currentYear = new Date().getFullYear();
+
+  const [activeTab, setActiveTab] = useState<TabId>("details");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onSubmitStateChange?.({ canSubmit: !loading, loading });
+  }, [loading, onSubmitStateChange]);
+
+  // ── Form state ───────────────────────────────────────────────────────────
+  const [name, setName] = useState(initial?.name ?? "");
+  const [nameInvalid, setNameInvalid] = useState(false);
+  const [faceValue, setFaceValue] = useState<string>(
+    initial?.faceValue != null ? String(initial.faceValue) : "0",
+  );
+  const [basis, setBasis] = useState<string>(
+    initial?.basis != null ? String(initial.basis) : "0",
+  );
+  // Track whether the user has manually edited basis. When false, basis
+  // mirrors faceValue (the common case for non-installment notes).
+  const basisTouchedRef = useRef<boolean>(
+    !!initial && Number(initial.basis) !== Number(initial.faceValue),
+  );
+
+  const [asOfBalance, setAsOfBalance] = useState<string>(
+    initial?.asOfBalance != null ? String(initial.asOfBalance) : "",
+  );
+  const [balanceAsOfMonth, setBalanceAsOfMonth] = useState<number>(
+    initial?.balanceAsOfMonth ?? new Date().getMonth() + 1,
+  );
+  const [balanceAsOfYear, setBalanceAsOfYear] = useState<number>(
+    initial?.balanceAsOfYear ?? currentYear,
+  );
+
+  const initialInterestPct = initial
+    ? Math.round(Number(initial.interestRate) * 10000) / 100
+    : 0;
+  const [interestRatePct, setInterestRatePct] = useState<string>(
+    String(initialInterestPct),
+  );
+
+  const [paymentType, setPaymentType] = useState<
+    "amortizing" | "interest_only_balloon"
+  >(initial?.paymentType ?? "amortizing");
+  const [monthlyPayment, setMonthlyPayment] = useState<string>(
+    initial?.monthlyPayment != null ? String(initial.monthlyPayment) : "",
+  );
+
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (initial?.startYearRef as YearRef) ??
+      (!isEdit ? ("plan_start" as YearRef) : null),
+  );
+  const [startYear, setStartYear] = useState<number>(
+    initial?.startYear ??
+      (startYearRef && milestones
+        ? (resolveMilestone(startYearRef, milestones, "start") ?? currentYear)
+        : currentYear),
+  );
+  const [startMonth, setStartMonth] = useState<number>(initial?.startMonth ?? 1);
+  const [termMonths, setTermMonths] = useState<string>(
+    initial?.termMonths != null ? String(initial.termMonths) : "120",
+  );
+
+  const [linkedTrustEntityId, setLinkedTrustEntityId] = useState<string>(
+    initial?.linkedTrustEntityId ?? "",
+  );
+
+  const clientFm = familyMembers.find((fm) => fm.role === "client");
+  const defaultOwners: AccountOwner[] = clientFm
+    ? [{ kind: "family_member", familyMemberId: clientFm.id, percent: 1 }]
+    : [];
+  const [owners, setOwners] = useState<AccountOwner[]>(
+    initial?.owners && initial.owners.length > 0 ? initial.owners : defaultOwners,
+  );
+
+  // setExtraPayments is consumed by the Extra Payments tab (Task 4.5).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [extraPayments, setExtraPayments] = useState(
+    initial?.extraPayments ?? [],
+  );
+
+  const [effectiveNoteId, setEffectiveNoteId] = useState<string | null>(
+    initial?.id ?? null,
+  );
+
+  // Auto-focus name input on create
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (isEdit) return;
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, [isEdit]);
+
+  // Sync basis ← faceValue while user hasn't touched basis
+  useEffect(() => {
+    if (basisTouchedRef.current) return;
+    setBasis(faceValue);
+  }, [faceValue]);
+
+  function handleBasisChange(next: string) {
+    basisTouchedRef.current = true;
+    setBasis(next);
+  }
+
+  // ── Validation ────────────────────────────────────────────────────────────
+  const faceValueNum = parseFloat(faceValue) || 0;
+  const basisNum = parseFloat(basis) || 0;
+  const termMonthsNum = parseInt(termMonths) || 0;
+  const ownerSum = owners.reduce((acc, o) => acc + o.percent, 0);
+  const ownersValid = Math.abs(ownerSum - 1) < 0.0001;
+
+  const canSave =
+    name.trim().length > 0 &&
+    faceValueNum > 0 &&
+    basisNum >= 0 &&
+    termMonthsNum > 0 &&
+    ownersValid;
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+  function buildBody() {
+    const interestRate = (parseFloat(interestRatePct) || 0) / 100;
+    const mp = parseFloat(monthlyPayment);
+    return {
+      name: name.trim(),
+      faceValue: faceValueNum,
+      basis: basisNum,
+      asOfBalance: asOfBalance === "" ? null : parseFloat(asOfBalance),
+      balanceAsOfMonth: asOfBalance === "" ? null : balanceAsOfMonth,
+      balanceAsOfYear: asOfBalance === "" ? null : balanceAsOfYear,
+      interestRate,
+      paymentType,
+      monthlyPayment: isFinite(mp) && monthlyPayment !== "" ? mp : null,
+      startYear,
+      startMonth,
+      startYearRef,
+      termMonths: termMonthsNum,
+      linkedTrustEntityId: linkedTrustEntityId || null,
+      owners: owners.map((o) => ({
+        familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
+        entityId: o.kind === "entity" ? o.entityId : null,
+        externalBeneficiaryId:
+          o.kind === "external_beneficiary"
+            ? o.externalBeneficiaryId
+            : null,
+        percent: o.percent,
+      })),
+      extraPayments: extraPayments.map((ep) => ({
+        year: ep.year,
+        type: ep.type,
+        amount: ep.amount,
+      })),
+    };
+  }
+
+  async function saveExtraPayments(noteId: string) {
+    const res = await fetch(
+      `/api/clients/${clientId}/notes-receivable/${noteId}/extra-payments`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          extraPayments.map((ep) => ({
+            year: ep.year,
+            type: ep.type,
+            amount: ep.amount,
+          })),
+        ),
+      },
+    );
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(json.error ?? "Failed to save extra payments");
+    }
+  }
+
+  async function saveCore(): Promise<SaveResult & { recordId?: string }> {
+    if (!canSave) {
+      return { ok: false, error: "Required fields missing or invalid." };
+    }
+    const body = buildBody();
+    try {
+      if (effectiveNoteId) {
+        // PATCH note + (separately) PATCH extra payments
+        const res = await fetch(
+          `/api/clients/${clientId}/notes-receivable/${effectiveNoteId}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          },
+        );
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          return { ok: false, error: json.error ?? "Failed to save note" };
+        }
+        await saveExtraPayments(effectiveNoteId);
+        lastSavedSnapshotRef.current = JSON.stringify(body);
+        return { ok: true, recordId: effectiveNoteId };
+      }
+      // POST creates note + owners + extra payments in one transaction
+      const res = await fetch(`/api/clients/${clientId}/notes-receivable`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: json.error ?? "Failed to create note" };
+      }
+      const json = (await res.json().catch(() => null)) as { id?: string } | null;
+      const recordId = json?.id;
+      if (recordId) setEffectiveNoteId(recordId);
+      lastSavedSnapshotRef.current = JSON.stringify(body);
+      return { ok: true, recordId };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      };
+    }
+  }
+
+  const lastSavedSnapshotRef = useRef<string>(JSON.stringify(buildBody()));
+  const isDirty = JSON.stringify(buildBody()) !== lastSavedSnapshotRef.current;
+
+  useEffect(() => {
+    onAutoSaveStateChange?.({ isDirty, canSave });
+  }, [isDirty, canSave, onAutoSaveStateChange]);
+
   useImperativeHandle(
     ref,
     () => ({
-      saveAsync: async () => ({
-        ok: false,
-        error: "AddNoteReceivableForm not implemented",
-      }),
+      saveAsync: async () => {
+        if (!canSave) {
+          setNameInvalid(name.trim().length === 0);
+          return { ok: false, error: "Required fields missing or invalid." };
+        }
+        setLoading(true);
+        const result = await saveCore();
+        setLoading(false);
+        if (result.ok && result.recordId && !effectiveNoteId) {
+          onAutoSaved?.(result.recordId);
+        }
+        return result;
+      },
     }),
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      canSave,
+      name,
+      faceValue,
+      basis,
+      asOfBalance,
+      balanceAsOfMonth,
+      balanceAsOfYear,
+      interestRatePct,
+      paymentType,
+      monthlyPayment,
+      startYear,
+      startMonth,
+      startYearRef,
+      termMonths,
+      linkedTrustEntityId,
+      owners,
+      extraPayments,
+      effectiveNoteId,
+    ],
   );
 
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (name.trim().length === 0) {
+      setNameInvalid(true);
+      return;
+    }
+    if (!canSave) {
+      setError("Required fields missing or invalid.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const result = await saveCore();
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+    onSuccess?.();
+  }
+
+  // ── Tab buttons ──────────────────────────────────────────────────────────
+  function tabButtonClass(id: TabId) {
+    return activeTab === id
+      ? "border-b-2 border-accent px-3 py-1.5 text-sm text-white"
+      : "border-b-2 border-transparent px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200";
+  }
+
+  // ── Trust filter for linked-trust dropdown ───────────────────────────────
+  // We don't have entityType on the lite entity shape passed in; show all
+  // for now. Future polish: filter to trusts when the prop carries it.
+  const trustEntities = entities;
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="rounded-md border border-dashed border-gray-600 p-6 text-sm text-gray-400">
-      Note Receivable form — skeleton (Task 4.1). Details, Amortization, and
-      Extra Payments tabs are implemented in Tasks 4.3–4.5.
+    <div className="space-y-4">
+      <nav className="flex gap-1 border-b border-gray-700">
+        <button
+          type="button"
+          className={tabButtonClass("details")}
+          onClick={() => setActiveTab("details")}
+        >
+          Details
+        </button>
+        <button
+          type="button"
+          className={tabButtonClass("amortization")}
+          onClick={() => setActiveTab("amortization")}
+        >
+          Amortization
+        </button>
+        <button
+          type="button"
+          className={tabButtonClass("extra-payments")}
+          onClick={() => setActiveTab("extra-payments")}
+        >
+          Extra Payments
+        </button>
+      </nav>
+
+      {error && (
+        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">
+          {error}
+        </p>
+      )}
+
+      {/* Single <form> wraps every tab so the dialog's primaryAction.form
+          submit hook can fire from any tab. Tab panels are conditionally
+          shown so React's tab state persists across switches. */}
+      <form
+        id="add-note-receivable-form"
+        onSubmit={handleSubmit}
+        className="space-y-4"
+      >
+        {activeTab === "details" && (
+          <div className="space-y-4">
+            {/* Name */}
+            <div>
+              <label htmlFor="nr-name" className={fieldLabelClassName}>
+                Name
+              </label>
+              <input
+                id="nr-name"
+                ref={nameInputRef}
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (nameInvalid && e.target.value.trim().length > 0) {
+                    setNameInvalid(false);
+                  }
+                }}
+                className={
+                  nameInvalid
+                    ? `${inputBaseClassName} border-red-500`
+                    : inputClassName
+                }
+                placeholder="e.g. Note from Smith Family Trust"
+              />
+            </div>
+
+            {/* Face value + Cost basis */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="nr-face" className={fieldLabelClassName}>
+                  Face value
+                </label>
+                <CurrencyInput
+                  id="nr-face"
+                  value={faceValue}
+                  onChange={setFaceValue}
+                  className={inputClassName}
+                />
+              </div>
+              <div>
+                <label htmlFor="nr-basis" className={fieldLabelClassName}>
+                  Cost basis
+                </label>
+                <CurrencyInput
+                  id="nr-basis"
+                  value={basis}
+                  onChange={handleBasisChange}
+                  className={inputClassName}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Lower than face value only if this is an installment sale of
+                  an appreciated asset.
+                </p>
+              </div>
+            </div>
+
+            {/* Current balance + as-of date */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="nr-balance" className={fieldLabelClassName}>
+                  Current balance
+                </label>
+                <CurrencyInput
+                  id="nr-balance"
+                  value={asOfBalance}
+                  onChange={setAsOfBalance}
+                  className={inputClassName}
+                  placeholder="(optional)"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Leave blank if the note starts on the start date below.
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="nr-balance-month"
+                  className={fieldLabelClassName}
+                >
+                  Balance as-of month
+                </label>
+                <select
+                  id="nr-balance-month"
+                  value={balanceAsOfMonth}
+                  onChange={(e) => setBalanceAsOfMonth(Number(e.target.value))}
+                  disabled={asOfBalance === ""}
+                  className={selectClassName}
+                >
+                  {MONTH_NAMES.map((m, i) => (
+                    <option key={m} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
+                  htmlFor="nr-balance-year"
+                  className={fieldLabelClassName}
+                >
+                  Balance as-of year
+                </label>
+                <input
+                  id="nr-balance-year"
+                  type="number"
+                  value={balanceAsOfYear}
+                  onChange={(e) => setBalanceAsOfYear(Number(e.target.value))}
+                  disabled={asOfBalance === ""}
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+
+            {/* Interest rate + Payment type + Monthly payment */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="nr-rate" className={fieldLabelClassName}>
+                  Interest rate
+                </label>
+                <PercentInput
+                  id="nr-rate"
+                  value={interestRatePct}
+                  onChange={setInterestRatePct}
+                  className={inputClassName}
+                />
+              </div>
+              <div>
+                <label htmlFor="nr-paytype" className={fieldLabelClassName}>
+                  Payment type
+                </label>
+                <select
+                  id="nr-paytype"
+                  value={paymentType}
+                  onChange={(e) =>
+                    setPaymentType(
+                      e.target.value as "amortizing" | "interest_only_balloon",
+                    )
+                  }
+                  className={selectClassName}
+                >
+                  <option value="amortizing">Amortizing</option>
+                  <option value="interest_only_balloon">
+                    Interest-only + balloon
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="nr-mpay" className={fieldLabelClassName}>
+                  Monthly payment
+                </label>
+                <CurrencyInput
+                  id="nr-mpay"
+                  value={monthlyPayment}
+                  onChange={setMonthlyPayment}
+                  className={inputClassName}
+                  placeholder="(auto)"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Leave blank to compute from face value, rate, and term.
+                </p>
+              </div>
+            </div>
+
+            {/* Start date + Term */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className={fieldLabelClassName}>Start year</label>
+                {milestones ? (
+                  <MilestoneYearPicker
+                    name="startYear"
+                    id="nr-start-year"
+                    value={startYear}
+                    yearRef={startYearRef}
+                    milestones={milestones}
+                    showSSRefs={false}
+                    onChange={(yr, ref) => {
+                      setStartYear(yr);
+                      setStartYearRef(ref);
+                    }}
+                    label=""
+                  />
+                ) : (
+                  <input
+                    id="nr-start-year"
+                    type="number"
+                    value={startYear}
+                    onChange={(e) => {
+                      setStartYear(Number(e.target.value));
+                      setStartYearRef(null);
+                    }}
+                    className={inputClassName}
+                  />
+                )}
+              </div>
+              <div>
+                <label htmlFor="nr-start-month" className={fieldLabelClassName}>
+                  Start month
+                </label>
+                <select
+                  id="nr-start-month"
+                  value={startMonth}
+                  onChange={(e) => setStartMonth(Number(e.target.value))}
+                  className={selectClassName}
+                >
+                  {MONTH_NAMES.map((m, i) => (
+                    <option key={m} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="nr-term" className={fieldLabelClassName}>
+                  Term (months)
+                </label>
+                <input
+                  id="nr-term"
+                  type="number"
+                  min={1}
+                  value={termMonths}
+                  onChange={(e) => setTermMonths(e.target.value)}
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+
+            {/* Linked trust */}
+            {trustEntities.length > 0 && (
+              <div>
+                <label htmlFor="nr-trust" className={fieldLabelClassName}>
+                  Linked trust (optional)
+                </label>
+                <select
+                  id="nr-trust"
+                  value={linkedTrustEntityId}
+                  onChange={(e) => setLinkedTrustEntityId(e.target.value)}
+                  className={selectClassName}
+                >
+                  <option value="">— None —</option>
+                  {trustEntities.map((ent) => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  Used by sale-to-IDGT scenarios to associate the note with the
+                  buying trust.
+                </p>
+              </div>
+            )}
+
+            {/* Ownership */}
+            <div>
+              <OwnershipEditor
+                familyMembers={familyMembers}
+                entities={entities}
+                value={owners}
+                onChange={setOwners}
+                titlingType="jtwros"
+                onTitlingTypeChange={() => {}}
+                label="Ownership"
+              />
+              {!ownersValid && (
+                <p className="mt-1 text-xs text-red-400">
+                  Owner percentages must sum to 100%.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "amortization" && (
+          <div className="rounded border border-gray-700 p-4 text-sm text-gray-400">
+            Amortization preview lives here (Task 4.4).
+          </div>
+        )}
+
+        {activeTab === "extra-payments" && (
+          <div className="rounded border border-gray-700 p-4 text-sm text-gray-400">
+            Extra Payments editor lives here (Task 4.5).
+          </div>
+        )}
+      </form>
     </div>
   );
 });
