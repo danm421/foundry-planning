@@ -496,7 +496,7 @@ describe("asset-transaction sale routing for trust-owned accounts", () => {
     includeInPortfolio: true,
     isGrantor: false,
     entityType: "trust",
-    trustSubType: "slat",
+    trustSubType: "irrevocable",
     isIrrevocable: true,
     grantor: "client",
     distributionMode: null,

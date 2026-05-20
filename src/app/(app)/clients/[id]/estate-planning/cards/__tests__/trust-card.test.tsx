@@ -30,7 +30,7 @@ function makeTrustCardData(overrides: Partial<TrustCardData> = {}): TrustCardDat
   return {
     entityId: "e1",
     name: "Tom's SLAT",
-    subType: "slat",
+    subType: "irrevocable",
     isIrrevocable: true,
     grantorRole: "client",
     trusteeName: "Sarah Smith",
@@ -49,7 +49,7 @@ describe("TrustCard", () => {
   it("renders collapsed with name, sub-type pill, and asset count", () => {
     render(<TrustCard data={data} />);
     expect(screen.getByText("Tom's SLAT")).toBeInTheDocument();
-    expect(screen.getAllByText(/slat/i)).toHaveLength(2); // name and pill
+    expect(screen.getByText(/irrevocable/i)).toBeInTheDocument();
     expect(screen.getByText(/1 asset/i)).toBeInTheDocument();
   });
 

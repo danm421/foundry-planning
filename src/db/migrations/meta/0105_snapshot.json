@@ -1,6 +1,6 @@
 {
-  "id": "600571c5-0b0a-41bd-b52b-68c53ad5eb42",
-  "prevId": "c9e2bde4-1171-465a-8707-7ca9bf9db953",
+  "id": "5f5d6e6b-e510-4e82-99ae-39bdc6e70948",
+  "prevId": "ddb06eae-d2e5-43a1-bc22-8797242c075c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -121,6 +121,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "external_beneficiary_id": {
+          "name": "external_beneficiary_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "percent": {
           "name": "percent",
           "type": "numeric(6, 4)",
@@ -182,6 +188,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "account_owners_external_beneficiary_id_external_beneficiaries_id_fk": {
+          "name": "account_owners_external_beneficiary_id_external_beneficiaries_id_fk",
+          "tableFrom": "account_owners",
+          "tableTo": "external_beneficiaries",
+          "columnsFrom": [
+            "external_beneficiary_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -192,7 +211,8 @@
           "columns": [
             "account_id",
             "family_member_id",
-            "entity_id"
+            "entity_id",
+            "external_beneficiary_id"
           ]
         }
       },
@@ -200,7 +220,7 @@
       "checkConstraints": {
         "account_owners_one_owner": {
           "name": "account_owners_one_owner",
-          "value": "(\"account_owners\".\"family_member_id\" IS NOT NULL)::int + (\"account_owners\".\"entity_id\" IS NOT NULL)::int = 1"
+          "value": "(\"account_owners\".\"family_member_id\" IS NOT NULL)::int\n        + (\"account_owners\".\"entity_id\" IS NOT NULL)::int\n        + (\"account_owners\".\"external_beneficiary_id\" IS NOT NULL)::int = 1"
         }
       },
       "isRLSEnabled": false
@@ -381,6 +401,14 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'custom'"
+        },
+        "titling_type": {
+          "name": "titling_type",
+          "type": "titling_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'jtwros'"
         },
         "source": {
           "name": "source",
@@ -5246,6 +5274,13 @@
           "notNull": true,
           "default": "'0.9'"
         },
+        "cover_estate_taxes": {
+          "name": "cover_estate_taxes",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -9463,6 +9498,14 @@
         "bracket"
       ]
     },
+    "public.titling_type": {
+      "name": "titling_type",
+      "schema": "public",
+      "values": [
+        "jtwros",
+        "community_property"
+      ]
+    },
     "public.transfer_mode": {
       "name": "transfer_mode",
       "schema": "public",
@@ -9496,14 +9539,7 @@
         "revocable",
         "irrevocable",
         "ilit",
-        "slat",
-        "crt",
-        "grat",
-        "qprt",
-        "clat",
-        "clut",
-        "qtip",
-        "bypass"
+        "clut"
       ]
     },
     "public.trust_term_type": {

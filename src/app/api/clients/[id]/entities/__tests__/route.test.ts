@@ -149,7 +149,7 @@ describe("POST /api/clients/[id]/entities — distribution policy", () => {
       makePostReq({
         name: "SLAT for Spouse",
         entityType: "trust",
-        trustSubType: "slat",
+        trustSubType: "irrevocable",
         isIrrevocable: true,
         distributionMode: "fixed",
         distributionAmount: 50000,
@@ -497,7 +497,7 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
       makePostReq({
         name: "SLAT misuse",
         entityType: "trust",
-        trustSubType: "slat",
+        trustSubType: "irrevocable",
         isIrrevocable: true,
         grantor: "client",
         splitInterest: {

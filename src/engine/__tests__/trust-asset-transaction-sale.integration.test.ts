@@ -180,7 +180,7 @@ describe("Trust-owned business sale", () => {
       includeInPortfolio: true,
       isGrantor: false,
       entityType: "trust",
-      trustSubType: "slat",
+      trustSubType: "irrevocable",
       isIrrevocable: true,
       grantor: "client",
       distributionMode: null, // accumulate so the gain hits the trust directly

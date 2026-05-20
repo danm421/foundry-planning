@@ -114,7 +114,7 @@ function cooperSampleScenario(): ClientData {
         id: SLAT,
         name: "Cooper SLAT",
         entityType: "trust",
-        trustSubType: "slat",
+        trustSubType: "irrevocable",
         isIrrevocable: true,
         isGrantor: true,
         includeInPortfolio: false,

@@ -255,7 +255,7 @@ describe("deriveTrustCardData", () => {
           id: "e1",
           name: "Tom's SLAT",
           entityType: "trust",
-          trustSubType: "slat",
+          trustSubType: "irrevocable",
           isIrrevocable: true,
           exemptionConsumed: 2_400_000,
           grantor: "client",
@@ -272,7 +272,7 @@ describe("deriveTrustCardData", () => {
     const cards = deriveTrustCardData(tree, 2026);
     expect(cards).toHaveLength(1);
     expect(cards[0].name).toBe("Tom's SLAT");
-    expect(cards[0].subType).toBe("slat");
+    expect(cards[0].subType).toBe("irrevocable");
     expect(cards[0].rows).toHaveLength(1);
     expect(cards[0].total).toBe(2_400_000);
     expect(cards[0].exemptionConsumed).toBe(2_400_000);

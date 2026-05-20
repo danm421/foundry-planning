@@ -116,7 +116,7 @@ const trustEntity: Entity = {
   owner: null,
   grantor: "client",
   beneficiaries: null,
-  trustSubType: "bypass",
+  trustSubType: "irrevocable",
   isIrrevocable: true,
   trustee: "Bank Corp",
   trustEnds: null,

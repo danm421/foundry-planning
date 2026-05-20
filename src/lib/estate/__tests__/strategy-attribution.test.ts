@@ -15,7 +15,7 @@ function fixture(): { tree: ClientData; withResult: ProjectionYear[] } {
   const tree = {
     entities: [
       { id: ILIT_ID, name: "ILIT", entityType: "trust", isIrrevocable: true, trustSubType: "ilit", grantor: "client" },
-      { id: SLAT_ID, name: "SLAT", entityType: "trust", isIrrevocable: true, trustSubType: "slat", grantor: "client" },
+      { id: SLAT_ID, name: "SLAT", entityType: "trust", isIrrevocable: true, trustSubType: "irrevocable", grantor: "client" },
       { id: REVOC_ID, name: "Revocable Trust", entityType: "trust", isIrrevocable: false, trustSubType: "revocable", grantor: "client" },
     ],
     accounts: [
@@ -101,7 +101,7 @@ describe("computeTrustCardData", () => {
       withResult,
       finalDeathYear: 2054,
     });
-    expect(card.tagLine).toContain("SLAT");
+    expect(card.tagLine).toContain("IRREVOCABLE");
     expect(card.tagLine).toContain("$2.4M GIFT IN 2026");
     expect(card.primaryAmount).toBe(9_870_000);
     expect(card.narrative).toMatch(/Compounded/);
@@ -153,7 +153,7 @@ describe("strategy-attribution — locked entity shares for split-owned trust ac
           name: "SLAT",
           entityType: "trust",
           isIrrevocable: true,
-          trustSubType: "slat",
+          trustSubType: "irrevocable",
           grantor: "client",
         },
       ],

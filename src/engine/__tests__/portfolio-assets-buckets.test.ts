@@ -24,7 +24,7 @@ const entities: EntitySummary[] = [
     id: ENT_NON_IIP_LOCKED,
     name: "Locked SLAT",
     entityType: "trust",
-    trustSubType: "slat",
+    trustSubType: "irrevocable",
     isIrrevocable: true,
     isGrantor: false,
     includeInPortfolio: false,
