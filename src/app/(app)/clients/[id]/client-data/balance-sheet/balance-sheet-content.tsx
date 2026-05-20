@@ -20,6 +20,7 @@ import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 interface BalanceSheetContentProps {
@@ -60,6 +61,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
     allocationRows,
     assetClassRows,
     { effectiveTree },
+    notesReceivableRows,
   ] = await Promise.all([
     db
       .select({
@@ -98,6 +100,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    loadNotesReceivable(id, scenario.id),
   ]);
 
   const accountMetaById = new Map(accountMetaRows.map((r) => [r.id, r]));
@@ -326,6 +329,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       clientId={id}
       accounts={accountProps}
       liabilities={liabilityProps}
+      notesReceivable={notesReceivableRows}
       entities={entityOptions}
       familyMembers={familyMemberRows}
       categoryDefaults={categoryDefaults}

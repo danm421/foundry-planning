@@ -28,6 +28,8 @@ export interface CellDrillContext {
   entityNames?: Record<string, string>;
   /** Optional roth-conversion-id → display-name map for `roth_conversion:<id>` keys. */
   rothConversionNames?: Record<string, string>;
+  /** Optional note-receivable-id → display-name map for `note:<id>:<kind>` keys. */
+  noteNames?: Record<string, string>;
 }
 
 export interface CellDrillRow {

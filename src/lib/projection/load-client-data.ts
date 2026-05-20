@@ -62,6 +62,7 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
+import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
 import {
   resolveAccountFromRaw,
@@ -1214,6 +1215,7 @@ export const loadClientDataWithContext = cache(
       giftEvents,
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
+      notesReceivable: await loadNotesReceivable(id, scenario.id),
     };
 
     return { clientData, resolutionContext: resolutionCtx };

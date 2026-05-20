@@ -75,6 +75,13 @@ export default function IncomeTaxReport({ clientId }: Props) {
         },
         {},
       ),
+      noteNames: (clientData?.notesReceivable ?? []).reduce<Record<string, string>>(
+        (acc, n) => {
+          if (n.name) acc[n.id] = n.name;
+          return acc;
+        },
+        {},
+      ),
     }),
     [accountNames, clientData],
   );

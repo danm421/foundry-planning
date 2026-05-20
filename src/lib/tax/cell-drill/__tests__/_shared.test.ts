@@ -44,6 +44,24 @@ describe("resolveSourceLabel", () => {
     expect(resolveSourceLabel("sale:tx_9", ctx)).toBe("Asset sale (tx_9)");
   });
 
+  it("resolves note:<noteId>:interest|ltcg to '<name> — interest|capital gain' when names are provided", () => {
+    const noteCtx: CellDrillContext = {
+      ...ctx,
+      noteNames: { note_1: "Sale of XYZ stock" },
+    };
+    expect(resolveSourceLabel("note:note_1:interest", noteCtx)).toBe(
+      "Sale of XYZ stock — interest",
+    );
+    expect(resolveSourceLabel("note:note_1:ltcg", noteCtx)).toBe(
+      "Sale of XYZ stock — capital gain",
+    );
+  });
+
+  it("falls back to 'Note — interest|capital gain' when the note id isn't in the name map", () => {
+    expect(resolveSourceLabel("note:abc-uuid:interest", ctx)).toBe("Note — interest");
+    expect(resolveSourceLabel("note:abc-uuid:ltcg", ctx)).toBe("Note — capital gain");
+  });
+
   it("falls back to the raw id for unknown shapes", () => {
     expect(resolveSourceLabel("mystery_thing", ctx)).toBe("mystery_thing");
   });

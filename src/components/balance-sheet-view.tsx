@@ -10,10 +10,15 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
+import type { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
+import {
+  buildNoteReceivableSchedule,
+  type NoteReceivable,
+} from "@/engine/notes-receivable";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
@@ -77,6 +82,7 @@ interface BalanceSheetViewProps {
   clientId: string;
   accounts: AccountRow[];
   liabilities: LiabilityRow[];
+  notesReceivable?: NoteReceivable[];
   entities: EntityOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults: CategoryDefaults;
@@ -195,6 +201,45 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
   };
 }
 
+function noteToInitial(n: NoteReceivable): NoteReceivableFormInitial {
+  return {
+    id: n.id,
+    name: n.name,
+    faceValue: n.faceValue,
+    basis: n.basis,
+    asOfBalance: n.asOfBalance,
+    balanceAsOfMonth: n.balanceAsOfMonth,
+    balanceAsOfYear: n.balanceAsOfYear,
+    interestRate: n.interestRate,
+    paymentType: n.paymentType,
+    monthlyPayment: n.monthlyPayment,
+    startYear: n.startYear,
+    startMonth: n.startMonth,
+    termMonths: n.termMonths,
+    linkedTrustEntityId: n.linkedTrustEntityId ?? null,
+    owners: n.owners,
+    extraPayments: n.extraPayments.map((ep) => ({
+      id: ep.id,
+      year: ep.year,
+      type: ep.type,
+      amount: ep.amount,
+    })),
+  };
+}
+
+/** Returns the projected note balance for `year` using the engine's schedule.
+ * Falls back to asOfBalance / faceValue when the schedule has no row at `year`. */
+function noteBalanceAtYear(n: NoteReceivable, year: number): number {
+  const schedule = buildNoteReceivableSchedule(n);
+  const row = schedule.find((r) => r.year === year);
+  if (row) return row.endingBalance;
+  if (year < (schedule[0]?.year ?? n.startYear)) {
+    return n.asOfBalance ?? n.faceValue;
+  }
+  // Past the term — note is paid off.
+  return 0;
+}
+
 function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
   return {
     id: l.id,
@@ -283,6 +328,7 @@ export default function BalanceSheetView({
   clientId,
   accounts,
   liabilities,
+  notesReceivable = [],
   entities,
   familyMembers,
   categoryDefaults,
@@ -315,6 +361,9 @@ export default function BalanceSheetView({
   const [editingLiability, setEditingLiability] = useState<LiabilityRow | null>(null);
   const [deletingLiability, setDeletingLiability] = useState<LiabilityRow | null>(null);
 
+  const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
+  const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
+
   const entityMap = Object.fromEntries(entities.map((e) => [e.id, e]));
   // Term policies (cash_value = 0) are hidden from Net Worth — face value pays out only on
   // death, so it's not an asset on the balance sheet. They're managed in the Insurance tab.
@@ -340,8 +389,13 @@ export default function BalanceSheetView({
   const accountInEstate = (a: AccountRow): boolean =>
     !a.ownerEntityId || isFamilyOwnedBusiness(a.ownerEntityId);
 
-  const inEstate = accounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));
-  const outOfEstate = accounts.filter((a) => !accountInEstate(a) && isVisibleInNetWorth(a));
+  // Legacy notes_receivable accounts are sourced from `notesReceivable` now.
+  const nonNoteAccounts = accounts.filter((a) => a.category !== "notes_receivable");
+
+  const inEstate = nonNoteAccounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));
+  const outOfEstate = nonNoteAccounts.filter(
+    (a) => !accountInEstate(a) && isVisibleInNetWorth(a),
+  );
 
   const inEstateByCategory: Record<AccountCategory, AccountRow[]> = {
     taxable: [],
@@ -353,6 +407,16 @@ export default function BalanceSheetView({
     notes_receivable: [],
   };
   for (const a of inEstate) inEstateByCategory[a.category].push(a);
+
+  // Notes receivable: project balance to prior-year-end (≈ current balance),
+  // matching how liability balances are displayed.
+  const noteDisplayYear = new Date().getFullYear() - 1;
+  type NoteRow = { note: NoteReceivable; value: number };
+  const noteRows: NoteRow[] = notesReceivable.map((n) => ({
+    note: n,
+    value: noteBalanceAtYear(n, noteDisplayYear),
+  }));
+  const notesReceivableTotal = noteRows.reduce((s, r) => s + r.value, 0);
 
   const outByEntity = new Map<string, AccountRow[]>();
   for (const a of outOfEstate) {
@@ -385,7 +449,9 @@ export default function BalanceSheetView({
   );
 
   const totalInEstate =
-    inEstate.reduce((s, a) => s + Number(a.value), 0) + inEstateBusinessEntityTotal;
+    inEstate.reduce((s, a) => s + Number(a.value), 0) +
+    inEstateBusinessEntityTotal +
+    notesReceivableTotal;
   const totalOutOfEstate =
     outOfEstate.reduce((s, a) => s + Number(a.value), 0) + outOfEstateBusinessEntityTotal;
   const totalAssets = totalInEstate + totalOutOfEstate;
@@ -407,6 +473,20 @@ export default function BalanceSheetView({
     }
     setDeletingAccount(null);
     setEditingAccount(null);
+    router.refresh();
+  }
+
+  async function performNoteDelete(id: string) {
+    const res = await fetch(`/api/clients/${clientId}/notes-receivable/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok && res.status !== 204) {
+      const json = await res.json().catch(() => ({}));
+      alert(json.error ?? "Failed to delete note");
+      return;
+    }
+    setDeletingNote(null);
+    setEditingNote(null);
     router.refresh();
   }
 
@@ -437,6 +517,29 @@ export default function BalanceSheetView({
   function ownerDisplay(a: AccountRow) {
     if (a.ownerEntityId && entityMap[a.ownerEntityId]) return entityMap[a.ownerEntityId].name;
     return individualOwnerLabel(a.owner as "client" | "spouse" | "joint", ownerNames);
+  }
+
+  function handleNoteClick(n: NoteReceivable) {
+    if (assetsEdit) return;
+    setEditingNote(n);
+  }
+
+  function noteOwnerDisplay(n: NoteReceivable): string {
+    const owners = n.owners ?? [];
+    if (owners.length === 0) return "—";
+    const first = owners[0];
+    if (first.kind === "entity") {
+      return entityMap[first.entityId]?.name ?? "Entity";
+    }
+    if (first.kind === "family_member") {
+      const fm = (familyMembers ?? []).find((m) => m.id === first.familyMemberId);
+      if (!fm) return "Household";
+      if (fm.role === "client" || fm.role === "spouse") {
+        return individualOwnerLabel(fm.role, ownerNames);
+      }
+      return fm.firstName;
+    }
+    return "External";
   }
 
   function growthDisplay(a: AccountRow) {
@@ -473,24 +576,35 @@ export default function BalanceSheetView({
           totalLabel={`Total ${fmt(totalInEstate)}`}
           actions={
             <div className="flex items-center gap-2">
-              {accounts.length > 0 && <EditToggle on={assetsEdit} onToggle={() => setAssetsEdit((v) => !v)} />}
+              {(nonNoteAccounts.length > 0 || noteRows.length > 0) && (
+                <EditToggle on={assetsEdit} onToggle={() => setAssetsEdit((v) => !v)} />
+              )}
               <AddAssetMenu onPick={(cat) => setAddCategory(cat)} />
             </div>
           }
         >
-          {inEstate.length === 0 && inEstateBusinessEntityRows.length === 0 ? (
+          {inEstate.length === 0 &&
+          inEstateBusinessEntityRows.length === 0 &&
+          noteRows.length === 0 ? (
             <EmptyRow message="No assets yet. Click Add Asset to get started." />
           ) : (
             CATEGORY_ORDER.map((cat) => {
               const items = inEstateByCategory[cat];
               const flatBusinessRows = cat === "business" ? inEstateBusinessEntityRows : [];
-              if (items.length === 0 && flatBusinessRows.length === 0) return null;
+              const noteCatRows = cat === "notes_receivable" ? noteRows : [];
+              if (
+                items.length === 0 &&
+                flatBusinessRows.length === 0 &&
+                noteCatRows.length === 0
+              )
+                return null;
               const accountSubtotal = items.reduce((s, a) => s + Number(a.value), 0);
               const flatSubtotal = flatBusinessRows.reduce(
                 (s, e) => s + Number(e.value ?? "0"),
                 0,
               );
-              const subtotal = accountSubtotal + flatSubtotal;
+              const noteSubtotal = noteCatRows.reduce((s, r) => s + r.value, 0);
+              const subtotal = accountSubtotal + flatSubtotal + noteSubtotal;
               return (
                 <CategoryGroup key={cat} label={CATEGORY_LABELS[cat]} total={fmt(subtotal)}>
                   {items.map((a) => (
@@ -510,6 +624,24 @@ export default function BalanceSheetView({
                       }
                       subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
                       value={fmt(a.value)}
+                    />
+                  ))}
+                  {noteCatRows.map(({ note, value }) => (
+                    <Row
+                      key={note.id}
+                      onClick={() => handleNoteClick(note)}
+                      editMode={assetsEdit}
+                      onDelete={() => setDeletingNote(note)}
+                      label={note.name}
+                      labelBadge={
+                        note.linkedTrustEntityId ? (
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-amber-900/30 px-2 py-0.5 text-xs text-amber-300">
+                            → {entityMap[note.linkedTrustEntityId]?.name ?? "Trust"}
+                          </span>
+                        ) : undefined
+                      }
+                      subLabel={`${noteOwnerDisplay(note)} · ${(note.interestRate * 100).toFixed(2)}%`}
+                      value={fmt(value)}
                     />
                   ))}
                   {flatBusinessRows.map((e) => (
@@ -717,6 +849,28 @@ export default function BalanceSheetView({
         }}
       />
 
+      <AddAccountDialog
+        clientId={clientId}
+        entities={entities}
+        familyMembers={familyMembers}
+        categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolios}
+        ownerNames={ownerNames}
+        assetClasses={assetClasses}
+        categoryDefaultSources={categoryDefaultSources}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        milestones={milestones}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        resolvedInflationRate={resolvedInflationRate}
+        open={!!editingNote}
+        onOpenChange={(o) => !o && setEditingNote(null)}
+        editingNote={editingNote ? noteToInitial(editingNote) : undefined}
+        onRequestDelete={() => {
+          if (editingNote) setDeletingNote(editingNote);
+        }}
+      />
+
       <ConfirmDeleteDialog
         open={!!deletingAccount}
         title="Delete Account"
@@ -738,6 +892,16 @@ export default function BalanceSheetView({
         onCancel={() => setDeletingLiability(null)}
         onConfirm={async () => {
           if (deletingLiability) await performLiabilityDelete(deletingLiability.id);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!deletingNote}
+        title="Delete Note Receivable"
+        message={deletingNote ? `Delete "${deletingNote.name}"?` : ""}
+        onCancel={() => setDeletingNote(null)}
+        onConfirm={async () => {
+          if (deletingNote) await performNoteDelete(deletingNote.id);
         }}
       />
     </div>

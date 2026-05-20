@@ -31,9 +31,13 @@ import type {
   Account,
   PlanSettings,
   ClientInfo,
+  NoteReceivable,
 } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
-import { noteBalanceAtYear, noteIncomeForYear } from "../notes/note-income";
+import {
+  buildNoteReceivableSchedule,
+  computeNotesReceivable,
+} from "../notes-receivable";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── Shared minimal scaffolding ──────────────────────────────────────────────
@@ -300,30 +304,30 @@ describe("IDGT grantor flip", () => {
       realization: brokerageRealization,
     };
 
-    // Promissory note held by client + spouse (the sellers). The trust is the
-    // debtor, so its cash accounts will be drained for annual payments.
-    // $1M at 5% amortizing over 120 months (10 years) starting 2026.
-    // category: "notes_receivable" — promissory notes moved out of "taxable"
-    // so they are excluded from any trust's taxableBrokerage liquidity pool.
-    const promissoryNote: Account = {
+    // Promissory note held by client + spouse (the sellers). Modeled as a
+    // top-level `NoteReceivable` (not an Account) — installment-sale notes
+    // moved to their own engine module per spec
+    // 2025-04-notes-receivable-installment. The trust is the debtor
+    // (`linkedTrustEntityId: "idgt-2"`); its cash accounts will be drained
+    // for annual payments. $1M at 5% amortizing over 120 months (10 years)
+    // starting 2026. faceValue == basis → no installment-sale LTCG (full
+    // principal is basis recovery).
+    const promissoryNote: NoteReceivable = {
       id: "idgt-2-note",
       name: "IDGT-2 Promissory Note",
-      category: "notes_receivable",
-      subType: "promissory_note",
-      titlingType: "jtwros",
-      value: 1_000_000,
+      faceValue: 1_000_000,
       basis: 1_000_000,
-      growthRate: 0,
-      rmdEnabled: false,
+      interestRate: 0.05,
+      paymentType: "amortizing",
+      startYear: 2026,
+      startMonth: 1,
+      termMonths: 120,
+      linkedTrustEntityId: "idgt-2",
+      extraPayments: [],
       owners: [
         { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
         { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
       ],
-      noteInterestRate: 0.05,
-      noteTermMonths: 120,
-      noteStartYear: 2026,
-      notePaymentType: "amortizing",
-      noteLinkedTrustEntityId: "idgt-2",
     };
 
     // Trust checking — needed so the trust-side note payment has a cash
@@ -342,10 +346,7 @@ describe("IDGT grantor flip", () => {
     };
 
     // Use a long-lived client (lifeExpectancy=95) so no death event fires
-    // during the 2026-2040 horizon. If the client dies mid-projection, the
-    // death-event code sets account.value = currentBalance on the promissory
-    // note, which would reset the amortization principal and break the
-    // noteBalanceAtYear cross-check in assertion 2.
+    // during the 2026-2040 horizon.
     const longLivedClient: ClientInfo = {
       ...client,
       lifeExpectancy: 95, // born 1951 → dies 2046, well past planEndYear=2040
@@ -353,7 +354,7 @@ describe("IDGT grantor flip", () => {
 
     const data: ClientData = {
       client: longLivedClient,
-      accounts: [hhChecking, idgt2Checking, idgt2Brokerage, promissoryNote],
+      accounts: [hhChecking, idgt2Checking, idgt2Brokerage],
       incomes: [],
       expenses: [],
       liabilities: [],
@@ -364,62 +365,69 @@ describe("IDGT grantor flip", () => {
       entities: [idgt2],
       taxYearRows: [taxYearRow],
       giftEvents: [],
+      notesReceivable: [promissoryNote],
     };
 
     const years = runProjection(data);
     expect(years.length).toBeGreaterThan(0);
 
-    // ── Assertion 1: Note principal balance steps down each year ─────────────
-    // The engine sets the note account's ledger endingValue to
-    // noteBalanceAtYear(note, year) each year. Verify the balance is strictly
-    // decreasing from 2026 through 2035 (last payment year).
-    const noteFixture = promissoryNote; // local ref for noteBalanceAtYear calls
+    // Cross-check helpers — pre-compute the note's schedule + per-year results
+    // outside the projection so we can verify the engine matches them.
+    const schedule = buildNoteReceivableSchedule(promissoryNote);
+    const noteScheduleMap = new Map([[promissoryNote.id, schedule]]);
 
+    // ── Assertion 1: Note principal balance steps down each year ─────────────
+    // Verify the engine's per-year ending balance is strictly decreasing
+    // through the amortization term.
     for (let y = 2026; y <= 2034; y++) {
       const row = years.find((r) => r.year === y);
       const nextRow = years.find((r) => r.year === y + 1);
       expect(row, `year ${y} missing`).toBeDefined();
       expect(nextRow, `year ${y + 1} missing`).toBeDefined();
 
-      const balanceThisYear = row!.accountLedgers["idgt-2-note"]?.endingValue ?? -1;
-      const balanceNextYear = nextRow!.accountLedgers["idgt-2-note"]?.endingValue ?? -2;
+      const balanceThisYear =
+        row!.notesReceivableByNote?.["idgt-2-note"]?.endingBalance ?? -1;
+      const balanceNextYear =
+        nextRow!.notesReceivableByNote?.["idgt-2-note"]?.endingBalance ?? -2;
 
       expect(balanceThisYear).toBeGreaterThan(0); // note not yet paid off
-      expect(balanceNextYear).toBeLessThan(balanceThisYear); // balance stepping down
+      expect(balanceNextYear).toBeLessThan(balanceThisYear); // stepping down
     }
 
     // After the note expires (2036+) the ending balance should be 0.
     const year2036 = years.find((y) => y.year === 2036);
     expect(year2036).toBeDefined();
-    expect(year2036!.accountLedgers["idgt-2-note"]?.endingValue ?? -1).toBe(0);
+    expect(
+      year2036!.notesReceivableByNote?.["idgt-2-note"]?.endingBalance ?? -1,
+    ).toBe(0);
 
-    // ── Assertion 2: Ledger values match noteBalanceAtYear formula ───────────
-    // Cross-check a sample year (2028) against the standalone helper.
+    // ── Assertion 2: Engine ending balance matches the standalone schedule ───
+    // Cross-check 2028 against the schedule the engine consumes.
     const year2028 = years.find((y) => y.year === 2028);
     expect(year2028).toBeDefined();
-    const expectedBalance2028 = noteBalanceAtYear(noteFixture, 2028);
-    expect(year2028!.accountLedgers["idgt-2-note"]?.endingValue).toBeCloseTo(
-      expectedBalance2028,
-      0, // within $1 — rounding from monthly amortization
-    );
+    const expectedRow2028 = schedule.find((r) => r.year === 2028);
+    expect(expectedRow2028).toBeDefined();
+    expect(
+      year2028!.notesReceivableByNote?.["idgt-2-note"]?.endingBalance ?? -1,
+    ).toBeCloseTo(expectedRow2028!.endingBalance, 0);
 
     // ── Assertion 3: Note interest appears in household ordinary income ───────
     // The engine adds note interest to taxDetail.ordinaryIncome every year
     // (grantor-period netting is NOT yet implemented — see header comment).
-    // Verify that interest does land on the household 1040 for a grantor year.
     const year2027 = years.find((y) => y.year === 2027);
     expect(year2027).toBeDefined();
-    const expectedInterest2027 = noteIncomeForYear(noteFixture, 2027)?.interest ?? 0;
+    const expected2027 = computeNotesReceivable(
+      [promissoryNote],
+      noteScheduleMap,
+      2027,
+    ).byNote.get("idgt-2-note");
+    const expectedInterest2027 = expected2027?.interest ?? 0;
     expect(expectedInterest2027).toBeGreaterThan(0);
-    // taxDetail.ordinaryIncome should include the note interest (plus any
-    // trust-brokerage ordinary income that flows through the grantor 1040).
     expect(year2027!.taxDetail?.ordinaryIncome ?? 0).toBeGreaterThanOrEqual(
       expectedInterest2027,
     );
 
     // ── Assertion 4: Grantor-period trust tax is zero (2026-2030) ────────────
-    // During effective-grantor years the IDGT is not in the non-grantor trust
-    // tax pass → trustTaxByEntity should have no entry for "idgt-2".
     for (const y of [2026, 2027, 2028, 2029, 2030]) {
       const row = years.find((r) => r.year === y);
       expect(row, `grantor year ${y} missing`).toBeDefined();
@@ -430,54 +438,33 @@ describe("IDGT grantor flip", () => {
     }
 
     // ── Assertion 5: Post-grantorStatusEndYear — trust still isGrantor===true
-    // in currentEntities, so NO 1041 tax fires. This is the known-unimplemented
-    // gap documented above. The assertion here confirms the current behavior so
-    // any future fix is visible as a test change.
+    // in currentEntities, so NO 1041 tax fires. Same known-unimplemented gap
+    // documented above; assertion locks current behavior.
     const year2031 = years.find((y) => y.year === 2031);
     expect(year2031).toBeDefined();
-    // Currently 0 (unimplemented 1041 flip). When Task N fixes
-    // buildNonGrantorTrusts to respect grantorStatusEndYear, this assertion
-    // should be updated to toBeGreaterThan(0).
     expect(year2031!.trustTaxByEntity?.get("idgt-2")?.total ?? 0).toBe(0);
 
-    // ── Assertion 6: Promissory note is excluded from trust taxableBrokerage ──
-    // The promissory note has category: "notes_receivable" (changed from
-    // "taxable" when promissory notes moved to their own category). The engine's
-    // trust-liquidity computation only counts accounts with category === "taxable"
-    // toward taxableBrokerage. This ensures that a promissory note — which
-    // amortizes on a fixed schedule and cannot be partially liquidated like a
-    // brokerage account — never inflates a trust's liquidity pool.
-    //
-    // NOTE: trustLiquidity is computed internally and not exposed on ProjectionYear,
-    // so we assert the observable proxy: the note's principal balance is correctly
-    // tracked in accountLedgers (the engine still amortizes it) while NOT
-    // appearing in the trust's accessible asset buckets (confirming it is treated
-    // as a household receivable, not a trust-owned liquid asset).
+    // ── Assertion 6: Note is decoupled from trust's portfolioAssets buckets ──
+    // NoteReceivable rows are NOT accounts — the trust's portfolioAssets pool
+    // should be unaffected (the trust's brokerage is the only entity-owned
+    // asset that surfaces under idgt-2).
     const year2027forLiquidity = years.find((y) => y.year === 2027);
     expect(year2027forLiquidity).toBeDefined();
 
-    // The note balance is tracked and strictly positive (engine still amortizes it).
-    const noteLedger2027 = year2027forLiquidity!.accountLedgers["idgt-2-note"];
-    expect(noteLedger2027?.endingValue).toBeGreaterThan(0);
+    // The note ending balance is tracked and strictly positive (engine
+    // still amortizes it in notesReceivableByNote, not portfolioAssets).
+    expect(
+      year2027forLiquidity!.notesReceivableByNote?.["idgt-2-note"]?.endingBalance,
+    ).toBeGreaterThan(0);
 
-    // The note does NOT appear in the trust's entity-owned asset buckets.
-    // (The note is household-owned, so it should be absent from
-    //  trustsAndBusinesses and accessibleTrustAssets entirely.)
+    // The note does NOT appear anywhere in portfolioAssets — it's not an
+    // account, so all account-keyed maps must be absent.
     const tAndB2027 = year2027forLiquidity!.portfolioAssets.trustsAndBusinesses;
     expect(tAndB2027["idgt-2-note"] ?? 0).toBe(0);
     const accessible2027 = year2027forLiquidity!.portfolioAssets.accessibleTrustAssets;
     expect(accessible2027["idgt-2-note"] ?? 0).toBe(0);
-
-    // The brokerage account owned by the IDGT (category: "taxable") IS present
-    // in portfolioAssets because idgt-2 is includeInPortfolio:true. The note
-    // is NOT present under the idgt-2 entity — only the brokerage is.
-    // This is the direct evidence that notes_receivable is decoupled from the
-    // trust's investable/liquid surface.
     const taxable2027 = year2027forLiquidity!.portfolioAssets.taxable;
     expect(taxable2027["idgt-2-brokerage"]).toBeGreaterThan(0); // brokerage tracked
-    // The note is excluded from portfolioAssets entirely (notes_receivable
-    // accounts are skipped in computePortfolioSnapshot — they amortize and
-    // aren't fungible liquid wealth). It's still tracked in accountLedgers.
-    expect(taxable2027["idgt-2-note"] ?? 0).toBe(0);
+    expect(taxable2027["idgt-2-note"] ?? 0).toBe(0); // note absent
   });
 });

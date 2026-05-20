@@ -4,6 +4,7 @@ import type { TrustSubType } from "@/lib/entities/trust";
 import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
 import type { AccountOwner } from "./ownership";
 import type { EntityCashFlowRow } from "./entity-cashflow";
+import type { NoteReceivable } from "./notes-receivable/types";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -376,6 +377,12 @@ export interface ClientData {
   /** External beneficiaries (charities and non-family individuals) configured on the
    *  client. The death-event module uses these for recipient resolution. */
   externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual"; charityType: "public" | "private" }>;
+  /** Notes receivable — installment sale promissory notes held by the household
+   *  (or by an entity, with the trust-side outflow drained from a linked trust).
+   *  Each note amortizes on a fixed schedule and produces interest income +
+   *  installment-sale principal (basis recovery + §1(h) LTCG) per IRC §453.
+   *  Engine consumption arrives in spec 2025-04-notes-receivable-installment. */
+  notesReceivable?: NoteReceivable[];
 }
 
 /** 'annual' uses base+growth math; 'schedule' uses entity_flow_overrides
@@ -1077,6 +1084,30 @@ export interface ProjectionYear {
    * a given sale year. */
   liabilityBalancesBoY: Record<string, number>;
 
+  /** Per-note-receivable per-year breakdown. Records interest income,
+   *  installment-sale principal split (LTCG vs basis recovery), total cash
+   *  inflow, and ending balance for each note in this year. Used by the
+   *  balance-sheet UI to render the "Notes Receivable" row and by reports
+   *  to drill into installment-sale tax detail. Empty when the projection
+   *  has no notes_receivable rows. */
+  notesReceivableByNote?: Record<string, {
+    interest: number;
+    principalLTCG: number;
+    principalBasis: number;
+    totalCashIn: number;
+    endingBalance: number;
+  }>;
+
+  /** Per-year totals across every note in `notesReceivableByNote`. Reports
+   *  read this directly instead of re-aggregating `byNote`. Present only
+   *  in years where at least one note contributed. */
+  notesReceivableTotals?: {
+    interest: number;
+    principalLTCG: number;
+    principalBasis: number;
+    totalCashIn: number;
+  };
+
   /** Technique breakdown for drill-down UI — only present in years where techniques execute. */
   techniqueBreakdown?: {
     sales: {
@@ -1316,3 +1347,4 @@ export function emptyCharityCarryforward(): CharityCarryforward {
 }
 
 export type { EntityCashFlowRow, TrustCashFlowRow, BusinessCashFlowRow } from "./entity-cashflow";
+export type { NoteReceivable, NoteExtraPayment, NotePaymentType as NoteReceivablePaymentType, NoteYearResult, NotesReceivableResult, NoteScheduleMap, NoteScheduleRow } from "./notes-receivable/types";

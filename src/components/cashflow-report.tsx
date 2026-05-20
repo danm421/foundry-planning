@@ -214,6 +214,7 @@ const DRILL_LABELS: Record<string, string> = {
   deferred: "Deferred",
   capitalGains: "Capital Gains",
   other_income: "Other",
+  notes_receivable: "Notes Receivable",
   // Expense sub-types
   living: "Living Expenses",
   other_expense: "Other Expenses",
@@ -1133,6 +1134,26 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const level = drillPath[0];
     const subLevel = drillPath[1];
 
+    // Notes-receivable per-year aggregates are emitted by the engine as
+    // ProjectionYear.notesReceivableTotals. Note income is not in r.income.total
+    // — by design the new column is presented alongside, not as a sub-bucket.
+    function noteInterest(y: ProjectionYear) {
+      return y.notesReceivableTotals?.interest ?? 0;
+    }
+    function noteLTCG(y: ProjectionYear) {
+      return y.notesReceivableTotals?.principalLTCG ?? 0;
+    }
+    function noteBasis(y: ProjectionYear) {
+      return y.notesReceivableTotals?.principalBasis ?? 0;
+    }
+    function noteTotal(y: ProjectionYear) {
+      return noteInterest(y) + noteLTCG(y) + noteBasis(y);
+    }
+    const hasNoteInterest = visibleYears.some((y) => noteInterest(y) > 0);
+    const hasNoteLTCG = visibleYears.some((y) => noteLTCG(y) > 0);
+    const hasNoteBasis = visibleYears.some((y) => noteBasis(y) > 0);
+    const hasNoteIncome = hasNoteInterest || hasNoteLTCG || hasNoteBasis;
+
     // Always-present base columns
     const baseColumns: ColumnDef<ProjectionYear>[] = [
       col("year", "Year", (r) => r.year, (info) => {
@@ -1364,6 +1385,29 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
+      // Level 2: notes-receivable child rows (Interest / Gain / Return of Basis)
+      if (subLevel === "notes_receivable") {
+        return [
+          ...baseColumns,
+          ...(hasNoteInterest
+            ? [numCol("notes_interest", "Interest Income", noteInterest)]
+            : []),
+          ...(hasNoteLTCG
+            ? [numCol("notes_ltcg", "Principal — Gain", noteLTCG)]
+            : []),
+          ...(hasNoteBasis
+            ? [
+                numCol(
+                  "notes_basis",
+                  "Principal — Return of Basis",
+                  noteBasis,
+                ),
+              ]
+            : []),
+          numCol("notes_total", "Notes Receivable Total", noteTotal, true),
+        ];
+      }
+
       // Level 2: individual sources for a specific income type
       if (subLevel && INCOME_SEGMENT_TO_TYPE[subLevel] != null) {
         const sourceIds = incomesByType[subLevel] ?? [];
@@ -1425,6 +1469,15 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("income_deferred", () => <DrillBtn segment="deferred" label="Deferred" />, (r) => r.income.deferred),
         numCol("income_capgains", () => <DrillBtn segment="capitalGains" label="Capital Gains" />, (r) => r.income.capitalGains),
         numCol("income_other", () => <DrillBtn segment="other_income" label="Other" />, (r) => r.income.other),
+        ...(hasNoteIncome
+          ? [
+              numCol(
+                "income_notes",
+                () => <DrillBtn segment="notes_receivable" label="Notes Receivable" />,
+                noteTotal,
+              ),
+            ]
+          : []),
         numCol("income_total", "Total", (r) => r.income.total, true),
       ];
     }

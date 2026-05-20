@@ -35,6 +35,20 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
   if (sourceId.startsWith("clut_recapture:")) {
     return `CLUT recapture (${sourceId.slice("clut_recapture:".length)})`;
   }
+  if (sourceId.startsWith("note:")) {
+    // Shape: `note:<noteId>:<kind>` where kind ∈ {"interest", "ltcg"}.
+    const rest = sourceId.slice("note:".length);
+    const lastColon = rest.lastIndexOf(":");
+    const noteId = lastColon >= 0 ? rest.slice(0, lastColon) : rest;
+    const kind = lastColon >= 0 ? rest.slice(lastColon + 1) : "";
+    const kindLabel = kind === "interest"
+      ? "interest"
+      : kind === "ltcg"
+        ? "capital gain"
+        : kind || "";
+    const name = ctx.noteNames?.[noteId] ?? "Note";
+    return kindLabel ? `${name} — ${kindLabel}` : name;
+  }
   if (sourceId.includes(":")) {
     const [acctId, kind] = sourceId.split(":");
     const name = ctx.accountNames[acctId] ?? acctId;
