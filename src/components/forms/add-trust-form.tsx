@@ -683,9 +683,10 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
           </div>
         </div>
 
-        {/* Income Beneficiaries (hidden for revocable) */}
-        {showDistributionAndIncome && (
-          <div className="mt-4">
+        {/* Income + Remainder Beneficiaries — side-by-side when both visible.
+            Income is hidden for revocable trusts; remainder falls back to full width. */}
+        <div className={`mt-4 grid gap-4 ${showDistributionAndIncome ? "grid-cols-2" : "grid-cols-1"}`}>
+          {showDistributionAndIncome && (
             <BeneficiaryRowList
               tier="income"
               allowEntities={false}
@@ -696,11 +697,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
               entities={[]}
               household={household}
             />
-          </div>
-        )}
-
-        {/* Remainder Beneficiaries (always shown) */}
-        <div className="mt-4">
+          )}
           <BeneficiaryRowList
             tier="remainder"
             allowEntities={true}
