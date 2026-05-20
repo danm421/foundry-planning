@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
@@ -9,6 +9,9 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import type { SaveResult } from "@/lib/use-tab-auto-save";
+import { useTabAutoSave } from "@/lib/use-tab-auto-save";
+import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 import SavingsRuleDialog, { type SavingsRuleRow } from "./savings-rule-dialog";
 import SavingsRulesList from "./savings-rules-list";
@@ -37,7 +40,7 @@ import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 const isRetirementSubType = (st: string) =>
   (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
+type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 export interface AccountFormInitial {
   id: string;
@@ -107,6 +110,11 @@ export interface CategoryDefaults {
   real_estate: string;
   business: string;
   life_insurance: string;
+  notes_receivable: string;
+}
+
+export interface AccountFormAutoSaveHandle {
+  saveAsync: () => Promise<SaveResult & { recordId?: string }>;
 }
 
 interface AddAccountFormProps {
@@ -140,15 +148,20 @@ interface AddAccountFormProps {
   /** Called whenever submit-button state changes. Used by DialogShell to drive
    *  the footer button's disabled / loading visuals. */
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+  /** Pushed up whenever the form's dirty/can-save state changes. Drives useTabAutoSave in the dialog. */
+  onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
+  /** Called after the first successful auto-save, with the persisted account id. */
+  onAutoSaved?: (accountId: string) => void;
 }
 
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
-  taxable: ["brokerage", "trust", "other", "promissory_note"],
+  taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
+  notes_receivable: ["promissory_note"],
 };
 
 const SUB_TYPE_LABELS: Record<string, string> = {
@@ -184,6 +197,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   real_estate: "Real Estate",
   business: "Business",
   life_insurance: "Life Insurance",
+  notes_receivable: "Notes Receivable",
 };
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529"]);
@@ -196,6 +210,7 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   real_estate: "Real Estate",
   business: "Business Interest",
   life_insurance: "Life Insurance Policy",
+  notes_receivable: "Promissory Note",
 };
 
 function uniqueAccountName(base: string, existing: string[]): string {
@@ -208,7 +223,7 @@ function uniqueAccountName(base: string, existing: string[]): string {
   return base;
 }
 
-export default function AddAccountForm({
+const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps>(function AddAccountForm({
   clientId,
   category: defaultCategory,
   mode = "create",
@@ -230,10 +245,16 @@ export default function AddAccountForm({
   lockTab,
   onSuccess,
   onSubmitStateChange,
-}: AddAccountFormProps) {
+  onAutoSaveStateChange,
+  onAutoSaved,
+}, ref) {
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
   const isEdit = mode === "edit" && !!initial;
+
+  // Tracks the server-assigned id for accounts that start as "create" but have
+  // been auto-saved at least once (first save mints the row and returns the id).
+  const [effectiveAccountId, setEffectiveAccountId] = useState<string | null>(initial?.id ?? null);
 
   // Auto-focus + select-all the Name input on create so the advisor can start
   // typing to replace any default. Skipped on edit and when the dialog is
@@ -411,6 +432,61 @@ export default function AddAccountForm({
     initial?.notePaymentType ?? "amortizing",
   );
 
+  // ── Dirty-tracking for autosave ─────────────────────────────────────────────
+  // Serialize every controlled field into a snapshot string so tab-switch
+  // autosave can tell whether there are unsaved changes.
+  const currentSerialized = useMemo(() => JSON.stringify({
+    name,
+    category,
+    subType,
+    owners,
+    titlingType,
+    accountValue,
+    accountBasis,
+    accountRothValue,
+    growthSource,
+    growthRatePct,
+    realEstateGrowthSource,
+    realEstateGrowthRatePct,
+    modelPortfolioId,
+    rmdEnabled,
+    priorYearEndValue,
+    annualPropertyTax,
+    propertyTaxGrowthRate,
+    propertyTaxGrowthSource,
+    overridePctOi,
+    overridePctLtCg,
+    overridePctQdiv,
+    overridePctTaxExempt,
+    turnoverPct,
+    customAllocations,
+    noteInterestRatePct,
+    noteTermMonths,
+    noteStartYear,
+    notePaymentType,
+  }), [
+    name, category, subType, owners, titlingType, accountValue, accountBasis,
+    accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
+    realEstateGrowthRatePct, modelPortfolioId, rmdEnabled, priorYearEndValue,
+    annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
+    overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
+    turnoverPct, customAllocations, noteInterestRatePct, noteTermMonths,
+    noteStartYear, notePaymentType,
+  ]);
+
+  const baselineRef = useRef<string>("");
+  useEffect(() => {
+    baselineRef.current = currentSerialized;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isDirty = currentSerialized !== baselineRef.current;
+  const canSave = name.trim().length > 0;
+
+  useEffect(() => {
+    onAutoSaveStateChange?.({ isDirty, canSave });
+  }, [isDirty, canSave, onAutoSaveStateChange]);
+
   const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
   const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category);
 
@@ -529,6 +605,170 @@ export default function AddAccountForm({
     }
   }
 
+  // ── saveAsyncImpl ────────────────────────────────────────────────────────────
+  // Shared between the explicit-submit path and tab-switch autosave. Builds the
+  // account body from React state (no FormData dependency) and POST/PUTs it.
+  // NOTE: savings-rule creation is create-only and requires the savings tab's
+  // FormData values — it stays in handleSubmit below, not here.
+  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string }> => {
+    if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
+
+    const isPromissoryNote = subType === "promissory_note";
+    let growthRate: string | null;
+    if (isPromissoryNote) {
+      growthRate = null;
+    } else if (category === "real_estate") {
+      growthRate = String(Number(realEstateGrowthRatePct) / 100);
+    } else if (growthSource === "custom") {
+      growthRate = String(Number(growthRatePct) / 100);
+    } else {
+      growthRate = isInvestable ? null : String(Number(growthRatePct) / 100);
+    }
+
+    const toPctOrNull = (val: string) =>
+      val !== "" && val != null ? String(Number(val) / 100) : null;
+
+    const isMixedDeferral =
+      category === "retirement" && (subType === "401k" || subType === "403b");
+
+    const accountBody = {
+      name,
+      category,
+      subType,
+      owners,
+      titlingType,
+      value: accountValue,
+      basis: isMixedDeferral
+        ? "0"
+        : isPromissoryNote
+          ? accountValue
+          : accountBasis,
+      rothValue: isMixedDeferral ? (accountRothValue || "0") : "0",
+      growthRate,
+      rmdEnabled,
+      priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
+      growthSource: isPromissoryNote
+        ? "custom"
+        : isInvestable
+          ? growthSource
+          : category === "real_estate"
+            ? realEstateGrowthSource
+            : "custom",
+      modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
+      turnoverPct: toPctOrNull(turnoverPct) ?? "0",
+      overridePctOi: toPctOrNull(overridePctOi),
+      overridePctLtCg: toPctOrNull(overridePctLtCg),
+      overridePctQdiv: toPctOrNull(overridePctQdiv),
+      overridePctTaxExempt: toPctOrNull(overridePctTaxExempt),
+      annualPropertyTax: category === "real_estate" ? annualPropertyTax : undefined,
+      propertyTaxGrowthRate:
+        category === "real_estate"
+          ? String(Number(propertyTaxGrowthRate) / 100)
+          : undefined,
+      propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
+      noteInterestRate: isPromissoryNote
+        ? noteInterestRatePct !== "" ? String(Number(noteInterestRatePct) / 100) : null
+        : null,
+      noteTermMonths: isPromissoryNote
+        ? noteTermMonths !== "" ? Number(noteTermMonths) : null
+        : null,
+      noteStartYear: isPromissoryNote
+        ? noteStartYear !== "" ? Number(noteStartYear) : null
+        : null,
+      notePaymentType: isPromissoryNote ? notePaymentType : null,
+    };
+
+    setLoading(true);
+    setError(null);
+    try {
+      const targetId = effectiveAccountId;
+      if (targetId) {
+        // Existing account (edit mode or post-first-autosave)
+        const res = await writer.submit(
+          {
+            op: "edit",
+            targetKind: "account",
+            targetId,
+            desiredFields: accountBody,
+          },
+          {
+            url: `/api/clients/${clientId}/accounts/${targetId}`,
+            method: "PUT",
+            body: accountBody,
+          },
+        );
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          return { ok: false, error: json.error ?? "Failed to update account" };
+        }
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
+          await fetch(`/api/clients/${clientId}/accounts/${targetId}/allocations`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ allocations: customAllocations }),
+          });
+        }
+        baselineRef.current = currentSerialized;
+        return { ok: true, recordId: targetId };
+      } else {
+        // First save for a new account — mint an id and POST
+        const newAccountId =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `tmp-${Date.now()}`;
+        const res = await writer.submit(
+          {
+            op: "add",
+            targetKind: "account",
+            entity: { id: newAccountId, ...accountBody },
+          },
+          {
+            url: `/api/clients/${clientId}/accounts`,
+            method: "POST",
+            body: accountBody,
+          },
+        );
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          return { ok: false, error: json.error ?? "Failed to create account" };
+        }
+        const saved = writer.scenarioActive
+          ? { id: newAccountId }
+          : (await res.json()) as { id: string };
+
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
+          await fetch(`/api/clients/${clientId}/accounts/${saved.id}/allocations`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ allocations: customAllocations }),
+          });
+        }
+
+        setEffectiveAccountId(saved.id);
+        onAutoSaved?.(saved.id);
+        baselineRef.current = currentSerialized;
+        return { ok: true, recordId: saved.id };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setError(msg);
+      return { ok: false, error: msg };
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
+    isInvestable, name, owners, titlingType, accountValue, accountBasis, accountRothValue,
+    rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId,
+    turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
+    annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
+    noteInterestRatePct, noteTermMonths, noteStartYear, notePaymentType,
+    effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
+    currentSerialized, onAutoSaved,
+  ]);
+
+  useImperativeHandle(ref, () => ({ saveAsync: saveAsyncImpl }), [saveAsyncImpl]);
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (lockTab) return;
@@ -555,8 +795,8 @@ export default function AddAccountForm({
       growthRate = isInvestable ? null : String(Number(data.get("growthRate")) / 100);
     }
 
-    const toPctOrNull = (name: string) => {
-      const v = data.get(name) as string;
+    const toPctOrNull = (n: string) => {
+      const v = data.get(n) as string;
       return v !== "" && v != null ? String(Number(v) / 100) : null;
     };
 
@@ -622,16 +862,17 @@ export default function AddAccountForm({
     };
 
     try {
-      if (isEdit) {
+      const targetId = effectiveAccountId;
+      if (targetId) {
         const res = await writer.submit(
           {
             op: "edit",
             targetKind: "account",
-            targetId: initial!.id,
+            targetId,
             desiredFields: accountBody,
           },
           {
-            url: `/api/clients/${clientId}/accounts/${initial!.id}`,
+            url: `/api/clients/${clientId}/accounts/${targetId}`,
             method: "PUT",
             body: accountBody,
           },
@@ -643,7 +884,7 @@ export default function AddAccountForm({
         // Save asset mix allocations for existing account. Allocations are a
         // nested resource and not in v1 scenario scope — base mode only.
         if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
-          await fetch(`/api/clients/${clientId}/accounts/${initial!.id}/allocations`, {
+          await fetch(`/api/clients/${clientId}/accounts/${targetId}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ allocations: customAllocations }),
@@ -762,6 +1003,16 @@ export default function AddAccountForm({
     }
   }
 
+  // ── In-form tab autosave ─────────────────────────────────────────────────────
+  const accountAutoSave = useTabAutoSave({
+    isDirty,
+    canSave,
+    saveAsync: saveAsyncImpl,
+  });
+
+  const handleTabClick = (next: typeof activeTab) =>
+    void accountAutoSave.interceptTabChange(next, (id) => setActiveTab(id as typeof activeTab));
+
   return (
     <>
     <form id="add-account-form" onSubmit={handleSubmit} className="space-y-4">
@@ -770,83 +1021,90 @@ export default function AddAccountForm({
       )}
 
       {/* Tab bar */}
-      <div className="flex border-b border-gray-700">
-        {!lockTab && (
+      <div className="flex items-center border-b border-gray-700">
+        <div className="flex flex-1">
+          {!lockTab && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("details")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "details"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              Account Details
+            </button>
+          )}
+          {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && category !== "notes_receivable" && subType !== "promissory_note" && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("savings")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "savings"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              Savings
+            </button>
+          )}
+          {!lockTab && category === "taxable" && subType !== "promissory_note" && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("realization")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "realization"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              Realization
+            </button>
+          )}
+          {!lockTab && showAssetMixTab && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("asset_mix")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "asset_mix"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              Asset Mix
+            </button>
+          )}
+          {!lockTab && showRmdCheckbox && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("rmd")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "rmd"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              RMD
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setActiveTab("details")}
+            onClick={() => handleTabClick("beneficiaries")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === "details"
+              activeTab === "beneficiaries"
                 ? "border-accent text-accent"
                 : "border-transparent text-gray-300 hover:text-gray-200"
             }`}
           >
-            Account Details
+            Beneficiaries
           </button>
-        )}
-        {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && subType !== "promissory_note" && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("savings")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === "savings"
-                ? "border-accent text-accent"
-                : "border-transparent text-gray-300 hover:text-gray-200"
-            }`}
-          >
-            Savings
-          </button>
-        )}
-        {!lockTab && category === "taxable" && subType !== "promissory_note" && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("realization")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === "realization"
-                ? "border-accent text-accent"
-                : "border-transparent text-gray-300 hover:text-gray-200"
-            }`}
-          >
-            Realization
-          </button>
-        )}
-        {!lockTab && showAssetMixTab && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("asset_mix")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === "asset_mix"
-                ? "border-accent text-accent"
-                : "border-transparent text-gray-300 hover:text-gray-200"
-            }`}
-          >
-            Asset Mix
-          </button>
-        )}
-        {!lockTab && showRmdCheckbox && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("rmd")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === "rmd"
-                ? "border-accent text-accent"
-                : "border-transparent text-gray-300 hover:text-gray-200"
-            }`}
-          >
-            RMD
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setActiveTab("beneficiaries")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            activeTab === "beneficiaries"
-              ? "border-accent text-accent"
-              : "border-transparent text-gray-300 hover:text-gray-200"
-          }`}
-        >
-          Beneficiaries
-        </button>
+        </div>
+        <TabAutoSaveIndicator
+          saving={accountAutoSave.saving}
+          error={accountAutoSave.saveError}
+          onDismissError={accountAutoSave.clearSaveError}
+        />
       </div>
 
       {/* Account Details */}
@@ -892,9 +1150,9 @@ export default function AddAccountForm({
                   if (!userEditedName) {
                     setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
                   }
-                  // Savings tab is not available for real-estate, business, or life_insurance
-                  // categories — snap back to Details if it was active.
-                  if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance") && activeTab === "savings") {
+                  // Savings tab is not available for real-estate, business, life_insurance, or
+                  // notes_receivable categories — snap back to Details if it was active.
+                  if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance" || newCat === "notes_receivable") && (activeTab === "savings" || activeTab === "realization")) {
                     setActiveTab("details");
                   }
                 }}
@@ -1542,4 +1800,6 @@ export default function AddAccountForm({
     )}
     </>
   );
-}
+});
+
+export default AddAccountForm;

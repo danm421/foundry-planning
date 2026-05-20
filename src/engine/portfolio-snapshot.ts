@@ -81,7 +81,15 @@ export function computePortfolioSnapshot(args: {
     }
     if (inPortfolioFraction > 0) {
       const inPortfolioVal = val * inPortfolioFraction;
-      const key = categoryToKey[acct.category] ?? "taxable";
+      // Notes receivable amortize on a fixed schedule and aren't fungible liquid
+      // wealth. They appear under "Notes Receivable" on the balance sheet UI and
+      // are tracked in accountLedgers, but they don't belong in any
+      // portfolioAssets bucket.
+      if (acct.category === "notes_receivable") continue;
+      // Use an explicit null-guard so future unknown categories fail loud rather
+      // than silently bucketing into taxable.
+      const key = categoryToKey[acct.category];
+      if (!key) continue;
       portfolioAssets[key][acct.id] = inPortfolioVal;
       const totalKey = `${key}Total` as keyof typeof portfolioAssets;
       (portfolioAssets[totalKey] as number) += inPortfolioVal;

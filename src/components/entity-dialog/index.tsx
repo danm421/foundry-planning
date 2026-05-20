@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
@@ -9,6 +9,10 @@ import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "../forms/assets-tab";
 import type { FlowsTabIncome, FlowsTabExpense, ScheduleSaveBinding } from "../forms/flows-tab";
 import DialogShell from "../dialog-shell";
+import TabAutoSaveIndicator from "../tab-auto-save-indicator";
+import { useTabAutoSave } from "@/lib/use-tab-auto-save";
+import type { TrustFormAutoSaveHandle } from "../forms/add-trust-form";
+import type { BusinessFormAutoSaveHandle } from "./business-form";
 
 export interface EntityDialogProps {
   clientId: string;
@@ -18,6 +22,8 @@ export interface EntityDialogProps {
   createKind?: EntityKind;
   editing?: Entity;
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
+  /** Fires on every successful autosave (tab-switch saves). Distinct from onSaved which fires only on explicit user submit. */
+  onAutoSaved?: (entity: Entity, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
   /** Required for trust dialogs — caller supplies household/member data */
   household: { client: { firstName: string }; spouse: { firstName: string } | null };
@@ -88,6 +94,7 @@ export default function EntityDialog({
   createKind,
   editing,
   onSaved,
+  onAutoSaved,
   onRequestDelete,
   household,
   members,
@@ -122,6 +129,46 @@ export default function EntityDialog({
   const [scheduleSaveBinding, setScheduleSaveBinding] =
     useState<ScheduleSaveBinding | null>(null);
 
+  const trustFormRef = useRef<TrustFormAutoSaveHandle | null>(null);
+  const [trustAutoSaveState, setTrustAutoSaveState] = useState<{ isDirty: boolean; canSave: boolean }>({
+    isDirty: false,
+    canSave: true,
+  });
+  const [liveTrustState, setLiveTrustState] = useState<{ trustSubType: string; isGrantor: boolean; isIrrevocable: boolean }>({
+    trustSubType: editing?.trustSubType ?? "",
+    isGrantor: editing?.isGrantor ?? false,
+    isIrrevocable: editing?.isIrrevocable ?? false,
+  });
+  const trustSaveAsync = useCallback(async () => {
+    const handle = trustFormRef.current;
+    if (!handle) return { ok: true as const };
+    return handle.saveAsync();
+  }, []);
+
+  const trustAutoSave = useTabAutoSave({
+    isDirty: trustAutoSaveState.isDirty,
+    canSave: trustAutoSaveState.canSave,
+    saveAsync: trustSaveAsync,
+  });
+
+  const businessFormRef = useRef<BusinessFormAutoSaveHandle | null>(null);
+  const [businessAutoSaveState, setBusinessAutoSaveState] = useState<{ isDirty: boolean; canSave: boolean }>({
+    isDirty: false,
+    canSave: true,
+  });
+
+  const businessSaveAsync = useCallback(async () => {
+    const handle = businessFormRef.current;
+    if (!handle) return { ok: true as const };
+    return handle.saveAsync();
+  }, []);
+
+  const businessAutoSave = useTabAutoSave({
+    isDirty: businessAutoSaveState.isDirty,
+    canSave: businessAutoSaveState.canSave,
+    saveAsync: businessSaveAsync,
+  });
+
   const scenarioId = searchParams.get("scenario");
 
   useEffect(() => {
@@ -147,7 +194,12 @@ export default function EntityDialog({
     : kind === "trust" ? "Add Trust" : "Add Business";
 
   const trustShowsNotesAndSales =
-    kind === "trust" && editing != null && showNotesAndSalesTab(editing);
+    kind === "trust" &&
+    showNotesAndSalesTab({
+      trustSubType: liveTrustState.trustSubType || null,
+      isIrrevocable: liveTrustState.isIrrevocable,
+      isGrantor: liveTrustState.isGrantor,
+    });
 
   const tabs =
     kind === "trust"
@@ -169,9 +221,13 @@ export default function EntityDialog({
         ];
 
   const activeTab = kind === "trust" ? trustTab : businessTab;
+  const autoSave = kind === "trust" ? trustAutoSave : businessAutoSave;
   const onTabChange = (tab: string) => {
-    if (kind === "trust") setTrustTab(tab as TrustTab);
-    else setBusinessTab(tab as BusinessTab);
+    if (kind === "trust") {
+      void autoSave.interceptTabChange(tab, (next) => setTrustTab(next as TrustTab));
+    } else {
+      void autoSave.interceptTabChange(tab, (next) => setBusinessTab(next as BusinessTab));
+    }
   };
 
   // Tabs that don't own a primary form action (Assets / Transfers manage their own data inline).
@@ -205,6 +261,13 @@ export default function EntityDialog({
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={onTabChange}
+      tabBarRight={
+        <TabAutoSaveIndicator
+          saving={autoSave.saving}
+          error={autoSave.saveError}
+          onDismissError={autoSave.clearSaveError}
+        />
+      }
       primaryAction={
         noPrimaryAction
           ? undefined
@@ -231,6 +294,7 @@ export default function EntityDialog({
     >
       {kind === "trust" ? (
         <AddTrustForm
+          ref={trustFormRef}
           clientId={clientId}
           editing={editing}
           household={household}
@@ -253,9 +317,13 @@ export default function EntityDialog({
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
           onScheduleSaveBindingChange={setScheduleSaveBinding}
+          onAutoSaveStateChange={setTrustAutoSaveState}
+          onAutoSaved={(e, mode) => onAutoSaved?.(e, mode)}
+          onLiveStateChange={setLiveTrustState}
         />
       ) : (
         <BusinessForm
+          ref={businessFormRef}
           clientId={clientId}
           editing={editing}
           activeTab={businessTab}
@@ -274,6 +342,8 @@ export default function EntityDialog({
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
           onScheduleSaveBindingChange={setScheduleSaveBinding}
+          onAutoSaveStateChange={setBusinessAutoSaveState}
+          onAutoSaved={(e, mode) => onAutoSaved?.(e, mode)}
         />
       )}
     </DialogShell>

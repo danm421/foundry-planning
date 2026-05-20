@@ -128,6 +128,7 @@ function categoryWithdrawalPriority(acct: Account): number | null {
     // traditional_ira, 401k, 403b, 529, deferred, other → tax-deferred bucket
     return 3;
   }
+  if (acct.category === "notes_receivable") return null; // notes amortize themselves
   return null;
 }
 

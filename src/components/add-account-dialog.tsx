@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import DialogShell from "./dialog-shell";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
+type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 interface AddAccountDialogProps {
   clientId: string;
@@ -64,6 +65,7 @@ export default function AddAccountDialog({
   initialTab,
   lockTab,
 }: AddAccountDialogProps) {
+  const router = useRouter();
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
   const actualOpen = isControlled ? !!open : internalOpen;
@@ -73,7 +75,15 @@ export default function AddAccountDialog({
   });
   const isEdit = Boolean(editing);
 
+  // Track whether any autosave occurred so we can refresh the balance sheet
+  // on close (mirrors the liability dialog pattern).
+  const autoSavedRef = useRef(false);
+
   function close() {
+    if (autoSavedRef.current) {
+      router.refresh();
+      autoSavedRef.current = false;
+    }
     if (isControlled) onOpenChange?.(false);
     else setInternalOpen(false);
   }
@@ -135,6 +145,7 @@ export default function AddAccountDialog({
             lockTab={lockTab}
             onSuccess={close}
             onSubmitStateChange={setSubmitState}
+            onAutoSaved={() => { autoSavedRef.current = true; }}
           />
         </DialogShell>
       )}

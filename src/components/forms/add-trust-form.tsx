@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { forwardRef, useImperativeHandle, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
@@ -34,6 +34,7 @@ import {
 } from "@/lib/forms/clut-funding-diff";
 import type { ClutFundingPickerAccount } from "./clut-funding-picker";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
+import type { SaveResult } from "@/lib/use-tab-auto-save";
 
 interface AddTrustFormProps {
   clientId: string;
@@ -67,6 +68,18 @@ interface AddTrustFormProps {
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
   /** Forwarded to FlowsTab → FlowScheduleGrid so the dialog footer can render a Save button. */
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
+  /** Pushed up whenever the form's dirty/can-save state changes. Drives useTabAutoSave. */
+  onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
+  /** Reports the saved entity after every successful auto-save (create or edit). */
+  onAutoSaved?: (entity: Entity, mode: "create" | "edit") => void;
+  /** Reports live form state the dialog needs for conditional-tab visibility
+   *  (e.g. whether to render Notes & sales). */
+  onLiveStateChange?: (state: { trustSubType: string; isGrantor: boolean; isIrrevocable: boolean }) => void;
+}
+
+/** Imperative handle the EntityDialog uses to trigger a save on tab switch. */
+export interface TrustFormAutoSaveHandle {
+  saveAsync: () => Promise<SaveResult & { recordId?: string }>;
 }
 
 // ── Fetch helper ─────────────────────────────────────────────────────────────
@@ -113,7 +126,7 @@ function showNotesAndSales(t: Entity): boolean {
   return Boolean(t.isIrrevocable && t.isGrantor);
 }
 
-export default function AddTrustForm({
+const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(function AddTrustForm({
   clientId, editing, household, members, externals, entities,
   initialDesignations, activeTab, accounts, liabilities, incomes, expenses,
   entityIncome, entityExpense,
@@ -123,10 +136,14 @@ export default function AddTrustForm({
   initialFlowOverrides,
   onSaved, onClose, onSubmitStateChange,
   onScheduleSaveBindingChange,
-}: AddTrustFormProps) {
+  onAutoSaveStateChange,
+  onAutoSaved,
+  onLiveStateChange,
+}, ref) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => onSubmitStateChange?.({ canSubmit: !loading, loading }), [loading, onSubmitStateChange]);
+  const [effectiveEntityId, setEffectiveEntityId] = useState<string | null>(editing?.id ?? null);
   const scenarioWriter = useScenarioWriter(clientId);
   const { scenarioId } = useScenarioState(clientId);
 
@@ -209,6 +226,12 @@ export default function AddTrustForm({
   const isClut = trustSubType === "clut";
   const showDistributionAndIncome = isIrrevocable && !isClut;
 
+  // Push live state up so the parent dialog can conditionally show/hide tabs
+  // (e.g. the Notes & sales tab visibility depends on these values).
+  useEffect(() => {
+    onLiveStateChange?.({ trustSubType, isGrantor, isIrrevocable });
+  }, [trustSubType, isGrantor, isIrrevocable, onLiveStateChange]);
+
   // CLUT split-interest state. Initialized lazily so re-renders don't reset.
   const [splitInterest, setSplitInterest] = useState<TrustSplitInterestInput>(() => ({
     origin: "new",
@@ -225,6 +248,37 @@ export default function AddTrustForm({
   // Picks for the CLUT funding-year FMV dropdown. Seeded from inception-year asset/cash transfers when editing.
   const [clutFundingPicks, setClutFundingPicks] = useState<ClutFundingPick[]>([]);
   const [originalClutFundingPicks, setOriginalClutFundingPicks] = useState<ClutFundingPick[]>([]);
+
+  // ── Dirty-tracking ──────────────────────────────────────────────────────────
+
+  // Snapshot of every field sent in the entity POST/PUT body. Compared to
+  // baselineRef.current to derive isDirty without expensive deep-equality.
+  const currentSerialized = useMemo(() => JSON.stringify({
+    name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
+    grantorStatusEndYear, includeInPortfolio, accessibleToClient, notes,
+    distributionMode, distributionAmount, distributionPercent,
+    incomeRows, remainderRows,
+    ...(trustSubType === "clut" ? { splitInterest, clutFundingPicks } : {}),
+  }), [
+    name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
+    grantorStatusEndYear, includeInPortfolio, accessibleToClient, notes,
+    distributionMode, distributionAmount, distributionPercent,
+    incomeRows, remainderRows, splitInterest, clutFundingPicks,
+  ]);
+
+  // Seeded to the current snapshot on mount so a freshly-opened dialog starts clean.
+  const baselineRef = useRef<string>("");
+  useEffect(() => {
+    baselineRef.current = currentSerialized;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isDirty = currentSerialized !== baselineRef.current;
+  const canSave = name.trim().length > 0 && trustSubType !== "";
+
+  useEffect(() => {
+    onAutoSaveStateChange?.({ isDirty, canSave });
+  }, [isDirty, canSave, onAutoSaveStateChange]);
 
   // ── Transfers tab state ────────────────────────────────────────────────────
   const [openModal, setOpenModal] = useState<"asset" | "cash" | "series" | null>(null);
@@ -407,40 +461,37 @@ export default function AddTrustForm({
     }
   }, [editing, accounts, liabilities, assetFamilyMembers, clientId, scenarioWriter]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (trustSubType === "") {
-      setError("Please pick a type.");
-      return;
-    }
-    // Inline validation: distribution mode set ⇒ ≥1 income beneficiary
-    if (distributionMode != null && incomeRows.filter((r) => r.source.kind !== "empty").length === 0) {
-      setError("Distribution mode is set but no income beneficiaries are listed.");
-      return;
-    }
+  // Pure save: validates, persists entity + CLUT gift ops + designations, then
+  // resets the dirty baseline. Shared between the explicit-submit path and the
+  // tab-switch auto-save path so both routes use identical validation + payloads.
+  const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string; entity?: Entity }> => {
+    if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
 
+    // Distribution mode set ⇒ ≥1 income beneficiary
+    if (distributionMode != null && incomeRows.filter((r) => r.source.kind !== "empty").length === 0) {
+      return { ok: false, error: "Distribution mode is set but no income beneficiaries are listed." };
+    }
     if (trustSubType === "clut" && splitInterest.origin === "new") {
       if (clutFundingPicks.length === 0) {
-        setError("Pick at least one funding asset or cash gift for the CLUT.");
-        return;
+        return { ok: false, error: "Pick at least one funding asset or cash gift for the CLUT." };
       }
       const bad = clutFundingPicks.find(
         (p) => (p.kind === "asset" ? p.percent <= 0 : p.amount <= 0),
       );
       if (bad) {
-        setError(
-          bad.kind === "asset"
+        return {
+          ok: false,
+          error: bad.kind === "asset"
             ? "Asset picks must have a percent greater than 0."
             : "Cash picks must have an amount greater than 0.",
-        );
-        return;
+        };
       }
     }
 
     setLoading(true);
     setError(null);
     try {
-      // Save entity row first
+      // Build entity body — mirrors the old handleSubmit payload exactly.
       const entityBody = {
         name,
         entityType: "trust",
@@ -462,14 +513,21 @@ export default function AddTrustForm({
         distributionPercent: showDistributionAndIncome && (distributionMode === "pct_liquid" || distributionMode === "pct_income") && distributionPercent.trim() !== "" ? Number(distributionPercent) / 100 : null,
         ...(trustSubType === "clut" && { splitInterest }),
       };
-      const isEdit = Boolean(editing);
-      const url = isEdit ? `/api/clients/${clientId}/entities/${editing!.id}` : `/api/clients/${clientId}/entities`;
+
+      // Choose POST vs PUT based on whether we have a persisted id yet.
+      const targetId = effectiveEntityId ?? editing?.id ?? null;
+      const url = targetId
+        ? `/api/clients/${clientId}/entities/${targetId}`
+        : `/api/clients/${clientId}/entities`;
       const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
+        method: targetId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entityBody),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: j.error ?? "Failed to save" };
+      }
       const saved = (await res.json()) as Entity;
 
       // Apply CLUT funding-pick changes as gift ops.
@@ -483,32 +541,32 @@ export default function AddTrustForm({
         });
         for (const op of ops) {
           if (op.type === "create") {
-            const res = await fetch(`/api/clients/${clientId}/gifts`, {
+            const giftRes = await fetch(`/api/clients/${clientId}/gifts`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(op.body),
             });
-            if (!res.ok) {
-              const j = (await res.json().catch(() => ({}))) as { error?: string };
-              throw new Error(j.error ?? `Failed to create gift (HTTP ${res.status})`);
+            if (!giftRes.ok) {
+              const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: j.error ?? `Failed to create gift (HTTP ${giftRes.status})` };
             }
           } else if (op.type === "update") {
-            const res = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
+            const giftRes = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(op.body),
             });
-            if (!res.ok) {
-              const j = (await res.json().catch(() => ({}))) as { error?: string };
-              throw new Error(j.error ?? `Failed to update gift (HTTP ${res.status})`);
+            if (!giftRes.ok) {
+              const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: j.error ?? `Failed to update gift (HTTP ${giftRes.status})` };
             }
           } else {
-            const res = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
+            const giftRes = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
               method: "DELETE",
             });
-            if (!res.ok) {
-              const j = (await res.json().catch(() => ({}))) as { error?: string };
-              throw new Error(j.error ?? `Failed to delete gift (HTTP ${res.status})`);
+            if (!giftRes.ok) {
+              const j = (await giftRes.json().catch(() => ({}))) as { error?: string };
+              return { ok: false, error: j.error ?? `Failed to delete gift (HTTP ${giftRes.status})` };
             }
           }
         }
@@ -524,16 +582,56 @@ export default function AddTrustForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(designations),
       });
-      if (!desigRes.ok) throw new Error((await desigRes.json()).error ?? "Failed to save beneficiaries");
+      if (!desigRes.ok) {
+        const j = (await desigRes.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: j.error ?? "Failed to save beneficiaries" };
+      }
 
-      onSaved(saved, isEdit ? "edit" : "create");
-      onClose();
+      // Capture whether this was the first create BEFORE flipping effectiveEntityId.
+      const wasFirstCreate = !effectiveEntityId && !editing;
+      // Flip into PUT-mode after first successful POST.
+      if (wasFirstCreate) {
+        setEffectiveEntityId(saved.id);
+      }
+      // Reset the dirty baseline so subsequent edits are correctly tracked.
+      baselineRef.current = currentSerialized;
+      // onAutoSaved fires on every successful save (autosave + explicit submit).
+      // onSaved (close-the-dialog signal) is called by handleSubmit only.
+      onAutoSaved?.(saved, wasFirstCreate ? "create" : "edit");
+      return { ok: true, recordId: saved.id, entity: saved };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     } finally {
       setLoading(false);
     }
+  }, [
+    canSave, trustSubType, distributionMode, incomeRows, splitInterest, clutFundingPicks,
+    effectiveEntityId, editing, clientId, currentSerialized,
+    name, notes, includeInPortfolio, accessibleToClient, isGrantor, grantorStatusEndYear,
+    isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
+    distributionAmount, distributionPercent, remainderRows,
+    originalClutFundingPicks, onAutoSaved,
+  ]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    // Snapshot wasFirstCreate before saveAsyncImpl, which flips effectiveEntityId.
+    const wasFirstCreate = !effectiveEntityId && !editing;
+    const result = await saveAsyncImpl();
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    // onSaved fires only here — on explicit user submit (dialog-close signal).
+    if (result.entity) {
+      onSaved(result.entity, wasFirstCreate ? "create" : "edit");
+    }
+    onClose();
   }
+
+  useImperativeHandle(ref, () => ({
+    saveAsync: saveAsyncImpl,
+  }), [saveAsyncImpl]);
 
   return (
     <form id="add-trust-form" onSubmit={handleSubmit} className="space-y-4">
@@ -967,7 +1065,9 @@ export default function AddTrustForm({
       )}
     </form>
   );
-}
+});
+
+export default AddTrustForm;
 
 // ── LinkedNotesList ──────────────────────────────────────────────────────────
 // Tiny presentational helper for the Notes & sales tab. Small enough not to

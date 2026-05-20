@@ -9,7 +9,8 @@ export type AccountCategory =
   | "retirement"
   | "real_estate"
   | "business"
-  | "life_insurance";
+  | "life_insurance"
+  | "notes_receivable";
 
 export interface AccountLite {
   id: string;

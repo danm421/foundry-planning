@@ -124,6 +124,7 @@ describe("AddAccountForm — submit payload", () => {
           real_estate: "0.04",
           business: "0.05",
           life_insurance: "0.03",
+          notes_receivable: "0",
         }}
       />,
     );
@@ -182,6 +183,7 @@ describe("AddAccountForm — edit hydration roundtrip", () => {
           real_estate: "0.04",
           business: "0.05",
           life_insurance: "0.03",
+          notes_receivable: "0",
         }}
       />,
     );

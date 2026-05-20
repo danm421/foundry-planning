@@ -15,7 +15,7 @@ import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
+type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 export interface AccountRow {
   id: string;
@@ -101,6 +101,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   real_estate: "Real Estate",
   business: "Business",
   life_insurance: "Life Insurance",
+  notes_receivable: "Notes Receivable",
 };
 
 const CATEGORY_ORDER: AccountCategory[] = [
@@ -110,6 +111,7 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "real_estate",
   "business",
   "life_insurance",
+  "notes_receivable",
 ];
 
 // Categories the Add Asset menu offers. Business entities and life-insurance
@@ -347,6 +349,7 @@ export default function BalanceSheetView({
     real_estate: [],
     business: [],
     life_insurance: [],
+    notes_receivable: [],
   };
   for (const a of inEstate) inEstateByCategory[a.category].push(a);
 

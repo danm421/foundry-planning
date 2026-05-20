@@ -45,6 +45,7 @@ export const accountCategoryEnum = pgEnum("account_category", [
   "real_estate",
   "business",
   "life_insurance",
+  "notes_receivable",
 ]);
 
 export const accountSubTypeEnum = pgEnum("account_sub_type", [

@@ -680,6 +680,10 @@ export default function FamilyView({
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
           }}
+          onAutoSaved={(e, mode) => {
+            if (mode === "create") setEntities((prev) => [...prev, e]);
+            else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
+          }}
           onRequestDelete={() => {
             if (editingEntity) setDeletingEntity(editingEntity);
           }}

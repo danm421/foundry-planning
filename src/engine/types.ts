@@ -587,7 +587,7 @@ export interface LifeInsurancePayout {
 export interface Account {
   id: string;
   name: string;
-  category: "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
+  category: "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
   subType: string;
   value: number;
   basis: number;
