@@ -18,10 +18,10 @@ const ownerSchema = z
     familyMemberId: uuidSchema.optional().nullable(),
     entityId: uuidSchema.optional().nullable(),
     externalBeneficiaryId: uuidSchema.optional().nullable(),
-    // Percent of the note owed to this party. Stored 0-100 to match the
-    // beneficiaries/wills convention; DB column is decimal(6,4) and routes
-    // convert when persisting.
-    percent: z.number().gte(0).lte(100),
+    // Fraction of the note owed to this party (0-1). Matches the
+    // account/liability owner convention so engine code can multiply
+    // amounts by owner.percent directly. DB column is decimal(6,4).
+    percent: z.number().gte(0).lte(1),
   })
   .superRefine((o, ctx) => {
     const set = [o.familyMemberId, o.entityId, o.externalBeneficiaryId].filter(

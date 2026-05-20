@@ -35,6 +35,11 @@ export type AuditAction =
   | "extra_payment.create"
   | "extra_payment.update"
   | "extra_payment.delete"
+  // Notes receivable (lender-side installment notes)
+  | "note_receivable.create"
+  | "note_receivable.update"
+  | "note_receivable.delete"
+  | "note_receivable.extra_payments.replace"
   // Cash flow
   | "income.create"
   | "income.update"
