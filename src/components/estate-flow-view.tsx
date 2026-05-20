@@ -393,12 +393,19 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
 
       for (const change of pendingChanges) {
         const { edit } = change;
-        const body: Record<string, unknown> = {
-          op: edit.op,
-          targetKind: edit.targetKind,
-          targetId: edit.targetId,
-          desiredFields: edit.desiredFields,
-        };
+        // op:"add" carries `entity` (full payload); op:"edit" carries
+        // `targetId` + `desiredFields`. The unified writer route's zod
+        // discriminated union rejects mixing these — send only the keys that
+        // belong to the op.
+        const body: Record<string, unknown> =
+          edit.op === "add"
+            ? { op: "add", targetKind: edit.targetKind, entity: edit.entity }
+            : {
+                op: edit.op,
+                targetKind: edit.targetKind,
+                targetId: edit.targetId,
+                desiredFields: edit.desiredFields,
+              };
         const res = await fetch(
           `/api/clients/${props.clientId}/scenarios/${newScenarioId}/changes`,
           {

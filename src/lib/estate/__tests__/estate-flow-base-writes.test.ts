@@ -101,4 +101,34 @@ describe("baseWritesForChange", () => {
       },
     ]);
   });
+
+  it("maps an op:add will change to one POST against /wills with grantor + both fields", () => {
+    // The wills POST schema (willCreateSchema) requires grantor, bequests,
+    // residuaryRecipients — and rejects an `id` in the body (the route mints
+    // its own). So the add path drops entity.id from the request body.
+    const residuaryRecipients = [
+      { recipientKind: "family_member", recipientId: "fm-child", tier: "primary", percentage: 100, sortOrder: 0 },
+    ];
+    const addChange: EstateFlowChange = {
+      description: "Will (Pat) — distribution",
+      edit: {
+        op: "add",
+        targetKind: "will",
+        entity: {
+          id: "new-will-id",
+          grantor: "client",
+          bequests: [],
+          residuaryRecipients,
+        },
+      },
+    };
+    const writes = baseWritesForChange(addChange, CLIENT);
+    expect(writes).toEqual([
+      {
+        url: "/api/clients/client-1/wills",
+        method: "POST",
+        body: { grantor: "client", bequests: [], residuaryRecipients },
+      },
+    ]);
+  });
 });

@@ -8,12 +8,16 @@ import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
 export interface EstateFlowChange {
   /** Human-readable summary for the unsaved-changes list. */
   description: string;
-  /** The overlay edit to submit. Always op: "edit". */
+  /**
+   * The overlay edit to submit. `op: "edit"` carries `targetId` +
+   * `desiredFields`; `op: "add"` carries `entity` instead. Wills are the only
+   * estate-flow targetKind that supports adds today — the Remainder estate
+   * dialog mints a new will when the household had none, and the diff must
+   * surface that as an add so it flows through both save channels.
+   */
   edit: ScenarioEdit & {
-    op: "edit";
+    op: "add" | "edit";
     targetKind: "account" | "entity" | "will";
-    targetId: string;
-    desiredFields: Record<string, unknown>;
   };
 }
 
@@ -169,8 +173,35 @@ export function diffWorkingCopy(
 
   const origWill = new Map((original.wills ?? []).map((w) => [w.id, w]));
   for (const w of working.wills ?? []) {
+    const grantorName =
+      w.grantor === "client" ? clientName
+      : w.grantor === "spouse" ? spouseName
+      : (w.grantor ?? "?");
+
     const o = origWill.get(w.id);
-    if (!o) continue; // skip adds
+    if (!o) {
+      // New will — the Remainder estate dialog mints one when the household
+      // had no will yet. Suppress fully-empty new wills so a phantom upsert
+      // doesn't flag the household dirty with a no-op.
+      const bequests = w.bequests ?? [];
+      const residuary = w.residuaryRecipients ?? [];
+      if (bequests.length === 0 && residuary.length === 0) continue;
+
+      changes.push({
+        description: `Will (${grantorName}) — distribution`,
+        edit: {
+          op: "add",
+          targetKind: "will",
+          entity: {
+            id: w.id,
+            grantor: w.grantor,
+            bequests,
+            residuaryRecipients: residuary,
+          },
+        },
+      });
+      continue;
+    }
 
     if (
       eq(bequestContent(o.bequests), bequestContent(w.bequests)) &&
@@ -178,11 +209,6 @@ export function diffWorkingCopy(
     ) {
       continue;
     }
-
-    const grantorName =
-      w.grantor === "client" ? clientName
-      : w.grantor === "spouse" ? spouseName
-      : (w.grantor ?? "?");
 
     changes.push({
       description: `Will (${grantorName}) — distribution`,

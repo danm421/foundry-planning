@@ -10,7 +10,7 @@ import type { EstateFlowChange } from "./estate-flow-diff";
  */
 export interface BaseWrite {
   url: string;
-  method: "PUT" | "PATCH";
+  method: "POST" | "PUT" | "PATCH";
   body: unknown;
 }
 
@@ -30,9 +30,34 @@ export function baseWritesForChange(
   change: EstateFlowChange,
   clientId: string,
 ): BaseWrite[] {
-  const { targetKind, targetId, desiredFields } = change.edit;
   const base = `/api/clients/${clientId}`;
   const writes: BaseWrite[] = [];
+
+  // ── Will adds ─────────────────────────────────────────────────────────────
+  // The Remainder estate dialog mints a fresh will when the household had
+  // none — surface that as a POST to /wills. willCreateSchema requires
+  // grantor + bequests + residuaryRecipients and rejects a client-side `id`
+  // (the route mints its own), so the entity.id is dropped from the body.
+  if (change.edit.op === "add") {
+    if (change.edit.targetKind === "will") {
+      const entity = change.edit.entity ?? {};
+      writes.push({
+        url: `${base}/wills`,
+        method: "POST",
+        body: {
+          grantor: entity.grantor,
+          bequests: entity.bequests ?? [],
+          residuaryRecipients: entity.residuaryRecipients ?? [],
+        },
+      });
+    }
+    return writes;
+  }
+
+  // ── Edits ─────────────────────────────────────────────────────────────────
+  const { targetKind, targetId, desiredFields } = change.edit;
+  // op:"edit" branches all require targetId and desiredFields; narrow once.
+  if (!targetId || !desiredFields) return writes;
 
   switch (targetKind) {
     case "account": {

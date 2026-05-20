@@ -194,7 +194,7 @@ describe("diffWorkingCopy", () => {
     expect(changes[0].edit.desiredFields).toHaveProperty("bequests");
     expect(changes[0].edit.desiredFields).toHaveProperty("residuaryRecipients");
     // Fix 3: the unchanged residuaryRecipients value is faithfully carried
-    expect(changes[0].edit.desiredFields.residuaryRecipients).toEqual([]);
+    expect(changes[0].edit.desiredFields?.residuaryRecipients).toEqual([]);
   });
 
   it("emits one will edit when residuaryRecipients change", () => {
@@ -269,6 +269,71 @@ describe("diffWorkingCopy", () => {
     const changes = diffWorkingCopy(original, working);
     expect(changes).toHaveLength(1);
     expect(changes[0].description).toContain("Client");
+  });
+
+  // ── Will adds ────────────────────────────────────────────────────────────
+  // The Remainder estate dialog can mint a fresh will when the household
+  // doesn't have one yet (clientWill?.id ?? newId() in the dialog). The diff
+  // must surface that as an `op: "add"` change so the unsaved-changes banner
+  // appears and the save channel POSTs the new will to /api/clients/[id]/wills.
+
+  it("emits an op:add change for a new client will with residuary recipients", () => {
+    const recipient = { recipientKind: "family_member", recipientId: "fm-child", tier: "primary", percentage: 100, sortOrder: 0 };
+    const original = cd([], [], [], BASE_FAMILY_MEMBERS);
+    const working = cd(
+      [],
+      [],
+      [{ id: "new-will-id", grantor: "client", bequests: [], residuaryRecipients: [recipient] }],
+      BASE_FAMILY_MEMBERS,
+    );
+    const changes = diffWorkingCopy(original, working);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].edit).toMatchObject({ op: "add", targetKind: "will" });
+    expect(changes[0].edit.entity).toMatchObject({
+      id: "new-will-id",
+      grantor: "client",
+      bequests: [],
+      residuaryRecipients: [recipient],
+    });
+    expect(changes[0].description).toContain("Pat");
+  });
+
+  it("emits an op:add change for a new spouse will when only the client had a will", () => {
+    const recipient = { recipientKind: "family_member", recipientId: "fm-child", tier: "primary", percentage: 100, sortOrder: 0 };
+    const original = cd(
+      [],
+      [],
+      [{ id: "w-client", grantor: "client", bequests: [], residuaryRecipients: [] }],
+      BASE_FAMILY_MEMBERS,
+    );
+    const working = cd(
+      [],
+      [],
+      [
+        { id: "w-client", grantor: "client", bequests: [], residuaryRecipients: [] },
+        { id: "new-w-spouse", grantor: "spouse", bequests: [], residuaryRecipients: [recipient] },
+      ],
+      BASE_FAMILY_MEMBERS,
+    );
+    const changes = diffWorkingCopy(original, working);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].edit).toMatchObject({ op: "add", targetKind: "will" });
+    expect(changes[0].edit.entity).toMatchObject({ id: "new-w-spouse", grantor: "spouse" });
+    expect(changes[0].description).toContain("Jordan");
+  });
+
+  it("skips a phantom new will with no bequests and no residuary recipients", () => {
+    // The Remainder dialog won't push an empty will, but defending against
+    // empty new wills here keeps a stray upsert from flagging the household
+    // dirty with a no-op change.
+    const original = cd([], [], [], BASE_FAMILY_MEMBERS);
+    const working = cd(
+      [],
+      [],
+      [{ id: "new-will-id", grantor: "client", bequests: [], residuaryRecipients: [] }],
+      BASE_FAMILY_MEMBERS,
+    );
+    expect(diffWorkingCopy(original, working)).toEqual([]);
   });
 
   // ── Ordering ─────────────────────────────────────────────────────────────
