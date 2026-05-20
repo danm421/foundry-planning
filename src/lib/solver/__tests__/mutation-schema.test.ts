@@ -208,3 +208,83 @@ describe("SOLVER_MUTATION_SCHEMA — technique upserts", () => {
     expect(r.success).toBe(false);
   });
 });
+
+describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine", () => {
+  it("rejects a sell with both accountId and entityId set", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "asset-transaction-upsert",
+      id: "at-1",
+      value: {
+        id: "at-1",
+        name: "Sell",
+        type: "sell",
+        year: 2030,
+        accountId: "acc-1",
+        entityId: "ent-1",
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("accepts a sell with only entityId set", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "asset-transaction-upsert",
+      id: "at-1",
+      value: {
+        id: "at-1",
+        name: "Sell",
+        type: "sell",
+        year: 2030,
+        entityId: "ent-1",
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts a buy with multiple sources set (refine only triggers on sells)", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "asset-transaction-upsert",
+      id: "at-1",
+      value: {
+        id: "at-1",
+        name: "Buy",
+        type: "buy",
+        year: 2030,
+        accountId: "acc-1",
+        entityId: "ent-1",
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects a sell with all three sources set", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "asset-transaction-upsert",
+      id: "at-1",
+      value: {
+        id: "at-1",
+        name: "Sell",
+        type: "sell",
+        year: 2030,
+        accountId: "acc-1",
+        purchaseTransactionId: "pt-1",
+        entityId: "ent-1",
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("accepts a sell with zero sources set", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "asset-transaction-upsert",
+      id: "at-1",
+      value: {
+        id: "at-1",
+        name: "Sell",
+        type: "sell",
+        year: 2030,
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+});
