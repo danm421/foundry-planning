@@ -62,6 +62,7 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
+import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
 import {
   resolveAccountFromRaw,
@@ -1214,10 +1215,7 @@ export const loadClientDataWithContext = cache(
       giftEvents,
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
-      // Notes receivable wiring lives in Task 2.7 — the engine consumes
-      // `data.notesReceivable` already, but the DB → engine mapper is not
-      // yet plumbed. Empty array preserves the old projection behavior.
-      notesReceivable: [],
+      notesReceivable: await loadNotesReceivable(id, scenario.id),
     };
 
     return { clientData, resolutionContext: resolutionCtx };
