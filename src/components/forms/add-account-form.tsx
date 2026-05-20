@@ -1158,9 +1158,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 }}
                 className={selectClassName}
               >
-                {(Object.keys(CATEGORY_LABELS) as AccountCategory[]).map((cat) => (
-                  <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
-                ))}
+                {(Object.keys(CATEGORY_LABELS) as AccountCategory[])
+                  .filter((cat) => cat !== "business" && cat !== "life_insurance")
+                  .map((cat) => (
+                    <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
+                  ))}
               </select>
             </div>
 

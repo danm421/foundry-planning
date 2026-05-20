@@ -121,6 +121,7 @@ const ADDABLE_CATEGORIES: AccountCategory[] = [
   "cash",
   "retirement",
   "real_estate",
+  "notes_receivable",
 ];
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
