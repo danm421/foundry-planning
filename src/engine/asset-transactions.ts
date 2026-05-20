@@ -528,3 +528,190 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
 
   return { newAccounts, newLiabilities, breakdown };
 }
+
+// ── applyEntitySales ──────────────────────────────────────────────────────────
+
+/** Minimal shape of an entity row consumed by entity sales. Real callers pass
+ *  EntitySummary from src/engine/types — structurally compatible. Kept local
+ *  so the engine signature stays decoupled from the broader EntitySummary
+ *  surface (which carries dozens of unrelated trust/distribution fields). */
+export interface EntitySaleInputEntity {
+  id: string;
+  name: string;
+  entityType: "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
+  value: number;
+  basis: number;
+  /** Family-member owners only — entity_owners schema has no external_beneficiary. */
+  owners: Array<{ familyMemberId: string; percent: number }>;
+}
+
+export interface EntitySaleBreakdown {
+  transactionId: string;
+  entityId: string;
+  fractionSold: number;
+  operatingSaleValue: number;
+  operatingBasis: number;
+  operatingGain: number;
+  cascadedAccountIds: string[];
+  cascadedLiabilityIds: string[];
+  cascadedCapitalGain: number;
+  totalCapitalGain: number;
+  transactionCosts: number;
+  totalLiabilityPaydown: number;
+  netProceeds: number;
+}
+
+export interface EntitySaleDiagnostic {
+  transactionId: string;
+  reason:
+    | "trust-not-sellable"
+    | "entity-not-found"
+    | "no-owners"
+    | "invalid-fraction";
+}
+
+export interface EntitySalesResult {
+  capitalGains: number;
+  capitalGainsByOwner: Record<string, number>;
+  removedAccountIds: string[];
+  removedLiabilityIds: string[];
+  removedEntityIds: string[];
+  totalLiabilityPaydown: number;
+  breakdown: EntitySaleBreakdown[];
+  diagnostics: EntitySaleDiagnostic[];
+}
+
+export interface ApplyEntitySalesInput {
+  sales: AssetTransaction[];
+  entities: EntitySaleInputEntity[];
+  accounts: Account[];
+  liabilities: Liability[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  accountLedgers: Record<string, AccountLedger>;
+  year: number;
+  defaultCheckingId: string;
+}
+
+export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResult {
+  const {
+    sales,
+    entities,
+    accountBalances,
+    basisMap,
+    accountLedgers,
+    year,
+    defaultCheckingId,
+  } = input;
+
+  let totalCapitalGains = 0;
+  const capitalGainsByOwner: Record<string, number> = {};
+  const removedAccountIds: string[] = [];
+  const removedLiabilityIds: string[] = [];
+  const removedEntityIds: string[] = [];
+  let totalLiabilityPaydown = 0;
+  const breakdown: EntitySaleBreakdown[] = [];
+  const diagnostics: EntitySaleDiagnostic[] = [];
+
+  for (const sale of sales) {
+    if (sale.type !== "sell" || sale.year !== year) continue;
+    if (!sale.entityId) continue;
+
+    const f = sale.fractionSold ?? 1;
+    if (f <= 0 || f > 1) {
+      diagnostics.push({ transactionId: sale.id, reason: "invalid-fraction" });
+      continue;
+    }
+
+    const entity = entities.find((e) => e.id === sale.entityId);
+    if (!entity) {
+      diagnostics.push({ transactionId: sale.id, reason: "entity-not-found" });
+      continue;
+    }
+    if (entity.entityType === "trust") {
+      diagnostics.push({ transactionId: sale.id, reason: "trust-not-sellable" });
+      continue;
+    }
+    if (entity.owners.length === 0) {
+      diagnostics.push({ transactionId: sale.id, reason: "no-owners" });
+      continue;
+    }
+
+    // Operating-value sale
+    const operatingValue = sale.overrideSaleValue ?? entity.value;
+    const operatingBasis = sale.overrideBasis ?? entity.basis;
+    const operatingGross = f * operatingValue;
+    const operatingGain = Math.max(0, f * (operatingValue - operatingBasis));
+
+    // Cascade hooks — filled in Tasks 6 (accounts) and 7 (liabilities).
+    const cascadedAccountIds: string[] = [];
+    const cascadedLiabilityIds: string[] = [];
+    const cascadedGross = 0;
+    const cascadedGain = 0;
+    const cascadedPaydown = 0;
+
+    // Costs apply to combined gross
+    const grossProceeds = operatingGross + cascadedGross;
+    const costPct = (sale.transactionCostPct ?? 0) * grossProceeds;
+    const costFlat = sale.transactionCostFlat ?? 0;
+    const transactionCosts = costPct + costFlat;
+
+    const netProceeds = grossProceeds - transactionCosts - cascadedPaydown;
+    const totalCapitalGain = operatingGain + cascadedGain;
+
+    // Distribute cap gain to owners pro-rata
+    for (const owner of entity.owners) {
+      const share = totalCapitalGain * owner.percent;
+      capitalGainsByOwner[owner.familyMemberId] =
+        (capitalGainsByOwner[owner.familyMemberId] ?? 0) + share;
+    }
+    totalCapitalGains += totalCapitalGain;
+    totalLiabilityPaydown += cascadedPaydown;
+
+    // Route proceeds to household default checking
+    if (defaultCheckingId && accountBalances[defaultCheckingId] !== undefined) {
+      accountBalances[defaultCheckingId] += netProceeds;
+      basisMap[defaultCheckingId] = (basisMap[defaultCheckingId] ?? 0) + netProceeds;
+      if (accountLedgers[defaultCheckingId]) {
+        accountLedgers[defaultCheckingId].contributions += netProceeds;
+        accountLedgers[defaultCheckingId].endingValue += netProceeds;
+        accountLedgers[defaultCheckingId].entries.push({
+          category: "income",
+          label: `Entity sale proceeds: ${entity.name}`,
+          amount: netProceeds,
+          sourceId: sale.id,
+        });
+      }
+    }
+
+    // Full sale → mark entity for removal
+    if (f >= 1) removedEntityIds.push(entity.id);
+
+    breakdown.push({
+      transactionId: sale.id,
+      entityId: entity.id,
+      fractionSold: f,
+      operatingSaleValue: operatingValue,
+      operatingBasis,
+      operatingGain,
+      cascadedAccountIds,
+      cascadedLiabilityIds,
+      cascadedCapitalGain: cascadedGain,
+      totalCapitalGain,
+      transactionCosts,
+      totalLiabilityPaydown: cascadedPaydown,
+      netProceeds,
+    });
+  }
+
+  return {
+    capitalGains: totalCapitalGains,
+    capitalGainsByOwner,
+    removedAccountIds,
+    removedLiabilityIds,
+    removedEntityIds,
+    totalLiabilityPaydown,
+    breakdown,
+    diagnostics,
+  };
+}
