@@ -104,6 +104,16 @@ interface LedgerModal {
   ledger: AccountLedger;
 }
 
+interface NoteLedgerModal {
+  noteName: string;
+  year: number;
+  beginningBalance: number;
+  interest: number;
+  principalLTCG: number;
+  principalBasis: number;
+  endingBalance: number;
+}
+
 interface TaxDrillModal {
   year: number;
   detail: NonNullable<ProjectionYear["taxDetail"]>;
@@ -293,6 +303,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   );
   const [chartView, setChartView] = useState<"portfolio" | "cashflow">("portfolio");
   const [ledgerModal, setLedgerModal] = useState<LedgerModal | null>(null);
+  const [noteLedgerModal, setNoteLedgerModal] = useState<NoteLedgerModal | null>(null);
   const [sourceDetailModal, setSourceDetailModal] = useState<{
     name: string;
     year: number;
@@ -1134,25 +1145,24 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const level = drillPath[0];
     const subLevel = drillPath[1];
 
-    // Notes-receivable per-year aggregates are emitted by the engine as
-    // ProjectionYear.notesReceivableTotals. Note income is not in r.income.total
-    // — by design the new column is presented alongside, not as a sub-bucket.
-    function noteInterest(y: ProjectionYear) {
-      return y.notesReceivableTotals?.interest ?? 0;
-    }
-    function noteLTCG(y: ProjectionYear) {
-      return y.notesReceivableTotals?.principalLTCG ?? 0;
-    }
-    function noteBasis(y: ProjectionYear) {
-      return y.notesReceivableTotals?.principalBasis ?? 0;
-    }
+    // Notes-receivable per-year cash inflow. Not present in r.income.total —
+    // notes are credited directly to checking and surfaced as a separate
+    // sub-column under Other Inflows.
     function noteTotal(y: ProjectionYear) {
-      return noteInterest(y) + noteLTCG(y) + noteBasis(y);
+      const t = y.notesReceivableTotals;
+      if (!t) return 0;
+      return t.interest + t.principalLTCG + t.principalBasis;
     }
-    const hasNoteInterest = visibleYears.some((y) => noteInterest(y) > 0);
-    const hasNoteLTCG = visibleYears.some((y) => noteLTCG(y) > 0);
-    const hasNoteBasis = visibleYears.some((y) => noteBasis(y) > 0);
-    const hasNoteIncome = hasNoteInterest || hasNoteLTCG || hasNoteBasis;
+    function noteByNoteCash(y: ProjectionYear, noteId: string) {
+      const r = y.notesReceivableByNote?.[noteId];
+      if (!r) return 0;
+      return r.interest + r.principalLTCG + r.principalBasis;
+    }
+    // Notes from clientData that have any cash inflow in the visible range.
+    const activeNotes = (clientData?.notesReceivable ?? []).filter((n) =>
+      visibleYears.some((y) => noteByNoteCash(y, n.id) > 0),
+    );
+    const hasNoteIncome = activeNotes.length > 0;
 
     // Always-present base columns
     const baseColumns: ColumnDef<ProjectionYear>[] = [
@@ -1199,19 +1209,25 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol(
           "other_income_l0",
           () => <DrillBtn segment="other_income_detail" label="Other Inflows" />,
-          // Top-level "Other Inflows" surfaces technique-generated proceeds
-          // (asset sale surpluses) only. User-entered `type=other` income is
-          // already represented under Income > Other in the income drill, so
-          // showing it here would double-display the same row. Matches the
-          // drill-down breakdown at level=other_income_detail, which itself
-          // sums only `techniqueIncomeIds` from `bySource`.
+          // Other Inflows surfaces technique-generated proceeds (asset sale
+          // surpluses) plus notes-receivable cash payments. User-entered
+          // `type=other` income is already represented under Income > Other
+          // in the income drill, so it stays out of this top-level cell.
           (r) =>
             techniqueIncomeIds.reduce(
               (sum, id) => sum + (r.income.bySource[id] ?? 0),
               0,
-            )
+            ) + noteTotal(r),
         ),
-        numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
+        numCol(
+          "totalIncome",
+          "Total Income",
+          // Engine's r.totalIncome doesn't include note cash (credited
+          // directly to checking). Surface it here so the row footer matches
+          // Income + RMDs + Other Inflows.
+          (r) => r.totalIncome + noteTotal(r),
+          true,
+        ),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),
         numCol("savings_total", () => <DrillBtn segment="savings" label="Savings" />, (r) => r.savings.total),
         numCol("totalExpenses", "Total Expenses", (r) => r.totalExpenses, true),
@@ -1244,16 +1260,65 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
     // ── Other Income direct drill (from Level 0) ────────────────────────
     if (level === "other_income_detail") {
-      // Consolidate every surplus-producing asset transaction into a single
-      // "Net Proceeds from Asset Transactions" column. Clicking a non-zero
-      // year opens a grouped modal showing every sale AND every same-year
-      // purchase as offsets, so the advisor can see how the net cell value
-      // was computed.
       const sourceIds = techniqueIncomeIds;
       const techniqueSourceIds = sourceIds.filter((id) => id.startsWith("technique-"));
       const nonTechniqueSourceIds = sourceIds.filter((id) => !id.startsWith("technique-"));
       const yearTotal = (r: ProjectionYear) =>
         techniqueSourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0);
+      const notesYearTotal = (r: ProjectionYear) =>
+        activeNotes.reduce((sum, n) => sum + noteByNoteCash(r, n.id), 0);
+
+      // Level 2: per-note breakdown under Other Inflows → Notes Receivable.
+      // Each note becomes its own column; clicking a non-zero cell opens the
+      // per-year ledger modal.
+      if (subLevel === "notes_receivable") {
+        return [
+          ...baseColumns,
+          ...activeNotes.map((note) =>
+            col(
+              `oi_note_${note.id}`,
+              note.name,
+              (r) => noteByNoteCash(r, note.id),
+              (info) => {
+                const v = info.getValue() as number;
+                if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
+                const row = info.row.original;
+                const detail = row.notesReceivableByNote?.[note.id];
+                return (
+                  <button
+                    onClick={() => {
+                      const interest = detail?.interest ?? 0;
+                      const principalLTCG = detail?.principalLTCG ?? 0;
+                      const principalBasis = detail?.principalBasis ?? 0;
+                      const endingBalance = detail?.endingBalance ?? 0;
+                      setNoteLedgerModal({
+                        noteName: note.name,
+                        year: row.year,
+                        beginningBalance: endingBalance + principalLTCG + principalBasis,
+                        interest,
+                        principalLTCG,
+                        principalBasis,
+                        endingBalance,
+                      });
+                    }}
+                    className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
+                    title="View note ledger"
+                  >
+                    {fmtNum(v)}
+                  </button>
+                );
+              },
+            ),
+          ),
+          numCol("oi_notes_total", "Notes Receivable Total", notesYearTotal, true),
+        ];
+      }
+
+      // Level 1: Other Inflows summary. Net Proceeds from Asset Transactions
+      // consolidates every surplus-producing transaction; clicking a non-zero
+      // year opens a grouped modal showing sales + same-year purchase offsets.
+      // Notes Receivable collapses to a single drill column — drill into it
+      // to see per-note columns + ledger.
       return [
         ...baseColumns,
         col(
@@ -1287,10 +1352,21 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ...nonTechniqueSourceIds.map((id) =>
           numCol(`oi_src_${id}`, incomeNames[id] ?? id, (r) => r.income.bySource[id] ?? 0),
         ),
+        ...(hasNoteIncome
+          ? [
+              numCol(
+                "oi_notes",
+                () => <DrillBtn segment="notes_receivable" label="Notes Receivable" />,
+                notesYearTotal,
+              ),
+            ]
+          : []),
         numCol(
           "oi_total",
           "Other Inflows Total",
-          (r) => sourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0),
+          (r) =>
+            sourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0) +
+            notesYearTotal(r),
           true,
         ),
       ];
@@ -1385,29 +1461,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
-      // Level 2: notes-receivable child rows (Interest / Gain / Return of Basis)
-      if (subLevel === "notes_receivable") {
-        return [
-          ...baseColumns,
-          ...(hasNoteInterest
-            ? [numCol("notes_interest", "Interest Income", noteInterest)]
-            : []),
-          ...(hasNoteLTCG
-            ? [numCol("notes_ltcg", "Principal — Gain", noteLTCG)]
-            : []),
-          ...(hasNoteBasis
-            ? [
-                numCol(
-                  "notes_basis",
-                  "Principal — Return of Basis",
-                  noteBasis,
-                ),
-              ]
-            : []),
-          numCol("notes_total", "Notes Receivable Total", noteTotal, true),
-        ];
-      }
-
       // Level 2: individual sources for a specific income type
       if (subLevel && INCOME_SEGMENT_TO_TYPE[subLevel] != null) {
         const sourceIds = incomesByType[subLevel] ?? [];
@@ -1469,15 +1522,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("income_deferred", () => <DrillBtn segment="deferred" label="Deferred" />, (r) => r.income.deferred),
         numCol("income_capgains", () => <DrillBtn segment="capitalGains" label="Capital Gains" />, (r) => r.income.capitalGains),
         numCol("income_other", () => <DrillBtn segment="other_income" label="Other" />, (r) => r.income.other),
-        ...(hasNoteIncome
-          ? [
-              numCol(
-                "income_notes",
-                () => <DrillBtn segment="notes_receivable" label="Notes Receivable" />,
-                noteTotal,
-              ),
-            ]
-          : []),
         numCol("income_total", "Total", (r) => r.income.total, true),
       ];
     }
@@ -2443,6 +2487,72 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Note Ledger Modal — per-year breakdown for a single note receivable */}
+      {noteLedgerModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setNoteLedgerModal(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-100">{noteLedgerModal.noteName}</h3>
+              <button
+                onClick={() => setNoteLedgerModal(null)}
+                className="text-gray-300 hover:text-gray-200 focus:outline-none"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-sm text-gray-300 mb-3">Year {noteLedgerModal.year} Ledger</p>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-300">Beginning Balance</span>
+                <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.beginningBalance)}</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-800">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
+                Year Payment Breakdown
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-300">Interest Income</span>
+                  <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.interest)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-300">Principal — Gain</span>
+                  <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.principalLTCG)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-300">Principal — Return of Basis</span>
+                  <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.principalBasis)}</span>
+                </div>
+                <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-gray-800 font-medium">
+                  <span className="text-gray-200">Total Payment</span>
+                  <span className="tabular-nums text-gray-100">
+                    {fmtNum(
+                      noteLedgerModal.interest +
+                        noteLedgerModal.principalLTCG +
+                        noteLedgerModal.principalBasis,
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-700 space-y-1.5">
+              <div className="flex justify-between text-sm font-semibold">
+                <span className="text-gray-200">Ending Balance</span>
+                <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.endingBalance)}</span>
+              </div>
             </div>
           </div>
         </div>
