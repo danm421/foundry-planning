@@ -214,6 +214,7 @@ const DRILL_LABELS: Record<string, string> = {
   deferred: "Deferred",
   capitalGains: "Capital Gains",
   other_income: "Other",
+  notes_receivable: "Notes Receivable",
   // Expense sub-types
   living: "Living Expenses",
   other_expense: "Other Expenses",
@@ -1133,6 +1134,40 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const level = drillPath[0];
     const subLevel = drillPath[1];
 
+    // Notes-receivable per-year aggregation. Sums across all notes for a
+    // given year. The engine emits per-note interest / principalLTCG /
+    // principalBasis on ProjectionYear.notesReceivableByNote; we surface the
+    // sums as a top-level income column + 3-child drill (Interest / Principal
+    // Gain / Return of Basis). Note income is not in r.income.total — by
+    // design the new column is presented alongside, not as a sub-bucket.
+    function noteYearTotals(y: ProjectionYear): {
+      interest: number;
+      principalLTCG: number;
+      principalBasis: number;
+      total: number;
+    } {
+      const m = y.notesReceivableByNote;
+      if (!m) return { interest: 0, principalLTCG: 0, principalBasis: 0, total: 0 };
+      let interest = 0;
+      let principalLTCG = 0;
+      let principalBasis = 0;
+      for (const n of Object.values(m)) {
+        interest += n.interest;
+        principalLTCG += n.principalLTCG;
+        principalBasis += n.principalBasis;
+      }
+      return {
+        interest,
+        principalLTCG,
+        principalBasis,
+        total: interest + principalLTCG + principalBasis,
+      };
+    }
+    const hasNoteInterest = visibleYears.some((y) => noteYearTotals(y).interest > 0);
+    const hasNoteLTCG = visibleYears.some((y) => noteYearTotals(y).principalLTCG > 0);
+    const hasNoteBasis = visibleYears.some((y) => noteYearTotals(y).principalBasis > 0);
+    const hasNoteIncome = hasNoteInterest || hasNoteLTCG || hasNoteBasis;
+
     // Always-present base columns
     const baseColumns: ColumnDef<ProjectionYear>[] = [
       col("year", "Year", (r) => r.year, (info) => {
@@ -1364,6 +1399,46 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
+      // Level 2: notes-receivable child rows (Interest / Gain / Return of Basis)
+      if (subLevel === "notes_receivable") {
+        return [
+          ...baseColumns,
+          ...(hasNoteInterest
+            ? [
+                numCol(
+                  "notes_interest",
+                  "Interest Income",
+                  (r) => noteYearTotals(r).interest,
+                ),
+              ]
+            : []),
+          ...(hasNoteLTCG
+            ? [
+                numCol(
+                  "notes_ltcg",
+                  "Principal — Gain",
+                  (r) => noteYearTotals(r).principalLTCG,
+                ),
+              ]
+            : []),
+          ...(hasNoteBasis
+            ? [
+                numCol(
+                  "notes_basis",
+                  "Principal — Return of Basis",
+                  (r) => noteYearTotals(r).principalBasis,
+                ),
+              ]
+            : []),
+          numCol(
+            "notes_total",
+            "Notes Receivable Total",
+            (r) => noteYearTotals(r).total,
+            true,
+          ),
+        ];
+      }
+
       // Level 2: individual sources for a specific income type
       if (subLevel && INCOME_SEGMENT_TO_TYPE[subLevel] != null) {
         const sourceIds = incomesByType[subLevel] ?? [];
@@ -1425,6 +1500,15 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("income_deferred", () => <DrillBtn segment="deferred" label="Deferred" />, (r) => r.income.deferred),
         numCol("income_capgains", () => <DrillBtn segment="capitalGains" label="Capital Gains" />, (r) => r.income.capitalGains),
         numCol("income_other", () => <DrillBtn segment="other_income" label="Other" />, (r) => r.income.other),
+        ...(hasNoteIncome
+          ? [
+              numCol(
+                "income_notes",
+                () => <DrillBtn segment="notes_receivable" label="Notes Receivable" />,
+                (r) => noteYearTotals(r).total,
+              ),
+            ]
+          : []),
         numCol("income_total", "Total", (r) => r.income.total, true),
       ];
     }
