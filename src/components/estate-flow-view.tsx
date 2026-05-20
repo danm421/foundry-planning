@@ -222,6 +222,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     setWorkingGifts(props.initialGifts);
   }, [props.initialGifts]);
 
+  // Same shape of resync for the ClientData sandbox. The Remainder estate
+  // dialog mints a fresh uuid for a new will; after a successful POST /wills
+  // the DB-assigned id supersedes it, and without this effect `working`
+  // would keep the client-side id while `original` switches to the DB id.
+  // `diffWorkingCopy` would then re-emit an `op:"add"` change every save
+  // and the next POST would 409 ("A will already exists for grantor=...").
+  useEffect(() => {
+    setWorking(props.initialClientData);
+  }, [props.initialClientData]);
+
   // Warn on browser close / tab close / hard navigation when there are unsaved edits.
   useEffect(() => {
     if (!isDirty) return;
