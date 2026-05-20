@@ -65,6 +65,11 @@ type RawAccount = {
   priorYearEndValue: string | number | null;
   insuredPerson: string | null;
   titlingType: "jtwros" | "community_property";
+  noteInterestRate?: string | number | null;
+  noteTermMonths?: number | null;
+  noteStartYear?: number | null;
+  notePaymentType?: "amortizing" | "interest_only_balloon" | null;
+  noteLinkedTrustEntityId?: string | null;
   owners?: AccountOwner[];
   beneficiaries?: BeneficiaryRef[];
   lifeInsurance?: Account["lifeInsurance"];
@@ -181,6 +186,11 @@ export function resolveAccountFromRaw(
       ctx.resolver,
     ),
     titlingType: raw.titlingType,
+    noteInterestRate: raw.noteInterestRate != null ? n(raw.noteInterestRate) : undefined,
+    noteTermMonths: raw.noteTermMonths ?? undefined,
+    noteStartYear: raw.noteStartYear ?? undefined,
+    notePaymentType: raw.notePaymentType ?? undefined,
+    noteLinkedTrustEntityId: raw.noteLinkedTrustEntityId ?? undefined,
     owners: raw.owners ?? ctx.ownersByAccountId?.get(raw.id) ?? [],
   };
 }
