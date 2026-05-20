@@ -343,4 +343,101 @@ d("loadEffectiveTree — notesReceivable filter by ToggleState", () => {
     );
     expect(ourNote).toBeUndefined();
   });
+
+  it("drops notes whose toggle group's parent is off via requiresGroupId", async () => {
+    const { db } = dbMod;
+    const {
+      scenarios,
+      scenarioToggleGroups,
+      notesReceivable,
+      noteReceivableOwners,
+      externalBeneficiaries,
+    } = schema;
+
+    // Regression for a code-review-caught bug: the previous filter resolved
+    // each group's state independently (toggleState ?? defaultOn), ignoring
+    // `requiresGroupId` parent-chain cascading. A note attached to a child
+    // group whose parent is off would incorrectly pass.
+    const [scn] = await db
+      .insert(scenarios)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        name: `nr-filter-C-${randomUUID().slice(0, 8)}`,
+        isBaseCase: false,
+      })
+      .returning();
+    createdScenarioIds.push(scn.id);
+
+    // Parent + child groups, both default-on. We'll override parent → off in
+    // toggleState; `resolveEffectiveToggleState` must propagate that down to
+    // the child even though the child itself has no explicit override.
+    const [parentGroup] = await db
+      .insert(scenarioToggleGroups)
+      .values({
+        scenarioId: scn.id,
+        name: "parent-group",
+        defaultOn: true,
+        orderIndex: 0,
+        requiresGroupId: null,
+      })
+      .returning();
+    const [childGroup] = await db
+      .insert(scenarioToggleGroups)
+      .values({
+        scenarioId: scn.id,
+        name: "child-group",
+        defaultOn: true,
+        orderIndex: 1,
+        requiresGroupId: parentGroup.id,
+      })
+      .returning();
+
+    const [extBen] = await db
+      .insert(externalBeneficiaries)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        name: `nr-filter-ben-${randomUUID().slice(0, 6)}`,
+        kind: "charity",
+      })
+      .returning();
+    createdExternalBeneficiaryIds.push(extBen.id);
+
+    const [note] = await db
+      .insert(notesReceivable)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId: baseScenarioId,
+        toggleGroupId: childGroup.id,
+        name: "Child-of-off-parent note",
+        faceValue: "75000",
+        basis: "75000",
+        interestRate: "0.045",
+        paymentType: "amortizing",
+        startYear: 2028,
+        startMonth: 3,
+        termMonths: 84,
+      })
+      .returning();
+    createdNoteIds.push(note.id);
+
+    await db.insert(noteReceivableOwners).values({
+      noteReceivableId: note.id,
+      externalBeneficiaryId: extBen.id,
+      percent: "1.0000",
+    });
+
+    // Parent → off. Child has no explicit override, but its effective state
+    // must cascade to off, so the note must be filtered out.
+    const { effectiveTree } = await loaderMod.loadEffectiveTree(
+      COOPER_CLIENT_ID,
+      COOPER_FIRM_ID,
+      scn.id,
+      { [parentGroup.id]: false },
+    );
+
+    const ourNote = (effectiveTree.notesReceivable ?? []).find(
+      (n) => n.id === note.id,
+    );
+    expect(ourNote).toBeUndefined();
+  });
 });

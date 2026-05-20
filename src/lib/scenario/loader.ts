@@ -14,6 +14,7 @@ import {
 import type { ClientData, EntityFlowOverride } from "@/engine/types";
 import {
   applyScenarioChanges,
+  resolveEffectiveToggleState,
 } from "@/engine/scenario/applyChanges";
 import type {
   CascadeWarning,
@@ -221,20 +222,16 @@ export const loadEffectiveTree = cache(
 
     // Filter notes_receivable by ToggleState. Notes with toggleGroupId === null
     // always pass; otherwise the row passes iff its group resolves "on" in the
-    // active toggle state (toggleState wins; falls back to group.defaultOn).
-    // applyScenarioChangesWithRefs does not currently overlay notesReceivable,
-    // so this runs against whatever the base tree provided.
+    // effective toggle state — `resolveEffectiveToggleState` walks the
+    // `requiresGroupId` chain so child groups inherit "off" from their parents,
+    // matching how `applyScenarioChanges` treats scenario_change rows under the
+    // same group.
     if (result.effectiveTree.notesReceivable) {
-      const groupOn = new Map<string, boolean>();
-      for (const g of groups) {
-        const explicit = toggleState[g.id];
-        groupOn.set(g.id, explicit ?? g.defaultOn);
-      }
+      const effective = resolveEffectiveToggleState(toggleState, groups);
       result.effectiveTree = {
         ...result.effectiveTree,
         notesReceivable: result.effectiveTree.notesReceivable.filter(
-          (n) =>
-            n.toggleGroupId == null || groupOn.get(n.toggleGroupId) === true,
+          (n) => n.toggleGroupId == null || effective[n.toggleGroupId] === true,
         ),
       };
     }
