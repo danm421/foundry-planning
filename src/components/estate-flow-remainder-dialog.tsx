@@ -179,7 +179,7 @@ export default function EstateFlowRemainderDialog({
         if (!open) onClose();
       }}
       title="Remainder estate"
-      size="md"
+      size="lg"
       primaryAction={{ label: "Apply", onClick: handleApply, disabled: !canApply }}
     >
       <p className="mb-4 text-[12px] text-ink-3">
@@ -188,70 +188,93 @@ export default function EstateFlowRemainderDialog({
         grantor; the contingent tier governs when the spouse predeceased.
       </p>
 
-      <section className="mb-6">
-        <h3 className="mb-2 text-sm font-semibold text-ink-1">
+      <section className="mb-6 rounded-md border border-gray-800 bg-gray-900/30 p-4">
+        <h3 className="mb-3 text-sm font-medium text-gray-300">
           {ownerNames.clientName}&apos;s will
         </h3>
-        <WillRecipientList
-          label="Primary — if spouse survives"
-          sumMsgId="rmd-client-primary"
-          rows={clientPrimary}
-          onChange={setClientPrimary}
-          spouseName={ownerNames.spouseName}
-          familyMembers={familyOptions}
-          externalBeneficiaries={externalOptions}
-          entities={entityOptions}
-          childMembers={childMembers}
-          recipientAriaLabel="Client primary remainder recipient"
-        />
-        {isMarried && (
-          <div className="mt-3">
+        {isMarried ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+              <WillRecipientList
+                label="Primary — if spouse survives"
+                sumMsgId="rmd-client-primary"
+                rows={clientPrimary}
+                onChange={setClientPrimary}
+                spouseName={ownerNames.spouseName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Client primary remainder recipient"
+              />
+            </div>
+            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+              <WillRecipientList
+                label="Contingent — if spouse predeceased"
+                sumMsgId="rmd-client-contingent"
+                rows={clientContingent}
+                onChange={setClientContingent}
+                spouseName={ownerNames.spouseName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Client contingent remainder recipient"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
             <WillRecipientList
-              label="Contingent — if spouse predeceased"
-              sumMsgId="rmd-client-contingent"
-              rows={clientContingent}
-              onChange={setClientContingent}
+              label="Primary"
+              sumMsgId="rmd-client-primary"
+              rows={clientPrimary}
+              onChange={setClientPrimary}
               spouseName={ownerNames.spouseName}
               familyMembers={familyOptions}
               externalBeneficiaries={externalOptions}
               entities={entityOptions}
               childMembers={childMembers}
-              recipientAriaLabel="Client contingent remainder recipient"
+              recipientAriaLabel="Client primary remainder recipient"
             />
           </div>
         )}
       </section>
 
       {isMarried && ownerNames.spouseName && (
-        <section>
-          <h3 className="mb-2 text-sm font-semibold text-ink-1">
+        <section className="rounded-md border border-gray-800 bg-gray-900/30 p-4">
+          <h3 className="mb-3 text-sm font-medium text-gray-300">
             {ownerNames.spouseName}&apos;s will
           </h3>
-          <WillRecipientList
-            label="Primary — if spouse survives"
-            sumMsgId="rmd-spouse-primary"
-            rows={spousePrimary}
-            onChange={setSpousePrimary}
-            spouseName={ownerNames.clientName}
-            familyMembers={familyOptions}
-            externalBeneficiaries={externalOptions}
-            entities={entityOptions}
-            childMembers={childMembers}
-            recipientAriaLabel="Spouse primary remainder recipient"
-          />
-          <div className="mt-3">
-            <WillRecipientList
-              label="Contingent — if spouse predeceased"
-              sumMsgId="rmd-spouse-contingent"
-              rows={spouseContingent}
-              onChange={setSpouseContingent}
-              spouseName={ownerNames.clientName}
-              familyMembers={familyOptions}
-              externalBeneficiaries={externalOptions}
-              entities={entityOptions}
-              childMembers={childMembers}
-              recipientAriaLabel="Spouse contingent remainder recipient"
-            />
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+              <WillRecipientList
+                label="Primary — if spouse survives"
+                sumMsgId="rmd-spouse-primary"
+                rows={spousePrimary}
+                onChange={setSpousePrimary}
+                spouseName={ownerNames.clientName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Spouse primary remainder recipient"
+              />
+            </div>
+            <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+              <WillRecipientList
+                label="Contingent — if spouse predeceased"
+                sumMsgId="rmd-spouse-contingent"
+                rows={spouseContingent}
+                onChange={setSpouseContingent}
+                spouseName={ownerNames.clientName}
+                familyMembers={familyOptions}
+                externalBeneficiaries={externalOptions}
+                entities={entityOptions}
+                childMembers={childMembers}
+                recipientAriaLabel="Spouse contingent remainder recipient"
+              />
+            </div>
           </div>
         </section>
       )}
