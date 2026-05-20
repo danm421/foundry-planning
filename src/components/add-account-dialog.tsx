@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "./dialog-shell";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
-import AddNoteReceivableForm from "./forms/add-note-receivable-form";
+import AddNoteReceivableForm, { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
 
@@ -18,6 +18,9 @@ interface AddAccountDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   editing?: AccountFormInitial;
+  /** When set, opens the dialog in edit mode for a notes_receivable row.
+   * Takes precedence over `editing` and forces the AddNoteReceivableForm path. */
+  editingNote?: NoteReceivableFormInitial;
   onRequestDelete?: () => void;
   entities?: EntityOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
@@ -49,6 +52,7 @@ export default function AddAccountDialog({
   open,
   onOpenChange,
   editing,
+  editingNote,
   onRequestDelete,
   entities,
   familyMembers,
@@ -74,7 +78,8 @@ export default function AddAccountDialog({
     canSubmit: true,
     loading: false,
   });
-  const isEdit = Boolean(editing);
+  const isEdit = Boolean(editing) || Boolean(editingNote);
+  const isNoteCategory = category === "notes_receivable" || Boolean(editingNote);
 
   // Track whether any autosave occurred so we can refresh the balance sheet
   // on close (mirrors the liability dialog pattern).
@@ -110,11 +115,17 @@ export default function AddAccountDialog({
           onOpenChange={(o) => {
             if (!o) close();
           }}
-          title={isEdit ? "Edit Account" : `Add ${label ?? ""} Account`.trim()}
+          title={
+            isEdit
+              ? editingNote
+                ? "Edit Note Receivable"
+                : "Edit Account"
+              : `Add ${label ?? ""} Account`.trim()
+          }
           size="md"
           primaryAction={{
             label: isEdit ? "Save Changes" : "Add Account",
-            form: category === "notes_receivable" ? "add-note-receivable-form" : "add-account-form",
+            form: isNoteCategory ? "add-note-receivable-form" : "add-account-form",
             disabled: !submitState.canSubmit,
             loading: submitState.loading,
           }}
@@ -124,7 +135,7 @@ export default function AddAccountDialog({
               : undefined
           }
         >
-          {category === "notes_receivable" ? (
+          {isNoteCategory ? (
             <AddNoteReceivableForm
               clientId={clientId}
               entities={entities}
@@ -133,6 +144,7 @@ export default function AddAccountDialog({
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
               mode={isEdit ? "edit" : "create"}
+              initial={editingNote}
               onSuccess={close}
               onSubmitStateChange={setSubmitState}
               onAutoSaved={() => {
