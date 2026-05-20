@@ -554,6 +554,10 @@ export const entities = pgTable("entities", {
   accessibleToClient: boolean("accessible_to_client").notNull().default(false),
   // When true, taxes on the entity's income / RMDs are paid at the household (grantor trust).
   isGrantor: boolean("is_grantor").notNull().default(false),
+  // Trust-only: optional. When set and isGrantor=true, grantor-trust treatment
+  // applies only through this projection year (inclusive). Past this year, the
+  // trust files its own 1041. NULL → permanent grantor status (existing behavior).
+  grantorStatusEndYear: integer("grantor_status_end_year"),
   // For business-interest entities (LLC/S-Corp/C-Corp/Partnership/Other): flat
   // valuation that surfaces on the balance sheet's Out of Estate section.
   // Null/zero for trust/foundation rows that hold value through child accounts.
