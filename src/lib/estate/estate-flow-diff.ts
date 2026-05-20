@@ -32,6 +32,12 @@ export interface EstateFlowChange {
  *
  * Contract:
  * - `undefined` and `null` are treated as equivalent.
+ * - A key whose value is `undefined`/`null` is equivalent to an absent key —
+ *   so `{ x: undefined }` equals `{}`. The estate-flow loader emits "dense"
+ *   objects (every optional field present, `undefined` when unset) while the
+ *   edit dialogs emit "sparse" objects (unset optionals omitted); the diff
+ *   must see those as the same value or the "Unsaved changes" banner can
+ *   never clear after a save.
  * - Object key order is ignored (checks every key in both objects).
  * - Array element order is significant (owners/beneficiaries order matters).
  * - No external dependencies; no JSON serialisation.
@@ -46,12 +52,14 @@ function eq(a: unknown, b: unknown): boolean {
     return av.every((item, i) => eq(item, bv[i]));
   }
   if (typeof av === "object" && typeof bv === "object") {
-    const ak = Object.keys(av as object);
-    const bk = Object.keys(bv as object);
+    // Count only keys with a meaningful (non-nullish) value: a key set to
+    // `undefined`/`null` reads identically to an absent key under `eq`.
+    const aObj = av as Record<string, unknown>;
+    const bObj = bv as Record<string, unknown>;
+    const ak = Object.keys(aObj).filter((k) => aObj[k] != null);
+    const bk = Object.keys(bObj).filter((k) => bObj[k] != null);
     if (ak.length !== bk.length) return false;
-    return ak.every((k) =>
-      eq((av as Record<string, unknown>)[k], (bv as Record<string, unknown>)[k]),
-    );
+    return ak.every((k) => eq(aObj[k], bObj[k]));
   }
   return false;
 }

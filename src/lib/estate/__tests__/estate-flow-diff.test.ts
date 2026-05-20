@@ -151,6 +151,57 @@ describe("diffWorkingCopy", () => {
     expect(diffWorkingCopy(original, working)).toEqual([]);
   });
 
+  it("ignores dense-vs-sparse beneficiary shape — loader emits every optional key, the edit dialog omits them", () => {
+    // load-client-data emits "dense" BeneficiaryRefs: every optional recipient
+    // key is present, set to `undefined` when the DB column is null. The
+    // estate-flow edit dialog's `rowsToRefs` emits "sparse" refs: it spreads in
+    // only the one recipient key that applies. After an in-place save the
+    // reloaded `original` is dense and the un-refreshed `working` copy is still
+    // sparse. Same beneficiary, different key set — this must NOT be reported
+    // as an unsaved change, or the "Unsaved changes" banner can never clear and
+    // the save appears to do nothing.
+    const dense = {
+      id: "reloaded-id",
+      tier: "primary",
+      percentage: 100,
+      familyMemberId: undefined,
+      externalBeneficiaryId: undefined,
+      entityIdRef: undefined,
+      householdRole: "spouse",
+      sortOrder: 0,
+    };
+    const sparse = {
+      id: "stale-id",
+      tier: "primary",
+      percentage: 100,
+      householdRole: "spouse",
+      sortOrder: 0,
+    };
+    const original = cd([
+      { id: "a1", name: "Checking", owners: BASE_ACCOUNT.owners, beneficiaries: [dense] },
+    ]);
+    const working = cd([
+      { id: "a1", name: "Checking", owners: BASE_ACCOUNT.owners, beneficiaries: [sparse] },
+    ]);
+    expect(diffWorkingCopy(original, working)).toEqual([]);
+  });
+
+  it("still detects a real beneficiary change when a recipient key is genuinely set on one side only", () => {
+    // Guard against the dense-vs-sparse fix masking real edits: an explicitly
+    // populated recipient key (vs absent) is a genuine change.
+    const original = cd([
+      { id: "a1", name: "Checking", owners: BASE_ACCOUNT.owners, beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, householdRole: "spouse", sortOrder: 0 },
+      ] },
+    ]);
+    const working = cd([
+      { id: "a1", name: "Checking", owners: BASE_ACCOUNT.owners, beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, familyMemberId: "fm-kid", sortOrder: 0 },
+      ] },
+    ]);
+    expect(diffWorkingCopy(original, working)).toHaveLength(1);
+  });
+
   it("skips an account present only in the working copy (add — not handled in v1)", () => {
     const original = cd([]);
     const working = cd([{ id: "a1", name: "New", owners: [], beneficiaries: [] }]);
