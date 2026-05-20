@@ -204,6 +204,7 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "irrevocable",
   "ilit",
   "clut",
+  "idgt",
 ]);
 
 export const trustTermTypeEnum = pgEnum("trust_term_type", [
