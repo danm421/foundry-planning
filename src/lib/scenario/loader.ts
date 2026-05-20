@@ -147,8 +147,25 @@ export const loadEffectiveTree = cache(
     // Fast path: when scenarioId resolves to the client's base case AND no
     // toggles are explicitly set, we can return baseTree directly. The base
     // tree already carries the base (scenario_id IS NULL) flow overrides.
+    //
+    // We still need to filter notes_receivable rows that point to a toggle
+    // group, because the base view doesn't activate any group — those notes
+    // belong to non-base scenarios (e.g. IDGT sale_to_trust) and shouldn't
+    // appear here. This mirrors what the full filter below would compute:
+    // `resolveEffectiveToggleState({}, [])` returns {}, so any note with a
+    // non-null toggleGroupId would fail `effective[gid] === true` and be
+    // dropped. We can achieve the same result without loading groups by
+    // simply dropping every note whose toggleGroupId is non-null.
     if (resolvedScenario.isBaseCase && Object.keys(toggleState).length === 0) {
-      return { effectiveTree: baseTree, warnings: [], resolutionContext };
+      const filteredBase = baseTree.notesReceivable
+        ? {
+            ...baseTree,
+            notesReceivable: baseTree.notesReceivable.filter(
+              (n) => n.toggleGroupId == null,
+            ),
+          }
+        : baseTree;
+      return { effectiveTree: filteredBase, warnings: [], resolutionContext };
     }
 
     const entityIds = baseTree.entities?.map((e) => e.id) ?? [];

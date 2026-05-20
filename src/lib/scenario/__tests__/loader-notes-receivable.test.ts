@@ -344,6 +344,111 @@ d("loadEffectiveTree — notesReceivable filter by ToggleState", () => {
     expect(ourNote).toBeUndefined();
   });
 
+  it("fast-path: base scenario with empty toggleState drops notes that have a non-null toggleGroupId", async () => {
+    const { db } = dbMod;
+    const {
+      scenarios,
+      scenarioToggleGroups,
+      notesReceivable,
+      noteReceivableOwners,
+      externalBeneficiaries,
+    } = schema;
+
+    // Create a non-base scenario to host a toggle group. The toggle group
+    // must exist (FK enforces existence) before we can attach a note to it.
+    // The fast-path filter doesn't *load* groups — it just drops any note
+    // with a non-null toggleGroupId — but the row insert still requires a
+    // real group_id.
+    const [hostScn] = await db
+      .insert(scenarios)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        name: `nr-fast-path-host-${randomUUID().slice(0, 8)}`,
+        isBaseCase: false,
+      })
+      .returning();
+    createdScenarioIds.push(hostScn.id);
+
+    const [grp] = await db
+      .insert(scenarioToggleGroups)
+      .values({
+        scenarioId: hostScn.id,
+        name: "fast-path-group",
+        defaultOn: true,
+        orderIndex: 0,
+      })
+      .returning();
+
+    const [extBen] = await db
+      .insert(externalBeneficiaries)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        name: `nr-fast-path-ben-${randomUUID().slice(0, 6)}`,
+        kind: "charity",
+      })
+      .returning();
+    createdExternalBeneficiaryIds.push(extBen.id);
+
+    // Two notes scoped to the BASE scenario. One has toggleGroupId=null
+    // (must appear), the other has toggleGroupId pointing at the group on
+    // the non-base host scenario (must NOT appear in the base view).
+    const noteRows = await db
+      .insert(notesReceivable)
+      .values([
+        {
+          clientId: COOPER_CLIENT_ID,
+          scenarioId: baseScenarioId,
+          toggleGroupId: null,
+          name: "Fast-path null-toggle note",
+          faceValue: "100000",
+          basis: "100000",
+          interestRate: "0.05",
+          paymentType: "amortizing",
+          startYear: 2026,
+          startMonth: 1,
+          termMonths: 120,
+        },
+        {
+          clientId: COOPER_CLIENT_ID,
+          scenarioId: baseScenarioId,
+          toggleGroupId: grp.id,
+          name: "Fast-path grouped note",
+          faceValue: "100000",
+          basis: "100000",
+          interestRate: "0.05",
+          paymentType: "amortizing",
+          startYear: 2026,
+          startMonth: 1,
+          termMonths: 120,
+        },
+      ])
+      .returning();
+    for (const r of noteRows) createdNoteIds.push(r.id);
+
+    await db.insert(noteReceivableOwners).values(
+      noteRows.map((r) => ({
+        noteReceivableId: r.id,
+        externalBeneficiaryId: extBen.id,
+        percent: "1.0000",
+      })),
+    );
+
+    // Hit the base scenario with empty toggleState → fast path fires.
+    const { effectiveTree } = await loaderMod.loadEffectiveTree(
+      COOPER_CLIENT_ID,
+      COOPER_FIRM_ID,
+      baseScenarioId,
+      {},
+    );
+
+    const ourNoteIdSet = new Set(noteRows.map((r) => r.id));
+    const ourNotes = (effectiveTree.notesReceivable ?? []).filter((n) =>
+      ourNoteIdSet.has(n.id),
+    );
+    const names = ourNotes.map((n) => n.name).sort();
+    expect(names).toEqual(["Fast-path null-toggle note"]);
+  });
+
   it("drops notes whose toggle group's parent is off via requiresGroupId", async () => {
     const { db } = dbMod;
     const {
