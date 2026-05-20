@@ -249,6 +249,37 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   const [clutFundingPicks, setClutFundingPicks] = useState<ClutFundingPick[]>([]);
   const [originalClutFundingPicks, setOriginalClutFundingPicks] = useState<ClutFundingPick[]>([]);
 
+  // ── Dirty-tracking ──────────────────────────────────────────────────────────
+
+  // Snapshot of every field sent in the entity POST/PUT body. Compared to
+  // baselineRef.current to derive isDirty without expensive deep-equality.
+  const currentSerialized = useMemo(() => JSON.stringify({
+    name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
+    grantorStatusEndYear, includeInPortfolio, accessibleToClient, notes,
+    distributionMode, distributionAmount, distributionPercent,
+    incomeRows, remainderRows,
+    ...(trustSubType === "clut" ? { splitInterest, clutFundingPicks } : {}),
+  }), [
+    name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
+    grantorStatusEndYear, includeInPortfolio, accessibleToClient, notes,
+    distributionMode, distributionAmount, distributionPercent,
+    incomeRows, remainderRows, splitInterest, clutFundingPicks,
+  ]);
+
+  // Seeded to the current snapshot on mount so a freshly-opened dialog starts clean.
+  const baselineRef = useRef<string>("");
+  useEffect(() => {
+    baselineRef.current = currentSerialized;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isDirty = currentSerialized !== baselineRef.current;
+  const canSave = name.trim().length > 0 && trustSubType !== "";
+
+  useEffect(() => {
+    onAutoSaveStateChange?.({ isDirty, canSave });
+  }, [isDirty, canSave, onAutoSaveStateChange]);
+
   // ── Transfers tab state ────────────────────────────────────────────────────
   const [openModal, setOpenModal] = useState<"asset" | "cash" | "series" | null>(null);
   const [transferEvents, setTransferEvents] = useState<TransferEvent[]>([]);
