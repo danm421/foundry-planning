@@ -123,7 +123,7 @@ d("gifts tenant isolation", () => {
         clientId: client.id,
         name: `${firmId} SLAT`,
         entityType: "trust",
-        trustSubType: "slat",
+        trustSubType: "irrevocable",
         isIrrevocable: true,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)

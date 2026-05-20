@@ -83,14 +83,7 @@ const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
   revocable: "Revocable",
   irrevocable: "Irrevocable (generic)",
   ilit: "ILIT",
-  slat: "SLAT",
-  crt: "CRT",
-  grat: "GRAT",
-  qprt: "QPRT",
-  clat: "CLAT",
   clut: "CLUT (Charitable Lead Unitrust)",
-  qtip: "QTIP",
-  bypass: "Bypass / Credit Shelter",
 };
 
 function ownerSummary(owners: import("@/engine/ownership").AccountOwner[]): string {

@@ -19,7 +19,7 @@ describe("entityCreateSchema — non-trust", () => {
     const r = entityCreateSchema.safeParse({
       name: "Smith LLC",
       entityType: "llc",
-      trustSubType: "slat",
+      trustSubType: "irrevocable",
     });
     expect(r.success).toBe(false);
   });
@@ -49,7 +49,7 @@ describe("entityCreateSchema — trust", () => {
     const r = entityCreateSchema.safeParse({
       name: "Smith SLAT",
       entityType: "trust",
-      trustSubType: "slat",
+      trustSubType: "irrevocable",
       isIrrevocable: true,
       trustee: "Linda",
     });
@@ -70,7 +70,7 @@ describe("entityCreateSchema — trust", () => {
     const r = entityCreateSchema.safeParse({
       name: "Bad SLAT",
       entityType: "trust",
-      trustSubType: "slat",
+      trustSubType: "irrevocable",
       isIrrevocable: false,
     });
     expect(r.success).toBe(false);
@@ -89,7 +89,7 @@ describe("entityCreateSchema — trust", () => {
     const r = entityCreateSchema.safeParse({
       name: "No Flag",
       entityType: "trust",
-      trustSubType: "slat",
+      trustSubType: "irrevocable",
     });
     expect(r.success).toBe(false);
   });
@@ -99,7 +99,7 @@ describe("entityCreateSchema — trustEnds field", () => {
   const baseTrust = {
     name: "Smith SLAT",
     entityType: "trust",
-    trustSubType: "slat",
+    trustSubType: "irrevocable",
     isIrrevocable: true,
   };
 
@@ -137,7 +137,7 @@ describe("entityCreateSchema — trustEnds field", () => {
 describe("entityCreateSchema — distribution policy", () => {
   it("accepts valid fixed distribution without beneficiary fields (designations are a separate request)", () => {
     const result = entityCreateSchema.safeParse({
-      name: "SLAT", entityType: "trust", trustSubType: "slat", isIrrevocable: true,
+      name: "SLAT", entityType: "trust", trustSubType: "irrevocable", isIrrevocable: true,
       distributionMode: "fixed", distributionAmount: 50_000,
     });
     expect(result.success).toBe(true);
@@ -145,7 +145,7 @@ describe("entityCreateSchema — distribution policy", () => {
 
   it("rejects fixed mode without amount", () => {
     const result = entityCreateSchema.safeParse({
-      name: "SLAT", entityType: "trust", trustSubType: "slat", isIrrevocable: true,
+      name: "SLAT", entityType: "trust", trustSubType: "irrevocable", isIrrevocable: true,
       distributionMode: "fixed",
     });
     expect(result.success).toBe(false);
@@ -153,7 +153,7 @@ describe("entityCreateSchema — distribution policy", () => {
 
   it("rejects pct_income mode with amount but no percent", () => {
     const result = entityCreateSchema.safeParse({
-      name: "SLAT", entityType: "trust", trustSubType: "slat", isIrrevocable: true,
+      name: "SLAT", entityType: "trust", trustSubType: "irrevocable", isIrrevocable: true,
       distributionMode: "pct_income", distributionAmount: 50_000,
     });
     expect(result.success).toBe(false);
@@ -186,7 +186,7 @@ describe("entityUpdateSchema", () => {
 
   it("rejects a partial update with inconsistent trustSubType + isIrrevocable pair", () => {
     const r = entityUpdateSchema.safeParse({
-      trustSubType: "slat",
+      trustSubType: "irrevocable",
       isIrrevocable: false,
     });
     expect(r.success).toBe(false);

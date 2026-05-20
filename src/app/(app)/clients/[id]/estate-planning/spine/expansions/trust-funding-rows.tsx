@@ -6,14 +6,7 @@ const SUBTYPE_PILL: Record<TrustSubType, string> = {
   revocable: "bg-cat-portfolio/15 text-cat-portfolio",
   irrevocable: "bg-warn/15 text-warn",
   ilit: "bg-warn/15 text-warn",
-  slat: "bg-accent/15 text-accent-ink",
-  crt: "bg-cat-life/15 text-cat-life",
-  grat: "bg-cat-life/15 text-cat-life",
-  qprt: "bg-cat-life/15 text-cat-life",
-  clat: "bg-cat-life/15 text-cat-life",
   clut: "bg-cat-life/15 text-cat-life",
-  qtip: "bg-accent/15 text-accent-ink",
-  bypass: "bg-accent/15 text-accent-ink",
 };
 
 export function TrustFundingRows({

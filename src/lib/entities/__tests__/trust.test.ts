@@ -7,19 +7,12 @@ import {
 } from "../trust";
 
 describe("TRUST_SUB_TYPES", () => {
-  it("lists the eleven expected values in order", () => {
+  it("lists the expected values in order", () => {
     expect(TRUST_SUB_TYPES).toEqual([
       "revocable",
       "irrevocable",
       "ilit",
-      "slat",
-      "crt",
-      "grat",
-      "qprt",
-      "clat",
       "clut",
-      "qtip",
-      "bypass",
     ]);
   });
 });
@@ -35,13 +28,7 @@ describe("deriveIsIrrevocable", () => {
     ["revocable", false],
     ["irrevocable", true],
     ["ilit", true],
-    ["slat", true],
-    ["crt", true],
-    ["grat", true],
-    ["qprt", true],
-    ["clat", true],
-    ["qtip", true],
-    ["bypass", true],
+    ["clut", true],
   ];
   it.each(cases)("%s → %s", (sub, expected) => {
     expect(deriveIsIrrevocable(sub)).toBe(expected);
