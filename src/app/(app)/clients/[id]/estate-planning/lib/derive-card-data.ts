@@ -1,4 +1,4 @@
-import type { ClientData, FamilyMember, Account, WillBequest, Gift } from "@/engine/types";
+import type { ClientData, FamilyMember, Account, WillBequest, Gift, NoteReceivable } from "@/engine/types";
 import { beaForYear } from "@/lib/tax/estate";
 import { amortizeNote } from "@/engine/notes/note-amortization";
 import {
@@ -26,7 +26,7 @@ export interface ClientCardData {
 }
 
 export interface LinkedNoteRow {
-  accountId: string;
+  noteId: string;
   name: string;
   annualPayment: number;
 }
@@ -45,7 +45,7 @@ export interface TrustCardData {
   breach: boolean;
   /** When set, grantor-trust treatment ends after this year. */
   grantorStatusEndYear?: number;
-  /** Promissory notes where this trust is the debtor (noteLinkedTrustEntityId === entityId). */
+  /** Promissory notes (from notesReceivable) where this trust is the debtor (linkedTrustEntityId === entityId). */
   linkedNotes: LinkedNoteRow[];
   /**
    * Split-interest snapshot for CLUT/CLAT trusts. Populated only when
@@ -179,19 +179,13 @@ export function deriveClientCardData(
   return cards;
 }
 
-function noteAnnualPayment(a: Account): number {
-  if (
-    a.noteInterestRate == null ||
-    a.noteTermMonths == null ||
-    a.noteStartYear == null ||
-    a.notePaymentType == null
-  ) return 0;
+function noteAnnualPaymentForReceivable(n: NoteReceivable): number {
   const sched = amortizeNote({
-    principal: a.value,
-    rate: a.noteInterestRate,
-    termMonths: a.noteTermMonths,
-    startYear: a.noteStartYear,
-    paymentType: a.notePaymentType,
+    principal: n.faceValue,
+    rate: n.interestRate,
+    termMonths: n.termMonths,
+    startYear: n.startYear,
+    paymentType: n.paymentType,
   });
   if (sched.length === 0) return 0;
   return Math.round(sched[0].interest + sched[0].principal);
@@ -227,12 +221,12 @@ export function deriveTrustCardData(
           originalRemainderInterest: Number(si.originalRemainderInterest),
         }
       : undefined;
-    const linkedNotes: LinkedNoteRow[] = (tree.accounts ?? [])
-      .filter((a) => a.subType === "promissory_note" && a.noteLinkedTrustEntityId === e.id)
-      .map((a) => ({
-        accountId: a.id,
-        name: a.name,
-        annualPayment: noteAnnualPayment(a),
+    const linkedNotes: LinkedNoteRow[] = (tree.notesReceivable ?? [])
+      .filter((n) => n.linkedTrustEntityId === e.id)
+      .map((n) => ({
+        noteId: n.id,
+        name: n.name,
+        annualPayment: noteAnnualPaymentForReceivable(n),
       }));
     return {
       entityId: e.id,

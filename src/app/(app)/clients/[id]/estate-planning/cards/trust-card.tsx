@@ -115,7 +115,7 @@ export function TrustCard({ data, defaultExpanded = false, onRemoveSlice }: Prop
               </h4>
               <ul className="flex flex-col gap-0.5">
                 {data.linkedNotes.map((n) => (
-                  <li key={n.accountId} className="flex items-center justify-between text-xs text-[var(--color-ink-2)]">
+                  <li key={n.noteId} className="flex items-center justify-between text-xs text-[var(--color-ink-2)]">
                     <span className="truncate">{n.name}</span>
                     <span className="ml-3 shrink-0 tabular-nums text-[var(--color-ink-3)]">
                       ${n.annualPayment.toLocaleString("en-US")} / yr
