@@ -187,20 +187,20 @@ describe("buildEstateTransferReportData — insurance pour-out at second death",
       ...clientData,
       entities: [
         {
-          ...(clientData.entities as any)[0],
+          ...(clientData.entities ?? [])[0],
           remainderBeneficiaries: [
             { familyMemberId: "fm-child", percentage: 100, distributionForm: "in_trust" },
           ],
         },
       ],
-    };
+    } as unknown as ClientData;
     const projection = makeProjection({ deathYear: 2030, pourOutAmount: 5_000 });
 
     const out = buildEstateTransferReportData({
       projection,
       asOf: { kind: "today" },
       ordering: "primaryFirst",
-      clientData: inTrustClient as any,
+      clientData: inTrustClient,
       ownerNames: { clientName: "Alice", spouseName: "Bob" },
     });
 
@@ -215,16 +215,16 @@ describe("buildEstateTransferReportData — insurance pour-out at second death",
     const noRemainderClient = {
       ...clientData,
       entities: [
-        { ...(clientData.entities as any)[0], remainderBeneficiaries: [] },
+        { ...(clientData.entities ?? [])[0], remainderBeneficiaries: [] },
       ],
-    };
+    } as unknown as ClientData;
     const projection = makeProjection({ deathYear: 2030, pourOutAmount: 5_000 });
 
     const out = buildEstateTransferReportData({
       projection,
       asOf: { kind: "today" },
       ordering: "primaryFirst",
-      clientData: noRemainderClient as any,
+      clientData: noRemainderClient,
       ownerNames: { clientName: "Alice", spouseName: "Bob" },
     });
 
