@@ -211,47 +211,43 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
           title="Inflation"
           help="Annual inflation rate applied to expenses and incomes across the projection."
         />
-        <div className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
+        <div className="inline-block min-w-[20rem] divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
           <label
-            className={`flex items-center justify-between gap-3 px-3 py-2 text-sm ${
+            className={`flex items-center gap-3 px-3 py-2 text-sm ${
               hasInflationAssetClass ? "text-gray-200 cursor-pointer" : "text-gray-400 cursor-not-allowed"
             }`}
           >
-            <span className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="inflationRateSource"
-                value="asset_class"
-                checked={inflationRateSource === "asset_class"}
-                disabled={!hasInflationAssetClass}
-                onChange={() => setInflationRateSource("asset_class")}
-              />
-              <span>Asset class</span>
-              {!hasInflationAssetClass && (
-                <HelpTip text="No Inflation asset class is configured for this firm — set one in firm CMA to use this option." />
-              )}
-            </span>
+            <input
+              type="radio"
+              name="inflationRateSource"
+              value="asset_class"
+              checked={inflationRateSource === "asset_class"}
+              disabled={!hasInflationAssetClass}
+              onChange={() => setInflationRateSource("asset_class")}
+            />
+            <span className="w-24">Asset class</span>
             <span className="tabular-nums text-xs text-gray-300">
               {(resolvedInflationRate * 100).toFixed(2)}%
             </span>
+            {!hasInflationAssetClass && (
+              <HelpTip text="No Inflation asset class is configured for this firm — set one in firm CMA to use this option." />
+            )}
           </label>
-          <label className="flex items-center justify-between gap-3 px-3 py-2 text-sm text-gray-200 cursor-pointer">
-            <span className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="inflationRateSource"
-                value="custom"
-                checked={inflationRateSource === "custom"}
-                onChange={() => setInflationRateSource("custom")}
-              />
-              <span>Custom</span>
-            </span>
+          <label className="flex items-center gap-3 px-3 py-2 text-sm text-gray-200 cursor-pointer">
+            <input
+              type="radio"
+              name="inflationRateSource"
+              value="custom"
+              checked={inflationRateSource === "custom"}
+              onChange={() => setInflationRateSource("custom")}
+            />
+            <span className="w-24">Custom</span>
             <PercentInput
               id="inflationRate"
               name="inflationRate"
               defaultValue={pct(rates.inflationRate)}
               disabled={inflationRateSource !== "custom"}
-              className={`w-28 rounded-md border border-gray-700 bg-gray-900 px-3 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent ${inflationRateSource !== "custom" ? "opacity-50" : ""}`}
+              className={`w-24 rounded-md border border-gray-700 bg-gray-900 px-2 py-0.5 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent ${inflationRateSource !== "custom" ? "opacity-50" : ""}`}
             />
           </label>
         </div>

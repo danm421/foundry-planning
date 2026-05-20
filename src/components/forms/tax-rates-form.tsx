@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
+import { CurrencyInput } from "@/components/currency-input";
 import { HelpTip } from "@/components/help-tip";
 import { STATE_ESTATE_TAX, type Bracket } from "@/lib/tax/state-estate";
 import { USPS_STATE_NAMES, USPS_STATE_CODES, type USPSStateCode } from "@/lib/usps-states";
@@ -244,16 +245,15 @@ export default function TaxRatesForm({
           help="Applied at each death event in the projection."
         />
         <FieldTable>
-          <FieldRow label="Administrative expenses ($)">
-            <input
-              id="estateAdminExpenses"
-              name="estateAdminExpenses"
-              type="number"
-              min="0"
-              step="100"
-              defaultValue={estateAdminExpenses}
-              className={`${INPUT_CLS} max-w-[12rem]`}
-            />
+          <FieldRow label="Administrative expenses">
+            <div className="max-w-[12rem]">
+              <CurrencyInput
+                id="estateAdminExpenses"
+                name="estateAdminExpenses"
+                defaultValue={estateAdminExpenses}
+                className={INPUT_CLS}
+              />
+            </div>
           </FieldRow>
           <FieldRow
             label="State of residence"
@@ -325,28 +325,26 @@ export default function TaxRatesForm({
           help="Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709's 'prior periods' line. Joint pre-plan gifts are pre-attributed (a $200K joint gift = $100K on each spouse)."
         />
         <FieldTable>
-          <FieldRow label={`${clientFirstName ?? "Client"} ($)`}>
-            <input
-              id="priorTaxableGiftsClient"
-              name="priorTaxableGiftsClient"
-              type="number"
-              min="0"
-              step="1000"
-              defaultValue={priorTaxableGiftsClient}
-              className={`${INPUT_CLS} max-w-[12rem]`}
-            />
+          <FieldRow label={clientFirstName ?? "Client"}>
+            <div className="max-w-[12rem]">
+              <CurrencyInput
+                id="priorTaxableGiftsClient"
+                name="priorTaxableGiftsClient"
+                defaultValue={priorTaxableGiftsClient}
+                className={INPUT_CLS}
+              />
+            </div>
           </FieldRow>
           {hasSpouse && (
-            <FieldRow label={`${spouseFirstName ?? "Spouse"} ($)`}>
-              <input
-                id="priorTaxableGiftsSpouse"
-                name="priorTaxableGiftsSpouse"
-                type="number"
-                min="0"
-                step="1000"
-                defaultValue={priorTaxableGiftsSpouse}
-                className={`${INPUT_CLS} max-w-[12rem]`}
-              />
+            <FieldRow label={spouseFirstName ?? "Spouse"}>
+              <div className="max-w-[12rem]">
+                <CurrencyInput
+                  id="priorTaxableGiftsSpouse"
+                  name="priorTaxableGiftsSpouse"
+                  defaultValue={priorTaxableGiftsSpouse}
+                  className={INPUT_CLS}
+                />
+              </div>
             </FieldRow>
           )}
         </FieldTable>
