@@ -125,6 +125,240 @@ describe("applyEntitySales — operating-value-only case", () => {
     expect(result.capitalGainsByOwner["M"]).toBeCloseTo(40_000, 6);
   });
 
+  it("fractionSold = 0 produces an invalid-fraction diagnostic", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 0,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 100_000,
+          basis: 0,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts: [checking],
+      liabilities: [],
+      accountBalances: { "acct-cash": 0 },
+      basisMap: { "acct-cash": 0 },
+      accountLedgers: { "acct-cash": makeLedger(0) },
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    expect(result.capitalGains).toBe(0);
+    expect(result.removedEntityIds).toEqual([]);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ transactionId: "tx-1", reason: "invalid-fraction" }),
+    );
+  });
+
+  it("fractionSold = 1.5 produces an invalid-fraction diagnostic", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 1.5,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 100_000,
+          basis: 0,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts: [checking],
+      liabilities: [],
+      accountBalances: { "acct-cash": 0 },
+      basisMap: { "acct-cash": 0 },
+      accountLedgers: { "acct-cash": makeLedger(0) },
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    expect(result.capitalGains).toBe(0);
+    expect(result.removedEntityIds).toEqual([]);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ transactionId: "tx-1", reason: "invalid-fraction" }),
+    );
+  });
+
+  it("partial operating-only sale (f=0.5) without owned accounts halves gain and proceeds", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const accountBalances: Record<string, number> = { "acct-cash": 0 };
+    const basisMap: Record<string, number> = { "acct-cash": 0 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(0),
+    };
+
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Half sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 0.5,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 100_000,
+          basis: 0,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts: [checking],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    // f=0.5 × ($100k - $0) = $50k cap gain
+    expect(result.capitalGains).toBeCloseTo(50_000, 6);
+    // Gross proceeds = f × value = $50k, no costs/liabilities so net = $50k
+    expect(accountBalances["acct-cash"]).toBeCloseTo(50_000, 6);
+    // Partial sale → entity not removed
+    expect(result.removedEntityIds).toEqual([]);
+  });
+
+  it("owner percents summing to 0.95 normalize pro-rata and emit owner-percents-not-summing-to-one diagnostic", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const accountBalances: Record<string, number> = { "acct-cash": 0 };
+    const basisMap: Record<string, number> = { "acct-cash": 0 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(0),
+    };
+
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 1,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 100_000,
+          basis: 0,
+          // Legacy data: owners sum to 0.95 instead of 1.
+          owners: [{ familyMemberId: "B", percent: 0.95 }],
+        },
+      ],
+      accounts: [checking],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+
+    // Aggregate cap gain still reflects the full sale.
+    expect(result.capitalGains).toBeCloseTo(100_000, 6);
+    // After normalization, per-owner total equals the aggregate.
+    const perOwnerSum = Object.values(result.capitalGainsByOwner).reduce(
+      (s, v) => s + v,
+      0,
+    );
+    expect(perOwnerSum).toBeCloseTo(result.capitalGains, 6);
+    expect(result.capitalGainsByOwner["B"]).toBeCloseTo(100_000, 6);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        transactionId: "tx-1",
+        reason: "owner-percents-not-summing-to-one",
+      }),
+    );
+  });
+
+  it("empty defaultCheckingId emits no-default-checking diagnostic; cap gain still recognized; cash not deposited", () => {
+    const checking = makeChecking("acct-cash", 1_000);
+    const accountBalances: Record<string, number> = { "acct-cash": 1_000 };
+    const basisMap: Record<string, number> = { "acct-cash": 1_000 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(1_000),
+    };
+
+    const result = applyEntitySales({
+      sales: [
+        {
+          id: "tx-1",
+          name: "Sell LLC",
+          type: "sell",
+          year: 2030,
+          entityId: "E1",
+          fractionSold: 1,
+        },
+      ],
+      entities: [
+        {
+          id: "E1",
+          name: "BobsLLC",
+          entityType: "llc",
+          value: 500_000,
+          basis: 100_000,
+          owners: [{ familyMemberId: "B", percent: 1 }],
+        },
+      ],
+      accounts: [checking],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "",
+    });
+
+    // Cap gain still recognized.
+    expect(result.capitalGains).toBeCloseTo(400_000, 6);
+    expect(result.capitalGainsByOwner["B"]).toBeCloseTo(400_000, 6);
+    // No cash deposited anywhere — checking balance untouched.
+    expect(accountBalances["acct-cash"]).toBe(1_000);
+    expect(basisMap["acct-cash"]).toBe(1_000);
+    expect(accountLedgers["acct-cash"].contributions).toBe(0);
+    // Diagnostic emitted.
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        transactionId: "tx-1",
+        reason: "no-default-checking",
+      }),
+    );
+  });
+
   it("skips a trust entity with a diagnostic", () => {
     const checking = makeChecking("acct-cash", 0);
     const result = applyEntitySales({

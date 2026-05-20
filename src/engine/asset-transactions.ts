@@ -567,7 +567,9 @@ export interface EntitySaleDiagnostic {
     | "trust-not-sellable"
     | "entity-not-found"
     | "no-owners"
-    | "invalid-fraction";
+    | "invalid-fraction"
+    | "owner-percents-not-summing-to-one"
+    | "no-default-checking";
 }
 
 export interface EntitySalesResult {
@@ -729,16 +731,35 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     const netProceeds = grossProceeds - transactionCosts - cascadedPaydown;
     const totalCapitalGain = operatingGain + cascadedGain;
 
-    // Distribute cap gain to owners pro-rata
-    for (const owner of entity.owners) {
-      const share = totalCapitalGain * owner.percent;
-      capitalGainsByOwner[owner.familyMemberId] =
-        (capitalGainsByOwner[owner.familyMemberId] ?? 0) + share;
+    // Distribute cap gain to owners pro-rata.
+    // Normalize against the sum of owner percents so that the per-owner shares
+    // always reconcile to `totalCapitalGain` even when `entity.owners` is from
+    // legacy/incomplete data and doesn't sum to exactly 1. Without this, the
+    // aggregate `capitalGains` and the per-owner `capitalGainsByOwner` would
+    // silently drift apart. If the drift exceeds a small epsilon, emit a
+    // diagnostic so the advisor can fix the underlying data.
+    const ownerSum = entity.owners.reduce((s, o) => s + o.percent, 0);
+    if (ownerSum > 0) {
+      if (Math.abs(ownerSum - 1) > 1e-6) {
+        diagnostics.push({
+          transactionId: sale.id,
+          reason: "owner-percents-not-summing-to-one",
+        });
+      }
+      for (const owner of entity.owners) {
+        const share = totalCapitalGain * (owner.percent / ownerSum);
+        capitalGainsByOwner[owner.familyMemberId] =
+          (capitalGainsByOwner[owner.familyMemberId] ?? 0) + share;
+      }
     }
     totalCapitalGains += totalCapitalGain;
     totalLiabilityPaydown += cascadedPaydown;
 
-    // Route proceeds to household default checking
+    // Route proceeds to household default checking. If routing is impossible
+    // (no default checking configured, or the id doesn't map to a balance),
+    // the sale still proceeds — cap gain is recognized — but cash isn't
+    // deposited. Emit a diagnostic so the advisor knows to wire up a default
+    // checking account.
     if (defaultCheckingId && accountBalances[defaultCheckingId] !== undefined) {
       accountBalances[defaultCheckingId] += netProceeds;
       basisMap[defaultCheckingId] = (basisMap[defaultCheckingId] ?? 0) + netProceeds;
@@ -752,6 +773,11 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
           sourceId: sale.id,
         });
       }
+    } else {
+      diagnostics.push({
+        transactionId: sale.id,
+        reason: "no-default-checking",
+      });
     }
 
     // Full sale → mark entity for removal
