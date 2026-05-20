@@ -48,7 +48,16 @@ import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
 import { applyRothConversions } from "./roth-conversions";
-import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
+import {
+  applyAssetSales,
+  applyAssetPurchases,
+  applyEntitySales,
+  _resetSyntheticIdCounter,
+} from "./asset-transactions";
+import type {
+  EntitySaleInputEntity,
+  EntitySalesResult,
+} from "./asset-transactions";
 import {
   computeFirstDeathYear,
   computeFinalDeathYear,
@@ -801,6 +810,85 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       liab.balance = boy;
     }
 
+    // ── BoY: Entity Sales ────────────────────────────────────────────────────
+    // Selling a business entity cascades to liquidate the entity's portion of
+    // every account and liability it co-owns. Runs before applyAssetSales so
+    // any account/liability the cascade fully drains is already gone before
+    // direct account sales fire in the same year.
+    let entitySaleResult: EntitySalesResult = {
+      capitalGains: 0,
+      capitalGainsByOwner: {},
+      removedAccountIds: [],
+      removedLiabilityIds: [],
+      removedEntityIds: [],
+      totalLiabilityPaydown: 0,
+      breakdown: [],
+      diagnostics: [],
+    };
+    if (data.assetTransactions && data.assetTransactions.length > 0) {
+      const entitySales = data.assetTransactions.filter(
+        (t) => t.type === "sell" && t.year === year && t.entityId,
+      );
+      if (entitySales.length > 0) {
+        // Adapt EntitySummary[] → EntitySaleInputEntity[]. Entities missing
+        // required fields (name/value/basis/owners/entityType) are dropped so
+        // applyEntitySales can record an "entity-not-found" diagnostic and
+        // skip them cleanly.
+        const entityInputs: EntitySaleInputEntity[] = currentEntities
+          .filter(
+            (e): e is typeof e & {
+              name: string;
+              value: number;
+              basis: number;
+              owners: Array<{ familyMemberId: string; percent: number }>;
+              entityType: NonNullable<typeof e.entityType>;
+            } =>
+              !!e.name &&
+              !!e.entityType &&
+              !!e.owners &&
+              e.value !== undefined &&
+              e.basis !== undefined,
+          )
+          .map((e) => ({
+            id: e.id,
+            name: e.name,
+            entityType: e.entityType,
+            value: e.value,
+            basis: e.basis,
+            owners: e.owners,
+          }));
+
+        entitySaleResult = applyEntitySales({
+          sales: entitySales,
+          entities: entityInputs,
+          accounts: workingAccounts,
+          liabilities: currentLiabilities,
+          accountBalances,
+          basisMap,
+          accountLedgers,
+          year,
+          defaultCheckingId: defaultChecking?.id ?? "",
+        });
+
+        if (entitySaleResult.removedAccountIds.length > 0) {
+          const removed = new Set(entitySaleResult.removedAccountIds);
+          workingAccounts = workingAccounts.filter((a) => !removed.has(a.id));
+        }
+        if (entitySaleResult.removedLiabilityIds.length > 0) {
+          const removed = new Set(entitySaleResult.removedLiabilityIds);
+          currentLiabilities = currentLiabilities.filter(
+            (l) => !removed.has(l.id),
+          );
+        }
+        if (entitySaleResult.removedEntityIds.length > 0) {
+          const removed = new Set(entitySaleResult.removedEntityIds);
+          currentEntities = currentEntities.filter((e) => !removed.has(e.id));
+          entityMap = {};
+          for (const e of currentEntities) entityMap[e.id] = e;
+        }
+      }
+    }
+
     // ── BoY: Asset Sales ─────────────────────────────────────────────────────
     // Sales happen on the first day of the year: the sold asset doesn't earn
     // growth this year, and sale proceeds land in the cash account in time to
@@ -1358,7 +1446,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       transferResult.capitalGains +
       reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
-      saleResult.capitalGains;
+      saleResult.capitalGains +
+      entitySaleResult.capitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
@@ -1596,6 +1685,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       transferResult.capitalGains +
       reinvestmentResult.capitalGains +
       saleResult.capitalGains +
+      entitySaleResult.capitalGains +
       grantorCarryInCapGains;
     if (grantorCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
@@ -1618,6 +1708,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const item of saleResult.breakdown) {
       if (item.capitalGain > 0) {
         taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: item.capitalGain };
+      }
+    }
+    for (const item of entitySaleResult.breakdown) {
+      if (item.totalCapitalGain > 0) {
+        taxDetail.bySource[`entity_sale:${item.transactionId}`] = {
+          type: "capital_gains",
+          amount: item.totalCapitalGain,
+        };
       }
     }
     for (const [rid, info] of Object.entries(reinvestmentResult.byReinvestment)) {
