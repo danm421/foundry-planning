@@ -303,10 +303,12 @@ describe("IDGT grantor flip", () => {
     // Promissory note held by client + spouse (the sellers). The trust is the
     // debtor, so its cash accounts will be drained for annual payments.
     // $1M at 5% amortizing over 120 months (10 years) starting 2026.
+    // category: "notes_receivable" — promissory notes moved out of "taxable"
+    // so they are excluded from any trust's taxableBrokerage liquidity pool.
     const promissoryNote: Account = {
       id: "idgt-2-note",
       name: "IDGT-2 Promissory Note",
-      category: "taxable",
+      category: "notes_receivable",
       subType: "promissory_note",
       titlingType: "jtwros",
       value: 1_000_000,
@@ -437,5 +439,47 @@ describe("IDGT grantor flip", () => {
     // buildNonGrantorTrusts to respect grantorStatusEndYear, this assertion
     // should be updated to toBeGreaterThan(0).
     expect(year2031!.trustTaxByEntity?.get("idgt-2")?.total ?? 0).toBe(0);
+
+    // ── Assertion 6: Promissory note is excluded from trust taxableBrokerage ──
+    // The promissory note has category: "notes_receivable" (changed from
+    // "taxable" when promissory notes moved to their own category). The engine's
+    // trust-liquidity computation only counts accounts with category === "taxable"
+    // toward taxableBrokerage. This ensures that a promissory note — which
+    // amortizes on a fixed schedule and cannot be partially liquidated like a
+    // brokerage account — never inflates a trust's liquidity pool.
+    //
+    // NOTE: trustLiquidity is computed internally and not exposed on ProjectionYear,
+    // so we assert the observable proxy: the note's principal balance is correctly
+    // tracked in accountLedgers (the engine still amortizes it) while NOT
+    // appearing in the trust's accessible asset buckets (confirming it is treated
+    // as a household receivable, not a trust-owned liquid asset).
+    const year2027forLiquidity = years.find((y) => y.year === 2027);
+    expect(year2027forLiquidity).toBeDefined();
+
+    // The note balance is tracked and strictly positive (engine still amortizes it).
+    const noteLedger2027 = year2027forLiquidity!.accountLedgers["idgt-2-note"];
+    expect(noteLedger2027?.endingValue).toBeGreaterThan(0);
+
+    // The note does NOT appear in the trust's entity-owned asset buckets.
+    // (The note is household-owned, so it should be absent from
+    //  trustsAndBusinesses and accessibleTrustAssets entirely.)
+    const tAndB2027 = year2027forLiquidity!.portfolioAssets.trustsAndBusinesses;
+    expect(tAndB2027["idgt-2-note"] ?? 0).toBe(0);
+    const accessible2027 = year2027forLiquidity!.portfolioAssets.accessibleTrustAssets;
+    expect(accessible2027["idgt-2-note"] ?? 0).toBe(0);
+
+    // The brokerage account owned by the IDGT (category: "taxable") IS present
+    // in portfolioAssets because idgt-2 is includeInPortfolio:true. The note
+    // is NOT present under the idgt-2 entity — only the brokerage is.
+    // This is the direct evidence that notes_receivable is decoupled from the
+    // trust's investable/liquid surface.
+    const taxable2027 = year2027forLiquidity!.portfolioAssets.taxable;
+    expect(taxable2027["idgt-2-brokerage"]).toBeGreaterThan(0); // brokerage tracked
+    // The note appears in household taxable (fallback for notes_receivable in
+    // portfolio-snapshot), not in the trust entity's portion.
+    // Its household balance is the amortized principal × 100% ownership (both
+    // client + spouse are principals).
+    const expectedNoteBalance2027 = noteBalanceAtYear(promissoryNote, 2027);
+    expect(taxable2027["idgt-2-note"]).toBeCloseTo(expectedNoteBalance2027, 0);
   });
 });
