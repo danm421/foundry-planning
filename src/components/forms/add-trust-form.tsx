@@ -5,6 +5,7 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
 import BeneficiaryRowList, { type BeneficiaryRow } from "./beneficiary-row-list";
+import { splitEvenly } from "./auto-split-percentages";
 import TrustEndsSelect, { type TrustEnds } from "./trust-ends-select";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
@@ -173,9 +174,32 @@ export default function AddTrustForm({
     return raw != null ? (Number(raw) * 100).toFixed(2) : "";
   });
 
-  // Beneficiary rows — built from initialDesignations
-  const [incomeRows, setIncomeRows] = useState<BeneficiaryRow[]>(() => designationsToRows(initialDesignations ?? [], "income"));
-  const [remainderRows, setRemainderRows] = useState<BeneficiaryRow[]>(() => designationsToRows(initialDesignations ?? [], "remainder"));
+  // Beneficiary rows — built from initialDesignations, scoped to this entity.
+  // `initialDesignations` is the household's full set across all trusts/accounts,
+  // so we must filter by entityId to avoid bleeding rows from other entities
+  // (which was the bug surfaced for new-trust create: stale beneficiaries from
+  // sibling trusts appeared with a 200% sum).
+  const scopedDesignations = useMemo(
+    () => (editing ? (initialDesignations ?? []).filter((d) => d.entityId === editing.id) : []),
+    [editing, initialDesignations],
+  );
+  const [incomeRows, setIncomeRows] = useState<BeneficiaryRow[]>(
+    () => designationsToRows(scopedDesignations, "income"),
+  );
+  const [remainderRows, setRemainderRows] = useState<BeneficiaryRow[]>(() => {
+    const rows = designationsToRows(scopedDesignations, "remainder");
+    if (rows.length > 0 || !isCreate) return rows;
+    // Create-mode default: split remainder evenly across children if any exist.
+    const children = members.filter((m) => m.relationship === "child");
+    if (children.length === 0) return rows;
+    const pcts = splitEvenly(children.length);
+    return children.map((child, i) => ({
+      id: `tmp-${Math.random().toString(36).slice(2)}`,
+      source: { kind: "family", familyMemberId: child.id },
+      percentage: pcts[i],
+      distributionForm: "outright" as const,
+    }));
+  });
 
   const isIrrevocable = trustSubType !== "" && deriveIsIrrevocable(trustSubType);
   // For CLUTs, distribution to the income beneficiary (charity) is computed
