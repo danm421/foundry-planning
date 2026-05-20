@@ -37,7 +37,7 @@ import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 const isRetirementSubType = (st: string) =>
   (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
+type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 export interface AccountFormInitial {
   id: string;
@@ -107,6 +107,7 @@ export interface CategoryDefaults {
   real_estate: string;
   business: string;
   life_insurance: string;
+  notes_receivable: string;
 }
 
 interface AddAccountFormProps {
@@ -143,12 +144,13 @@ interface AddAccountFormProps {
 }
 
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
-  taxable: ["brokerage", "trust", "other", "promissory_note"],
+  taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
+  notes_receivable: ["promissory_note"],
 };
 
 const SUB_TYPE_LABELS: Record<string, string> = {
@@ -184,6 +186,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   real_estate: "Real Estate",
   business: "Business",
   life_insurance: "Life Insurance",
+  notes_receivable: "Notes Receivable",
 };
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529"]);
@@ -196,6 +199,7 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   real_estate: "Real Estate",
   business: "Business Interest",
   life_insurance: "Life Insurance Policy",
+  notes_receivable: "Promissory Note",
 };
 
 function uniqueAccountName(base: string, existing: string[]): string {
@@ -892,9 +896,9 @@ export default function AddAccountForm({
                   if (!userEditedName) {
                     setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
                   }
-                  // Savings tab is not available for real-estate, business, or life_insurance
-                  // categories — snap back to Details if it was active.
-                  if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance") && activeTab === "savings") {
+                  // Savings tab is not available for real-estate, business, life_insurance, or
+                  // notes_receivable categories — snap back to Details if it was active.
+                  if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance" || newCat === "notes_receivable") && (activeTab === "savings" || activeTab === "realization")) {
                     setActiveTab("details");
                   }
                 }}

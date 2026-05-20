@@ -309,6 +309,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
         real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
         business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
         life_insurance: flatRate(settings.defaultGrowthLifeInsurance, settings.growthSourceLifeInsurance),
+        notes_receivable: "0",
       }
     : {
         taxable: "0.07",
@@ -317,6 +318,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
         real_estate: "0.04",
         business: "0.05",
         life_insurance: "0.03",
+        notes_receivable: "0",
       };
 
   return (

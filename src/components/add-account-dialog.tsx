@@ -6,7 +6,7 @@ import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, Mod
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
+type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 interface AddAccountDialogProps {
   clientId: string;
