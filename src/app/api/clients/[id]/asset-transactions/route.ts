@@ -31,7 +31,7 @@ const postBodySchema = z
     // Buy fields
     assetName: z.string().nullable().optional(),
     assetCategory: z
-      .enum(["taxable", "cash", "retirement", "real_estate", "business", "life_insurance"])
+      .enum(["taxable", "cash", "retirement", "real_estate", "business", "life_insurance", "notes_receivable"])
       .nullable()
       .optional(),
     assetSubType: z
@@ -133,7 +133,7 @@ const putBodySchema = z
     // Buy fields
     assetName: z.string().nullable().optional(),
     assetCategory: z
-      .enum(["taxable", "cash", "retirement", "real_estate", "business", "life_insurance"])
+      .enum(["taxable", "cash", "retirement", "real_estate", "business", "life_insurance", "notes_receivable"])
       .nullable()
       .optional(),
     assetSubType: z
