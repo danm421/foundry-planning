@@ -98,6 +98,7 @@ import {
   type CharityCarryforward,
 } from "./types";
 import { computeTaxForYear } from "./year-tax";
+import { noteIncomeForYear, noteBalanceAtYear } from "./notes/note-income";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -1018,6 +1019,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const acct of workingAccounts) {
       const currentBalance = accountBalances[acct.id] ?? 0;
       if (scheduleOverriddenAccounts.has(acct.id)) continue;
+      // Promissory notes don't grow via market returns — their balance is
+      // amortization-determined and is set explicitly in the note-income
+      // emission block below.
+      if (acct.subType === "promissory_note") continue;
       const overriddenRate = options?.returnsOverride?.(year, acct.id);
       const effectiveGrowthRate =
         overriddenRate != null && Number.isFinite(overriddenRate)
@@ -1375,6 +1380,64 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         case "tax_exempt": taxDetail.taxExempt += amount; break;
       }
       taxDetail.bySource[inc.id] = { type: tt, amount };
+    }
+
+    // ── Promissory-note per-year emission (household side) ─────────────────
+    // For each promissory_note account, emit interest as household ordinary
+    // income and credit principal to the holder's default checking. The note's
+    // own balance steps down to the year-end outstanding principal via
+    // accountBalances. Trust-side outflow (when the note is linked to a trust)
+    // is handled separately — see Task 11.
+    //
+    // Only family-owned (household-held) notes flow into household 1040 here.
+    // Entity-held notes are handled by their owner-entity's tax pass.
+    for (const noteAcct of workingAccounts) {
+      if (noteAcct.subType !== "promissory_note") continue;
+      const row = noteIncomeForYear(noteAcct, year);
+      if (row != null) {
+        const familyOwned = noteAcct.owners.some((o) => o.kind === "family_member");
+        if (familyOwned) {
+          // 1. Interest → household ordinary income.
+          if (row.interest > 0) {
+            taxDetail.ordinaryIncome += row.interest;
+            taxDetail.bySource[`${noteAcct.id}:interest`] = {
+              type: "ordinary_income",
+              amount: row.interest,
+            };
+          }
+          // 2. Principal + interest → credit holder's default checking via
+          //    the standard creditCash path (flushed onto accountBalances and
+          //    ledgers in step 11). Combined payment lands as cash; only the
+          //    interest portion is also taxable above.
+          const payment = row.interest + row.principal;
+          if (payment > 0) {
+            creditCash(defaultChecking?.id, payment, {
+              category: "income",
+              label: `Note payment from ${noteAcct.name}`,
+              sourceId: noteAcct.id,
+            });
+          }
+        }
+      }
+      // 3. Step the note's balance down to the year-end outstanding principal.
+      //    Done regardless of ownership — the note's own ledger must reflect
+      //    the amortized balance. Pre-start years and post-payoff years return
+      //    the appropriate boundary value from noteBalanceAtYear.
+      const newBalance = noteBalanceAtYear(noteAcct, year);
+      const prevBalance = accountBalances[noteAcct.id] ?? 0;
+      accountBalances[noteAcct.id] = newBalance;
+      if (accountLedgers[noteAcct.id]) {
+        const delta = newBalance - prevBalance;
+        accountLedgers[noteAcct.id].endingValue = newBalance;
+        if (delta < 0) {
+          accountLedgers[noteAcct.id].distributions += -delta;
+          accountLedgers[noteAcct.id].entries.push({
+            category: "withdrawal",
+            label: "Note principal repayment",
+            amount: delta,
+          });
+        }
+      }
     }
 
     // ── Phase 3: business-entity tax incidence (passthrough K-1) ──────────
