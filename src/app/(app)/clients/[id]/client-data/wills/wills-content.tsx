@@ -123,11 +123,17 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
     spouseName: client.spouseName ?? null,
     spouseLastName: client.spouseLastName ?? null,
   };
+  const entityOwnedAccountTotals = new Map<string, number>();
+  for (const a of accountRows) {
+    const e = controllingEntity(a);
+    if (e) entityOwnedAccountTotals.set(e, (entityOwnedAccountTotals.get(e) ?? 0) + a.value);
+  }
   const accts: WillsPanelAccount[] = accountRows.map((a) => ({
     id: a.id,
     name: a.name,
     category: a.category,
     ownerEntityId: controllingEntity(a) ?? null,
+    value: a.value,
   }));
   const fams: WillsPanelFamilyMember[] = familyRows.map((f) => ({
     id: f.id,
@@ -143,6 +149,7 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
     id: e.id,
     name: e.name,
     entityType: e.entityType ?? undefined,
+    value: parseFloat(e.value ?? "0") + (entityOwnedAccountTotals.get(e.id) ?? 0),
   }));
   const liabs: WillsPanelLiability[] = liabilityRows.map((l) => ({
     id: l.id,

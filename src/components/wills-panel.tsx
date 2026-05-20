@@ -73,6 +73,8 @@ export interface WillsPanelAccount {
    *  bequeathed as a whole (its cash/assets ride along), and trust assets
    *  aren't part of the grantor's bequeathable estate. */
   ownerEntityId?: string | null;
+  /** Current market value. Shown alongside the name in the bequest picker. */
+  value?: number;
 }
 
 export interface WillsPanelLiability {
@@ -102,6 +104,10 @@ export interface WillsPanelEntity {
   id: string;
   name: string;
   entityType?: string;
+  /** Business entities: equity value + value of all accounts the entity owns
+   *  (its cash/assets ride along when the entity is bequeathed). Undefined
+   *  for entities used only as recipients (charities, third-party trusts). */
+  value?: number;
 }
 
 interface WillsPanelProps {

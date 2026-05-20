@@ -461,40 +461,50 @@ export function CanvasDndProvider({
           />
         )}
 
-        {editing && (
-          <BequestDialog
-            open
-            onOpenChange={(open) => { if (!open) setEditing(null); }}
-            primary={{
-              firstName: clientFirstName,
-              lastName: "",
-              spouseName: spouseFirstName,
-              spouseLastName: null,
-            }}
-            accounts={(tree.accounts ?? []).map((a) => ({
-              id: a.id,
-              name: a.name,
-              category: a.category,
-              ownerEntityId: controllingEntity(a) ?? null,
-            }))}
-            familyMembers={(tree.familyMembers ?? []).map((m) => ({
-              id: m.id,
-              firstName: m.firstName,
-              lastName: m.lastName ?? null,
-              role: m.role,
-            }))}
-            externalBeneficiaries={(tree.externalBeneficiaries ?? []).map((x) => ({
-              id: x.id,
-              name: x.name,
-            }))}
-            entities={(tree.entities ?? []).map((e) => ({
-              id: e.id,
-              name: e.name ?? "(unnamed)",
-            }))}
-            editing={editing.draft}
-            onSave={handleEditSave}
-          />
-        )}
+        {editing && (() => {
+          const treeAccounts = tree.accounts ?? [];
+          const entityOwnedAccountTotals = new Map<string, number>();
+          for (const a of treeAccounts) {
+            const e = controllingEntity(a);
+            if (e) entityOwnedAccountTotals.set(e, (entityOwnedAccountTotals.get(e) ?? 0) + a.value);
+          }
+          return (
+            <BequestDialog
+              open
+              onOpenChange={(open) => { if (!open) setEditing(null); }}
+              primary={{
+                firstName: clientFirstName,
+                lastName: "",
+                spouseName: spouseFirstName,
+                spouseLastName: null,
+              }}
+              accounts={treeAccounts.map((a) => ({
+                id: a.id,
+                name: a.name,
+                category: a.category,
+                ownerEntityId: controllingEntity(a) ?? null,
+                value: a.value,
+              }))}
+              familyMembers={(tree.familyMembers ?? []).map((m) => ({
+                id: m.id,
+                firstName: m.firstName,
+                lastName: m.lastName ?? null,
+                role: m.role,
+              }))}
+              externalBeneficiaries={(tree.externalBeneficiaries ?? []).map((x) => ({
+                id: x.id,
+                name: x.name,
+              }))}
+              entities={(tree.entities ?? []).map((e) => ({
+                id: e.id,
+                name: e.name ?? "(unnamed)",
+                value: (e.value ?? 0) + (entityOwnedAccountTotals.get(e.id) ?? 0),
+              }))}
+              editing={editing.draft}
+              onSave={handleEditSave}
+            />
+          );
+        })()}
       </DndContext>
     </BequestEditContext.Provider>
   );

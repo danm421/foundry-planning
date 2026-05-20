@@ -100,6 +100,14 @@ const ASSET_PREFIX = "asset:";
 const ENTITY_PREFIX = "entity:";
 const DEBT_PREFIX = "debt:";
 
+function formatCurrency(n: number): string {
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
 function selectorValue(draft: BequestDraft): string {
   if (draft.kind === "liability") {
     return draft.liabilityId ? `${DEBT_PREFIX}${draft.liabilityId}` : "";
@@ -336,6 +344,7 @@ export default function BequestDialog({
                     {visibleAccounts.map((a) => (
                       <option key={a.id} value={`${ASSET_PREFIX}${a.id}`}>
                         {a.name}
+                        {a.value != null ? ` — ${formatCurrency(a.value)}` : ""}
                       </option>
                     ))}
                   </optgroup>
@@ -346,6 +355,7 @@ export default function BequestDialog({
                   {businessEntities.map((e) => (
                     <option key={e.id} value={`${ENTITY_PREFIX}${e.id}`}>
                       {e.name}
+                      {e.value != null ? ` — ${formatCurrency(e.value)}` : ""}
                     </option>
                   ))}
                 </optgroup>
