@@ -15,6 +15,11 @@ const DRAIN_KINDS: ReadonlyArray<keyof RecipientGroup["drainsByKind"]> = [
   "ird_tax",
 ];
 
+const DISTRIBUTION_FORM_CHIP = {
+  outright: { className: "bg-gray-800/70 text-gray-300", label: "Outright" },
+  in_trust: { className: "bg-indigo-900/40 text-indigo-200", label: "In trust" },
+} as const;
+
 export function EstateTransferRecipientCard({
   group,
 }: {
@@ -86,14 +91,11 @@ export function EstateTransferRecipientCard({
                         Conflict
                       </span>
                     )}
-                    {a.distributionForm === "outright" && (
-                      <span className="rounded bg-gray-800/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-gray-300">
-                        Outright
-                      </span>
-                    )}
-                    {a.distributionForm === "in_trust" && (
-                      <span className="rounded bg-indigo-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-indigo-200">
-                        In trust
+                    {a.distributionForm && (
+                      <span
+                        className={`rounded ${DISTRIBUTION_FORM_CHIP[a.distributionForm].className} px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider`}
+                      >
+                        {DISTRIBUTION_FORM_CHIP[a.distributionForm].label}
                       </span>
                     )}
                   </span>

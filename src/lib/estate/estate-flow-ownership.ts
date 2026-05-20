@@ -9,7 +9,11 @@ import {
 } from "@/engine/ownership";
 import type { EstateFlowGift } from "./estate-flow-gifts";
 import { resolveOwnerSlices } from "./account-owner-slices";
-import { isPolicyInForce, insuredRetirementYearFor } from "./insurance-in-force";
+import {
+  isPolicyInForce,
+  insuredRetirementYearFor,
+  resolveOwnerRetirementYears,
+} from "./insurance-in-force";
 
 // ── Output Types ─────────────────────────────────────────────────────────────
 
@@ -204,19 +208,9 @@ export function buildOwnershipColumn(
   const displayYear =
     options.asOfYear ?? options.todayYear ?? new Date().getFullYear();
 
-  const parseBirthYearFromDob = (dob: string | null | undefined): number | null => {
-    if (!dob) return null;
-    const y = Number(dob.slice(0, 4));
-    return Number.isFinite(y) ? y : null;
-  };
-  const clientBirthYear = parseBirthYearFromDob(data.client.dateOfBirth);
-  const spouseBirthYear = parseBirthYearFromDob(data.client.spouseDob);
-  const clientRetirementYear =
-    clientBirthYear != null ? clientBirthYear + data.client.retirementAge : null;
-  const spouseRetirementYear =
-    spouseBirthYear != null && data.client.spouseRetirementAge != null
-      ? spouseBirthYear + data.client.spouseRetirementAge
-      : null;
+  const { clientRetirementYear, spouseRetirementYear } = resolveOwnerRetirementYears(
+    data.client,
+  );
 
   /**
    * Insurance policies show their face value (death benefit) in the Ownership

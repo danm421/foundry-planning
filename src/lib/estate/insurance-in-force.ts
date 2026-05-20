@@ -1,4 +1,4 @@
-import type { Account } from "@/engine/types";
+import type { Account, ClientInfo } from "@/engine/types";
 
 /**
  * Returns true if the policy would pay out its face value if death occurred
@@ -88,4 +88,30 @@ export function insuredRetirementYearFor(
     default:
       return null;
   }
+}
+
+function parseBirthYearFromDob(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const y = Number(dob.slice(0, 4));
+  return Number.isFinite(y) ? y : null;
+}
+
+/**
+ * Derive `clientRetirementYear` / `spouseRetirementYear` from a `ClientInfo`
+ * record — feeds `insuredRetirementYearFor`. Returns `null` per side when the
+ * relevant DOB or retirement-age field is missing.
+ */
+export function resolveOwnerRetirementYears(
+  client: ClientInfo,
+): { clientRetirementYear: number | null; spouseRetirementYear: number | null } {
+  const clientBirthYear = parseBirthYearFromDob(client.dateOfBirth);
+  const spouseBirthYear = parseBirthYearFromDob(client.spouseDob);
+  return {
+    clientRetirementYear:
+      clientBirthYear != null ? clientBirthYear + client.retirementAge : null,
+    spouseRetirementYear:
+      spouseBirthYear != null && client.spouseRetirementAge != null
+        ? spouseBirthYear + client.spouseRetirementAge
+        : null,
+  };
 }
