@@ -68,6 +68,11 @@ export interface WillsPanelAccount {
   id: string;
   name: string;
   category: string;
+  /** Set when the account is 100%-owned by a single entity (business or trust).
+   *  Such accounts are hidden from the bequest picker — a business entity is
+   *  bequeathed as a whole (its cash/assets ride along), and trust assets
+   *  aren't part of the grantor's bequeathable estate. */
+  ownerEntityId?: string | null;
 }
 
 export interface WillsPanelLiability {

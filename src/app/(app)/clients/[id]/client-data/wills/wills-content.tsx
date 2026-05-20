@@ -127,6 +127,7 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
     id: a.id,
     name: a.name,
     category: a.category,
+    ownerEntityId: controllingEntity(a) ?? null,
   }));
   const fams: WillsPanelFamilyMember[] = familyRows.map((f) => ({
     id: f.id,

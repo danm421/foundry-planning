@@ -315,15 +315,32 @@ export default function BequestDialog({
               className={selectClassName}
             >
               <option value={RESIDUAL_VALUE}>Remaining Estate Value</option>
-              {accounts.length > 0 && (
-                <optgroup label="Assets">
-                  {accounts.map((a) => (
-                    <option key={a.id} value={`${ASSET_PREFIX}${a.id}`}>
-                      {a.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
+              {(() => {
+                const selectedAccountId =
+                  draft.kind === "asset" && draft.assetMode === "specific"
+                    ? draft.accountId
+                    : null;
+                // Hide entity-owned accounts (bequeathed via the entity) and
+                // retirement / life-insurance accounts (transfer by beneficiary
+                // designation, not the will). Keep the currently-selected one
+                // visible so existing bequests remain editable.
+                const visibleAccounts = accounts.filter((a) => {
+                  if (a.id === selectedAccountId) return true;
+                  if (a.ownerEntityId != null) return false;
+                  if (a.category === "retirement" || a.category === "life_insurance") return false;
+                  return true;
+                });
+                if (visibleAccounts.length === 0) return null;
+                return (
+                  <optgroup label="Assets">
+                    {visibleAccounts.map((a) => (
+                      <option key={a.id} value={`${ASSET_PREFIX}${a.id}`}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })()}
               {businessEntities.length > 0 && (
                 <optgroup label="Business interests">
                   {businessEntities.map((e) => (

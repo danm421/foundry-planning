@@ -108,6 +108,7 @@ export default async function EstateStep({ clientId, firmId }: EstateStepProps) 
     id: a.id,
     name: a.name,
     category: a.category,
+    ownerEntityId: controllingEntity(a) ?? null,
   }));
   const fams: WillsPanelFamilyMember[] = familyRows.map((f) => ({
     id: f.id,
