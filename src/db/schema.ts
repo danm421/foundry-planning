@@ -2153,6 +2153,10 @@ export const assetTransactions = pgTable("asset_transactions", {
     (): AnyPgColumn => assetTransactions.id,
     { onDelete: "set null" },
   ),
+  // Sell-only. Set when the transaction sells an entire (or fractional) business
+  // entity. Mutually exclusive with accountId and purchaseTransactionId.
+  // Entities of type 'trust' may not be referenced (API-enforced).
+  entityId: uuid("entity_id").references(() => entities.id, { onDelete: "set null" }),
   // Partial-sale fraction. null = full sale (today's binary behavior). 0 < x ≤ 1
   // = partial. Sell-only via CHECK; null on buys.
   fractionSold: decimal("fraction_sold", { precision: 7, scale: 6 }),
@@ -2173,16 +2177,21 @@ export const assetTransactions = pgTable("asset_transactions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 },
 (t) => [
-  // Sells have AT MOST one source. Both-null is allowed temporarily when the
-  // referenced buy is deleted (FK SET NULL cascade). Both-non-null is never legal.
+  // Sells have AT MOST one source. All-null is allowed temporarily when the
+  // referenced buy/entity is deleted (FK SET NULL cascade). Multiple sources is
+  // never legal.
   check(
     "asset_transactions_sell_source_check",
-    sql`${t.type} <> 'sell' OR NOT (${t.accountId} IS NOT NULL AND ${t.purchaseTransactionId} IS NOT NULL)`,
+    sql`${t.type} <> 'sell' OR (
+      (CASE WHEN ${t.accountId} IS NOT NULL THEN 1 ELSE 0 END) +
+      (CASE WHEN ${t.purchaseTransactionId} IS NOT NULL THEN 1 ELSE 0 END) +
+      (CASE WHEN ${t.entityId} IS NOT NULL THEN 1 ELSE 0 END)
+    ) <= 1`,
   ),
   // Buys never carry sell-side fields.
   check(
     "asset_transactions_buy_no_source_check",
-    sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.fractionSold} IS NULL)`,
+    sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.entityId} IS NULL AND ${t.fractionSold} IS NULL)`,
   ),
   // fraction_sold must be in (0, 1] when present.
   check(
