@@ -58,6 +58,7 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "529",
   "trust",
   "other",
+  "promissory_note",
   // real_estate sub types
   "primary_residence",
   "rental_property",
