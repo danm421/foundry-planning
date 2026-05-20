@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -46,6 +46,8 @@ export interface AccountRow {
    * Hydrated from `accounts.titling_type` so the edit form round-trips the
    * value instead of silently defaulting to "jtwros". */
   titlingType?: "jtwros" | "community_property";
+  /** When set, this account is a promissory note owed by the named trust. */
+  noteLinkedTrustEntityId?: string | null;
 }
 
 export interface LiabilityRow {
@@ -486,6 +488,13 @@ export default function BalanceSheetView({
                       onDelete={() => setDeletingAccount(a)}
                       deletable={!a.isDefaultChecking}
                       label={a.name}
+                      labelBadge={
+                        a.subType === "promissory_note" && a.noteLinkedTrustEntityId ? (
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-amber-900/30 px-2 py-0.5 text-xs text-amber-300">
+                            → {entityMap[a.noteLinkedTrustEntityId]?.name ?? "Trust"}
+                          </span>
+                        ) : undefined
+                      }
                       subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
                       value={fmt(a.value)}
                     />
@@ -812,6 +821,7 @@ function Row({
   onDelete,
   deletable = true,
   label,
+  labelBadge,
   subLabel,
   value,
   valueClassName,
@@ -821,6 +831,7 @@ function Row({
   onDelete: () => void;
   deletable?: boolean;
   label: string;
+  labelBadge?: ReactNode;
   subLabel?: string;
   value: string;
   valueClassName?: string;
@@ -831,7 +842,10 @@ function Row({
       className="flex cursor-pointer items-center justify-between px-4 py-2 hover:bg-gray-800/60"
     >
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-gray-100">{label}</div>
+        <div className="flex items-center gap-1.5 text-sm font-medium text-gray-100">
+          <span className="truncate">{label}</span>
+          {labelBadge}
+        </div>
         {subLabel && <div className="truncate text-xs text-gray-400">{subLabel}</div>}
       </div>
       <div className="flex items-center gap-3">

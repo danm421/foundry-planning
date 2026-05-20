@@ -199,6 +199,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
       titlingType: a.titlingType,
+      noteLinkedTrustEntityId: a.noteLinkedTrustEntityId ?? null,
     };
   });
 
