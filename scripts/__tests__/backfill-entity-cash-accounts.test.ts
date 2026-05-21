@@ -90,22 +90,40 @@ d("backfillEntityCashAccounts", () => {
 
   async function setupClientWithEntity(name = "Test Trust") {
     const { db } = dbMod;
-    const { clients, scenarios, entities } = schema;
+    const { clients, scenarios, entities, crmHouseholds, crmHouseholdContacts } = schema;
+
+    const [household] = await db
+      .insert(crmHouseholds)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_backfill_entity_cash_test",
+        name: "Backfill EntityCash Household",
+      })
+      .returning();
+    await db.insert(crmHouseholdContacts).values({
+      householdId: household.id,
+      role: "primary",
+      firstName: "Backfill",
+      lastName: "EntityCash",
+      dateOfBirth: "1970-01-01",
+    });
+    await db.insert(crmHouseholdContacts).values({
+      householdId: household.id,
+      role: "spouse",
+      firstName: "Spouse",
+      lastName: "Test",
+    });
 
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_backfill_entity_cash_test",
-        firstName: "Backfill",
-        lastName: "EntityCash",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: household.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "married_joint",
-        spouseName: "Spouse",
-        spouseLastName: "Test",
       })
       .returning();
 
@@ -194,18 +212,31 @@ d("backfillEntityCashAccounts", () => {
 
   it("skips entities whose client has no base scenario", async () => {
     const { db } = dbMod;
-    const { clients, entities, accounts, accountOwners } = schema;
+    const { clients, entities, accounts, accountOwners, crmHouseholds, crmHouseholdContacts } = schema;
     const { eq } = drizzleOrm;
 
     // Client + entity but no base scenario at all.
+    const [household] = await db
+      .insert(crmHouseholds)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_backfill_entity_cash_test",
+        name: "NoBase Scenario Household",
+      })
+      .returning();
+    await db.insert(crmHouseholdContacts).values({
+      householdId: household.id,
+      role: "primary",
+      firstName: "NoBase",
+      lastName: "Scenario",
+      dateOfBirth: "1970-01-01",
+    });
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_backfill_entity_cash_test",
-        firstName: "NoBase",
-        lastName: "Scenario",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: household.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,

@@ -50,6 +50,7 @@ import {
   transferSchedules,
   assetTransactions,
   clientCmaOverrides,
+  crmHouseholdContacts,
 } from "../src/db/schema";
 import { dbRowToTaxYearParameters } from "../src/lib/tax/dbMapper";
 import { resolveInflationRate } from "../src/lib/inflation";
@@ -59,6 +60,15 @@ import type { ClientData } from "../src/engine/types";
 async function loadClientData(clientId: string): Promise<ClientData> {
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   if (!client) throw new Error(`Client ${clientId} not found`);
+
+  // Identity lives on CRM contacts now.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) throw new Error(`Client ${clientId} has no primary CRM contact`);
 
   const [scenario] = await db
     .select()
@@ -265,14 +275,14 @@ async function loadClientData(clientId: string): Promise<ClientData> {
 
   const data: ClientData = {
     client: {
-      firstName: client.firstName,
-      lastName: client.lastName,
-      dateOfBirth: client.dateOfBirth,
+      firstName: primaryContact.firstName,
+      lastName: primaryContact.lastName,
+      dateOfBirth: primaryContact.dateOfBirth,
       retirementAge: client.retirementAge,
       planEndAge: client.planEndAge,
       lifeExpectancy: client.lifeExpectancy,
-      spouseName: client.spouseName ?? undefined,
-      spouseDob: client.spouseDob ?? undefined,
+      spouseName: spouseContact?.firstName ?? undefined,
+      spouseDob: spouseContact?.dateOfBirth ?? undefined,
       spouseRetirementAge: client.spouseRetirementAge ?? undefined,
       spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
       filingStatus: client.filingStatus,
