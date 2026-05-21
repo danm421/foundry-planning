@@ -11,6 +11,7 @@ import {
   clientCmaOverrides,
   clientDeductions,
   clients,
+  crmHouseholdContacts,
   entities,
   entityFlowOverrides,
   entityOwners,
@@ -105,6 +106,29 @@ export const loadClientDataWithContext = cache(
     if (!client) {
       throw new ClientNotFoundError(clientId);
     }
+
+    // CRM contacts — identity fields (first/last name, DOB) source from here.
+    // Fallback to legacy `clients.*` columns when no CRM household is linked
+    // (e.g. pure-fixture tests). Phase 9 tightens this to required.
+    const crmContactRows = client.crmHouseholdId
+      ? await db
+          .select()
+          .from(crmHouseholdContacts)
+          .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
+      : [];
+    const primaryContact = crmContactRows.find((c) => c.role === "primary") ?? null;
+    const spouseContact = crmContactRows.find((c) => c.role === "spouse") ?? null;
+
+    const clientFirstName = primaryContact?.firstName ?? client.firstName;
+    const clientLastName = primaryContact?.lastName ?? client.lastName;
+    const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
+    if (!clientDob) {
+      throw new ProjectionInputError(
+        `Client ${clientId} has no date of birth (primary contact + legacy column both empty)`,
+      );
+    }
+    const spouseFirstName = spouseContact?.firstName ?? client.spouseName ?? undefined;
+    const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob ?? undefined;
 
     // Get base case scenario
     const [scenario] = await db
@@ -662,9 +686,9 @@ export const loadClientDataWithContext = cache(
     );
 
     // Synthesize life-insurance premium expenses and merge with the mapped list.
-    const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
-    const spouseBirthYear = client.spouseDob
-      ? parseInt(client.spouseDob.slice(0, 4), 10)
+    const clientBirthYear = parseInt(clientDob.slice(0, 4), 10);
+    const spouseBirthYear = spouseDob
+      ? parseInt(spouseDob.slice(0, 4), 10)
       : null;
     const syntheticPremiums = synthesizePremiumExpenses({
       currentYear: new Date().getFullYear(),
@@ -1183,15 +1207,15 @@ export const loadClientDataWithContext = cache(
     }));
 
     const clientInfo = {
-      firstName: client.firstName,
-      lastName: client.lastName,
-      dateOfBirth: client.dateOfBirth,
+      firstName: clientFirstName,
+      lastName: clientLastName,
+      dateOfBirth: clientDob,
       retirementAge: client.retirementAge,
       retirementMonth: client.retirementMonth ?? 1,
       planEndAge: client.planEndAge,
       lifeExpectancy: client.lifeExpectancy,
-      spouseName: client.spouseName ?? undefined,
-      spouseDob: client.spouseDob ?? undefined,
+      spouseName: spouseFirstName,
+      spouseDob: spouseDob,
       spouseRetirementAge: client.spouseRetirementAge ?? undefined,
       spouseRetirementMonth: client.spouseRetirementMonth ?? undefined,
       spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
