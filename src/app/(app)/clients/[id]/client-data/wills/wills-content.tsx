@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import {
   clients,
+  crmHouseholdContacts,
   scenarios,
   familyMembers,
   externalBeneficiaries,
@@ -37,6 +38,16 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   if (!client) notFound();
+
+  // CRM contacts — identity source for the wills panel header.
+  const contactRows = client.crmHouseholdId
+    ? await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
+    : [];
+  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
+  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
   const [scenario] = await db
     .select()
@@ -118,10 +129,10 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
     }));
 
   const primary: WillsPanelPrimary = {
-    firstName: client.firstName,
-    lastName: client.lastName,
-    spouseName: client.spouseName ?? null,
-    spouseLastName: client.spouseLastName ?? null,
+    firstName: primaryContact?.firstName ?? client.firstName,
+    lastName: primaryContact?.lastName ?? client.lastName,
+    spouseName: spouseContact?.firstName ?? client.spouseName ?? null,
+    spouseLastName: spouseContact?.lastName ?? client.spouseLastName ?? null,
   };
   const entityOwnedAccountTotals = new Map<string, number>();
   for (const a of accountRows) {

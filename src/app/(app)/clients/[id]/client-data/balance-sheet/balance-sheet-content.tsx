@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import {
   clients,
+  crmHouseholdContacts,
   scenarios,
   accounts,
   liabilities,
@@ -31,12 +32,25 @@ interface BalanceSheetContentProps {
 export async function BalanceSheetContent({ clientId: id, scenarioParam }: BalanceSheetContentProps) {
   const firmId = await getOrgId();
 
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
-  if (!client) notFound();
+  if (!clientRow) notFound();
+
+  // CRM contacts — source of spouseLastName fallback.
+  const contactRows = clientRow.crmHouseholdId
+    ? await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
+    : [];
+  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  const client = {
+    ...clientRow,
+    spouseLastName: spouseContact?.lastName ?? clientRow.spouseLastName,
+  };
 
   const [scenario] = await db
     .select()
@@ -330,9 +344,9 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       categoryDefaults={categoryDefaults}
       modelPortfolios={modelPortfolioOptions}
       ownerNames={{
-        clientName: `${client.firstName} ${client.lastName}`,
-        spouseName: client.spouseName
-          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+        clientName: `${effectiveTree.client.firstName} ${effectiveTree.client.lastName}`,
+        spouseName: effectiveTree.client.spouseName
+          ? `${effectiveTree.client.spouseName} ${client.spouseLastName ?? effectiveTree.client.lastName}`.trim()
           : null,
       }}
       assetClasses={assetClassOptions}

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import {
   clients,
+  crmHouseholdContacts,
   scenarios,
   incomeScheduleOverrides,
   expenseScheduleOverrides,
@@ -32,12 +33,31 @@ interface IncomeExpensesContentProps {
 export async function IncomeExpensesContent({ clientId: id, scenarioParam }: IncomeExpensesContentProps) {
   const firmId = await getOrgId();
 
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
-  if (!client) notFound();
+  if (!clientRow) notFound();
+
+  // CRM contacts — identity source.
+  const contactRows = clientRow.crmHouseholdId
+    ? await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
+    : [];
+  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
+  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  const client = {
+    ...clientRow,
+    firstName: primaryContact?.firstName ?? clientRow.firstName,
+    lastName: primaryContact?.lastName ?? clientRow.lastName,
+    dateOfBirth: primaryContact?.dateOfBirth ?? clientRow.dateOfBirth,
+    spouseName: spouseContact?.firstName ?? clientRow.spouseName,
+    spouseLastName: spouseContact?.lastName ?? clientRow.spouseLastName,
+    spouseDob: spouseContact?.dateOfBirth ?? clientRow.spouseDob,
+  };
 
   const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioParam ?? "base", {});
 

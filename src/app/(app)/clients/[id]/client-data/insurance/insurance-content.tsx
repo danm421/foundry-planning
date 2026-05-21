@@ -182,8 +182,8 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
   return (
     <InsurancePanel
       clientId={id}
-      clientFirstName={client.firstName}
-      spouseFirstName={client.spouseName ?? null}
+      clientFirstName={effectiveTree.client.firstName}
+      spouseFirstName={effectiveTree.client.spouseName ?? null}
       accounts={accts}
       policies={policies}
       entities={ents}

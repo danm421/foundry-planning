@@ -255,8 +255,8 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
       entities={entityOptions}
       modelPortfolios={modelPortfolioRows}
       milestones={milestones}
-      clientFirstName={client.firstName}
-      spouseFirstName={client.spouseName ?? undefined}
+      clientFirstName={effectiveTree.client.firstName}
+      spouseFirstName={effectiveTree.client.spouseName ?? undefined}
     />
   );
 }
