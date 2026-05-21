@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -24,25 +24,40 @@ export default async function EstateTaxReportPage({ params }: PageProps) {
     notFound();
   }
 
+  // CRM contacts — identity source.
+  const contactRows = client.crmHouseholdId
+    ? await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
+    : [];
+  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
+  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+
+  const clientFirstName = primaryContact?.firstName ?? client.firstName;
+  const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
+  const spouseFirstName = spouseContact?.firstName ?? client.spouseName;
+  const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob;
+
   const isMarried =
     client.filingStatus === "married_joint" ||
     client.filingStatus === "married_separate";
 
   const ownerNames = {
-    clientName: client.firstName ?? "Client",
-    spouseName: client.spouseName ?? null,
+    clientName: clientFirstName ?? "Client",
+    spouseName: spouseFirstName ?? null,
   };
 
   const ownerDobs = {
-    clientDob: client.dateOfBirth,
-    spouseDob: client.spouseDob ?? null,
+    clientDob,
+    spouseDob: spouseDob ?? null,
   };
 
-  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+  const clientBirthYear = parseInt(clientDob.slice(0, 4), 10);
   const clientRetirementYear = clientBirthYear + client.retirementAge;
   const spouseRetirementYear =
-    client.spouseDob && client.spouseRetirementAge != null
-      ? parseInt(client.spouseDob.slice(0, 4), 10) + client.spouseRetirementAge
+    spouseDob && client.spouseRetirementAge != null
+      ? parseInt(spouseDob.slice(0, 4), 10) + client.spouseRetirementAge
       : null;
   // "Retirement (Clients)" milestone = the year both have retired (later of the two).
   const retirementYear =

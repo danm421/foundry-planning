@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -20,16 +20,26 @@ export default async function GiftTaxReportPage({ params }: PageProps) {
 
   if (!client) notFound();
 
+  // CRM contacts — identity source.
+  const contactRows = client.crmHouseholdId
+    ? await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
+    : [];
+  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
+  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+
   return (
     <GiftTaxReportView
       clientId={id}
       ownerNames={{
-        clientName: client.firstName ?? "Client",
-        spouseName: client.spouseName ?? null,
+        clientName: primaryContact?.firstName ?? client.firstName ?? "Client",
+        spouseName: spouseContact?.firstName ?? client.spouseName ?? null,
       }}
       ownerDobs={{
-        clientDob: client.dateOfBirth,
-        spouseDob: client.spouseDob ?? null,
+        clientDob: primaryContact?.dateOfBirth ?? client.dateOfBirth,
+        spouseDob: spouseContact?.dateOfBirth ?? client.spouseDob ?? null,
       }}
     />
   );
