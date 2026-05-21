@@ -3691,6 +3691,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       realEstate: householdSyntheticExpenseTotal,
       taxes: totalTaxes,
       cashGifts: householdCashGiftsTotal,
+      discretionary: 0,
       total:
         expenseBreakdown.living +
         expenseBreakdown.other +

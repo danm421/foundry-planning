@@ -6,6 +6,7 @@ interface ExpenseBreakdown {
   liabilities: number;
   other: number;
   insurance: number;
+  discretionary: number;
   total: number;
   bySource: Record<string, number>;
 }
@@ -21,6 +22,7 @@ export function computeExpenses(
     liabilities: 0,
     other: 0,
     insurance: 0,
+    discretionary: 0,
     total: 0,
     bySource: {},
   };

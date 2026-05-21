@@ -20,6 +20,7 @@ describe("buildExpensesDatasets", () => {
         liabilities: 10_000,
         other: 5_000,
         cashGifts: 0,
+        discretionary: 0,
         total: 115_000,
         bySource: {},
         byLiability: {},
