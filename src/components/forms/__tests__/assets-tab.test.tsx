@@ -2,7 +2,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import AssetsTab from "../assets-tab";
-import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "../assets-tab";
+import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "../assets-tab";
 
 const TRUST_ID = "trust-abc";
 
@@ -143,6 +143,128 @@ describe("AssetsTab", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ type: "remove" })
     );
+  });
+
+  it("renders a Businesses section listing businesses owned by the trust", () => {
+    const businesses: AssetsTabBusiness[] = [
+      {
+        id: "biz-1",
+        name: "Test Bus",
+        value: 280_000,
+        owners: [{ kind: "entity", entityId: TRUST_ID, percent: 1.0 }],
+      },
+      {
+        id: "biz-2",
+        name: "Sibling LLC",
+        value: 100_000,
+        // Not owned by this trust — should not appear in the trust's Assets tab.
+        owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1.0 }],
+      },
+    ];
+    render(
+      <AssetsTab
+        entityId={TRUST_ID}
+        accounts={accounts}
+        liabilities={liabilities}
+        incomes={[]}
+        expenses={[]}
+        familyMembers={familyMembers}
+        entities={entities}
+        businesses={businesses}
+        onChange={vi.fn()}
+      />
+    );
+    // Trust-owned business appears under Businesses
+    expect(screen.getByText("Businesses")).toBeInTheDocument();
+    expect(screen.getByText("Test Bus")).toBeInTheDocument();
+    // Other business doesn't show on the trust card.
+    expect(screen.queryByText("Sibling LLC")).not.toBeInTheDocument();
+    // Total trust value rolls in 100% of the business's flat valuation
+    //   trust accounts 250k + 200k − mortgage 120k + business 280k = 610k
+    expect(screen.getByText("$610,000")).toBeInTheDocument();
+  });
+
+  it("clicking the X on a Business dispatches a remove op for assetType=entity", () => {
+    const onChange = vi.fn();
+    const businesses: AssetsTabBusiness[] = [
+      {
+        id: "biz-1",
+        name: "Test Bus",
+        value: 280_000,
+        owners: [{ kind: "entity", entityId: TRUST_ID, percent: 1.0 }],
+      },
+    ];
+    render(
+      <AssetsTab
+        entityId={TRUST_ID}
+        accounts={accounts}
+        liabilities={liabilities}
+        incomes={[]}
+        expenses={[]}
+        familyMembers={familyMembers}
+        entities={entities}
+        businesses={businesses}
+        onChange={onChange}
+      />
+    );
+    fireEvent.click(screen.getByLabelText(/Remove Test Bus from trust/i));
+    // Confirmation dialog
+    fireEvent.click(screen.getByRole("button", { name: /^Remove$/i }));
+    expect(onChange).toHaveBeenCalledWith({
+      type: "remove",
+      assetType: "entity",
+      assetId: "biz-1",
+    });
+  });
+
+  it("rolls held accounts + liabilities into the displayed business value (matches balance-sheet rollup)", () => {
+    const TEST_BUS_ID = "biz-1";
+    // Test Bus holds a brokerage worth $100k + a separate mortgage of $30k.
+    // Trust holds Test Bus 100%, so the displayed business value should be
+    // flat 280k + held 100k − mortgage 30k = 350k.
+    const acctsWithBiz: AssetsTabAccount[] = [
+      ...accounts,
+      {
+        id: "biz-broker",
+        name: "Biz Brokerage",
+        value: 100_000,
+        owners: [{ kind: "entity", entityId: TEST_BUS_ID, percent: 1.0 }],
+      },
+    ];
+    const liabsWithBiz: AssetsTabLiability[] = [
+      ...liabilities,
+      {
+        id: "biz-mort",
+        name: "Biz Mortgage",
+        balance: 30_000,
+        owners: [{ kind: "entity", entityId: TEST_BUS_ID, percent: 1.0 }],
+      },
+    ];
+    const businesses: AssetsTabBusiness[] = [
+      {
+        id: TEST_BUS_ID,
+        name: "Test Bus",
+        value: 280_000,
+        owners: [{ kind: "entity", entityId: TRUST_ID, percent: 1.0 }],
+      },
+    ];
+    render(
+      <AssetsTab
+        entityId={TRUST_ID}
+        accounts={acctsWithBiz}
+        liabilities={liabsWithBiz}
+        incomes={[]}
+        expenses={[]}
+        familyMembers={familyMembers}
+        entities={entities}
+        businesses={businesses}
+        onChange={vi.fn()}
+      />
+    );
+    // Business row displays the full balance-sheet value: 280 + 100 − 30 = 350k.
+    expect(screen.getByText("$350,000")).toBeInTheDocument();
+    // Net trust value: trust's own accounts 250 + 200 − mortgage 120 + business 350 = 680k.
+    expect(screen.getByText("$680,000")).toBeInTheDocument();
   });
 
   it("shows empty state when no trust-owned items", () => {

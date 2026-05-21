@@ -173,6 +173,62 @@ describe("applyEntityOwnersOp — add", () => {
   });
 });
 
+describe("applyEntityOwnersOp — remove", () => {
+  it("releases trust share back to the remaining family member proportionally", () => {
+    const owners: EntityOwner[] = [
+      { kind: "family_member", familyMemberId: "fm-c", percent: 0.3 },
+      { kind: "family_member", familyMemberId: "fm-s", percent: 0.2 },
+      { kind: "entity", entityId: TRUST_ID, percent: 0.5 },
+    ];
+    const result = applyEntityOwnersOp(owners, { type: "remove", trustId: TRUST_ID });
+    expect(trustPct(result.newOwners)).toBe(0);
+    // Family share before was 0.5; 0.3 -> 0.3 + 0.5×(0.3/0.5) = 0.6
+    expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0.6, 4);
+    expect(fmPct(result.newOwners, "fm-s")).toBeCloseTo(0.4, 4);
+    expect(Math.abs(sum(result.newOwners) - 1)).toBeLessThan(EPSILON);
+  });
+
+  it("falls back to client/spouse 50/50 when trust held 100% and no family rows exist", () => {
+    const owners: EntityOwner[] = [
+      { kind: "entity", entityId: TRUST_ID, percent: 1 },
+    ];
+    const result = applyEntityOwnersOp(
+      owners,
+      { type: "remove", trustId: TRUST_ID },
+      {
+        familyMembers: [
+          { id: "fm-c", role: "client" },
+          { id: "fm-s", role: "spouse" },
+        ],
+      },
+    );
+    expect(trustPct(result.newOwners)).toBe(0);
+    expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(0.5, 4);
+    expect(fmPct(result.newOwners, "fm-s")).toBeCloseTo(0.5, 4);
+  });
+
+  it("falls back to client only when no spouse exists", () => {
+    const owners: EntityOwner[] = [
+      { kind: "entity", entityId: TRUST_ID, percent: 1 },
+    ];
+    const result = applyEntityOwnersOp(
+      owners,
+      { type: "remove", trustId: TRUST_ID },
+      { familyMembers: [{ id: "fm-c", role: "client" }] },
+    );
+    expect(fmPct(result.newOwners, "fm-c")).toBeCloseTo(1, 4);
+  });
+
+  it("is a no-op when the trust does not own the business", () => {
+    const owners: EntityOwner[] = [
+      { kind: "family_member", familyMemberId: "fm-c", percent: 1 },
+    ];
+    const result = applyEntityOwnersOp(owners, { type: "remove", trustId: TRUST_ID });
+    expect(result.newOwners).toEqual(owners);
+    expect(result.appliedDebit).toBe(0);
+  });
+});
+
 describe("applyEntityOwnersOp — set-percent", () => {
   it("grows trust share and shrinks others proportionally", () => {
     const owners: EntityOwner[] = [

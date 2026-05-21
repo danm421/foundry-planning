@@ -41,6 +41,12 @@ export interface ApplyEntityOwnersOpResult {
   appliedDebit: number;
 }
 
+/** Optional context for ops that need household fallback (e.g. `remove` when
+ *  no existing family-member rows exist to absorb the freed share). */
+export interface ApplyEntityOwnersOpContext {
+  familyMembers: { id: string; role: "client" | "spouse" | "child" | "other" }[];
+}
+
 function sumPct(owners: EntityOwner[]): number {
   return owners.reduce((s, o) => s + o.percent, 0);
 }
@@ -55,6 +61,7 @@ function sumPct(owners: EntityOwner[]): number {
 export function applyEntityOwnersOp(
   currentOwners: EntityOwner[],
   op: EntityOwnersOp,
+  ctx?: ApplyEntityOwnersOpContext,
 ): ApplyEntityOwnersOpResult {
   switch (op.type) {
     case "add":
@@ -62,7 +69,7 @@ export function applyEntityOwnersOp(
     case "set-percent":
       return opSetPercent(currentOwners, op.trustId, op.percent);
     case "remove":
-      throw new Error("entity-owners-ops: 'remove' not yet implemented");
+      return opRemove(currentOwners, op.trustId, ctx);
   }
 }
 
@@ -166,6 +173,94 @@ function opSetPercent(
   const familyLosses = computeFamilyLosses(owners, scaledOthers);
 
   return { newOwners, familyLosses, appliedDebit: debit };
+}
+
+// ── remove ────────────────────────────────────────────────────────────────────
+
+/** Reassign the trust's share back to family members. If existing FM rows
+ *  carry weight, the freed % is distributed proportionally across them; if
+ *  none do (e.g. the trust held 100%), it falls back to the household
+ *  client/spouse split — same pattern as account/liability removal in
+ *  asset-tab-ops.ts. */
+function opRemove(
+  owners: EntityOwner[],
+  trustId: string,
+  ctx: ApplyEntityOwnersOpContext | undefined,
+): ApplyEntityOwnersOpResult {
+  const trustRow = owners.find(
+    (o) => o.kind === "entity" && o.entityId === trustId,
+  );
+  const freedPct = trustRow ? trustRow.percent : 0;
+
+  // Strip the trust's row(s); other owners (including other trusts) stay.
+  const remaining = owners.filter(
+    (o) => !(o.kind === "entity" && o.entityId === trustId),
+  );
+
+  if (Math.abs(freedPct) < EPSILON) {
+    return { newOwners: remaining, familyLosses: [], appliedDebit: 0 };
+  }
+
+  // Distribute freedPct proportionally across existing FM rows when any have
+  // non-zero share. Other entity-owners are left untouched — only family
+  // members absorb the released stake.
+  const fmRows = remaining.filter((o) => o.kind === "family_member") as Extract<
+    EntityOwner,
+    { kind: "family_member" }
+  >[];
+  const nonFmRows = remaining.filter((o) => o.kind !== "family_member");
+  const fmSum = fmRows.reduce((s, o) => s + o.percent, 0);
+
+  if (fmRows.length > 0 && fmSum > EPSILON) {
+    const grownFm = fmRows.map((r) => ({
+      ...r,
+      percent: r.percent + freedPct * (r.percent / fmSum),
+    }));
+    return {
+      newOwners: [...nonFmRows, ...grownFm].filter((r) => r.percent > EPSILON),
+      familyLosses: [],
+      appliedDebit: 0,
+    };
+  }
+
+  // No existing FM rows — fall back to client (+ spouse if married). Without
+  // a household context we can't synthesize one; in that case we drop the
+  // trust row and let the caller decide what to do with the orphaned share.
+  if (!ctx) {
+    return {
+      newOwners: nonFmRows.filter((r) => r.percent > EPSILON),
+      familyLosses: [],
+      appliedDebit: 0,
+    };
+  }
+  const fallback = defaultHouseholdRows(freedPct, ctx);
+  return {
+    newOwners: [...nonFmRows, ...fallback].filter((r) => r.percent > EPSILON),
+    familyLosses: [],
+    appliedDebit: 0,
+  };
+}
+
+function defaultHouseholdRows(
+  freedPct: number,
+  ctx: ApplyEntityOwnersOpContext,
+): EntityOwner[] {
+  const { familyMembers } = ctx;
+  const clientFm = familyMembers.find((m) => m.role === "client");
+  const spouseFm = familyMembers.find((m) => m.role === "spouse");
+  if (clientFm && spouseFm) {
+    return [
+      { kind: "family_member", familyMemberId: clientFm.id, percent: freedPct / 2 },
+      { kind: "family_member", familyMemberId: spouseFm.id, percent: freedPct / 2 },
+    ];
+  }
+  if (clientFm) {
+    return [{ kind: "family_member", familyMemberId: clientFm.id, percent: freedPct }];
+  }
+  if (spouseFm) {
+    return [{ kind: "family_member", familyMemberId: spouseFm.id, percent: freedPct }];
+  }
+  return [];
 }
 
 // ── shared ────────────────────────────────────────────────────────────────────

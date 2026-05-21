@@ -161,8 +161,8 @@ describe("buildViewModel (business entity in estate)", () => {
       entityType: "llc",
       value: 2_000_000,
       owners: [
-        { familyMemberId: FM_CLIENT, percent: 0.5 },
-        { familyMemberId: FM_SPOUSE, percent: 0.5 },
+        { kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 0.5 },
+        { kind: "family_member" as const, familyMemberId: FM_SPOUSE, percent: 0.5 },
       ],
     },
   ];
@@ -178,7 +178,7 @@ describe("buildViewModel (business entity in estate)", () => {
   });
 
   it("partially family-owned business splits the flat value across in-estate and OOE", () => {
-    const partial = [{ ...businessEntities[0], owners: [{ familyMemberId: FM_CLIENT, percent: 0.6 }] }];
+    const partial = [{ ...businessEntities[0], owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 0.6 }] }];
     const vm = buildViewModel({ ...baseInput, entities: [...entities, ...partial] });
     const biz = vm.assetCategories.find((c) => c.key === "business");
     expect(biz?.total).toBe(1_200_000); // 60% of 2M
@@ -234,7 +234,7 @@ describe("buildViewModel (proportional ownership)", () => {
       ...baseInput,
       accounts: [splitAccount],
       entities: [
-        { id: "llc-1", name: "Smith Family LLC", entityType: "llc", value: 0, owners: [{ familyMemberId: FM_CLIENT, percent: 1 }] },
+        { id: "llc-1", name: "Smith Family LLC", entityType: "llc", value: 0, owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }] },
       ],
       projectionYears: [
         { ...priorYear, accountLedgers: { "a-mix": { beginningValue: 90_000, endingValue: 100_000 } }, liabilityBalancesBoY: {} },
@@ -277,7 +277,7 @@ describe("buildViewModel (entities view)", () => {
           name: "Smith Family LLC",
           entityType: "llc",
           value: 1_000_000,
-          owners: [{ familyMemberId: FM_CLIENT, percent: 1 }],
+          owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
         },
       ],
       view: "entities",
@@ -300,6 +300,58 @@ describe("buildViewModel (entities view)", () => {
       view: "entities",
     });
     expect(vm.entityGroups?.map((g) => g.entityId)).toEqual(["trust-1"]);
+  });
+
+  it("rolls a fully-trust-owned business into the trust's card and drops the business's card", () => {
+    const vm = buildViewModel({
+      ...baseInput,
+      entities: [
+        ...entities,
+        {
+          id: "llc-1",
+          name: "Test Bus",
+          entityType: "llc",
+          value: 280_000,
+          owners: [{ kind: "entity" as const, entityId: "trust-1", percent: 1 }],
+        },
+      ],
+      view: "entities",
+    });
+    // Business card disappears; its full value rolls into the trust card.
+    expect(vm.entityGroups?.map((g) => g.entityId)).toEqual(["trust-1"]);
+    const trust = vm.entityGroups![0];
+    const rollup = trust.assetRows.find((r) => r.accountId === "llc-1");
+    expect(rollup).toBeDefined();
+    expect(rollup?.accountName).toBe("Test Bus");
+    expect(rollup?.value).toBe(280_000);
+    expect(rollup?.isFlatBusinessValue).toBe(true);
+    // Trust card total = its own brokerage slice (300k) + rolled-up business (280k).
+    expect(trust.assetTotal).toBe(580_000);
+  });
+
+  it("splits a 50/50 family/trust-owned business between the business's card and the trust's card", () => {
+    const vm = buildViewModel({
+      ...baseInput,
+      entities: [
+        ...entities,
+        {
+          id: "llc-2",
+          name: "Mixed LLC",
+          entityType: "llc",
+          value: 1_000_000,
+          owners: [
+            { kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 0.5 },
+            { kind: "entity" as const, entityId: "trust-1", percent: 0.5 },
+          ],
+        },
+      ],
+      view: "entities",
+    });
+    const llc = vm.entityGroups?.find((g) => g.entityId === "llc-2");
+    expect(llc?.assetTotal).toBe(500_000); // family share only — flat value scaled by 0.5
+    const trust = vm.entityGroups?.find((g) => g.entityId === "trust-1");
+    const rollup = trust?.assetRows.find((r) => r.accountId === "llc-2");
+    expect(rollup?.value).toBe(500_000); // trust gets 50% of full $1M net worth
   });
 });
 
@@ -372,7 +424,7 @@ describe("buildViewModel — flat business value projection", () => {
           entityType: "llc",
           value: 10_000,
           valueGrowthRate: 0.05,
-          owners: [{ familyMemberId: FM_CLIENT, percent: 1 }],
+          owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
         },
       ],
       familyMembers,
@@ -410,7 +462,7 @@ describe("buildViewModel — flat business value projection", () => {
           entityType: "llc",
           value: 10_000,
           valueGrowthRate: 0,
-          owners: [{ familyMemberId: FM_CLIENT, percent: 1 }],
+          owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
         },
       ],
     });
@@ -438,7 +490,7 @@ describe("buildViewModel — entity default-cash account visibility", () => {
           name: "Test Bus",
           entityType: "llc",
           value: 10_000,
-          owners: [{ familyMemberId: FM_CLIENT, percent: 1 }],
+          owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
         },
       ],
       familyMembers,

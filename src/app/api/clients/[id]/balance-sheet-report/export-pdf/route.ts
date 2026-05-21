@@ -11,7 +11,7 @@ import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/b
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import type { OwnershipView } from "@/components/balance-sheet-report/ownership-filter";
 import type { FamilyMember } from "@/engine/types";
-import type { AccountOwner } from "@/engine/ownership";
+import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import React from "react";
 import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
 
@@ -80,7 +80,7 @@ export async function POST(
       id: string;
       isIrrevocable?: boolean;
       value?: number;
-      owners?: Array<{ familyMemberId: string; percent: number }>;
+      owners?: EntityOwner[];
     }>;
     const entityInfos = entityRows.map((e) => {
       const fromApi = apiEntities.find((x) => x.id === e.id);

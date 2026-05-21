@@ -215,6 +215,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     .map((e) => ({
       id: e.id,
       name: e.name,
+      value: e.value != null ? parseFloat(String(e.value)) : 0,
       // ownersByEntity rows are already polymorphic family_member | entity —
       // matches the EntityOwner discriminated union the picker expects.
       owners: ownersByEntity.get(e.id) ?? [],

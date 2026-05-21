@@ -62,12 +62,48 @@ export interface AssetsTabFamilyMember {
 }
 
 /** Mirrors {@link import("./asset-picker-modal").PickerBusiness}. The picker
- *  needs only id/name/owners — value + entityType aren't displayed. */
+ *  needs only id/name/owners; the Businesses list under an owning entity also
+ *  uses `value` to display the pro-rated business interest. */
 export interface AssetsTabBusiness {
   id: string;
   name: string;
+  /** Flat business valuation — used to compute the pro-rated value shown for
+   *  businesses owned by this trust. */
+  value?: number;
   /** Polymorphic entity_owners rows — mixed family + entity owners. */
   owners: EntityOwner[];
+}
+
+/** Sum of percents on `b.owners` rows that point at `entityId`. */
+function entitySharePercent(b: AssetsTabBusiness, entityId: string): number {
+  return b.owners
+    .filter((o) => o.kind === "entity" && o.entityId === entityId)
+    .reduce((s, o) => s + o.percent, 0);
+}
+
+/** Total ("balance sheet") value of a business: flat valuation + held
+ *  accounts net of liabilities owned by the business. Mirrors the rollup
+ *  the balance-sheet entities view emits for trust-owned businesses, so the
+ *  dollar figure shown on the trust's Assets tab matches the report. */
+function businessTotalValue(
+  b: AssetsTabBusiness,
+  accounts: AssetsTabAccount[],
+  liabilities: AssetsTabLiability[],
+): number {
+  const flat = b.value ?? 0;
+  const accountsHeld = accounts.reduce((sum, a) => {
+    const share = a.owners
+      .filter((o) => o.kind === "entity" && o.entityId === b.id)
+      .reduce((s, o) => s + o.percent, 0);
+    return sum + a.value * share;
+  }, 0);
+  const liabsHeld = liabilities.reduce((sum, l) => {
+    const share = l.owners
+      .filter((o) => o.kind === "entity" && o.entityId === b.id)
+      .reduce((s, o) => s + o.percent, 0);
+    return sum + l.balance * share;
+  }, 0);
+  return flat + accountsHeld - liabsHeld;
 }
 
 interface AssetsTabProps {
@@ -205,7 +241,7 @@ export default function AssetsTab({
 }: AssetsTabProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removingItem, setRemovingItem] = useState<{
-    kind: "account" | "liability";
+    kind: "account" | "liability" | "entity";
     id: string;
     name: string;
   } | null>(null);
@@ -213,6 +249,7 @@ export default function AssetsTab({
   // Filter to entity-owned items
   const ownedAccounts = accounts.filter((a) => ownedByEntity(a, entityId) > 0);
   const ownedLiabilities = liabilities.filter((l) => ownedByEntity(l, entityId) > 0);
+  const ownedBusinesses = (businesses ?? []).filter((b) => entitySharePercent(b, entityId) > 0);
 
   // Entity-asset id set for income/expense lookup
   const entityAssetIds = new Set(ownedAccounts.map((a) => a.id));
@@ -220,12 +257,22 @@ export default function AssetsTab({
   const linkedIncomes = incomes.filter((i) => i.cashAccountId && entityAssetIds.has(i.cashAccountId));
   const linkedExpenses = expenses.filter((e) => e.cashAccountId && entityAssetIds.has(e.cashAccountId));
 
-  // Total entity value
+  // Total entity value — accounts + business interests, net of liabilities.
+  // A business contributes its full balance-sheet value (flat valuation +
+  // accounts it holds − liabilities it holds) × this entity's ownership share.
+  // That matches the rollup row the balance-sheet entities view emits.
   const totalValue =
-    ownedAccounts.reduce((s, a) => s + a.value * ownedByEntity(a, entityId), 0) -
+    ownedAccounts.reduce((s, a) => s + a.value * ownedByEntity(a, entityId), 0) +
+    ownedBusinesses.reduce(
+      (s, b) => s + businessTotalValue(b, accounts, liabilities) * entitySharePercent(b, entityId),
+      0,
+    ) -
     ownedLiabilities.reduce((s, l) => s + l.balance * ownedByEntity(l, entityId), 0);
 
-  const isEmpty = ownedAccounts.length === 0 && ownedLiabilities.length === 0;
+  const isEmpty =
+    ownedAccounts.length === 0 &&
+    ownedLiabilities.length === 0 &&
+    ownedBusinesses.length === 0;
 
   return (
     <div className="space-y-4">
@@ -263,6 +310,46 @@ export default function AssetsTab({
           </ul>
         )}
       </div>
+
+      {/* Businesses owned by this entity. Remove releases the entity's share
+       *  back to family-member owners (proportional, with client/spouse
+       *  fallback). Percent editing isn't wired up yet — the picker is
+       *  add-or-remove only. */}
+      {ownedBusinesses.length > 0 && (
+        <div>
+          <label className={fieldLabelClassName}>Businesses</label>
+          <ul className="space-y-1.5">
+            {ownedBusinesses.map((b) => {
+              const ownerPct = entitySharePercent(b, entityId);
+              const proRated = businessTotalValue(b, accounts, liabilities) * ownerPct;
+              return (
+                <li
+                  key={b.id}
+                  className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2"
+                >
+                  <span className="flex-1 min-w-0 text-[13px] text-ink truncate">{b.name}</span>
+                  <span className="text-[12px] tabular text-ink-2">
+                    <MoneyText value={proRated} />
+                  </span>
+                  <span className="inline-flex items-center justify-end w-20 text-[12px] tabular text-ink-3">
+                    {(ownerPct * 100).toFixed(0)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRemovingItem({ kind: "entity", id: b.id, name: b.name })
+                    }
+                    className="text-ink-4 hover:text-crit text-[13px] ml-1"
+                    aria-label={`Remove ${b.name} from ${entityLabel}`}
+                  >
+                    ✕
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Liabilities */}
       <div>

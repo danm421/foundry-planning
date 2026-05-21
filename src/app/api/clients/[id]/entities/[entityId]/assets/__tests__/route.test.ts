@@ -15,7 +15,8 @@
  *      capped at available family share + gift rows reflect the cap.
  *   6. Target entity isn't a trust → 400.
  *   7. Picked entity isn't a business → 400.
- *   8. Non-add op / non-entity asset type → 400 (not yet implemented).
+ *   8. Non-entity asset type → 400 (handled by per-asset PUT endpoints).
+ *   9. Remove op releases the trust's share back to family + creates no gift.
  */
 
 import { readFileSync } from "node:fs";
@@ -528,7 +529,85 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     expect(res.status).toBe(400);
   });
 
-  it("8. Non-entity asset type returns 400 (not yet implemented)", async () => {
+  it("9. Remove op releases the trust's share back to the family member and inserts no gift", async () => {
+    // Set up a business 100% owned by the trust (simulating a prior add).
+    const { clientId, trustId, businessId, members } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "500000",
+      businessOwners: [{ memberIdx: 0, percent: 1.0 }],
+    });
+    const { db } = dbMod;
+    const { gifts, entityOwners } = schema;
+
+    // Transfer the business to the trust (creates a gift row since
+    // trust is irrevocable).
+    const addRes = await POST(
+      makeReq(clientId, trustId, {
+        op: "add",
+        assetType: "entity",
+        assetId: businessId,
+        percent: 100,
+      }) as never,
+      { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+    );
+    expect(addRes.status).toBe(200);
+
+    const giftsAfterAdd = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    const giftsAtAdd = giftsAfterAdd.length;
+
+    // Now exercise the remove path.
+    const removeRes = await POST(
+      makeReq(clientId, trustId, {
+        op: "remove",
+        assetType: "entity",
+        assetId: businessId,
+      }) as never,
+      { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+    );
+    expect(removeRes.status).toBe(200);
+
+    const ownerRowsAfter = await db
+      .select()
+      .from(entityOwners)
+      .where(drizzleOrm.eq(entityOwners.entityId, businessId));
+    // Trust should be gone; client should be the sole owner again.
+    expect(ownerRowsAfter.find((r) => r.ownerEntityId === trustId)).toBeUndefined();
+    const clientRow = ownerRowsAfter.find((r) => r.familyMemberId === members[0].id);
+    expect(clientRow).toBeDefined();
+    expect(parseFloat(clientRow!.percent)).toBeCloseTo(1.0, 4);
+
+    // Remove doesn't create new gift rows (undoing a transfer doesn't
+    // generate one — the original gift is the source of record).
+    const giftsAfterRemove = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    expect(giftsAfterRemove.length).toBe(giftsAtAdd);
+  });
+
+  it("10. Remove on a business the trust doesn't own → 400", async () => {
+    const { clientId, trustId, businessId } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "100000",
+      businessOwners: [{ memberIdx: 0, percent: 1.0 }],
+    });
+    const res = await POST(
+      makeReq(clientId, trustId, {
+        op: "remove",
+        assetType: "entity",
+        assetId: businessId,
+      }) as never,
+      { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("8. Non-entity asset type returns 400 (handled by per-asset PUT endpoints)", async () => {
     const { clientId, trustId, businessId } = await setup({
       members: [{ role: "client", firstName: "Alice" }],
       trustIrrevocable: true,

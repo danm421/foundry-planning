@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
 import type { FamilyMember, ProjectionYear } from "@/engine/types";
-import type { AccountOwner } from "@/engine/ownership";
+import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import HeaderControls from "./balance-sheet-report/header-controls";
 import AssetsPanel from "./balance-sheet-report/assets-panel";
@@ -44,7 +44,7 @@ interface ProjectionApiResponse {
     isIrrevocable?: boolean;
     value?: number;
     valueGrowthRate?: number;
-    owners?: Array<{ familyMemberId: string; percent: number }>;
+    owners?: EntityOwner[];
   }>;
   familyMembers?: FamilyMember[];
   [key: string]: unknown;

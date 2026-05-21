@@ -103,16 +103,18 @@ export async function POST(
     }
     const op = parsed.data;
 
-    // Stub the not-yet-implemented branches (Tasks 11+).
+    // Account/liability mutations still live on the per-asset PUT endpoints
+    // (handled directly in the trust form). This route only handles entity-
+    // type ops (assigning / removing a business interest to a trust).
     if (op.assetType !== "entity") {
       return NextResponse.json(
         { error: `assetType="${op.assetType}" not yet implemented on this route` },
         { status: 400 },
       );
     }
-    if (op.op !== "add") {
+    if (op.op === "set-percent") {
       return NextResponse.json(
-        { error: `op="${op.op}" not yet implemented for assetType="entity"` },
+        { error: `op="set-percent" not yet implemented for assetType="entity"` },
         { status: 400 },
       );
     }
@@ -176,18 +178,41 @@ export async function POST(
       };
     });
 
-    const percentFraction = op.percent / 100;
-    const result = applyEntityOwnersOp(currentOwners, {
-      type: "add",
-      trustId,
-      percent: percentFraction,
-    });
+    // Branch the op: `add` debits family share into the trust (and emits gift
+    // rows when the trust is irrevocable); `remove` releases the trust's
+    // share back to existing family-member rows (or falls back to client/
+    // spouse), and never creates gift rows — undoing a transfer doesn't
+    // generate a gift event, since the original gift is the source of record.
+    const percentFraction = op.op === "add" ? op.percent / 100 : 0;
+    const result =
+      op.op === "add"
+        ? applyEntityOwnersOp(currentOwners, {
+            type: "add",
+            trustId,
+            percent: percentFraction,
+          })
+        : applyEntityOwnersOp(
+            currentOwners,
+            { type: "remove", trustId },
+            { familyMembers: householdMembers },
+          );
 
-    if (result.appliedDebit < EPSILON) {
+    if (op.op === "add" && result.appliedDebit < EPSILON) {
       return NextResponse.json(
         { error: "No share available to assign to trust" },
         { status: 400 },
       );
+    }
+    if (op.op === "remove") {
+      const ownedBefore = currentOwners.some(
+        (o) => o.kind === "entity" && o.entityId === trustId,
+      );
+      if (!ownedBefore) {
+        return NextResponse.json(
+          { error: "Trust does not own this business" },
+          { status: 400 },
+        );
+      }
     }
 
     // Persist owner replacement + (optionally) gift rows in one transaction.
@@ -208,7 +233,7 @@ export async function POST(
         );
       }
 
-      if (trust.isIrrevocable && result.familyLosses.length > 0) {
+      if (op.op === "add" && trust.isIrrevocable && result.familyLosses.length > 0) {
         const businessValue = parseFloat(business.value);
         const currentYear = new Date().getFullYear();
 
@@ -256,7 +281,10 @@ export async function POST(
       clientId,
       firmId,
       metadata: {
-        op: "assign-business-to-trust",
+        op:
+          op.op === "add"
+            ? "assign-business-to-trust"
+            : "remove-business-from-trust",
         businessId,
         trustId,
         requestedPercent: percentFraction,
