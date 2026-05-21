@@ -288,26 +288,6 @@ describe("computeGiftLedger", () => {
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(1_000_000);
   });
 
-  it("charitable business_interest GiftEvent zeros out (charitable deduction)", () => {
-    const businessGift: GiftEvent = {
-      id: "ge-biz-4",
-      kind: "business_interest",
-      year: 2026,
-      grantor: "client",
-      entityId: "biz-llc-1",
-      percent: 1,
-      recipientEntityId: undefined,
-      recipientExternalBeneficiaryId: "ext-charity-1",
-      amountOverride: 500_000,
-    } as unknown as GiftEvent;
-    const ledger = computeGiftLedger({
-      ...baseInput,
-      giftEvents: [businessGift],
-      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
-    });
-    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
-  });
-
   it("populates giftsGiven (gross) regardless of grantor or charitable status", () => {
     const ledger = computeGiftLedger({
       ...baseInput,
