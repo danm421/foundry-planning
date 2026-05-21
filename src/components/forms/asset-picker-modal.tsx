@@ -24,12 +24,23 @@ export interface PickerLiability {
   owners: AccountOwner[];
 }
 
+export interface PickerBusiness {
+  id: string;
+  name: string;
+  /** Current entity_owners rows on the business. Mixed family + entity owners. */
+  owners: Array<
+    | { kind: "family_member"; familyMemberId: string; percent: number }
+    | { kind: "entity"; entityId: string; percent: number }
+  >;
+}
+
 interface AssetPickerModalProps {
   entityId: string;
   accounts: PickerAccount[];
   liabilities: PickerLiability[];
+  businesses?: PickerBusiness[];
   onClose: () => void;
-  onAdd: (op: { type: "add"; assetType: "account" | "liability"; assetId: string; percent: number }) => void;
+  onAdd: (op: { type: "add"; assetType: "account" | "liability" | "entity"; assetId: string; percent: number }) => void;
   /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
   entityLabel?: string;
 }
@@ -51,7 +62,13 @@ function isOtherEntityDefaultChecking(account: PickerAccount, entityId: string):
   );
 }
 
-type AssetType = "account" | "liability";
+function ownedByThisEntity(b: PickerBusiness, entityId: string): number {
+  return b.owners
+    .filter((o) => o.kind === "entity" && o.entityId === entityId)
+    .reduce((s, o) => s + o.percent, 0);
+}
+
+type AssetType = "account" | "liability" | "entity";
 
 interface PickedItem {
   id: string;
@@ -66,6 +83,7 @@ export default function AssetPickerModal({
   entityId,
   accounts,
   liabilities,
+  businesses,
   onClose,
   onAdd,
   entityLabel = "trust",
@@ -87,6 +105,11 @@ export default function AssetPickerModal({
   // Filter liabilities (no special filter rules beyond the 100% check)
   const availableLiabilities = liabilities.filter((l) => {
     return Math.abs(ownedByEntity(l, entityId) - 1) >= 0.0001;
+  });
+
+  // Filter businesses (hide if already 100% owned by this entity)
+  const availableBusinesses = (businesses ?? []).filter((b) => {
+    return Math.abs(ownedByThisEntity(b, entityId) - 1) >= 0.0001;
   });
 
   function selectItem(item: PickedItem) {
@@ -123,7 +146,9 @@ export default function AssetPickerModal({
     >
       {step === "pick" ? (
         <div className="space-y-4">
-          {availableAccounts.length === 0 && availableLiabilities.length === 0 && (
+          {availableAccounts.length === 0
+            && availableLiabilities.length === 0
+            && availableBusinesses.length === 0 && (
             <p className="text-[13px] text-ink-3 text-center py-4">
               All household assets are already fully assigned to this {entityLabel}.
             </p>
@@ -184,6 +209,39 @@ export default function AssetPickerModal({
                         aria-label={`Select ${l.name}`}
                       >
                         <span className="text-[13px] text-ink">{l.name}</span>
+                        <span className="text-[11px] text-ink-4">
+                          {currentPct > 0 ? `${(currentPct * 100).toFixed(0)}% owned` : "unassigned"}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {availableBusinesses.length > 0 && (
+            <div>
+              <label className={fieldLabelClassName}>Business Entities</label>
+              <ul className="space-y-1">
+                {availableBusinesses.map((b) => {
+                  const currentPct = ownedByThisEntity(b, entityId);
+                  return (
+                    <li key={b.id}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          selectItem({
+                            id: b.id,
+                            name: b.name,
+                            assetType: "entity",
+                            isRetirement: false,
+                          })
+                        }
+                        className="w-full flex items-center justify-between rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-left hover:border-accent hover:bg-card-hover transition-colors"
+                        aria-label={`Select ${b.name}`}
+                      >
+                        <span className="text-[13px] text-ink">{b.name}</span>
                         <span className="text-[11px] text-ink-4">
                           {currentPct > 0 ? `${(currentPct * 100).toFixed(0)}% owned` : "unassigned"}
                         </span>

@@ -41,9 +41,9 @@ function defaultHouseholdRows(
 }
 
 export type AssetTabOp =
-  | { type: "remove"; assetType: "account" | "liability"; assetId: string }
-  | { type: "set-percent"; assetType: "account" | "liability"; assetId: string; percent: number }
-  | { type: "add"; assetType: "account" | "liability"; assetId: string; percent: number };
+  | { type: "remove"; assetType: "account" | "liability" | "entity"; assetId: string }
+  | { type: "set-percent"; assetType: "account" | "liability" | "entity"; assetId: string; percent: number }
+  | { type: "add"; assetType: "account" | "liability" | "entity"; assetId: string; percent: number };
 
 export interface ApplyOpContext {
   entityId: string;
@@ -60,6 +60,11 @@ export function applyAssetTabOp(
   op: AssetTabOp,
   ctx: ApplyOpContext,
 ): AccountOwner[] {
+  if (op.assetType === "entity") {
+    throw new Error(
+      "entity asset mutations must go through the API route POST /api/clients/[id]/entities/[trustId]/assets — applyAssetTabOp does not handle EntityOwner[]",
+    );
+  }
   switch (op.type) {
     case "remove":
       return opRemove(currentOwners, ctx);

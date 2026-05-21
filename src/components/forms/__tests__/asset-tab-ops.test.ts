@@ -24,6 +24,25 @@ function trustPct(owners: AccountOwner[], trustId = "trust-1"): number {
   return row ? row.percent : 0;
 }
 
+// ── entity assetType guard ────────────────────────────────────────────────────
+
+describe("entity assetType guard", () => {
+  it("throws on any op with assetType=entity (entity owners must mutate via API route)", () => {
+    const owners: AccountOwner[] = [
+      { kind: "family_member", familyMemberId: "fm-c", percent: 1.0 },
+    ];
+    expect(() =>
+      applyAssetTabOp(owners, { type: "add", assetType: "entity", assetId: "biz-1", percent: 50 }, CTX),
+    ).toThrow(/API route/);
+    expect(() =>
+      applyAssetTabOp(owners, { type: "set-percent", assetType: "entity", assetId: "biz-1", percent: 25 }, CTX),
+    ).toThrow(/API route/);
+    expect(() =>
+      applyAssetTabOp(owners, { type: "remove", assetType: "entity", assetId: "biz-1" }, CTX),
+    ).toThrow(/API route/);
+  });
+});
+
 // ── remove ─────────────────────────────────────────────────────────────────────
 
 describe("remove op", () => {
