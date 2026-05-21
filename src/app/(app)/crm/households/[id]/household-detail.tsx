@@ -1,0 +1,69 @@
+"use client";
+
+import { useState } from "react";
+import type { getCrmHousehold } from "@/lib/crm/households";
+import { OverviewTab } from "./tabs/overview-tab";
+import { ContactsTab } from "./tabs/contacts-tab";
+import { AccountsTab } from "./tabs/accounts-tab";
+import { ActivityTab } from "./tabs/activity-tab";
+import { DocumentsTab } from "./tabs/documents-tab";
+
+type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
+
+const TABS = ["overview", "contacts", "accounts", "activity", "documents"] as const;
+type Tab = (typeof TABS)[number];
+
+const STATUS_LABELS: Record<string, string> = {
+  prospect: "Prospect",
+  active: "Active",
+  inactive: "Inactive",
+  archived: "Archived",
+};
+
+export function HouseholdDetail({
+  household,
+  initialTab,
+}: {
+  household: Household;
+  initialTab: string;
+}) {
+  const [tab, setTab] = useState<Tab>(
+    (TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "overview"),
+  );
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold text-ink">{household.name}</h1>
+      <div className="mt-1 text-sm text-ink-3">
+        Status: {STATUS_LABELS[household.status] ?? household.status}
+      </div>
+
+      <div role="tablist" className="mt-6 flex gap-0.5 border-b border-hair">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={
+              tab === t
+                ? "cursor-pointer border-b-2 border-accent px-4 py-2.5 text-sm font-medium text-accent transition-colors duration-150"
+                : "cursor-pointer border-b-2 border-transparent px-4 py-2.5 text-sm capitalize text-ink-3 transition-colors duration-150 hover:text-ink-2"
+            }
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-6">
+        {tab === "overview" && <OverviewTab household={household} />}
+        {tab === "contacts" && <ContactsTab household={household} />}
+        {tab === "accounts" && <AccountsTab household={household} />}
+        {tab === "activity" && <ActivityTab household={household} />}
+        {tab === "documents" && <DocumentsTab household={household} />}
+      </div>
+    </div>
+  );
+}
