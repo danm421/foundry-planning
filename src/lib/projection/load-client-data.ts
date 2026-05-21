@@ -847,18 +847,24 @@ export const loadClientDataWithContext = cache(
           .from(entityOwners)
           .where(inArray(entityOwners.entityId, entityRows.map((e) => e.id)))
       : [];
-    // Only family_member owner rows are materialized here. Entity-kind owner
-    // rows (where familyMemberId is null) are skipped until the consumers of
-    // EntitySummary.owners are wired to handle them.
+    // Polymorphic ownership of business entities — emit either a family_member
+    // or entity owner depending on which column is set. CHECK constraint on
+    // entity_owners guarantees exactly one is non-null.
     const ownersByEntity = new Map<string, EntityOwner[]>();
     for (const row of entityOwnerRows) {
-      if (row.familyMemberId == null) continue;
       const list = ownersByEntity.get(row.entityId) ?? [];
-      list.push({
-        kind: "family_member",
-        familyMemberId: row.familyMemberId,
-        percent: parseFloat(row.percent),
-      });
+      const owner: EntityOwner = row.familyMemberId
+        ? {
+            kind: "family_member",
+            familyMemberId: row.familyMemberId,
+            percent: parseFloat(row.percent),
+          }
+        : {
+            kind: "entity",
+            entityId: row.ownerEntityId!,
+            percent: parseFloat(row.percent),
+          };
+      list.push(owner);
       ownersByEntity.set(row.entityId, list);
     }
 
