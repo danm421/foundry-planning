@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  jointLifeAnnuityFactor,
   singleLifeAnnuityFactor,
   termCertainAnnuityFactor,
 } from "../annuity-factors";
@@ -61,5 +62,27 @@ describe("singleLifeAnnuityFactor", () => {
     // EOY annuity-in-arrears (Σ v^t × tpx) against 2010CM; this is below the
     // Pub 1457 Table S figure (~13.4) because Table S uses half-year timing.
     expect(a).toBeCloseTo(11.47, 2);
+  });
+});
+
+describe("jointLifeAnnuityFactor", () => {
+  it("returns a positive finite value for ages 65+62, r=4%", () => {
+    const a = jointLifeAnnuityFactor({ age1: 65, age2: 62, irc7520Rate: 0.04 });
+    expect(a).toBeGreaterThan(0);
+    expect(Number.isFinite(a)).toBe(true);
+  });
+
+  it("joint last-survivor exceeds single life (younger lives longer expected)", () => {
+    const aJoint = jointLifeAnnuityFactor({ age1: 65, age2: 62, irc7520Rate: 0.04 });
+    const aSingle65 = singleLifeAnnuityFactor({ age: 65, irc7520Rate: 0.04 });
+    const aSingle62 = singleLifeAnnuityFactor({ age: 62, irc7520Rate: 0.04 });
+    expect(aJoint).toBeGreaterThan(aSingle65);
+    expect(aJoint).toBeGreaterThan(aSingle62);
+  });
+
+  it("rejects ages out of range", () => {
+    expect(() =>
+      jointLifeAnnuityFactor({ age1: -1, age2: 62, irc7520Rate: 0.04 }),
+    ).toThrow(/age/);
   });
 });

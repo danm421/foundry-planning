@@ -58,3 +58,37 @@ export function singleLifeAnnuityFactor(input: SingleLifeAnnuityInput): number {
   }
   return a;
 }
+
+export interface JointLifeAnnuityInput {
+  age1: number;
+  age2: number;
+  irc7520Rate: number;
+}
+
+/**
+ * Joint-life (last-survivor) annuity factor — independent-lives assumption.
+ *
+ * P(at-least-one alive at time t) = 1 - (1 - tp_x) * (1 - tp_y)
+ * a_xy(last-survivor) = Σ_{t=1..} v^t × P(at-least-one alive at t)
+ */
+export function jointLifeAnnuityFactor(input: JointLifeAnnuityInput): number {
+  const { age1, age2, irc7520Rate } = input;
+  for (const a of [age1, age2]) {
+    if (a < 0 || a > AGE_MAX || !Number.isInteger(a)) {
+      throw new Error(`age out of [0, ${AGE_MAX}]: ${a}`);
+    }
+  }
+  if (irc7520Rate <= 0 || irc7520Rate >= 1) {
+    throw new Error(`irc7520Rate out of (0,1): ${irc7520Rate}`);
+  }
+  const v = 1 / (1 + irc7520Rate);
+  const tMax = AGE_MAX - Math.min(age1, age2);
+  let a = 0;
+  for (let t = 1; t <= tMax; t++) {
+    const tp1 = survivalProbability(age1, t);
+    const tp2 = survivalProbability(age2, t);
+    const atLeastOneAlive = 1 - (1 - tp1) * (1 - tp2);
+    a += Math.pow(v, t) * atLeastOneAlive;
+  }
+  return a;
+}
