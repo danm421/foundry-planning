@@ -244,8 +244,8 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
       }))}
       withdrawalStrategies={withdrawalRows}
       milestones={milestones}
-      clientFirstName={client.firstName}
-      spouseFirstName={client.spouseName?.split(" ")[0]}
+      clientFirstName={effectiveTree.client.firstName}
+      spouseFirstName={effectiveTree.client.spouseName?.split(" ")[0]}
       deductionsData={{
         derivedRows,
         expenseDeductionRows,

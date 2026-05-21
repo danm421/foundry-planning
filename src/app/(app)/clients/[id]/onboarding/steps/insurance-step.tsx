@@ -153,8 +153,8 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
     <Suspense fallback={null}>
       <InsurancePanel
         clientId={clientId}
-        clientFirstName={client.firstName}
-        spouseFirstName={client.spouseName ?? null}
+        clientFirstName={effectiveTree.client.firstName}
+        spouseFirstName={effectiveTree.client.spouseName ?? null}
         accounts={accts}
         policies={policies}
         entities={ents}
