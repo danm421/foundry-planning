@@ -1,8 +1,8 @@
 import type { getCrmHousehold } from "@/lib/crm/households";
+import { CrmDocumentList } from "@/components/crm-document-list";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
 export function DocumentsTab({ household }: { household: Household }) {
-  void household;
-  return <div className="text-ink-3">TODO — filled in Phase 5</div>;
+  return <CrmDocumentList householdId={household.id} />;
 }
