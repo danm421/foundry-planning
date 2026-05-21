@@ -1,7 +1,12 @@
-export { computeAnnualUnitrustPayment } from "./compute-annual-payment";
+export {
+  computeAnnualUnitrustPayment,
+  computeAnnualAnnuityPayment,
+} from "./compute-annual-payment";
 export type {
   AnnualPaymentInput,
   AnnualPaymentResult,
+  AnnuityPaymentInput,
+  AnnuityPaymentResult,
 } from "./compute-annual-payment";
 export {
   isTrustTerminationYear,

@@ -75,6 +75,7 @@ import { computePortfolioSnapshot } from "./portfolio-snapshot";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
 import {
   computeAnnualUnitrustPayment,
+  computeAnnualAnnuityPayment,
   computeClutRecapture,
   distributeAtTermination,
   isTrustTerminationYear,
@@ -1892,13 +1893,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (!ledger) continue;
           startOfYearFmv += ledger.beginningValue * trustShare;
         }
-        if (startOfYearFmv <= 0) return t;
-        const { unitrustAmount } = computeAnnualUnitrustPayment({
-          payoutPercent: Number(si.payoutPercent ?? 0),
-          startOfYearFmv,
-        });
-        return unitrustAmount > 0
-          ? { ...t, charitableDeduction: unitrustAmount }
+        if (startOfYearFmv <= 0 && si.payoutType !== "annuity") return t;
+        let annualPayment: number;
+        if (si.payoutType === "annuity") {
+          const { annuityAmount } = computeAnnualAnnuityPayment({
+            payoutAmount: Number(si.payoutAmount ?? 0),
+          });
+          annualPayment = annuityAmount;
+        } else {
+          const { unitrustAmount } = computeAnnualUnitrustPayment({
+            payoutPercent: Number(si.payoutPercent ?? 0),
+            startOfYearFmv,
+          });
+          annualPayment = unitrustAmount;
+        }
+        return annualPayment > 0
+          ? { ...t, charitableDeduction: annualPayment }
           : t;
       });
 
@@ -2071,33 +2081,45 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!ledger) continue;
         startOfYearFmv += ledger.beginningValue * trustShare;
       }
-      if (startOfYearFmv <= 0) continue;
+      if (startOfYearFmv <= 0 && si.payoutType !== "annuity") continue;
 
-      const { unitrustAmount } = computeAnnualUnitrustPayment({
-        payoutPercent: Number(si.payoutPercent ?? 0),
-        startOfYearFmv,
-      });
-      if (unitrustAmount <= 0) continue;
+      let annualPayment: number;
+      let paymentLabel: string;
+      if (si.payoutType === "annuity") {
+        const { annuityAmount } = computeAnnualAnnuityPayment({
+          payoutAmount: Number(si.payoutAmount ?? 0),
+        });
+        annualPayment = annuityAmount;
+        paymentLabel = "CLAT annuity payment to charity";
+      } else {
+        const { unitrustAmount } = computeAnnualUnitrustPayment({
+          payoutPercent: Number(si.payoutPercent ?? 0),
+          startOfYearFmv,
+        });
+        annualPayment = unitrustAmount;
+        paymentLabel = "CLUT unitrust payment to charity";
+      }
+      if (annualPayment <= 0) continue;
 
-      creditCash(checkingId, -unitrustAmount, {
+      creditCash(checkingId, -annualPayment, {
         category: "gift",
-        label: `CLUT unitrust payment to charity`,
+        label: paymentLabel,
         sourceId: trust.id,
       });
-      clutCharitableOutflowsTotal += unitrustAmount;
+      clutCharitableOutflowsTotal += annualPayment;
       clutCharitableOutflowDetail.push({
-        kind: "clut_unitrust",
+        kind: "clut_unitrust", // will be renamed in Phase 2
         trustId: trust.id,
         trustName: trust.name ?? trust.id,
         charityId: si.charityId,
-        amount: unitrustAmount,
+        amount: annualPayment,
       });
 
       // Record the payment for cross-year recapture math. The death-year
       // payment IS counted in the PV per §170(f)(2)(B), so this push happens
       // before the recapture pass below for this same year.
       const existing = clutPaymentsByTrustId.get(trust.id) ?? [];
-      existing.push(unitrustAmount);
+      existing.push(annualPayment);
       clutPaymentsByTrustId.set(trust.id, existing);
     }
 
