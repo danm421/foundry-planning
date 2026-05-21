@@ -847,10 +847,9 @@ export const loadClientDataWithContext = cache(
           .from(entityOwners)
           .where(inArray(entityOwners.entityId, entityRows.map((e) => e.id)))
       : [];
-    // Task 3: Map value is now EntityOwner[] (discriminated). This loader pass
-    // still only materializes family_member rows — entity-owner rows from the
-    // polymorphic schema are wired in Task 4. Until then this branch produces
-    // the same shape as before, just with an explicit `kind: "family_member"`.
+    // Only family_member owner rows are materialized here. Entity-kind owner
+    // rows (where familyMemberId is null) are skipped until the consumers of
+    // EntitySummary.owners are wired to handle them.
     const ownersByEntity = new Map<string, EntityOwner[]>();
     for (const row of entityOwnerRows) {
       if (row.familyMemberId == null) continue;

@@ -1681,8 +1681,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // to the household 1040; they retain it at the holder level. Filter
       // preserves pre-polymorphic behavior for the (current) all-family case.
       const familyOwners = (entity.owners ?? []).filter(
-        (o): o is { kind: "family_member"; familyMemberId: string; percent: number } =>
-          o.kind === "family_member",
+        (o) => o.kind === "family_member",
       );
       let entityFamilyTaxable = 0;
       for (const owner of familyOwners) {
@@ -4172,10 +4171,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const accountFamilyOwners = new Map<string, Array<{ familyMemberId: string; percent: number }>>();
   for (const acct of data.accounts ?? []) {
     const fmOwners = (acct.owners ?? [])
-      .filter(
-        (o): o is { kind: "family_member"; familyMemberId: string; percent: number } =>
-          o.kind === "family_member",
-      )
+      .filter((o) => o.kind === "family_member")
       .map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent }));
     if (fmOwners.length >= 2) {
       accountFamilyOwners.set(acct.id, fmOwners);
