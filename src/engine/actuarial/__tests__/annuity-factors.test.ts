@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   jointLifeAnnuityFactor,
+  shorterOfYearsOrLifeAnnuityFactor,
   singleLifeAnnuityFactor,
   termCertainAnnuityFactor,
 } from "../annuity-factors";
@@ -84,5 +85,43 @@ describe("jointLifeAnnuityFactor", () => {
     expect(() =>
       jointLifeAnnuityFactor({ age1: -1, age2: 62, irc7520Rate: 0.04 }),
     ).toThrow(/age/);
+  });
+});
+
+describe("shorterOfYearsOrLifeAnnuityFactor", () => {
+  it("returns a positive finite value for age 65, n=10, r=4%", () => {
+    const a = shorterOfYearsOrLifeAnnuityFactor({
+      age: 65,
+      termYears: 10,
+      irc7520Rate: 0.04,
+    });
+    expect(a).toBeGreaterThan(0);
+    expect(Number.isFinite(a)).toBe(true);
+  });
+
+  it("shorter-of <= term-certain (shorter term cannot exceed pure term)", () => {
+    const aShorterOf = shorterOfYearsOrLifeAnnuityFactor({
+      age: 65,
+      termYears: 10,
+      irc7520Rate: 0.04,
+    });
+    const aTermCertain = termCertainAnnuityFactor({
+      irc7520Rate: 0.04,
+      termYears: 10,
+    });
+    expect(aShorterOf).toBeLessThanOrEqual(aTermCertain);
+  });
+
+  it("shorter-of <= single-life (mortality cutoff caps single-life)", () => {
+    const aShorterOf = shorterOfYearsOrLifeAnnuityFactor({
+      age: 65,
+      termYears: 10,
+      irc7520Rate: 0.04,
+    });
+    const aSingleLife = singleLifeAnnuityFactor({
+      age: 65,
+      irc7520Rate: 0.04,
+    });
+    expect(aShorterOf).toBeLessThanOrEqual(aSingleLife);
   });
 });

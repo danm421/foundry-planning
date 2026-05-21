@@ -92,3 +92,37 @@ export function jointLifeAnnuityFactor(input: JointLifeAnnuityInput): number {
   }
   return a;
 }
+
+export interface ShorterOfAnnuityInput {
+  age: number;
+  termYears: number;
+  irc7520Rate: number;
+}
+
+/**
+ * Shorter-of-N-years-or-life annuity factor.
+ *
+ * Payments stop when EITHER N years pass OR the measuring life dies.
+ *
+ *   a_{x:n|} = Σ_{t=1..n} v^t × tpx
+ */
+export function shorterOfYearsOrLifeAnnuityFactor(
+  input: ShorterOfAnnuityInput,
+): number {
+  const { age, termYears, irc7520Rate } = input;
+  if (age < 0 || age > AGE_MAX || !Number.isInteger(age)) {
+    throw new Error(`age out of [0, ${AGE_MAX}]: ${age}`);
+  }
+  if (termYears < 1 || !Number.isInteger(termYears)) {
+    throw new Error(`termYears must be a positive integer: ${termYears}`);
+  }
+  if (irc7520Rate <= 0 || irc7520Rate >= 1) {
+    throw new Error(`irc7520Rate out of (0,1): ${irc7520Rate}`);
+  }
+  const v = 1 / (1 + irc7520Rate);
+  let a = 0;
+  for (let t = 1; t <= termYears; t++) {
+    a += Math.pow(v, t) * survivalProbability(age, t);
+  }
+  return a;
+}
