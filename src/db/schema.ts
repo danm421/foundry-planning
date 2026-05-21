@@ -891,7 +891,7 @@ export const gifts = pgTable(
          AND NOT (${t.accountId} IS NOT NULL AND ${t.liabilityId} IS NOT NULL)
          AND ${t.businessEntityId} IS NULL)
         OR
-        (${t.businessEntityId} IS NOT NULL AND ${t.percent} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL)
+        (${t.businessEntityId} IS NOT NULL AND ${t.percent} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL AND ${t.recipientEntityId} IS NOT NULL)
       )`,
     ),
   ],
