@@ -335,6 +335,34 @@ export const importDocumentTypeEnum = pgEnum("import_document_type", [
 
 export const extractionModelEnum = pgEnum("extraction_model", ["mini", "full"]);
 
+// ── CRM enums ────────────────────────────────────────────────────────────────
+
+export const crmHouseholdStatusEnum = pgEnum("crm_household_status", [
+  "prospect",
+  "active",
+  "inactive",
+  "archived",
+]);
+
+export const crmContactRoleEnum = pgEnum("crm_contact_role", [
+  "primary",
+  "spouse",
+  "dependent",
+  "other",
+]);
+
+export const crmActivityKindEnum = pgEnum("crm_activity_kind", [
+  "note",
+  "call",
+  "meeting",
+  "email",
+  "status_change",
+  "contact_change",
+  "account_change",
+  "document_uploaded",
+  "planning_link",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
