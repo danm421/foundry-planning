@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { termCertainAnnuityFactor } from "../annuity-factors";
+import {
+  singleLifeAnnuityFactor,
+  termCertainAnnuityFactor,
+} from "../annuity-factors";
 
 describe("termCertainAnnuityFactor", () => {
   it("matches IRS Pub 1457 Table B example: r=4.0%, n=10", () => {
@@ -25,5 +28,38 @@ describe("termCertainAnnuityFactor", () => {
     expect(() =>
       termCertainAnnuityFactor({ irc7520Rate: 0, termYears: 10 }),
     ).toThrow(/irc7520Rate/);
+  });
+});
+
+describe("singleLifeAnnuityFactor", () => {
+  it("returns a positive finite value for age 65, r=4%", () => {
+    const a = singleLifeAnnuityFactor({ age: 65, irc7520Rate: 0.04 });
+    expect(a).toBeGreaterThan(0);
+    expect(a).toBeLessThan(30);
+    expect(Number.isFinite(a)).toBe(true);
+  });
+
+  it("rejects age out of [0, 110]", () => {
+    expect(() =>
+      singleLifeAnnuityFactor({ age: -1, irc7520Rate: 0.04 }),
+    ).toThrow(/age/);
+    expect(() =>
+      singleLifeAnnuityFactor({ age: 111, irc7520Rate: 0.04 }),
+    ).toThrow(/age/);
+  });
+
+  it("monotonically decreases as age increases (older = shorter expected term)", () => {
+    const a40 = singleLifeAnnuityFactor({ age: 40, irc7520Rate: 0.04 });
+    const a65 = singleLifeAnnuityFactor({ age: 65, irc7520Rate: 0.04 });
+    const a85 = singleLifeAnnuityFactor({ age: 85, irc7520Rate: 0.04 });
+    expect(a40).toBeGreaterThan(a65);
+    expect(a65).toBeGreaterThan(a85);
+  });
+
+  it("pinned snapshot: age 65, r=4% (regression guard)", () => {
+    const a = singleLifeAnnuityFactor({ age: 65, irc7520Rate: 0.04 });
+    // EOY annuity-in-arrears (Σ v^t × tpx) against 2010CM; this is below the
+    // Pub 1457 Table S figure (~13.4) because Table S uses half-year timing.
+    expect(a).toBeCloseTo(11.47, 2);
   });
 });
