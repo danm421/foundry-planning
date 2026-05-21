@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ownedByEntity } from "@/engine/ownership";
-import type { AccountOwner } from "@/engine/ownership";
+import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import DialogShell from "@/components/dialog-shell";
 import { PercentInput } from "@/components/percent-input";
@@ -28,10 +28,7 @@ export interface PickerBusiness {
   id: string;
   name: string;
   /** Current entity_owners rows on the business. Mixed family + entity owners. */
-  owners: Array<
-    | { kind: "family_member"; familyMemberId: string; percent: number }
-    | { kind: "entity"; entityId: string; percent: number }
-  >;
+  owners: EntityOwner[];
 }
 
 interface AssetPickerModalProps {
