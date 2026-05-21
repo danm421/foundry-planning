@@ -785,6 +785,13 @@
       "when": 1779315791073,
       "tag": "0111_strange_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1779322014058,
+      "tag": "0112_icy_franklin_storm",
+      "breakpoints": true
     }
   ]
 }
