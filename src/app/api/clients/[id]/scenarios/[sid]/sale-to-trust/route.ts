@@ -1,23 +1,23 @@
 // src/app/api/clients/[id]/scenarios/[sid]/sale-to-trust/route.ts
 //
-// POST: record an IDGT sale-to-trust event as a single toggleable bundle of
-// two scenario_changes:
+// POST: record an IDGT sale-to-trust event as a toggleable pair:
 //
-//   1. `edit` on the source account — reassign owners to `[{ kind: "entity",
-//      entityId: trustEntityId, percent: 1 }]`.
-//   2. `add` of a new promissory_note account — owners = the source account's
-//      prior family-member owners (with renormalized percents), debtor =
-//      trustEntityId, plus the supplied note terms.
+//   1. `scenario_change.edit` on the source account — reassign owners to
+//      `[{ kind: "entity", entityId: trustEntityId, percent: 1 }]`.
+//   2. A direct `notesReceivable` row (scoped to the client's BASE scenario,
+//      matching Phase-1 user-entered notes) carrying the same
+//      `toggleGroupId`, so the loader hides the note whenever the source-
+//      owner flip is off.
 //
-// Both rows share a freshly minted `scenarioToggleGroup` so the advisor can
-// flip the sale on/off as one unit. The toggle group + both writes happen in
-// sequence; each writer call wraps its own transaction. We accept a small
-// window of partial state on failure between calls — the toggle group will
-// remain orphaned but harmless (no changes attached). A future hardening pass
-// could collapse all three into a single tx by inlining the writer logic.
+// Both writes share a freshly minted `scenarioToggleGroup` so the advisor
+// can flip the sale on/off as one unit. The owner flip is a transactional
+// scenario_change (transactional via applyEntityEdit's tx). The note insert
+// has its own transaction. We accept a small window of partial state on
+// failure between the two calls — the toggle group remains harmless if
+// orphaned (no changes attached).
 //
-// Auth model: requireOrgId + assertScenarioRouteScope, matching toggle-groups
-// and changes routes.
+// Auth model: requireOrgId + assertScenarioRouteScope, matching toggle-
+// groups and changes routes.
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
@@ -27,17 +27,31 @@ import { db } from "@/db";
 import {
   accounts,
   accountOwners,
+  scenarios,
   scenarioToggleGroups,
+  notesReceivable,
+  noteReceivableOwners,
 } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
-import {
-  applyEntityAdd,
-  applyEntityEdit,
-} from "@/lib/scenario/changes-writer";
+import { applyEntityEdit } from "@/lib/scenario/changes-writer";
 import type { AccountOwner } from "@/engine/ownership";
+
+// Firm scope is already enforced upstream by assertScenarioRouteScope; this
+// helper only needs the base-case scenario lookup.
+async function getBaseCaseScenarioId(
+  clientId: string,
+): Promise<string | null> {
+  const [scenario] = await db
+    .select({ id: scenarios.id })
+    .from(scenarios)
+    .where(
+      and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)),
+    );
+  return scenario?.id ?? null;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -119,9 +133,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       (sum, o) => sum + Number(o.percent),
       0,
     );
-    const noteOwners: AccountOwner[] = familyOwners.map((o) => ({
-      kind: "family_member",
-      familyMemberId: o.familyMemberId!,
+    const noteOwners = familyOwners.map((o) => ({
+      familyMemberId: o.familyMemberId as string,
       percent:
         familyPercentSum > 0 ? Number(o.percent) / familyPercentSum : 0,
     }));
@@ -160,34 +173,49 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       toggleGroupId: toggleGroup.id,
     });
 
-    // Step 3: add the new promissory note account. The targetId is the new
-    // entity's id (a fresh uuid). Field shape matches engine/types.Account.
+    // Step 3: insert the new promissory note into notes_receivable. The note
+    // is linked to the same toggleGroup as the source-account-owner flip so
+    // the pair flips on/off together. Owners come from the source account's
+    // prior family-member owners (renormalized above). Note rows live on the
+    // BASE scenario (mirrors Phase-1 user-entered notes); visibility in
+    // non-base scenarios is gated by the toggle group. Basis equals face
+    // value in v1 — the installment-sale economic distinction (note basis =
+    // seller's basis in the original asset) is a separate refinement.
+    const baseScenarioId = await getBaseCaseScenarioId(clientId);
+    if (!baseScenarioId) {
+      return NextResponse.json(
+        { error: "Client has no base case scenario" },
+        { status: 500 },
+      );
+    }
+
     const noteId = randomUUID();
     const sourceValueNum = Number(sourceAccount.value);
-    const noteEntity = {
-      id: noteId,
-      name: `Note from ${sourceAccount.name} sale`,
-      category: "taxable" as const,
-      subType: "promissory_note" as const,
-      value: sourceValueNum,
-      basis: sourceValueNum,
-      growthRate: 0,
-      rmdEnabled: false,
-      titlingType: "jtwros" as const,
-      noteInterestRate: body.noteInterestRate,
-      noteTermMonths: body.noteTermMonths,
-      noteStartYear: body.noteStartYear,
-      notePaymentType: body.notePaymentType,
-      noteLinkedTrustEntityId: body.trustEntityId,
-      owners: noteOwners,
-    };
 
-    await applyEntityAdd({
-      scenarioId,
-      firmId,
-      targetKind: "account",
-      entity: noteEntity,
-      toggleGroupId: toggleGroup.id,
+    await db.transaction(async (tx) => {
+      await tx.insert(notesReceivable).values({
+        id: noteId,
+        clientId,
+        scenarioId: baseScenarioId,
+        name: `Note from ${sourceAccount.name} sale`,
+        faceValue: String(sourceValueNum),
+        basis: String(sourceValueNum),
+        interestRate: String(body.noteInterestRate),
+        paymentType: body.notePaymentType,
+        startYear: body.noteStartYear,
+        startMonth: 1,
+        termMonths: body.noteTermMonths,
+        linkedTrustEntityId: body.trustEntityId,
+        toggleGroupId: toggleGroup.id,
+      });
+
+      for (const o of noteOwners) {
+        await tx.insert(noteReceivableOwners).values({
+          noteReceivableId: noteId,
+          familyMemberId: o.familyMemberId,
+          percent: String(o.percent),
+        });
+      }
     });
 
     // No dedicated audit action — sale-to-trust is recorded as a compound
@@ -206,7 +234,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         toggleGroupId: toggleGroup.id,
         sourceAccountId: body.accountId,
         trustEntityId: body.trustEntityId,
-        noteAccountId: noteId,
+        noteReceivableId: noteId,
         noteInterestRate: body.noteInterestRate,
         noteTermMonths: body.noteTermMonths,
         noteStartYear: body.noteStartYear,
@@ -218,7 +246,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       {
         ok: true,
         toggleGroupId: toggleGroup.id,
-        noteAccountId: noteId,
+        noteReceivableId: noteId,
       },
       { status: 201 },
     );

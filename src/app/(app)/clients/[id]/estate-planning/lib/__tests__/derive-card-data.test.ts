@@ -287,6 +287,85 @@ describe("deriveTrustCardData", () => {
     });
     expect(deriveTrustCardData(tree, 2026)).toHaveLength(0);
   });
+
+  it("surfaces linkedNotes from tree.notesReceivable when linkedTrustEntityId matches", () => {
+    const tree = baseTree({
+      entities: [
+        {
+          id: "e1",
+          name: "Tom's IDGT",
+          entityType: "trust",
+          trustSubType: "idgt",
+          isIrrevocable: true,
+          grantor: "client",
+          includeInPortfolio: false,
+          isGrantor: true,
+        },
+      ] as unknown as ClientData["entities"],
+      notesReceivable: [
+        {
+          id: "n1",
+          name: "Sale-to-trust note",
+          faceValue: 1_000_000,
+          basis: 1_000_000,
+          interestRate: 0.05,
+          paymentType: "amortizing",
+          startYear: 2026,
+          startMonth: 1,
+          termMonths: 120,
+          linkedTrustEntityId: "e1",
+          toggleGroupId: null,
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+        },
+      ] as unknown as ClientData["notesReceivable"],
+    });
+    const cards = deriveTrustCardData(tree, 2026);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].linkedNotes).toHaveLength(1);
+    expect(cards[0].linkedNotes[0].noteId).toBe("n1");
+    expect(cards[0].linkedNotes[0].name).toBe("Sale-to-trust note");
+    // 10-yr amortizing $1M @ 5% → ~$127k/yr first-year payment
+    expect(cards[0].linkedNotes[0].annualPayment).toBeGreaterThan(120_000);
+    expect(cards[0].linkedNotes[0].annualPayment).toBeLessThan(135_000);
+  });
+
+  it("does not surface notesReceivable linked to a different trust", () => {
+    const tree = baseTree({
+      entities: [
+        {
+          id: "e1",
+          name: "Trust A",
+          entityType: "trust",
+          trustSubType: "idgt",
+          isIrrevocable: true,
+          grantor: "client",
+          includeInPortfolio: false,
+          isGrantor: true,
+        },
+      ] as unknown as ClientData["entities"],
+      notesReceivable: [
+        {
+          id: "n1",
+          name: "Note to Trust B",
+          faceValue: 500_000,
+          basis: 500_000,
+          interestRate: 0.04,
+          paymentType: "interest_only_balloon",
+          startYear: 2026,
+          startMonth: 1,
+          termMonths: 60,
+          linkedTrustEntityId: "e2", // not e1
+          toggleGroupId: null,
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+        },
+      ] as unknown as ClientData["notesReceivable"],
+    });
+    const cards = deriveTrustCardData(tree, 2026);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].linkedNotes).toHaveLength(0);
+  });
 });
 
 describe("deriveHeirCardData", () => {

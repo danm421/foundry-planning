@@ -40,7 +40,6 @@ export type AccountSubType =
   | "529"
   | "trust"
   | "other"
-  | "promissory_note"
   | "primary_residence"
   | "rental_property"
   | "commercial_property"

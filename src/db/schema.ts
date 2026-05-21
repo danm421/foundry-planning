@@ -59,7 +59,6 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "529",
   "trust",
   "other",
-  "promissory_note",
   // real_estate sub types
   "primary_residence",
   "rental_property",
@@ -1027,17 +1026,6 @@ export const accounts = pgTable("accounts", {
   // the rate column is then a fallback / display value only.
   propertyTaxGrowthSource: itemGrowthSourceEnum("property_tax_growth_source").notNull().default("custom"),
   titlingType: titlingTypeEnum("titling_type").notNull().default("jtwros"),
-  // Promissory-note fields. Only populated when subType = 'promissory_note'.
-  noteInterestRate: decimal("note_interest_rate", { precision: 7, scale: 4 }),
-  noteTermMonths: integer("note_term_months"),
-  noteStartYear: integer("note_start_year"),
-  notePaymentType: notePaymentTypeEnum("note_payment_type"),
-  // When set, the named trust entity is the debtor. Engine derives a matching
-  // outflow on the trust equal to the holder's combined interest + principal.
-  noteLinkedTrustEntityId: uuid("note_linked_trust_entity_id").references(
-    () => entities.id,
-    { onDelete: "set null" },
-  ),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1293,6 +1281,14 @@ export const notesReceivable = pgTable("notes_receivable", {
   scenarioId: uuid("scenario_id")
     .notNull()
     .references(() => scenarios.id, { onDelete: "cascade" }),
+  // toggle_group_id — nullable. When set, the loader filters this row
+  // out when the named toggle group is off in the active ToggleState. Used
+  // exclusively by the IDGT sale_to_trust route in v1; user-entered notes
+  // are toggle_group_id IS NULL (always visible).
+  toggleGroupId: uuid("toggle_group_id").references(
+    () => scenarioToggleGroups.id,
+    { onDelete: "set null" },
+  ),
   name: text("name").notNull(),
   faceValue: decimal("face_value", { precision: 15, scale: 2 }).notNull(),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull(),

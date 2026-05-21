@@ -638,13 +638,6 @@ export interface Account {
    * (not optional) so call sites never silently default.
    */
   titlingType: "jtwros" | "community_property";
-  /** Promissory-note fields. Present only when subType === 'promissory_note'. */
-  noteInterestRate?: number;
-  noteTermMonths?: number;
-  noteStartYear?: number;
-  notePaymentType?: "amortizing" | "interest_only_balloon";
-  /** When set, this trust entity is the debtor — engine derives a matching outflow. */
-  noteLinkedTrustEntityId?: string;
   owners: AccountOwner[];
 }
 

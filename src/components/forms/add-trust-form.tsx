@@ -23,7 +23,6 @@ import TransferAssetForm, { type AccountOption as AssetAccountOption } from "./t
 import TransferCashForm from "./transfer-cash-form";
 import TransferSeriesForm from "./transfer-series-form";
 import SellToTrustDialog from "./sell-to-trust-dialog";
-import LinkExistingNoteDialog from "./link-existing-note-dialog";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import DialogShell from "../dialog-shell";
 import ClutDetailsSection from "./clut-details-section";
@@ -955,19 +954,12 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         {editing ? (
           showNotesAndSales(editing) ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <SellToTrustDialog
-                  clientId={clientId}
-                  scenarioId={scenarioId}
-                  trust={editing}
-                  accounts={accounts ?? []}
-                />
-                <LinkExistingNoteDialog
-                  clientId={clientId}
-                  trust={editing}
-                  accounts={accounts ?? []}
-                />
-              </div>
+              <SellToTrustDialog
+                clientId={clientId}
+                scenarioId={scenarioId}
+                trust={editing}
+                accounts={accounts ?? []}
+              />
               {!scenarioId && (
                 <p className="text-[12px] text-ink-3">
                   Selling assets to the trust requires an active scenario. Open
@@ -975,7 +967,6 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
                   event.
                 </p>
               )}
-              <LinkedNotesList trust={editing} accounts={accounts ?? []} />
             </div>
           ) : (
             <p className="text-[13px] text-ink-3 text-center py-6">
@@ -1065,32 +1056,6 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
 });
 
 export default AddTrustForm;
-
-// ── LinkedNotesList ──────────────────────────────────────────────────────────
-// Tiny presentational helper for the Notes & sales tab. Small enough not to
-// warrant its own file — only used here.
-function LinkedNotesList({
-  trust,
-  accounts,
-}: {
-  trust: Entity;
-  accounts: AssetsTabAccount[];
-}) {
-  const linked = accounts.filter((a) => a.noteLinkedTrustEntityId === trust.id);
-  if (linked.length === 0) return null;
-  return (
-    <section className="mt-4">
-      <h4 className="text-sm font-medium text-ink-2">Linked notes</h4>
-      <ul className="mt-1 space-y-1">
-        {linked.map((n) => (
-          <li key={n.id} className="text-xs text-ink-3">
-            {n.name} — balance ${n.value.toLocaleString()}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 // ── Raw API row shapes (minimal — only the fields we read) ───────────────────
 

@@ -77,11 +77,6 @@ export interface AccountFormInitial {
    * and cannot be deleted (the projection engine uses it as the default
    * deposit/expense target). */
   isDefaultChecking?: boolean;
-  // Promissory-note fields (subType === "promissory_note")
-  noteInterestRate?: string | null;
-  noteTermMonths?: number | null;
-  noteStartYear?: number | null;
-  notePaymentType?: "amortizing" | "interest_only_balloon" | null;
 }
 
 export interface ModelPortfolioOption {
@@ -161,7 +156,10 @@ const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
-  notes_receivable: ["promissory_note"],
+  // notes_receivable: routed to AddNoteReceivableForm via add-account-dialog;
+  // this form never renders for that category. Empty list keeps the Record
+  // exhaustive without offering a stale subType option.
+  notes_receivable: [],
 };
 
 const SUB_TYPE_LABELS: Record<string, string> = {
@@ -174,7 +172,6 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   "403b": "403(b)",
   "529": "529 Plan",
   trust: "Trust",
-  promissory_note: "Promissory note (receivable)",
   other: "Other",
   primary_residence: "Primary Residence",
   rental_property: "Rental Property",
@@ -210,6 +207,9 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   real_estate: "Real Estate",
   business: "Business Interest",
   life_insurance: "Life Insurance Policy",
+  // notes_receivable: routed to AddNoteReceivableForm via add-account-dialog;
+  // this form never renders for that category. Entry kept only to satisfy
+  // Record<AccountCategory, string> exhaustiveness.
   notes_receivable: "Promissory Note",
 };
 
@@ -418,20 +418,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0",
   );
 
-  // Promissory-note state (only active when subType === "promissory_note")
-  const [noteInterestRatePct, setNoteInterestRatePct] = useState<string>(
-    initial?.noteInterestRate != null ? (Number(initial.noteInterestRate) * 100).toString() : "",
-  );
-  const [noteTermMonths, setNoteTermMonths] = useState<string>(
-    initial?.noteTermMonths != null ? String(initial.noteTermMonths) : "120",
-  );
-  const [noteStartYear, setNoteStartYear] = useState<string>(
-    initial?.noteStartYear != null ? String(initial.noteStartYear) : String(new Date().getFullYear()),
-  );
-  const [notePaymentType, setNotePaymentType] = useState<"amortizing" | "interest_only_balloon">(
-    initial?.notePaymentType ?? "amortizing",
-  );
-
   // ── Dirty-tracking for autosave ─────────────────────────────────────────────
   // Serialize every controlled field into a snapshot string so tab-switch
   // autosave can tell whether there are unsaved changes.
@@ -460,18 +446,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     overridePctTaxExempt,
     turnoverPct,
     customAllocations,
-    noteInterestRatePct,
-    noteTermMonths,
-    noteStartYear,
-    notePaymentType,
   }), [
     name, category, subType, owners, titlingType, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
     realEstateGrowthRatePct, modelPortfolioId, rmdEnabled, priorYearEndValue,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
-    turnoverPct, customAllocations, noteInterestRatePct, noteTermMonths,
-    noteStartYear, notePaymentType,
+    turnoverPct, customAllocations,
   ]);
 
   const baselineRef = useRef<string>("");
@@ -613,11 +594,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string }> => {
     if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
 
-    const isPromissoryNote = subType === "promissory_note";
     let growthRate: string | null;
-    if (isPromissoryNote) {
-      growthRate = null;
-    } else if (category === "real_estate") {
+    if (category === "real_estate") {
       growthRate = String(Number(realEstateGrowthRatePct) / 100);
     } else if (growthSource === "custom") {
       growthRate = String(Number(growthRatePct) / 100);
@@ -638,22 +616,16 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       owners,
       titlingType,
       value: accountValue,
-      basis: isMixedDeferral
-        ? "0"
-        : isPromissoryNote
-          ? accountValue
-          : accountBasis,
+      basis: isMixedDeferral ? "0" : accountBasis,
       rothValue: isMixedDeferral ? (accountRothValue || "0") : "0",
       growthRate,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
-      growthSource: isPromissoryNote
-        ? "custom"
-        : isInvestable
-          ? growthSource
-          : category === "real_estate"
-            ? realEstateGrowthSource
-            : "custom",
+      growthSource: isInvestable
+        ? growthSource
+        : category === "real_estate"
+          ? realEstateGrowthSource
+          : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       turnoverPct: toPctOrNull(turnoverPct) ?? "0",
       overridePctOi: toPctOrNull(overridePctOi),
@@ -666,16 +638,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? String(Number(propertyTaxGrowthRate) / 100)
           : undefined,
       propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
-      noteInterestRate: isPromissoryNote
-        ? noteInterestRatePct !== "" ? String(Number(noteInterestRatePct) / 100) : null
-        : null,
-      noteTermMonths: isPromissoryNote
-        ? noteTermMonths !== "" ? Number(noteTermMonths) : null
-        : null,
-      noteStartYear: isPromissoryNote
-        ? noteStartYear !== "" ? Number(noteStartYear) : null
-        : null,
-      notePaymentType: isPromissoryNote ? notePaymentType : null,
     };
 
     setLoading(true);
@@ -762,7 +724,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
-    noteInterestRatePct, noteTermMonths, noteStartYear, notePaymentType,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
     currentSerialized, onAutoSaved,
   ]);
@@ -782,12 +743,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     // toggling Inflation ↔ Custom doesn't lose the value. The engine uses
     // `growthSource` to decide whether to substitute the resolved inflation
     // rate at projection time.
-    const isPromissoryNote = subType === "promissory_note";
     let growthRate: string | null;
-    if (isPromissoryNote) {
-      // Promissory notes are amortized by the engine — no market growth rate.
-      growthRate = null;
-    } else if (category === "real_estate") {
+    if (category === "real_estate") {
       growthRate = String(Number(realEstateGrowthRatePct) / 100);
     } else if (growthSource === "custom") {
       growthRate = String(Number(data.get("growthRate")) / 100);
@@ -814,25 +771,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       value: currentValue,
       // Cost basis is meaningless for 401k/403b; force 0 so any leftover
       // pre-migration value can't influence engine math.
-      // For promissory notes, basis equals value at issuance (full principal).
       basis: isMixedDeferralForBody
         ? "0"
-        : isPromissoryNote
-          ? currentValue
-          : (data.get("basis") as string),
+        : (data.get("basis") as string),
       rothValue: isMixedDeferralForBody
         ? ((data.get("rothValue") as string) || "0")
         : "0",
       growthRate,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
-      growthSource: isPromissoryNote
-        ? "custom"
-        : isInvestable
-          ? growthSource
-          : category === "real_estate"
-            ? realEstateGrowthSource
-            : "custom",
+      growthSource: isInvestable
+        ? growthSource
+        : category === "real_estate"
+          ? realEstateGrowthSource
+          : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
       overridePctOi: toPctOrNull("overridePctOi"),
@@ -848,17 +800,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? String(Number(propertyTaxGrowthRate) / 100)
           : undefined,
       propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
-      // Promissory-note fields — only sent when subType is promissory_note
-      noteInterestRate: isPromissoryNote
-        ? noteInterestRatePct !== "" ? String(Number(noteInterestRatePct) / 100) : null
-        : null,
-      noteTermMonths: isPromissoryNote
-        ? noteTermMonths !== "" ? Number(noteTermMonths) : null
-        : null,
-      noteStartYear: isPromissoryNote
-        ? noteStartYear !== "" ? Number(noteStartYear) : null
-        : null,
-      notePaymentType: isPromissoryNote ? notePaymentType : null,
     };
 
     try {
@@ -1036,7 +977,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               Account Details
             </button>
           )}
-          {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && category !== "notes_receivable" && subType !== "promissory_note" && (
+          {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && category !== "notes_receivable" && (
             <button
               type="button"
               onClick={() => handleTabClick("savings")}
@@ -1049,7 +990,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               Savings
             </button>
           )}
-          {!lockTab && category === "taxable" && subType !== "promissory_note" && (
+          {!lockTab && category === "taxable" && (
             <button
               type="button"
               onClick={() => handleTabClick("realization")}
@@ -1159,7 +1100,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 className={selectClassName}
               >
                 {(Object.keys(CATEGORY_LABELS) as AccountCategory[])
-                  .filter((cat) => cat !== "business" && cat !== "life_insurance")
+                  .filter((cat) => cat !== "business" && cat !== "life_insurance" && cat !== "notes_receivable")
                   .map((cat) => (
                     <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
                   ))}
@@ -1187,10 +1128,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     } else {
                       setAccountBasis(accountValue);
                     }
-                  }
-                  // Savings / Realization tabs are not available for promissory notes
-                  if (newSub === "promissory_note" && (activeTab === "savings" || activeTab === "realization")) {
-                    setActiveTab("details");
                   }
                 }}
                 className={selectClassName}
@@ -1255,10 +1192,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   account and is excluded from tax on withdrawal.
                 </p>
               </div>
-            ) : subType === "promissory_note" ? (
-              // Basis is not user-editable for promissory notes — it equals value at issuance
-              // (full principal). We pass it silently as `value` on submit.
-              null
             ) : (
               <div>
                 <label className={fieldLabelClassName} htmlFor="basis">
@@ -1277,78 +1210,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </div>
             )}
 
-            {/* Promissory-note fields */}
-            {subType === "promissory_note" && (
-              <>
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="noteInterestRate">
-                    Interest Rate (%)
-                  </label>
-                  <PercentInput
-                    id="noteInterestRate"
-                    name="noteInterestRate"
-                    value={noteInterestRatePct}
-                    onChange={(raw) => setNoteInterestRatePct(raw)}
-                    placeholder="e.g. 5"
-                    className={inputClassName}
-                  />
-                </div>
-
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="noteTermMonths">
-                    Term (months)
-                  </label>
-                  <input
-                    id="noteTermMonths"
-                    name="noteTermMonths"
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={noteTermMonths}
-                    onChange={(e) => setNoteTermMonths(e.target.value)}
-                    placeholder="e.g. 120"
-                    className={inputClassName}
-                  />
-                </div>
-
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="noteStartYear">
-                    Start Year
-                  </label>
-                  <input
-                    id="noteStartYear"
-                    name="noteStartYear"
-                    type="number"
-                    min={1900}
-                    max={2200}
-                    step={1}
-                    value={noteStartYear}
-                    onChange={(e) => setNoteStartYear(e.target.value)}
-                    placeholder={String(new Date().getFullYear())}
-                    className={inputClassName}
-                  />
-                </div>
-
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="notePaymentType">
-                    Payment Type
-                  </label>
-                  <select
-                    id="notePaymentType"
-                    name="notePaymentType"
-                    value={notePaymentType}
-                    onChange={(e) => setNotePaymentType(e.target.value as "amortizing" | "interest_only_balloon")}
-                    className={selectClassName}
-                  >
-                    <option value="amortizing">Amortizing (level payment)</option>
-                    <option value="interest_only_balloon">Interest-only + balloon</option>
-                  </select>
-                </div>
-              </>
-            )}
-
             <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
-              {subType === "promissory_note" ? null : isInvestable ? (
+              {isInvestable ? (
                 <div>
                   <label className={fieldLabelClassName}>Growth Rate</label>
                   <select
