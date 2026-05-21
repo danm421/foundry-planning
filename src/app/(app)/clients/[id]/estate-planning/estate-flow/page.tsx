@@ -20,23 +20,20 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
   const [client] = await db
     .select({
       filingStatus: clients.filingStatus,
-      legacyFirstName: clients.firstName,
-      legacySpouseName: clients.spouseName,
       crmHouseholdId: clients.crmHouseholdId,
     })
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   if (!client) notFound();
 
-  // CRM contacts — identity source.
-  const contactRows = client.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-    : [];
-  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
-  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact) notFound();
 
   const scenarioId = sp.scenario ?? "base";
 
@@ -46,8 +43,8 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
         clientId={id}
         firmId={firmId}
         filingStatus={client.filingStatus}
-        firstName={primaryContact?.firstName ?? client.legacyFirstName}
-        spouseName={spouseContact?.firstName ?? client.legacySpouseName}
+        firstName={primaryContact.firstName}
+        spouseName={spouseContact?.firstName ?? null}
         scenarioId={scenarioId}
       />
     </Suspense>

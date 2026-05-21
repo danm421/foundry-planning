@@ -40,16 +40,14 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
   if (!clientRow) notFound();
 
   // CRM contacts — source of spouseLastName fallback.
-  const contactRows = clientRow.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
-    : [];
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
   const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
   const client = {
     ...clientRow,
-    spouseLastName: spouseContact?.lastName ?? clientRow.spouseLastName,
+    spouseLastName: spouseContact?.lastName,
   };
 
   const [scenario] = await db

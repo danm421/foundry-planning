@@ -25,12 +25,10 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
   }
 
   // CRM contacts — identity source.
-  const contactRows = client.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-    : [];
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
   const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
   const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
@@ -44,8 +42,8 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
     client.filingStatus === "married_separate";
 
   const ownerDobs = {
-    clientDob: primaryContact?.dateOfBirth ?? client.dateOfBirth,
-    spouseDob: spouseContact?.dateOfBirth ?? client.spouseDob ?? null,
+    clientDob: primaryContact?.dateOfBirth,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
   };
 
   const entityInfos = entityRows.map((e) => ({

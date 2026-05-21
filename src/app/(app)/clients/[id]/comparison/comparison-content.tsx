@@ -18,9 +18,6 @@ export async function ComparisonContent({ clientId, firmId }: Props) {
   const [clientRow, scenarios, comparisons] = await Promise.all([
     db
       .select({
-        legacyFirstName: clients.firstName,
-        legacyLastName: clients.lastName,
-        legacyDob: clients.dateOfBirth,
         retirementAge: clients.retirementAge,
         crmHouseholdId: clients.crmHouseholdId,
       })
@@ -40,26 +37,25 @@ export async function ComparisonContent({ clientId, firmId }: Props) {
 
   if (!clientRow) notFound();
 
-  // CRM contacts — identity source.
-  const [primaryContact] = clientRow.crmHouseholdId
-    ? await db
-        .select({
-          firstName: crmHouseholdContacts.firstName,
-          lastName: crmHouseholdContacts.lastName,
-          dateOfBirth: crmHouseholdContacts.dateOfBirth,
-        })
-        .from(crmHouseholdContacts)
-        .where(
-          and(
-            eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId),
-            eq(crmHouseholdContacts.role, "primary"),
-          ),
-        )
-    : [];
+  // CRM contacts — sole identity source.
+  const [primaryContact] = await db
+    .select({
+      firstName: crmHouseholdContacts.firstName,
+      lastName: crmHouseholdContacts.lastName,
+      dateOfBirth: crmHouseholdContacts.dateOfBirth,
+    })
+    .from(crmHouseholdContacts)
+    .where(
+      and(
+        eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId),
+        eq(crmHouseholdContacts.role, "primary"),
+      ),
+    );
+  if (!primaryContact) notFound();
   const client = {
-    firstName: primaryContact?.firstName ?? clientRow.legacyFirstName,
-    lastName: primaryContact?.lastName ?? clientRow.legacyLastName,
-    dateOfBirth: primaryContact?.dateOfBirth ?? clientRow.legacyDob,
+    firstName: primaryContact.firstName,
+    lastName: primaryContact.lastName,
+    dateOfBirth: primaryContact.dateOfBirth,
     retirementAge: clientRow.retirementAge,
   };
 

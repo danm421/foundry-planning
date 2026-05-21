@@ -62,8 +62,8 @@ export async function POST(
             ),
           )
       : [];
-    const clientFirstName = primaryContact?.firstName ?? client.firstName;
-    const clientLastName = primaryContact?.lastName ?? client.lastName;
+    const clientFirstName = primaryContact?.firstName;
+    const clientLastName = primaryContact?.lastName;
 
     const url = new URL(request.url);
     const year = Number(url.searchParams.get("year"));

@@ -40,23 +40,22 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
 
   if (!clientRow) notFound();
 
-  // CRM contacts — identity source.
-  const contactRows = clientRow.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
-    : [];
-  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
-  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
   const client = {
     ...clientRow,
-    firstName: primaryContact?.firstName ?? clientRow.firstName,
-    lastName: primaryContact?.lastName ?? clientRow.lastName,
-    dateOfBirth: primaryContact?.dateOfBirth ?? clientRow.dateOfBirth,
-    spouseName: spouseContact?.firstName ?? clientRow.spouseName,
-    spouseLastName: spouseContact?.lastName ?? clientRow.spouseLastName,
-    spouseDob: spouseContact?.dateOfBirth ?? clientRow.spouseDob,
+    firstName: primaryContact.firstName,
+    lastName: primaryContact.lastName,
+    dateOfBirth: primaryContact.dateOfBirth,
+    spouseName: spouseContact?.firstName ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
   };
 
   const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioParam ?? "base", {});

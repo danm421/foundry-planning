@@ -25,24 +25,23 @@ export default async function ClientLayout({ children, params }: Props): Promise
     .limit(1);
   if (!clientRow) notFound();
 
-  // CRM contacts — identity source for the header.
-  const contactRows = clientRow.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId))
-    : [];
+  // CRM contacts — sole identity source for the header.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
   const primary = contactRows.find((c) => c.role === "primary") ?? null;
   const spouse = contactRows.find((c) => c.role === "spouse") ?? null;
+  if (!primary) notFound();
 
   const client = {
     ...clientRow,
-    firstName: primary?.firstName ?? clientRow.firstName,
-    lastName: primary?.lastName ?? clientRow.lastName,
-    dateOfBirth: primary?.dateOfBirth ?? clientRow.dateOfBirth,
-    spouseName: spouse?.firstName ?? clientRow.spouseName,
-    spouseLastName: spouse?.lastName ?? clientRow.spouseLastName,
-    spouseDob: spouse?.dateOfBirth ?? clientRow.spouseDob,
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    dateOfBirth: primary.dateOfBirth,
+    spouseName: spouse?.firstName ?? null,
+    spouseLastName: spouse?.lastName ?? null,
+    spouseDob: spouse?.dateOfBirth ?? null,
   };
 
   // Scenarios for the chip row + create-dialog "copy from" select. The parent

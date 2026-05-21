@@ -38,11 +38,11 @@ export async function POST(
     const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
     const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
-    const clientFirstName = primaryContact?.firstName ?? client.firstName;
-    const clientLastName = primaryContact?.lastName ?? client.lastName;
-    const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
-    const spouseFirstName = spouseContact?.firstName ?? client.spouseName;
-    const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob;
+    const clientFirstName = primaryContact?.firstName;
+    const clientLastName = primaryContact?.lastName;
+    const clientDob = primaryContact?.dateOfBirth;
+    const spouseFirstName = spouseContact?.firstName;
+    const spouseDob = spouseContact?.dateOfBirth;
 
     const url = new URL(request.url);
     const body = await request.json().catch(() => ({}));

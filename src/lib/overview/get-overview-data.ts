@@ -48,8 +48,8 @@ export async function getOverviewData(
     : [];
   const primaryContact = crmContactRows.find((c) => c.role === "primary") ?? null;
   const spouseContact = crmContactRows.find((c) => c.role === "spouse") ?? null;
-  const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
-  const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob;
+  const clientDob = primaryContact?.dateOfBirth;
+  const spouseDob = spouseContact?.dateOfBirth;
 
   const [allocation, openItemsAll, openItemsPreview, auditRows, accountRows, entityRows] =
     await Promise.all([

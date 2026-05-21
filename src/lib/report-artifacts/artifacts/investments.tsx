@@ -100,8 +100,8 @@ async function fetchInvestmentsData(
         .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
     : [];
   const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
-  const clientFirstName = primaryContact?.firstName ?? client.firstName;
-  const clientLastName = primaryContact?.lastName ?? client.lastName;
+  const clientFirstName = primaryContact?.firstName;
+  const clientLastName = primaryContact?.lastName;
 
   const [scenario] = await db
     .select()

@@ -24,20 +24,19 @@ export default async function EstateTaxReportPage({ params }: PageProps) {
     notFound();
   }
 
-  // CRM contacts — identity source.
-  const contactRows = client.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-    : [];
-  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
-  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
 
-  const clientFirstName = primaryContact?.firstName ?? client.firstName;
-  const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
-  const spouseFirstName = spouseContact?.firstName ?? client.spouseName;
-  const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob;
+  const clientFirstName = primaryContact.firstName;
+  const clientDob = primaryContact.dateOfBirth;
+  const spouseFirstName = spouseContact?.firstName ?? null;
+  const spouseDob = spouseContact?.dateOfBirth ?? null;
 
   const isMarried =
     client.filingStatus === "married_joint" ||

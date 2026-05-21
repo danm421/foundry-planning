@@ -38,7 +38,7 @@ export async function POST(
             ),
           )
       : [];
-    const clientFirstName = primaryContact?.firstName ?? client.firstName;
+    const clientFirstName = primaryContact?.firstName;
 
     const [target] = await db
       .select()

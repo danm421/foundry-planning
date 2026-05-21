@@ -134,8 +134,12 @@ function ownerLabel(
     const fm = (tree.familyMembers ?? []).find((f) => f.id === owner.familyMemberId);
     return fm?.firstName ?? "Family member";
   }
-  const ent = (tree.entities ?? []).find((e) => e.id === owner.entityId);
-  return ent?.name ?? "Entity";
+  if (owner.kind === "entity") {
+    const ent = (tree.entities ?? []).find((e) => e.id === owner.entityId);
+    return ent?.name ?? "Entity";
+  }
+  // external_beneficiary — charity / non-household recipient.
+  return "External beneficiary";
 }
 
 function compareRows(a: RenderRow, b: RenderRow): number {

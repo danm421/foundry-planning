@@ -37,15 +37,14 @@ export default async function EstateStep({ clientId, firmId }: EstateStepProps) 
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
   if (!client) return <NotFound />;
 
-  // CRM contacts — identity source.
-  const contactRows = client.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-    : [];
-  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
-  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact) return <NotFound />;
 
   const [scenario] = await db
     .select()
@@ -110,10 +109,10 @@ export default async function EstateStep({ clientId, firmId }: EstateStepProps) 
     }));
 
   const primary: WillsPanelPrimary = {
-    firstName: primaryContact?.firstName ?? client.firstName,
-    lastName: primaryContact?.lastName ?? client.lastName,
-    spouseName: spouseContact?.firstName ?? client.spouseName ?? null,
-    spouseLastName: spouseContact?.lastName ?? client.spouseLastName ?? null,
+    firstName: primaryContact.firstName,
+    lastName: primaryContact.lastName,
+    spouseName: spouseContact?.firstName ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
   };
   const entityOwnedAccountTotals = new Map<string, number>();
   for (const a of accountRows) {

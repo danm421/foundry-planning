@@ -41,12 +41,10 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
   if (!client) notFound();
 
   // CRM contacts — source of spouseLastName (and other identity fallbacks).
-  const contactRows = client.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-    : [];
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
   const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
   const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
@@ -270,7 +268,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     lifeExpectancy: effectiveClient.lifeExpectancy ?? client.lifeExpectancy,
     filingStatus: effectiveClient.filingStatus,
     spouseName: effectiveClient.spouseName ?? null,
-    spouseLastName: spouseContact?.lastName ?? client.spouseLastName ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
     spouseDob: effectiveClient.spouseDob ?? null,
     spouseRetirementAge: effectiveClient.spouseRetirementAge ?? null,
     spouseRetirementMonth: client.spouseRetirementMonth ?? null,

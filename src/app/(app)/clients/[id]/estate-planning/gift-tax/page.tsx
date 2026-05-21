@@ -20,26 +20,25 @@ export default async function GiftTaxReportPage({ params }: PageProps) {
 
   if (!client) notFound();
 
-  // CRM contacts — identity source.
-  const contactRows = client.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-    : [];
-  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
-  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
 
   return (
     <GiftTaxReportView
       clientId={id}
       ownerNames={{
-        clientName: primaryContact?.firstName ?? client.firstName ?? "Client",
-        spouseName: spouseContact?.firstName ?? client.spouseName ?? null,
+        clientName: primaryContact.firstName,
+        spouseName: spouseContact?.firstName ?? null,
       }}
       ownerDobs={{
-        clientDob: primaryContact?.dateOfBirth ?? client.dateOfBirth,
-        spouseDob: spouseContact?.dateOfBirth ?? client.spouseDob ?? null,
+        clientDob: primaryContact.dateOfBirth,
+        spouseDob: spouseContact?.dateOfBirth ?? null,
       }}
     />
   );

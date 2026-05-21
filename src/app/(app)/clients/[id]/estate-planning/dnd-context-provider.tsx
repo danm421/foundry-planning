@@ -326,11 +326,15 @@ export function CanvasDndProvider({
           if (target.kind === "external_beneficiary") {
             throw new Error("Cannot retitle to a charity");
           }
-          const currentOwners: SaveAccountOwner[] = account.owners.map((o) =>
-            o.kind === "family_member"
-              ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }
-              : { kind: "entity", entityId: o.entityId, percent: o.percent },
-          );
+          const currentOwners: SaveAccountOwner[] = account.owners.map((o) => {
+            if (o.kind === "family_member") {
+              return { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent };
+            }
+            if (o.kind === "entity") {
+              return { kind: "entity", entityId: o.entityId, percent: o.percent };
+            }
+            return { kind: "external_beneficiary", externalBeneficiaryId: o.externalBeneficiaryId, percent: o.percent };
+          });
           await saveRetitle({
             clientId,
             accountId: source.accountId,

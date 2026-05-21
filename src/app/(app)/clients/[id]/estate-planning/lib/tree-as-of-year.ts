@@ -69,7 +69,7 @@ export function treeAsOfYear(
       if (o.kind === "entity") {
         const locked = yearRow.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
         sliceValue = locked ?? value * o.percent;
-      } else {
+      } else if (o.kind === "family_member") {
         const lockedFm = yearRow.familyAccountSharesEoY
           ?.get(o.familyMemberId)
           ?.get(a.id);
@@ -81,6 +81,9 @@ export function treeAsOfYear(
               ? familyPool * (o.percent / familyPercentTotal)
               : value * o.percent;
         }
+      } else {
+        // external_beneficiary — no locked share semantics; pro-rate by percent.
+        sliceValue = value * o.percent;
       }
       return { ...o, percent: sliceValue / value };
     });
