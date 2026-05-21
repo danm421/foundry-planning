@@ -417,6 +417,25 @@ export const crmHouseholdContacts = pgTable("crm_household_contacts", {
     .where(sql`role = 'spouse'`),
 ]);
 
+export const crmHouseholdAccounts = pgTable("crm_household_accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id")
+    .references(() => crmHouseholdContacts.id, { onDelete: "set null" }),
+  accountType: text("account_type"),
+  custodian: text("custodian"),
+  accountNumberLast4: text("account_number_last4"),
+  balance: numeric("balance", { precision: 14, scale: 2 }),
+  balanceAsOf: date("balance_as_of"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_accounts_household_idx").on(t.householdId),
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
