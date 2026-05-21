@@ -207,6 +207,9 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   real_estate: "Real Estate",
   business: "Business Interest",
   life_insurance: "Life Insurance Policy",
+  // notes_receivable: routed to AddNoteReceivableForm via add-account-dialog;
+  // this form never renders for that category. Entry kept only to satisfy
+  // Record<AccountCategory, string> exhaustiveness.
   notes_receivable: "Promissory Note",
 };
 
@@ -1097,7 +1100,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 className={selectClassName}
               >
                 {(Object.keys(CATEGORY_LABELS) as AccountCategory[])
-                  .filter((cat) => cat !== "business" && cat !== "life_insurance")
+                  .filter((cat) => cat !== "business" && cat !== "life_insurance" && cat !== "notes_receivable")
                   .map((cat) => (
                     <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
                   ))}

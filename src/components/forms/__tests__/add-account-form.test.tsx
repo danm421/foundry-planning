@@ -238,3 +238,30 @@ describe("AddAccountForm — retirement mode (retirementMode)", () => {
     expect(screen.queryByRole("button", { name: "Joint 50/50" })).toBeNull();
   });
 });
+
+// ── Test 6: Category dropdown excludes routed-elsewhere categories ────────────
+
+describe("AddAccountForm — category dropdown filtering", () => {
+  it("does not offer notes_receivable, business, or life_insurance in the Category dropdown", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    const categorySelect = screen.getByRole("combobox", { name: /Category/ }) as HTMLSelectElement;
+    const values = Array.from(categorySelect.options).map((o) => o.value);
+
+    // Categories routed to their own dedicated forms must not appear here.
+    expect(values).not.toContain("notes_receivable");
+    expect(values).not.toContain("business");
+    expect(values).not.toContain("life_insurance");
+
+    // Sanity: the categories AddAccountForm actually handles are still present.
+    expect(values).toEqual(expect.arrayContaining(["taxable", "cash", "retirement", "real_estate"]));
+  });
+});
