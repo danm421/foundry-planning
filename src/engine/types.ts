@@ -1302,7 +1302,9 @@ export interface AccountLedgerEntry {
     | "withdrawal"
     | "withdrawal_tax"
     | "gift"
-    | "entity_distribution";
+    | "entity_distribution"
+    | "discretionary"
+    | "surplus_transfer";
   label: string;
   amount: number;
   sourceId?: string;

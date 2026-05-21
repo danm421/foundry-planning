@@ -88,7 +88,12 @@ const withdrawalStrategy: WithdrawalPriority[] = [
 function baseFixture(overrides?: {
   surplusSpendPct?: number;
   surplusSaveAccountId?: string | null;
+  livingAmount?: number;
 }): ClientData {
+  const livingExpense: Expense = {
+    ...living,
+    annualAmount: overrides?.livingAmount ?? living.annualAmount,
+  };
   return buildClientData({
     // Single-filer household — drop the spouse fields from baseClient.
     client: {
@@ -104,7 +109,7 @@ function baseFixture(overrides?: {
     familyMembers: soloFamily,
     accounts: [checking, brokerage],
     incomes: [salary],
-    expenses: [living],
+    expenses: [livingExpense],
     liabilities: [],
     savingsRules: [],
     withdrawalStrategy,
@@ -132,5 +137,61 @@ describe("surplus cash flow allocation (step 10c)", () => {
     expect(y.expenses.discretionary).toBe(0);
     // Surplus = 100k − 60k = 40k, lands in checking on top of $10k opening balance
     expect(y.accountLedgers["acct-checking"].endingValue).toBeCloseTo(50_000, 0);
+  });
+
+  it("50% spend, no destination override: half debited as discretionary, half remains in checking", () => {
+    const data = baseFixture({ surplusSpendPct: 0.5 });
+    const result = runProjection(data);
+    const y = result[0];
+
+    // Surplus = 40k. 50% spent → discretionary = 20k. 50% saved → stays in checking.
+    expect(y.expenses.discretionary).toBeCloseTo(20_000, 0);
+    // Checking now has: 10k opening + (40k surplus − 20k spent) = 30k
+    expect(y.accountLedgers["acct-checking"].endingValue).toBeCloseTo(30_000, 0);
+    // Total expenses now includes the discretionary line
+    expect(y.expenses.total).toBeCloseTo(60_000 + 20_000, 0);
+  });
+
+  it("50% spend with destination override: half spent, half transferred to brokerage", () => {
+    const data = baseFixture({ surplusSpendPct: 0.5, surplusSaveAccountId: "acct-brokerage" });
+    const result = runProjection(data);
+    const y = result[0];
+
+    expect(y.expenses.discretionary).toBeCloseTo(20_000, 0);
+    // Checking: 10k opening + (40k − 20k spent − 20k transferred out) = 10k
+    expect(y.accountLedgers["acct-checking"].endingValue).toBeCloseTo(10_000, 0);
+    // Brokerage: 0 opening + 20k transfer in
+    expect(y.accountLedgers["acct-brokerage"].endingValue).toBeCloseTo(20_000, 0);
+  });
+
+  it("100% spend: all surplus consumed, no transfer regardless of destination", () => {
+    const data = baseFixture({ surplusSpendPct: 1.0, surplusSaveAccountId: "acct-brokerage" });
+    const result = runProjection(data);
+    const y = result[0];
+
+    expect(y.expenses.discretionary).toBeCloseTo(40_000, 0);
+    // Checking: 10k opening + (40k surplus − 40k spent) = 10k
+    expect(y.accountLedgers["acct-checking"].endingValue).toBeCloseTo(10_000, 0);
+    // Brokerage untouched
+    expect(y.accountLedgers["acct-brokerage"].endingValue).toBeCloseTo(0, 0);
+  });
+
+  it("destination = same as default checking: no transfer fires", () => {
+    const data = baseFixture({ surplusSpendPct: 0.5, surplusSaveAccountId: "acct-checking" });
+    const result = runProjection(data);
+    const y = result[0];
+
+    expect(y.expenses.discretionary).toBeCloseTo(20_000, 0);
+    // Same as no-override case: 10k + 20k saved = 30k
+    expect(y.accountLedgers["acct-checking"].endingValue).toBeCloseTo(30_000, 0);
+  });
+
+  it("deficit year (surplus ≤ 0): no-op, no discretionary", () => {
+    // Expenses (150k) exceed income (100k) — surplusBeforeSavings is negative.
+    const data = baseFixture({ surplusSpendPct: 0.5, livingAmount: 150_000 });
+    const result = runProjection(data);
+    const y = result[0];
+
+    expect(y.expenses.discretionary).toBe(0);
   });
 });
