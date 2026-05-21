@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -16,6 +16,15 @@ interface CrmHouseholdFormProps {
   mode: "create";
 }
 
+// Sanitize `returnTo` so an attacker can't bounce the user to an off-site URL
+// by editing the query string. Only allow same-origin absolute paths.
+function safeReturnTo(raw: string | null): string | null {
+  if (!raw) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null; // protocol-relative URL
+  return raw;
+}
+
 const STATUS_OPTIONS = [
   { value: "prospect", label: "Prospect" },
   { value: "active", label: "Active" },
@@ -25,6 +34,8 @@ const STATUS_OPTIONS = [
 
 export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = safeReturnTo(searchParams.get("returnTo"));
   const { user, isLoaded } = useUser();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +68,15 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         );
       }
       const { household } = await res.json();
-      router.push(`/crm/households/${household.id}`);
+      if (returnTo) {
+        // Bounce back to the caller (e.g. /clients/new) with the new household
+        // id so they can resume their flow. We append crmHouseholdId rather
+        // than embedding it in the URL so the caller controls how it's read.
+        const sep = returnTo.includes("?") ? "&" : "?";
+        router.push(`${returnTo}${sep}crmHouseholdId=${household.id}`);
+      } else {
+        router.push(`/crm/households/${household.id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
       setSubmitting(false);
@@ -110,7 +129,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
       )}
 
       <div className="flex items-center justify-between gap-3 pt-1">
-        <Link href="/crm" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
+        <Link href={returnTo ?? "/crm"} className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
           Cancel
         </Link>
         <button

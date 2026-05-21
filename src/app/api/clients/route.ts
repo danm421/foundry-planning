@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { clients, scenarios, planSettings, accounts, expenses, incomes, familyMembers } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import {
+  clients,
+  scenarios,
+  planSettings,
+  accounts,
+  expenses,
+  incomes,
+  familyMembers,
+  crmHouseholds,
+  crmHouseholdContacts,
+} from "@/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription } from "@/lib/authz";
 import { computePlanEndAge } from "@/lib/plan-horizon";
@@ -45,7 +55,14 @@ export async function GET() {
   }
 }
 
-// POST /api/clients — create a new client with base case scenario + plan settings
+// POST /api/clients — create a new client with base case scenario + plan settings.
+//
+// Identity (name, DOB, email, address) lives in the CRM now. The caller picks a
+// CRM household (`crmHouseholdId`) and sends planning-only fields. We read the
+// primary + spouse contacts from the CRM and dual-write the legacy `clients`
+// columns (firstName/lastName/dateOfBirth/...) so the still-notNull schema
+// columns are satisfied — Phase 9 will drop those columns and remove the
+// dual-write.
 export async function POST(request: NextRequest) {
   try {
     const firmId = await requireOrgId();
@@ -58,24 +75,57 @@ export async function POST(request: NextRequest) {
     const parsed = await parseBody(clientCreateSchema, request);
     if (!parsed.ok) return parsed.response;
     const {
-      firstName,
-      lastName,
-      dateOfBirth,
+      crmHouseholdId,
       retirementAge,
       retirementMonth,
       lifeExpectancy,
       filingStatus,
-      spouseName,
-      spouseLastName,
-      spouseDob,
       spouseRetirementAge,
       spouseRetirementMonth,
       spouseLifeExpectancy,
-      email,
-      address,
-      spouseEmail,
-      spouseAddress,
     } = parsed.data;
+
+    // Load the CRM household + contacts. Without a primary contact we can't
+    // populate the still-notNull legacy columns, so reject early with 422.
+    const household = await db.query.crmHouseholds.findFirst({
+      where: and(
+        eq(crmHouseholds.id, crmHouseholdId),
+        eq(crmHouseholds.firmId, firmId),
+      ),
+      with: { contacts: true },
+    });
+    if (!household) {
+      return NextResponse.json(
+        { error: "CRM household not found" },
+        { status: 404 },
+      );
+    }
+    const primary = household.contacts.find(
+      (c: typeof crmHouseholdContacts.$inferSelect) => c.role === "primary",
+    );
+    const spouse = household.contacts.find(
+      (c: typeof crmHouseholdContacts.$inferSelect) => c.role === "spouse",
+    );
+    if (!primary || !primary.dateOfBirth) {
+      return NextResponse.json(
+        {
+          error:
+            "CRM household must have a primary contact with a date of birth before a planning client can be created.",
+        },
+        { status: 422 },
+      );
+    }
+
+    const firstName = primary.firstName;
+    const lastName = primary.lastName;
+    const dateOfBirth = primary.dateOfBirth;
+    const email = primary.email ?? null;
+    const address = formatAddress(primary);
+    const spouseName = spouse?.firstName ?? null;
+    const spouseLastName = spouse?.lastName ?? null;
+    const spouseDob = spouse?.dateOfBirth ?? null;
+    const spouseEmail = spouse?.email ?? null;
+    const spouseAddress = spouse ? formatAddress(spouse) : null;
 
     // Plan horizon is the year the last spouse dies; plan_end_age is derived
     // from client + spouse life expectancies.
@@ -88,12 +138,13 @@ export async function POST(request: NextRequest) {
 
     const currentYear = new Date().getFullYear();
 
-    // Insert client
+    // Insert client — dual-writes legacy identity columns from the CRM contacts.
     const [client] = await db
       .insert(clients)
       .values({
         firmId,
         advisorId: userId,
+        crmHouseholdId,
         firstName,
         lastName,
         dateOfBirth,
@@ -102,16 +153,16 @@ export async function POST(request: NextRequest) {
         planEndAge,
         lifeExpectancy: Number(lifeExpectancy),
         filingStatus,
-        spouseName: spouseName ?? null,
-        spouseLastName: spouseLastName ?? null,
-        spouseDob: spouseDob ?? null,
+        spouseName,
+        spouseLastName,
+        spouseDob,
         spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
         spouseRetirementMonth: spouseRetirementMonth != null ? Number(spouseRetirementMonth) : null,
         spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
-        email: email ?? null,
-        address: address ?? null,
-        spouseEmail: spouseEmail ?? null,
-        spouseAddress: spouseAddress ?? null,
+        email,
+        address,
+        spouseEmail,
+        spouseAddress,
       })
       .returning();
 
@@ -253,7 +304,7 @@ export async function POST(request: NextRequest) {
       resourceId: client.id,
       clientId: client.id,
       firmId,
-      metadata: { firstName, lastName },
+      metadata: { firstName, lastName, crmHouseholdId },
     });
 
     return NextResponse.json(client, { status: 201 });
@@ -264,4 +315,17 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/clients error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+}
+
+// Flatten a CRM contact's structured address into the single-line legacy
+// `address` column the planning UI still expects. Phase 9 drops this column.
+function formatAddress(contact: typeof crmHouseholdContacts.$inferSelect): string | null {
+  const parts = [
+    contact.addressLine1,
+    contact.addressLine2,
+    [contact.city, contact.state].filter(Boolean).join(", "),
+    contact.postalCode,
+  ].filter((p): p is string => Boolean(p && p.trim()));
+  if (parts.length === 0) return null;
+  return parts.join("\n");
 }
