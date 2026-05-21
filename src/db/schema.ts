@@ -436,6 +436,24 @@ export const crmHouseholdAccounts = pgTable("crm_household_accounts", {
   index("crm_accounts_household_idx").on(t.householdId),
 ]);
 
+export const crmActivity = pgTable("crm_activity", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  firmId: text("firm_id").notNull(),
+  actorUserId: text("actor_user_id"),
+  kind: crmActivityKindEnum("kind").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  metadata: jsonb("metadata"),
+  occurredAt: timestamp("occurred_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_activity_household_occurred_idx").on(t.householdId, t.occurredAt.desc()),
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
