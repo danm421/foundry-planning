@@ -853,6 +853,9 @@ export const gifts = pgTable(
     liabilityId: uuid("liability_id").references(() => liabilities.id, {
       onDelete: "set null",
     }),
+    businessEntityId: uuid("business_entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
     percent: decimal("percent", { precision: 6, scale: 4 }),
     parentGiftId: uuid("parent_gift_id"),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
@@ -881,11 +884,14 @@ export const gifts = pgTable(
     check(
       "gifts_event_kind",
       sql`(
-        (${t.amount} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL AND ${t.percent} IS NULL)
+        (${t.amount} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL AND ${t.percent} IS NULL AND ${t.businessEntityId} IS NULL)
         OR
         ((${t.accountId} IS NOT NULL OR ${t.liabilityId} IS NOT NULL)
          AND ${t.percent} IS NOT NULL
-         AND NOT (${t.accountId} IS NOT NULL AND ${t.liabilityId} IS NOT NULL))
+         AND NOT (${t.accountId} IS NOT NULL AND ${t.liabilityId} IS NOT NULL)
+         AND ${t.businessEntityId} IS NULL)
+        OR
+        (${t.businessEntityId} IS NOT NULL AND ${t.percent} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL)
       )`,
     ),
   ],

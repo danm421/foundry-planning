@@ -799,6 +799,13 @@
       "when": 1779371437128,
       "tag": "0113_familiar_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1779377307940,
+      "tag": "0114_typical_gwen_stacy",
+      "breakpoints": true
     }
   ]
 }
