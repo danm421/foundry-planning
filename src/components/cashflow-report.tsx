@@ -1661,6 +1661,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       return [
         ...baseColumns,
         numCol("expenses_living", () => <DrillBtn segment="living" label="Living" />, (r) => r.expenses.living),
+        numCol("expenses_discretionary", "Surplus spent", (r) => r.expenses.discretionary),
         numCol("expenses_liabilities", () => <DrillBtn segment="liabilities" label="Liabilities" />, (r) => r.expenses.liabilities),
         numCol("expenses_other", () => <DrillBtn segment="other_expense" label="Other" />, (r) => r.expenses.other),
         numCol("expenses_insurance", () => <DrillBtn segment="insurance" label="Insurance" />, (r) => r.expenses.insurance),
