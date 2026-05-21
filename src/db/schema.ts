@@ -612,9 +612,11 @@ export const entities = pgTable("entities", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Per-family-member ownership of a business entity. Mirrors account_owners.
-// Trusts do not write rows here — their grantor/beneficiary structure is
-// captured separately via the grantor column and beneficiary_designations.
+// Ownership of a business entity. Mirrors account_owners' polymorphic shape:
+// an owner is exactly one of family_member_id (individual) or owner_entity_id
+// (another entity, e.g. a trust holding business units). Trust grantor /
+// beneficiary structure is still captured separately via the grantor column
+// on entities and beneficiary_designations.
 export const entityOwners = pgTable(
   "entity_owners",
   {
