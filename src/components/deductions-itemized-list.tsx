@@ -150,7 +150,7 @@ export function DeductionsItemizedList({
                         title="Delete"
                         aria-label={`Delete ${r.name ?? "deduction"}`}
                         onClick={() => handleDelete(r.id)}
-                        className="rounded p-1 text-red-400 hover:bg-red-900/30 hover:text-red-200"
+                        className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
                       >
                         <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
                           <path

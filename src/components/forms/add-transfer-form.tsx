@@ -455,7 +455,7 @@ export default function AddTransferForm({
                         <button
                           type="button"
                           onClick={() => removeScheduleRow(row.id)}
-                          className="text-xs text-red-400 hover:text-red-300"
+                          className="text-xs text-white hover:text-white"
                           aria-label="Remove row"
                         >
                           ×

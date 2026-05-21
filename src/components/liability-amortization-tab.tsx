@@ -379,7 +379,7 @@ export default function LiabilityAmortizationTab({
                           <button
                             key={ep.id}
                             onClick={() => removeExtraPayment(ep.id)}
-                            className="ml-1 text-red-400 hover:text-red-300"
+                            className="ml-1 text-white hover:text-white"
                             title="Remove extra payment"
                           >
                             &times;

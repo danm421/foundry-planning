@@ -498,7 +498,7 @@ export default function AddRothConversionForm({
                       <button
                         type="button"
                         onClick={() => toggleSource(id)}
-                        className="px-1 text-crit hover:opacity-80"
+                        className="px-1 text-white hover:opacity-80"
                         aria-label="Remove"
                       >×</button>
                     </div>

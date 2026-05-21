@@ -151,7 +151,7 @@ export default function InsurancePolicyCashValueGrid({
                     type="button"
                     onClick={() => removeRow(i)}
                     aria-label={`Remove year ${row.year}`}
-                    className="px-2 text-gray-400 hover:text-red-400"
+                    className="px-2 text-white hover:text-white"
                   >
                     ×
                   </button>

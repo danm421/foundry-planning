@@ -293,7 +293,7 @@ function RowActions({
           e.stopPropagation();
           onDelete();
         }}
-        className="rounded p-1 text-red-400 hover:bg-red-900/30 hover:text-red-200"
+        className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
       >
         <TrashIcon />
       </button>

@@ -666,7 +666,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                                   .map((x, i) => ({ ...x, sortOrder: i }));
                                 await saveWill(g, next);
                               }}
-                              className="rounded p-1 text-red-400 hover:bg-red-900/30 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded p-1 text-white hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">✕</span>
                             </button>

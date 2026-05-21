@@ -218,7 +218,7 @@ function AssetRow({ name, proRatedValue, ownerPct, entityLabel, onRemove, onPctC
       <button
         type="button"
         onClick={onRemove}
-        className="text-ink-4 hover:text-crit text-[13px] ml-1"
+        className="text-white hover:text-white text-[13px] ml-1"
         aria-label={`Remove ${name} from ${entityLabel}`}
       >
         ✕
@@ -339,7 +339,7 @@ export default function AssetsTab({
                     onClick={() =>
                       setRemovingItem({ kind: "entity", id: b.id, name: b.name })
                     }
-                    className="text-ink-4 hover:text-crit text-[13px] ml-1"
+                    className="text-white hover:text-white text-[13px] ml-1"
                     aria-label={`Remove ${b.name} from ${entityLabel}`}
                   >
                     ✕
