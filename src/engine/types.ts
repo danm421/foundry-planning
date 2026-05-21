@@ -967,6 +967,16 @@ export interface PlanSettings {
   /** Flat IRD tax rate applied to pre-tax retirement assets passing to non-spouse,
    *  non-charity beneficiaries at any death event. 0 disables. */
   irdTaxRate?: number;
+  /** 0–1 fraction of unaccounted-for surplus cash flow to spend each year.
+   *  Surplus = max(0, surplusBeforeSavings − savings.total − cashGifts).
+   *  The spent portion is recorded as a discretionary expense; the remainder
+   *  either stays in household checking (default) or transfers to
+   *  `surplusSaveAccountId`. Defaults to 0 = save 100% to checking (today's
+   *  behavior). */
+  surplusSpendPct?: number;
+  /** Account that receives the saved (non-spent) portion of surplus each year.
+   *  Null/undefined = leave it in household checking (today's behavior). */
+  surplusSaveAccountId?: string | null;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
@@ -1035,6 +1045,10 @@ export interface ProjectionYear {
      *  rolled into `other` and `total`; surfaced separately so the cashflow
      *  report can show a dedicated column under Expenses > Other. */
     cashGifts: number;
+    /** Surplus cash flow consumed via the `surplusSpendPct` assumption.
+     *  Already rolled into `total`; surfaced separately for the
+     *  "Surplus spent" cashflow column. */
+    discretionary: number;
     total: number;
     bySource: Record<string, number>;
     byLiability: Record<string, number>;
@@ -1288,7 +1302,9 @@ export interface AccountLedgerEntry {
     | "withdrawal"
     | "withdrawal_tax"
     | "gift"
-    | "entity_distribution";
+    | "entity_distribution"
+    | "discretionary"
+    | "surplus_transfer";
   label: string;
   amount: number;
   sourceId?: string;

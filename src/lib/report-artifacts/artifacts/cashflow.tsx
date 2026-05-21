@@ -199,6 +199,7 @@ function buildExpensesSection(years: ProjectionYear[], c: ClientData): CashflowS
     { id: "year", label: "Year", align: "left" },
     { id: "age", label: "Age(s)", align: "left" },
     { id: "living", label: "Living", align: "right" },
+    { id: "discretionary", label: "Surplus spent", align: "right" },
     { id: "liabilities", label: "Liabilities", align: "right" },
     { id: "other", label: "Other", align: "right" },
     { id: "insurance", label: "Insurance", align: "right" },
@@ -211,6 +212,7 @@ function buildExpensesSection(years: ProjectionYear[], c: ClientData): CashflowS
     age: ageString(y, c),
     cells: {
       living: y.expenses.living,
+      discretionary: y.expenses.discretionary,
       liabilities: y.expenses.liabilities,
       other: y.expenses.other,
       insurance: y.expenses.insurance,
@@ -220,7 +222,7 @@ function buildExpensesSection(years: ProjectionYear[], c: ClientData): CashflowS
     },
   }));
   const totals: Record<string, number> = {};
-  for (const id of ["living", "liabilities", "other", "insurance", "realEstate", "taxes", "total"]) {
+  for (const id of ["living", "discretionary", "liabilities", "other", "insurance", "realEstate", "taxes", "total"]) {
     totals[id] = years.reduce((s, y) => s + (y.expenses[id as keyof typeof y.expenses] as number), 0);
   }
   return { id: "expenses", title: "Expenses Detail", headers, rows, totals };

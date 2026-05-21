@@ -534,6 +534,13 @@ export const planSettings = pgTable("plan_settings", {
   outOfHouseholdDniRate: decimal("out_of_household_dni_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.37"),
+  surplusSpendPct: decimal("surplus_spend_pct", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0"),
+  surplusSaveAccountId: uuid("surplus_save_account_id").references(
+    () => accounts.id,
+    { onDelete: "set null" },
+  ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

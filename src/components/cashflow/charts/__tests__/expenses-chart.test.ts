@@ -5,7 +5,15 @@ import { makeYear } from "./fixtures";
 describe("buildExpensesDatasets", () => {
   it("returns one series per expense category", () => {
     const labels = buildExpensesDatasets().map((s) => s.label);
-    expect(labels).toEqual(["Living", "Real Estate", "Insurance", "Taxes", "Debt service", "Other"]);
+    expect(labels).toEqual([
+      "Living",
+      "Surplus spent",
+      "Real Estate",
+      "Insurance",
+      "Taxes",
+      "Debt service",
+      "Other",
+    ]);
   });
 
   it("each series reads the matching expenses field", () => {
@@ -20,13 +28,15 @@ describe("buildExpensesDatasets", () => {
         liabilities: 10_000,
         other: 5_000,
         cashGifts: 0,
-        total: 115_000,
+        discretionary: 8_000,
+        total: 123_000,
         bySource: {},
         byLiability: {},
         interestByLiability: {},
       },
     });
     expect(series.find((s) => s.label === "Living")!.valueFor(y)).toBe(60_000);
+    expect(series.find((s) => s.label === "Surplus spent")!.valueFor(y)).toBe(8_000);
     expect(series.find((s) => s.label === "Real Estate")!.valueFor(y)).toBe(12_000);
     expect(series.find((s) => s.label === "Debt service")!.valueFor(y)).toBe(10_000);
     expect(series.find((s) => s.label === "Other")!.valueFor(y)).toBe(5_000);

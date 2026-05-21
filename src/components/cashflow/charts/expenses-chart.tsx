@@ -8,6 +8,7 @@ import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 export function buildExpensesDatasets(): StackedBarSeries[] {
   return [
     { label: "Living", color: "#16a34a", valueFor: (y) => y.expenses.living },
+    { label: "Surplus spent", color: "#f59e0b", valueFor: (y) => y.expenses.discretionary },
     { label: "Real Estate", color: "#0891b2", valueFor: (y) => y.expenses.realEstate },
     { label: "Insurance", color: "#7c3aed", valueFor: (y) => y.expenses.insurance },
     { label: "Taxes", color: "#ea580c", valueFor: (y) => y.expenses.taxes },

@@ -153,7 +153,7 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
       fixtureYear({
         expenses: {
           living: 80_000, liabilities: 12_000, other: 5_000, insurance: 3_000,
-          realEstate: 4_000, taxes: 30_000, cashGifts: 0, total: 134_000,
+          realEstate: 4_000, taxes: 30_000, cashGifts: 0, discretionary: 0, total: 134_000,
           bySource: {}, byLiability: {}, interestByLiability: {},
         },
       }),
@@ -165,7 +165,7 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     });
     const sec = data.sections.expenses;
     expect(sec.headers.map((h) => h.id)).toEqual([
-      "year", "age", "living", "liabilities", "other", "insurance",
+      "year", "age", "living", "discretionary", "liabilities", "other", "insurance",
       "realEstate", "taxes", "total",
     ]);
     expect(sec.rows[0].cells.taxes).toBe(30_000);
