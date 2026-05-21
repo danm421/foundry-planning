@@ -1617,6 +1617,53 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
     fields: [clients.id],
     references: [lifeInsuranceSolverSettings.clientId],
   }),
+  crmHousehold: one(crmHouseholds, {
+    fields: [clients.crmHouseholdId],
+    references: [crmHouseholds.id],
+  }),
+}));
+
+export const crmHouseholdsRelations = relations(crmHouseholds, ({ many, one }) => ({
+  contacts: many(crmHouseholdContacts),
+  accounts: many(crmHouseholdAccounts),
+  activity: many(crmActivity),
+  documents: many(crmHouseholdDocuments),
+  planningClient: one(clients, {
+    fields: [crmHouseholds.id],
+    references: [clients.crmHouseholdId],
+  }),
+}));
+
+export const crmHouseholdContactsRelations = relations(crmHouseholdContacts, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmHouseholdContacts.householdId],
+    references: [crmHouseholds.id],
+  }),
+}));
+
+export const crmHouseholdAccountsRelations = relations(crmHouseholdAccounts, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmHouseholdAccounts.householdId],
+    references: [crmHouseholds.id],
+  }),
+  contact: one(crmHouseholdContacts, {
+    fields: [crmHouseholdAccounts.contactId],
+    references: [crmHouseholdContacts.id],
+  }),
+}));
+
+export const crmActivityRelations = relations(crmActivity, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmActivity.householdId],
+    references: [crmHouseholds.id],
+  }),
+}));
+
+export const crmHouseholdDocumentsRelations = relations(crmHouseholdDocuments, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmHouseholdDocuments.householdId],
+    references: [crmHouseholds.id],
+  }),
 }));
 
 export const entitiesRelations = relations(entities, ({ one, many }) => ({
