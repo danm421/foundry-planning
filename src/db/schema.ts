@@ -17,6 +17,7 @@ import {
   check,
   customType,
   foreignKey,
+  bigint,
 } from "drizzle-orm/pg-core";
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
@@ -452,6 +453,22 @@ export const crmActivity = pgTable("crm_activity", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("crm_activity_household_occurred_idx").on(t.householdId, t.occurredAt.desc()),
+]);
+
+export const crmHouseholdDocuments = pgTable("crm_household_documents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  storageProvider: text("storage_provider").notNull(),
+  storageKey: text("storage_key").notNull(),
+  mimeType: text("mime_type"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
+  uploadedBy: text("uploaded_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_documents_household_idx").on(t.householdId),
 ]);
 
 // ── Tables ───────────────────────────────────────────────────────────────────
