@@ -165,7 +165,7 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     });
     const sec = data.sections.expenses;
     expect(sec.headers.map((h) => h.id)).toEqual([
-      "year", "age", "living", "liabilities", "other", "insurance",
+      "year", "age", "living", "discretionary", "liabilities", "other", "insurance",
       "realEstate", "taxes", "total",
     ]);
     expect(sec.rows[0].cells.taxes).toBe(30_000);
