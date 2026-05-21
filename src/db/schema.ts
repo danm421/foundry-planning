@@ -477,9 +477,6 @@ export const clients = pgTable("clients", {
   id: uuid("id").defaultRandom().primaryKey(),
   firmId: text("firm_id").notNull(),
   advisorId: text("advisor_id").notNull(),
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
-  dateOfBirth: date("date_of_birth").notNull(),
   retirementAge: integer("retirement_age").notNull(),
   // Calendar month (1-12) within the retirement year when retirement starts.
   // Income/expenses linked to the retirement transition are pro-rated for this
@@ -490,23 +487,18 @@ export const clients = pgTable("clients", {
   // Life expectancies are the source of truth for the plan horizon; plan_end_age
   // is derived (= max(death year across client + spouse) - clientBirthYear).
   lifeExpectancy: integer("life_expectancy").notNull().default(95),
-  spouseName: text("spouse_name"),
-  spouseLastName: text("spouse_last_name"),
-  spouseDob: date("spouse_dob"),
   spouseRetirementAge: integer("spouse_retirement_age"),
   spouseRetirementMonth: integer("spouse_retirement_month"),
   spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
-  email: text("email"),
-  address: text("address"),
-  spouseEmail: text("spouse_email"),
-  spouseAddress: text("spouse_address"),
   onboardingState: jsonb("onboarding_state").notNull().default({}),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  // CRM linkage — populated during Phase 6 backfill, tightened to NOT NULL in Migration 2 (Phase 9).
-  crmHouseholdId: uuid("crm_household_id"),
+  crmHouseholdId: uuid("crm_household_id")
+    .notNull()
+    .unique()
+    .references(() => crmHouseholds.id, { onDelete: "restrict" }),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);
