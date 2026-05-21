@@ -18,6 +18,10 @@
  * row for every family member who lost share — one row per grantor, with
  * `business_entity_id`, `percent`, and a denormalized `amount` snapshot
  * (= business.value × lostPct) so the report doesn't need to re-multiply.
+ *
+ * NOT IDEMPOTENT: calling POST twice with the same body transfers share
+ * twice AND inserts duplicate gift rows. Callers (the balance-sheet UI)
+ * rely on optimistic update + router.refresh to gate double-submission.
  */
 
 import { NextRequest, NextResponse } from "next/server";
