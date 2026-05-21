@@ -320,6 +320,168 @@ describe("non-trust (business) entities", () => {
     expect(outE).toBe(0);
   });
 
+  it("counts a business owned 100% by a revocable trust as fully in-estate (flat value)", () => {
+    // Revocable trust → grantor's estate. familyOwnedFraction alone would
+    // wrongly return 0 (no direct family owners); recursive
+    // entityInEstateWeight correctly returns 1.
+    const tree = {
+      accounts: [],
+      entities: [
+        {
+          id: "trust-revoc",
+          name: "Living Trust",
+          entityType: "trust",
+          isIrrevocable: false,
+        },
+        {
+          id: "llc-trust-owned",
+          name: "LLC owned by revocable trust",
+          entityType: "llc",
+          value: 1_000_000,
+          owners: [{ kind: "entity", entityId: "trust-revoc", percent: 1 }],
+        },
+      ],
+    } as unknown as ClientData;
+    const inE = computeInEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    expect(inE).toBe(1_000_000);
+    expect(outE).toBe(0);
+  });
+
+  it("counts a business owned 100% by an irrevocable trust as fully out-of-estate (flat value)", () => {
+    const tree = {
+      accounts: [],
+      entities: [
+        {
+          id: "trust-ilit",
+          name: "ILIT",
+          entityType: "trust",
+          isIrrevocable: true,
+        },
+        {
+          id: "llc-ilit-owned",
+          name: "LLC owned by ILIT",
+          entityType: "llc",
+          value: 1_000_000,
+          owners: [{ kind: "entity", entityId: "trust-ilit", percent: 1 }],
+        },
+      ],
+    } as unknown as ClientData;
+    const inE = computeInEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    expect(inE).toBe(0);
+    expect(outE).toBe(1_000_000);
+  });
+
+  it("splits a business co-owned 50% family + 50% irrevocable trust", () => {
+    const tree = {
+      accounts: [],
+      entities: [
+        {
+          id: "trust-ilit",
+          name: "ILIT",
+          entityType: "trust",
+          isIrrevocable: true,
+        },
+        {
+          id: "llc-mixed",
+          name: "LLC family+ILIT",
+          entityType: "llc",
+          value: 2_000_000,
+          owners: [
+            { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.5 },
+            { kind: "entity", entityId: "trust-ilit", percent: 0.5 },
+          ],
+        },
+      ],
+    } as unknown as ClientData;
+    const inE = computeInEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    expect(inE).toBeCloseTo(1_000_000, 4);
+    expect(outE).toBeCloseTo(1_000_000, 4);
+  });
+
+  it("recurses through chained business ownership: B2 → B1 → ILIT is fully out-of-estate", () => {
+    const tree = {
+      accounts: [],
+      entities: [
+        {
+          id: "trust-ilit",
+          name: "ILIT",
+          entityType: "trust",
+          isIrrevocable: true,
+        },
+        {
+          id: "llc-holdco",
+          name: "Holdco",
+          entityType: "llc",
+          // Holdco itself has no flat valuation — only Opco holds value.
+          value: 0,
+          owners: [{ kind: "entity", entityId: "trust-ilit", percent: 1 }],
+        },
+        {
+          id: "llc-opco",
+          name: "Opco",
+          entityType: "llc",
+          value: 1_500_000,
+          owners: [{ kind: "entity", entityId: "llc-holdco", percent: 1 }],
+        },
+      ],
+    } as unknown as ClientData;
+    const inE = computeInEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: new Map(),
+    });
+    expect(inE).toBe(0);
+    expect(outE).toBe(1_500_000);
+  });
+
   it("ignores trusts and foundations in the flat-value sum", () => {
     const tree = {
       accounts: [],

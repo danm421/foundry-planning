@@ -3,9 +3,12 @@
  *
  * "In-estate" = family-member-owned slices + revocable-trust-owned slices
  *               + family-owned business-entity slices (LLC / S-Corp / etc.)
- *               + flat business-entity valuations weighted by family ownership.
- * "Out-of-estate" = irrevocable-trust-owned slices + the residual non-family
- *                   share of partially-family-owned business entities.
+ *               + flat business-entity valuations weighted by recursive
+ *                 in-estate weight (handles trust-owned and chain-held
+ *                 businesses — e.g. LLC owned by a revocable trust is fully
+ *                 in-estate; LLC owned by an ILIT is fully out).
+ * "Out-of-estate" = irrevocable-trust-owned slices + the residual non-in-estate
+ *                   share of partially-family-or-trust-owned business entities.
  *
  * Composes Phase 3's `ownersForYear` to get year-resolved ownership.
  */
@@ -15,7 +18,7 @@ import type { ClientData, EntitySummary, GiftEvent } from "@/engine/types";
 import { resolveOwnerSlices } from "./account-owner-slices";
 import { ownersForYearOrHousehold } from "./owners-or-household";
 import {
-  familyOwnedFraction,
+  entityInEstateWeight,
   inEstateWeight,
   isBusinessEntity,
   outOfEstateWeight,
@@ -101,12 +104,17 @@ function sumBusinessFlatValues(
 // orphans, fix at the loader rather than papering over here.
 export function computeInEstateAtYear(args: ComputeAtYearArgs): number {
   const accounts = sumAccountsWhere(args, (o) => inEstateWeight(args.tree, o));
-  const flat = sumBusinessFlatValues(args.tree, (e) => familyOwnedFraction(e));
+  const flat = sumBusinessFlatValues(args.tree, (e) =>
+    entityInEstateWeight(args.tree, e.id),
+  );
   return accounts + flat;
 }
 
 export function computeOutOfEstateAtYear(args: ComputeAtYearArgs): number {
   const accounts = sumAccountsWhere(args, (o) => outOfEstateWeight(args.tree, o));
-  const flat = sumBusinessFlatValues(args.tree, (e) => 1 - familyOwnedFraction(e));
+  const flat = sumBusinessFlatValues(
+    args.tree,
+    (e) => 1 - entityInEstateWeight(args.tree, e.id),
+  );
   return accounts + flat;
 }
