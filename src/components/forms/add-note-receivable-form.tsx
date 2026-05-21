@@ -165,7 +165,7 @@ const AddNoteReceivableForm = forwardRef<
     initial?.termMonths != null ? String(initial.termMonths) : "120",
   );
 
-  const [linkedTrustEntityId, setLinkedTrustEntityId] = useState<string>(
+  const [linkedTrustEntityId] = useState<string>(
     initial?.linkedTrustEntityId ?? "",
   );
 
@@ -421,11 +421,6 @@ const AddNoteReceivableForm = forwardRef<
       ? "border-b-2 border-accent px-3 py-1.5 text-sm text-white"
       : "border-b-2 border-transparent px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200";
   }
-
-  // ── Trust filter for linked-trust dropdown ───────────────────────────────
-  // We don't have entityType on the lite entity shape passed in; show all
-  // for now. Future polish: filter to trusts when the prop carries it.
-  const trustEntities = entities;
 
   // ── Amortization preview ─────────────────────────────────────────────────
   // Build a NoteReceivable from current form state and run the engine's
@@ -750,32 +745,6 @@ const AddNoteReceivableForm = forwardRef<
                 />
               </div>
             </div>
-
-            {/* Linked trust */}
-            {trustEntities.length > 0 && (
-              <div>
-                <label htmlFor="nr-trust" className={fieldLabelClassName}>
-                  Linked trust (optional)
-                </label>
-                <select
-                  id="nr-trust"
-                  value={linkedTrustEntityId}
-                  onChange={(e) => setLinkedTrustEntityId(e.target.value)}
-                  className={selectClassName}
-                >
-                  <option value="">— None —</option>
-                  {trustEntities.map((ent) => (
-                    <option key={ent.id} value={ent.id}>
-                      {ent.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-gray-500">
-                  Used by sale-to-IDGT scenarios to associate the note with the
-                  buying trust.
-                </p>
-              </div>
-            )}
 
             {/* Ownership */}
             <div>
