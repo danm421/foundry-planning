@@ -1069,7 +1069,13 @@ export const loadClientDataWithContext = cache(
     // Without this filter, asset rows would reach the estate-tax calc as $0
     // and silently drop from lifetime exemption consumption.
     const mappedGifts = giftRows
-      .filter((g) => g.amount != null && g.accountId == null && g.liabilityId == null)
+      .filter(
+        (g) =>
+          g.amount != null &&
+          g.accountId == null &&
+          g.liabilityId == null &&
+          g.businessEntityId == null,
+      )
       .map((g) => ({
         id: g.id,
         year: g.year,
@@ -1085,7 +1091,13 @@ export const loadClientDataWithContext = cache(
     const cpi = resolvedInflationRate;
 
     const cashFromGifts: GiftEvent[] = giftRows
-      .filter((g) => g.amount != null && g.accountId == null && g.liabilityId == null)
+      .filter(
+        (g) =>
+          g.amount != null &&
+          g.accountId == null &&
+          g.liabilityId == null &&
+          g.businessEntityId == null,
+      )
       .map((g) => ({
         kind: "cash" as const,
         year: g.year,
@@ -1122,6 +1134,19 @@ export const loadClientDataWithContext = cache(
         eventKind: g.eventKind,
       }));
 
+    const businessInterestFromGifts: GiftEvent[] = giftRows
+      .filter((g) => g.businessEntityId != null)
+      .map((g) => ({
+        kind: "business_interest" as const,
+        year: g.year,
+        entityId: g.businessEntityId!,
+        percent: Number(g.percent),
+        grantor: g.grantor as "client" | "spouse",
+        recipientEntityId: g.recipientEntityId!,
+        amountOverride: g.amount != null ? Number(g.amount) : undefined,
+        eventKind: g.eventKind,
+      }));
+
     const seriesEvents: GiftEvent[] = giftSeriesRows.flatMap((s) =>
       fanOutGiftSeries(
         {
@@ -1142,6 +1167,7 @@ export const loadClientDataWithContext = cache(
       ...cashFromGifts,
       ...assetFromGifts,
       ...liabilityFromGifts,
+      ...businessInterestFromGifts,
       ...seriesEvents,
     ].sort((a, b) => a.year - b.year);
 
