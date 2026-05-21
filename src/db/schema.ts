@@ -379,6 +379,44 @@ export const crmHouseholds = pgTable("crm_households", {
   index("crm_households_firm_status_idx").on(t.firmId, t.status),
 ]);
 
+export const crmHouseholdContacts = pgTable("crm_household_contacts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  role: crmContactRoleEnum("role").notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  preferredName: text("preferred_name"),
+  dateOfBirth: date("date_of_birth"),
+  email: text("email"),
+  phone: text("phone"),
+  mobile: text("mobile"),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  city: text("city"),
+  state: text("state"),
+  postalCode: text("postal_code"),
+  country: text("country"),
+  ssnLast4: text("ssn_last4"),
+  maritalStatus: text("marital_status"),
+  employmentStatus: text("employment_status"),
+  employer: text("employer"),
+  occupation: text("occupation"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_contacts_household_idx").on(t.householdId),
+  index("crm_contacts_name_idx").on(t.lastName, t.firstName),
+  uniqueIndex("crm_contacts_one_primary_per_household")
+    .on(t.householdId)
+    .where(sql`role = 'primary'`),
+  uniqueIndex("crm_contacts_one_spouse_per_household")
+    .on(t.householdId)
+    .where(sql`role = 'spouse'`),
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
