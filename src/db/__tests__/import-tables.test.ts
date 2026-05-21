@@ -5,6 +5,8 @@ import {
   clientImports,
   clientImportFiles,
   clients,
+  crmHouseholds,
+  crmHouseholdContacts,
 } from "@/db/schema";
 
 // Smoke test for the Import v2 schema additions:
@@ -67,19 +69,28 @@ describe("import v2 tables", () => {
   });
 
   it("can insert / select / cascade-delete a draft import + file", async () => {
-    // Throwaway client — clients has firmId/advisorId/firstName/lastName/dateOfBirth/
-    // retirementAge/planEndAge as NOT NULL. Use a unique firm id so parallel runs
+    // Throwaway client — identity now lives on CRM contacts, so create the
+    // household + primary contact first. Use a unique firm id so parallel runs
     // don't collide.
     const firmId = `test-org-import-v2-${crypto.randomUUID()}`;
 
+    const [household] = await db
+      .insert(crmHouseholds)
+      .values({ firmId, advisorId: "test-advisor", name: "ImportV2 Smoke Household" })
+      .returning();
+    await db.insert(crmHouseholdContacts).values({
+      householdId: household.id,
+      role: "primary",
+      firstName: "ImportV2Test",
+      lastName: "Smoke",
+      dateOfBirth: "1980-01-01",
+    });
     const [client] = await db
       .insert(clients)
       .values({
         firmId,
         advisorId: "test-advisor",
-        firstName: "ImportV2Test",
-        lastName: "Smoke",
-        dateOfBirth: "1980-01-01",
+        crmHouseholdId: household.id,
         retirementAge: 65,
         planEndAge: 95,
       })
@@ -124,6 +135,7 @@ describe("import v2 tables", () => {
       expect(filesAfter).toHaveLength(0);
     } finally {
       await db.delete(clients).where(eq(clients.id, client.id));
+      await db.delete(crmHouseholds).where(eq(crmHouseholds.id, household.id));
     }
   });
 });

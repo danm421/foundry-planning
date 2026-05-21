@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { clients, clientOpenItems } from "@/db/schema";
+import {
+  clients,
+  clientOpenItems,
+  crmHouseholds,
+  crmHouseholdContacts,
+} from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
@@ -12,35 +17,42 @@ const FIRM = "firm_test_itemId";
 const FIRM_OTHER = "firm_test_itemId_other";
 let clientId: string;
 let clientOtherId: string;
+let householdId: string;
+let householdOtherId: string;
 let itemId: string;
 
+async function seedClient(firmId: string, lastName: string): Promise<{ clientId: string; householdId: string }> {
+  const [household] = await db
+    .insert(crmHouseholds)
+    .values({ firmId, advisorId: "advisor_test", name: `${lastName} Household` })
+    .returning();
+  await db.insert(crmHouseholdContacts).values({
+    householdId: household.id,
+    role: "primary",
+    firstName: "X",
+    lastName,
+    dateOfBirth: "1970-01-01",
+  });
+  const [client] = await db
+    .insert(clients)
+    .values({
+      firmId,
+      advisorId: "advisor_test",
+      crmHouseholdId: household.id,
+      retirementAge: 65,
+      planEndAge: 95,
+    })
+    .returning();
+  return { clientId: client.id, householdId: household.id };
+}
+
 beforeAll(async () => {
-  const [c] = await db
-    .insert(clients)
-    .values({
-      firmId: FIRM,
-      advisorId: "advisor_test",
-      firstName: "X",
-      lastName: "Y",
-      dateOfBirth: "1970-01-01",
-      retirementAge: 65,
-      planEndAge: 95,
-    })
-    .returning();
-  const [o] = await db
-    .insert(clients)
-    .values({
-      firmId: FIRM_OTHER,
-      advisorId: "advisor_test",
-      firstName: "X",
-      lastName: "Z",
-      dateOfBirth: "1970-01-01",
-      retirementAge: 65,
-      planEndAge: 95,
-    })
-    .returning();
-  clientId = c.id;
-  clientOtherId = o.id;
+  const a = await seedClient(FIRM, "Y");
+  const b = await seedClient(FIRM_OTHER, "Z");
+  clientId = a.clientId;
+  clientOtherId = b.clientId;
+  householdId = a.householdId;
+  householdOtherId = b.householdId;
   const [row] = await db
     .insert(clientOpenItems)
     .values({ clientId, title: "initial", priority: "medium" })
@@ -52,6 +64,8 @@ afterAll(async () => {
   await db.delete(clientOpenItems).where(eq(clientOpenItems.clientId, clientId));
   await db.delete(clients).where(eq(clients.id, clientId));
   await db.delete(clients).where(eq(clients.id, clientOtherId));
+  await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
+  await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdOtherId));
 });
 
 import { PATCH, DELETE } from "../route";

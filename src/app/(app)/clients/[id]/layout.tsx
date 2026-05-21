@@ -30,9 +30,9 @@ export default async function ClientLayout({ children, params }: Props): Promise
     .select()
     .from(crmHouseholdContacts)
     .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
-  const primary = contactRows.find((c) => c.role === "primary") ?? null;
-  const spouse = contactRows.find((c) => c.role === "spouse") ?? null;
-  if (!primary) notFound();
+  const primary = contactRows.find((c) => c.role === "primary");
+  const spouse = contactRows.find((c) => c.role === "spouse");
+  if (!primary?.dateOfBirth) notFound();
 
   const client = {
     ...clientRow,

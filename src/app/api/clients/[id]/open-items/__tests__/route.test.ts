@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { clients, clientOpenItems } from "@/db/schema";
+import {
+  clients,
+  clientOpenItems,
+  crmHouseholds,
+  crmHouseholdContacts,
+} from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
@@ -13,34 +18,41 @@ const FIRM_B = "firm_test_overview_other";
 
 let clientA: string;
 let clientB: string;
+let householdA: string;
+let householdB: string;
+
+async function seedClient(firmId: string, lastName: string): Promise<{ clientId: string; householdId: string }> {
+  const [household] = await db
+    .insert(crmHouseholds)
+    .values({ firmId, advisorId: "advisor_test", name: `${lastName} Household` })
+    .returning();
+  await db.insert(crmHouseholdContacts).values({
+    householdId: household.id,
+    role: "primary",
+    firstName: "Test",
+    lastName,
+    dateOfBirth: "1970-01-01",
+  });
+  const [client] = await db
+    .insert(clients)
+    .values({
+      firmId,
+      advisorId: "advisor_test",
+      crmHouseholdId: household.id,
+      retirementAge: 65,
+      planEndAge: 95,
+    })
+    .returning();
+  return { clientId: client.id, householdId: household.id };
+}
 
 beforeAll(async () => {
-  const [a] = await db
-    .insert(clients)
-    .values({
-      firmId: FIRM_A,
-      advisorId: "advisor_test",
-      firstName: "Test",
-      lastName: "Alpha",
-      dateOfBirth: "1970-01-01",
-      retirementAge: 65,
-      planEndAge: 95,
-    })
-    .returning();
-  const [b] = await db
-    .insert(clients)
-    .values({
-      firmId: FIRM_B,
-      advisorId: "advisor_test",
-      firstName: "Test",
-      lastName: "Beta",
-      dateOfBirth: "1970-01-01",
-      retirementAge: 65,
-      planEndAge: 95,
-    })
-    .returning();
-  clientA = a.id;
-  clientB = b.id;
+  const a = await seedClient(FIRM_A, "Alpha");
+  const b = await seedClient(FIRM_B, "Beta");
+  clientA = a.clientId;
+  clientB = b.clientId;
+  householdA = a.householdId;
+  householdB = b.householdId;
 });
 
 afterAll(async () => {
@@ -48,6 +60,8 @@ afterAll(async () => {
   await db.delete(clientOpenItems).where(eq(clientOpenItems.clientId, clientB));
   await db.delete(clients).where(eq(clients.id, clientA));
   await db.delete(clients).where(eq(clients.id, clientB));
+  await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdA));
+  await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdB));
 });
 
 // Import AFTER mock + fixture setup

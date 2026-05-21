@@ -10,6 +10,7 @@ import {
   assetClasses,
   clientCmaOverrides,
   clientDeductions,
+  crmHouseholdContacts,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -28,12 +29,26 @@ interface AssumptionsContentProps {
 export async function AssumptionsContent({ clientId: id, scenarioParam }: AssumptionsContentProps) {
   const firmId = await getOrgId();
 
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
-  if (!client) notFound();
+  if (!clientRow) notFound();
+
+  // CRM contacts — sole identity source for milestone math.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
+  const client = {
+    ...clientRow,
+    dateOfBirth: primaryContact.dateOfBirth,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
+  };
 
   const [scenario] = await db
     .select()

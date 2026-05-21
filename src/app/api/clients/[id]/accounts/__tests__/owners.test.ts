@@ -4,6 +4,7 @@
  * in CI if unavailable (structural tests still enforce tenant isolation).
  */
 import { readFileSync } from "node:fs";
+import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
@@ -116,21 +117,64 @@ d("Account owners[] API — POST and PUT", () => {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
 
+    const [_crmHousehold] = await db
+
+
+      .insert(crmHouseholds)
+
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_owners_test", name: "Test Household" })
+
+
+      .returning();
+
+
+    await db.insert(crmHouseholdContacts).values({
+
+
+      householdId: _crmHousehold.id,
+
+
+      role: "primary",
+
+
+      firstName: "Owners",
+
+
+      lastName: "Test",
+
+
+      dateOfBirth: "1970-01-01",
+
+
+    });
+
+
+    if (opts?.withSpouse !== false) {
+      await db.insert(crmHouseholdContacts).values({
+        householdId: _crmHousehold.id,
+        role: "spouse",
+        firstName: "Spouse",
+        lastName: "Test",
+      });
+    }
+
+
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_owners_test",
-        firstName: "Owners",
-        lastName: "Test",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "married_joint",
-        spouseName: opts?.withSpouse !== false ? "Spouse" : undefined,
-        spouseLastName: opts?.withSpouse !== false ? "Test" : undefined,
+
+
       })
+
+
       .returning();
 
     const [scenario] = await db

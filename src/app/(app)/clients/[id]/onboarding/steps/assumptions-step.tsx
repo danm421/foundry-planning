@@ -10,6 +10,7 @@ import {
   assetClasses,
   clientCmaOverrides,
   clientDeductions,
+  crmHouseholdContacts,
 } from "@/db/schema";
 import AssumptionsClient from "../../client-data/assumptions/assumptions-client";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
@@ -26,11 +27,25 @@ interface AssumptionsStepProps {
 /** Wizard step over AssumptionsClient. Mirrors the standard
  * `/clients/[id]/client-data/assumptions/page.tsx` loader. */
 export default async function AssumptionsStep({ clientId, firmId }: AssumptionsStepProps) {
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return <NotFound />;
+  if (!clientRow) return <NotFound />;
+
+  // CRM contacts — sole identity source for milestone math.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) return <NotFound />;
+  const client = {
+    ...clientRow,
+    dateOfBirth: primaryContact.dateOfBirth,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
+  };
 
   const [scenario] = await db
     .select()

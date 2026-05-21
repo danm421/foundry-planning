@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { db } from "@/db";
-import { clients, clientOpenItems } from "@/db/schema";
+import { clients, clientOpenItems, crmHouseholds, crmHouseholdContacts} from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 
@@ -8,17 +8,39 @@ const FIRM = "firm_test_list_open_items";
 let clientId: string;
 
 beforeAll(async () => {
+  const [_crmHousehold] = await db
+
+    .insert(crmHouseholds)
+
+    .values({ firmId: FIRM, advisorId: "advisor_test", name: "Test Household" })
+
+    .returning();
+
+  await db.insert(crmHouseholdContacts).values({
+
+    householdId: _crmHousehold.id,
+
+    role: "primary",
+
+    firstName: "A",
+
+    lastName: "A",
+
+    dateOfBirth: "1970-01-01",
+
+  });
+
   const [c] = await db
     .insert(clients)
     .values({
       firmId: FIRM,
       advisorId: "advisor_test",
-      firstName: "A",
-      lastName: "A",
-      dateOfBirth: "1970-01-01",
+      crmHouseholdId: _crmHousehold.id,
       retirementAge: 65,
       planEndAge: 95,
+
     })
+
     .returning();
   clientId = c.id;
   await db.insert(clientOpenItems).values([

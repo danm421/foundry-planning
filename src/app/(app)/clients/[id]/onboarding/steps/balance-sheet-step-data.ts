@@ -35,15 +35,20 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
   if (!clientRow) return null;
 
-  // CRM contacts — source of spouseLastName fallback.
+  // CRM contacts — sole source of identity (firstName, lastName, DOB) +
+  // spouseLastName display fallback.
   const contactRows = await db
     .select()
     .from(crmHouseholdContacts)
     .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
-  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) return null;
   const client = {
     ...clientRow,
-    spouseLastName: spouseContact?.lastName,
+    dateOfBirth: primaryContact.dateOfBirth,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
   };
 
   const [scenario] = await db

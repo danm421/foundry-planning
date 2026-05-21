@@ -26,6 +26,7 @@
  * 11. Mid-stream household scaling — proportional preservation with client + spouse.
  */
 import { readFileSync } from "node:fs";
+import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
@@ -127,19 +128,54 @@ d("POST /api/clients/[id]/gifts", () => {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
 
+    const [_crmHousehold] = await db
+
+
+      .insert(crmHouseholds)
+
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_gifts_test", name: "Test Household" })
+
+
+      .returning();
+
+
+    await db.insert(crmHouseholdContacts).values({
+
+
+      householdId: _crmHousehold.id,
+
+
+      role: "primary",
+
+
+      firstName: "Gift",
+
+
+      lastName: "Test",
+
+
+      dateOfBirth: "1970-01-01",
+
+
+    });
+
+
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_gifts_test",
-        firstName: "Gift",
-        lastName: "Test",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "single",
+
+
       })
+
+
       .returning();
 
     const [scenario] = await db
@@ -383,19 +419,54 @@ d("PATCH /api/clients/[id]/gifts/[giftId]", () => {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
 
+    const [_crmHousehold] = await db
+
+
+      .insert(crmHouseholds)
+
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_gifts_test", name: "Test Household" })
+
+
+      .returning();
+
+
+    await db.insert(crmHouseholdContacts).values({
+
+
+      householdId: _crmHousehold.id,
+
+
+      role: "primary",
+
+
+      firstName: "Gift",
+
+
+      lastName: "Test",
+
+
+      dateOfBirth: "1970-01-01",
+
+
+    });
+
+
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_gifts_test",
-        firstName: "Gift",
-        lastName: "Test",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "single",
+
+
       })
+
+
       .returning();
 
     const [scenario] = await db
@@ -656,19 +727,54 @@ d("DELETE /api/clients/[id]/gifts/[giftId]", () => {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
 
+    const [_crmHousehold] = await db
+
+
+      .insert(crmHouseholds)
+
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_gifts_test", name: "Test Household" })
+
+
+      .returning();
+
+
+    await db.insert(crmHouseholdContacts).values({
+
+
+      householdId: _crmHousehold.id,
+
+
+      role: "primary",
+
+
+      firstName: "Gift",
+
+
+      lastName: "Test",
+
+
+      dateOfBirth: "1970-01-01",
+
+
+    });
+
+
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_gifts_test",
-        firstName: "Gift",
-        lastName: "Test",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "single",
+
+
       })
+
+
       .returning();
 
     const [scenario] = await db
@@ -868,19 +974,54 @@ d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
 
+    const [_crmHousehold] = await db
+
+
+      .insert(crmHouseholds)
+
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_t16_test", name: "Test Household" })
+
+
+      .returning();
+
+
+    await db.insert(crmHouseholdContacts).values({
+
+
+      householdId: _crmHousehold.id,
+
+
+      role: "primary",
+
+
+      firstName: "T16",
+
+
+      lastName: "Test",
+
+
+      dateOfBirth: "1970-01-01",
+
+
+    });
+
+
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_t16_test",
-        firstName: "T16",
-        lastName: "Test",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "single",
+
+
       })
+
+
       .returning();
 
     const [scenario] = await db

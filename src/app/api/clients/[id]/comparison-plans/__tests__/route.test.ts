@@ -37,31 +37,48 @@ vi.mock("@/lib/scenario/load-panel-data", () => ({
 
 import { POST } from "../route";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 let testClientId: string;
+let testHouseholdId: string;
 
-beforeEach(async () => {
-  buildMock.mockReset();
-  loadPanelDataMock.mockReset();
+async function seedClient(firmId: string, lastName: string): Promise<{ clientId: string; householdId: string }> {
+  const [household] = await db
+    .insert(crmHouseholds)
+    .values({ firmId, advisorId: TEST_USER, name: `${lastName} Household` })
+    .returning();
+  await db.insert(crmHouseholdContacts).values({
+    householdId: household.id,
+    role: "primary",
+    firstName: "T",
+    lastName,
+    dateOfBirth: "1970-01-01",
+  });
   const [c] = await db
     .insert(clients)
     .values({
-      firmId: TEST_FIRM,
+      firmId,
       advisorId: TEST_USER,
-      firstName: "T",
-      lastName: "U",
-      dateOfBirth: "1970-01-01",
+      crmHouseholdId: household.id,
       retirementAge: 65,
       planEndAge: 95,
     })
     .returning({ id: clients.id });
-  testClientId = c.id;
+  return { clientId: c.id, householdId: household.id };
+}
+
+beforeEach(async () => {
+  buildMock.mockReset();
+  loadPanelDataMock.mockReset();
+  const seed = await seedClient(TEST_FIRM, "U");
+  testClientId = seed.clientId;
+  testHouseholdId = seed.householdId;
 });
 
 afterEach(async () => {
   await db.delete(clients).where(eq(clients.id, testClientId));
+  await db.delete(crmHouseholds).where(eq(crmHouseholds.id, testHouseholdId));
 });
 
 function makeParams() {
@@ -89,27 +106,17 @@ describe("POST /api/clients/[id]/comparison-plans", () => {
   });
 
   it("404s when the client doesn't belong to the firm", async () => {
-    const [other] = await db
-      .insert(clients)
-      .values({
-        firmId: "different-firm",
-        advisorId: TEST_USER,
-        firstName: "X",
-        lastName: "Y",
-        dateOfBirth: "1980-01-01",
-        retirementAge: 65,
-        planEndAge: 95,
-      })
-      .returning({ id: clients.id });
+    const other = await seedClient("different-firm", "Y");
     const res = await POST(
       new NextRequest("http://localhost/x", {
         method: "POST",
         body: JSON.stringify({ plans: ["base"] }),
       }),
-      { params: Promise.resolve({ id: other.id }) },
+      { params: Promise.resolve({ id: other.clientId }) },
     );
     expect(res.status).toBe(404);
-    await db.delete(clients).where(eq(clients.id, other.id));
+    await db.delete(clients).where(eq(clients.id, other.clientId));
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.id, other.householdId));
   });
 
   it("returns the array buildComparisonPlans produced", async () => {

@@ -28,21 +28,22 @@ export async function POST(
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // CRM contacts — identity source.
-    const contactRows = client.crmHouseholdId
-      ? await db
-          .select()
-          .from(crmHouseholdContacts)
-          .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-      : [];
-    const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
-    const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+    // CRM contacts — sole identity source.
+    const contactRows = await db
+      .select()
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+    const primaryContact = contactRows.find((c) => c.role === "primary");
+    const spouseContact = contactRows.find((c) => c.role === "spouse");
+    if (!primaryContact?.dateOfBirth) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
-    const clientFirstName = primaryContact?.firstName;
-    const clientLastName = primaryContact?.lastName;
-    const clientDob = primaryContact?.dateOfBirth;
-    const spouseFirstName = spouseContact?.firstName;
-    const spouseDob = spouseContact?.dateOfBirth;
+    const clientFirstName = primaryContact.firstName;
+    const clientLastName = primaryContact.lastName;
+    const clientDob = primaryContact.dateOfBirth;
+    const spouseFirstName = spouseContact?.firstName ?? null;
+    const spouseDob = spouseContact?.dateOfBirth ?? null;
 
     const url = new URL(request.url);
     const body = await request.json().catch(() => ({}));

@@ -73,13 +73,15 @@ d("CLUT split-interest tenant isolation", () => {
 
   async function cleanup() {
     const { db } = dbMod;
-    const { clients } = schema;
+    const { clients, crmHouseholds } = schema;
     const { inArray } = drizzleOrm;
     // Delete clients in a single statement so cascade flows
     // accounts → account_owners atomically. Splitting deletes across
     // statements lets the deferred sum-check trigger fire between them
-    // and raise on transient zero-owner state.
+    // and raise on transient zero-owner state. CRM households are FK'd
+    // by clients (restrict) — delete after clients cascade.
     await db.delete(clients).where(inArray(clients.firmId, [FIRM_A, FIRM_B]));
+    await db.delete(crmHouseholds).where(inArray(crmHouseholds.firmId, [FIRM_A, FIRM_B]));
   }
 
   async function setupFirmWithClut(firmId: string): Promise<FirmSeed> {
@@ -91,15 +93,26 @@ d("CLUT split-interest tenant isolation", () => {
       entities,
       externalBeneficiaries,
       trustSplitInterestDetails,
+      crmHouseholds,
+      crmHouseholdContacts,
     } = schema;
+    const [household] = await db
+      .insert(crmHouseholds)
+      .values({ firmId, advisorId: "advisor_clut_isolation_test", name: "Test Household" })
+      .returning();
+    await db.insert(crmHouseholdContacts).values({
+      householdId: household.id,
+      role: "primary",
+      firstName: "Test",
+      lastName: firmId,
+      dateOfBirth: "1970-01-01",
+    });
     const [client] = await db
       .insert(clients)
       .values({
         firmId,
         advisorId: "advisor_clut_isolation_test",
-        firstName: "Test",
-        lastName: firmId,
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: household.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
