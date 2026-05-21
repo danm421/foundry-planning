@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { accounts, clients, entities, entityOwners } from "@/db/schema";
+import { accounts, clients, crmHouseholdContacts, entities, entityOwners } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { listOpenItems } from "./list-open-items";
 import { listAuditRows } from "./list-audit-rows";
@@ -38,6 +38,18 @@ export async function getOverviewData(
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
 
   if (!client) throw new ClientNotFoundError(clientId);
+
+  // CRM contacts: source of truth for identity (DOB used here for years-to-retirement).
+  const crmContactRows = client.crmHouseholdId
+    ? await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
+    : [];
+  const primaryContact = crmContactRows.find((c) => c.role === "primary") ?? null;
+  const spouseContact = crmContactRows.find((c) => c.role === "spouse") ?? null;
+  const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
+  const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob;
 
   const [allocation, openItemsAll, openItemsPreview, auditRows, accountRows, entityRows] =
     await Promise.all([
@@ -105,14 +117,14 @@ export async function getOverviewData(
   // Years-to-retirement — unchanged from before
   const currentYear = new Date().getFullYear();
   const retirementYears: number[] = [];
-  if (client.retirementAge != null && client.dateOfBirth) {
+  if (client.retirementAge != null && clientDob) {
     retirementYears.push(
-      new Date(client.dateOfBirth).getFullYear() + client.retirementAge,
+      new Date(clientDob).getFullYear() + client.retirementAge,
     );
   }
-  if (client.spouseRetirementAge != null && client.spouseDob) {
+  if (client.spouseRetirementAge != null && spouseDob) {
     retirementYears.push(
-      new Date(client.spouseDob).getFullYear() + client.spouseRetirementAge,
+      new Date(spouseDob).getFullYear() + client.spouseRetirementAge,
     );
   }
   const earliestRetirementYear = retirementYears.length

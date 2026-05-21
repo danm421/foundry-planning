@@ -7,6 +7,7 @@ import { ChartImage } from "@/components/pdf/widgets/chart-image";
 import { db } from "@/db";
 import {
   clients,
+  crmHouseholdContacts,
   scenarios,
   planSettings,
   accounts as accountsTable,
@@ -91,6 +92,17 @@ async function fetchInvestmentsData(
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
   if (!client) throw new Error(`Client ${clientId} not found`);
 
+  // CRM contacts — identity source.
+  const contactRows = client.crmHouseholdId
+    ? await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
+    : [];
+  const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
+  const clientFirstName = primaryContact?.firstName ?? client.firstName;
+  const clientLastName = primaryContact?.lastName ?? client.lastName;
+
   const [scenario] = await db
     .select()
     .from(scenarios)
@@ -149,7 +161,7 @@ async function fetchInvestmentsData(
   if (acctRows.length === 0) {
     return {
       data: {
-        clientName: `${client.firstName} ${client.lastName}`.trim(),
+        clientName: `${clientFirstName} ${clientLastName}`.trim(),
         household: {
           totalClassifiedValue: 0,
           totalInvestableValue: 0,
@@ -298,7 +310,7 @@ async function fetchInvestmentsData(
       : null;
 
   const data: InvestmentsData = {
-    clientName: `${client.firstName} ${client.lastName}`.trim(),
+    clientName: `${clientFirstName} ${clientLastName}`.trim(),
     household: {
       totalClassifiedValue: household.totalClassifiedValue,
       totalInvestableValue: household.totalInvestableValue,
