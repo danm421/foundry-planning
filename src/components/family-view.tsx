@@ -14,7 +14,7 @@ import type { EntityFlowMode } from "@/engine/types";
 import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import { type TrustSubType } from "@/lib/entities/trust";
-import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "./forms/assets-tab";
+import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -195,6 +195,8 @@ interface FamilyViewProps {
   initialFullLiabilities?: AssetsTabLiability[];
   initialFullIncomes?: AssetsTabIncome[];
   initialFullExpenses?: AssetsTabExpense[];
+  /** Business entities (with polymorphic owners) for the trust-Assets picker. */
+  initialFullBusinesses?: AssetsTabBusiness[];
   initialAssetFamilyMembers?: AssetsTabFamilyMember[];
   embed?: "page" | "wizard";
   /** When `embed === "wizard"`, only render this section. */
@@ -288,6 +290,7 @@ export default function FamilyView({
   initialFullLiabilities,
   initialFullIncomes,
   initialFullExpenses,
+  initialFullBusinesses,
   initialAssetFamilyMembers,
   embed = "page",
   section,
@@ -665,6 +668,7 @@ export default function FamilyView({
           liabilities={initialFullLiabilities}
           incomes={initialFullIncomes}
           expenses={initialFullExpenses}
+          businesses={initialFullBusinesses}
           assetFamilyMembers={initialAssetFamilyMembers}
           primaryClientBirthYear={
             primary.dateOfBirth

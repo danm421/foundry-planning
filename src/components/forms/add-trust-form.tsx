@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
@@ -10,7 +11,7 @@ import TrustEndsSelect, { type TrustEnds } from "./trust-ends-select";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
-import AssetsTab, { type AssetsTabAccount, type AssetsTabLiability, type AssetsTabIncome, type AssetsTabExpense, type AssetsTabFamilyMember } from "./assets-tab";
+import AssetsTab, { type AssetsTabAccount, type AssetsTabLiability, type AssetsTabIncome, type AssetsTabExpense, type AssetsTabFamilyMember, type AssetsTabBusiness } from "./assets-tab";
 import FlowsTab, {
   type FlowsTabIncome,
   type FlowsTabExpense,
@@ -49,6 +50,8 @@ interface AddTrustFormProps {
   liabilities?: AssetsTabLiability[];
   incomes?: AssetsTabIncome[];
   expenses?: AssetsTabExpense[];
+  /** Business entities available to assign to this trust via the Assets-tab picker. */
+  businesses?: AssetsTabBusiness[];
   /** Flows tab — single income + expense scoped to this entity. */
   entityIncome?: FlowsTabIncome | null;
   entityExpense?: FlowsTabExpense | null;
@@ -128,6 +131,7 @@ function showNotesAndSales(t: Entity): boolean {
 const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(function AddTrustForm({
   clientId, editing, household, members, externals, entities,
   initialDesignations, activeTab, accounts, liabilities, incomes, expenses,
+  businesses,
   entityIncome, entityExpense,
   assetFamilyMembers,
   planEndYear,
@@ -143,6 +147,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   const [error, setError] = useState<string | null>(null);
   useEffect(() => onSubmitStateChange?.({ canSubmit: !loading, loading }), [loading, onSubmitStateChange]);
   const [effectiveEntityId, setEffectiveEntityId] = useState<string | null>(editing?.id ?? null);
+  const router = useRouter();
   const scenarioWriter = useScenarioWriter(clientId);
   const { scenarioId } = useScenarioState(clientId);
 
@@ -402,6 +407,41 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   // ── Asset tab op handler ───────────────────────────────────────────────────
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
     if (!editing) return; // no trust id in create mode — shouldn't be reachable
+
+    // Business entity branch — owner mutation + gift creation happens server-
+    // side via the dedicated route. Client just relays the op (translating
+    // `type` → `op` to match the API schema) and refreshes after success.
+    if (op.assetType === "entity") {
+      try {
+        const apiBody: Record<string, unknown> = {
+          op: op.type,
+          assetType: op.assetType,
+          assetId: op.assetId,
+        };
+        if (op.type === "add" || op.type === "set-percent") {
+          apiBody.percent = op.percent;
+        }
+        const res = await fetch(
+          `/api/clients/${clientId}/entities/${editing.id}/assets`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(apiBody),
+          },
+        );
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          setError(json.error ?? "Failed to assign business to trust");
+          return;
+        }
+        // Refresh router so the new entity_owners + gift rows surface.
+        router.refresh();
+      } catch {
+        setError("Failed to assign business to trust");
+      }
+      return;
+    }
+
     const ctx = {
       entityId: editing.id,
       familyMembers: (assetFamilyMembers ?? []).map((m) => ({ id: m.id, role: m.role })),
@@ -458,7 +498,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     } catch {
       setError("Failed to update asset ownership");
     }
-  }, [editing, accounts, liabilities, assetFamilyMembers, clientId, scenarioWriter]);
+  }, [editing, accounts, liabilities, assetFamilyMembers, clientId, scenarioWriter, router]);
 
   // Pure save: validates, persists entity + CLUT gift ops + designations, then
   // resets the dirty baseline. Shared between the explicit-submit path and the
@@ -860,6 +900,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             expenses={expenses ?? []}
             familyMembers={assetFamilyMembers ?? []}
             entities={entities}
+            businesses={businesses}
             entityLabel="trust"
             onChange={handleAssetTabOp}
           />

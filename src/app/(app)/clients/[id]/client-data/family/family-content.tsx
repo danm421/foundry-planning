@@ -81,10 +81,22 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
   const ownerRows = entityIds.length > 0
     ? await db.select().from(entityOwners).where(inArray(entityOwners.entityId, entityIds))
     : [];
-  const ownersByEntity = new Map<string, { kind: "family_member"; familyMemberId: string; percent: number }[]>();
+  // Polymorphic per-entity owner map. Rows have exactly one of
+  // familyMemberId / ownerEntityId populated (CHECK constraint).
+  const ownersByEntity = new Map<
+    string,
+    Array<
+      | { kind: "family_member"; familyMemberId: string; percent: number }
+      | { kind: "entity"; entityId: string; percent: number }
+    >
+  >();
   for (const o of ownerRows) {
     const arr = ownersByEntity.get(o.entityId) ?? [];
-    arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
+    if (o.familyMemberId) {
+      arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
+    } else if (o.ownerEntityId) {
+      arr.push({ kind: "entity", entityId: o.ownerEntityId, percent: parseFloat(o.percent) });
+    }
     ownersByEntity.set(o.entityId, arr);
   }
 
@@ -188,6 +200,26 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     firstName: m.firstName,
   }));
 
+  // Business entities available to assign to a trust via the Assets-tab picker.
+  // Trust entries themselves are excluded — only business-type entities can be
+  // transferred to a trust as a §709-style gifted interest.
+  const BUSINESS_ENTITY_TYPES = new Set([
+    "llc",
+    "s_corp",
+    "c_corp",
+    "partnership",
+    "other",
+  ]);
+  const fullBusinesses = entityRows
+    .filter((e) => BUSINESS_ENTITY_TYPES.has(e.entityType))
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      // ownersByEntity rows are already polymorphic family_member | entity —
+      // matches the EntityOwner discriminated union the picker expects.
+      owners: ownersByEntity.get(e.id) ?? [],
+    }));
+
   const designations: Designation[] = designationRows.map((d) => ({
     id: d.id,
     targetKind: d.targetKind,
@@ -249,6 +281,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialFullLiabilities={fullLiabilities}
         initialFullIncomes={fullIncomes}
         initialFullExpenses={fullExpenses}
+        initialFullBusinesses={fullBusinesses}
         initialAssetFamilyMembers={assetFamilyMembers}
       />
       <OpenItemsPanel clientId={id} firmId={firmId} />

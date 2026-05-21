@@ -6,7 +6,7 @@ import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
 import { getEntityKind, type EntityKind } from "./types";
 import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../family-view";
-import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "../forms/assets-tab";
+import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "../forms/assets-tab";
 import type { FlowsTabIncome, FlowsTabExpense, ScheduleSaveBinding } from "../forms/flows-tab";
 import DialogShell from "../dialog-shell";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
@@ -38,6 +38,8 @@ export interface EntityDialogProps {
   liabilities?: AssetsTabLiability[];
   incomes?: AssetsTabIncome[];
   expenses?: AssetsTabExpense[];
+  /** Business entities available for assignment to a trust via the Assets tab picker. */
+  businesses?: AssetsTabBusiness[];
   assetFamilyMembers?: AssetsTabFamilyMember[];
   /** Schedule modal context — derived from client plan settings + primary client DOB */
   planEndYear?: number;
@@ -105,6 +107,7 @@ export default function EntityDialog({
   liabilities,
   incomes,
   expenses,
+  businesses,
   assetFamilyMembers,
   planEndYear,
   primaryClientBirthYear,
@@ -307,6 +310,7 @@ export default function EntityDialog({
           liabilities={liabilities}
           incomes={incomes}
           expenses={expenses}
+          businesses={businesses}
           entityIncome={entityIncome}
           entityExpense={entityExpense}
           assetFamilyMembers={assetFamilyMembers}

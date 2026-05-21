@@ -29,6 +29,23 @@ vi.mock("@/hooks/use-scenario-writer", () => ({
   useScenarioWriter: () => ({ submit: vi.fn() }),
 }));
 
+// AddTrustForm imports useRouter for the entity-asset-op refresh path. jsdom
+// doesn't mount the App Router invariant — stub the hook here.
+vi.mock("next/navigation", async () => {
+  const actual = await vi.importActual<typeof import("next/navigation")>("next/navigation");
+  return {
+    ...actual,
+    useRouter: () => ({
+      refresh: vi.fn(),
+      push: vi.fn(),
+      replace: vi.fn(),
+      back: vi.fn(),
+      forward: vi.fn(),
+      prefetch: vi.fn(),
+    }),
+  };
+});
+
 // useScenarioState is used by FlowsTab (rendered inside AddTrustForm) and
 // calls useRouter/useSearchParams from Next.js App Router — not available in jsdom.
 vi.mock("@/hooks/use-scenario-state", () => ({

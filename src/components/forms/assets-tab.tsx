@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ownedByEntity } from "@/engine/ownership";
-import type { AccountOwner } from "@/engine/ownership";
+import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import type { AssetTabOp } from "./asset-tab-ops";
 import AssetPickerModal from "./asset-picker-modal";
 import MoneyText from "@/components/money-text";
@@ -61,6 +61,15 @@ export interface AssetsTabFamilyMember {
   firstName: string;
 }
 
+/** Mirrors {@link import("./asset-picker-modal").PickerBusiness}. The picker
+ *  needs only id/name/owners — value + entityType aren't displayed. */
+export interface AssetsTabBusiness {
+  id: string;
+  name: string;
+  /** Polymorphic entity_owners rows — mixed family + entity owners. */
+  owners: EntityOwner[];
+}
+
 interface AssetsTabProps {
   entityId: string;
   accounts: AssetsTabAccount[];
@@ -69,6 +78,9 @@ interface AssetsTabProps {
   expenses: AssetsTabExpense[];
   familyMembers: AssetsTabFamilyMember[];
   entities: { id: string; name: string }[];
+  /** Business entities (LLC/S-corp/etc.) eligible for assignment to this trust.
+   *  Optional — when absent the picker won't show the Business Entities section. */
+  businesses?: AssetsTabBusiness[];
   onChange: (op: AssetTabOp) => void;
   /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
   entityLabel?: string;
@@ -187,6 +199,7 @@ export default function AssetsTab({
   liabilities,
   incomes,
   expenses,
+  businesses,
   onChange,
   entityLabel = "trust",
 }: AssetsTabProps) {
@@ -324,6 +337,7 @@ export default function AssetsTab({
           entityId={entityId}
           accounts={accounts}
           liabilities={liabilities}
+          businesses={businesses}
           entityLabel={entityLabel}
           onClose={() => setPickerOpen(false)}
           onAdd={(op) => {
