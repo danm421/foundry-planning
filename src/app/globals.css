@@ -149,6 +149,16 @@ body {
   display: block !important;
 }
 
+/* High-contrast white outline on OTP / verification-code boxes. */
+.cl-rootBox .cl-otpCodeFieldInput {
+  border: 2px solid #ffffff !important;
+  background-color: transparent !important;
+}
+.cl-rootBox .cl-otpCodeFieldInput:focus {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4) !important;
+}
+
 /* ------------------------------------------------------------------ */
 /* Gift Tax Report — print-friendly chrome hiding + drilldown expand   */
 /* ------------------------------------------------------------------ */
