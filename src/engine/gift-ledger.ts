@@ -34,6 +34,10 @@ export interface GiftLedgerInput {
   annualExclusionsByYear: Record<number, number>;
   taxInflationRate: number;
   accountValueAtYear: (accountId: string, year: number) => number;
+  /** Resolver for business-entity value at a given year. Required for
+   *  `business_interest` GiftEvents; optional so callers that don't yet
+   *  surface entity values can omit it (defaults to a zero resolver). */
+  entityValueAtYear?: (entityId: string, year: number) => number;
 }
 
 type Grantor = "client" | "spouse";
@@ -105,6 +109,15 @@ function assetGiftValue(
     : accountValueAtYear(ev.accountId, ev.year) * ev.percent;
 }
 
+function businessInterestGiftValue(
+  ev: Extract<GiftEvent, { kind: "business_interest" }>,
+  entityValueAtYear: GiftLedgerInput["entityValueAtYear"],
+): number {
+  if (ev.amountOverride != null) return ev.amountOverride;
+  const value = entityValueAtYear ? entityValueAtYear(ev.entityId, ev.year) : 0;
+  return value * ev.percent;
+}
+
 function sumLegacyCashGifts(
   grantor: Grantor,
   year: number,
@@ -136,6 +149,8 @@ function sumGrossGifts(year: number, input: GiftLedgerInput): number {
       total += ev.amount;
     } else if (ev.kind === "asset") {
       total += assetGiftValue(ev, input.accountValueAtYear);
+    } else if (ev.kind === "business_interest") {
+      total += businessInterestGiftValue(ev, input.entityValueAtYear);
     }
   }
   return total;
@@ -159,6 +174,9 @@ function sumGiftEvents(
       total += Math.max(0, ev.amount - exclusion);
     } else if (ev.kind === "asset") {
       total += assetGiftValue(ev, input.accountValueAtYear);
+    } else if (ev.kind === "business_interest") {
+      // No annual exclusion — Crummey applies to cash only.
+      total += businessInterestGiftValue(ev, input.entityValueAtYear);
     }
   }
   return total;

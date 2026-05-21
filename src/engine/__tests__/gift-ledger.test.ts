@@ -224,6 +224,90 @@ describe("computeGiftLedger", () => {
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
 
+  it("business_interest GiftEvent at 100% of a $1M LLC → $1M cumulative taxable (no AE)", () => {
+    const businessGift: GiftEvent = {
+      id: "ge-biz-1",
+      kind: "business_interest",
+      year: 2026,
+      grantor: "client",
+      entityId: "biz-llc-1",
+      percent: 1,
+      recipientEntityId: "trust-1",
+      amountOverride: undefined,
+    } as unknown as GiftEvent;
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      giftEvents: [businessGift],
+      entityValueAtYear: (id, year) => (id === "biz-llc-1" && year === 2026 ? 1_000_000 : 0),
+    });
+    // No annual exclusion applies — Crummey is cash-only.
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(1_000_000);
+    expect(ledger[0].perGrantor.client.cumulativeTaxableGifts).toBe(1_000_000);
+    expect(ledger[0].taxableGiftsGiven).toBe(1_000_000);
+    // Gross gifts also reflect the full $1M.
+    expect(ledger[0].giftsGiven).toBe(1_000_000);
+  });
+
+  it("business_interest GiftEvent uses amountOverride when set", () => {
+    const businessGift: GiftEvent = {
+      id: "ge-biz-2",
+      kind: "business_interest",
+      year: 2026,
+      grantor: "client",
+      entityId: "biz-llc-1",
+      percent: 0.25,
+      recipientEntityId: "trust-1",
+      amountOverride: 750_000,
+    } as unknown as GiftEvent;
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      giftEvents: [businessGift],
+      // Override should win even though percent × value would yield a different number.
+      entityValueAtYear: () => 9_999_999,
+    });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(750_000);
+  });
+
+  it("business_interest GiftEvent at fractional percent uses entityValueAtYear × percent", () => {
+    const businessGift: GiftEvent = {
+      id: "ge-biz-3",
+      kind: "business_interest",
+      year: 2026,
+      grantor: "client",
+      entityId: "biz-llc-1",
+      percent: 0.4,
+      recipientEntityId: "trust-1",
+      amountOverride: undefined,
+    } as unknown as GiftEvent;
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      giftEvents: [businessGift],
+      entityValueAtYear: (id, year) => (id === "biz-llc-1" && year === 2026 ? 2_500_000 : 0),
+    });
+    // 0.4 × 2_500_000 = 1_000_000
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(1_000_000);
+  });
+
+  it("charitable business_interest GiftEvent zeros out (charitable deduction)", () => {
+    const businessGift: GiftEvent = {
+      id: "ge-biz-4",
+      kind: "business_interest",
+      year: 2026,
+      grantor: "client",
+      entityId: "biz-llc-1",
+      percent: 1,
+      recipientEntityId: undefined,
+      recipientExternalBeneficiaryId: "ext-charity-1",
+      amountOverride: 500_000,
+    } as unknown as GiftEvent;
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      giftEvents: [businessGift],
+      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
+    });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
+  });
+
   it("populates giftsGiven (gross) regardless of grantor or charitable status", () => {
     const ledger = computeGiftLedger({
       ...baseInput,

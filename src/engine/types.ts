@@ -336,6 +336,16 @@ export type GiftEvent =
       recipientEntityId: string;
       parentGiftId: string;
       eventKind?: GiftEventKind;
+    }
+  | {
+      kind: "business_interest";
+      year: number;
+      entityId: string; // business being gifted
+      percent: number; // fraction 0.0001..1
+      grantor: "client" | "spouse";
+      recipientEntityId: string; // receiving trust
+      amountOverride?: number;
+      eventKind?: GiftEventKind;
     };
 
 export interface ClientData {
