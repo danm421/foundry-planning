@@ -10,6 +10,7 @@ import {
   beneficiaryDesignations,
   gifts,
   trustSplitInterestDetails,
+  crmHouseholdContacts,
 } from "@/db/schema";
 import { eq, and, or, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -157,6 +158,13 @@ export async function PUT(
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
       .returning();
 
+    // Mirror identity changes to the CRM household contacts (source of truth
+    // post-port). Non-identity planning fields (retirementAge, filingStatus, …)
+    // stay on the clients row. The legacy clients identity columns are still
+    // notNull until Phase 9 — they're dual-written above so the schema stays
+    // satisfied; this mirror keeps CRM in sync until they drop.
+    await mirrorIdentityToCrm(updated.crmHouseholdId, safeUpdate);
+
     // If the horizon moved, push the new planEndYear through to all the
     // client's scenarios so the engine and UI stay in sync without the
     // advisor having to re-save plan settings.
@@ -261,6 +269,62 @@ async function collectSpouseDependents(spouseFmId: string): Promise<string[]> {
   if (beneRefs.length) out.push("beneficiary designations");
   if (giftRefs.length) out.push("gifts");
   return out;
+}
+
+// Pushes any identity fields in the PUT body through to the CRM household
+// contacts. We split fields into the primary contact (firstName/lastName/
+// dateOfBirth/email/address) and the spouse contact (spouseName/...). Address
+// is a single legacy text blob; we drop it into addressLine1 and leave the
+// other parts null — the CRM contact form can re-parse later. Unknown CRM
+// households (no link yet) are silently skipped: backfill scripts cover that
+// case separately.
+async function mirrorIdentityToCrm(
+  crmHouseholdId: string | null,
+  safeUpdate: Record<string, unknown>,
+): Promise<void> {
+  if (!crmHouseholdId) return;
+
+  // Primary contact patch.
+  const primaryPatch: Record<string, unknown> = {};
+  if ("firstName" in safeUpdate) primaryPatch.firstName = safeUpdate.firstName;
+  if ("lastName" in safeUpdate) primaryPatch.lastName = safeUpdate.lastName;
+  if ("dateOfBirth" in safeUpdate) primaryPatch.dateOfBirth = safeUpdate.dateOfBirth;
+  if ("email" in safeUpdate) primaryPatch.email = safeUpdate.email ?? null;
+  if ("address" in safeUpdate) primaryPatch.addressLine1 = safeUpdate.address ?? null;
+  if (Object.keys(primaryPatch).length > 0) {
+    primaryPatch.updatedAt = new Date();
+    await db
+      .update(crmHouseholdContacts)
+      .set(primaryPatch)
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, crmHouseholdId),
+          eq(crmHouseholdContacts.role, "primary"),
+        ),
+      );
+  }
+
+  // Spouse contact patch. Only run if at least one spouse identity field is
+  // present in the body — keeps a spouse-less household from getting a stray
+  // empty update.
+  const spousePatch: Record<string, unknown> = {};
+  if ("spouseName" in safeUpdate) spousePatch.firstName = safeUpdate.spouseName;
+  if ("spouseLastName" in safeUpdate) spousePatch.lastName = safeUpdate.spouseLastName;
+  if ("spouseDob" in safeUpdate) spousePatch.dateOfBirth = safeUpdate.spouseDob;
+  if ("spouseEmail" in safeUpdate) spousePatch.email = safeUpdate.spouseEmail ?? null;
+  if ("spouseAddress" in safeUpdate) spousePatch.addressLine1 = safeUpdate.spouseAddress ?? null;
+  if (Object.keys(spousePatch).length > 0) {
+    spousePatch.updatedAt = new Date();
+    await db
+      .update(crmHouseholdContacts)
+      .set(spousePatch)
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, crmHouseholdId),
+          eq(crmHouseholdContacts.role, "spouse"),
+        ),
+      );
+  }
 }
 
 // Reconciles role='client' / role='spouse' family_members rows with the

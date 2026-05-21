@@ -1,21 +1,27 @@
 import { and, eq } from "drizzle-orm";
 
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 
 import type { ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 /**
- * Commits the primary + spouse identity slots into the `clients` table.
- * Single-row PATCH — there's no match logic because a household has
- * exactly one clients row.
+ * Commits the primary + spouse identity slots into the CRM household
+ * (crm_household_contacts) and, transitionally, dual-writes the still-notNull
+ * legacy columns on `clients` (firstName/lastName/dateOfBirth/spouseName/...).
  *
- * Strategy:
- *   firstName / lastName / dateOfBirth / filingStatus  → replace-if-non-null
- *   spouseName / spouseLastName / spouseDob            → replace-if-non-null
+ * Field strategy:
+ *   firstName / lastName / dateOfBirth → replace-if-non-null on CRM
+ *     primary/spouse contacts
+ *   filingStatus → planning-only, stays on the `clients` row
  *
- * "Empty" = undefined or null. The clients row is required (created at
- * client onboarding); commit just enriches the row with extracted fields.
+ * CRM contact rows must already exist (Phase 6 backfill seeded them; new
+ * clients are created via /api/clients which seeds them from the picker
+ * selection). If the contact row is missing we skip that slot rather than
+ * upsert — the import wizard shouldn't be the place that creates households.
+ *
+ * The dual-write to legacy `clients` columns disappears in Phase 9 when those
+ * columns are dropped; only the CRM update + the filingStatus write remain.
  */
 export async function commitClientsIdentity(
   tx: Tx,
@@ -24,29 +30,54 @@ export async function commitClientsIdentity(
 ): Promise<CommitResult> {
   const result = emptyResult();
 
-  const updates: Record<string, unknown> = {};
   const { primary, spouse } = payload;
 
-  if (primary?.firstName) updates.firstName = primary.firstName;
-  if (primary?.lastName) updates.lastName = primary.lastName;
-  if (primary?.dateOfBirth) updates.dateOfBirth = primary.dateOfBirth;
-  if (primary?.filingStatus) updates.filingStatus = primary.filingStatus;
+  // ── 1. CRM contact updates (source of truth). ───────────────────────────
+  // Look up the household via the planning client's crmHouseholdId.
+  const [clientRow] = await tx
+    .select({ crmHouseholdId: clients.crmHouseholdId })
+    .from(clients)
+    .where(and(eq(clients.id, ctx.clientId), eq(clients.firmId, ctx.orgId)));
 
-  if (spouse?.firstName) updates.spouseName = spouse.firstName;
-  if (spouse?.lastName) updates.spouseLastName = spouse.lastName;
-  if (spouse?.dateOfBirth) updates.spouseDob = spouse.dateOfBirth;
+  if (clientRow?.crmHouseholdId) {
+    if (primary) {
+      await upsertCrmContactIdentity(tx, clientRow.crmHouseholdId, "primary", {
+        firstName: primary.firstName,
+        lastName: primary.lastName,
+        dateOfBirth: primary.dateOfBirth,
+      });
+    }
+    if (spouse) {
+      await upsertCrmContactIdentity(tx, clientRow.crmHouseholdId, "spouse", {
+        firstName: spouse.firstName,
+        lastName: spouse.lastName,
+        dateOfBirth: spouse.dateOfBirth,
+      });
+    }
+  }
 
-  if (Object.keys(updates).length === 0) {
+  // ── 2. Legacy clients columns (dual-write until Phase 9). ───────────────
+  const legacyUpdates: Record<string, unknown> = {};
+
+  if (primary?.firstName) legacyUpdates.firstName = primary.firstName;
+  if (primary?.lastName) legacyUpdates.lastName = primary.lastName;
+  if (primary?.dateOfBirth) legacyUpdates.dateOfBirth = primary.dateOfBirth;
+  if (primary?.filingStatus) legacyUpdates.filingStatus = primary.filingStatus;
+
+  if (spouse?.firstName) legacyUpdates.spouseName = spouse.firstName;
+  if (spouse?.lastName) legacyUpdates.spouseLastName = spouse.lastName;
+  if (spouse?.dateOfBirth) legacyUpdates.spouseDob = spouse.dateOfBirth;
+
+  if (Object.keys(legacyUpdates).length === 0) {
     result.skipped = 1;
     return result;
   }
 
-  updates.updatedAt = new Date();
-
+  legacyUpdates.updatedAt = new Date();
 
   const updated = await tx
     .update(clients)
-    .set(updates)
+    .set(legacyUpdates)
     .where(and(eq(clients.id, ctx.clientId), eq(clients.firmId, ctx.orgId)))
     .returning({ id: clients.id });
 
@@ -56,4 +87,33 @@ export async function commitClientsIdentity(
     result.skipped = 1;
   }
   return result;
+}
+
+// Replace-if-non-null update on the household's primary/spouse contact. Only
+// writes the fields the import actually extracted — `undefined`/empty leaves
+// the CRM value alone, which matters when the advisor has typed something into
+// the CRM that the extractor couldn't recover.
+async function upsertCrmContactIdentity(
+  tx: Tx,
+  householdId: string,
+  role: "primary" | "spouse",
+  patch: { firstName?: string; lastName?: string; dateOfBirth?: string | null },
+): Promise<void> {
+  const updates: Record<string, unknown> = {};
+  if (patch.firstName) updates.firstName = patch.firstName;
+  if (patch.lastName) updates.lastName = patch.lastName;
+  if (patch.dateOfBirth) updates.dateOfBirth = patch.dateOfBirth;
+  if (Object.keys(updates).length === 0) return;
+
+  updates.updatedAt = new Date();
+
+  await tx
+    .update(crmHouseholdContacts)
+    .set(updates)
+    .where(
+      and(
+        eq(crmHouseholdContacts.householdId, householdId),
+        eq(crmHouseholdContacts.role, role),
+      ),
+    );
 }
