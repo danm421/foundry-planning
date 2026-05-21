@@ -22,33 +22,28 @@ export async function clientByIdInFirm(
       id: clients.id,
       firmId: clients.firmId,
       advisorId: clients.advisorId,
-      legacyFirstName: clients.firstName,
-      legacyLastName: clients.lastName,
-      legacySpouseName: clients.spouseName,
-      legacySpouseLastName: clients.spouseLastName,
       crmHouseholdId: clients.crmHouseholdId,
     })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
   if (!row) return null;
 
-  const contacts = row.crmHouseholdId
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, row.crmHouseholdId))
-    : [];
-  const primary = contacts.find((c) => c.role === "primary") ?? null;
-  const spouse = contacts.find((c) => c.role === "spouse") ?? null;
+  const contacts = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, row.crmHouseholdId));
+  const primary = contacts.find((c) => c.role === "primary");
+  const spouse = contacts.find((c) => c.role === "spouse");
+  if (!primary) return null;
 
   return {
     id: row.id,
     firmId: row.firmId,
     advisorId: row.advisorId,
-    firstName: primary?.firstName ?? row.legacyFirstName,
-    lastName: primary?.lastName ?? row.legacyLastName,
-    spouseName: spouse?.firstName ?? row.legacySpouseName,
-    spouseLastName: spouse?.lastName ?? row.legacySpouseLastName,
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    spouseName: spouse?.firstName ?? null,
+    spouseLastName: spouse?.lastName ?? null,
   };
 }
 
