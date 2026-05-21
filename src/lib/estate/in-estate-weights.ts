@@ -15,10 +15,14 @@ export function isBusinessEntity(e: EntitySummary | undefined): boolean {
 
 /** Fraction of a non-trust entity owned by household family members. Missing
  *  `owners` is treated as fully family-owned for back-compat with legacy data
- *  imported before the entity_owners table existed. */
+ *  imported before the entity_owners table existed. Entity-kind owner rows
+ *  (e.g. a trust holding the business) are excluded — those contribute to the
+ *  out-of-estate side via their own in-estate-weight resolution. */
 export function familyOwnedFraction(entity: EntitySummary): number {
   if (entity.owners == null) return 1;
-  const sum = entity.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
+  const sum = entity.owners
+    .filter((o) => o.kind === "family_member")
+    .reduce((s, o) => s + (o.percent ?? 0), 0);
   return Math.max(0, Math.min(1, sum));
 }
 

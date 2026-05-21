@@ -75,7 +75,7 @@ const business: EntitySummary = {
   isGrantor: false,
   entityType: "llc",
   value: 0,
-  owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 } as unknown as EntitySummary;
 
 // $30k/yr living expense with no income — a pure household cash shortfall

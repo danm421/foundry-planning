@@ -41,18 +41,23 @@ export default function EstateFlowChangeEntityOwnerDialog({
   );
 
   // The dialog edits only the client/spouse split. If the entity has any other
-  // family-member owner (e.g. a child holding a stake), applying would replace
-  // it — warn the advisor rather than silently dropping it.
+  // family-member owner (e.g. a child holding a stake), or any entity-kind
+  // owner (e.g. a trust holding the business), applying would replace it —
+  // warn the advisor rather than silently dropping it.
   const hasOtherOwners = useMemo(() => {
     return (entity.owners ?? []).some(
-      (o) => o.familyMemberId !== clientFmId && o.familyMemberId !== spouseFmId,
+      (o) =>
+        o.kind !== "family_member" ||
+        (o.familyMemberId !== clientFmId && o.familyMemberId !== spouseFmId),
     );
   }, [entity.owners, clientFmId, spouseFmId]);
 
-  // Infer the starting destination from the entity's current owners.
+  // Infer the starting destination from the entity's current family-member owners.
+  // Entity-kind owners are ignored here — the dialog only edits the client/spouse split.
   const initialDestId = useMemo((): DestId => {
-    const owners = entity.owners ?? [];
-    const ids = owners.map((o) => o.familyMemberId);
+    const ids = (entity.owners ?? [])
+      .filter((o) => o.kind === "family_member")
+      .map((o) => o.familyMemberId);
     const hasClient = clientFmId != null && ids.includes(clientFmId);
     const hasSpouse = spouseFmId != null && ids.includes(spouseFmId);
     if (hasClient && hasSpouse) return "joint";
@@ -62,10 +67,12 @@ export default function EstateFlowChangeEntityOwnerDialog({
 
   const [destId, setDestId] = useState<DestId>(initialDestId);
 
-  // Joint per-member percents (integer 0-100), pre-populated from current owners.
+  // Joint per-member percents (integer 0-100), pre-populated from current
+  // family-member owners. Entity-kind owners are ignored.
   const [splitPercents, setSplitPercents] = useState<Record<string, number>>(() => {
     const map: Record<string, number> = {};
     for (const o of entity.owners ?? []) {
+      if (o.kind !== "family_member") continue;
       map[o.familyMemberId] = Math.round(o.percent * 100);
     }
     return map;
@@ -98,13 +105,13 @@ export default function EstateFlowChangeEntityOwnerDialog({
     let owners: EntityOwner[];
     if (isJoint && clientFmId && spouseFmId) {
       owners = [
-        { familyMemberId: clientFmId, percent: (splitPercents[clientFmId] ?? 50) / 100 },
-        { familyMemberId: spouseFmId, percent: (splitPercents[spouseFmId] ?? 50) / 100 },
+        { kind: "family_member", familyMemberId: clientFmId, percent: (splitPercents[clientFmId] ?? 50) / 100 },
+        { kind: "family_member", familyMemberId: spouseFmId, percent: (splitPercents[spouseFmId] ?? 50) / 100 },
       ];
     } else if (destId === "spouse" && spouseFmId) {
-      owners = [{ familyMemberId: spouseFmId, percent: 1 }];
+      owners = [{ kind: "family_member", familyMemberId: spouseFmId, percent: 1 }];
     } else if (clientFmId) {
-      owners = [{ familyMemberId: clientFmId, percent: 1 }];
+      owners = [{ kind: "family_member", familyMemberId: clientFmId, percent: 1 }];
     } else {
       return;
     }

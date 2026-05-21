@@ -178,7 +178,7 @@ const conservationLlc: EntitySummary = {
   entityType: "llc",
   value: 30_000,
   basis: 12_000,
-  owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 /** $50k cash account owned 100% by the LLC. */

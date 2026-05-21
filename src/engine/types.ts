@@ -463,11 +463,11 @@ export interface EntitySummary {
    *  pre-2026 behavior where flat-value growth was unmodeled. Ignored for
    *  trusts and foundations, which track value through accounts. */
   valueGrowthRate?: number | null;
-  /** Per-family-member ownership of a business entity (sourced from
-   *  entity_owners). Trusts leave this undefined. Sum may be < 1 when legacy
-   *  data is missing rows; in that case in-estate treatment defaults to fully
-   *  family-owned. */
-  owners?: Array<{ familyMemberId: string; percent: number }>;
+  /** Ownership of a business entity (sourced from entity_owners). Trusts leave
+   *  this undefined. Owners may be household family members OR another entity
+   *  (e.g. a trust that holds the business). Sum may be < 1 when legacy data
+   *  has unassigned slack. */
+  owners?: import("./ownership").EntityOwner[];
   /** Frozen split-interest snapshot for CLUT/CLAT trusts. Populated only when
    *  trustSubType = 'clut'. Captures inception-time inputs and computed
    *  income/remainder interests so engine passes don't recompute mid-projection. */

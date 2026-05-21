@@ -612,14 +612,18 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.entityId === e.id);
     if (ownerUpd && next.owners != null) {
       // Clone each kept row so the `existing.percent +=` merge below never
-      // mutates the original input entity's owner objects.
+      // mutates the original input entity's owner objects. Entity-kind owners
+      // pass through untouched — only family_member rows participate in
+      // deceased-removal / successor-merge.
       const merged = next.owners
-        .filter((o) => o.familyMemberId !== ownerUpd.removeFamilyMemberId)
+        .filter((o) => o.kind !== "family_member" || o.familyMemberId !== ownerUpd.removeFamilyMemberId)
         .map((o) => ({ ...o }));
       for (const s of ownerUpd.successors) {
-        const existing = merged.find((o) => o.familyMemberId === s.familyMemberId);
+        const existing = merged.find(
+          (o) => o.kind === "family_member" && o.familyMemberId === s.familyMemberId,
+        );
         if (existing) existing.percent += s.percent;
-        else merged.push({ familyMemberId: s.familyMemberId, percent: s.percent });
+        else merged.push({ kind: "family_member", familyMemberId: s.familyMemberId, percent: s.percent });
       }
       next = { ...next, owners: merged };
     }

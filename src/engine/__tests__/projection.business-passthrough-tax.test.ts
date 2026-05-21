@@ -62,7 +62,7 @@ const llcEntity: EntitySummary = {
   entityType: "llc",
   taxTreatment: "ordinary",
   distributionPolicyPercent: 0, // 0% — entity retains all earnings
-  owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 const llcChecking: Account = {
@@ -222,7 +222,7 @@ describe("Non-trust business entity-account realization → household tax detail
       isIrrevocable: true,
       distributionPolicyPercent: 0,
       distributionMode: null,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const trustChecking: Account = {
       id: "trust1-checking",
@@ -278,7 +278,7 @@ describe("Grantor non-trust entity: schedule-mode tax uses net income, not raw b
       taxTreatment: "ordinary",
       flowMode: "schedule",
       distributionPolicyPercent: 0,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const grantorChecking: Account = {
       id: "llc-g-checking",

@@ -64,7 +64,7 @@ function deceasedBusinessShare(
   if (entity.owners == null) return deathOrder === 1 ? 0.5 : 1;
   if (deceasedFmId == null) return 0;
   return entity.owners
-    .filter((o) => o.familyMemberId === deceasedFmId)
+    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
     .reduce((s, o) => s + (o.percent ?? 0), 0);
 }
 

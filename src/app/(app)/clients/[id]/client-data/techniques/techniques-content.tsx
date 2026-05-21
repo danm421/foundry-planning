@@ -227,12 +227,17 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
         entityType: e.entityType,
         value: Number(e.value ?? 0),
         basis: Number(e.basis ?? 0),
-        owners: (e.owners ?? []).map((o) => ({
-          familyMemberId: o.familyMemberId,
-          familyMemberName:
-            familyMemberNameById.get(o.familyMemberId) ?? o.familyMemberId,
-          percent: o.percent,
-        })),
+        // Techniques view models only know about family-member owners.
+        // Entity-kind owners (Task 4) are filtered out here; surfacing them
+        // requires a UI-level update to the EntityCard rendering.
+        owners: (e.owners ?? [])
+          .filter((o) => o.kind === "family_member")
+          .map((o) => ({
+            familyMemberId: o.familyMemberId,
+            familyMemberName:
+              familyMemberNameById.get(o.familyMemberId) ?? o.familyMemberId,
+            percent: o.percent,
+          })),
         ownedAccounts,
         ownedLiabilities,
       };

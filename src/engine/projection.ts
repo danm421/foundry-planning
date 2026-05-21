@@ -852,7 +852,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               name: string;
               value: number;
               basis: number;
-              owners: Array<{ familyMemberId: string; percent: number }>;
+              owners: NonNullable<typeof e.owners>;
               entityType: NonNullable<typeof e.entityType>;
             } =>
               !!e.name &&
@@ -1676,7 +1676,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       );
       if (netIncome <= 0) continue;
       const treatment = entity.taxTreatment ?? "ordinary";
-      const familyOwners = entity.owners ?? [];
+      // Pass-through taxation attributes to household owners only. Entity-kind
+      // owners (e.g. a trust holding the business) don't pass income through
+      // to the household 1040; they retain it at the holder level. Filter
+      // preserves pre-polymorphic behavior for the (current) all-family case.
+      const familyOwners = (entity.owners ?? []).filter(
+        (o): o is { kind: "family_member"; familyMemberId: string; percent: number } =>
+          o.kind === "family_member",
+      );
       let entityFamilyTaxable = 0;
       for (const owner of familyOwners) {
         const taxableShare = netIncome * owner.percent;
@@ -2883,7 +2890,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // defaultChecking, which could route the cash to the wrong account (or
       // nowhere) when the grantor's actual cash lived in an account that wasn't
       // the first .find(isDefaultChecking) match.
+      // Cash distributions route to a household cash account — only family_member
+      // owners are eligible. Entity-owner rows (e.g. a trust holding the
+      // business) are skipped here; their distribution accumulates via the
+      // entity's own checking account in a later pass.
       const primaryOwner = (entity.owners ?? [])
+        .filter((o) => o.kind === "family_member")
         .slice()
         .sort((x, y) => y.percent - x.percent)[0];
       const destinationId =

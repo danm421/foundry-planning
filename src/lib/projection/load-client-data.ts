@@ -56,7 +56,7 @@ import type {
   WillResiduaryRecipient,
 } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
-import type { AccountOwner } from "@/engine/ownership";
+import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
@@ -847,10 +847,19 @@ export const loadClientDataWithContext = cache(
           .from(entityOwners)
           .where(inArray(entityOwners.entityId, entityRows.map((e) => e.id)))
       : [];
-    const ownersByEntity = new Map<string, Array<{ familyMemberId: string; percent: number }>>();
+    // Task 3: Map value is now EntityOwner[] (discriminated). This loader pass
+    // still only materializes family_member rows — entity-owner rows from the
+    // polymorphic schema are wired in Task 4. Until then this branch produces
+    // the same shape as before, just with an explicit `kind: "family_member"`.
+    const ownersByEntity = new Map<string, EntityOwner[]>();
     for (const row of entityOwnerRows) {
+      if (row.familyMemberId == null) continue;
       const list = ownersByEntity.get(row.entityId) ?? [];
-      list.push({ familyMemberId: row.familyMemberId, percent: parseFloat(row.percent) });
+      list.push({
+        kind: "family_member",
+        familyMemberId: row.familyMemberId,
+        percent: parseFloat(row.percent),
+      });
       ownersByEntity.set(row.entityId, list);
     }
 

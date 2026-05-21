@@ -173,7 +173,7 @@ describe("changeEntityOwners", () => {
           id: "ent-1",
           name: "Acme LLC",
           entityType: "llc",
-          owners: [{ familyMemberId: "fm-client", percent: 1 }],
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
         },
       ],
       wills: [],
@@ -182,8 +182,8 @@ describe("changeEntityOwners", () => {
 
   it("replaces the owners array on the matching entity", () => {
     const next = changeEntityOwners(entityData(), "ent-1", [
-      { familyMemberId: "fm-client", percent: 0.5 },
-      { familyMemberId: "fm-spouse", percent: 0.5 },
+      { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+      { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
     ]);
     expect(next.entities?.[0].owners).toHaveLength(2);
     expect(next.entities?.[0].owners?.[1]).toMatchObject({ percent: 0.5 });
@@ -191,8 +191,13 @@ describe("changeEntityOwners", () => {
 
   it("does not mutate the input data", () => {
     const input = entityData();
-    changeEntityOwners(input, "ent-1", [{ familyMemberId: "fm-spouse", percent: 1 }]);
-    expect(input.entities?.[0].owners?.[0].familyMemberId).toBe("fm-client");
+    changeEntityOwners(input, "ent-1", [
+      { kind: "family_member", familyMemberId: "fm-spouse", percent: 1 },
+    ]);
+    const firstOwner = input.entities?.[0].owners?.[0];
+    expect(firstOwner?.kind === "family_member" ? firstOwner.familyMemberId : null).toBe(
+      "fm-client",
+    );
   });
 
   it("returns data unchanged when the entity id is unknown", () => {

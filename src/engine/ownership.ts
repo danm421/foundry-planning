@@ -5,6 +5,15 @@ export type AccountOwner =
   | { kind: "entity"; entityId: string; percent: number }
   | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number };
 
+/** Ownership row for a business entity (sourced from the `entity_owners`
+ *  table). Polymorphic: an owner is either a household family member or
+ *  another entity (e.g. a trust that holds the business). Mirrors
+ *  `AccountOwner` but excludes `external_beneficiary` — death-benefit
+ *  recipients don't hold present interest in a business. */
+export type EntityOwner =
+  | { kind: "family_member"; familyMemberId: string; percent: number }
+  | { kind: "entity"; entityId: string; percent: number };
+
 /** Minimal account shape used by the year-aware ownership helpers. Structurally
  *  satisfied by the full `Account` type from engine/types. */
 export interface AccountWithOwners {

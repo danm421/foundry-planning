@@ -43,7 +43,7 @@ function deceasedShare(
   }
   if (deceasedFmId == null) return { share: 0, legacy: false };
   const share = entity.owners
-    .filter((o) => o.familyMemberId === deceasedFmId)
+    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
     .reduce((s, o) => s + (o.percent ?? 0), 0);
   return { share, legacy: false };
 }

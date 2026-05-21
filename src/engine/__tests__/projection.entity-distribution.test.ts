@@ -86,7 +86,7 @@ const llcEntity: EntitySummary = {
   entityType: "llc",
   taxTreatment: "ordinary",
   distributionPolicyPercent: 1.0,
-  owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 const llcIncome: Income = {
@@ -174,8 +174,8 @@ describe("Phase 3: ownership gap", () => {
     const data = mkData({
       entity: {
         owners: [
-          { familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
-          { familyMemberId: LEGACY_FM_SPOUSE, percent: 0.2 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.2 },
         ],
       },
     });
@@ -344,7 +344,7 @@ describe("Phase 3: trust regression — taxTreatment ignored", () => {
       taxTreatment: "qbi", // should be ignored
       distributionPolicyPercent: 0.5, // should be ignored
       distributionMode: null,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const trustIncome: Income = {
       id: "ti1",
@@ -433,8 +433,8 @@ describe("Phase 3: multi-year 2-owner LLC integration", () => {
       taxTreatment: "qbi",
       distributionPolicyPercent: 0.5,
       owners: [
-        { familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
-        { familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
       ],
     };
     // 3-year projection
@@ -628,7 +628,7 @@ describe("Display: multi-entity Business column aggregation", () => {
       entityType: "llc",
       taxTreatment: "ordinary",
       distributionPolicyPercent: 1.0,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const llc2Income: Income = {
       id: "i2",

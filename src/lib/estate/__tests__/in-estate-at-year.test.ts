@@ -252,8 +252,8 @@ describe("non-trust (business) entities", () => {
           entityType: "llc",
           value: 2_000_000,
           owners: [
-            { familyMemberId: FM_CLIENT, percent: 0.5 },
-            { familyMemberId: FM_SPOUSE, percent: 0.5 },
+            { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: FM_SPOUSE, percent: 0.5 },
           ],
         },
         {
@@ -289,8 +289,8 @@ describe("non-trust (business) entities", () => {
     // Cut family share to 70% (rest is unowned — sum < 1)
     tree.entities = tree.entities!.filter((e) => e.id === LLC_FAMILY);
     tree.entities[0].owners = [
-      { familyMemberId: FM_CLIENT, percent: 0.4 },
-      { familyMemberId: FM_SPOUSE, percent: 0.3 },
+      { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.4 },
+      { kind: "family_member", familyMemberId: FM_SPOUSE, percent: 0.3 },
     ];
     const inE = computeInEstateAtYear({
       tree, giftEvents, year: 2026, projectionStartYear: 2026, accountBalances: balances,

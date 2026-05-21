@@ -623,7 +623,7 @@ describe("computeGrossEstate", () => {
       includeInPortfolio: true,
       isGrantor: false,
       entityType: "llc",
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",
@@ -651,8 +651,8 @@ describe("computeGrossEstate", () => {
       isGrantor: false,
       entityType: "llc",
       owners: [
-        { familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
-        { familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
       ],
     };
     const r = computeGrossEstate({
@@ -677,7 +677,7 @@ describe("computeGrossEstate", () => {
       includeInPortfolio: true,
       isGrantor: false,
       entityType: "llc",
-      owners: [{ familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",
@@ -703,7 +703,7 @@ describe("computeGrossEstate", () => {
       includeInPortfolio: true,
       isGrantor: false,
       entityType: "s_corp",
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",
@@ -736,8 +736,8 @@ describe("computeGrossEstate", () => {
       isGrantor: false,
       entityType: "llc",
       owners: [
-        { familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
-        { familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
       ],
     };
     const r = computeGrossEstate({
@@ -805,7 +805,7 @@ describe("computeGrossEstate", () => {
       isGrantor: false,
       entityType: "llc",
       value: 250_000,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",
@@ -832,8 +832,8 @@ describe("computeGrossEstate", () => {
       entityType: "llc",
       value: 250_000,
       owners: [
-        { familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
-        { familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
       ],
     };
     const r = computeGrossEstate({
@@ -858,7 +858,7 @@ describe("computeGrossEstate", () => {
       isGrantor: false,
       entityType: "llc",
       value: 250_000,
-      owners: [{ familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",
@@ -933,7 +933,7 @@ describe("computeGrossEstate", () => {
       isGrantor: false,
       entityType: "llc",
       value: 250_000,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",
@@ -964,7 +964,7 @@ describe("computeGrossEstate", () => {
       isGrantor: false,
       entityType: "llc",
       value: 10_000,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",

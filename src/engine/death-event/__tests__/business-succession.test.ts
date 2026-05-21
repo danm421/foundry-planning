@@ -7,7 +7,10 @@ const spouse: FamilyMember = { id: "fmSpouse", role: "spouse", relationship: "ot
 const child: FamilyMember = { id: "fmChild", role: "child", relationship: "child", firstName: "Kid", lastName: "", dateOfBirth: "1990-01-01" } as FamilyMember;
 
 function llc(owners: Array<{ familyMemberId: string; percent: number }>): EntitySummary {
-  return { id: "e1", name: "Test Bus", entityType: "llc", value: 10_000, basis: 4_000, owners } as EntitySummary;
+  // Synthesize `kind: "family_member"` on each owner so the fixture matches the
+  // discriminated EntityOwner shape that the engine's narrowing predicates expect.
+  const taggedOwners = owners.map((o) => ({ kind: "family_member" as const, ...o }));
+  return { id: "e1", name: "Test Bus", entityType: "llc", value: 10_000, basis: 4_000, owners: taggedOwners } as EntitySummary;
 }
 const accounts: Account[] = [];
 const balances: Record<string, number> = {};

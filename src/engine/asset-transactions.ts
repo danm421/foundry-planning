@@ -1,6 +1,7 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
 import { LEGACY_FM_CLIENT, rebalanceOwnersAfterEntityDisposition } from "./ownership";
+import type { EntityOwner } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -541,8 +542,10 @@ export interface EntitySaleInputEntity {
   entityType: "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
   value: number;
   basis: number;
-  /** Family-member owners only — entity_owners schema has no external_beneficiary. */
-  owners: Array<{ familyMemberId: string; percent: number }>;
+  /** Polymorphic — same shape as EntitySummary.owners. Family-member owners
+   *  drive per-1040 capital-gain attribution; entity-kind owners are recognized
+   *  in totals but not yet attributed to a downstream taxpayer. */
+  owners: EntityOwner[];
 }
 
 export interface EntitySaleBreakdown {
@@ -761,6 +764,12 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     // aggregate `capitalGains` and the per-owner `capitalGainsByOwner` would
     // silently drift apart. If the drift exceeds a small epsilon, emit a
     // diagnostic so the advisor can fix the underlying data.
+    // Capital-gain distribution is keyed by family-member id (1040 attribution).
+    // Normalize against the total owner sum (including any entity-kind rows) so
+    // legacy/incomplete data that doesn't sum to 1 still reconciles, but only
+    // emit per-family-member shares — entity-kind owners are skipped here.
+    // The diagnostic still fires on a non-unit total so the advisor can fix
+    // upstream data.
     const ownerSum = entity.owners.reduce((s, o) => s + o.percent, 0);
     if (ownerSum > 0) {
       if (Math.abs(ownerSum - 1) > 1e-6) {
@@ -770,6 +779,7 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
         });
       }
       for (const owner of entity.owners) {
+        if (owner.kind !== "family_member") continue;
         const share = totalCapitalGain * (owner.percent / ownerSum);
         capitalGainsByOwner[owner.familyMemberId] =
           (capitalGainsByOwner[owner.familyMemberId] ?? 0) + share;

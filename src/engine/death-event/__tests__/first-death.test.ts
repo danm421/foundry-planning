@@ -221,7 +221,7 @@ describe("applyFirstDeath — business-interest succession integration", () => {
       includeInPortfolio: false,
       isGrantor: false,
       isIrrevocable: false,
-      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
 
     const input = mkInput({
@@ -243,7 +243,7 @@ describe("applyFirstDeath — business-interest succession integration", () => {
     const updatedEntity = result.entities.find((e) => e.id === "e1");
     expect(updatedEntity).toBeDefined();
     expect(updatedEntity!.owners).toEqual([
-      { familyMemberId: LEGACY_FM_SPOUSE, percent: 1 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 },
     ]);
 
     // §1014 basis stepped up to FMV of the transferred share.
