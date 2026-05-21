@@ -505,6 +505,8 @@ export const clients = pgTable("clients", {
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  // CRM linkage — populated during Phase 6 backfill, tightened to NOT NULL in Migration 2 (Phase 9).
+  crmHouseholdId: uuid("crm_household_id"),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);

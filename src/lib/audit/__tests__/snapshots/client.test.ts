@@ -29,6 +29,7 @@ const row: typeof clients.$inferSelect = {
   onboardingCompletedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
+  crmHouseholdId: null,
 };
 
 describe("toClientSnapshot", () => {
