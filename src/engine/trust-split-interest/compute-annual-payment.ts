@@ -19,3 +19,28 @@ export function computeAnnualUnitrustPayment(
   }
   return { unitrustAmount: payoutPercent * startOfYearFmv };
 }
+
+export interface AnnuityPaymentInput {
+  payoutAmount: number;
+}
+
+export interface AnnuityPaymentResult {
+  annuityAmount: number;
+}
+
+/**
+ * CLAT annual payment — fixed dollar amount, independent of trust FMV.
+ *
+ * Returns the payoutAmount as-is. Kept as a typed helper for symmetry with
+ * computeAnnualUnitrustPayment and to give us a place to hang future edge-case
+ * handling (e.g. balance-capped underpayment).
+ */
+export function computeAnnualAnnuityPayment(
+  input: AnnuityPaymentInput,
+): AnnuityPaymentResult {
+  const { payoutAmount } = input;
+  if (payoutAmount < 0) {
+    throw new Error(`payoutAmount must be non-negative: ${payoutAmount}`);
+  }
+  return { annuityAmount: payoutAmount };
+}

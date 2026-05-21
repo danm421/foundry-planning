@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { computeAnnualUnitrustPayment } from "../compute-annual-payment";
+import {
+  computeAnnualAnnuityPayment,
+  computeAnnualUnitrustPayment,
+} from "../compute-annual-payment";
 import { runProjection } from "@/engine/projection";
 import {
   buildClutLifecycleFixture,
@@ -39,6 +42,26 @@ describe("computeAnnualUnitrustPayment", () => {
         startOfYearFmv: 1_000_000,
       }),
     ).toThrow();
+  });
+});
+
+describe("computeAnnualAnnuityPayment", () => {
+  it("returns payoutAmount as-is", () => {
+    expect(computeAnnualAnnuityPayment({ payoutAmount: 60_000 })).toEqual({
+      annuityAmount: 60_000,
+    });
+  });
+
+  it("rejects negative payoutAmount", () => {
+    expect(() =>
+      computeAnnualAnnuityPayment({ payoutAmount: -1 }),
+    ).toThrow(/payoutAmount/);
+  });
+
+  it("returns 0 for payoutAmount=0", () => {
+    expect(computeAnnualAnnuityPayment({ payoutAmount: 0 })).toEqual({
+      annuityAmount: 0,
+    });
   });
 });
 
