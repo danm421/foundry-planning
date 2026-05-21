@@ -27,7 +27,6 @@ import { db } from "@/db";
 import {
   accounts,
   accountOwners,
-  clients,
   scenarios,
   scenarioToggleGroups,
   notesReceivable,
@@ -40,17 +39,13 @@ import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import { applyEntityEdit } from "@/lib/scenario/changes-writer";
 import type { AccountOwner } from "@/engine/ownership";
 
+// Firm scope is already enforced upstream by assertScenarioRouteScope; this
+// helper only needs the base-case scenario lookup.
 async function getBaseCaseScenarioId(
   clientId: string,
-  firmId: string,
 ): Promise<string | null> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return null;
   const [scenario] = await db
-    .select()
+    .select({ id: scenarios.id })
     .from(scenarios)
     .where(
       and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)),
@@ -138,9 +133,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       (sum, o) => sum + Number(o.percent),
       0,
     );
-    const noteOwners: AccountOwner[] = familyOwners.map((o) => ({
-      kind: "family_member",
-      familyMemberId: o.familyMemberId!,
+    const noteOwners = familyOwners.map((o) => ({
+      familyMemberId: o.familyMemberId as string,
       percent:
         familyPercentSum > 0 ? Number(o.percent) / familyPercentSum : 0,
     }));
@@ -187,7 +181,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // non-base scenarios is gated by the toggle group. Basis equals face
     // value in v1 — the installment-sale economic distinction (note basis =
     // seller's basis in the original asset) is a separate refinement.
-    const baseScenarioId = await getBaseCaseScenarioId(clientId, firmId);
+    const baseScenarioId = await getBaseCaseScenarioId(clientId);
     if (!baseScenarioId) {
       return NextResponse.json(
         { error: "Client has no base case scenario" },
@@ -216,7 +210,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       });
 
       for (const o of noteOwners) {
-        if (o.kind !== "family_member") continue; // sale_to_trust filtered to family-only above
         await tx.insert(noteReceivableOwners).values({
           noteReceivableId: noteId,
           familyMemberId: o.familyMemberId,
@@ -241,7 +234,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         toggleGroupId: toggleGroup.id,
         sourceAccountId: body.accountId,
         trustEntityId: body.trustEntityId,
-        noteAccountId: noteId,
+        noteReceivableId: noteId,
         noteInterestRate: body.noteInterestRate,
         noteTermMonths: body.noteTermMonths,
         noteStartYear: body.noteStartYear,
@@ -253,7 +246,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       {
         ok: true,
         toggleGroupId: toggleGroup.id,
-        noteAccountId: noteId,
+        noteReceivableId: noteId,
       },
       { status: 201 },
     );

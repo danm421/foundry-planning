@@ -1,12 +1,7 @@
 // src/lib/loaders/__tests__/notes-receivable.test.ts
 //
 // Integration test for loadNotesReceivable. Hits the live Neon dev branch via
-// Drizzle. Patterned after
-// `src/app/api/clients/[id]/scenarios/[sid]/toggle-groups/__tests__/route.test.ts`.
-//
-// Skips when DATABASE_URL is unset.
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+// Drizzle. Skips when DATABASE_URL is unset (vitest.setup.ts loads .env.local).
 import { randomUUID } from "node:crypto";
 import {
   describe,
@@ -16,28 +11,6 @@ import {
   beforeEach,
   afterEach,
 } from "vitest";
-
-// Load .env.local before importing anything that reads DATABASE_URL.
-try {
-  const envPath = resolve(process.cwd(), ".env.local");
-  const raw = readFileSync(envPath, "utf8");
-  for (const line of raw.split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
-    if (!m) continue;
-    const [, k, vRaw] = m;
-    if (process.env[k]) continue;
-    let v = vRaw.trim();
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    process.env[k] = v;
-  }
-} catch {
-  // .env.local missing — describe.skipIf below handles it.
-}
 
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;

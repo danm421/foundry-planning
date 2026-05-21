@@ -17,8 +17,6 @@
 //   - We always pass a non-base scenario id to loadEffectiveTree so the fast
 //     path (isBaseCase && empty toggleState) doesn't short-circuit the filter.
 //
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   describe,
@@ -29,28 +27,7 @@ import {
   afterEach,
 } from "vitest";
 
-// Load .env.local before importing anything that reads DATABASE_URL.
-try {
-  const envPath = resolve(process.cwd(), ".env.local");
-  const raw = readFileSync(envPath, "utf8");
-  for (const line of raw.split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
-    if (!m) continue;
-    const [, k, vRaw] = m;
-    if (process.env[k]) continue;
-    let v = vRaw.trim();
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    process.env[k] = v;
-  }
-} catch {
-  // .env.local missing — describe.skipIf below handles it.
-}
-
+// vitest.setup.ts already loads .env.local before any test file imports.
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
 

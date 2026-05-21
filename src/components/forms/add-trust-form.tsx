@@ -957,14 +957,12 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         {editing ? (
           showNotesAndSales(editing) ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <SellToTrustDialog
-                  clientId={clientId}
-                  scenarioId={scenarioId}
-                  trust={editing}
-                  accounts={accounts ?? []}
-                />
-              </div>
+              <SellToTrustDialog
+                clientId={clientId}
+                scenarioId={scenarioId}
+                trust={editing}
+                accounts={accounts ?? []}
+              />
               {!scenarioId && (
                 <p className="text-[12px] text-ink-3">
                   Selling assets to the trust requires an active scenario. Open

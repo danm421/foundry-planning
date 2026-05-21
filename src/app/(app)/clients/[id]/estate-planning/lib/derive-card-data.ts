@@ -1,6 +1,6 @@
 import type { ClientData, FamilyMember, Account, WillBequest, Gift, NoteReceivable } from "@/engine/types";
 import { beaForYear } from "@/lib/tax/estate";
-import { amortizeNote } from "@/engine/notes/note-amortization";
+import { buildNoteReceivableSchedule } from "@/engine/notes-receivable/note-schedules";
 import {
   rowsForFamilyMember,
   rowsForEntity,
@@ -180,15 +180,11 @@ export function deriveClientCardData(
 }
 
 function noteAnnualPaymentForReceivable(n: NoteReceivable): number {
-  const sched = amortizeNote({
-    principal: n.faceValue,
-    rate: n.interestRate,
-    termMonths: n.termMonths,
-    startYear: n.startYear,
-    paymentType: n.paymentType,
-  });
-  if (sched.length === 0) return 0;
-  return Math.round(sched[0].interest + sched[0].principal);
+  // Use the same schedule the engine projects against (handles monthlyPayment,
+  // extraPayments, asOfBalance back-calculation, and interest-only-balloon).
+  const schedule = buildNoteReceivableSchedule(n);
+  if (schedule.length === 0) return 0;
+  return Math.round(schedule[0].scheduledPayment);
 }
 
 export function deriveTrustCardData(
