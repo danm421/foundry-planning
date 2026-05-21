@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { checkImportRateLimit } from "@/lib/rate-limit";
+import { checkImportRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { parseCsv, dryRun } from "@/lib/crm/import";
 import { recordAudit } from "@/lib/audit";
 
@@ -24,30 +24,7 @@ export async function POST(req: NextRequest) {
 
     const rl = await checkImportRateLimit(firmId, "upload");
     if (!rl.allowed) {
-      let status: number;
-      let message: string;
-      switch (rl.reason) {
-        case "unconfigured":
-          status = 503;
-          message = "Rate limiting is not configured — bulk import is disabled.";
-          break;
-        case "redis_error":
-          status = 503;
-          message =
-            "Rate limiting is temporarily unavailable. Please retry in a moment.";
-          break;
-        case "exceeded":
-          status = 429;
-          message = "Too many import requests. Please wait and try again.";
-          break;
-      }
-      const headers: Record<string, string> = {};
-      if (rl.reset) {
-        headers["Retry-After"] = String(
-          Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)),
-        );
-      }
-      return NextResponse.json({ error: message }, { status, headers });
+      return rateLimitErrorResponse(rl, "Import preview rate limit exceeded");
     }
 
     const contentLength = Number(req.headers.get("content-length") ?? "0");

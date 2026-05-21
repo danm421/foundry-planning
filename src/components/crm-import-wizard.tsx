@@ -4,47 +4,16 @@ import { useState } from "react";
 import Link from "next/link";
 import { AlertCircleIcon, ArrowRightIcon } from "@/components/icons";
 import { CrmImportPreview, type Decision } from "@/components/crm-import-preview";
+import type { DryRunResult } from "@/lib/crm/import";
 
 // Wizard step machine — kept as a single component because the three
 // states share too much (file, dry-run result, decisions) to make a
 // router or sub-component split worthwhile.
 type Step = "upload" | "preview" | "result";
 
-type DryRunMatch = { id: string; name: string; score: number };
-
-type ProposedHousehold = {
-  household: {
-    name: string;
-    advisorId: string;
-    status: string;
-    notes?: string;
-  };
-  primary: {
-    role: "primary";
-    firstName: string;
-    lastName: string;
-    email?: string;
-    phone?: string;
-    dateOfBirth?: string;
-    addressLine1?: string;
-    city?: string;
-    state?: string;
-    postalCode?: string;
-  };
-  spouse?: {
-    role: "spouse";
-    firstName: string;
-    lastName: string;
-    email?: string;
-    dateOfBirth?: string;
-  };
-};
-
-export type DryRunResult = {
-  rowsToCreate: ProposedHousehold[];
-  duplicates: { row: ProposedHousehold; matches: DryRunMatch[] }[];
-  errors: { rowIndex: number; messages: string[] }[];
-};
+// Re-export so existing consumers (crm-import-preview.tsx) keep the
+// import path stable; the canonical definition lives in @/lib/crm/import.
+export type { DryRunResult };
 
 export function CrmImportWizard() {
   const [step, setStep] = useState<Step>("upload");

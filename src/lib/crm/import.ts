@@ -1,9 +1,6 @@
 import * as XLSX from "xlsx";
 import * as fuzzball from "fuzzball";
 import { ZodError } from "zod";
-import { db } from "@/db";
-import { crmHouseholds } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -12,7 +9,7 @@ import {
   type CreateCrmHouseholdInput,
   type CreateCrmContactInput,
 } from "./schemas";
-import { createCrmHousehold } from "./households";
+import { createCrmHousehold, deleteCrmHousehold } from "./households";
 import { createCrmContact } from "./contacts";
 import { listCrmHouseholds } from "./households";
 
@@ -42,6 +39,7 @@ export const IMPORT_COLUMNS = [
 
 const DEDUP_THRESHOLD = 75;
 const MAX_MATCHES = 3;
+const DEDUP_CORPUS_LIMIT = 1000;
 
 export type ProposedHousehold = {
   household: CreateCrmHouseholdInput;
@@ -64,6 +62,12 @@ export type DryRunResult = {
   rowsToCreate: ProposedHousehold[];
   duplicates: { row: ProposedHousehold; matches: DryRunMatch[] }[];
   errors: ImportRowError[];
+  /**
+   * True when the dedup corpus was capped at `DEDUP_CORPUS_LIMIT` — additional
+   * existing households were not fetched, so duplicates beyond the cap may be
+   * missed. UI should surface a warning when this is set.
+   */
+  partialDedupCorpus: boolean;
 };
 
 export type ImportDecision =
@@ -128,9 +132,20 @@ export function parseCsv(buffer: Buffer): ParseResult {
     const raw = rows[r] ?? [];
     // Pad short rows with empty strings so the column indexing below is
     // stable. xlsx sometimes truncates trailing-empty cells.
-    const cells: string[] = IMPORT_COLUMNS.map((_, i) =>
-      String(raw[i] ?? "").trim(),
-    );
+    //
+    // xlsx with `raw: true` returns numeric cells as JS numbers. For
+    // postal_code (col 16) that means "02110" stored as the number 2110
+    // loses its leading zero in `String(n)`. We left-pad to 5 digits when
+    // the cell is a number to recover the common US zip case. Other
+    // free-form columns like primary_phone (col 4) hit the same xlsx
+    // limitation; we document it rather than over-fit padding rules.
+    const cells: string[] = IMPORT_COLUMNS.map((col, i) => {
+      const cell = raw[i];
+      if (col === "postal_code" && typeof cell === "number") {
+        return String(cell).padStart(5, "0");
+      }
+      return String(cell ?? "").trim();
+    });
     if (cells.every((c) => c === "")) continue;
 
     const rowIndex = r - 1; // 0-based data-row index for caller display
@@ -220,6 +235,8 @@ export function parseCsv(buffer: Buffer): ParseResult {
  * which `token_set_ratio` doesn't do on its own.
  */
 function normalize(s: string): string {
+  // ̀-ͯ is the Unicode "Combining Diacritical Marks" block.
+  // After NFD decomposition this strips accents like García -> Garcia.
   return s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -233,8 +250,12 @@ type ExistingForDedup = { id: string; name: string };
  * Per-row fuzzy match against the firm's existing CRM households.
  *
  * In production, `opts.existingHouseholds` is omitted and we pull the
- * list via `listCrmHouseholds({ limit: 1000 })`. The override is for
- * unit tests so the matcher can be exercised without DB IO.
+ * list via `listCrmHouseholds({ limit: DEDUP_CORPUS_LIMIT })`. When the
+ * firm has more households than the limit, dedup is performed against
+ * only the first page and `partialDedupCorpus` is set on the result so
+ * the UI can warn the advisor that matches beyond the cap may be missed.
+ * The override is for unit tests so the matcher can be exercised
+ * without DB IO.
  */
 export async function dryRun(
   rows: ProposedHousehold[],
@@ -244,11 +265,13 @@ export async function dryRun(
   } = {},
 ): Promise<DryRunResult> {
   let existing: ExistingForDedup[];
+  let partialDedupCorpus = false;
   if (opts.existingHouseholds) {
     existing = opts.existingHouseholds;
   } else {
-    const live = await listCrmHouseholds({ limit: 1000 });
+    const live = await listCrmHouseholds({ limit: DEDUP_CORPUS_LIMIT });
     existing = live.map((h) => ({ id: h.id, name: h.name }));
+    partialDedupCorpus = live.length === DEDUP_CORPUS_LIMIT;
   }
 
   const normExisting = existing.map((h) => ({
@@ -278,7 +301,12 @@ export async function dryRun(
     }
   }
 
-  return { rowsToCreate, duplicates, errors: opts.errors ?? [] };
+  return {
+    rowsToCreate,
+    duplicates,
+    errors: opts.errors ?? [],
+    partialDedupCorpus,
+  };
 }
 
 // --- commit -----------------------------------------------------------
@@ -300,6 +328,7 @@ export async function commit(
   const firmId = await requireOrgId();
   let created = 0;
   let skipped = 0;
+  let orphansCleanedUp = 0;
   const errors: ImportRowError[] = [];
 
   for (let i = 0; i < decisions.length; i++) {
@@ -308,14 +337,28 @@ export async function commit(
       skipped++;
       continue;
     }
+    let householdId: string | null = null;
     try {
       const household = await createCrmHousehold(d.row.household);
+      householdId = household.id;
       await createCrmContact(household.id, d.row.primary);
       if (d.row.spouse) {
         await createCrmContact(household.id, d.row.spouse);
       }
       created++;
     } catch (err) {
+      // If the household row landed but a downstream contact insert
+      // threw, roll the household back so we don't leave an empty
+      // contactless household behind. Swallow rollback failures — we
+      // still want to surface the original error to the caller.
+      if (householdId) {
+        try {
+          await deleteCrmHousehold(householdId);
+          orphansCleanedUp++;
+        } catch {
+          // best-effort cleanup; original error wins
+        }
+      }
       const msg = err instanceof Error ? err.message : String(err);
       errors.push({ rowIndex: i, messages: [msg] });
     }
@@ -326,12 +369,13 @@ export async function commit(
     resourceType: "crm_import",
     resourceId: `${firmId}:${Date.now()}`,
     firmId,
-    metadata: { created, skipped, errorCount: errors.length },
+    metadata: {
+      created,
+      skipped,
+      errorCount: errors.length,
+      ...(orphansCleanedUp > 0 ? { orphansCleanedUp } : {}),
+    },
   });
 
   return { created, skipped, errors };
 }
-
-// Convenience re-export so callers can clean up post-test household
-// rows without re-importing the schema themselves.
-export const __testing = { crmHouseholds, db, eq };

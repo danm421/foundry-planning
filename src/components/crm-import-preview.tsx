@@ -38,6 +38,17 @@ export function CrmImportPreview({
         <Stat label="Parse errors" value={dryRun.errors.length} tone="crit" />
       </div>
 
+      {dryRun.partialDedupCorpus && (
+        <div
+          role="status"
+          className="rounded-[var(--radius-sm)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300"
+        >
+          Duplicate detection was checked against only the first 1,000 existing
+          households. Matches beyond that page may be missed — review the
+          imported rows after commit.
+        </div>
+      )}
+
       {dryRun.errors.length > 0 && (
         <section>
           <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wider text-ink-3">
@@ -129,6 +140,7 @@ export function CrmImportPreview({
                           decision={d}
                           onChange={(next) => updateDecision(idx, next)}
                           row={d.row}
+                          rowIndex={idx}
                         />
                       ) : (
                         <span className="text-accent">Create new</span>
@@ -156,6 +168,7 @@ interface DuplicateResolverProps {
   matches: DryRunMatch[];
   decision: Decision;
   row: ProposedHousehold;
+  rowIndex: number;
   onChange: (next: Decision) => void;
 }
 
@@ -163,13 +176,18 @@ function DuplicateResolver({
   matches,
   decision,
   row,
+  rowIndex,
   onChange,
 }: DuplicateResolverProps) {
+  // Shared name groups the two radios so keyboard arrow keys move
+  // between them and screen readers announce them as a single choice.
+  const groupName = `decision-${rowIndex}`;
   return (
     <div className="space-y-2">
       <label className="flex items-center gap-2 text-[13px]">
         <input
           type="radio"
+          name={groupName}
           checked={decision.action === "create"}
           onChange={() => onChange({ action: "create", row })}
           className="accent-current text-accent"
@@ -179,6 +197,7 @@ function DuplicateResolver({
       <label className="flex items-center gap-2 text-[13px]">
         <input
           type="radio"
+          name={groupName}
           checked={decision.action === "skip"}
           onChange={() =>
             onChange({
