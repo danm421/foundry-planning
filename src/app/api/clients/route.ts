@@ -28,22 +28,30 @@ export async function GET() {
     const firmId = await requireOrgId();
 
     // Tight projection: the list UI only needs identity + the fields
-     // shown in the table. Full DOB, spouse DOB, filing status, and the
-     // internal advisorId Clerk user reference are held back.
+    // shown in the table. Identity (firstName/lastName/spouse names) now lives
+    // on CRM contacts joined via crm_household_id. Sort order keys off the
+    // primary contact's last+first name.
+    const primaryContact = crmHouseholdContacts;
     const rows = await db
       .select({
         id: clients.id,
-        firstName: clients.firstName,
-        lastName: clients.lastName,
-        spouseName: clients.spouseName,
-        spouseLastName: clients.spouseLastName,
+        firstName: primaryContact.firstName,
+        lastName: primaryContact.lastName,
         retirementAge: clients.retirementAge,
         planEndAge: clients.planEndAge,
         createdAt: clients.createdAt,
+        crmHouseholdId: clients.crmHouseholdId,
       })
       .from(clients)
+      .leftJoin(
+        primaryContact,
+        and(
+          eq(primaryContact.householdId, clients.crmHouseholdId),
+          eq(primaryContact.role, "primary"),
+        ),
+      )
       .where(eq(clients.firmId, firmId))
-      .orderBy(asc(clients.lastName), asc(clients.firstName));
+      .orderBy(asc(primaryContact.lastName), asc(primaryContact.firstName));
 
     return NextResponse.json(rows);
   } catch (err) {
@@ -119,13 +127,9 @@ export async function POST(request: NextRequest) {
     const firstName = primary.firstName;
     const lastName = primary.lastName;
     const dateOfBirth = primary.dateOfBirth;
-    const email = primary.email ?? null;
-    const address = formatAddress(primary);
     const spouseName = spouse?.firstName ?? null;
     const spouseLastName = spouse?.lastName ?? null;
     const spouseDob = spouse?.dateOfBirth ?? null;
-    const spouseEmail = spouse?.email ?? null;
-    const spouseAddress = spouse ? formatAddress(spouse) : null;
 
     // Plan horizon is the year the last spouse dies; plan_end_age is derived
     // from client + spouse life expectancies.
@@ -138,31 +142,22 @@ export async function POST(request: NextRequest) {
 
     const currentYear = new Date().getFullYear();
 
-    // Insert client — dual-writes legacy identity columns from the CRM contacts.
+    // Insert client — identity lives on CRM contacts (linked via crmHouseholdId),
+    // so the clients row only carries planning fields.
     const [client] = await db
       .insert(clients)
       .values({
         firmId,
         advisorId: userId,
         crmHouseholdId,
-        firstName,
-        lastName,
-        dateOfBirth,
         retirementAge: Number(retirementAge),
         retirementMonth: retirementMonth != null ? Number(retirementMonth) : 1,
         planEndAge,
         lifeExpectancy: Number(lifeExpectancy),
         filingStatus,
-        spouseName,
-        spouseLastName,
-        spouseDob,
         spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
         spouseRetirementMonth: spouseRetirementMonth != null ? Number(spouseRetirementMonth) : null,
         spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
-        email,
-        address,
-        spouseEmail,
-        spouseAddress,
       })
       .returning();
 
@@ -317,15 +312,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Flatten a CRM contact's structured address into the single-line legacy
-// `address` column the planning UI still expects. Phase 9 drops this column.
-function formatAddress(contact: typeof crmHouseholdContacts.$inferSelect): string | null {
-  const parts = [
-    contact.addressLine1,
-    contact.addressLine2,
-    [contact.city, contact.state].filter(Boolean).join(", "),
-    contact.postalCode,
-  ].filter((p): p is string => Boolean(p && p.trim()));
-  if (parts.length === 0) return null;
-  return parts.join("\n");
-}

@@ -7,52 +7,43 @@ const row: typeof clients.$inferSelect = {
   id: "cli1",
   firmId: "firm1",
   advisorId: "user_1",
-  firstName: "Jane",
-  lastName: "Doe",
-  dateOfBirth: "1980-01-15",
   retirementAge: 65,
   retirementMonth: 1,
   planEndAge: 95,
   lifeExpectancy: 92,
-  spouseName: "John",
-  spouseLastName: "Doe",
-  spouseDob: "1981-03-22",
   spouseRetirementAge: 67,
   spouseRetirementMonth: null,
   spouseLifeExpectancy: 90,
   filingStatus: "married_joint",
-  email: "jane@example.com",
-  address: "123 Main St",
-  spouseEmail: "john@example.com",
-  spouseAddress: null,
   onboardingState: {},
   onboardingCompletedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
-  crmHouseholdId: null,
+  crmHouseholdId: "00000000-0000-0000-0000-000000000000",
 };
 
 describe("toClientSnapshot", () => {
-  it("drops PII fields", () => {
+  it("does not project identity or PII fields (those live on CRM contacts)", () => {
     const snap = toClientSnapshot(row);
+    expect(snap).not.toHaveProperty("firstName");
+    expect(snap).not.toHaveProperty("lastName");
+    expect(snap).not.toHaveProperty("dateOfBirth");
     expect(snap).not.toHaveProperty("email");
     expect(snap).not.toHaveProperty("address");
+    expect(snap).not.toHaveProperty("spouseName");
+    expect(snap).not.toHaveProperty("spouseLastName");
+    expect(snap).not.toHaveProperty("spouseDob");
     expect(snap).not.toHaveProperty("spouseEmail");
     expect(snap).not.toHaveProperty("spouseAddress");
   });
 
-  it("keeps identity and plan-horizon fields", () => {
+  it("keeps planning fields", () => {
     const snap = toClientSnapshot(row);
     expect(snap).toMatchObject({
-      firstName: "Jane",
-      lastName: "Doe",
-      dateOfBirth: "1980-01-15",
       retirementAge: 65,
+      retirementMonth: 1,
       planEndAge: 95,
       lifeExpectancy: 92,
-      spouseName: "John",
-      spouseLastName: "Doe",
-      spouseDob: "1981-03-22",
       spouseRetirementAge: 67,
       spouseLifeExpectancy: 90,
       filingStatus: "married_joint",

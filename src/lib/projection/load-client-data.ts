@@ -107,28 +107,32 @@ export const loadClientDataWithContext = cache(
       throw new ClientNotFoundError(clientId);
     }
 
-    // CRM contacts — identity fields (first/last name, DOB) source from here.
-    // Fallback to legacy `clients.*` columns when no CRM household is linked
-    // (e.g. pure-fixture tests). Phase 9 tightens this to required.
-    const crmContactRows = client.crmHouseholdId
-      ? await db
-          .select()
-          .from(crmHouseholdContacts)
-          .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
-      : [];
+    // CRM contacts — sole source of truth for identity fields (first/last
+    // name, DOB). Schema guarantees crm_household_id is NOT NULL on the
+    // clients row, and the contacts loader's contract is that a primary
+    // contact with a date of birth exists.
+    const crmContactRows = await db
+      .select()
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
     const primaryContact = crmContactRows.find((c) => c.role === "primary") ?? null;
     const spouseContact = crmContactRows.find((c) => c.role === "spouse") ?? null;
 
-    const clientFirstName = primaryContact?.firstName ?? client.firstName;
-    const clientLastName = primaryContact?.lastName ?? client.lastName;
-    const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
-    if (!clientDob) {
+    if (!primaryContact) {
       throw new ProjectionInputError(
-        `Client ${clientId} has no date of birth (primary contact + legacy column both empty)`,
+        `Client ${clientId} CRM household ${client.crmHouseholdId} has no primary contact`,
       );
     }
-    const spouseFirstName = spouseContact?.firstName ?? client.spouseName ?? undefined;
-    const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob ?? undefined;
+    const clientDob = primaryContact.dateOfBirth;
+    if (!clientDob) {
+      throw new ProjectionInputError(
+        `Client ${clientId} primary contact has no date of birth`,
+      );
+    }
+    const clientFirstName = primaryContact.firstName;
+    const clientLastName = primaryContact.lastName;
+    const spouseFirstName = spouseContact?.firstName ?? undefined;
+    const spouseDob = spouseContact?.dateOfBirth ?? undefined;
 
     // Get base case scenario
     const [scenario] = await db
@@ -257,7 +261,13 @@ export const loadClientDataWithContext = cache(
     // ending at retirement stops the year *before* the retirement year and
     // doesn't overlap with streams starting at retirement.
     const refMilestones = buildClientMilestones(
-      client,
+      {
+        dateOfBirth: clientDob,
+        retirementAge: client.retirementAge,
+        planEndAge: client.planEndAge,
+        spouseDob: spouseDob ?? null,
+        spouseRetirementAge: client.spouseRetirementAge ?? null,
+      },
       settings.planStartYear,
       settings.planEndYear,
     );
