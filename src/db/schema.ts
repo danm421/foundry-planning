@@ -622,16 +622,26 @@ export const entityOwners = pgTable(
     entityId: uuid("entity_id")
       .notNull()
       .references(() => entities.id, { onDelete: "cascade" }),
-    familyMemberId: uuid("family_member_id")
-      .notNull()
-      .references(() => familyMembers.id, { onDelete: "cascade" }),
+    // Exactly one of familyMemberId / ownerEntityId must be non-null (enforced by CHECK).
+    familyMemberId: uuid("family_member_id").references(() => familyMembers.id, {
+      onDelete: "cascade",
+    }),
+    ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
     percent: decimal("percent", { precision: 6, scale: 4 }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => ({
+    exactlyOneOwner: check(
+      "entity_owners_one_owner",
+      sql`(${t.familyMemberId} IS NOT NULL)::int
+        + (${t.ownerEntityId} IS NOT NULL)::int = 1`,
+    ),
     uniqOwner: unique("entity_owners_uniq")
-      .on(t.entityId, t.familyMemberId),
+      .on(t.entityId, t.familyMemberId, t.ownerEntityId)
+      .nullsNotDistinct(),
   }),
 );
 
