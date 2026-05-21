@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { db } from "@/db";
 import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { searchClients, countClientsForFirm } from "../client-search";
 
 const FIRM_A = "firm_search_a";
