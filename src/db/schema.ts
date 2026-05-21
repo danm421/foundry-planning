@@ -363,6 +363,22 @@ export const crmActivityKindEnum = pgEnum("crm_activity_kind", [
   "planning_link",
 ]);
 
+// ── CRM tables ───────────────────────────────────────────────────────────────
+
+export const crmHouseholds = pgTable("crm_households", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  advisorId: text("advisor_id").notNull(),
+  name: text("name").notNull(),
+  status: crmHouseholdStatusEnum("status").notNull().default("prospect"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_households_firm_idx").on(t.firmId),
+  index("crm_households_firm_status_idx").on(t.firmId, t.status),
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
