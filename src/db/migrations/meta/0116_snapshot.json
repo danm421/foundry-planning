@@ -1,6 +1,6 @@
 {
-  "id": "17f4f73d-d2d8-43b2-b0a1-7a4a5cef8e02",
-  "prevId": "e45caca7-88de-4c40-a249-31993fde5d30",
+  "id": "2e050dfe-494e-4c47-a5ad-699c2bab7590",
+  "prevId": "c17da0c0-ee46-43cb-b2e6-a633fcd1d321",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -410,37 +410,6 @@
           "notNull": true,
           "default": "'jtwros'"
         },
-        "note_interest_rate": {
-          "name": "note_interest_rate",
-          "type": "numeric(7, 4)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "note_term_months": {
-          "name": "note_term_months",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "note_start_year": {
-          "name": "note_start_year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "note_payment_type": {
-          "name": "note_payment_type",
-          "type": "note_payment_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "note_linked_trust_entity_id": {
-          "name": "note_linked_trust_entity_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source": {
           "name": "source",
           "type": "source",
@@ -498,19 +467,6 @@
           "tableTo": "model_portfolios",
           "columnsFrom": [
             "model_portfolio_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "accounts_note_linked_trust_entity_id_entities_id_fk": {
-          "name": "accounts_note_linked_trust_entity_id_entities_id_fk",
-          "tableFrom": "accounts",
-          "tableTo": "entities",
-          "columnsFrom": [
-            "note_linked_trust_entity_id"
           ],
           "columnsTo": [
             "id"
@@ -3067,7 +3023,13 @@
           "name": "family_member_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "owner_entity_id": {
+          "name": "owner_entity_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "percent": {
           "name": "percent",
@@ -3117,21 +3079,40 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "entity_owners_owner_entity_id_entities_id_fk": {
+          "name": "entity_owners_owner_entity_id_entities_id_fk",
+          "tableFrom": "entity_owners",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "owner_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "entity_owners_uniq": {
           "name": "entity_owners_uniq",
-          "nullsNotDistinct": false,
+          "nullsNotDistinct": true,
           "columns": [
             "entity_id",
-            "family_member_id"
+            "family_member_id",
+            "owner_entity_id"
           ]
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "entity_owners_one_owner": {
+          "name": "entity_owners_one_owner",
+          "value": "(\"entity_owners\".\"family_member_id\" IS NOT NULL)::int\n        + (\"entity_owners\".\"owner_entity_id\" IS NOT NULL)::int = 1"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.expense_schedule_overrides": {
@@ -4032,6 +4013,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "business_entity_id": {
+          "name": "business_entity_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "percent": {
           "name": "percent",
           "type": "numeric(6, 4)",
@@ -4316,6 +4303,19 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "gifts_business_entity_id_entities_id_fk": {
+          "name": "gifts_business_entity_id_entities_id_fk",
+          "tableFrom": "gifts",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "business_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "gifts_parent_gift_id_fk": {
           "name": "gifts_parent_gift_id_fk",
           "tableFrom": "gifts",
@@ -4336,7 +4336,7 @@
       "checkConstraints": {
         "gifts_event_kind": {
           "name": "gifts_event_kind",
-          "value": "(\n        (\"gifts\".\"amount\" IS NOT NULL AND \"gifts\".\"account_id\" IS NULL AND \"gifts\".\"liability_id\" IS NULL AND \"gifts\".\"percent\" IS NULL)\n        OR\n        ((\"gifts\".\"account_id\" IS NOT NULL OR \"gifts\".\"liability_id\" IS NOT NULL)\n         AND \"gifts\".\"percent\" IS NOT NULL\n         AND NOT (\"gifts\".\"account_id\" IS NOT NULL AND \"gifts\".\"liability_id\" IS NOT NULL))\n      )"
+          "value": "(\n        (\"gifts\".\"amount\" IS NOT NULL AND \"gifts\".\"account_id\" IS NULL AND \"gifts\".\"liability_id\" IS NULL AND \"gifts\".\"percent\" IS NULL AND \"gifts\".\"business_entity_id\" IS NULL)\n        OR\n        ((\"gifts\".\"account_id\" IS NOT NULL OR \"gifts\".\"liability_id\" IS NOT NULL)\n         AND \"gifts\".\"percent\" IS NOT NULL\n         AND NOT (\"gifts\".\"account_id\" IS NOT NULL AND \"gifts\".\"liability_id\" IS NOT NULL)\n         AND \"gifts\".\"business_entity_id\" IS NULL)\n        OR\n        (\"gifts\".\"business_entity_id\" IS NOT NULL AND \"gifts\".\"percent\" IS NOT NULL AND \"gifts\".\"account_id\" IS NULL AND \"gifts\".\"liability_id\" IS NULL AND \"gifts\".\"recipient_entity_id\" IS NOT NULL)\n      )"
         }
       },
       "isRLSEnabled": false
@@ -6186,6 +6186,19 @@
           "notNull": true,
           "default": "'0.37'"
         },
+        "surplus_spend_pct": {
+          "name": "surplus_spend_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "surplus_save_account_id": {
+          "name": "surplus_save_account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -6274,6 +6287,19 @@
           "tableTo": "model_portfolios",
           "columnsFrom": [
             "selected_benchmark_portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "plan_settings_surplus_save_account_id_accounts_id_fk": {
+          "name": "plan_settings_surplus_save_account_id_accounts_id_fk",
+          "tableFrom": "plan_settings",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "surplus_save_account_id"
           ],
           "columnsTo": [
             "id"
@@ -9535,7 +9561,6 @@
         "529",
         "trust",
         "other",
-        "promissory_note",
         "primary_residence",
         "rental_property",
         "commercial_property",

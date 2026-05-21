@@ -1,0 +1,3 @@
+ALTER TABLE "plan_settings" ADD COLUMN "surplus_spend_pct" numeric(5, 4) DEFAULT '0' NOT NULL;--> statement-breakpoint
+ALTER TABLE "plan_settings" ADD COLUMN "surplus_save_account_id" uuid;--> statement-breakpoint
+ALTER TABLE "plan_settings" ADD CONSTRAINT "plan_settings_surplus_save_account_id_accounts_id_fk" FOREIGN KEY ("surplus_save_account_id") REFERENCES "public"."accounts"("id") ON DELETE set null ON UPDATE no action;
