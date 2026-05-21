@@ -181,7 +181,18 @@ export type AuditAction =
   | "firm.founder_initialized"
   | "firm.branding_logo_changed"
   | "firm.branding_favicon_changed"
-  | "firm.branding_color_changed";
+  | "firm.branding_color_changed"
+  // CRM (lightweight household / contact / account records that may or
+  // may not be linked to a planning client).
+  | "crm.household.create"
+  | "crm.household.update"
+  | "crm.household.delete"
+  | "crm.contact.create"
+  | "crm.contact.update"
+  | "crm.contact.delete"
+  | "crm.account.create"
+  | "crm.account.update"
+  | "crm.account.delete";
 
 type Args = {
   action: AuditAction;
