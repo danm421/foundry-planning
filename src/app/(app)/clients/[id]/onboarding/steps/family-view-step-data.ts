@@ -65,10 +65,20 @@ export async function loadFamilyViewStepData(
     entityIds.length > 0
       ? await db.select().from(entityOwners).where(inArray(entityOwners.entityId, entityIds))
       : [];
-  const ownersByEntity = new Map<string, { kind: "family_member"; familyMemberId: string; percent: number }[]>();
+  const ownersByEntity = new Map<
+    string,
+    Array<
+      | { kind: "family_member"; familyMemberId: string; percent: number }
+      | { kind: "entity"; entityId: string; percent: number }
+    >
+  >();
   for (const o of ownerRows) {
     const arr = ownersByEntity.get(o.entityId) ?? [];
-    arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
+    if (o.familyMemberId) {
+      arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
+    } else if (o.ownerEntityId) {
+      arr.push({ kind: "entity", entityId: o.ownerEntityId, percent: parseFloat(o.percent) });
+    }
     ownersByEntity.set(o.entityId, arr);
   }
 

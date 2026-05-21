@@ -8,14 +8,14 @@ import type { ClientData, EntitySummary } from "@/engine/types";
 
 function tree(entities: EntitySummary[]): ClientData {
   return {
-    client: {} as any,
+    client: {} as unknown as never,
     accounts: [],
     incomes: [],
     expenses: [],
     liabilities: [],
     savingsRules: [],
     withdrawalStrategy: [],
-    planSettings: {} as any,
+    planSettings: {} as unknown as never,
     entities,
     giftEvents: [],
   } as unknown as ClientData;
