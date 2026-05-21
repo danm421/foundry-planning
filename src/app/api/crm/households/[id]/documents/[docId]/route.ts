@@ -16,11 +16,19 @@ export const maxDuration = 30;
  */
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ docId: string }> },
+  { params }: { params: Promise<{ id: string; docId: string }> },
 ) {
   try {
-    const { docId } = await params;
+    const { id, docId } = await params;
     const doc = await getCrmDocument(docId);
+
+    // Defense-in-depth: the URL's householdId must match the doc's
+    // householdId. Without this, a same-firm caller could request a doc
+    // from a different household via this URL. Return 404 (not 403) to
+    // avoid leaking the existence of cross-household docs.
+    if (doc.householdId !== id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const result = await get(doc.storageKey, { access: "private" });
     if (!result || result.statusCode !== 200 || !result.stream) {
@@ -57,10 +65,19 @@ export async function GET(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: Promise<{ docId: string }> },
+  { params }: { params: Promise<{ id: string; docId: string }> },
 ) {
   try {
-    const { docId } = await params;
+    const { id, docId } = await params;
+
+    // Defense-in-depth: fetch first to verify the URL's householdId
+    // matches the doc's. Same rationale as the GET handler — return 404
+    // on mismatch so we don't leak cross-household doc existence.
+    const doc = await getCrmDocument(docId);
+    if (doc.householdId !== id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     await deleteCrmDocument(docId);
     return NextResponse.json({ ok: true });
   } catch (err) {

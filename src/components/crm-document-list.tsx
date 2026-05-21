@@ -7,6 +7,7 @@ import {
   FileTextIcon,
   TrashIcon,
 } from "@/components/icons";
+import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
 
 export type CrmDocumentRow = {
   id: string;
@@ -23,8 +24,6 @@ export type CrmDocumentRow = {
 interface Props {
   householdId: string;
 }
-
-const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
 function humanSize(bytes: number | null): string {
   if (bytes == null || !Number.isFinite(bytes)) return "—";
@@ -92,7 +91,7 @@ export function CrmDocumentList({ householdId }: Props) {
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > MAX_SIZE_BYTES) {
+    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
       setError(
         `${file.name} is too large. Maximum size is 10MB.`,
       );

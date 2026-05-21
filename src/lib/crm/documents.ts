@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
@@ -6,6 +7,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
+import { MAX_DOCUMENT_SIZE_BYTES } from "./document-constants";
 
 /**
  * CRM household document storage. Mirrors `src/lib/imports/blob.ts` but
@@ -23,7 +25,9 @@ import { recordActivity } from "./activity";
 const SAFE_FILENAME_RE = /[^A-Za-z0-9._-]/g;
 const DOT_RUN_RE = /\.{2,}/g;
 
-export const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+export { MAX_DOCUMENT_SIZE_BYTES } from "./document-constants";
+/** @deprecated Use `MAX_DOCUMENT_SIZE_BYTES`. Kept as an alias for older imports. */
+export const MAX_SIZE_BYTES = MAX_DOCUMENT_SIZE_BYTES;
 export const STORAGE_PROVIDER = "vercel-blob";
 
 function sanitizeFilename(name: string): string {
@@ -46,7 +50,9 @@ export async function uploadCrmDocument(
   const { userId } = await auth();
 
   const safe = sanitizeFilename(file.name || "document");
-  const storageKey = `crm/${householdId}/${Date.now()}-${safe}`;
+  // Include a random UUID segment so two uploads of the same filename
+  // landing in the same millisecond can't collide with `addRandomSuffix: false`.
+  const storageKey = `crm/${householdId}/${Date.now()}-${randomUUID()}-${safe}`;
 
   const result = await put(storageKey, file, {
     access: "private",

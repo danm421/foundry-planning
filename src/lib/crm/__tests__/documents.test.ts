@@ -110,7 +110,7 @@ describe("uploadCrmDocument", () => {
     expect(doc.uploadedBy).toBe("test_user_documents");
     expect(doc.storageProvider).toBe("vercel-blob");
     expect(doc.storageKey).toMatch(
-      new RegExp(`^crm/${h.id}/\\d+-Statement_Q1\\.pdf$`),
+      new RegExp(`^crm/${h.id}/\\d+-[0-9a-f-]+-Statement_Q1\\.pdf$`),
     );
 
     // Blob.put was called with the right options.
