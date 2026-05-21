@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { runProjectionWithEvents } from "@/engine/projection";
@@ -28,6 +28,22 @@ export async function POST(
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // CRM contacts — identity source.
+    const contactRows = client.crmHouseholdId
+      ? await db
+          .select()
+          .from(crmHouseholdContacts)
+          .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
+      : [];
+    const primaryContact = contactRows.find((c) => c.role === "primary") ?? null;
+    const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
+
+    const clientFirstName = primaryContact?.firstName ?? client.firstName;
+    const clientLastName = primaryContact?.lastName ?? client.lastName;
+    const clientDob = primaryContact?.dateOfBirth ?? client.dateOfBirth;
+    const spouseFirstName = spouseContact?.firstName ?? client.spouseName;
+    const spouseDob = spouseContact?.dateOfBirth ?? client.spouseDob;
+
     const url = new URL(request.url);
     const body = await request.json().catch(() => ({}));
 
@@ -52,16 +68,16 @@ export async function POST(
       projection,
       clientData: apiData,
       ownerNames: {
-        clientName: client.firstName ?? "Client",
-        spouseName: client.spouseName ?? null,
+        clientName: clientFirstName ?? "Client",
+        spouseName: spouseFirstName ?? null,
       },
       ownerDobs: {
-        clientDob: client.dateOfBirth,
-        spouseDob: client.spouseDob ?? null,
+        clientDob,
+        spouseDob: spouseDob ?? null,
       },
     });
 
-    const clientName = [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";
+    const clientName = [clientFirstName, clientLastName].filter(Boolean).join(" ") || "Client";
     const generatedAt = new Date().toLocaleString("en-US", {
       year: "numeric",
       month: "short",
@@ -88,7 +104,7 @@ export async function POST(
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="liquidity-${(client.lastName ?? "client").toLowerCase()}.pdf"`,
+        "Content-Disposition": `attachment; filename="liquidity-${(clientLastName ?? "client").toLowerCase()}.pdf"`,
         "Cache-Control": "no-store",
       },
     });

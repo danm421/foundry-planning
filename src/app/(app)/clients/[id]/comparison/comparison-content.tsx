@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { scenarios as scenariosTable, clients } from "@/db/schema";
+import { scenarios as scenariosTable, clients, crmHouseholdContacts } from "@/db/schema";
 import {
   defaultV5,
   listClientComparisons,
@@ -15,13 +15,14 @@ interface Props {
 }
 
 export async function ComparisonContent({ clientId, firmId }: Props) {
-  const [client, scenarios, comparisons] = await Promise.all([
+  const [clientRow, scenarios, comparisons] = await Promise.all([
     db
       .select({
-        firstName: clients.firstName,
-        lastName: clients.lastName,
-        dateOfBirth: clients.dateOfBirth,
+        legacyFirstName: clients.firstName,
+        legacyLastName: clients.lastName,
+        legacyDob: clients.dateOfBirth,
         retirementAge: clients.retirementAge,
+        crmHouseholdId: clients.crmHouseholdId,
       })
       .from(clients)
       .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
@@ -37,7 +38,30 @@ export async function ComparisonContent({ clientId, firmId }: Props) {
     listClientComparisons(clientId, firmId),
   ]);
 
-  if (!client) notFound();
+  if (!clientRow) notFound();
+
+  // CRM contacts — identity source.
+  const [primaryContact] = clientRow.crmHouseholdId
+    ? await db
+        .select({
+          firstName: crmHouseholdContacts.firstName,
+          lastName: crmHouseholdContacts.lastName,
+          dateOfBirth: crmHouseholdContacts.dateOfBirth,
+        })
+        .from(crmHouseholdContacts)
+        .where(
+          and(
+            eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId),
+            eq(crmHouseholdContacts.role, "primary"),
+          ),
+        )
+    : [];
+  const client = {
+    firstName: primaryContact?.firstName ?? clientRow.legacyFirstName,
+    lastName: primaryContact?.lastName ?? clientRow.legacyLastName,
+    dateOfBirth: primaryContact?.dateOfBirth ?? clientRow.legacyDob,
+    retirementAge: clientRow.retirementAge,
+  };
 
   const scenarioLookup: { id: string; name: string }[] = [
     { id: "base", name: "Base case" },
