@@ -194,7 +194,9 @@ export type AuditAction =
   | "crm.account.update"
   | "crm.account.delete"
   | "crm.import.preview"
-  | "crm.import.commit";
+  | "crm.import.commit"
+  | "crm.document.create"
+  | "crm.document.delete";
 
 type Args = {
   action: AuditAction;
