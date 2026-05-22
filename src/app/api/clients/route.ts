@@ -17,7 +17,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription } from "@/lib/authz";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
-import { clientCreateSchema } from "@/lib/schemas/resources";
+import { clientCreateSchema, clientContactInfoSchema } from "@/lib/schemas/resources";
 import { recordAudit } from "@/lib/audit";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 
@@ -25,13 +25,12 @@ import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 // body and atomically mirror them onto the CRM primary/spouse contact rows
 // inside the same transaction as the clients insert — so a partial failure
 // can't leave the planning client ahead of (or behind) its CRM contact info.
-const CONTACT_FIELDS = [
-  "email", "phone", "mobile",
-  "addressLine1", "addressLine2", "city", "state", "postalCode", "country",
-  "spouseEmail", "spousePhone", "spouseMobile",
-  "spouseAddressLine1", "spouseAddressLine2", "spouseCity", "spouseState",
-  "spousePostalCode", "spouseCountry",
-] as const;
+//
+// Single source of truth: the zod schema. Adding a contact field to
+// clientContactInfoSchema auto-flows into this POST mirror allowlist.
+const CONTACT_FIELDS = Object.keys(clientContactInfoSchema.shape) as Array<
+  keyof typeof clientContactInfoSchema.shape
+>;
 
 export const dynamic = "force-dynamic";
 

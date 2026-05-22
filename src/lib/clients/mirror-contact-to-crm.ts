@@ -1,9 +1,9 @@
 import { and, eq } from "drizzle-orm";
-import { db as defaultDb } from "@/db";
+import { db } from "@/db";
 import { crmHouseholdContacts } from "@/db/schema";
 
 // Drizzle transaction handle — same convention used in src/lib/ownership.ts.
-type Tx = Parameters<Parameters<typeof defaultDb.transaction>[0]>[0];
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Pushes any identity + contact fields in the patch through to the CRM
