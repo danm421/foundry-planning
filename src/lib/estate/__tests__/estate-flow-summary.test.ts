@@ -472,6 +472,123 @@ describe("buildEstateFlowSummary — heir composition rule 1: at-death receipts"
   });
 });
 
+describe("buildEstateFlowSummary — heir composition rule 2: bequest to trust", () => {
+  it("attributes a trust bequest to its single 100% remainder beneficiary as inTrust", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "snt",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Special Needs Trust FBO Kevin",
+        remainderBeneficiaries: [
+          {
+            familyMemberId: "fm-kevin",
+            percentage: 1,
+            distributionForm: "in_trust",
+          },
+        ],
+      },
+    ] as ClientData["entities"];
+
+    const firstDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2028,
+      recipients: [
+        group({
+          key: "snt",
+          kind: "entity",
+          recipientId: "snt",
+          label: "Special Needs Trust FBO Kevin",
+          byMechanism: [mech("will", [asset("Joint Account", 50_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ firstDeath }),
+      clientData,
+    })!;
+
+    const kevin = summary.heirBoxes.find((h) =>
+      h.recipientLabel.includes("Kevin"),
+    )!;
+    expect(kevin).toBeDefined();
+    expect(kevin.inTrust).toBe(50_000);
+    expect(kevin.outright).toBe(0);
+    expect(kevin.total).toBe(50_000);
+  });
+
+  it("splits a trust bequest equally between two remainder beneficiaries", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin", lastName: "Sample" },
+      { id: "fm-caroline", role: "child", firstName: "Caroline", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "ft",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Family Trust",
+        remainderBeneficiaries: [
+          {
+            familyMemberId: "fm-caroline",
+            percentage: 0.5,
+            distributionForm: "in_trust",
+          },
+          {
+            familyMemberId: "fm-kevin",
+            percentage: 0.5,
+            distributionForm: "in_trust",
+          },
+        ],
+      },
+    ] as ClientData["entities"];
+
+    const firstDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2028,
+      recipients: [
+        group({
+          key: "ft",
+          kind: "entity",
+          recipientId: "ft",
+          label: "Family Trust",
+          byMechanism: [mech("will", [asset("Cash", 100_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ firstDeath }),
+      clientData,
+    })!;
+
+    const kevin = summary.heirBoxes.find((h) =>
+      h.recipientLabel.includes("Kevin"),
+    )!;
+    const caroline = summary.heirBoxes.find((h) =>
+      h.recipientLabel.includes("Caroline"),
+    )!;
+    expect(kevin).toBeDefined();
+    expect(caroline).toBeDefined();
+    expect(kevin.inTrust).toBe(50_000);
+    expect(caroline.inTrust).toBe(50_000);
+    expect(kevin.outright).toBe(0);
+    expect(caroline.outright).toBe(0);
+  });
+});
+
 describe("buildEstateFlowSummary — first death sub-boxes", () => {
   it("emits taxes + trusts + inheritance_spouse for a married first death", () => {
     const clientData = emptyClientData();

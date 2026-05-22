@@ -5,7 +5,11 @@ import type {
   RecipientGroup,
   ReductionsLine,
 } from "@/lib/estate/transfer-report";
-import type { Account, ClientData } from "@/engine/types";
+import type {
+  Account,
+  ClientData,
+  RemainderBeneficiaryRef,
+} from "@/engine/types";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
@@ -296,6 +300,154 @@ function keyForGroup(g: RecipientGroup): string {
   return g.recipientId ?? `${g.recipientKind}:${g.recipientLabel}`;
 }
 
+interface TrustBeneficiarySplit {
+  recipientKey: string;
+  recipientLabel: string;
+  /** 0..1 — weights sum to 1.0 across the splits returned for a given trust. */
+  weight: number;
+}
+
+/**
+ * Resolve a family-member / household-role id to a display name.
+ * Falls back to the raw id when no match is found — keeps downstream rendering
+ * stable when client data is stale or hand-edited.
+ */
+function familyMemberLabel(id: string, clientData: ClientData): string {
+  if (id === "client") {
+    const c = clientData.client;
+    return `${c.firstName}${c.lastName ? " " + c.lastName : ""}`;
+  }
+  if (id === "spouse") {
+    const c = clientData.client;
+    if (c.spouseName) return c.spouseName;
+    const spouseFm = (clientData.familyMembers ?? []).find(
+      (f) => f.role === "spouse",
+    );
+    if (spouseFm) {
+      return `${spouseFm.firstName}${spouseFm.lastName ? " " + spouseFm.lastName : ""}`;
+    }
+    return id;
+  }
+  const fm = (clientData.familyMembers ?? []).find((f) => f.id === id);
+  if (fm) {
+    return `${fm.firstName}${fm.lastName ? " " + fm.lastName : ""}`;
+  }
+  return id;
+}
+
+function externalBeneficiaryLabel(id: string, clientData: ClientData): string {
+  const ext = (clientData.externalBeneficiaries ?? []).find((e) => e.id === id);
+  return ext?.name ?? id;
+}
+
+/**
+ * Resolve a trust entity to its beneficiary splits for heir-box attribution.
+ * Prefers `remainderBeneficiaries`; falls back to `incomeBeneficiaries` when
+ * remainder is empty. Returns [] when neither is populated or the entity is
+ * not a trust.
+ *
+ * Weights are derived from explicit `percentage` when the sum is > 0; an
+ * equal split is used otherwise. Per-beneficiary identity prefers
+ * `familyMemberId`, then `externalBeneficiaryId`. Beneficiaries that point at
+ * another entity (`entityIdRef`) are skipped — chasing nested trusts is left
+ * to a later rule.
+ */
+function resolveTrustBeneficiaries(
+  entityId: string,
+  clientData: ClientData,
+): TrustBeneficiarySplit[] {
+  const entity = (clientData.entities ?? []).find((e) => e.id === entityId);
+  if (!entity || entity.entityType !== "trust") return [];
+
+  type BeneRef = RemainderBeneficiaryRef | {
+    familyMemberId?: string;
+    externalBeneficiaryId?: string;
+    entityId?: string;
+    householdRole?: "client" | "spouse";
+    percentage: number;
+  };
+
+  const remainder = entity.remainderBeneficiaries ?? [];
+  const income = entity.incomeBeneficiaries ?? [];
+  const source: BeneRef[] = remainder.length > 0 ? remainder : income;
+  if (source.length === 0) return [];
+
+  type Resolved = { key: string; label: string; percentage: number };
+  const resolved: Resolved[] = [];
+  for (const b of source) {
+    let key: string | null = null;
+    let label: string | null = null;
+    if (b.familyMemberId) {
+      key = b.familyMemberId;
+      label = familyMemberLabel(b.familyMemberId, clientData);
+    } else if (b.householdRole) {
+      key = b.householdRole;
+      label = familyMemberLabel(b.householdRole, clientData);
+    } else if (b.externalBeneficiaryId) {
+      key = b.externalBeneficiaryId;
+      label = externalBeneficiaryLabel(b.externalBeneficiaryId, clientData);
+    } else {
+      // entityIdRef / entityId — nested-trust attribution is out of scope here.
+      continue;
+    }
+    resolved.push({
+      key,
+      label,
+      percentage: typeof b.percentage === "number" ? b.percentage : 0,
+    });
+  }
+  if (resolved.length === 0) return [];
+
+  const pctSum = resolved.reduce((s, r) => s + r.percentage, 0);
+  const weights: number[] =
+    pctSum > 0
+      ? resolved.map((r) => r.percentage / pctSum)
+      : resolved.map(() => 1 / resolved.length);
+
+  return resolved.map((r, i) => ({
+    recipientKey: r.key,
+    recipientLabel: r.label,
+    weight: weights[i],
+  }));
+}
+
+/**
+ * Rule 2 — bequests with `recipientKind === "entity"` whose target entity is
+ * a trust are attributed to that trust's beneficiaries as `inTrust`. Each
+ * `g.netTotal` is apportioned by the beneficiary weights returned by
+ * `resolveTrustBeneficiaries`. Non-trust entity bequests (LLCs / S-corps /
+ * etc.) and trust bequests with no resolvable beneficiaries fall through —
+ * later rules pick them up.
+ */
+function collectTrustBequestsInTrust(
+  acc: Map<string, HeirAccumulator>,
+  death: DeathSectionData | null,
+  clientData: ClientData,
+): void {
+  if (!death) return;
+  const trustEntityIds = new Set(
+    (clientData.entities ?? [])
+      .filter((e) => e.entityType === "trust")
+      .map((e) => e.id),
+  );
+  for (const g of death.recipients) {
+    if (g.recipientKind !== "entity") continue;
+    if (!g.recipientId || !trustEntityIds.has(g.recipientId)) continue;
+    const splits = resolveTrustBeneficiaries(g.recipientId, clientData);
+    if (splits.length === 0) continue;
+    for (const s of splits) {
+      const entry = acc.get(s.recipientKey) ?? {
+        recipientKey: s.recipientKey,
+        recipientLabel: s.recipientLabel,
+        outright: 0,
+        inTrust: 0,
+      };
+      entry.inTrust += g.netTotal * s.weight;
+      acc.set(s.recipientKey, entry);
+    }
+  }
+}
+
 /**
  * Rule 1 — at-death receipts go to Outright for person-like recipients
  * (family_member / external_beneficiary / system_default). Accumulates
@@ -372,10 +524,13 @@ export function buildEstateFlowSummary(
   const outOfEstate = computeOutOfEstate(clientData);
 
   // Per-heir composition. Rule 1 populates `outright` from at-death receipts;
-  // rules 2-5 will layer on top of this same accumulator in subsequent tasks.
+  // rule 2 attributes trust bequests to the trust's beneficiaries as `inTrust`;
+  // rules 3-5 will layer on top of this same accumulator in subsequent tasks.
   const heirAcc = new Map<string, HeirAccumulator>();
   collectAtDeathOutright(heirAcc, reportData.firstDeath);
   collectAtDeathOutright(heirAcc, reportData.secondDeath);
+  collectTrustBequestsInTrust(heirAcc, reportData.firstDeath, clientData);
+  collectTrustBequestsInTrust(heirAcc, reportData.secondDeath, clientData);
   const heirBoxes = finalizeHeirBoxes(heirAcc);
 
   return {
