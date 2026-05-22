@@ -1,17 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { DeathOrderToggle } from "./report-controls/death-order-toggle";
-import { EstateFlowSankey } from "./estate-flow-sankey";
+import { EstateFlowSummaryView } from "./estate-flow-summary";
 import {
   buildEstateTransferReportData,
   type AsOfSelection,
 } from "@/lib/estate/transfer-report";
-import {
-  buildEstateFlowGraph,
-  layoutEstateFlowGraph,
-} from "@/lib/estate/estate-flow-sankey";
+import { buildEstateFlowSummary } from "@/lib/estate/estate-flow-summary";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -25,8 +22,6 @@ interface Props {
   ownerNames: { clientName: string; spouseName: string | null };
 }
 
-const CHART_HEIGHT = 520;
-
 export function EstateFlowChartTab({
   working,
   engineData,
@@ -39,25 +34,6 @@ export function EstateFlowChartTab({
   const [ordering, setOrdering] = useState<"primaryFirst" | "spouseFirst">(
     "primaryFirst",
   );
-  const [width, setWidth] = useState(900);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Track container width via ResizeObserver.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const w = entry.contentRect.width;
-      if (w > 0) setWidth(w);
-    });
-    observer.observe(el);
-    // Seed with the current layout width immediately.
-    const initialWidth = el.clientWidth;
-    if (initialWidth > 0) setWidth(initialWidth);
-    return () => observer.disconnect();
-  }, []);
 
   // Map AsOfValue → AsOfSelection (the real shape expected by transfer-report).
   const asOfSelection: AsOfSelection = useMemo(() => {
@@ -78,20 +54,15 @@ export function EstateFlowChartTab({
     [projection, asOfSelection, ordering, engineData, ownerNames],
   );
 
-  const graph = useMemo(
+  const summary = useMemo(
     () =>
-      buildEstateFlowGraph({
+      buildEstateFlowSummary({
         reportData,
         clientData: engineData,
         gifts: workingGifts,
         ownerNames,
       }),
     [reportData, engineData, workingGifts, ownerNames],
-  );
-
-  const layout = useMemo(
-    () => layoutEstateFlowGraph(graph, { width, height: CHART_HEIGHT }),
-    [graph, width],
   );
 
   // Derive years list and todayYear from the projection.
@@ -131,27 +102,8 @@ export function EstateFlowChartTab({
     [working.client.dateOfBirth, working.client.spouseDob],
   );
 
-  // Stage headers — 3-tuple required by EstateFlowSankey.
-  // Middle entry is "" for single filers; renderer skips empty headers.
-  const stageHeaders: [string, string, string] = [
-    "Owners",
-    isMarried ? "Surviving Spouse" : "",
-    "Inherited",
-  ];
-
-  if (reportData.isEmpty) {
-    return (
-      <div
-        ref={containerRef}
-        className="py-16 text-center text-sm text-gray-500"
-      >
-        No estate flow to show for this selection.
-      </div>
-    );
-  }
-
   return (
-    <div ref={containerRef} className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <AsOfDropdown
           years={projectionYears}
@@ -171,7 +123,7 @@ export function EstateFlowChartTab({
           />
         )}
       </div>
-      <EstateFlowSankey layout={layout} stageHeaders={stageHeaders} />
+      <EstateFlowSummaryView summary={summary} />
     </div>
   );
 }
