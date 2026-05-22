@@ -65,7 +65,7 @@ export function EstateFlowSummaryDetailPanel({ selected, onClose }: Props) {
           ✕
         </button>
       </header>
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="scrollbar-subtle flex-1 overflow-y-auto px-4 py-3">
         <PanelBody selected={selected} />
       </div>
     </aside>
