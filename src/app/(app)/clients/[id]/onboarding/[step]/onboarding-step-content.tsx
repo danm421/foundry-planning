@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import { isImportEligibleStep } from "@/lib/onboarding/import-sections";
 import type { OnboardingState, StepSlug } from "@/lib/onboarding/types";
@@ -41,9 +42,13 @@ export async function OnboardingStepContent({ clientId, firmId, step, completedA
   }
   const activeImportId = state.activeImportId ?? null;
 
+  const contacts = step === "household"
+    ? await getClientWithContacts(clientId, firmId)
+    : null;
+
   let body: React.ReactNode;
   if (step === "household") {
-    body = <HouseholdStep clientId={clientId} tree={effectiveTree} />;
+    body = <HouseholdStep clientId={clientId} tree={effectiveTree} contacts={contacts} />;
   } else if (step === "family") {
     body = <FamilyStep clientId={clientId} tree={effectiveTree} />;
   } else if (step === "entities") {

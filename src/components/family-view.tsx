@@ -13,6 +13,7 @@ import type { AccountFormInitial } from "./forms/add-account-form";
 import type { EntityFlowMode } from "@/engine/types";
 import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
+import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { type TrustSubType } from "@/lib/entities/trust";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
@@ -198,6 +199,8 @@ interface FamilyViewProps {
   /** Business entities (with polymorphic owners) for the trust-Assets picker. */
   initialFullBusinesses?: AssetsTabBusiness[];
   initialAssetFamilyMembers?: AssetsTabFamilyMember[];
+  /** Contact info from CRM contact rows; pre-populates the edit dialog. */
+  contacts?: ClientWithContacts | null;
   embed?: "page" | "wizard";
   /** When `embed === "wizard"`, only render this section. */
   section?: "household" | "family" | "entities" | "externals";
@@ -292,6 +295,7 @@ export default function FamilyView({
   initialFullExpenses,
   initialFullBusinesses,
   initialAssetFamilyMembers,
+  contacts,
   embed = "page",
   section,
 }: FamilyViewProps) {
@@ -339,6 +343,24 @@ export default function FamilyView({
     spouseRetirementAge: primary.spouseRetirementAge,
     spouseRetirementMonth: primary.spouseRetirementMonth ?? null,
     spouseLifeExpectancy: primary.spouseLifeExpectancy,
+    email:              contacts?.email              ?? null,
+    phone:              contacts?.phone              ?? null,
+    mobile:             contacts?.mobile             ?? null,
+    addressLine1:       contacts?.addressLine1       ?? null,
+    addressLine2:       contacts?.addressLine2       ?? null,
+    city:               contacts?.city               ?? null,
+    state:              contacts?.state              ?? null,
+    postalCode:         contacts?.postalCode         ?? null,
+    country:            contacts?.country            ?? null,
+    spouseEmail:        contacts?.spouseEmail        ?? null,
+    spousePhone:        contacts?.spousePhone        ?? null,
+    spouseMobile:       contacts?.spouseMobile       ?? null,
+    spouseAddressLine1: contacts?.spouseAddressLine1 ?? null,
+    spouseAddressLine2: contacts?.spouseAddressLine2 ?? null,
+    spouseCity:         contacts?.spouseCity         ?? null,
+    spouseState:        contacts?.spouseState        ?? null,
+    spousePostalCode:   contacts?.spousePostalCode   ?? null,
+    spouseCountry:      contacts?.spouseCountry      ?? null,
   };
 
   // Group members by relationship

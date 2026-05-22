@@ -24,6 +24,7 @@ import FamilyView, {
 import OpenItemsPanel from "@/components/open-items/open-items-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
 interface FamilyContentProps {
   clientId: string;
@@ -259,6 +260,8 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       notes: g.notes ?? null,
     }));
 
+  const contacts = await getClientWithContacts(id, firmId);
+
   const primary: PrimaryInfo = {
     firstName: effectiveClient.firstName,
     lastName: effectiveClient.lastName,
@@ -292,6 +295,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialFullExpenses={fullExpenses}
         initialFullBusinesses={fullBusinesses}
         initialAssetFamilyMembers={assetFamilyMembers}
+        contacts={contacts}
       />
       <OpenItemsPanel clientId={id} firmId={firmId} />
     </>
