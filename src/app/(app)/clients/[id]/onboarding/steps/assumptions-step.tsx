@@ -245,6 +245,8 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
         priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
         priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
+        surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
+        surplusSaveAccountId: settings.surplusSaveAccountId,
       }}
       resolvedInflationRate={resolvedInflationRate}
       hasInflationAssetClass={firmInflationAc != null}

@@ -105,6 +105,8 @@ export async function PUT(
       modelPortfolioIdRetirement,
       selectedBenchmarkPortfolioId,
       inflationRateSource,
+      surplusSpendPct,
+      surplusSaveAccountId,
     } = body;
 
     if (selectedBenchmarkPortfolioId) {
@@ -186,6 +188,14 @@ export async function PUT(
       );
     }
 
+    if (typeof surplusSpendPct === "number" &&
+        (surplusSpendPct < 0 || surplusSpendPct > 1)) {
+      return NextResponse.json(
+        { error: "surplusSpendPct must be between 0 and 1" },
+        { status: 400 },
+      );
+    }
+
     const [updated] = await db
       .update(planSettings)
       .set({
@@ -225,6 +235,10 @@ export async function PUT(
         modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
         selectedBenchmarkPortfolioId: "selectedBenchmarkPortfolioId" in body
           ? (selectedBenchmarkPortfolioId === null ? null : selectedBenchmarkPortfolioId)
+          : undefined,
+        surplusSpendPct: surplusSpendPct != null ? String(surplusSpendPct) : undefined,
+        surplusSaveAccountId: "surplusSaveAccountId" in body
+          ? (surplusSaveAccountId === null ? null : surplusSaveAccountId)
           : undefined,
         inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
           ? inflationRateSource

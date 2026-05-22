@@ -788,6 +788,8 @@ export const loadClientDataWithContext = cache(
         client: settings.priorTaxableGiftsClient != null ? parseFloat(settings.priorTaxableGiftsClient) : 0,
         spouse: settings.priorTaxableGiftsSpouse != null ? parseFloat(settings.priorTaxableGiftsSpouse) : 0,
       },
+      surplusSpendPct: settings.surplusSpendPct != null ? parseFloat(settings.surplusSpendPct) : 0,
+      surplusSaveAccountId: settings.surplusSaveAccountId ?? null,
     };
 
     // ── Income-tier beneficiary designations grouped by entity ──────────────

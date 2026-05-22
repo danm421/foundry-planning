@@ -68,6 +68,8 @@ export interface AssumptionsSettings {
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
+  surplusSpendPct: string;
+  surplusSaveAccountId: string | null;
 }
 
 interface ModelPortfolioOption {
@@ -164,6 +166,11 @@ export default function AssumptionsClient({
             modelPortfolios={modelPortfolios}
             taxInflationRate={settings.taxInflationRate}
             ssWageGrowthRate={settings.ssWageGrowthRate}
+            surplusSpendPct={settings.surplusSpendPct}
+            surplusSaveAccountId={settings.surplusSaveAccountId}
+            householdAccounts={accounts
+              .filter((a) => !a.ownerEntityId)
+              .map((a) => ({ id: a.id, name: a.name }))}
           />
         )}
         {activeTab === "withdrawal" && (

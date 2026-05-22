@@ -1,6 +1,6 @@
 {
-  "id": "1b96a568-190c-4e20-92ad-c8bebf1aefea",
-  "prevId": "7940daff-f01f-4b4b-b283-5f47cf481e9c",
+  "id": "7940daff-f01f-4b4b-b283-5f47cf481e9c",
+  "prevId": "2e050dfe-494e-4c47-a5ad-699c2bab7590",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2387,6 +2387,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "first_name": {
+          "name": "first_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_of_birth": {
+          "name": "date_of_birth",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
         "retirement_age": {
           "name": "retirement_age",
           "type": "integer",
@@ -2413,6 +2431,24 @@
           "notNull": true,
           "default": 95
         },
+        "spouse_name": {
+          "name": "spouse_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_last_name": {
+          "name": "spouse_last_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_dob": {
+          "name": "spouse_dob",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "spouse_retirement_age": {
           "name": "spouse_retirement_age",
           "type": "integer",
@@ -2438,6 +2474,30 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'single'"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_email": {
+          "name": "spouse_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_address": {
+          "name": "spouse_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "onboarding_state": {
           "name": "onboarding_state",
@@ -2470,7 +2530,7 @@
           "name": "crm_household_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         }
       },
       "indexes": {
@@ -2490,31 +2550,9 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "clients_crm_household_id_crm_households_id_fk": {
-          "name": "clients_crm_household_id_crm_households_id_fk",
-          "tableFrom": "clients",
-          "tableTo": "crm_households",
-          "columnsFrom": [
-            "crm_household_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "clients_crm_household_id_unique": {
-          "name": "clients_crm_household_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "crm_household_id"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -6857,6 +6895,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "surplus_spend_pct": {
+          "name": "surplus_spend_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "surplus_save_account_id": {
+          "name": "surplus_save_account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -6932,6 +6983,19 @@
           "tableTo": "model_portfolios",
           "columnsFrom": [
             "selected_benchmark_portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "plan_settings_surplus_save_account_id_accounts_id_fk": {
+          "name": "plan_settings_surplus_save_account_id_accounts_id_fk",
+          "tableFrom": "plan_settings",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "surplus_save_account_id"
           ],
           "columnsTo": [
             "id"

@@ -173,6 +173,8 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     },
     "residenceState": null,
     "ssWageGrowthRate": null,
+    "surplusSaveAccountId": null,
+    "surplusSpendPct": 0,
     "taxEngineMode": "bracket",
     "taxInflationRate": null,
   },

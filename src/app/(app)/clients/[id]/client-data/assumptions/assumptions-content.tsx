@@ -290,6 +290,8 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
           priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
           priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
+          surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
+          surplusSaveAccountId: settings.surplusSaveAccountId,
         }}
         resolvedInflationRate={resolvedInflationRate}
         hasInflationAssetClass={firmInflationAc != null}

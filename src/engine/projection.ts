@@ -3087,6 +3087,58 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // 10c. Surplus allocation — split the unaccounted-for leftover cash flow
+    // into a spent portion (recorded as a discretionary expense) and a saved
+    // portion (left in checking, or transferred to a user-chosen destination).
+    //
+    // surplusForSplit captures what would have silently accumulated in
+    // household checking this year, after every other explicit cash event
+    // has fired (income, expenses, taxes, savings, gifts). When the value is
+    // <= 0, this step is a no-op — deficits are handled by the withdrawal
+    // gap-fill in step 12.
+    let discretionarySpend = 0;
+    if (hasChecking) {
+      const surplusForSplit = Math.max(
+        0,
+        surplusBeforeSavings - savings.total - householdCashGiftsTotal
+      );
+      if (surplusForSplit > 0) {
+        const rawPct = data.planSettings.surplusSpendPct ?? 0;
+        const spendPct = Math.min(1, Math.max(0, rawPct));
+        const spendAmount = surplusForSplit * spendPct;
+        const saveAmount = surplusForSplit - spendAmount;
+
+        if (spendAmount > 0) {
+          creditCash(defaultChecking!.id, -spendAmount, {
+            category: "discretionary",
+            label: "Discretionary spend (surplus)",
+          });
+          discretionarySpend = spendAmount;
+        }
+
+        const saveDestId = data.planSettings.surplusSaveAccountId ?? null;
+        if (
+          saveAmount > 0 &&
+          saveDestId &&
+          saveDestId !== defaultChecking!.id &&
+          // Quietly skip if the user picked an account that no longer exists.
+          data.accounts.some((a) => a.id === saveDestId)
+        ) {
+          creditCash(defaultChecking!.id, -saveAmount, {
+            category: "surplus_transfer",
+            label: "Surplus transferred out",
+            sourceId: saveDestId,
+          });
+          creditCash(saveDestId, saveAmount, {
+            category: "surplus_transfer",
+            label: "Surplus transferred in",
+            sourceId: defaultChecking!.id,
+          });
+        }
+      }
+    }
+    expenseBreakdown.discretionary = discretionarySpend;
+
     // Snapshot the checking balance *before* this year's inflows/outflows are applied
     // so we can attribute any drawdown of prior-year cash surplus as a "withdrawal
     // from cash" in the withdrawals drill-down.
@@ -3691,10 +3743,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       realEstate: householdSyntheticExpenseTotal,
       taxes: totalTaxes,
       cashGifts: householdCashGiftsTotal,
+      discretionary: expenseBreakdown.discretionary,
       total:
         expenseBreakdown.living +
         expenseBreakdown.other +
         expenseBreakdown.insurance +
+        expenseBreakdown.discretionary +
         householdSyntheticExpenseTotal +
         liabResult.totalPayment +
         totalTaxes +
