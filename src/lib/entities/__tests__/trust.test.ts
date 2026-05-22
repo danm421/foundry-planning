@@ -12,7 +12,7 @@ describe("TRUST_SUB_TYPES", () => {
       "revocable",
       "irrevocable",
       "ilit",
-      "clut",
+      "clt",
       "idgt",
     ]);
   });
@@ -29,7 +29,7 @@ describe("deriveIsIrrevocable", () => {
     ["revocable", false],
     ["irrevocable", true],
     ["ilit", true],
-    ["clut", true],
+    ["clt", true],
   ];
   it.each(cases)("%s → %s", (sub, expected) => {
     expect(deriveIsIrrevocable(sub)).toBe(expected);

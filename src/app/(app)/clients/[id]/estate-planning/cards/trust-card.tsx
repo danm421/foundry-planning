@@ -138,9 +138,9 @@ function SplitInterestPanel({
   splitInterest: NonNullable<TrustCardData["splitInterest"]>;
 }) {
   const payoutLabel =
-    si.payoutPercent != null
-      ? `${(si.payoutPercent * 100).toFixed(2)}% ${si.payoutType}`
-      : si.payoutType;
+    si.payoutType === "unitrust"
+      ? `${((si.payoutPercent ?? 0) * 100).toFixed(2)}% / yr (CLUT)`
+      : `$${Math.round(si.payoutAmount ?? 0).toLocaleString("en-US")} / yr (CLAT)`;
   return (
     <section className="mt-3 border-t border-[var(--color-hair)] pt-3">
       <h4 className="mb-2 text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-ink-3)]">

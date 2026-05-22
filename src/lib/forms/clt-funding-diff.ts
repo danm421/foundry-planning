@@ -1,4 +1,4 @@
-export type ClutFundingPick =
+export type CltFundingPick =
   | { kind: "asset"; accountId: string; percent: number; existingGiftId?: string }
   | { kind: "cash"; grantor: "client" | "spouse"; amount: number; existingGiftId?: string };
 
@@ -28,8 +28,8 @@ export type GiftOp =
   | { type: "delete"; giftId: string };
 
 interface DiffArgs {
-  original: ClutFundingPick[];
-  current: ClutFundingPick[];
+  original: CltFundingPick[];
+  current: CltFundingPick[];
   entityId: string;
   year: number;
   /**
@@ -40,7 +40,7 @@ interface DiffArgs {
   defaultAssetGrantor?: "client" | "spouse";
 }
 
-export function diffClutFundingPicks({
+export function diffCltFundingPicks({
   original,
   current,
   entityId,
@@ -48,7 +48,7 @@ export function diffClutFundingPicks({
   defaultAssetGrantor = "client",
 }: DiffArgs): GiftOp[] {
   const ops: GiftOp[] = [];
-  const originalById = new Map<string, ClutFundingPick>();
+  const originalById = new Map<string, CltFundingPick>();
   for (const p of original) {
     if (p.existingGiftId) originalById.set(p.existingGiftId, p);
   }

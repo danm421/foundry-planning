@@ -22,7 +22,7 @@ export interface RecaptureResult {
  * a negative (which means the actual lead-PV exceeded the original deduction,
  * an artifact of generous projections) or floor it at zero per IRS practice.
  */
-export function computeClutRecapture(input: RecaptureInput): RecaptureResult {
+export function computeCltRecapture(input: RecaptureInput): RecaptureResult {
   const { originalIncomeInterest, irc7520Rate, paymentsByYearOffset } = input;
   let pv = 0;
   for (let i = 0; i < paymentsByYearOffset.length; i++) {

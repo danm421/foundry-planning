@@ -192,9 +192,9 @@ function describeGift(
   index: number,
   input: BuildRecipientDrilldownInput,
 ): string {
-  if (g.eventKind === "clut_remainder_interest" && g.recipientEntityId) {
+  if (g.eventKind === "clt_remainder_interest" && g.recipientEntityId) {
     const ent = input.entitiesById.get(g.recipientEntityId);
-    return `CLUT ${ent?.name ?? "remainder"} – remainder interest`;
+    return `CLT ${ent?.name ?? "remainder"} – remainder interest`;
   }
   return `Gift ${index + 1}`;
 }

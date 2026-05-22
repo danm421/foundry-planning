@@ -6,18 +6,18 @@ import {
 import type { BeneficiaryRef, EntitySummary } from "@/engine/types";
 import { runProjection } from "@/engine/projection";
 import {
-  buildClutLifecycleFixture,
-  CLUT_FIXTURE_IDS,
-} from "@/engine/__tests__/_fixtures/clut";
+  buildCltLifecycleFixture,
+  CLT_FIXTURE_IDS,
+} from "@/engine/__tests__/_fixtures/clt";
 
 function makeClut(
   overrides: Partial<EntitySummary["splitInterest"]> = {},
 ): EntitySummary {
   return {
     id: "clut-1",
-    name: "Test CLUT",
+    name: "Test CLT",
     entityType: "trust",
-    trustSubType: "clut",
+    trustSubType: "clt",
     isIrrevocable: true,
     isGrantor: true,
     includeInPortfolio: false,
@@ -42,7 +42,7 @@ function makeClut(
 }
 
 describe("isTrustTerminationYear", () => {
-  it("returns true the year after the last term-year payment for a 'years' CLUT", () => {
+  it("returns true the year after the last term-year payment for a 'years' CLT", () => {
     const trust = makeClut({ termType: "years", termYears: 5 });
     // inceptionYear=2026, termYears=5 → payments 2026-2030, termination 2031
     expect(isTrustTerminationYear(trust, 2030, {})).toBe(false);
@@ -50,7 +50,7 @@ describe("isTrustTerminationYear", () => {
     expect(isTrustTerminationYear(trust, 2032, {})).toBe(false);
   });
 
-  it("returns false for non-CLUT entities", () => {
+  it("returns false for non-CLT entities", () => {
     const trust = makeClut();
     const notClut = { ...trust, trustSubType: "irrevocable" } as EntitySummary;
     expect(isTrustTerminationYear(notClut, 2031, {})).toBe(false);
@@ -162,9 +162,9 @@ describe("distributeAtTermination", () => {
   });
 });
 
-describe("CLUT trust-termination integration in projection", () => {
+describe("CLT trust-termination integration in projection", () => {
   it("emits trustTerminations on the year after term-end with summed beneficiary amounts", () => {
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 5,
@@ -181,7 +181,7 @@ describe("CLUT trust-termination integration in projection", () => {
     expect(terminationYear.trustTerminations).toBeDefined();
     expect(terminationYear.trustTerminations).toHaveLength(1);
     const term = terminationYear.trustTerminations![0];
-    expect(term.trustId).toBe(CLUT_FIXTURE_IDS.CLUT_ENTITY_ID);
+    expect(term.trustId).toBe(CLT_FIXTURE_IDS.CLT_ENTITY_ID);
     expect(term.totalDistributed).toBeGreaterThan(0);
     expect(term.toBeneficiaries).toHaveLength(2);
     const sum = term.toBeneficiaries.reduce((s, b) => s + b.amount, 0);
@@ -189,7 +189,7 @@ describe("CLUT trust-termination integration in projection", () => {
   });
 
   it("does not emit trustTerminations during the term", () => {
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 5,
@@ -206,7 +206,7 @@ describe("CLUT trust-termination integration in projection", () => {
   });
 
   it("does not re-emit termination in the year after termination", () => {
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 5,

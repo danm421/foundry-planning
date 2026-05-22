@@ -336,9 +336,9 @@ describe("computeEntityCashFlow", () => {
   it("includes charitable outflows and termination payouts in totalDistributions", () => {
     const trust = {
       id: "clut-1",
-      name: "Smith CLUT",
+      name: "Smith CLT",
       entityType: "trust" as const,
-      trustSubType: "clut" as const,
+      trustSubType: "clt" as const,
       isGrantor: false,
       initialValue: 0,
       initialBasis: 0,
@@ -347,9 +347,9 @@ describe("computeEntityCashFlow", () => {
     y.accountLedgers = {};
     y.charitableOutflowDetail = [
       {
-        kind: "clut_unitrust",
+        kind: "clt_payment",
         trustId: "clut-1",
-        trustName: "Smith CLUT",
+        trustName: "Smith CLT",
         charityId: "char-1",
         amount: 25_000,
       } as never,
@@ -357,7 +357,7 @@ describe("computeEntityCashFlow", () => {
     y.trustTerminations = [
       {
         trustId: "clut-1",
-        trustName: "Smith CLUT",
+        trustName: "Smith CLT",
         totalDistributed: 500_000,
         toBeneficiaries: [],
       } as never,

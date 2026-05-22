@@ -16,7 +16,7 @@ const uuid = z.string().uuid();
 export const trustSplitInterestSchema = z
   .object({
     /**
-     * Whether this CLUT is being funded in this plan ('new') or was funded
+     * Whether this CLT is being funded in this plan ('new') or was funded
      * historically before plan start ('existing'). Defaults to 'new'.
      *  - new: API computes income/remainder from inputs and auto-emits the
      *    remainder-interest gift on save.

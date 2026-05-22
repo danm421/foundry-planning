@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import ClutDetailsSection from "../clut-details-section";
+import CltDetailsSection from "../clt-details-section";
 
 const baseProps = {
   value: {
@@ -22,9 +22,9 @@ const baseProps = {
   charities: [{ id: "ch1", name: "Acme Foundation" }],
 };
 
-describe("<ClutDetailsSection>", () => {
+describe("<CltDetailsSection>", () => {
   it("renders the unitrust input fields", () => {
-    render(<ClutDetailsSection {...baseProps} />);
+    render(<CltDetailsSection {...baseProps} />);
     expect(screen.getByLabelText(/inception year/i)).toBeInTheDocument();
     // For origin = 'new', funding-year FMV is now a disclosure dropdown — the label associates with the trigger button.
     expect(
@@ -35,13 +35,13 @@ describe("<ClutDetailsSection>", () => {
   });
 
   it("displays the live computed income/remainder preview matching eMoney example", () => {
-    render(<ClutDetailsSection {...baseProps} />);
-    expect(screen.getByTestId("clut-income-interest").textContent).toMatch(/461,385/);
-    expect(screen.getByTestId("clut-remainder-interest").textContent).toMatch(/538,615/);
+    render(<CltDetailsSection {...baseProps} />);
+    expect(screen.getByTestId("clt-income-interest").textContent).toMatch(/461,385/);
+    expect(screen.getByTestId("clt-remainder-interest").textContent).toMatch(/538,615/);
   });
 
   it("renders origin radios with 'new' selected by default", () => {
-    render(<ClutDetailsSection {...baseProps} />);
+    render(<CltDetailsSection {...baseProps} />);
     const newBtn = screen.getByRole("radio", { name: /new \(funded in plan\)/i });
     const existingBtn = screen.getByRole("radio", {
       name: /existing \(already funded\)/i,
@@ -52,7 +52,7 @@ describe("<ClutDetailsSection>", () => {
 
   it("hides the computed preview and shows manual income/remainder inputs when origin = 'existing'", () => {
     render(
-      <ClutDetailsSection
+      <CltDetailsSection
         {...baseProps}
         value={{
           ...baseProps.value,
@@ -62,7 +62,7 @@ describe("<ClutDetailsSection>", () => {
         }}
       />,
     );
-    expect(screen.queryByTestId("clut-income-interest")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("clt-income-interest")).not.toBeInTheDocument();
     expect(
       screen.getByLabelText(/income interest \(deduction taken\)/i),
     ).toBeInTheDocument();
@@ -73,7 +73,7 @@ describe("<ClutDetailsSection>", () => {
 
   it("calls onChange with origin='existing' when the existing radio is clicked", () => {
     const onChange = vi.fn();
-    render(<ClutDetailsSection {...baseProps} onChange={onChange} />);
+    render(<CltDetailsSection {...baseProps} onChange={onChange} />);
     fireEvent.click(
       screen.getByRole("radio", { name: /existing \(already funded\)/i }),
     );
@@ -84,7 +84,7 @@ describe("<ClutDetailsSection>", () => {
 
   it("hides termYears when termType = 'single_life'", () => {
     render(
-      <ClutDetailsSection
+      <CltDetailsSection
         {...baseProps}
         value={{
           ...baseProps.value,
@@ -100,7 +100,7 @@ describe("<ClutDetailsSection>", () => {
 
   it("shows two measuring-life selects when termType = 'joint_life'", () => {
     render(
-      <ClutDetailsSection
+      <CltDetailsSection
         {...baseProps}
         value={{
           ...baseProps.value,
@@ -121,7 +121,7 @@ describe("<ClutDetailsSection>", () => {
 
   it("renders a manual FMV input (no picker) when origin = 'existing'", () => {
     render(
-      <ClutDetailsSection
+      <CltDetailsSection
         {...baseProps}
         value={{
           ...baseProps.value,
@@ -135,5 +135,65 @@ describe("<ClutDetailsSection>", () => {
     expect(
       screen.queryByRole("button", { name: /funding-year fmv/i }),
     ).toBeNull();
+  });
+});
+
+describe("<CltDetailsSection> subtype toggle (CLUT/CLAT)", () => {
+  it("defaults to CLUT (unitrust) on new entity and shows payout percent field", () => {
+    render(<CltDetailsSection {...baseProps} />);
+    expect(screen.getByRole("radio", { name: /^CLUT$/i })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: /^CLAT$/i })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    expect(screen.getByLabelText(/payout percentage/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/annual payment/i)).not.toBeInTheDocument();
+  });
+
+  it("clicking CLAT calls onChange with payoutType='annuity' and clears payoutPercent", () => {
+    const onChange = vi.fn();
+    render(<CltDetailsSection {...baseProps} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("radio", { name: /^CLAT$/i }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payoutType: "annuity",
+        payoutPercent: undefined,
+      }),
+    );
+  });
+
+  it("renders annual payment field (and no percent field) when payoutType is annuity", () => {
+    render(
+      <CltDetailsSection
+        {...baseProps}
+        value={{
+          ...baseProps.value,
+          payoutType: "annuity",
+          payoutPercent: undefined,
+          payoutAmount: 60_000,
+        }}
+      />,
+    );
+    expect(screen.getByLabelText(/annual payment/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/payout percentage/i)).not.toBeInTheDocument();
+  });
+
+  it("disables CLUT/CLAT radios when editing an existing trust (origin='existing')", () => {
+    render(
+      <CltDetailsSection
+        {...baseProps}
+        value={{
+          ...baseProps.value,
+          origin: "existing",
+          originalIncomeInterest: 461_385,
+          originalRemainderInterest: 538_615,
+        }}
+      />,
+    );
+    expect(screen.getByRole("radio", { name: /^CLUT$/i })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /^CLAT$/i })).toBeDisabled();
   });
 });

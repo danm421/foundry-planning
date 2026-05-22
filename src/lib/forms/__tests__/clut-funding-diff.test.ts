@@ -1,19 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { diffClutFundingPicks, type ClutFundingPick } from "../clut-funding-diff";
+import { diffCltFundingPicks, type CltFundingPick } from "../clt-funding-diff";
 
 const ENTITY_ID = "11111111-1111-1111-1111-111111111111";
 const ACCT_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const ACCT_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
-describe("diffClutFundingPicks", () => {
+describe("diffCltFundingPicks", () => {
   it("returns no ops when original and current are identical", () => {
-    const original: ClutFundingPick[] = [
+    const original: CltFundingPick[] = [
       { kind: "asset", accountId: ACCT_A, percent: 1.0, existingGiftId: "g1" },
     ];
-    const current: ClutFundingPick[] = [
+    const current: CltFundingPick[] = [
       { kind: "asset", accountId: ACCT_A, percent: 1.0, existingGiftId: "g1" },
     ];
-    const ops = diffClutFundingPicks({
+    const ops = diffCltFundingPicks({
       original,
       current,
       entityId: ENTITY_ID,
@@ -23,7 +23,7 @@ describe("diffClutFundingPicks", () => {
   });
 
   it("emits a create op for a brand-new asset pick", () => {
-    const ops = diffClutFundingPicks({
+    const ops = diffCltFundingPicks({
       original: [],
       current: [{ kind: "asset", accountId: ACCT_A, percent: 0.5 }],
       entityId: ENTITY_ID,
@@ -45,7 +45,7 @@ describe("diffClutFundingPicks", () => {
   });
 
   it("emits a delete op when an originally-checked pick is removed", () => {
-    const ops = diffClutFundingPicks({
+    const ops = diffCltFundingPicks({
       original: [
         { kind: "asset", accountId: ACCT_A, percent: 1.0, existingGiftId: "g1" },
       ],
@@ -57,7 +57,7 @@ describe("diffClutFundingPicks", () => {
   });
 
   it("emits an update op when the percent on an existing asset pick changed", () => {
-    const ops = diffClutFundingPicks({
+    const ops = diffCltFundingPicks({
       original: [
         { kind: "asset", accountId: ACCT_A, percent: 1.0, existingGiftId: "g1" },
       ],
@@ -71,7 +71,7 @@ describe("diffClutFundingPicks", () => {
   });
 
   it("emits an update op when a cash pick's amount changed", () => {
-    const ops = diffClutFundingPicks({
+    const ops = diffCltFundingPicks({
       original: [
         { kind: "cash", grantor: "client", amount: 1000, existingGiftId: "g2" },
       ],
@@ -85,7 +85,7 @@ describe("diffClutFundingPicks", () => {
   });
 
   it("emits no op when an existing pick is unchanged", () => {
-    const ops = diffClutFundingPicks({
+    const ops = diffCltFundingPicks({
       original: [
         { kind: "cash", grantor: "client", amount: 1000, existingGiftId: "g2" },
       ],
@@ -99,16 +99,16 @@ describe("diffClutFundingPicks", () => {
   });
 
   it("emits create + update + delete ops in a single diff when multiple picks change", () => {
-    const original: ClutFundingPick[] = [
+    const original: CltFundingPick[] = [
       { kind: "asset", accountId: ACCT_A, percent: 1.0, existingGiftId: "g1" },
       { kind: "cash", grantor: "client", amount: 1000, existingGiftId: "g2" },
     ];
-    const current: ClutFundingPick[] = [
+    const current: CltFundingPick[] = [
       // ACCT_A pick is removed (delete g1)
       { kind: "cash", grantor: "client", amount: 5000, existingGiftId: "g2" }, // updated amount
       { kind: "asset", accountId: ACCT_B, percent: 0.25 }, // new
     ];
-    const ops = diffClutFundingPicks({
+    const ops = diffCltFundingPicks({
       original,
       current,
       entityId: ENTITY_ID,

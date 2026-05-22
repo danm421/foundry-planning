@@ -16,7 +16,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
-import { computeClutInceptionInterests } from "@/lib/entities/compute-clut-inception";
+import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
 
 /** Derive the legacy `owner` enum from the multi-owner allocation. Used to
  *  keep the deprecated column populated for back-compat readers (balance-sheet
@@ -248,12 +248,12 @@ export async function POST(
       }
     }
 
-    if (data.trustSubType === "clut" && data.splitInterest) {
+    if (data.trustSubType === "clt" && data.splitInterest) {
       const si = data.splitInterest;
 
       if (data.grantor !== "client" && data.grantor !== "spouse") {
         return NextResponse.json(
-          { error: "grantor ('client' or 'spouse') is required for CLUTs" },
+          { error: "grantor ('client' or 'spouse') is required for CLTs" },
           { status: 400 },
         );
       }
@@ -329,8 +329,8 @@ export async function POST(
         );
       }
 
-      // For 'new' CLUTs we compute income/remainder from the actuarial inputs.
-      // For 'existing' CLUTs the caller supplies the historical values that
+      // For 'new' CLTs we compute income/remainder from the actuarial inputs.
+      // For 'existing' CLTs the caller supplies the historical values that
       // were recorded on the prior return — we trust them and skip the
       // recompute (the §7520 rate and mortality table at original funding may
       // not match what we'd compute today).
@@ -341,7 +341,7 @@ export async function POST(
             originalRemainderInterest: si.originalRemainderInterest!,
             remainderFactor: undefined,
           }
-        : computeClutInceptionInterests({
+        : computeCltInceptionInterests({
             inceptionValue: si.inceptionValue,
             payoutType: si.payoutType,
             payoutPercent: si.payoutPercent,
@@ -371,8 +371,8 @@ export async function POST(
         originalRemainderInterest: interests.originalRemainderInterest.toString(),
       });
 
-      // Auto-emit the remainder-interest gift only for new CLUTs. Existing
-      // CLUTs already filed this gift on the original §709 — we don't want
+      // Auto-emit the remainder-interest gift only for new CLTs. Existing
+      // CLTs already filed this gift on the original §709 — we don't want
       // to double-count it on the lifetime-exemption ledger.
       if (!isExistingClut) {
         await db.insert(gifts).values({
@@ -381,8 +381,8 @@ export async function POST(
           amount: interests.originalRemainderInterest.toString(),
           grantor: data.grantor,
           recipientEntityId: entity.id,
-          eventKind: "clut_remainder_interest",
-          notes: `Auto-emitted at CLUT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
+          eventKind: "clt_remainder_interest",
+          notes: `Auto-emitted at CLT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
         });
       }
 

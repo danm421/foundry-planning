@@ -75,7 +75,8 @@ import { computePortfolioSnapshot } from "./portfolio-snapshot";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
 import {
   computeAnnualUnitrustPayment,
-  computeClutRecapture,
+  computeAnnualAnnuityPayment,
+  computeCltRecapture,
   distributeAtTermination,
   isTrustTerminationYear,
   type TrustTerminationResult,
@@ -689,12 +690,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     gain: number;
   }> = [];
 
-  // Cross-year record of actual unitrust payments made by each CLUT, ordered
-  // year-by-year from inception. Drained by the §170(f)(2)(B) recapture pass
-  // when a grantor of a CLUT dies mid-term — the PV of these payments at the
-  // original §7520 rate is subtracted from the original income-interest
-  // deduction to compute recapture as ordinary income on the final 1040.
-  const clutPaymentsByTrustId: Map<string, number[]> = new Map();
+  // Cross-year record of actual lead-interest payments made by each CLT,
+  // ordered year-by-year from inception. Drained by the §170(f)(2)(B)
+  // recapture pass when a grantor of a CLT dies mid-term — the PV of these
+  // payments at the original §7520 rate is subtracted from the original
+  // income-interest deduction to compute recapture as ordinary income on the
+  // final 1040.
+  const cltPaymentsByTrustId: Map<string, number[]> = new Map();
 
   // Per-year locked-share carry for split-owned accounts. Mirrors
   // computeEntityCashFlow's post-loop accounting so the in-loop death-event
@@ -1862,13 +1864,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         : (tp?.niitThreshold?.single ?? 0);
 
       // §642(c) — for non-grantor split-interest trusts (post-grantor-death
-      // CLUTs) we need to feed this year's unitrust payment into the trust-
-      // tax pass as a charitable deduction. The unitrust amount is a function
-      // of BoY FMV so we can pre-compute it here before the actual emission
-      // happens later in the year loop's CLUT annual payment block.
+      // CLTs) we need to feed this year's lead payment into the trust-tax
+      // pass as a charitable deduction. The payment amount is a function of
+      // BoY FMV (CLUT) or fixed (CLAT) so we can pre-compute it here before
+      // the actual emission happens later in the year loop's CLT annual
+      // payment block.
       const nonGrantorTrustsWithDeductions = nonGrantorTrusts.map((t) => {
         const ent = entityMap[t.entityId];
-        if (!ent || ent.trustSubType !== "clut" || !ent.splitInterest) return t;
+        if (!ent || ent.trustSubType !== "clt" || !ent.splitInterest) return t;
         const si = ent.splitInterest;
         const yearsSinceInception = year - si.inceptionYear;
         if (yearsSinceInception < 0) return t;
@@ -1892,13 +1895,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (!ledger) continue;
           startOfYearFmv += ledger.beginningValue * trustShare;
         }
-        if (startOfYearFmv <= 0) return t;
-        const { unitrustAmount } = computeAnnualUnitrustPayment({
-          payoutPercent: Number(si.payoutPercent ?? 0),
-          startOfYearFmv,
-        });
-        return unitrustAmount > 0
-          ? { ...t, charitableDeduction: unitrustAmount }
+        if (startOfYearFmv <= 0 && si.payoutType !== "annuity") return t;
+        let annualPayment: number;
+        if (si.payoutType === "annuity") {
+          const { annuityAmount } = computeAnnualAnnuityPayment({
+            payoutAmount: Number(si.payoutAmount ?? 0),
+          });
+          annualPayment = annuityAmount;
+        } else {
+          const { unitrustAmount } = computeAnnualUnitrustPayment({
+            payoutPercent: Number(si.payoutPercent ?? 0),
+            startOfYearFmv,
+          });
+          annualPayment = unitrustAmount;
+        }
+        return annualPayment > 0
+          ? { ...t, charitableDeduction: annualPayment }
           : t;
       });
 
@@ -2027,23 +2039,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // ── CLUT annual unitrust payment pass ─────────────────────────────────
-    // Each year of a CLUT's term, the trust pays a fixed % of its BoY FMV
-    // to the designated charity. Cash-first via creditCash; if trust checking
-    // goes negative, step 12c gap-fill liquidates trust assets and attributes
-    // any realized gains to the grantor via the deferred-gain mechanism.
-    // Tasks 11-12 add post-grantor-death tax routing (§170(f)(2)(B) recapture
-    // and §642(c) deduction); this block handles only the cash-flow.
-    let clutCharitableOutflowsTotal = 0;
-    const clutCharitableOutflowDetail: Array<{
-      kind: "clut_unitrust";
+    // ── CLT annual payment pass ───────────────────────────────────────────
+    // Each year of a CLT's term, the trust pays either a fixed % of its BoY
+    // FMV (CLUT) or a fixed annuity amount (CLAT) to the designated charity.
+    // Cash-first via creditCash; if trust checking goes negative, step 12c
+    // gap-fill liquidates trust assets and attributes any realized gains to
+    // the grantor via the deferred-gain mechanism. Tasks 11-12 add
+    // post-grantor-death tax routing (§170(f)(2)(B) recapture and §642(c)
+    // deduction); this block handles only the cash-flow.
+    let cltCharitableOutflowsTotal = 0;
+    const cltCharitableOutflowDetail: Array<{
+      kind: "clt_payment";
       trustId: string;
       trustName: string;
       charityId: string;
       amount: number;
+      payoutType: "unitrust" | "annuity";
     }> = [];
     for (const trust of currentEntities) {
-      if (trust.trustSubType !== "clut" || !trust.splitInterest) continue;
+      if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
       const si = trust.splitInterest;
       const yearsSinceInception = year - si.inceptionYear;
       if (yearsSinceInception < 0) continue;
@@ -2071,38 +2085,51 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!ledger) continue;
         startOfYearFmv += ledger.beginningValue * trustShare;
       }
-      if (startOfYearFmv <= 0) continue;
+      if (startOfYearFmv <= 0 && si.payoutType !== "annuity") continue;
 
-      const { unitrustAmount } = computeAnnualUnitrustPayment({
-        payoutPercent: Number(si.payoutPercent ?? 0),
-        startOfYearFmv,
-      });
-      if (unitrustAmount <= 0) continue;
+      let annualPayment: number;
+      let paymentLabel: string;
+      if (si.payoutType === "annuity") {
+        const { annuityAmount } = computeAnnualAnnuityPayment({
+          payoutAmount: Number(si.payoutAmount ?? 0),
+        });
+        annualPayment = annuityAmount;
+        paymentLabel = "CLAT annuity payment to charity";
+      } else {
+        const { unitrustAmount } = computeAnnualUnitrustPayment({
+          payoutPercent: Number(si.payoutPercent ?? 0),
+          startOfYearFmv,
+        });
+        annualPayment = unitrustAmount;
+        paymentLabel = "CLT unitrust payment to charity";
+      }
+      if (annualPayment <= 0) continue;
 
-      creditCash(checkingId, -unitrustAmount, {
+      creditCash(checkingId, -annualPayment, {
         category: "gift",
-        label: `CLUT unitrust payment to charity`,
+        label: paymentLabel,
         sourceId: trust.id,
       });
-      clutCharitableOutflowsTotal += unitrustAmount;
-      clutCharitableOutflowDetail.push({
-        kind: "clut_unitrust",
+      cltCharitableOutflowsTotal += annualPayment;
+      cltCharitableOutflowDetail.push({
+        kind: "clt_payment",
         trustId: trust.id,
         trustName: trust.name ?? trust.id,
         charityId: si.charityId,
-        amount: unitrustAmount,
+        amount: annualPayment,
+        payoutType: si.payoutType === "annuity" ? "annuity" : "unitrust",
       });
 
       // Record the payment for cross-year recapture math. The death-year
       // payment IS counted in the PV per §170(f)(2)(B), so this push happens
       // before the recapture pass below for this same year.
-      const existing = clutPaymentsByTrustId.get(trust.id) ?? [];
-      existing.push(unitrustAmount);
-      clutPaymentsByTrustId.set(trust.id, existing);
+      const existing = cltPaymentsByTrustId.get(trust.id) ?? [];
+      existing.push(annualPayment);
+      cltPaymentsByTrustId.set(trust.id, existing);
     }
 
-    // ── CLUT trust-termination pass ───────────────────────────────────────
-    // The year after a CLUT's lead term ends, remaining trust assets are
+    // ── CLT trust-termination pass ────────────────────────────────────────
+    // The year after a CLT's lead term ends, remaining trust assets are
     // distributed to the trust's primary remainder beneficiaries. Cash leaves
     // the trust via creditCash; a TrustTerminationResult is recorded on the
     // year row for downstream report consumers (Task 13+ surfaces them).
@@ -2113,10 +2140,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // accounts to the data model.
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
-      if (trust.trustSubType !== "clut" || !trust.splitInterest) continue;
+      if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
       // Death-year extraction for life-based termination is deferred to
       // Tasks 11-12 when the death-event integration lands; until then,
-      // term-certain ('years') CLUTs are the only ones that terminate here.
+      // term-certain ('years') CLTs are the only ones that terminate here.
       if (!isTrustTerminationYear(trust, year, {})) continue;
 
       let totalAvailable = 0;
@@ -2160,19 +2187,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (drain <= 0) continue;
         creditCash(acct.id, -drain, {
           category: "expense",
-          label: `CLUT termination distribution`,
+          label: `CLT termination distribution`,
           sourceId: trust.id,
         });
       }
     }
 
     // ── §170(f)(2)(B) recapture pass ──────────────────────────────────────
-    // When a grantor of a CLUT dies before the lead term ends, the unused
+    // When a grantor of a CLT dies before the lead term ends, the unused
     // portion of the original income-interest deduction is recaptured as
     // ordinary income on the grantor's final 1040. Recapture =
     //   originalIncomeInterest − PV(actual payments) at the original §7520 rate.
     // Floored at 0; only fires for term-certain ('years' or
-    // 'shorter_of_years_or_life') CLUTs — for pure life CLUTs the death IS
+    // 'shorter_of_years_or_life') CLTs — for pure life CLTs the death IS
     // the term-end and there's no recapture.
     const decedentRoleThisYear: "client" | "spouse" | null =
       year === firstDeathYear
@@ -2182,7 +2209,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           : null;
     if (decedentRoleThisYear != null) {
       for (const trust of currentEntities) {
-        if (trust.trustSubType !== "clut" || !trust.splitInterest) continue;
+        if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
         if (trust.grantor !== decedentRoleThisYear) continue;
         const si = trust.splitInterest;
         const isYearsLeg =
@@ -2191,15 +2218,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!isYearsLeg) continue;
         const yearsElapsed = year - si.inceptionYear + 1;
         if (yearsElapsed >= (si.termYears ?? 0)) continue;
-        const payments = clutPaymentsByTrustId.get(trust.id) ?? [];
-        const { recaptureAmount } = computeClutRecapture({
+        const payments = cltPaymentsByTrustId.get(trust.id) ?? [];
+        const { recaptureAmount } = computeCltRecapture({
           originalIncomeInterest: Number(si.originalIncomeInterest),
           irc7520Rate: Number(si.irc7520Rate),
           paymentsByYearOffset: payments,
         });
         if (recaptureAmount > 0) {
           taxDetail.ordinaryIncome += recaptureAmount;
-          taxDetail.bySource[`clut_recapture:${trust.id}`] = {
+          taxDetail.bySource[`clt_recapture:${trust.id}`] = {
             type: "ordinary_income",
             amount: recaptureAmount,
           };
@@ -2552,13 +2579,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
     }
 
-    // Plan 4d-2 — CLUT inception charitable deduction. The grantor takes the
+    // Plan 4d-2 — CLT inception charitable deduction. The grantor takes the
     // present value of the lead interest as a "for the use of" charitable
     // contribution in the funding year (IRC §170(f)(2)(B)). AGI cap is 30%
     // (public charity) or 20% (private foundation), routed through the
     // appreciated buckets which encode those caps.
     for (const e of data.entities ?? []) {
-      if (e.trustSubType !== "clut" || !e.splitInterest) continue;
+      if (e.trustSubType !== "clt" || !e.splitInterest) continue;
       if (e.splitInterest.inceptionYear !== year) continue;
       const charity = (data.externalBeneficiaries ?? []).find(
         (eb) => eb.id === e.splitInterest!.charityId,
@@ -3909,9 +3936,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail: finalTaxDetail,
       taxResult: finalTaxResult,
       charityCarryforward,
-      charitableOutflows: clutCharitableOutflowsTotal,
-      ...(clutCharitableOutflowDetail.length > 0
-        ? { charitableOutflowDetail: clutCharitableOutflowDetail }
+      charitableOutflows: cltCharitableOutflowsTotal,
+      ...(cltCharitableOutflowDetail.length > 0
+        ? { charitableOutflowDetail: cltCharitableOutflowDetail }
         : {}),
       ...(yearTrustTerminations.length > 0
         ? { trustTerminations: yearTrustTerminations }

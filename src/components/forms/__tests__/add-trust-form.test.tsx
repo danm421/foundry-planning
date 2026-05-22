@@ -216,11 +216,11 @@ describe("AddTrustForm — Transfers tab (T21)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// CLUT funding pick save-flow tests (Task 6)
+// CLT funding pick save-flow tests (Task 6)
 // ---------------------------------------------------------------------------
 
-/** One brokerage account eligible for CLUT funding. */
-const CLUT_ACCOUNT = {
+/** One brokerage account eligible for CLT funding. */
+const CLT_ACCOUNT = {
   id: "acct-a",
   name: "Schwab Brokerage",
   value: 850_000,
@@ -230,7 +230,7 @@ const CLUT_ACCOUNT = {
 };
 
 /** Second brokerage account — used in the 2-pick edit-mode delete test. */
-const CLUT_ACCOUNT_B = {
+const CLT_ACCOUNT_B = {
   id: "acct-b",
   name: "Fidelity Brokerage",
   value: 500_000,
@@ -239,12 +239,12 @@ const CLUT_ACCOUNT_B = {
   owners: [{ kind: "family_member" as const, familyMemberId: "fm-c", percent: 1.0 }],
 };
 
-/** CLUT editing fixture — only the Entity fields; splitInterest is form-internal. */
-const EDITING_CLUT: Entity = {
+/** CLT editing fixture — only the Entity fields; splitInterest is form-internal. */
+const EDITING_CLT: Entity = {
   id: "trust-existing-id",
-  name: "Existing CLUT",
+  name: "Existing CLT",
   entityType: "trust",
-  trustSubType: "clut",
+  trustSubType: "clt",
   isIrrevocable: true,
   grantor: "client",
   trustee: null,
@@ -262,13 +262,13 @@ const EDITING_CLUT: Entity = {
   distributionPercent: null,
 };
 
-describe("<AddTrustForm> CLUT funding picks", () => {
+describe("<AddTrustForm> CLT funding picks", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it("posts an asset gift after the entity POST when an asset is picked for a new CLUT", async () => {
+  it("posts an asset gift after the entity POST when an asset is picked for a new CLT", async () => {
     // Record every fetch call so we can assert ordering.
     const calls: { url: string; method: string; body: unknown }[] = [];
 
@@ -297,14 +297,14 @@ describe("<AddTrustForm> CLUT funding picks", () => {
       <AddTrustForm
         {...defaultProps("details")}
         editing={undefined}
-        accounts={[CLUT_ACCOUNT]}
+        accounts={[CLT_ACCOUNT]}
       />,
     );
 
-    // Switch to CLUT type
-    fireEvent.change(screen.getByLabelText(/^Type/i), { target: { value: "clut" } });
+    // Switch to CLT type
+    fireEvent.change(screen.getByLabelText(/^Type/i), { target: { value: "clt" } });
 
-    // Open the funding picker (trigger has id="clut-fmv" → labelled by "Funding-year FMV" label)
+    // Open the funding picker (trigger has id="clt-fmv" → labelled by "Funding-year FMV" label)
     fireEvent.click(screen.getByRole("button", { name: /funding-year fmv/i }));
 
     // Pick the first asset checkbox (the Schwab Brokerage account)
@@ -356,12 +356,12 @@ describe("<AddTrustForm> CLUT funding picks", () => {
       <AddTrustForm
         {...defaultProps("details")}
         editing={undefined}
-        accounts={[CLUT_ACCOUNT]}
+        accounts={[CLT_ACCOUNT]}
       />,
     );
 
-    // Switch to CLUT type
-    fireEvent.change(screen.getByLabelText(/^Type/i), { target: { value: "clut" } });
+    // Switch to CLT type
+    fireEvent.change(screen.getByLabelText(/^Type/i), { target: { value: "clt" } });
 
     // Do NOT open the picker — leave picks empty
 
@@ -431,7 +431,7 @@ describe("<AddTrustForm> CLUT funding picks", () => {
       }
       // Entity PUT (edit save)
       if (method === "PUT" && url.includes("/entities/")) {
-        return { ok: true, json: async () => ({ ...EDITING_CLUT }) };
+        return { ok: true, json: async () => ({ ...EDITING_CLT }) };
       }
       // Beneficiaries PUT
       if (method === "PUT" && url.includes("/beneficiaries")) {
@@ -448,15 +448,15 @@ describe("<AddTrustForm> CLUT funding picks", () => {
     render(
       <AddTrustForm
         {...defaultProps("details")}
-        editing={EDITING_CLUT}
-        accounts={[CLUT_ACCOUNT, CLUT_ACCOUNT_B]}
+        editing={EDITING_CLT}
+        accounts={[CLT_ACCOUNT, CLT_ACCOUNT_B]}
       />,
     );
 
-    // Wait for both picks to seed: once inceptionValue > 0, the CLUT preview
+    // Wait for both picks to seed: once inceptionValue > 0, the CLT preview
     // shows a non-dash value for the income interest.
     await waitFor(() => {
-      const incomeEl = screen.getByTestId("clut-income-interest");
+      const incomeEl = screen.getByTestId("clt-income-interest");
       expect(incomeEl.textContent).toMatch(/\$/);
     });
 

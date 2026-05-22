@@ -49,7 +49,7 @@ export interface TrustCardData {
   linkedNotes: LinkedNoteRow[];
   /**
    * Split-interest snapshot for CLUT/CLAT trusts. Populated only when
-   * trustSubType = 'clut'. Drives the "Split-interest details" card panel.
+   * trustSubType = 'clt'. Drives the "Split-interest details" card panel.
    * `charityName` is resolved from externalBeneficiaries here so the card
    * doesn't have to do another lookup at render time.
    */
@@ -58,6 +58,7 @@ export interface TrustCardData {
     inceptionValue: number;
     payoutType: "unitrust" | "annuity";
     payoutPercent: number | null;
+    payoutAmount: number | null;
     irc7520Rate: number;
     termType: "years" | "single_life" | "joint_life" | "shorter_of_years_or_life";
     termYears: number | null;
@@ -206,6 +207,8 @@ export function deriveTrustCardData(
           payoutType: si.payoutType,
           payoutPercent:
             si.payoutPercent != null ? Number(si.payoutPercent) : null,
+          payoutAmount:
+            si.payoutAmount != null ? Number(si.payoutAmount) : null,
           irc7520Rate: Number(si.irc7520Rate),
           termType: si.termType,
           termYears: si.termYears ?? null,

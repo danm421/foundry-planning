@@ -174,18 +174,18 @@ describe("giftRowToDraft — Bug A: useCrummeyPowers", () => {
 // ── Bug B: eventKind ──────────────────────────────────────────────────────────
 describe("giftRowToDraft — Bug B: eventKind", () => {
   it("carries a non-outright eventKind on a cash row", () => {
-    const draft = giftRowToDraft(cashRow({ eventKind: "clut_remainder_interest" }));
+    const draft = giftRowToDraft(cashRow({ eventKind: "clt_remainder_interest" }));
     expect(draft?.kind).toBe("cash-once");
     if (draft?.kind === "cash-once") {
-      expect(draft.eventKind).toBe("clut_remainder_interest");
+      expect(draft.eventKind).toBe("clt_remainder_interest");
     }
   });
 
   it("carries a non-outright eventKind on an asset row", () => {
-    const draft = giftRowToDraft(assetRow({ eventKind: "clut_remainder_interest" }));
+    const draft = giftRowToDraft(assetRow({ eventKind: "clt_remainder_interest" }));
     expect(draft?.kind).toBe("asset-once");
     if (draft?.kind === "asset-once") {
-      expect(draft.eventKind).toBe("clut_remainder_interest");
+      expect(draft.eventKind).toBe("clt_remainder_interest");
     }
   });
 
@@ -270,7 +270,7 @@ describe("giftSeriesRowToDraft", () => {
 
 // ── Round-trip tests (applyGiftsToClientData) ─────────────────────────────────
 describe("applyGiftsToClientData — round-trip correctness", () => {
-  it("cash-once: eventKind clut_remainder_interest and crummey: true survive round-trip", () => {
+  it("cash-once: eventKind clt_remainder_interest and crummey: true survive round-trip", () => {
     const gift: EstateFlowGift = {
       kind: "cash-once",
       id: "g-clut",
@@ -279,7 +279,7 @@ describe("applyGiftsToClientData — round-trip correctness", () => {
       grantor: "client",
       recipient: { kind: "entity", id: "trust-clut" },
       crummey: true,
-      eventKind: "clut_remainder_interest",
+      eventKind: "clt_remainder_interest",
     };
     const out = applyGiftsToClientData(baseData(), [gift], 0.025);
 
@@ -289,7 +289,7 @@ describe("applyGiftsToClientData — round-trip correctness", () => {
     expect(cashEvents[0]).toMatchObject({
       kind: "cash",
       useCrummeyPowers: true,
-      eventKind: "clut_remainder_interest",
+      eventKind: "clt_remainder_interest",
     });
 
     // gifts[]: loader's mappedGifts omits eventKind — we match that behaviour
@@ -389,7 +389,7 @@ describe("applyGiftsToClientData — bundled liability transfer", () => {
       percent: 0.5,
       grantor: "client",
       recipient: { kind: "entity", id: "trust-1" },
-      eventKind: "clut_remainder_interest",
+      eventKind: "clt_remainder_interest",
     };
     const out = applyGiftsToClientData(
       baseData([liability({ linkedPropertyId: "acc-1" })]),
@@ -397,7 +397,7 @@ describe("applyGiftsToClientData — bundled liability transfer", () => {
       0.025,
     );
     const liabEvent = out.giftEvents.find((e) => e.kind === "liability");
-    expect(liabEvent).toMatchObject({ eventKind: "clut_remainder_interest" });
+    expect(liabEvent).toMatchObject({ eventKind: "clt_remainder_interest" });
   });
 
   it("ignores liabilities not linked to the gifted account", () => {

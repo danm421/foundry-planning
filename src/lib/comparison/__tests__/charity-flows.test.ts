@@ -47,7 +47,7 @@ function mkPlan(opts: {
 }
 
 describe("perYearCharitableFlows", () => {
-  it("sums charity cash gifts + CLUT outflows by year", () => {
+  it("sums charity cash gifts + CLT outflows by year", () => {
     const plan = mkPlan({
       gifts: [
         { year: 2030, amount: 10_000, recipient: "ch1" },
@@ -67,9 +67,9 @@ describe("perYearCharitableFlows", () => {
 
     const out = perYearCharitableFlows(plan, null);
     expect(out).toEqual([
-      { year: 2030, cashGiftsToCharity: 10_000, clutOutflows: 1_000, total: 11_000 },
-      { year: 2031, cashGiftsToCharity: 20_000, clutOutflows: 0, total: 20_000 },
-      { year: 2032, cashGiftsToCharity: 0, clutOutflows: 500, total: 500 },
+      { year: 2030, cashGiftsToCharity: 10_000, cltOutflows: 1_000, total: 11_000 },
+      { year: 2031, cashGiftsToCharity: 20_000, cltOutflows: 0, total: 20_000 },
+      { year: 2032, cashGiftsToCharity: 0, cltOutflows: 500, total: 500 },
     ]);
   });
 

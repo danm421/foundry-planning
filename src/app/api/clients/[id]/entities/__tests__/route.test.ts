@@ -71,7 +71,7 @@ beforeAll(async () => {
       relationship: "child",
     });
 
-  // Fixtures for the CLUT creation test.
+  // Fixtures for the CLT creation test.
   const [measuringLife] = await db
     .insert(familyMembers)
     .values({
@@ -439,17 +439,17 @@ describe("GET /api/clients/[id]/entities", () => {
   });
 });
 
-// ── CLUT creation tests ───────────────────────────────────────────────────────
+// ── CLT creation tests ───────────────────────────────────────────────────────
 
-describe("POST /api/clients/[id]/entities — CLUT creation", () => {
-  it("creates a term-certain CLUT with split-interest details and auto-emits the remainder gift", async () => {
+describe("POST /api/clients/[id]/entities — CLT creation", () => {
+  it("creates a term-certain CLT with split-interest details and auto-emits the remainder gift", async () => {
     void measuringLifeId; // measuring life referenced by single_life test below
 
     const res = await POST(
       makePostReq({
-        name: "Smith Family CLUT",
+        name: "Smith Family CLT",
         entityType: "trust",
-        trustSubType: "clut",
+        trustSubType: "clt",
         isIrrevocable: true,
         grantor: "client",
         splitInterest: {
@@ -467,7 +467,7 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
     );
     expect(res.status).toBe(201);
     const created = await res.json();
-    expect(created.trustSubType).toBe("clut");
+    expect(created.trustSubType).toBe("clt");
 
     const [details] = await db
       .select()
@@ -486,7 +486,7 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
       .where(
         and(
           eq(gifts.recipientEntityId, created.id),
-          eq(gifts.eventKind, "clut_remainder_interest"),
+          eq(gifts.eventKind, "clt_remainder_interest"),
         ),
       );
     expect(remainderGift).toBeDefined();
@@ -495,12 +495,12 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
     expect(remainderGift.grantor).toBe("client");
   });
 
-  it("rejects a CLUT without splitInterest payload", async () => {
+  it("rejects a CLT without splitInterest payload", async () => {
     const res = await POST(
       makePostReq({
-        name: "Bare CLUT",
+        name: "Bare CLT",
         entityType: "trust",
-        trustSubType: "clut",
+        trustSubType: "clt",
         isIrrevocable: true,
         grantor: "client",
       }),
@@ -513,7 +513,7 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
     ).toBe(true);
   });
 
-  it("rejects splitInterest on a non-CLUT trust", async () => {
+  it("rejects splitInterest on a non-CLT trust", async () => {
     const res = await POST(
       makePostReq({
         name: "SLAT misuse",
@@ -535,5 +535,113 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
       { params: Promise.resolve({ id: clientId }) },
     );
     expect(res.status).toBe(400);
+  });
+
+  it("creates a term-certain CLAT (annuity) and auto-emits the remainder gift", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Smith Family CLAT",
+        entityType: "trust",
+        trustSubType: "clt",
+        isIrrevocable: true,
+        grantor: "client",
+        splitInterest: {
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "annuity",
+          payoutAmount: 60_000,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.trustSubType).toBe("clt");
+
+    const [details] = await db
+      .select()
+      .from(trustSplitInterestDetails)
+      .where(eq(trustSplitInterestDetails.entityId, created.id));
+    expect(details).toBeDefined();
+    expect(details.payoutType).toBe("annuity");
+    expect(Number(details.payoutAmount)).toBeCloseTo(60_000, 0);
+    expect(details.payoutPercent).toBeNull();
+    // a_10 at 4% = 8.110896 → income ≈ 486,654 → remainder ≈ 513,346
+    expect(Number(details.originalIncomeInterest)).toBeCloseTo(486_654, 0);
+    expect(Number(details.originalRemainderInterest)).toBeCloseTo(513_346, 0);
+
+    const [remainderGift] = await db
+      .select()
+      .from(gifts)
+      .where(
+        and(
+          eq(gifts.recipientEntityId, created.id),
+          eq(gifts.eventKind, "clt_remainder_interest"),
+        ),
+      );
+    expect(remainderGift).toBeDefined();
+    expect(Number(remainderGift.amount)).toBeCloseTo(513_346, 0);
+    expect(remainderGift.year).toBe(2026);
+    expect(remainderGift.grantor).toBe("client");
+  });
+
+  it("rejects a CLAT with payoutPercent set (mutual exclusivity)", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Bad CLAT",
+        entityType: "trust",
+        trustSubType: "clt",
+        isIrrevocable: true,
+        grantor: "client",
+        splitInterest: {
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "annuity",
+          payoutAmount: 60_000,
+          payoutPercent: 0.05,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(
+      body.issues.some((i: { path: string[] }) => i.path.includes("payoutPercent")),
+    ).toBe(true);
+  });
+
+  it("rejects an annuity CLAT missing payoutAmount", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Bad CLAT 2",
+        entityType: "trust",
+        trustSubType: "clt",
+        isIrrevocable: true,
+        grantor: "client",
+        splitInterest: {
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "annuity",
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(
+      body.issues.some((i: { path: string[] }) => i.path.includes("payoutAmount")),
+    ).toBe(true);
   });
 });

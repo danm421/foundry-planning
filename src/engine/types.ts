@@ -19,7 +19,7 @@ export interface Gift {
   useCrummeyPowers: boolean;
   /**
    * Optional event kind for non-outright gifts. Set to
-   * 'clut_remainder_interest' on the gift auto-emitted at CLUT inception
+   * 'clt_remainder_interest' on the gift auto-emitted at CLT inception
    * (the present-value remainder portion that consumes lifetime exemption).
    * Default behavior (outright cash/asset gift) leaves this undefined.
    */
@@ -303,7 +303,7 @@ export interface FamilyMember {
   inheritanceClassOverride?: Partial<Record<"PA" | "NJ" | "KY" | "NE" | "MD", "A" | "B" | "C" | "D">>;
 }
 
-export type GiftEventKind = "outright" | "clut_remainder_interest";
+export type GiftEventKind = "outright" | "clt_remainder_interest";
 
 export type GiftEvent =
   | {
@@ -479,7 +479,7 @@ export interface EntitySummary {
    *  has unassigned slack. */
   owners?: import("./ownership").EntityOwner[];
   /** Frozen split-interest snapshot for CLUT/CLAT trusts. Populated only when
-   *  trustSubType = 'clut'. Captures inception-time inputs and computed
+   *  trustSubType = 'clt'. Captures inception-time inputs and computed
    *  income/remainder interests so engine passes don't recompute mid-projection. */
   splitInterest?: TrustSplitInterestSnapshot;
 }
@@ -1173,7 +1173,7 @@ export interface ProjectionYear {
    *  trusts that ran an annual pass this year (mandatory + discretionary).
    *  Sourced from trustPassResult.distributionsByEntity[entityId].drawFromCash.
    *  Excludes grantor-trust distributions (those flow through ledger entries
-   *  with category: "expense" / "income") and CLUT charity payments
+   *  with category: "expense" / "income") and CLT charity payments
    *  (read charitableOutflowDetail for those). */
   trustDistributionsByEntity?: Map<string, number>;
   /** Per-entity cash-flow rollup. Keyed by entity id. Empty map if no
@@ -1200,21 +1200,23 @@ export interface ProjectionYear {
   trustWarnings?: TrustWarning[];
   /** IRC §170(b) charitable-deduction carryforward state at end of this year. */
   charityCarryforward?: CharityCarryforward;
-  /** Sum of split-interest-trust outflows to charity this year (CLUT annual
-   * unitrust payments). 0 in years with no trust-driven charitable flow. */
+  /** Sum of split-interest-trust outflows to charity this year (CLT annual
+   * lead payments — unitrust or annuity). 0 in years with no trust-driven
+   * charitable flow. */
   charitableOutflows: number;
   /** Per-trust-per-charity breakdown of charitableOutflows. Populated only
    * when charitableOutflows > 0. */
   charitableOutflowDetail?: Array<{
-    kind: "clut_unitrust";
+    kind: "clt_payment";
     trustId: string;
     trustName: string;
     charityId: string;
     amount: number;
+    payoutType: "unitrust" | "annuity";
   }>;
-  /** End-of-term trust termination distributions. One entry per CLUT whose
+  /** End-of-term trust termination distributions. One entry per CLT whose
    * lead term ended in the prior year (distributions fire the year after
-   * the last unitrust payment). Populated only in the termination year. */
+   * the last lead payment). Populated only in the termination year. */
   trustTerminations?: Array<{
     trustId: string;
     trustName: string;

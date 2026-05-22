@@ -5,7 +5,7 @@ import type { YearRange } from "./layout-schema";
 export interface CharitableFlowRow {
   year: number;
   cashGiftsToCharity: number;
-  clutOutflows: number;
+  cltOutflows: number;
   total: number;
 }
 
@@ -33,12 +33,12 @@ export function perYearCharitableFlows(
   for (const y of plan.result.years) {
     if (!inRange(y.year)) continue;
     const cashGiftsToCharity = giftsByYear.get(y.year) ?? 0;
-    const clutOutflows = y.charitableOutflows ?? 0;
+    const cltOutflows = y.charitableOutflows ?? 0;
     rows.push({
       year: y.year,
       cashGiftsToCharity,
-      clutOutflows,
-      total: cashGiftsToCharity + clutOutflows,
+      cltOutflows,
+      total: cashGiftsToCharity + cltOutflows,
     });
   }
   return rows;

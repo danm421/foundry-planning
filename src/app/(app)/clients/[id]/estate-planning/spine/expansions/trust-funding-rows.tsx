@@ -6,7 +6,7 @@ const SUBTYPE_PILL: Record<TrustSubType, string> = {
   revocable: "bg-cat-portfolio/15 text-cat-portfolio",
   irrevocable: "bg-warn/15 text-warn",
   ilit: "bg-warn/15 text-warn",
-  clut: "bg-cat-life/15 text-cat-life",
+  clt: "bg-cat-life/15 text-cat-life",
   idgt: "bg-warn/15 text-warn",
 };
 

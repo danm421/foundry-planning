@@ -80,8 +80,8 @@ describe("CharitableImpactComparisonSection", () => {
     expect(screen.getAllByTestId("chart")).toHaveLength(1);
     expect(screen.getByText("A")).toBeTruthy();
     expect(screen.getByText("B")).toBeTruthy();
-    expect(screen.getByText("$6,000")).toBeTruthy(); // A: 5000 gift + 1000 CLUT
-    expect(screen.getByText("$2,000")).toBeTruthy(); // B: 0 gift + 2000 CLUT
+    expect(screen.getByText("$6,000")).toBeTruthy(); // A: 5000 gift + 1000 CLT
+    expect(screen.getByText("$2,000")).toBeTruthy(); // B: 0 gift + 2000 CLT
   });
 
   it("renders an empty state when no plan has any charitable outflow in range", () => {
