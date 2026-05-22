@@ -2019,12 +2019,32 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
     fields: [accounts.scenarioId],
     references: [scenarios.id],
   }),
+  owners: many(accountOwners),
   savingsRules: many(savingsRules),
   withdrawalStrategies: many(withdrawalStrategies),
   policy: one(lifeInsurancePolicies, {
     fields: [accounts.id],
     references: [lifeInsurancePolicies.accountId],
     relationName: "policyAccount",
+  }),
+}));
+
+export const accountOwnersRelations = relations(accountOwners, ({ one }) => ({
+  account: one(accounts, {
+    fields: [accountOwners.accountId],
+    references: [accounts.id],
+  }),
+  familyMember: one(familyMembers, {
+    fields: [accountOwners.familyMemberId],
+    references: [familyMembers.id],
+  }),
+  entity: one(entities, {
+    fields: [accountOwners.entityId],
+    references: [entities.id],
+  }),
+  externalBeneficiary: one(externalBeneficiaries, {
+    fields: [accountOwners.externalBeneficiaryId],
+    references: [externalBeneficiaries.id],
   }),
 }));
 

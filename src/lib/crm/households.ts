@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { crmHouseholds } from "@/db/schema";
+import { accounts, crmHouseholds, scenarios } from "@/db/schema";
 import { and, eq, ilike, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -34,14 +34,75 @@ export async function listCrmHouseholds(opts?: {
 
 export async function getCrmHousehold(id: string) {
   const firmId = await requireOrgId();
-  return db.query.crmHouseholds.findFirst({
+  const household = await db.query.crmHouseholds.findFirst({
     where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
     with: {
       contacts: true,
-      accounts: { with: { contact: true } },
       documents: true,
+      planningClient: { columns: { id: true } },
     },
   });
+  if (!household) return undefined;
+
+  const planningAccounts = household.planningClient
+    ? await loadPlanningAccountsForClient(household.planningClient.id)
+    : [];
+
+  return { ...household, planningAccounts };
+}
+
+async function loadPlanningAccountsForClient(clientId: string) {
+  const [baseScenario] = await db
+    .select({ id: scenarios.id })
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
+    .limit(1);
+  if (!baseScenario) return [];
+
+  const rows = await db.query.accounts.findMany({
+    where: and(
+      eq(accounts.clientId, clientId),
+      eq(accounts.scenarioId, baseScenario.id),
+    ),
+    with: {
+      owners: {
+        with: {
+          familyMember: { columns: { firstName: true, lastName: true } },
+          entity: { columns: { name: true } },
+          externalBeneficiary: { columns: { name: true } },
+        },
+      },
+    },
+    orderBy: (a, { desc }) => [desc(a.value)],
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    subType: row.subType,
+    custodian: row.custodian,
+    accountNumberLast4: row.accountNumberLast4,
+    value: row.value,
+    basis: row.basis,
+    owners: row.owners.map((o) => ({
+      percent: o.percent,
+      name: ownerDisplayName(o),
+    })),
+  }));
+}
+
+function ownerDisplayName(o: {
+  familyMember: { firstName: string; lastName: string | null } | null;
+  entity: { name: string } | null;
+  externalBeneficiary: { name: string } | null;
+}): string {
+  if (o.familyMember) {
+    return `${o.familyMember.firstName} ${o.familyMember.lastName ?? ""}`.trim();
+  }
+  if (o.entity) return o.entity.name;
+  if (o.externalBeneficiary) return o.externalBeneficiary.name;
+  return "—";
 }
 
 export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
