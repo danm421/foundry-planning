@@ -234,6 +234,73 @@ describe("buildEstateFlowSummary — entity disambiguation", () => {
   });
 });
 
+describe("buildEstateFlowSummary — spouseNetWorth", () => {
+  it("returns the surviving spouse's separately-owned account total", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-spouse", role: "spouse", firstName: "Susan" },
+    ] as ClientData["familyMembers"];
+    clientData.accounts = [
+      {
+        id: "a1",
+        name: "Susan Roth",
+        owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+        value: 500_000,
+      },
+      {
+        id: "a2",
+        name: "Joint",
+        owners: [
+          { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+          { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+        ],
+        value: 200_000,
+      },
+      {
+        id: "a3",
+        name: "Cooper Solo",
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        value: 999_999,
+      },
+    ] as unknown as ClientData["accounts"];
+
+    const firstDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2028,
+      recipients: [],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ firstDeath }),
+      clientData,
+    })!;
+
+    expect(summary.spouseNetWorth).toEqual({
+      ownerLabel: "Susan",
+      amount: 500_000,
+    });
+  });
+
+  it("is null for a single-filer household", () => {
+    const summary = buildEstateFlowSummary({
+      ...baseInput({
+        secondDeath: deathSection({
+          decedent: "client",
+          decedentName: "Cooper",
+          year: 2030,
+          recipients: [],
+          reductions: [],
+        }),
+      }),
+      ownerNames: { clientName: "Cooper", spouseName: null },
+    })!;
+    expect(summary.spouseNetWorth).toBeNull();
+  });
+});
+
 describe("buildEstateFlowSummary — first death sub-boxes", () => {
   it("emits taxes + trusts + inheritance_spouse for a married first death", () => {
     const clientData = emptyClientData();

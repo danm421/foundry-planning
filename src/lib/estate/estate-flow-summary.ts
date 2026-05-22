@@ -6,6 +6,7 @@ import type {
   ReductionsLine,
 } from "@/lib/estate/transfer-report";
 import type { ClientData } from "@/engine/types";
+import { controllingFamilyMember } from "@/engine/ownership";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 export interface EstateFlowSummary {
@@ -191,6 +192,29 @@ function buildDeathStage(
   };
 }
 
+/**
+ * Sum of accounts owned 100% by the surviving spouse — the leftmost top-row
+ * box on the estate flow chart. Joint and mixed-ownership accounts don't
+ * count; only sole-ownership lands here (matches `controllingFamilyMember`,
+ * the same helper used by the Sankey source rail in `owner-bucket.ts`).
+ * Returns null when there's no spouse on the household.
+ */
+function computeSpouseNetWorth(
+  clientData: ClientData,
+  spouseLabel: string | null,
+): EstateFlowSummary["spouseNetWorth"] {
+  if (!spouseLabel) return null;
+  const spouseFmId = (clientData.familyMembers ?? []).find(
+    (fm) => fm.role === "spouse",
+  )?.id;
+  if (!spouseFmId) return { ownerLabel: spouseLabel, amount: 0 };
+  const total = (clientData.accounts ?? []).reduce((sum, account) => {
+    if (controllingFamilyMember(account) !== spouseFmId) return sum;
+    return sum + (typeof account.value === "number" ? account.value : 0);
+  }, 0);
+  return { ownerLabel: spouseLabel, amount: total };
+}
+
 export function buildEstateFlowSummary(
   input: BuildEstateFlowSummaryInput,
 ): EstateFlowSummary | null {
@@ -220,8 +244,13 @@ export function buildEstateFlowSummary(
       )
     : null;
 
+  const spouseNetWorth = computeSpouseNetWorth(
+    clientData,
+    ownerNames.spouseName,
+  );
+
   return {
-    spouseNetWorth: null,
+    spouseNetWorth,
     firstDeath,
     secondDeath,
     outOfEstate: {
