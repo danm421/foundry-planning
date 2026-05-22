@@ -131,11 +131,10 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
     case "bequestsToTrusts":
     case "transfersToSpouse":
     case "transfersToHeirs": {
-      // Sub-box totals are gross asset values; liabilities passing with the
-      // asset (a mortgage assumed by the spouse with the home, e.g.) are
-      // excluded from the parent so the chart reconciles. Surface them here as
-      // a separate "Debts Assumed" section so the advisor still sees what the
-      // recipient is taking on, even though it isn't part of the headline.
+      // Sub-box total is net (assets minus assumed liabilities) to foot to the
+      // parent's net estate value. Split the lines here so the advisor sees
+      // gross assets and assumed debts separately — the headline at the bottom
+      // ("Net equity received") matches the parent sub-box total.
       const allLines = selected.payload.box
         .lines as import("@/lib/estate/transfer-report").AssetTransferLine[];
       const assetLines = allLines.filter(

@@ -43,6 +43,10 @@ export interface EstateFlowSummary {
 export interface DeathStage {
   decedentLabel: string;
   year: number;
+  /** Net estate flowing through the death event — gross asset transfers
+   *  minus any liability transfers that ride along (e.g. a mortgage assumed
+   *  with the home). Equals `Σ estateLines.amount`. Distinct from the
+   *  Form 706 gross-estate concept in `estate-tax.ts`. */
   estateValue: number;
   estateLines: AssetTransferLine[];
   subBoxes: DeathSubBox[];
@@ -120,9 +124,44 @@ function buildDeathStage(
   isFirstDeath: boolean,
   clientData: ClientData,
 ): DeathStage {
-  // Flatten estate-source lines from the section's recipients.
-  const estateLines: AssetTransferLine[] = section.recipients.flatMap((r) =>
-    r.byMechanism.flatMap((m) => m.assets),
+  // Scale a raw transfer amount down to the decedent's chargeable share.
+  // JTWROS real estate, for example, transfers 100% to the survivor by
+  // titling but only the decedent's 50% is in their estate; ditto a sole-
+  // FM-owned account at 100%. Lookups come from the engine's Form 706
+  // gross-estate lines (see transfer-report.ts). Anything the engine didn't
+  // emit (e.g. unlinked debt transfers with no chargeable share) defaults
+  // to its full amount — the report-side reductions track those separately.
+  const chargeable = (line: AssetTransferLine): number => {
+    if (line.sourceAccountId != null) {
+      const pct = section.chargeableShareByAccount[line.sourceAccountId];
+      return pct != null ? line.amount * pct : line.amount;
+    }
+    if (line.sourceLiabilityId != null) {
+      const pct = section.chargeableShareByLiability[line.sourceLiabilityId];
+      return pct != null ? line.amount * pct : line.amount;
+    }
+    return line.amount;
+  };
+
+  // Pre-compute scaled amounts once so every downstream sum / consolidation
+  // uses the same numbers and the box / sub-box / popover all foot.
+  const scaledByRef = new WeakMap<AssetTransferLine, number>();
+  const scale = (l: AssetTransferLine): number => {
+    const existing = scaledByRef.get(l);
+    if (existing !== undefined) return existing;
+    const v = chargeable(l);
+    scaledByRef.set(l, v);
+    return v;
+  };
+
+  // Consolidate the popover lines by source — life-insurance policies with
+  // two beneficiaries emit one transfer per beneficiary, but to the advisor
+  // it's a single $X policy. Joint accounts likewise emit a single transfer
+  // but we still key by source to keep the popover one line per asset/debt.
+  const estateLines: AssetTransferLine[] = consolidateBySource(
+    section.recipients.flatMap((r) =>
+      r.byMechanism.flatMap((m) => m.assets.map((a) => ({ line: a, scaled: scale(a) }))),
+    ),
   );
 
   // Entities with recipientKind === "entity" cover trusts, LLCs, S-corps, etc.
@@ -135,25 +174,14 @@ function buildDeathStage(
 
   const subBoxes: DeathSubBox[] = [];
 
-  // Recipient sub-boxes sum the *gross asset value* flowing to each bucket
-  // (positive asset transfers only). Liability transfers — a mortgage that
-  // moves with the home to the surviving spouse, for example — are excluded
-  // so the sub-boxes tally exactly to the parent's gross estate. The debt
-  // still shows up in the per-asset detail panel as a negative line.
-  const grossAssetTotal = (groups: RecipientGroup[]): number =>
+  // Sub-box totals sum each transfer at its chargeable-share amount so they
+  // foot to the parent box (which itself equals Σ scaled estate lines).
+  const chargeableRecipientTotal = (groups: RecipientGroup[]): number =>
     groups.reduce(
       (s, g) =>
         s +
         g.byMechanism.reduce(
-          (ms, m) =>
-            ms +
-            m.assets.reduce(
-              (as, a) =>
-                a.sourceLiabilityId == null && a.amount > 0
-                  ? as + a.amount
-                  : as,
-              0,
-            ),
+          (ms, m) => ms + m.assets.reduce((as, a) => as + scale(a), 0),
           0,
         ),
       0,
@@ -185,13 +213,15 @@ function buildDeathStage(
       trustEntityIds.has(g.recipientId),
   );
   if (trustGroups.length > 0) {
-    const trustAssets: AssetTransferLine[] = trustGroups.flatMap((g) =>
-      g.byMechanism.flatMap((m) => m.assets),
+    const trustAssets: AssetTransferLine[] = consolidateBySource(
+      trustGroups.flatMap((g) =>
+        g.byMechanism.flatMap((m) => m.assets.map((a) => ({ line: a, scaled: scale(a) }))),
+      ),
     );
     subBoxes.push({
       kind: "trusts",
       label: "Trusts",
-      total: grossAssetTotal(trustGroups),
+      total: chargeableRecipientTotal(trustGroups),
       lines: trustAssets,
     });
   }
@@ -202,13 +232,15 @@ function buildDeathStage(
       (g) => g.recipientKind === "spouse" && g.total > 0,
     );
     if (spouseGroup) {
-      const spouseAssets: AssetTransferLine[] = spouseGroup.byMechanism.flatMap(
-        (m) => m.assets,
+      const spouseAssets: AssetTransferLine[] = consolidateBySource(
+        spouseGroup.byMechanism.flatMap((m) =>
+          m.assets.map((a) => ({ line: a, scaled: scale(a) })),
+        ),
       );
       subBoxes.push({
         kind: "inheritance_spouse",
         label: "Surviving Spouse",
-        total: grossAssetTotal([spouseGroup]),
+        total: chargeableRecipientTotal([spouseGroup]),
         lines: spouseAssets,
         targetLabel: spouseLabel ? `${spouseLabel}'s Estate` : "Surviving Spouse",
       });
@@ -230,24 +262,63 @@ function buildDeathStage(
     ...entityNonTrustGroups,
   ];
   if (outrightGroups.length > 0) {
-    const outrightAssets: AssetTransferLine[] = outrightGroups.flatMap((g) =>
-      g.byMechanism.flatMap((m) => m.assets),
+    const outrightAssets: AssetTransferLine[] = consolidateBySource(
+      outrightGroups.flatMap((g) =>
+        g.byMechanism.flatMap((m) => m.assets.map((a) => ({ line: a, scaled: scale(a) }))),
+      ),
     );
     subBoxes.push({
       kind: "heirs_outright",
       label: "Heirs",
-      total: grossAssetTotal(outrightGroups),
+      total: chargeableRecipientTotal(outrightGroups),
       lines: outrightAssets,
     });
   }
 
+  // estateValue equals Σ estateLines (each line at the decedent's chargeable
+  // share). For a sole-decedent household this matches asset transfers minus
+  // assumed debts; for joint accounts at first death only the decedent's 50%
+  // counts. Lines up with Form 706 gross estate in the Estate Tax view.
   return {
     decedentLabel: `${section.decedentName}'s Estate`,
     year: section.year,
-    estateValue: section.assetEstateValue,
+    estateValue: estateLines.reduce((s, l) => s + l.amount, 0),
     estateLines,
     subBoxes,
   };
+}
+
+/**
+ * Collapses transfer rows down to one row per source — life-insurance with
+ * two beneficiaries emits two ledger lines for the same policy, joint
+ * accounts may emit multiple split rows, etc. Sums the *scaled* amount per
+ * source so each row already carries its chargeable-share value. Preserves
+ * the basis / conflict-id / distributionForm metadata from the first row
+ * encountered for that source (display fields, not financial).
+ */
+function consolidateBySource(
+  entries: { line: AssetTransferLine; scaled: number }[],
+): AssetTransferLine[] {
+  const byKey = new Map<string, { line: AssetTransferLine; amount: number }>();
+  let synthIdx = 0;
+  for (const { line, scaled } of entries) {
+    const key =
+      line.sourceAccountId != null
+        ? `acct:${line.sourceAccountId}`
+        : line.sourceLiabilityId != null
+          ? `liab:${line.sourceLiabilityId}`
+          : `none:${synthIdx++}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.amount += scaled;
+    } else {
+      byKey.set(key, { line, amount: scaled });
+    }
+  }
+  return [...byKey.values()].map(({ line, amount }) => ({
+    ...line,
+    amount,
+  }));
 }
 
 /**

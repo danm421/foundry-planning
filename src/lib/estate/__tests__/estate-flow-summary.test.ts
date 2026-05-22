@@ -108,6 +108,8 @@ function deathSection(opts: {
     recipients: opts.recipients,
     reductions: opts.reductions,
     conflicts: [],
+    chargeableShareByAccount: {},
+    chargeableShareByLiability: {},
     reconciliation: {
       sumLiabilityTransfers: 0,
       sumRecipients: assetEstateValue,
@@ -196,6 +198,144 @@ describe("buildEstateFlowSummary — second death sub-boxes", () => {
 
     expect(subBoxes.find((b) => b.kind === "inheritance_spouse")).toBeUndefined();
     expect(subBoxes.find((b) => b.kind === "trusts")).toBeUndefined();
+  });
+});
+
+describe("buildEstateFlowSummary — liability netting", () => {
+  it("nets liability transfers into stage.estateValue and the spouse sub-box", () => {
+    // Cooper leaves Susan a $950k home and the $600k mortgage that rides with
+    // it. The real engine reports assetEstateValue=$950k (positives only) and
+    // sumLiabilityTransfers=−$600k, with RecipientGroup.total already net at
+    // $350k because it sums every transfer.
+    const homeAsset = asset("Home", 950_000, { sourceAccountId: "acct-home" });
+    const mortgageLine = asset("Home Mortgage", -600_000, {
+      sourceAccountId: null,
+      sourceLiabilityId: "liab-mortgage",
+    });
+    const spouseGroup = group({
+      key: "spouse|",
+      kind: "spouse",
+      label: "Susan Sample",
+      byMechanism: [mech("titling", [homeAsset, mortgageLine])],
+    });
+
+    const firstDeath: DeathSectionData = {
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2026,
+      taxableEstate: 0,
+      assetEstateValue: 950_000,
+      assetCount: 1,
+      recipients: [spouseGroup],
+      reductions: [],
+      conflicts: [],
+      // Cooper is the sole owner of both rows (chargeable share = 1.0). The
+      // netting comes from the liability being signed-negative, not from a
+      // joint split. A separate test below covers the joint case.
+      chargeableShareByAccount: { "acct-home": 1 },
+      chargeableShareByLiability: { "liab-mortgage": 1 },
+      reconciliation: {
+        sumLiabilityTransfers: -600_000,
+        sumRecipients: 350_000,
+        sumReductions: 0,
+        unattributed: 0,
+        reconciles: true,
+      },
+    };
+
+    const summary = buildEstateFlowSummary(baseInput({ firstDeath }))!;
+    expect(summary.firstDeath!.estateValue).toBe(350_000);
+
+    const spouseBox = summary.firstDeath!.subBoxes.find(
+      (b) => b.kind === "inheritance_spouse",
+    )!;
+    expect(spouseBox.total).toBe(350_000);
+    expect(spouseBox.lines).toHaveLength(2);
+  });
+
+  it("scales joint accounts to the decedent's chargeable share and consolidates split beneficiaries", () => {
+    // Real Estate is jointly titled — chargeable share = 0.5 at first death.
+    // Cooper - Term 2 is a $500k life-insurance policy split between two
+    // family-member beneficiaries; the engine writes two ledger rows. Both
+    // wind up as one Heirs sub-box at the policy's chargeable share (= 1).
+    const realEstate = asset("Real Estate", 1_000_000, {
+      sourceAccountId: "acct-re",
+    });
+    const term2A = asset("Cooper - Term 2", 250_000, {
+      sourceAccountId: "acct-term2",
+    });
+    const term2B = asset("Cooper - Term 2", 250_000, {
+      sourceAccountId: "acct-term2",
+    });
+
+    const spouseGroup = group({
+      key: "spouse|",
+      kind: "spouse",
+      label: "Susan Sample",
+      byMechanism: [mech("titling", [realEstate])],
+    });
+    const heirA = group({
+      key: "fm-a",
+      kind: "family_member",
+      label: "Heir A",
+      byMechanism: [mech("beneficiary_designation", [term2A])],
+    });
+    const heirB = group({
+      key: "fm-b",
+      kind: "family_member",
+      label: "Heir B",
+      byMechanism: [mech("beneficiary_designation", [term2B])],
+    });
+
+    const firstDeath: DeathSectionData = {
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2026,
+      taxableEstate: 0,
+      assetEstateValue: 1_500_000,
+      assetCount: 3,
+      recipients: [spouseGroup, heirA, heirB],
+      reductions: [],
+      conflicts: [],
+      chargeableShareByAccount: { "acct-re": 0.5, "acct-term2": 1 },
+      chargeableShareByLiability: {},
+      reconciliation: {
+        sumLiabilityTransfers: 0,
+        sumRecipients: 1_500_000,
+        sumReductions: 0,
+        unattributed: 0,
+        reconciles: true,
+      },
+    };
+
+    const summary = buildEstateFlowSummary(baseInput({ firstDeath }))!;
+
+    // Cooper's Estate = $500k (his half of Real Estate) + $500k (Term 2) = $1.0M.
+    expect(summary.firstDeath!.estateValue).toBe(1_000_000);
+
+    // Popover line items: one Real Estate at $500k (50%), one Term 2 at $500k.
+    expect(summary.firstDeath!.estateLines).toHaveLength(2);
+    const reLine = summary.firstDeath!.estateLines.find(
+      (l) => l.sourceAccountId === "acct-re",
+    )!;
+    expect(reLine.amount).toBe(500_000);
+    const t2Line = summary.firstDeath!.estateLines.find(
+      (l) => l.sourceAccountId === "acct-term2",
+    )!;
+    expect(t2Line.amount).toBe(500_000);
+
+    // Sub-boxes foot to the parent.
+    const spouseBox = summary.firstDeath!.subBoxes.find(
+      (b) => b.kind === "inheritance_spouse",
+    )!;
+    expect(spouseBox.total).toBe(500_000);
+
+    const heirsBox = summary.firstDeath!.subBoxes.find(
+      (b) => b.kind === "heirs_outright",
+    )!;
+    expect(heirsBox.total).toBe(500_000);
+    // Both heir transfers came from the same policy → one consolidated line.
+    expect(heirsBox.lines).toHaveLength(1);
   });
 });
 
