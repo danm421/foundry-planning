@@ -27,7 +27,7 @@ export interface TrustTerminationResult {
 }
 
 /**
- * Returns true when `currentYear` is the year-after-term-end for this CLUT.
+ * Returns true when `currentYear` is the year-after-term-end for this CLT.
  * For 'years' termType: inceptionYear + termYears.
  * For 'single_life': measuringLife1 death year + 1.
  * For 'joint_life': max(both deaths) + 1 (term ends at second death).
@@ -39,7 +39,7 @@ export function isTrustTerminationYear(
   currentYear: number,
   deathYears: TerminationDeathYears,
 ): boolean {
-  if (trust.trustSubType !== "clut" || !trust.splitInterest) return false;
+  if (trust.trustSubType !== "clt" || !trust.splitInterest) return false;
   const si = trust.splitInterest;
   switch (si.termType) {
     case "years":

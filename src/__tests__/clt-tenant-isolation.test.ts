@@ -1,11 +1,11 @@
 /**
- * Behavioral tenant-isolation test for CLUT split-interest details.
+ * Behavioral tenant-isolation test for CLT split-interest details.
  *
  * Mirrors the pattern of `gifts-tenant-isolation.test.ts`. Verifies:
  *   - Firm B cannot GET Firm A's entities list (which surfaces split-interest)
- *   - Firm B cannot PUT split-interest changes onto Firm A's CLUT
+ *   - Firm B cannot PUT split-interest changes onto Firm A's CLT
  *   - The split-interest payload validates and trust_split_interest_details
- *     persists when the same firm operates on its own CLUT
+ *     persists when the same firm operates on its own CLT
  *
  * Requires DATABASE_URL (loaded from .env.local). Skipped otherwise — the
  * structural contract test still enforces the CI-level invariant.
@@ -55,10 +55,10 @@ type FirmSeed = {
   scenarioId: string;
   fmId: string;
   charityId: string;
-  clutId: string;
+  cltId: string;
 };
 
-d("CLUT split-interest tenant isolation", () => {
+d("CLT split-interest tenant isolation", () => {
   let dbMod: typeof import("@/db");
   let schema: typeof import("@/db/schema");
   let helpers: typeof import("@/lib/db-helpers");
@@ -136,13 +136,13 @@ d("CLUT split-interest tenant isolation", () => {
         charityType: "public",
       })
       .returning();
-    const [clut] = await db
+    const [clt] = await db
       .insert(entities)
       .values({
         clientId: client.id,
-        name: `${firmId} CLUT`,
+        name: `${firmId} CLT`,
         entityType: "trust",
-        trustSubType: "clut",
+        trustSubType: "clt",
         isIrrevocable: true,
         isGrantor: true,
         grantor: "client",
@@ -150,7 +150,7 @@ d("CLUT split-interest tenant isolation", () => {
       } as any)
       .returning();
     await db.insert(trustSplitInterestDetails).values({
-      entityId: clut.id,
+      entityId: clt.id,
       clientId: client.id,
       inceptionYear: 2026,
       inceptionValue: "1000000",
@@ -168,7 +168,7 @@ d("CLUT split-interest tenant isolation", () => {
       scenarioId: scenario.id,
       fmId: fm.id,
       charityId: charity.id,
-      clutId: clut.id,
+      cltId: clt.id,
     };
   }
 
@@ -178,7 +178,7 @@ d("CLUT split-interest tenant isolation", () => {
     vi.mocked(helpers.requireOrgId).mockReset();
   });
 
-  it("Firm B cannot GET Firm A's entities (which surfaces CLUT split-interest)", async () => {
+  it("Firm B cannot GET Firm A's entities (which surfaces CLT split-interest)", async () => {
     const a = await setupFirmWithClut(FIRM_A);
     vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
     vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_B);
@@ -194,7 +194,7 @@ d("CLUT split-interest tenant isolation", () => {
     expect(res.status).toBe(404);
   });
 
-  it("Firm B cannot PUT split-interest changes onto Firm A's CLUT", async () => {
+  it("Firm B cannot PUT split-interest changes onto Firm A's CLT", async () => {
     const a = await setupFirmWithClut(FIRM_A);
     vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
     vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_B);
@@ -222,7 +222,7 @@ d("CLUT split-interest tenant isolation", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }) as any,
       {
-        params: Promise.resolve({ id: a.clientId, entityId: a.clutId }),
+        params: Promise.resolve({ id: a.clientId, entityId: a.cltId }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     );
@@ -234,12 +234,12 @@ d("CLUT split-interest tenant isolation", () => {
     const rows = await db
       .select()
       .from(trustSplitInterestDetails)
-      .where(eq(trustSplitInterestDetails.entityId, a.clutId));
+      .where(eq(trustSplitInterestDetails.entityId, a.cltId));
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].inceptionValue)).toBe(1_000_000);
   });
 
-  it("Firm A's GET on its own client returns the CLUT in entity list", async () => {
+  it("Firm A's GET on its own client returns the CLT in entity list", async () => {
     const a = await setupFirmWithClut(FIRM_A);
     vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
     vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
@@ -255,8 +255,8 @@ d("CLUT split-interest tenant isolation", () => {
     expect(res.status).toBe(200);
     const entities: Array<{ id: string; trustSubType?: string }> =
       await res.json();
-    const clut = entities.find((e) => e.id === a.clutId);
-    expect(clut).toBeDefined();
-    expect(clut!.trustSubType).toBe("clut");
+    const clt = entities.find((e) => e.id === a.cltId);
+    expect(clt).toBeDefined();
+    expect(clt!.trustSubType).toBe("clt");
   });
 });

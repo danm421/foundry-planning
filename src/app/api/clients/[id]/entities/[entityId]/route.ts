@@ -15,7 +15,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
-import { computeClutInceptionInterests } from "@/lib/entities/compute-clut-inception";
+import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 
 function deriveLegacyOwner(
@@ -137,9 +137,9 @@ export async function PUT(
         ? deriveLegacyOwner(patch.owners, householdMembers)
         : undefined;
 
-    // For CLUT entities, the merged-validation block below requires splitInterest
+    // For CLT entities, the merged-validation block below requires splitInterest
     // to be present (entityCreateSchema enforces this). Hydrate the existing row
-    // so a non-splitInterest patch on a CLUT still validates.
+    // so a non-splitInterest patch on a CLT still validates.
     const [existingSplitInterest] = await db
       .select()
       .from(trustSplitInterestDetails)
@@ -349,12 +349,12 @@ export async function PUT(
       await db.delete(entityOwners).where(eq(entityOwners.entityId, entityId));
     }
 
-    if (patch.splitInterest && updated.trustSubType === "clut") {
+    if (patch.splitInterest && updated.trustSubType === "clt") {
       const si = patch.splitInterest;
       const grantor = updated.grantor;
       if (grantor !== "client" && grantor !== "spouse") {
         return NextResponse.json(
-          { error: "grantor ('client' or 'spouse') is required for CLUTs" },
+          { error: "grantor ('client' or 'spouse') is required for CLTs" },
           { status: 400 },
         );
       }
@@ -392,7 +392,7 @@ export async function PUT(
         return year - parseInt(dob.slice(0, 4), 10);
       };
 
-      // For 'new' CLUTs we compute income/remainder from inputs; for
+      // For 'new' CLTs we compute income/remainder from inputs; for
       // 'existing' the caller supplies historical values from the prior
       // return and we trust them (origin-aware branch).
       const isExistingClut = si.origin === "existing";
@@ -402,7 +402,7 @@ export async function PUT(
             originalRemainderInterest: si.originalRemainderInterest!,
             remainderFactor: undefined,
           }
-        : computeClutInceptionInterests({
+        : computeCltInceptionInterests({
             inceptionValue: si.inceptionValue,
             payoutType: si.payoutType,
             payoutPercent: si.payoutPercent,
@@ -446,8 +446,8 @@ export async function PUT(
         await db.insert(trustSplitInterestDetails).values(valuesToWrite);
       }
 
-      // Auto-emit the remainder-interest gift only for new CLUTs. Existing
-      // CLUTs already filed this gift on the original §709. If a previous
+      // Auto-emit the remainder-interest gift only for new CLTs. Existing
+      // CLTs already filed this gift on the original §709. If a previous
       // 'new'-mode save left an auto-emitted gift on this entity and the
       // user later flipped origin to 'existing', delete that ledger row to
       // avoid double-counting against the lifetime exemption.
@@ -457,12 +457,12 @@ export async function PUT(
           .where(
             and(
               eq(gifts.recipientEntityId, entityId),
-              eq(gifts.eventKind, "clut_remainder_interest"),
+              eq(gifts.eventKind, "clt_remainder_interest"),
             ),
           );
       } else {
         const remainderAmount = interests.originalRemainderInterest.toString();
-        const noteText = `Auto-emitted at CLUT '${updated.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`;
+        const noteText = `Auto-emitted at CLT '${updated.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`;
         const updatedGift = await db
           .update(gifts)
           .set({
@@ -475,7 +475,7 @@ export async function PUT(
           .where(
             and(
               eq(gifts.recipientEntityId, entityId),
-              eq(gifts.eventKind, "clut_remainder_interest"),
+              eq(gifts.eventKind, "clt_remainder_interest"),
             ),
           )
           .returning({ id: gifts.id });
@@ -487,7 +487,7 @@ export async function PUT(
             amount: remainderAmount,
             grantor,
             recipientEntityId: entityId,
-            eventKind: "clut_remainder_interest",
+            eventKind: "clt_remainder_interest",
             notes: noteText,
           });
         }

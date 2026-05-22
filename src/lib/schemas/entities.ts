@@ -176,18 +176,18 @@ export const entityCreateSchema = z
       return;
     }
 
-    if (data.trustSubType === "clut" && !data.splitInterest) {
+    if (data.trustSubType === "clt" && !data.splitInterest) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["splitInterest"],
-        message: "splitInterest payload is required when trustSubType = 'clut'",
+        message: "splitInterest payload is required when trustSubType = 'clt'",
       });
     }
-    if (data.trustSubType !== "clut" && data.splitInterest) {
+    if (data.trustSubType !== "clt" && data.splitInterest) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["splitInterest"],
-        message: "splitInterest is only allowed when trustSubType = 'clut'",
+        message: "splitInterest is only allowed when trustSubType = 'clt'",
       });
     }
 
@@ -257,12 +257,12 @@ export const entityUpdateSchema = z
     if (
       d.splitInterest !== undefined &&
       d.trustSubType !== undefined &&
-      d.trustSubType !== "clut"
+      d.trustSubType !== "clt"
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["splitInterest"],
-        message: "splitInterest is only allowed when trustSubType = 'clut'",
+        message: "splitInterest is only allowed when trustSubType = 'clt'",
       });
     }
 

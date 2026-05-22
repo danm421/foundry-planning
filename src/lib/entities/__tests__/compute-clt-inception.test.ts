@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { computeClutInceptionInterests } from "../compute-clut-inception";
+import { computeCltInceptionInterests } from "../compute-clt-inception";
 
-describe("computeClutInceptionInterests", () => {
+describe("computeCltInceptionInterests", () => {
   it("matches eMoney CRUT memo example exactly", () => {
-    const result = computeClutInceptionInterests({
+    const result = computeCltInceptionInterests({
       inceptionValue: 1_000_000,
       payoutType: "unitrust",
       payoutPercent: 0.06,
@@ -21,7 +21,7 @@ describe("computeClutInceptionInterests", () => {
   });
 
   it("rounds to dollar precision for storage", () => {
-    const result = computeClutInceptionInterests({
+    const result = computeCltInceptionInterests({
       inceptionValue: 1_234_567,
       payoutType: "unitrust",
       payoutPercent: 0.05,
@@ -36,7 +36,7 @@ describe("computeClutInceptionInterests", () => {
   });
 
   it("computes single-life from measuringLifeAge1", () => {
-    const result = computeClutInceptionInterests({
+    const result = computeCltInceptionInterests({
       inceptionValue: 1_000_000,
       payoutType: "unitrust",
       payoutPercent: 0.05,
@@ -52,7 +52,7 @@ describe("computeClutInceptionInterests", () => {
   });
 
   it("throws when single_life is missing measuringLifeAge1", () => {
-    expect(() => computeClutInceptionInterests({
+    expect(() => computeCltInceptionInterests({
       inceptionValue: 1_000_000,
       payoutType: "unitrust",
       payoutPercent: 0.05,
@@ -66,12 +66,12 @@ describe("computeClutInceptionInterests", () => {
   });
 });
 
-describe("computeClutInceptionInterests (annuity / CLAT path)", () => {
+describe("computeCltInceptionInterests (annuity / CLAT path)", () => {
   it("computes term-certain CLAT income = payoutAmount × a_n", () => {
     // r=4%, n=10 → a_n = 8.110896
     // payoutAmount=$60,000 → income = $486,653.76 → $486,654
     // remainder = $1,000,000 - $486,654 = $513,346
-    const result = computeClutInceptionInterests({
+    const result = computeCltInceptionInterests({
       inceptionValue: 1_000_000,
       payoutType: "annuity",
       payoutPercent: undefined,
@@ -88,7 +88,7 @@ describe("computeClutInceptionInterests (annuity / CLAT path)", () => {
 
   it("throws when annuity is missing payoutAmount", () => {
     expect(() =>
-      computeClutInceptionInterests({
+      computeCltInceptionInterests({
         inceptionValue: 1_000_000,
         payoutType: "annuity",
         payoutPercent: undefined,
@@ -103,7 +103,7 @@ describe("computeClutInceptionInterests (annuity / CLAT path)", () => {
   });
 
   it("computes single-life CLAT from measuringLifeAge1", () => {
-    const result = computeClutInceptionInterests({
+    const result = computeCltInceptionInterests({
       inceptionValue: 1_000_000,
       payoutType: "annuity",
       payoutPercent: undefined,
@@ -123,7 +123,7 @@ describe("computeClutInceptionInterests (annuity / CLAT path)", () => {
 
   it("throws when CLAT single_life is missing measuringLifeAge1", () => {
     expect(() =>
-      computeClutInceptionInterests({
+      computeCltInceptionInterests({
         inceptionValue: 1_000_000,
         payoutType: "annuity",
         payoutPercent: undefined,

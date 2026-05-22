@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ClutFundingPick } from "@/lib/forms/clut-funding-diff";
+import type { CltFundingPick } from "@/lib/forms/clt-funding-diff";
 import { inputBaseClassName } from "./input-styles";
 import { formatCompact } from "@/lib/format-compact";
 
-export interface ClutFundingPickerAccount {
+export interface CltFundingPickerAccount {
   id: string;
   name: string;
   subType?: string;
@@ -13,12 +13,12 @@ export interface ClutFundingPickerAccount {
   value: number;
 }
 
-interface ClutFundingPickerProps {
-  accounts: ClutFundingPickerAccount[];
-  picks: ClutFundingPick[];
+interface CltFundingPickerProps {
+  accounts: CltFundingPickerAccount[];
+  picks: CltFundingPick[];
   inceptionValue: number;
   defaultGrantor: "client" | "spouse";
-  onChange: (next: ClutFundingPick[]) => void;
+  onChange: (next: CltFundingPick[]) => void;
   /** Optional DOM id for the trigger button — used for label-htmlFor association. */
   id?: string;
 }
@@ -29,33 +29,33 @@ const MONEY_FMT = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-function summary(picks: ClutFundingPick[], inceptionValue: number): string {
+function summary(picks: CltFundingPick[], inceptionValue: number): string {
   const count = picks.length;
   if (count === 0) return "Select assets to fund the trust";
   const noun = count === 1 ? "row" : "rows";
   return `${count} ${noun} · ${formatCompact(inceptionValue)}`;
 }
 
-function findAssetPick(picks: ClutFundingPick[], accountId: string) {
+function findAssetPick(picks: CltFundingPick[], accountId: string) {
   return picks.find((p) => p.kind === "asset" && p.accountId === accountId) as
-    | (ClutFundingPick & { kind: "asset" })
+    | (CltFundingPick & { kind: "asset" })
     | undefined;
 }
 
-function findCashPick(picks: ClutFundingPick[]) {
+function findCashPick(picks: CltFundingPick[]) {
   return picks.find((p) => p.kind === "cash") as
-    | (ClutFundingPick & { kind: "cash" })
+    | (CltFundingPick & { kind: "cash" })
     | undefined;
 }
 
-export default function ClutFundingPicker({
+export default function CltFundingPicker({
   accounts,
   picks,
   inceptionValue,
   defaultGrantor,
   onChange,
   id,
-}: ClutFundingPickerProps) {
+}: CltFundingPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -86,7 +86,7 @@ export default function ClutFundingPicker({
 
   const cashPick = findCashPick(picks);
 
-  function toggleAsset(account: ClutFundingPickerAccount) {
+  function toggleAsset(account: CltFundingPickerAccount) {
     const existing = findAssetPick(picks, account.id);
     if (existing) {
       onChange(picks.filter((p) => p !== existing));
@@ -154,7 +154,7 @@ export default function ClutFundingPicker({
         <div
           ref={popoverRef}
           role="dialog"
-          aria-label="CLUT funding picker"
+          aria-label="CLT funding picker"
           className="absolute left-0 right-0 z-20 mt-1 max-h-96 overflow-y-auto rounded-[var(--radius-sm)] border border-hair bg-card shadow-lg"
         >
           {accounts.length === 0 && (

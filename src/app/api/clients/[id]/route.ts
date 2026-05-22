@@ -89,7 +89,7 @@ export async function PUT(
     // If the body removes the spouse (spouseName cleared), pre-check that no
     // rows still reference the spouse family_member. Account/liability owner
     // triggers would otherwise abort the cascade with cryptic errors, and the
-    // CLUT/CLAT measuring-life FK is RESTRICT. Block here with a clear 409
+    // CLT measuring-life FK is RESTRICT. Block here with a clear 409
     // before mutating clients so we don't end up half-updated.
     const spouseBeingRemoved =
       "spouseName" in body &&

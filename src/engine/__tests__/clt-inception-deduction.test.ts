@@ -4,7 +4,7 @@ import type { ClientData, FamilyMember } from "../types";
 
 const PUBLIC_CHARITY_ID = "00000000-0000-0000-0000-000000000aaa";
 const CLIENT_FM_ID = "00000000-0000-0000-0000-000000000001";
-const CLUT_ENTITY_ID = "00000000-0000-0000-0000-000000000ccc";
+const CLT_ENTITY_ID = "00000000-0000-0000-0000-000000000ccc";
 
 function baseScenarioWithClut(opts: {
   inceptionYear: number;
@@ -65,10 +65,10 @@ function baseScenarioWithClut(opts: {
     },
     entities: [
       {
-        id: CLUT_ENTITY_ID,
-        name: "Smith Family CLUT",
+        id: CLT_ENTITY_ID,
+        name: "Smith Family CLT",
         entityType: "trust",
-        trustSubType: "clut",
+        trustSubType: "clt",
         isIrrevocable: true,
         isGrantor: true,
         includeInPortfolio: false,
@@ -112,7 +112,7 @@ function baseScenarioWithClut(opts: {
   } as ClientData;
 }
 
-describe("CLUT inception charitable deduction", () => {
+describe("CLT inception charitable deduction", () => {
   it("emits the income-interest as a 30%-AGI charitable contribution in the funding year (public charity)", () => {
     const data = baseScenarioWithClut({
       inceptionYear: 2026,
@@ -122,7 +122,7 @@ describe("CLUT inception charitable deduction", () => {
     });
     const years = runProjection(data);
     const funding = years.find((y) => y.year === 2026)!;
-    // The CLUT inception income-interest routes into the appreciatedPublic
+    // The CLT inception income-interest routes into the appreciatedPublic
     // bucket. With high AGI ($5M) the full $461K fits within the 30% cap so
     // nothing carries forward.
     expect(funding.charityCarryforward?.appreciatedPublic).toEqual([]);

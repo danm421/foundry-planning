@@ -205,7 +205,7 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "revocable",
   "irrevocable",
   "ilit",
-  "clut",
+  "clt",
   "idgt",
 ]);
 
@@ -228,7 +228,7 @@ export const trustPayoutTypeEnum = pgEnum("trust_payout_type", [
 
 export const giftEventKindEnum = pgEnum("gift_event_kind", [
   "outright",
-  "clut_remainder_interest",
+  "clt_remainder_interest",
 ]);
 
 export const yearRefEnum = pgEnum("year_ref", [

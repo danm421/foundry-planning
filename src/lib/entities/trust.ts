@@ -2,7 +2,7 @@ export const TRUST_SUB_TYPES = [
   "revocable",
   "irrevocable",
   "ilit",
-  "clut",
+  "clt",
   "idgt",
 ] as const;
 export type TrustSubType = (typeof TRUST_SUB_TYPES)[number];

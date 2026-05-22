@@ -5,9 +5,9 @@ import {
 } from "../compute-annual-payment";
 import { runProjection } from "@/engine/projection";
 import {
-  buildClutLifecycleFixture,
-  CLUT_FIXTURE_IDS,
-} from "@/engine/__tests__/_fixtures/clut";
+  buildCltLifecycleFixture,
+  CLT_FIXTURE_IDS,
+} from "@/engine/__tests__/_fixtures/clt";
 
 describe("computeAnnualUnitrustPayment", () => {
   it("returns payoutPercent × startOfYearFmv", () => {
@@ -65,9 +65,9 @@ describe("computeAnnualAnnuityPayment", () => {
   });
 });
 
-describe("CLUT annual payment integration in projection", () => {
+describe("CLT annual payment integration in projection", () => {
   it("emits a charitable outflow each year of the term, none after", () => {
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 5,
@@ -85,8 +85,8 @@ describe("CLUT annual payment integration in projection", () => {
     expect(post.charitableOutflows ?? 0).toBe(0);
   });
 
-  it("drains the CLUT-owned account by ~payoutPercent each year of the term", () => {
-    const data = buildClutLifecycleFixture({
+  it("drains the CLT-owned account by ~payoutPercent each year of the term", () => {
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 5,
@@ -96,9 +96,9 @@ describe("CLUT annual payment integration in projection", () => {
     });
     const years = runProjection(data);
     const inception = years.find((y) => y.year === 2026)!;
-    const ledger = inception.accountLedgers[CLUT_FIXTURE_IDS.CLUT_CHECKING_ID];
+    const ledger = inception.accountLedgers[CLT_FIXTURE_IDS.CLT_CHECKING_ID];
     expect(ledger).toBeDefined();
-    // After year 1 the CLUT account should be ~$940K (1M - 6% × 1M).
+    // After year 1 the CLT account should be ~$940K (1M - 6% × 1M).
     expect(ledger.endingValue).toBeLessThan(1_000_000);
     expect(ledger.endingValue).toBeCloseTo(940_000, -3);
   });

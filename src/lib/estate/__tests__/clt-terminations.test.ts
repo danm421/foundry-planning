@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { extractClutTerminations } from "../transfer-report";
+import { extractCltTerminations } from "../transfer-report";
 import { runProjectionWithEvents } from "@/engine/projection";
 import {
-  buildClutLifecycleFixture,
-  CLUT_FIXTURE_IDS,
-} from "@/engine/__tests__/_fixtures/clut";
+  buildCltLifecycleFixture,
+  CLT_FIXTURE_IDS,
+} from "@/engine/__tests__/_fixtures/clt";
 
-describe("extractClutTerminations", () => {
+describe("extractCltTerminations", () => {
   it("flattens trustTerminations across all years into a single list", () => {
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 5,
@@ -21,9 +21,9 @@ describe("extractClutTerminations", () => {
       ],
     });
     const projection = runProjectionWithEvents(data);
-    const terminations = extractClutTerminations(projection);
+    const terminations = extractCltTerminations(projection);
     expect(terminations).toHaveLength(1);
-    expect(terminations[0].trustId).toBe(CLUT_FIXTURE_IDS.CLUT_ENTITY_ID);
+    expect(terminations[0].trustId).toBe(CLT_FIXTURE_IDS.CLT_ENTITY_ID);
     expect(terminations[0].year).toBe(2031);
     expect(terminations[0].totalDistributed).toBeGreaterThan(0);
     expect(terminations[0].toBeneficiaries).toHaveLength(2);
@@ -34,7 +34,7 @@ describe("extractClutTerminations", () => {
     // Last payment year = 2026..2030; termination year = 2036; plan ends 2031,
     // so no termination row. Wait: termination year for a 10y term is 2036,
     // but planEnd=2031 means we never reach it.
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 10,
@@ -44,7 +44,7 @@ describe("extractClutTerminations", () => {
       trailingYears: -5,
     });
     const projection = runProjectionWithEvents(data);
-    const terminations = extractClutTerminations(projection);
+    const terminations = extractCltTerminations(projection);
     expect(terminations).toEqual([]);
   });
 });

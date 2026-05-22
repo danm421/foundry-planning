@@ -228,7 +228,7 @@ describe("buildRecipientDrilldown", () => {
     ]);
   });
 
-  it("annotates clut_remainder_interest gifts with CLUT trust name in description", () => {
+  it("annotates clt_remainder_interest gifts with CLT trust name in description", () => {
     const remainderGift: Gift = {
       id: "g-clut",
       year: 2028,
@@ -236,7 +236,7 @@ describe("buildRecipientDrilldown", () => {
       grantor: "client",
       recipientEntityId: "ent-1",
       useCrummeyPowers: false,
-      eventKind: "clut_remainder_interest",
+      eventKind: "clt_remainder_interest",
     };
     const groups = buildRecipientDrilldown(
       baseInput({ gifts: [remainderGift] }),
@@ -244,7 +244,7 @@ describe("buildRecipientDrilldown", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].label).toBe("Sample Family ILIT");
     expect(groups[0].rows[0].description).toMatch(
-      /CLUT Sample Family ILIT.*remainder interest/i,
+      /CLT Sample Family ILIT.*remainder interest/i,
     );
   });
 });

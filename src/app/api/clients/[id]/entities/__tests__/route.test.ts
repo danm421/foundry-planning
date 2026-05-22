@@ -71,7 +71,7 @@ beforeAll(async () => {
       relationship: "child",
     });
 
-  // Fixtures for the CLUT creation test.
+  // Fixtures for the CLT creation test.
   const [measuringLife] = await db
     .insert(familyMembers)
     .values({
@@ -439,17 +439,17 @@ describe("GET /api/clients/[id]/entities", () => {
   });
 });
 
-// ── CLUT creation tests ───────────────────────────────────────────────────────
+// ── CLT creation tests ───────────────────────────────────────────────────────
 
-describe("POST /api/clients/[id]/entities — CLUT creation", () => {
-  it("creates a term-certain CLUT with split-interest details and auto-emits the remainder gift", async () => {
+describe("POST /api/clients/[id]/entities — CLT creation", () => {
+  it("creates a term-certain CLT with split-interest details and auto-emits the remainder gift", async () => {
     void measuringLifeId; // measuring life referenced by single_life test below
 
     const res = await POST(
       makePostReq({
-        name: "Smith Family CLUT",
+        name: "Smith Family CLT",
         entityType: "trust",
-        trustSubType: "clut",
+        trustSubType: "clt",
         isIrrevocable: true,
         grantor: "client",
         splitInterest: {
@@ -467,7 +467,7 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
     );
     expect(res.status).toBe(201);
     const created = await res.json();
-    expect(created.trustSubType).toBe("clut");
+    expect(created.trustSubType).toBe("clt");
 
     const [details] = await db
       .select()
@@ -486,7 +486,7 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
       .where(
         and(
           eq(gifts.recipientEntityId, created.id),
-          eq(gifts.eventKind, "clut_remainder_interest"),
+          eq(gifts.eventKind, "clt_remainder_interest"),
         ),
       );
     expect(remainderGift).toBeDefined();
@@ -495,12 +495,12 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
     expect(remainderGift.grantor).toBe("client");
   });
 
-  it("rejects a CLUT without splitInterest payload", async () => {
+  it("rejects a CLT without splitInterest payload", async () => {
     const res = await POST(
       makePostReq({
-        name: "Bare CLUT",
+        name: "Bare CLT",
         entityType: "trust",
-        trustSubType: "clut",
+        trustSubType: "clt",
         isIrrevocable: true,
         grantor: "client",
       }),
@@ -513,7 +513,7 @@ describe("POST /api/clients/[id]/entities — CLUT creation", () => {
     ).toBe(true);
   });
 
-  it("rejects splitInterest on a non-CLUT trust", async () => {
+  it("rejects splitInterest on a non-CLT trust", async () => {
     const res = await POST(
       makePostReq({
         name: "SLAT misuse",

@@ -16,9 +16,9 @@ import {
   resolveOwnerRetirementYears,
 } from "./insurance-in-force";
 
-// ── CLUT termination surfacing ───────────────────────────────────────────────
+// ── CLT termination surfacing ───────────────────────────────────────────────
 
-export interface ClutTerminationTransfer {
+export interface CltTerminationTransfer {
   trustId: string;
   trustName: string;
   year: number;
@@ -33,20 +33,20 @@ export interface ClutTerminationTransfer {
 }
 
 /**
- * Flatten the CLUT trust-termination records emitted by the projection engine
+ * Flatten the CLT trust-termination records emitted by the projection engine
  * into a list suitable for the wealth-transfer / death-spine surfaces. The
  * caller decides where to render them — the engine just exposes the events
  * at year-grain via `ProjectionYear.trustTerminations`.
  *
- * Phase 1 surface: callers may render these as a "CLUT remainder distribution"
+ * Phase 1 surface: callers may render these as a "CLT remainder distribution"
  * mechanism on the wealth-transfer report, cross-referenced to the original
  * inception-year remainder-interest gift. Full death-spine integration is
  * deferred to phase 2 (see future-work/reports.md).
  */
-export function extractClutTerminations(
+export function extractCltTerminations(
   projection: ProjectionResult,
-): ClutTerminationTransfer[] {
-  const out: ClutTerminationTransfer[] = [];
+): CltTerminationTransfer[] {
+  const out: CltTerminationTransfer[] = [];
   for (const y of projection.years) {
     if (!y.trustTerminations) continue;
     for (const t of y.trustTerminations) {

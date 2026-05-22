@@ -97,7 +97,7 @@ describe("TrustCard", () => {
 
   it("renders split-interest details panel when splitInterest is populated", () => {
     const trust = makeTrustCardData({
-      subType: "clut",
+      subType: "clt",
       splitInterest: {
         inceptionYear: 2026,
         inceptionValue: 1_000_000,

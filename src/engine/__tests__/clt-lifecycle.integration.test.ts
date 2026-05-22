@@ -1,29 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import {
-  buildClutLifecycleFixture,
-  CLUT_FIXTURE_IDS,
-} from "./_fixtures/clut";
+  buildCltLifecycleFixture,
+  CLT_FIXTURE_IDS,
+} from "./_fixtures/clt";
 
 /**
- * End-to-end CLUT lifecycle integration. Each scenario instantiates the
+ * End-to-end CLT lifecycle integration. Each scenario instantiates the
  * fixture, runs `runProjection`, and asserts on the public output surfaces:
  *
  *   - charitableOutflows / charitableOutflowDetail: annual unitrust
- *   - taxDetail.bySource['clut_recapture:<entityId>']: §170(f)(2)(B) recapture
+ *   - taxDetail.bySource['clt_recapture:<entityId>']: §170(f)(2)(B) recapture
  *   - trustTerminations: end-of-term distribution
  *
  * Phase 1 limitations are explicit:
  *   - Life-based termination (single_life / joint_life) requires the death-
  *     event-year plumbing for measuring lives — deferred to phase 2.
- *   - `clut_depleted` informational note is unreachable with proportional
+ *   - `clt_depleted` informational note is unreachable with proportional
  *     unitrust math (% × FMV); fixed-annuity depletion lands with CLAT.
  *   - Pre-grantor-death isGrantor flip is verified through the existing
  *     applyGrantorSuccession (irrevocable + isGrantor branch).
  */
-describe("CLUT — full lifecycle integration", () => {
+describe("CLT — full lifecycle integration", () => {
   describe("term-certain, grantor outlives the term", () => {
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 10,
@@ -39,7 +39,7 @@ describe("CLUT — full lifecycle integration", () => {
 
     it("auto-emits remainder-interest gift in source ClientData (non-zero amount)", () => {
       const remainderGift = data.gifts?.find(
-        (g) => g.eventKind === "clut_remainder_interest",
+        (g) => g.eventKind === "clt_remainder_interest",
       );
       expect(remainderGift).toBeDefined();
       expect(remainderGift!.amount).toBeGreaterThan(0);
@@ -49,7 +49,7 @@ describe("CLUT — full lifecycle integration", () => {
       for (let yr = 2026; yr <= 2035; yr++) {
         const y = years.find((r) => r.year === yr)!;
         expect(y.charitableOutflows).toBeGreaterThan(0);
-        expect(y.charitableOutflowDetail?.[0].kind).toBe("clut_unitrust");
+        expect(y.charitableOutflowDetail?.[0].kind).toBe("clt_payment");
       }
     });
 
@@ -68,7 +68,7 @@ describe("CLUT — full lifecycle integration", () => {
     });
 
     it("does not produce recapture (grantor outlived the term)", () => {
-      const key = `clut_recapture:${CLUT_FIXTURE_IDS.CLUT_ENTITY_ID}`;
+      const key = `clt_recapture:${CLT_FIXTURE_IDS.CLT_ENTITY_ID}`;
       for (const y of years) {
         expect(y.taxDetail?.bySource?.[key]).toBeUndefined();
       }
@@ -76,7 +76,7 @@ describe("CLUT — full lifecycle integration", () => {
   });
 
   describe("term-certain, grantor dies mid-term", () => {
-    const data = buildClutLifecycleFixture({
+    const data = buildCltLifecycleFixture({
       inceptionYear: 2026,
       payoutPercent: 0.06,
       termYears: 15,
@@ -91,7 +91,7 @@ describe("CLUT — full lifecycle integration", () => {
 
     it("emits recapture in taxDetail.bySource on the death year", () => {
       const death = years.find((y) => y.year === 2030)!;
-      const key = `clut_recapture:${CLUT_FIXTURE_IDS.CLUT_ENTITY_ID}`;
+      const key = `clt_recapture:${CLT_FIXTURE_IDS.CLT_ENTITY_ID}`;
       const entry = death.taxDetail?.bySource?.[key];
       expect(entry).toBeDefined();
       expect(entry!.type).toBe("ordinary_income");
@@ -99,7 +99,7 @@ describe("CLUT — full lifecycle integration", () => {
     });
 
     it("does not double-emit recapture in subsequent years", () => {
-      const key = `clut_recapture:${CLUT_FIXTURE_IDS.CLUT_ENTITY_ID}`;
+      const key = `clt_recapture:${CLT_FIXTURE_IDS.CLT_ENTITY_ID}`;
       const post = years.filter((y) => y.year > 2030);
       for (const y of post) {
         expect(y.taxDetail?.bySource?.[key]).toBeUndefined();

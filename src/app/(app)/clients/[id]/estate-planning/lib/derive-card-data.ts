@@ -49,7 +49,7 @@ export interface TrustCardData {
   linkedNotes: LinkedNoteRow[];
   /**
    * Split-interest snapshot for CLUT/CLAT trusts. Populated only when
-   * trustSubType = 'clut'. Drives the "Split-interest details" card panel.
+   * trustSubType = 'clt'. Drives the "Split-interest details" card panel.
    * `charityName` is resolved from externalBeneficiaries here so the card
    * doesn't have to do another lookup at render time.
    */

@@ -2,12 +2,12 @@
 
 import { useMemo } from "react";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
-import { computeClutInceptionInterests } from "@/lib/entities/compute-clut-inception";
+import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
-import ClutFundingPicker, {
-  type ClutFundingPickerAccount,
-} from "./clut-funding-picker";
-import type { ClutFundingPick } from "@/lib/forms/clut-funding-diff";
+import CltFundingPicker, {
+  type CltFundingPickerAccount,
+} from "./clt-funding-picker";
+import type { CltFundingPick } from "@/lib/forms/clt-funding-diff";
 
 const TERM_TYPE_LABELS = {
   years: "Years (term certain)",
@@ -16,22 +16,22 @@ const TERM_TYPE_LABELS = {
   shorter_of_years_or_life: "Shorter of years or life",
 } as const;
 
-interface ClutDetailsSectionProps {
+interface CltDetailsSectionProps {
   value: TrustSplitInterestInput;
   onChange: (next: TrustSplitInterestInput) => void;
   familyMembers: { id: string; firstName: string; dateOfBirth: string | null }[];
   charities: { id: string; name: string }[];
   /** Required for origin === "new". Filtered list of accounts available for funding. */
-  fundingAccounts?: ClutFundingPickerAccount[];
+  fundingAccounts?: CltFundingPickerAccount[];
   /** Required for origin === "new". Current picks. */
-  fundingPicks?: ClutFundingPick[];
+  fundingPicks?: CltFundingPick[];
   /** Required for origin === "new". Picks change handler. */
-  onFundingPicksChange?: (next: ClutFundingPick[]) => void;
+  onFundingPicksChange?: (next: CltFundingPick[]) => void;
   /** Default grantor for new cash picks (the trust's grantor). Defaults to "client". */
   defaultGrantor?: "client" | "spouse";
 }
 
-export default function ClutDetailsSection({
+export default function CltDetailsSection({
   value,
   onChange,
   familyMembers,
@@ -40,7 +40,7 @@ export default function ClutDetailsSection({
   fundingPicks,
   onFundingPicksChange,
   defaultGrantor,
-}: ClutDetailsSectionProps) {
+}: CltDetailsSectionProps) {
   const origin = value.origin ?? "new";
   const isNew = origin === "new";
   const showTermYears =
@@ -57,7 +57,7 @@ export default function ClutDetailsSection({
 
   const preview = useMemo(() => {
     try {
-      return computeClutInceptionInterests({
+      return computeCltInceptionInterests({
         inceptionValue: value.inceptionValue,
         payoutType: value.payoutType,
         payoutPercent: value.payoutPercent,
@@ -95,7 +95,7 @@ export default function ClutDetailsSection({
 
   return (
     <fieldset className="rounded-md border border-hair p-4 space-y-3">
-      <legend className="px-2 text-sm font-semibold text-ink">CLUT Details</legend>
+      <legend className="px-2 text-sm font-semibold text-ink">CLT Details</legend>
 
       {/* Origin: new (funded in plan) vs existing (funded historically) */}
       <div className="space-y-1">
@@ -136,11 +136,11 @@ export default function ClutDetailsSection({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={fieldLabelClassName} htmlFor="clut-inception-year">
+          <label className={fieldLabelClassName} htmlFor="clt-inception-year">
             {isNew ? "Inception year" : "Original funding year"}
           </label>
           <input
-            id="clut-inception-year"
+            id="clt-inception-year"
             type="number"
             className={inputClassName}
             value={value.inceptionYear}
@@ -149,12 +149,12 @@ export default function ClutDetailsSection({
         </div>
 
         <div>
-          <label className={fieldLabelClassName} htmlFor="clut-fmv">
+          <label className={fieldLabelClassName} htmlFor="clt-fmv">
             {isNew ? "Funding-year FMV" : "FMV at original funding"}
           </label>
           {isNew ? (
-            <ClutFundingPicker
-              id="clut-fmv"
+            <CltFundingPicker
+              id="clt-fmv"
               accounts={fundingAccounts ?? []}
               picks={fundingPicks ?? []}
               inceptionValue={value.inceptionValue}
@@ -163,7 +163,7 @@ export default function ClutDetailsSection({
             />
           ) : (
             <input
-              id="clut-fmv"
+              id="clt-fmv"
               type="number"
               min={0}
               step={1}
@@ -175,12 +175,12 @@ export default function ClutDetailsSection({
         </div>
 
         <div>
-          <label className={fieldLabelClassName} htmlFor="clut-payout">
+          <label className={fieldLabelClassName} htmlFor="clt-payout">
             Payout percentage
           </label>
           <div className="relative">
             <input
-              id="clut-payout"
+              id="clt-payout"
               type="number"
               step="0.0001"
               min={0}
@@ -198,12 +198,12 @@ export default function ClutDetailsSection({
         </div>
 
         <div>
-          <label className={fieldLabelClassName} htmlFor="clut-7520">
+          <label className={fieldLabelClassName} htmlFor="clt-7520">
             IRC §7520 rate
           </label>
           <div className="relative">
             <input
-              id="clut-7520"
+              id="clt-7520"
               type="number"
               step="0.001"
               min={0}
@@ -224,11 +224,11 @@ export default function ClutDetailsSection({
         </div>
 
         <div>
-          <label className={fieldLabelClassName} htmlFor="clut-term-type">
+          <label className={fieldLabelClassName} htmlFor="clt-term-type">
             Term type
           </label>
           <select
-            id="clut-term-type"
+            id="clt-term-type"
             className={selectClassName}
             value={value.termType}
             onChange={(e) =>
@@ -248,11 +248,11 @@ export default function ClutDetailsSection({
 
         {showTermYears && (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clut-term-years">
+            <label className={fieldLabelClassName} htmlFor="clt-term-years">
               Term years
             </label>
             <input
-              id="clut-term-years"
+              id="clt-term-years"
               type="number"
               min={1}
               className={inputClassName}
@@ -269,11 +269,11 @@ export default function ClutDetailsSection({
 
         {showLife1 && (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clut-life-1">
+            <label className={fieldLabelClassName} htmlFor="clt-life-1">
               Measuring life 1
             </label>
             <select
-              id="clut-life-1"
+              id="clt-life-1"
               className={selectClassName}
               value={value.measuringLife1Id ?? ""}
               onChange={(e) =>
@@ -292,11 +292,11 @@ export default function ClutDetailsSection({
 
         {showLife2 && (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clut-life-2">
+            <label className={fieldLabelClassName} htmlFor="clt-life-2">
               Measuring life 2
             </label>
             <select
-              id="clut-life-2"
+              id="clt-life-2"
               className={selectClassName}
               value={value.measuringLife2Id ?? ""}
               onChange={(e) =>
@@ -314,11 +314,11 @@ export default function ClutDetailsSection({
         )}
 
         <div className="col-span-2">
-          <label className={fieldLabelClassName} htmlFor="clut-charity">
+          <label className={fieldLabelClassName} htmlFor="clt-charity">
             Charitable beneficiary
           </label>
           <select
-            id="clut-charity"
+            id="clt-charity"
             className={selectClassName}
             value={value.charityId ?? ""}
             onChange={(e) => set("charityId", e.target.value)}
@@ -338,11 +338,11 @@ export default function ClutDetailsSection({
           <div className="font-medium text-ink">Computed at inception</div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-1">
             <span className="text-ink-2">Income interest (charitable deduction)</span>
-            <span data-testid="clut-income-interest" className="text-right font-mono">
+            <span data-testid="clt-income-interest" className="text-right font-mono">
               {preview ? `$${preview.originalIncomeInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
             </span>
             <span className="text-ink-2">Remainder interest (taxable gift)</span>
-            <span data-testid="clut-remainder-interest" className="text-right font-mono">
+            <span data-testid="clt-remainder-interest" className="text-right font-mono">
               {preview ? `$${preview.originalRemainderInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
             </span>
             {termEndYear !== null && (
@@ -357,17 +357,17 @@ export default function ClutDetailsSection({
         <div className="rounded-md bg-card-2 p-3 space-y-3">
           <div className="text-sm font-medium text-ink">Historical values from the return</div>
           <p className="text-xs text-ink-3">
-            Enter the values that were recorded when the CLUT was funded — they
+            Enter the values that were recorded when the CLT was funded — they
             were calculated from the §7520 rate and mortality table in effect at
             that time.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={fieldLabelClassName} htmlFor="clut-original-income">
+              <label className={fieldLabelClassName} htmlFor="clt-original-income">
                 Income interest (deduction taken)
               </label>
               <input
-                id="clut-original-income"
+                id="clt-original-income"
                 type="number"
                 min={0}
                 step={1}
@@ -382,11 +382,11 @@ export default function ClutDetailsSection({
               />
             </div>
             <div>
-              <label className={fieldLabelClassName} htmlFor="clut-original-remainder">
+              <label className={fieldLabelClassName} htmlFor="clt-original-remainder">
                 Remainder interest (gift filed)
               </label>
               <input
-                id="clut-original-remainder"
+                id="clt-original-remainder"
                 type="number"
                 min={0}
                 step={1}

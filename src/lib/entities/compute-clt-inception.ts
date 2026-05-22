@@ -11,7 +11,7 @@ import {
   shorterOfYearsOrLifeAnnuityFactor,
 } from "@/engine/actuarial/annuity-factors";
 
-export interface ClutInceptionInput {
+export interface CltInceptionInput {
   inceptionValue: number;
   payoutType: "unitrust" | "annuity";
   payoutPercent: number | undefined;
@@ -23,7 +23,7 @@ export interface ClutInceptionInput {
   measuringLifeAge2: number | undefined;
 }
 
-export interface ClutInceptionResult {
+export interface CltInceptionResult {
   originalIncomeInterest: number;
   originalRemainderInterest: number;
   remainderFactor: number;
@@ -34,19 +34,19 @@ export interface ClutInceptionResult {
  * (taxable gift PV) at inception for both CLUT (unitrust) and CLAT (annuity)
  * variants of a Charitable Lead Trust.
  */
-export function computeClutInceptionInterests(
-  input: ClutInceptionInput,
-): ClutInceptionResult {
+export function computeCltInceptionInterests(
+  input: CltInceptionInput,
+): CltInceptionResult {
   if (input.payoutType === "unitrust") {
     return computeUnitrustInception(input);
   }
   return computeAnnuityInception(input);
 }
 
-function computeUnitrustInception(input: ClutInceptionInput): ClutInceptionResult {
+function computeUnitrustInception(input: CltInceptionInput): CltInceptionResult {
   if (input.payoutPercent == null) {
     throw new Error(
-      "computeClutInceptionInterests: payoutPercent is required for unitrust",
+      "computeCltInceptionInterests: payoutPercent is required for unitrust",
     );
   }
   const p = input.payoutPercent;
@@ -98,10 +98,10 @@ function computeUnitrustInception(input: ClutInceptionInput): ClutInceptionResul
   };
 }
 
-function computeAnnuityInception(input: ClutInceptionInput): ClutInceptionResult {
+function computeAnnuityInception(input: CltInceptionInput): CltInceptionResult {
   if (input.payoutAmount == null) {
     throw new Error(
-      "computeClutInceptionInterests: payoutAmount is required for annuity",
+      "computeCltInceptionInterests: payoutAmount is required for annuity",
     );
   }
   const A = input.payoutAmount;
