@@ -87,25 +87,10 @@ All specs, plans, future-work, and handoffs go to the Obsidian vault at
 - For design questions, UI refactors, new pages, or "this doesn't look professional" work, use `ui-ux-pro-max` (primary) and `frontend-design:frontend-design` (secondary). React best-practices pass: `vercel:react-best-practices` after multi-TSX edits.
 - After any non-trivial change, run `simplify` before claiming completion.
 
-## Skills cheat sheet (when to reach for what)
+## Coding posture
 
-| Situation | Skill |
-|---|---|
-| New feature / scoping | `superpowers:brainstorming` |
-| Multi-step implementation | `superpowers:writing-plans` → `superpowers:executing-plans` |
-| Isolating feature work | `superpowers:using-git-worktrees` |
-| Writing engine/lib code | `superpowers:test-driven-development` |
-| Any bug / test failure / "this isn't working" | `superpowers:systematic-debugging` (before proposing a fix) |
-| Before claiming "done" | `superpowers:verification-before-completion` |
-| Wrapping a feature | `superpowers:finishing-a-development-branch` |
-| UI / visual design | `ui-ux-pro-max`, `frontend-design:frontend-design` |
-| Topic shift / long gap | `splitting-sessions` |
-| Post-edit cleanup | `simplify` |
-| Security-sensitive change | `security-review` (slash-command) before merging |
-| Deploy / env vars | `vercel:deploy`, `vercel:env-vars`, `vercel:verification` |
-| Next.js / App Router questions | `vercel:nextjs`, `vercel:next-cache-components` |
-| AI SDK / extraction work | `vercel:ai-sdk` |
-| Cutting permission-prompt noise | `fewer-permission-prompts` |
+- **Orphans only.** Remove imports/vars/functions *your* changes made unused. Leave pre-existing dead code alone — mention it instead of deleting.
+- **Senior-engineer test.** Before claiming done, ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify first.
 
 ## Gotchas
 
