@@ -233,3 +233,55 @@ describe("buildEstateFlowSummary — entity disambiguation", () => {
     expect(trusts.total).toBe(100_000);
   });
 });
+
+describe("buildEstateFlowSummary — first death sub-boxes", () => {
+  it("emits taxes + trusts + inheritance_spouse for a married first death", () => {
+    const clientData = emptyClientData();
+    clientData.entities = [
+      { id: "snt", entityType: "trust", name: "Special Needs Trust FBO Kevin" },
+    ] as ClientData["entities"];
+
+    const firstDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2028,
+      recipients: [
+        group({
+          key: "snt",
+          kind: "entity",
+          recipientId: "snt",
+          label: "Special Needs Trust FBO Kevin",
+          byMechanism: [mech("will", [asset("Joint Account", 50_000)])],
+        }),
+        group({
+          key: "susan",
+          kind: "spouse",
+          label: "Susan Sample",
+          byMechanism: [mech("titling", [asset("Home", 175_000), asset("401k", 400_000)])],
+        }),
+      ],
+      reductions: [reduction("admin_expenses", -3_900)],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ firstDeath }),
+      clientData,
+    })!;
+    const stage = summary.firstDeath!;
+
+    expect(stage.decedentLabel).toBe("Cooper's Estate");
+    expect(stage.estateValue).toBe(625_000);
+
+    const kinds = stage.subBoxes.map((b) => b.kind);
+    expect(kinds).toEqual(["taxes", "trusts", "inheritance_spouse"]);
+
+    const inheritance = stage.subBoxes.find(
+      (b) => b.kind === "inheritance_spouse",
+    )!;
+    expect(inheritance.total).toBe(575_000);
+    expect(inheritance.targetLabel).toBe("Susan's Estate");
+
+    const trusts = stage.subBoxes.find((b) => b.kind === "trusts")!;
+    expect(trusts.total).toBe(50_000);
+  });
+});
