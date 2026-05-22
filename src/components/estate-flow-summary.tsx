@@ -8,6 +8,7 @@ import type {
   HeirBox,
   OoeEntity,
 } from "@/lib/estate/estate-flow-summary";
+import { EstateFlowSummaryDetailPanel } from "./estate-flow-summary-detail-panel";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -169,8 +170,10 @@ export function EstateFlowSummaryView({
         />
       </div>
 
-      {/* Panel rendered in Task 15 — wired here once it exists */}
-      {/* <EstateFlowSummaryDetailPanel selected={selected} onClose={() => setSelected(null)} /> */}
+      <EstateFlowSummaryDetailPanel
+        selected={selected}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }
