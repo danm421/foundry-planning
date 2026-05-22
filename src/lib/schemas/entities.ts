@@ -94,6 +94,7 @@ const baseEntityFields = {
   notes: z.string().trim().nullish(),
   includeInPortfolio: z.boolean().optional(),
   accessibleToClient: z.boolean().optional(),
+  crummeyPowers: z.boolean().optional(),
   isGrantor: z.boolean().optional(),
   grantorStatusEndYear: z.number().int().nullable().optional(),
   value: z.union([z.string(), z.number()]).optional(),

@@ -26,6 +26,7 @@ import TransferSeriesForm from "./transfer-series-form";
 import SellToTrustDialog from "./sell-to-trust-dialog";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import DialogShell from "../dialog-shell";
+import { HelpTip } from "../help-tip";
 import CltDetailsSection from "./clt-details-section";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import {
@@ -177,8 +178,15 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     el.focus();
     el.select();
   }, [isCreate]);
-  const [includeInPortfolio, setIncludeInPortfolio] = useState(editing?.includeInPortfolio ?? false);
-  const [accessibleToClient, setAccessibleToClient] = useState(
+  // includeInPortfolio is no longer a user-facing toggle — for revocable trusts
+  // the assets pass through to the household, so we derive it from trustSubType
+  // on save (see `derivedIncludeInPortfolio` below). The form keeps the original
+  // value around only as a baseline so unrelated edits don't accidentally flip it.
+  const editingIncludeInPortfolio = editing?.includeInPortfolio ?? false;
+  const [crummeyPowers, setCrummeyPowers] = useState(
+    (editing as { crummeyPowers?: boolean } | null)?.crummeyPowers ?? false,
+  );
+  const [sprinkleProvisions, setSprinkleProvisions] = useState(
     (editing as { accessibleToClient?: boolean } | null)?.accessibleToClient ?? false,
   );
   const [isGrantor, setIsGrantor] = useState(editing?.isGrantor ?? false);
@@ -259,13 +267,13 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   // baselineRef.current to derive isDirty without expensive deep-equality.
   const currentSerialized = useMemo(() => JSON.stringify({
     name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
-    grantorStatusEndYear, includeInPortfolio, accessibleToClient, notes,
+    grantorStatusEndYear, crummeyPowers, sprinkleProvisions, notes,
     distributionMode, distributionAmount, distributionPercent,
     incomeRows, remainderRows,
     ...(trustSubType === "clt" ? { splitInterest, cltFundingPicks } : {}),
   }), [
     name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
-    grantorStatusEndYear, includeInPortfolio, accessibleToClient, notes,
+    grantorStatusEndYear, crummeyPowers, sprinkleProvisions, notes,
     distributionMode, distributionAmount, distributionPercent,
     incomeRows, remainderRows, splitInterest, cltFundingPicks,
   ]);
@@ -530,13 +538,22 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     setLoading(true);
     setError(null);
     try {
+      // includeInPortfolio is no longer user-controlled. Revocable trusts pass
+      // through to the household portfolio; all other trust types are out of estate.
+      // For existing rows whose value was set by the old toggle, preserve it
+      // unless the trust subtype implies otherwise — avoids silent behavior
+      // changes when an advisor opens an old trust just to edit notes.
+      const derivedIncludeInPortfolio =
+        trustSubType === "revocable" ? true : editingIncludeInPortfolio;
+
       // Build entity body — mirrors the old handleSubmit payload exactly.
       const entityBody = {
         name,
         entityType: "trust",
         notes: notes || null,
-        includeInPortfolio,
-        accessibleToClient,
+        includeInPortfolio: derivedIncludeInPortfolio,
+        accessibleToClient: sprinkleProvisions,
+        crummeyPowers,
         isGrantor,
         grantorStatusEndYear: isIrrevocable && isGrantor && grantorStatusEndYear !== "" ? grantorStatusEndYear : null,
         value: "0",
@@ -646,7 +663,8 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   }, [
     canSave, trustSubType, distributionMode, incomeRows, splitInterest, cltFundingPicks,
     effectiveEntityId, editing, clientId, currentSerialized,
-    name, notes, includeInPortfolio, accessibleToClient, isGrantor, grantorStatusEndYear,
+    name, notes, editingIncludeInPortfolio, sprinkleProvisions, crummeyPowers,
+    isGrantor, grantorStatusEndYear,
     isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
     distributionAmount, distributionPercent, remainderRows,
     originalCltFundingPicks, onAutoSaved,
@@ -818,57 +836,40 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
           </div>
         )}
 
-        {/* Toggles */}
-        <div className="mt-4 space-y-2">
-          <label className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 cursor-pointer hover:border-hair-2">
-            <input
-              type="checkbox"
-              checked={includeInPortfolio}
-              onChange={(e) => setIncludeInPortfolio(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-hair bg-card text-accent focus:ring-1 focus:ring-accent/40"
-            />
-            <span className="text-sm text-ink-2">
-              Include this entity&apos;s accounts in portfolio assets
-              <span className="block text-xs text-ink-4">
-                Trust-owned accounts contribute to liquid assets and projected returns.
-              </span>
-            </span>
-          </label>
-          {!includeInPortfolio && isIrrevocable && (
-            <label className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 cursor-pointer hover:border-hair-2">
-              <input
-                type="checkbox"
-                checked={accessibleToClient}
-                onChange={(e) => setAccessibleToClient(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-hair bg-card text-accent focus:ring-1 focus:ring-accent/40"
+        {/* Provisions */}
+        <div className="mt-4 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 space-y-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+            Provisions
+          </div>
+          <div className="divide-y divide-hair">
+            {isIrrevocable && (
+              <ProvisionRow
+                label="Crummey powers"
+                tooltip="Beneficiaries hold a limited-time right to withdraw new contributions (typically 30–60 days), qualifying gifts for the annual gift-tax exclusion."
+                checked={crummeyPowers}
+                onChange={setCrummeyPowers}
               />
-              <span className="text-sm text-ink-2">
-                Client has a provision to access these assets
-                <span className="block text-xs text-ink-4">
-                  Surfaces this trust in the &ldquo;Accessible Trust Assets&rdquo; column on the cash-flow drill. Use for HEMS standards, trust-protector access, or distribution committees that let the client withdraw.
-                </span>
-              </span>
-            </label>
-          )}
-          <label className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 cursor-pointer hover:border-hair-2">
-            <input
-              type="checkbox"
+            )}
+            {isIrrevocable && (
+              <ProvisionRow
+                label="Sprinkle provisions"
+                tooltip="HEMS / distribution-committee clause that lets the client tap trust liquid assets once household liquid assets are exhausted. Surfaces in the “Accessible Trust Assets” column on the cash-flow drill."
+                checked={sprinkleProvisions}
+                onChange={setSprinkleProvisions}
+              />
+            )}
+            <ProvisionRow
+              label="Grantor trust"
+              tooltip="Trust income flows to the grantor’s 1040 — household pays tax instead of the trust."
               checked={isGrantor}
-              onChange={(e) => {
-                setIsGrantor(e.target.checked);
-                if (!e.target.checked) setGrantorStatusEndYear("");
+              onChange={(v) => {
+                setIsGrantor(v);
+                if (!v) setGrantorStatusEndYear("");
               }}
-              className="mt-0.5 h-4 w-4 rounded border-hair bg-card text-accent focus:ring-1 focus:ring-accent/40"
             />
-            <span className="text-sm text-ink-2">
-              Income taxes paid by household (grantor trust)
-              <span className="block text-xs text-ink-4">
-                Trust income flows to the grantor&apos;s 1040 — household pays tax instead of the trust.
-              </span>
-            </span>
-          </label>
+          </div>
           {isIrrevocable && isGrantor && (
-            <div>
+            <div className="pt-1">
               <label className={fieldLabelClassName} htmlFor="grantor-status-end-year">
                 Grantor status ends after year <span className="text-ink-4 font-normal">(optional)</span>
               </label>
@@ -1097,6 +1098,60 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
 });
 
 export default AddTrustForm;
+
+function ProvisionRow({
+  label,
+  tooltip,
+  checked,
+  onChange,
+}: {
+  label: string;
+  tooltip: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+      <div className="flex items-center gap-1.5 text-sm text-ink-2">
+        <span>{label}</span>
+        <HelpTip text={tooltip} />
+      </div>
+      <Switch checked={checked} onChange={onChange} aria-label={label} />
+    </div>
+  );
+}
+
+function Switch({
+  checked,
+  onChange,
+  "aria-label": ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  "aria-label"?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      onClick={() => onChange(!checked)}
+      className={`inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
+        checked
+          ? "border-accent bg-accent"
+          : "border-hair bg-card"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+          checked ? "translate-x-[18px]" : "translate-x-[2px]"
+        }`}
+      />
+    </button>
+  );
+}
 
 // ── Raw API row shapes (minimal — only the fields we read) ───────────────────
 

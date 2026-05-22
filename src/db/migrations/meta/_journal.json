@@ -848,6 +848,13 @@
       "when": 1779457036953,
       "tag": "0120_true_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1779465556325,
+      "tag": "0121_gigantic_stone_men",
+      "breakpoints": true
     }
   ]
 }

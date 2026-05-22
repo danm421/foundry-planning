@@ -155,6 +155,7 @@ export async function POST(
         notes: data.notes ?? null,
         includeInPortfolio: data.includeInPortfolio ?? false,
         accessibleToClient: data.accessibleToClient ?? false,
+        crummeyPowers: data.crummeyPowers ?? false,
         isGrantor: data.isGrantor ?? false,
         grantorStatusEndYear: data.grantorStatusEndYear ?? null,
         value: data.value != null ? String(data.value) : "0",

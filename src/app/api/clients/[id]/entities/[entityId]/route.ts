@@ -85,6 +85,7 @@ export async function PUT(
       notes?: string | null;
       includeInPortfolio?: boolean;
       accessibleToClient?: boolean;
+      crummeyPowers?: boolean;
       isGrantor?: boolean;
       grantorStatusEndYear?: number | null;
       value?: string | number;
@@ -174,6 +175,7 @@ export async function PUT(
       notes: patch.notes !== undefined ? patch.notes : existing.notes,
       includeInPortfolio: patch.includeInPortfolio ?? existing.includeInPortfolio,
       accessibleToClient: patch.accessibleToClient ?? existing.accessibleToClient,
+      crummeyPowers: patch.crummeyPowers ?? existing.crummeyPowers,
       isGrantor: patch.isGrantor ?? existing.isGrantor,
       grantorStatusEndYear: patch.grantorStatusEndYear !== undefined ? patch.grantorStatusEndYear : existing.grantorStatusEndYear ?? null,
       value: patch.value ?? existing.value,
@@ -248,6 +250,9 @@ export async function PUT(
         }),
         ...(patch.accessibleToClient !== undefined && {
           accessibleToClient: Boolean(patch.accessibleToClient),
+        }),
+        ...(patch.crummeyPowers !== undefined && {
+          crummeyPowers: Boolean(patch.crummeyPowers),
         }),
         ...(patch.isGrantor !== undefined && {
           isGrantor: Boolean(patch.isGrantor),

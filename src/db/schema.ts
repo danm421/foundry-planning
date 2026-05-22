@@ -685,11 +685,17 @@ export const entities = pgTable("entities", {
   entityType: entityTypeEnum("entity_type").notNull().default("trust"),
   // When true, the entity's accounts roll into the household portfolio-assets view.
   includeInPortfolio: boolean("include_in_portfolio").notNull().default(false),
-  // When true and includeInPortfolio is false, the entity's assets surface in the
-  // "Accessible Trust Assets" column on the cash-flow Portfolio Assets drill —
-  // signaling the client has a withdrawal provision (HEMS, trust-protector, etc.).
-  // No-op for revocable trusts (their assets already flow through normal columns).
+  // Trust-only sprinkle provision: when true (and includeInPortfolio is false), the
+  // entity's assets surface in the "Accessible Trust Assets" column on the cash-flow
+  // Portfolio Assets drill. Models distribution committees / HEMS / trust-protector
+  // sprinkle clauses that let the client tap trust principal once household liquid
+  // assets are exhausted. No-op for revocable trusts.
   accessibleToClient: boolean("accessible_to_client").notNull().default(false),
+  // Trust-only: when true, contributions to the trust grant beneficiaries a
+  // limited-time withdrawal right (Crummey powers), qualifying gifts for the
+  // annual gift-tax exclusion. Default applied to new gifts; per-gift overrides
+  // remain on the gifts table.
+  crummeyPowers: boolean("crummey_powers").notNull().default(false),
   // When true, taxes on the entity's income / RMDs are paid at the household (grantor trust).
   isGrantor: boolean("is_grantor").notNull().default(false),
   // Trust-only: optional. When set and isGrantor=true, grantor-trust treatment

@@ -1,0 +1,1 @@
+ALTER TABLE "entities" ADD COLUMN "crummey_powers" boolean DEFAULT false NOT NULL;
