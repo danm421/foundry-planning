@@ -146,7 +146,6 @@ export async function PUT(
     for (const key of IDENTITY_FIELDS) {
       if (key in updateBody) identityPatch[key] = updateBody[key];
     }
-    await mirrorIdentityToCrm(existing.crmHouseholdId, identityPatch);
 
     // Explicit allowlist of mutable columns on the clients row itself.
     // Identity fields live on CRM contacts and are mirrored above — not
@@ -168,14 +167,22 @@ export async function PUT(
       if (key in incoming) safeUpdate[key] = incoming[key];
     }
 
-    const [updated] = await db
-      .update(clients)
-      .set({
-        ...safeUpdate,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
-      .returning();
+    // Atomically mirror identity to CRM and update the clients row so a partial
+    // failure can't leave CRM contacts ahead of the planning row (or vice
+    // versa). Audit/plan-settings/family-member sync below stay outside — they
+    // are idempotent and not load-bearing for contact-info correctness.
+    const updated = await db.transaction(async (tx) => {
+      await mirrorIdentityToCrm(tx, existing.crmHouseholdId, identityPatch);
+      const [u] = await tx
+        .update(clients)
+        .set({
+          ...safeUpdate,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
+        .returning();
+      return u;
+    });
 
     // If the horizon moved, push the new planEndYear through to all the
     // client's scenarios so the engine and UI stay in sync without the
@@ -228,15 +235,35 @@ export async function PUT(
 // the corresponding clients columns have been dropped. Keep both flat name
 // fields (legacy advisor habit) and CRM-shaped fields as accepted input.
 const IDENTITY_FIELDS = [
+  // legacy identity (CRM-owned)
   "firstName",
   "lastName",
   "dateOfBirth",
   "spouseName",
   "spouseLastName",
   "spouseDob",
+  // primary contact info
   "email",
+  "phone",
+  "mobile",
+  "addressLine1",
+  "addressLine2",
+  "city",
+  "state",
+  "postalCode",
+  "country",
+  // legacy single-line address blob — accepted for back-compat; routed to addressLine1
   "address",
+  // spouse contact info
   "spouseEmail",
+  "spousePhone",
+  "spouseMobile",
+  "spouseAddressLine1",
+  "spouseAddressLine2",
+  "spouseCity",
+  "spouseState",
+  "spousePostalCode",
+  "spouseCountry",
   "spouseAddress",
 ] as const;
 
@@ -318,7 +345,10 @@ async function collectSpouseDependents(spouseFmId: string): Promise<string[]> {
 // other parts null — the CRM contact form can re-parse later. CRM is now the
 // SOLE source of truth for identity; this is no longer a "mirror" but the
 // canonical write path.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 async function mirrorIdentityToCrm(
+  tx: Tx,
   crmHouseholdId: string,
   safeUpdate: Record<string, unknown>,
 ): Promise<void> {
@@ -328,10 +358,18 @@ async function mirrorIdentityToCrm(
   if ("lastName" in safeUpdate) primaryPatch.lastName = safeUpdate.lastName;
   if ("dateOfBirth" in safeUpdate) primaryPatch.dateOfBirth = safeUpdate.dateOfBirth;
   if ("email" in safeUpdate) primaryPatch.email = safeUpdate.email ?? null;
-  if ("address" in safeUpdate) primaryPatch.addressLine1 = safeUpdate.address ?? null;
+  if ("phone" in safeUpdate) primaryPatch.phone = safeUpdate.phone ?? null;
+  if ("mobile" in safeUpdate) primaryPatch.mobile = safeUpdate.mobile ?? null;
+  if ("addressLine1" in safeUpdate) primaryPatch.addressLine1 = safeUpdate.addressLine1 ?? null;
+  else if ("address" in safeUpdate) primaryPatch.addressLine1 = safeUpdate.address ?? null;
+  if ("addressLine2" in safeUpdate) primaryPatch.addressLine2 = safeUpdate.addressLine2 ?? null;
+  if ("city" in safeUpdate) primaryPatch.city = safeUpdate.city ?? null;
+  if ("state" in safeUpdate) primaryPatch.state = safeUpdate.state ?? null;
+  if ("postalCode" in safeUpdate) primaryPatch.postalCode = safeUpdate.postalCode ?? null;
+  if ("country" in safeUpdate) primaryPatch.country = safeUpdate.country ?? null;
   if (Object.keys(primaryPatch).length > 0) {
     primaryPatch.updatedAt = new Date();
-    await db
+    await tx
       .update(crmHouseholdContacts)
       .set(primaryPatch)
       .where(
@@ -342,18 +380,24 @@ async function mirrorIdentityToCrm(
       );
   }
 
-  // Spouse contact patch. Only run if at least one spouse identity field is
-  // present in the body — keeps a spouse-less household from getting a stray
-  // empty update.
+  // Spouse contact patch — UPDATE only; skip silently if no spouse row exists.
   const spousePatch: Record<string, unknown> = {};
   if ("spouseName" in safeUpdate) spousePatch.firstName = safeUpdate.spouseName;
   if ("spouseLastName" in safeUpdate) spousePatch.lastName = safeUpdate.spouseLastName;
   if ("spouseDob" in safeUpdate) spousePatch.dateOfBirth = safeUpdate.spouseDob;
   if ("spouseEmail" in safeUpdate) spousePatch.email = safeUpdate.spouseEmail ?? null;
-  if ("spouseAddress" in safeUpdate) spousePatch.addressLine1 = safeUpdate.spouseAddress ?? null;
+  if ("spousePhone" in safeUpdate) spousePatch.phone = safeUpdate.spousePhone ?? null;
+  if ("spouseMobile" in safeUpdate) spousePatch.mobile = safeUpdate.spouseMobile ?? null;
+  if ("spouseAddressLine1" in safeUpdate) spousePatch.addressLine1 = safeUpdate.spouseAddressLine1 ?? null;
+  else if ("spouseAddress" in safeUpdate) spousePatch.addressLine1 = safeUpdate.spouseAddress ?? null;
+  if ("spouseAddressLine2" in safeUpdate) spousePatch.addressLine2 = safeUpdate.spouseAddressLine2 ?? null;
+  if ("spouseCity" in safeUpdate) spousePatch.city = safeUpdate.spouseCity ?? null;
+  if ("spouseState" in safeUpdate) spousePatch.state = safeUpdate.spouseState ?? null;
+  if ("spousePostalCode" in safeUpdate) spousePatch.postalCode = safeUpdate.spousePostalCode ?? null;
+  if ("spouseCountry" in safeUpdate) spousePatch.country = safeUpdate.spouseCountry ?? null;
   if (Object.keys(spousePatch).length > 0) {
     spousePatch.updatedAt = new Date();
-    await db
+    await tx
       .update(crmHouseholdContacts)
       .set(spousePatch)
       .where(
