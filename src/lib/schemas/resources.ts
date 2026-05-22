@@ -26,6 +26,31 @@ const filingStatusSchema = z.enum([
 
 const ownerSchema = z.enum(["client", "spouse", "joint"]);
 
+// Per-contact info that's mirrored to crm_household_contacts. All fields
+// optional — the PUT/POST handlers PATCH only the keys present in the body.
+export const clientContactInfoSchema = z
+  .object({
+    email:           z.string().email().max(254).nullable().optional(),
+    phone:           z.string().max(40).nullable().optional(),
+    mobile:          z.string().max(40).nullable().optional(),
+    addressLine1:    z.string().max(200).nullable().optional(),
+    addressLine2:    z.string().max(200).nullable().optional(),
+    city:            z.string().max(100).nullable().optional(),
+    state:           z.string().max(100).nullable().optional(),
+    postalCode:      z.string().max(20).nullable().optional(),
+    country:         z.string().max(100).nullable().optional(),
+    spouseEmail:        z.string().email().max(254).nullable().optional(),
+    spousePhone:        z.string().max(40).nullable().optional(),
+    spouseMobile:       z.string().max(40).nullable().optional(),
+    spouseAddressLine1: z.string().max(200).nullable().optional(),
+    spouseAddressLine2: z.string().max(200).nullable().optional(),
+    spouseCity:         z.string().max(100).nullable().optional(),
+    spouseState:        z.string().max(100).nullable().optional(),
+    spousePostalCode:   z.string().max(20).nullable().optional(),
+    spouseCountry:      z.string().max(100).nullable().optional(),
+  })
+  .strict();
+
 // Identity (firstName, lastName, dateOfBirth, email, address + spouse equivalents)
 // lives in the CRM now (crm_household_contacts). The planning client row carries
 // only the CRM link + planning-specific fields. The route handler reads the CRM
@@ -42,6 +67,7 @@ export const clientCreateSchema = z
     spouseRetirementMonth: z.coerce.number().int().min(1).max(12).optional().nullable(),
     spouseLifeExpectancy: z.coerce.number().int().min(1).max(130).optional().nullable(),
   })
+  .merge(clientContactInfoSchema)
   .strict();
 
 export const accountCreateSchema = z
