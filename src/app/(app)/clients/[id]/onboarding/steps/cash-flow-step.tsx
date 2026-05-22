@@ -4,6 +4,7 @@ import {
   assetClasses,
   clientCmaOverrides,
   clients,
+  crmHouseholdContacts,
   entities,
   expenseScheduleOverrides,
   incomeScheduleOverrides,
@@ -31,11 +32,29 @@ interface CashFlowStepProps {
  * `/clients/[id]/client-data/income-expenses/page.tsx` — see that page for the
  * canonical version. Kept inline because it has exactly one other caller. */
 export default async function CashFlowStep({ clientId, firmId }: CashFlowStepProps) {
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return <NotFound />;
+  if (!clientRow) return <NotFound />;
+
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) return <NotFound />;
+  const client = {
+    ...clientRow,
+    firstName: primaryContact.firstName,
+    lastName: primaryContact.lastName,
+    dateOfBirth: primaryContact.dateOfBirth,
+    spouseName: spouseContact?.firstName ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
+  };
 
   const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
 

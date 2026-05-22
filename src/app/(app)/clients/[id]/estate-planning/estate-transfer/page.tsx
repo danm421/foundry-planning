@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -22,25 +22,39 @@ export default async function EstateTransferReportPage({ params }: PageProps) {
     notFound();
   }
 
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
+
+  const clientFirstName = primaryContact.firstName;
+  const clientDob = primaryContact.dateOfBirth;
+  const spouseFirstName = spouseContact?.firstName ?? null;
+  const spouseDob = spouseContact?.dateOfBirth ?? null;
+
   const isMarried =
     client.filingStatus === "married_joint" ||
     client.filingStatus === "married_separate";
 
   const ownerNames = {
-    clientName: client.firstName ?? "Client",
-    spouseName: client.spouseName ?? null,
+    clientName: clientFirstName ?? "Client",
+    spouseName: spouseFirstName ?? null,
   };
 
   const ownerDobs = {
-    clientDob: client.dateOfBirth,
-    spouseDob: client.spouseDob ?? null,
+    clientDob,
+    spouseDob: spouseDob ?? null,
   };
 
-  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+  const clientBirthYear = parseInt(clientDob.slice(0, 4), 10);
   const clientRetirementYear = clientBirthYear + client.retirementAge;
   const spouseRetirementYear =
-    client.spouseDob && client.spouseRetirementAge != null
-      ? parseInt(client.spouseDob.slice(0, 4), 10) + client.spouseRetirementAge
+    spouseDob && client.spouseRetirementAge != null
+      ? parseInt(spouseDob.slice(0, 4), 10) + client.spouseRetirementAge
       : null;
   // "Retirement (Clients)" milestone = the year both have retired (later of the two).
   const retirementYear =

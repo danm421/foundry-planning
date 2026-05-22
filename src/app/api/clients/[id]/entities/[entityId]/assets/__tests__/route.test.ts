@@ -20,6 +20,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
@@ -145,19 +146,54 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
       entityOwners,
     } = schema;
 
+    const [_crmHousehold] = await db
+
+
+      .insert(crmHouseholds)
+
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_entity_assets_test", name: "Test Household" })
+
+
+      .returning();
+
+
+    await db.insert(crmHouseholdContacts).values({
+
+
+      householdId: _crmHousehold.id,
+
+
+      role: "primary",
+
+
+      firstName: "EntityAssets",
+
+
+      lastName: "Test",
+
+
+      dateOfBirth: "1970-01-01",
+
+
+    });
+
+
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_entity_assets_test",
-        firstName: "EntityAssets",
-        lastName: "Test",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "single",
+
+
       })
+
+
       .returning();
 
     const [scenario] = await db

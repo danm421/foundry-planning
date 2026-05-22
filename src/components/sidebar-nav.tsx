@@ -6,6 +6,7 @@ import SidebarNavItem from "./sidebar-nav-item";
 import {
   HomeIcon,
   ClientsIcon,
+  CrmIcon,
   FolderIcon,
   FileTextIcon,
   ListCheckIcon,
@@ -30,6 +31,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "WORKSPACE",
     items: [
       { icon: <HomeIcon />, label: "Home", placeholder: true },
+      { icon: <CrmIcon />, label: "CRM", href: "/crm" },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
       { icon: <FileTextIcon />, label: "Presentations", placeholder: true },

@@ -820,6 +820,20 @@
       "when": 1779392140617,
       "tag": "0116_lethal_mister_fear",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1779392592155,
+      "tag": "0117_mighty_christian_walker",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1779397649129,
+      "tag": "0118_natural_silver_centurion",
+      "breakpoints": true
     }
   ]
 }

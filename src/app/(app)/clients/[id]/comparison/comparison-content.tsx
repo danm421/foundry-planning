@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { scenarios as scenariosTable, clients } from "@/db/schema";
+import { scenarios as scenariosTable, clients, crmHouseholdContacts } from "@/db/schema";
 import {
   defaultV5,
   listClientComparisons,
@@ -15,13 +15,11 @@ interface Props {
 }
 
 export async function ComparisonContent({ clientId, firmId }: Props) {
-  const [client, scenarios, comparisons] = await Promise.all([
+  const [clientRow, scenarios, comparisons] = await Promise.all([
     db
       .select({
-        firstName: clients.firstName,
-        lastName: clients.lastName,
-        dateOfBirth: clients.dateOfBirth,
         retirementAge: clients.retirementAge,
+        crmHouseholdId: clients.crmHouseholdId,
       })
       .from(clients)
       .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
@@ -37,7 +35,29 @@ export async function ComparisonContent({ clientId, firmId }: Props) {
     listClientComparisons(clientId, firmId),
   ]);
 
-  if (!client) notFound();
+  if (!clientRow) notFound();
+
+  // CRM contacts — sole identity source.
+  const [primaryContact] = await db
+    .select({
+      firstName: crmHouseholdContacts.firstName,
+      lastName: crmHouseholdContacts.lastName,
+      dateOfBirth: crmHouseholdContacts.dateOfBirth,
+    })
+    .from(crmHouseholdContacts)
+    .where(
+      and(
+        eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId),
+        eq(crmHouseholdContacts.role, "primary"),
+      ),
+    );
+  if (!primaryContact) notFound();
+  const client = {
+    firstName: primaryContact.firstName,
+    lastName: primaryContact.lastName,
+    dateOfBirth: primaryContact.dateOfBirth,
+    retirementAge: clientRow.retirementAge,
+  };
 
   const scenarioLookup: { id: string; name: string }[] = [
     { id: "base", name: "Base case" },

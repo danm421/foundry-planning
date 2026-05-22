@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { clerkClient } from "@clerk/nextjs/server";
 import type { ReactElement } from "react";
 import { db } from "@/db";
-import { clients, scenarios as scenariosTable } from "@/db/schema";
+import { clients, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
 import { and, eq, desc, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import ClientHeader from "@/components/client-header";
@@ -18,12 +18,31 @@ interface Props {
 export default async function ClientLayout({ children, params }: Props): Promise<ReactElement> {
   const [{ id }, firmId] = await Promise.all([params, requireOrgId()]);
 
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
     .limit(1);
-  if (!client) notFound();
+  if (!clientRow) notFound();
+
+  // CRM contacts — sole identity source for the header.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+  const primary = contactRows.find((c) => c.role === "primary");
+  const spouse = contactRows.find((c) => c.role === "spouse");
+  if (!primary?.dateOfBirth) notFound();
+
+  const client = {
+    ...clientRow,
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    dateOfBirth: primary.dateOfBirth,
+    spouseName: spouse?.firstName ?? null,
+    spouseLastName: spouse?.lastName ?? null,
+    spouseDob: spouse?.dateOfBirth ?? null,
+  };
 
   // Scenarios for the chip row + create-dialog "copy from" select. The parent
   // client lookup above already enforced firm scoping, so a plain clientId

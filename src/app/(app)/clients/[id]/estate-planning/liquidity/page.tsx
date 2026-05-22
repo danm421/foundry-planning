@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -20,18 +20,27 @@ export default async function EstateLiquidityPage({ params }: PageProps) {
 
   if (!client) notFound();
 
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
+
   const isMarried =
     client.filingStatus === "married_joint" ||
     client.filingStatus === "married_separate";
 
   const ownerNames = {
-    clientName: client.firstName ?? "Client",
-    spouseName: client.spouseName ?? null,
+    clientName: primaryContact.firstName,
+    spouseName: spouseContact?.firstName ?? null,
   };
 
   const ownerDobs = {
-    clientDob: client.dateOfBirth,
-    spouseDob: client.spouseDob ?? null,
+    clientDob: primaryContact.dateOfBirth,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
   };
 
   return (

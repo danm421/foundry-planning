@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 
 export interface ClientForExport {
   id: string;
@@ -22,14 +22,29 @@ export async function clientByIdInFirm(
       id: clients.id,
       firmId: clients.firmId,
       advisorId: clients.advisorId,
-      firstName: clients.firstName,
-      lastName: clients.lastName,
-      spouseName: clients.spouseName,
-      spouseLastName: clients.spouseLastName,
+      crmHouseholdId: clients.crmHouseholdId,
     })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return row ?? null;
+  if (!row) return null;
+
+  const contacts = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, row.crmHouseholdId));
+  const primary = contacts.find((c) => c.role === "primary");
+  const spouse = contacts.find((c) => c.role === "spouse");
+  if (!primary) return null;
+
+  return {
+    id: row.id,
+    firmId: row.firmId,
+    advisorId: row.advisorId,
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    spouseName: spouse?.firstName ?? null,
+    spouseLastName: spouse?.lastName ?? null,
+  };
 }
 
 export async function resolveAdvisorName(advisorId: string): Promise<string> {

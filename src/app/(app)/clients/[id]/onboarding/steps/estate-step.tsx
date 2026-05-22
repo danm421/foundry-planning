@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
   clients,
+  crmHouseholdContacts,
   scenarios,
   familyMembers,
   externalBeneficiaries,
@@ -35,6 +36,15 @@ export default async function EstateStep({ clientId, firmId }: EstateStepProps) 
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
   if (!client) return <NotFound />;
+
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact) return <NotFound />;
 
   const [scenario] = await db
     .select()
@@ -99,10 +109,10 @@ export default async function EstateStep({ clientId, firmId }: EstateStepProps) 
     }));
 
   const primary: WillsPanelPrimary = {
-    firstName: client.firstName,
-    lastName: client.lastName,
-    spouseName: client.spouseName ?? null,
-    spouseLastName: client.spouseLastName ?? null,
+    firstName: primaryContact.firstName,
+    lastName: primaryContact.lastName,
+    spouseName: spouseContact?.firstName ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
   };
   const entityOwnedAccountTotals = new Map<string, number>();
   for (const a of accountRows) {

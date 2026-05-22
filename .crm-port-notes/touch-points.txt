@@ -1,0 +1,266 @@
+src/app/(app)/clients/[id]/solver/solver-row-incomes.tsx:71:      ? ` — ${client.spouseName?.split(" ")[0] ?? "Spouse"}`
+src/app/(app)/clients/[id]/solver/solver-row-incomes.tsx:73:        ? ` — ${client.firstName.split(" ")[0]}`
+src/app/(app)/clients/[id]/solver/solver-ss-edit-dialog.tsx:40:    person === "spouse" ? (client.spouseName ?? "Spouse") : client.firstName;
+src/app/(app)/clients/[id]/solver/solver-ss-edit-dialog.tsx:41:  const ownerDob = person === "spouse" ? client.spouseDob : client.dateOfBirth;
+src/app/(app)/clients/[id]/estate-planning/estate-planning-content.tsx:73:  const clientFirstName = tree.client.firstName;
+src/app/(app)/clients/[id]/estate-planning/estate-planning-content.tsx:74:  const spouseFirstName = tree.client.spouseName ?? null;
+src/app/(app)/clients/[id]/estate-planning/out-of-estate-column.tsx:81:          client: { firstName: tree.client.firstName },
+src/app/(app)/clients/[id]/estate-planning/out-of-estate-column.tsx:82:          spouse: tree.client.spouseName ? { firstName: tree.client.spouseName } : null,
+src/app/(app)/clients/[id]/estate-planning/canvas-frame.tsx:28:  const clientBirthYear = parseInt(tree.client.dateOfBirth.slice(0, 4), 10);
+src/app/(app)/clients/[id]/estate-planning/canvas-frame.tsx:31:    if (tree.client.spouseDob && tree.client.spouseRetirementAge != null) {
+src/app/(app)/clients/[id]/estate-planning/canvas-frame.tsx:32:      const sBirth = parseInt(tree.client.spouseDob.slice(0, 4), 10);
+src/app/(app)/clients/[id]/estate-planning/canvas-frame.tsx:39:    tree.client.spouseDob,
+src/app/(app)/clients/[id]/estate-planning/canvas-frame.tsx:50:    clientDob: tree.client.dateOfBirth,
+src/app/(app)/clients/[id]/estate-planning/canvas-frame.tsx:51:    spouseDob: tree.client.spouseDob ?? null,
+src/app/(app)/clients/[id]/estate-planning/canvas-frame.tsx:71:    !!tree.client.spouseDob && firstDeathYear != null && secondDeathYear != null;
+src/app/(app)/clients/[id]/estate-planning/estate-flow/page.tsx:38:        firstName={client.firstName}
+src/app/(app)/clients/[id]/estate-planning/estate-flow/page.tsx:39:        spouseName={client.spouseName}
+src/app/(app)/clients/[id]/estate-planning/estate-tax/page.tsx:32:    clientName: client.firstName ?? "Client",
+src/app/(app)/clients/[id]/estate-planning/estate-tax/page.tsx:33:    spouseName: client.spouseName ?? null,
+src/app/(app)/clients/[id]/estate-planning/estate-tax/page.tsx:37:    clientDob: client.dateOfBirth,
+src/app/(app)/clients/[id]/estate-planning/estate-tax/page.tsx:38:    spouseDob: client.spouseDob ?? null,
+src/app/(app)/clients/[id]/estate-planning/estate-tax/page.tsx:41:  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/app/(app)/clients/[id]/estate-planning/estate-tax/page.tsx:44:    client.spouseDob && client.spouseRetirementAge != null
+src/app/(app)/clients/[id]/estate-planning/estate-tax/page.tsx:45:      ? parseInt(client.spouseDob.slice(0, 4), 10) + client.spouseRetirementAge
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:483:  const hasSpouse = !!client.spouseDob;
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:500:      (firstDeceasedRole === "client" ? client.firstName : client.spouseName ?? "Spouse");
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:503:      (finalDeceasedRole === "client" ? client.firstName : client.spouseName ?? "Spouse");
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:615:      spouseFm?.firstName ?? client.spouseName ?? "Spouse";
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:621:        client: { name: client.firstName, netWorth: clientNetWorth },
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:668:      survivorName = client.firstName;
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:672:      const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:673:      const spouseBirthYear = parseInt((client.spouseDob as string).slice(0, 4), 10);
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:681:        survivorName = client.spouseName ?? "Spouse";
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:684:        survivorName = client.firstName;
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:694:            ? client.firstName
+src/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data.ts:695:            : client.spouseName ?? "Spouse";
+src/app/(app)/clients/[id]/estate-planning/gift-tax/page.tsx:27:        clientName: client.firstName ?? "Client",
+src/app/(app)/clients/[id]/estate-planning/gift-tax/page.tsx:28:        spouseName: client.spouseName ?? null,
+src/app/(app)/clients/[id]/estate-planning/gift-tax/page.tsx:31:        clientDob: client.dateOfBirth,
+src/app/(app)/clients/[id]/estate-planning/gift-tax/page.tsx:32:        spouseDob: client.spouseDob ?? null,
+src/app/(app)/clients/[id]/estate-planning/estate-transfer/page.tsx:30:    clientName: client.firstName ?? "Client",
+src/app/(app)/clients/[id]/estate-planning/estate-transfer/page.tsx:31:    spouseName: client.spouseName ?? null,
+src/app/(app)/clients/[id]/estate-planning/estate-transfer/page.tsx:35:    clientDob: client.dateOfBirth,
+src/app/(app)/clients/[id]/estate-planning/estate-transfer/page.tsx:36:    spouseDob: client.spouseDob ?? null,
+src/app/(app)/clients/[id]/estate-planning/estate-transfer/page.tsx:39:  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/app/(app)/clients/[id]/estate-planning/estate-transfer/page.tsx:42:    client.spouseDob && client.spouseRetirementAge != null
+src/app/(app)/clients/[id]/estate-planning/estate-transfer/page.tsx:43:      ? parseInt(client.spouseDob.slice(0, 4), 10) + client.spouseRetirementAge
+src/app/(app)/clients/[id]/estate-planning/lib/tree-as-of-year.ts:115:    tree.client.dateOfBirth,
+src/app/(app)/clients/[id]/estate-planning/lib/tree-as-of-year.ts:119:    tree.client.spouseDob,
+src/app/(app)/clients/[id]/estate-planning/liquidity/page.tsx:28:    clientName: client.firstName ?? "Client",
+src/app/(app)/clients/[id]/estate-planning/liquidity/page.tsx:29:    spouseName: client.spouseName ?? null,
+src/app/(app)/clients/[id]/estate-planning/liquidity/page.tsx:33:    clientDob: client.dateOfBirth,
+src/app/(app)/clients/[id]/estate-planning/liquidity/page.tsx:34:    spouseDob: client.spouseDob ?? null,
+src/app/(app)/clients/[id]/client-data/family/family-content.tsx:263:    spouseLastName: client.spouseLastName ?? null,
+src/app/(app)/clients/[id]/client-data/wills/wills-content.tsx:121:    firstName: client.firstName,
+src/app/(app)/clients/[id]/client-data/wills/wills-content.tsx:122:    lastName: client.lastName,
+src/app/(app)/clients/[id]/client-data/wills/wills-content.tsx:123:    spouseName: client.spouseName ?? null,
+src/app/(app)/clients/[id]/client-data/wills/wills-content.tsx:124:    spouseLastName: client.spouseLastName ?? null,
+src/app/(app)/clients/[id]/client-data/assumptions/assumptions-content.tsx:292:        clientFirstName={client.firstName}
+src/app/(app)/clients/[id]/client-data/assumptions/assumptions-content.tsx:293:        spouseFirstName={client.spouseName?.split(" ")[0]}
+src/app/(app)/clients/[id]/client-data/insurance/insurance-content.tsx:185:      clientFirstName={client.firstName}
+src/app/(app)/clients/[id]/client-data/insurance/insurance-content.tsx:186:      spouseFirstName={client.spouseName ?? null}
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:126:  const clientBirthYear = new Date(client.dateOfBirth).getFullYear();
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:132:  if (client.spouseDob) {
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:133:    const spouseBirthYear = new Date(client.spouseDob).getFullYear();
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:161:        clientName: `${client.firstName} ${client.lastName}`,
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:162:        spouseName: client.spouseName
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:163:          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:174:        clientDob: client.dateOfBirth,
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:175:        spouseDob: client.spouseDob ?? null,
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:182:        firstName: client.firstName,
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:183:        lastName: client.lastName,
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:184:        dateOfBirth: client.dateOfBirth,
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:187:        spouseName: client.spouseName ?? undefined,
+src/app/(app)/clients/[id]/client-data/income-expenses/income-expenses-content.tsx:188:        spouseDob: client.spouseDob ?? undefined,
+src/app/(app)/clients/[id]/client-data/balance-sheet/balance-sheet-content.tsx:333:        clientName: `${client.firstName} ${client.lastName}`,
+src/app/(app)/clients/[id]/client-data/balance-sheet/balance-sheet-content.tsx:334:        spouseName: client.spouseName
+src/app/(app)/clients/[id]/client-data/balance-sheet/balance-sheet-content.tsx:335:          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+src/app/(app)/clients/[id]/client-data/techniques/techniques-content.tsx:258:      clientFirstName={client.firstName}
+src/app/(app)/clients/[id]/client-data/techniques/techniques-content.tsx:259:      spouseFirstName={client.spouseName ?? undefined}
+src/app/(app)/clients/[id]/comparison/use-shared-mc-run.ts:108:        const clientBirthYear = plans[0]?.tree.client.dateOfBirth
+src/app/(app)/clients/[id]/comparison/use-shared-mc-run.ts:109:          ? parseInt(plans[0].tree.client.dateOfBirth.slice(0, 4), 10) || undefined
+src/app/(app)/clients/[id]/comparison/comparison-content.tsx:48:    client.dateOfBirth ? parseInt(client.dateOfBirth.slice(0, 4), 10) : null;
+src/app/(app)/clients/[id]/comparison/comparison-content.tsx:54:  const personalizedDefaultTitle = `${client.firstName} ${client.lastName} — Report`.trim();
+src/app/(app)/clients/[id]/assets/balance-sheet-report/page.tsx:37:    clientDob: client.dateOfBirth,
+src/app/(app)/clients/[id]/assets/balance-sheet-report/page.tsx:38:    spouseDob: client.spouseDob ?? null,
+src/app/(app)/clients/[id]/onboarding/steps/assumptions-step.tsx:247:      clientFirstName={client.firstName}
+src/app/(app)/clients/[id]/onboarding/steps/assumptions-step.tsx:248:      spouseFirstName={client.spouseName?.split(" ")[0]}
+src/app/(app)/clients/[id]/onboarding/steps/balance-sheet-step-data.ts:307:    clientName: `${client.firstName} ${client.lastName}`,
+src/app/(app)/clients/[id]/onboarding/steps/balance-sheet-step-data.ts:308:    spouseName: client.spouseName
+src/app/(app)/clients/[id]/onboarding/steps/balance-sheet-step-data.ts:309:      ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+src/app/(app)/clients/[id]/onboarding/steps/insurance-step.tsx:156:        clientFirstName={client.firstName}
+src/app/(app)/clients/[id]/onboarding/steps/insurance-step.tsx:157:        spouseFirstName={client.spouseName ?? null}
+src/app/(app)/clients/[id]/onboarding/steps/estate-step.tsx:102:    firstName: client.firstName,
+src/app/(app)/clients/[id]/onboarding/steps/estate-step.tsx:103:    lastName: client.lastName,
+src/app/(app)/clients/[id]/onboarding/steps/estate-step.tsx:104:    spouseName: client.spouseName ?? null,
+src/app/(app)/clients/[id]/onboarding/steps/estate-step.tsx:105:    spouseLastName: client.spouseLastName ?? null,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:117:  const clientBirthYear = new Date(client.dateOfBirth).getFullYear();
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:123:  if (client.spouseDob) {
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:124:    const spouseBirthYear = new Date(client.spouseDob).getFullYear();
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:152:        clientName: `${client.firstName} ${client.lastName}`,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:153:        spouseName: client.spouseName
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:154:          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:165:        clientDob: client.dateOfBirth,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:166:        spouseDob: client.spouseDob ?? null,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:173:        firstName: client.firstName,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:174:        lastName: client.lastName,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:175:        dateOfBirth: client.dateOfBirth,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:178:        spouseName: client.spouseName ?? undefined,
+src/app/(app)/clients/[id]/onboarding/steps/cash-flow-step.tsx:179:        spouseDob: client.spouseDob ?? undefined,
+src/app/api/clients/[id]/accounts/[accountId]/split/route.ts:111:          name: `${target.name} (${client.firstName ?? "Client"} share)`,
+src/app/api/clients/[id]/liquidity-report/export-pdf/route.ts:55:        clientName: client.firstName ?? "Client",
+src/app/api/clients/[id]/liquidity-report/export-pdf/route.ts:56:        spouseName: client.spouseName ?? null,
+src/app/api/clients/[id]/liquidity-report/export-pdf/route.ts:59:        clientDob: client.dateOfBirth,
+src/app/api/clients/[id]/liquidity-report/export-pdf/route.ts:60:        spouseDob: client.spouseDob ?? null,
+src/app/api/clients/[id]/liquidity-report/export-pdf/route.ts:64:    const clientName = [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";
+src/app/api/clients/[id]/liquidity-report/export-pdf/route.ts:91:        "Content-Disposition": `attachment; filename="liquidity-${(client.lastName ?? "client").toLowerCase()}.pdf"`,
+src/app/api/clients/[id]/comparison/ai-analysis/route.ts:88:  const clientBirth = birthYear(client.dateOfBirth);
+src/app/api/clients/[id]/comparison/ai-analysis/route.ts:89:  const spouseBirth = birthYear(client.spouseDob);
+src/app/api/clients/[id]/comparison/ai-analysis/route.ts:92:    clientFirstName: client.firstName,
+src/app/api/clients/[id]/comparison/ai-analysis/route.ts:93:    clientLastName: client.lastName,
+src/app/api/clients/[id]/comparison/ai-analysis/route.ts:99:    spouse: client.spouseName
+src/app/api/clients/[id]/comparison/ai-analysis/route.ts:101:          firstName: client.spouseName,
+src/app/api/clients/[id]/comparison/[cid]/export-pdf/route.tsx:88:      (slugify(data.client.lastName) || "client") +
+src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts:132:    const clientName = [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";
+src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts:168:        "Content-Disposition": `attachment; filename="balance-sheet-${(client.lastName ?? "client").toLowerCase()}-${year}.pdf"`,
+src/components/estate-flow-chart-tab.tsx:128:      clientDob: working.client.dateOfBirth,
+src/components/estate-flow-chart-tab.tsx:129:      spouseDob: working.client.spouseDob ?? null,
+src/components/estate-flow-chart-tab.tsx:131:    [working.client.dateOfBirth, working.client.spouseDob],
+src/components/clients-table.tsx:203:                const spouseLabel = client.spouseName
+src/components/clients-table.tsx:204:                  ? `${client.spouseName}${client.spouseLastName ? ` ${client.spouseLastName}` : ""}`
+src/components/clients-table.tsx:215:                          {client.firstName} {client.lastName}
+src/components/clients-table.tsx:224:                          {client.firstName} {client.lastName}
+src/components/clients-table.tsx:244:                          aria-label={`Delete ${client.firstName} ${client.lastName}`}
+src/components/timeline-report-view.tsx:129:  const primaryLabel = clientData ? clientData.client.firstName : "";
+src/components/timeline-report-view.tsx:130:  const spouseLabel = clientData?.client.spouseName ?? null;
+src/components/client-header.tsx:66:  const clientAge = ageFromDob(client.dateOfBirth);
+src/components/client-header.tsx:67:  const spouseAge = client.spouseDob ? ageFromDob(client.spouseDob) : null;
+src/components/estate-flow-report-tab.tsx:132:      clientDob: working.client.dateOfBirth,
+src/components/estate-flow-report-tab.tsx:133:      spouseDob: working.client.spouseDob ?? null,
+src/components/estate-flow-report-tab.tsx:135:    [working.client.dateOfBirth, working.client.spouseDob],
+src/components/income-tax-report.tsx:118:    if (!clientData?.client.dateOfBirth || !clientData?.client.retirementAge) {
+src/components/income-tax-report.tsx:122:      parseInt(clientData.client.dateOfBirth.slice(0, 4), 10) +
+src/components/estate-flow-change-owner-dialog.tsx:76:    if (o.familyMemberId === LEGACY_FM_CLIENT || o.familyMemberId === clientData.client.firstName) {
+src/components/estate-flow-change-owner-dialog.tsx:103:  const clientName = `${clientData.client.firstName} ${clientData.client.lastName ?? ""}`.trim();
+src/components/estate-flow-change-owner-dialog.tsx:104:  const spouseName = clientData.client.spouseName ?? null;
+src/components/entities-cashflow-report-view.tsx:91:          setClientRetirementYear(parseInt(client.dateOfBirth.slice(0, 4), 10) + client.retirementAge);
+src/components/estate-flow-change-entity-owner-dialog.tsx:31:    `${clientData.client.firstName} ${clientData.client.lastName ?? ""}`.trim();
+src/components/estate-flow-change-entity-owner-dialog.tsx:32:  const spouseName = clientData.client.spouseName ?? null;
+src/components/cashflow-report.tsx:331:    if (!clientData?.client.dateOfBirth || !clientData?.client.retirementAge) {
+src/components/cashflow-report.tsx:335:      parseInt(clientData.client.dateOfBirth.slice(0, 4), 10) +
+src/components/cashflow-report.tsx:1382:        const clientName = clientData?.client.firstName ?? "Client";
+src/components/cashflow-report.tsx:1383:        const spouseName = clientData?.client.spouseName ?? "Spouse";
+src/components/estate-flow-change-distribution-dialog.tsx:306:  const clientName = `${clientData.client.firstName} ${clientData.client.lastName ?? ""}`.trim();
+src/components/estate-flow-change-distribution-dialog.tsx:307:  const spouseName = clientData.client.spouseName ?? null;
+src/components/monte-carlo-report.tsx:234:              clientData.client.spouseName
+src/components/monte-carlo-report.tsx:235:                ? `${clientData.client.firstName} & ${clientData.client.spouseName} ${clientData.client.lastName}`
+src/components/monte-carlo-report.tsx:236:                : `${clientData.client.firstName} ${clientData.client.lastName}`
+src/components/monte-carlo-report.tsx:281:                    clientData.client.dateOfBirth
+src/components/monte-carlo-report.tsx:282:                      ? parseInt(clientData.client.dateOfBirth.slice(0, 4), 10) || undefined
+src/components/monte-carlo-report.tsx:346:                    clientData.client.dateOfBirth
+src/components/monte-carlo-report.tsx:347:                      ? parseInt(clientData.client.dateOfBirth.slice(0, 4), 10) || undefined
+src/components/forms/trust-ends-select.tsx:28:        <option value="client_death">{household.client.firstName}&apos;s death</option>
+src/components/forms/beneficiary-row-list.tsx:154:                <option value="hh:client">{household.client.firstName} (client)</option>
+src/components/comparison-pdf/widgets/expense-detail.tsx:99:  const a = client.dateOfBirth
+src/components/comparison-pdf/widgets/expense-detail.tsx:100:    ? Number(client.dateOfBirth.slice(0, 4)) + (client.retirementAge ?? 0)
+src/components/comparison-pdf/widgets/expense-detail.tsx:102:  const b = client.spouseDob
+src/components/comparison-pdf/widgets/expense-detail.tsx:103:    ? Number(client.spouseDob.slice(0, 4)) + (client.spouseRetirementAge ?? 0)
+src/components/comparison/expense-detail-comparison-section.tsx:23:  const a = client.dateOfBirth
+src/components/comparison/expense-detail-comparison-section.tsx:24:    ? Number(client.dateOfBirth.slice(0, 4)) + (client.retirementAge ?? 0)
+src/components/comparison/expense-detail-comparison-section.tsx:26:  const b = client.spouseDob
+src/components/comparison/expense-detail-comparison-section.tsx:27:    ? Number(client.spouseDob.slice(0, 4)) + (client.spouseRetirementAge ?? 0)
+src/components/monte-carlo/kpi-band.tsx:39:  const startAgeVal = startAge(clientData.client.dateOfBirth, planSettings.planStartYear);
+src/lib/life-event-markers.ts:20:  const clientBirth = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/lib/life-event-markers.ts:22:    label: `${client.firstName} retires`,
+src/lib/life-event-markers.ts:26:    label: `${client.firstName} passes`,
+src/lib/life-event-markers.ts:30:  if (client.spouseDob) {
+src/lib/life-event-markers.ts:31:    const spouseBirth = parseInt(client.spouseDob.slice(0, 4), 10);
+src/lib/life-event-markers.ts:32:    const spouseFirst = client.spouseName ?? "Spouse";
+src/lib/milestones.ts:60:  const clientBirthYear = new Date(client.dateOfBirth).getFullYear();
+src/lib/milestones.ts:72:  if (client.spouseDob && client.spouseRetirementAge != null) {
+src/lib/milestones.ts:73:    const spouseBirthYear = new Date(client.spouseDob).getFullYear();
+src/lib/estate/insurance-in-force.ts:107:  const clientBirthYear = parseBirthYearFromDob(client.dateOfBirth);
+src/lib/estate/insurance-in-force.ts:108:  const spouseBirthYear = parseBirthYearFromDob(client.spouseDob);
+src/lib/estate/estate-flow-ownership.ts:260:  const clientLabel = clientFm?.firstName ?? data.client.firstName ?? "Client";
+src/lib/estate/estate-flow-ownership.ts:261:  const spouseLabel = spouseFm?.firstName ?? data.client.spouseName ?? "Spouse";
+src/lib/life-insurance/need-over-time.ts:35:  return married && Boolean(data.client.spouseDob);
+src/lib/life-insurance/__tests__/need-over-time.test.ts:65:    delete data.client.spouseDob;
+src/lib/report-artifacts/artifacts/investments.tsx:152:        clientName: `${client.firstName} ${client.lastName}`.trim(),
+src/lib/report-artifacts/artifacts/investments.tsx:301:    clientName: `${client.firstName} ${client.lastName}`.trim(),
+src/lib/report-artifacts/artifacts/cashflow.tsx:79:  return `${c.client.firstName ?? ""} ${c.client.lastName ?? ""}`.trim() || "Client";
+src/lib/scenario/load-panel-data.ts:138:    names[`client:${clientId}`] = tree.client.firstName;
+src/lib/overview/get-overview-data.ts:108:  if (client.retirementAge != null && client.dateOfBirth) {
+src/lib/overview/get-overview-data.ts:110:      new Date(client.dateOfBirth).getFullYear() + client.retirementAge,
+src/lib/overview/get-overview-data.ts:113:  if (client.spouseRetirementAge != null && client.spouseDob) {
+src/lib/overview/get-overview-data.ts:115:      new Date(client.spouseDob).getFullYear() + client.spouseRetirementAge,
+src/lib/scenario/view-adapters.ts:298:    firstName: client.firstName,
+src/lib/scenario/view-adapters.ts:299:    lastName: client.lastName,
+src/lib/scenario/view-adapters.ts:300:    dateOfBirth: client.dateOfBirth,
+src/lib/scenario/view-adapters.ts:305:    spouseName: client.spouseName ?? null,
+src/lib/scenario/view-adapters.ts:306:    spouseDob: client.spouseDob ?? null,
+src/lib/comparison-pdf/__tests__/load-export-data.test.ts:86:    expect(res!.client.firstName).toBe("John");
+src/lib/__tests__/onboarding-step-status.test.ts:48:    tree.client.firstName = "Cooper";
+src/lib/__tests__/onboarding-step-status.test.ts:49:    tree.client.lastName = "Sample";
+src/lib/__tests__/onboarding-step-status.test.ts:50:    tree.client.dateOfBirth = "1975-06-20";
+src/lib/__tests__/onboarding-step-status.test.ts:63:    tree.client.firstName = "Cooper";
+src/lib/__tests__/onboarding-step-status.test.ts:64:    tree.client.lastName = "Sample";
+src/lib/__tests__/onboarding-step-status.test.ts:77:    tree.client.firstName = "Cooper";
+src/lib/__tests__/onboarding-step-status.test.ts:78:    tree.client.lastName = "Sample";
+src/lib/__tests__/onboarding-step-status.test.ts:79:    tree.client.dateOfBirth = "1975-06-20";
+src/lib/__tests__/onboarding-step-status.test.ts:224:    tree.client.firstName = "Cooper";
+src/lib/__tests__/onboarding-step-status.test.ts:225:    tree.client.lastName = "Sample";
+src/lib/__tests__/onboarding-step-status.test.ts:226:    tree.client.dateOfBirth = "1975-06-20";
+src/lib/comparison/owner-info.ts:7:  const clientName = tree.client.firstName;
+src/lib/comparison/owner-info.ts:9:    tree.client.filingStatus === "married_joint" || !!tree.client.spouseDob;
+src/lib/comparison/owner-info.ts:10:  const spouseName = isMarried ? (tree.client.spouseName ?? "Spouse") : null;
+src/lib/comparison/owner-info.ts:19:    clientDob: tree.client.dateOfBirth,
+src/lib/comparison/owner-info.ts:20:    spouseDob: tree.client.spouseDob ?? null,
+src/engine/life-insurance-expiry.ts:17:      parseInt(client.dateOfBirth.slice(0, 4), 10) + client.retirementAge;
+src/engine/life-insurance-expiry.ts:21:    if (!client.spouseDob || client.spouseRetirementAge == null) {
+src/engine/life-insurance-expiry.ts:27:      parseInt(client.spouseDob.slice(0, 4), 10) + client.spouseRetirementAge;
+src/engine/contribution-limits.ts:128:  const clientAge = resolveAgeInYear(client.dateOfBirth, year);
+src/engine/contribution-limits.ts:129:  const spouseAge = resolveAgeInYear(client.spouseDob, year);
+src/lib/comparison/widgets/balance-sheet-shared.ts:104:    cols.push({ key: `fm:${client.id}`, label: client.firstName || "Client" });
+src/engine/socialSecurity/orchestrator.ts:29:  return income.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+src/lib/timeline/detectors/income.ts:33:    const dob = subject === "primary" ? data.client.dateOfBirth : subject === "spouse" ? data.client.spouseDob : undefined;
+src/lib/projection/load-client-data.ts:665:    const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/lib/projection/load-client-data.ts:666:    const spouseBirthYear = client.spouseDob
+src/lib/projection/load-client-data.ts:667:      ? parseInt(client.spouseDob.slice(0, 4), 10)
+src/lib/projection/load-client-data.ts:1186:      firstName: client.firstName,
+src/lib/projection/load-client-data.ts:1187:      lastName: client.lastName,
+src/lib/projection/load-client-data.ts:1188:      dateOfBirth: client.dateOfBirth,
+src/lib/projection/load-client-data.ts:1193:      spouseName: client.spouseName ?? undefined,
+src/lib/projection/load-client-data.ts:1194:      spouseDob: client.spouseDob ?? undefined,
+src/lib/projection/__tests__/load-client-data.test.ts:267:    expect(data.client.firstName).toBe("Alice");
+src/engine/retirement-proration.ts:35:    const by = birthYear(client.dateOfBirth);
+src/engine/retirement-proration.ts:40:    const by = birthYear(client.spouseDob);
+src/engine/projection.ts:619:  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/engine/projection.ts:620:  const spouseBirthYear = client.spouseDob
+src/engine/projection.ts:621:    ? parseInt(client.spouseDob.slice(0, 4), 10)
+src/engine/projection.ts:2292:            isSpouseAccount(acct) ? client.spouseDob : client.dateOfBirth;
+src/engine/projection.ts:2754:          const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+src/engine/projection.ts:4396:    hasSpouse: data.client.spouseDob != null,
+src/engine/income.ts:59:      const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+src/engine/income.ts:74:      if (inc.owner === "spouse" && client.spouseDob) {
+src/engine/income.ts:75:        const spouseBy = parseInt(client.spouseDob.slice(0, 4), 10);
+src/engine/income.ts:82:      if (inc.owner === "client" && client.lifeExpectancy != null && client.dateOfBirth) {
+src/engine/income.ts:83:        const clientBy = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/engine/death-event/shared.ts:17:  if (!client.spouseDob) return null;
+src/engine/death-event/shared.ts:20:  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/engine/death-event/shared.ts:21:  const spouseBirthYear = parseInt(client.spouseDob.slice(0, 4), 10);
+src/engine/death-event/shared.ts:43:  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/engine/death-event/shared.ts:62:  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+src/engine/death-event/shared.ts:66:  if (client.spouseDob) {
+src/engine/death-event/shared.ts:67:    const spouseBirthYear = parseInt(client.spouseDob.slice(0, 4), 10);
+src/engine/what-if/life-insurance-need.ts:92:    if (data.client.spouseDob) {
+src/engine/what-if/life-insurance-need.ts:94:      return birthYear(data.client.spouseDob) + le;
+src/engine/what-if/life-insurance-need.ts:98:    return birthYear(data.client.dateOfBirth) + le;
+src/engine/what-if/life-insurance-need.ts:102:  return birthYear(data.client.dateOfBirth) + le;
+src/engine/what-if/life-insurance-need.ts:326:    out.client.lifeExpectancy = deathYear - birthYear(out.client.dateOfBirth);
+src/engine/what-if/life-insurance-need.ts:328:    if (!out.client.spouseDob) {
+src/engine/what-if/life-insurance-need.ts:331:    out.client.spouseLifeExpectancy = deathYear - birthYear(out.client.spouseDob);
+src/engine/monteCarlo/summarize.ts:107:  const clientBirthYear = parseBirthYear(client.dateOfBirth);
+src/engine/monteCarlo/summarize.ts:108:  const spouseBirthYear = parseBirthYear(client.spouseDob);
+src/engine/monteCarlo/__tests__/summarize.test.ts:43:// client.dateOfBirth / spouseDob and planSettings.planStartYear.
+src/engine/socialSecurity/claimAge.ts:19:    const dob = row.owner === "spouse" ? client.spouseDob : client.dateOfBirth;

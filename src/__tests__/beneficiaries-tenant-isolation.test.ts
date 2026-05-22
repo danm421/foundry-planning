@@ -72,6 +72,7 @@ d("beneficiaries tenant isolation", () => {
       scenarios,
       externalBeneficiaries,
       beneficiaryDesignations,
+      crmHouseholds,
     } = schema;
     const { inArray } = drizzleOrm;
 
@@ -80,7 +81,13 @@ d("beneficiaries tenant isolation", () => {
       .from(clients)
       .where(inArray(clients.firmId, [FIRM_A, FIRM_B]));
     const ids = testClients.map((c) => c.id);
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      // CRM households may still be lingering from a prior failed run.
+      await db
+        .delete(crmHouseholds)
+        .where(inArray(crmHouseholds.firmId, [FIRM_A, FIRM_B]));
+      return;
+    }
 
     await db
       .delete(beneficiaryDesignations)
@@ -92,19 +99,41 @@ d("beneficiaries tenant isolation", () => {
     await db.delete(scenarios).where(inArray(scenarios.clientId, ids));
     await db.delete(familyMembers).where(inArray(familyMembers.clientId, ids));
     await db.delete(clients).where(inArray(clients.firmId, [FIRM_A, FIRM_B]));
+    // CRM households are FK'd by clients (restrict) — delete after clients.
+    await db
+      .delete(crmHouseholds)
+      .where(inArray(crmHouseholds.firmId, [FIRM_A, FIRM_B]));
   }
 
   async function setupFirmWithClient(firmId: string) {
     const { db } = dbMod;
-    const { clients, scenarios, familyMembers, accounts } = schema;
+    const {
+      clients,
+      scenarios,
+      familyMembers,
+      accounts,
+      crmHouseholds,
+      crmHouseholdContacts,
+    } = schema;
+    // Identity now lives on CRM contacts — create the household + primary
+    // contact first so the planning client can link to it.
+    const [household] = await db
+      .insert(crmHouseholds)
+      .values({ firmId, advisorId: "advisor_isolation_test", name: "Test Household" })
+      .returning();
+    await db.insert(crmHouseholdContacts).values({
+      householdId: household.id,
+      role: "primary",
+      firstName: "Test",
+      lastName: firmId,
+      dateOfBirth: "1970-01-01",
+    });
     const [client] = await db
       .insert(clients)
       .values({
         firmId,
         advisorId: "advisor_isolation_test",
-        firstName: "Test",
-        lastName: firmId,
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: household.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,

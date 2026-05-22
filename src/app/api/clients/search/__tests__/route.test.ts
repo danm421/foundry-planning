@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { GET } from "../route";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 const FIRM = "firm_api_search";
@@ -19,12 +19,29 @@ import { auth } from "@clerk/nextjs/server";
 
 async function cleanup() {
   await db.delete(clients).where(eq(clients.firmId, FIRM));
+  await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, FIRM));
 }
 async function seed() {
   await cleanup();
-  await db.insert(clients).values([
-    { firmId: FIRM, advisorId: USER, firstName: "Casey", lastName: "Carver", dateOfBirth: "1975-03-03", retirementAge: 65, planEndAge: 95 },
-  ] as (typeof clients.$inferInsert)[]);
+  // Identity lives on CRM contacts — create household + primary contact first.
+  const [household] = await db
+    .insert(crmHouseholds)
+    .values({ firmId: FIRM, advisorId: USER, name: "Carver Household" })
+    .returning();
+  await db.insert(crmHouseholdContacts).values({
+    householdId: household.id,
+    role: "primary",
+    firstName: "Casey",
+    lastName: "Carver",
+    dateOfBirth: "1975-03-03",
+  });
+  await db.insert(clients).values({
+    firmId: FIRM,
+    advisorId: USER,
+    crmHouseholdId: household.id,
+    retirementAge: 65,
+    planEndAge: 95,
+  });
 }
 
 beforeAll(seed);

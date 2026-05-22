@@ -1,7 +1,7 @@
 // src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities as entitiesTable } from "@/db/schema";
+import { clients, crmHouseholdContacts, entities as entitiesTable } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { runProjection } from "@/engine/projection";
@@ -46,6 +46,24 @@ export async function POST(
       .from(clients)
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // CRM contacts — source of client name for the PDF.
+    const [primaryContact] = client.crmHouseholdId
+      ? await db
+          .select({
+            firstName: crmHouseholdContacts.firstName,
+            lastName: crmHouseholdContacts.lastName,
+          })
+          .from(crmHouseholdContacts)
+          .where(
+            and(
+              eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
+              eq(crmHouseholdContacts.role, "primary"),
+            ),
+          )
+      : [];
+    const clientFirstName = primaryContact?.firstName;
+    const clientLastName = primaryContact?.lastName;
 
     const url = new URL(request.url);
     const year = Number(url.searchParams.get("year"));
@@ -129,7 +147,7 @@ export async function POST(
       asOfMode,
     });
 
-    const clientName = [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";
+    const clientName = [clientFirstName, clientLastName].filter(Boolean).join(" ") || "Client";
     const generatedAt = new Date().toLocaleString("en-US", {
       year: "numeric",
       month: "short",
@@ -165,7 +183,7 @@ export async function POST(
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="balance-sheet-${(client.lastName ?? "client").toLowerCase()}-${year}.pdf"`,
+        "Content-Disposition": `attachment; filename="balance-sheet-${(clientLastName ?? "client").toLowerCase()}-${year}.pdf"`,
         "Cache-Control": "no-store",
       },
     });

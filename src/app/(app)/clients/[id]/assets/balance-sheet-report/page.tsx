@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { clients, entities } from "@/db/schema";
+import { clients, crmHouseholdContacts, entities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -24,6 +24,15 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
     notFound();
   }
 
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
+
   const entityRows = await db
     .select()
     .from(entities)
@@ -34,8 +43,8 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
     client.filingStatus === "married_separate";
 
   const ownerDobs = {
-    clientDob: client.dateOfBirth,
-    spouseDob: client.spouseDob ?? null,
+    clientDob: primaryContact.dateOfBirth,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
   };
 
   const entityInfos = entityRows.map((e) => ({

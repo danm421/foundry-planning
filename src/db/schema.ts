@@ -17,6 +17,7 @@ import {
   check,
   customType,
   foreignKey,
+  bigint,
 } from "drizzle-orm/pg-core";
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
@@ -335,15 +336,147 @@ export const importDocumentTypeEnum = pgEnum("import_document_type", [
 
 export const extractionModelEnum = pgEnum("extraction_model", ["mini", "full"]);
 
+// ── CRM enums ────────────────────────────────────────────────────────────────
+
+export const crmHouseholdStatusEnum = pgEnum("crm_household_status", [
+  "prospect",
+  "active",
+  "inactive",
+  "archived",
+]);
+
+export const crmContactRoleEnum = pgEnum("crm_contact_role", [
+  "primary",
+  "spouse",
+  "dependent",
+  "other",
+]);
+
+export const crmActivityKindEnum = pgEnum("crm_activity_kind", [
+  "note",
+  "call",
+  "meeting",
+  "email",
+  "status_change",
+  "contact_change",
+  "account_change",
+  "document_uploaded",
+  "planning_link",
+]);
+
+// ── CRM tables ───────────────────────────────────────────────────────────────
+
+export const crmHouseholds = pgTable("crm_households", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  advisorId: text("advisor_id").notNull(),
+  name: text("name").notNull(),
+  status: crmHouseholdStatusEnum("status").notNull().default("prospect"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_households_firm_idx").on(t.firmId),
+  index("crm_households_firm_status_idx").on(t.firmId, t.status),
+]);
+
+export const crmHouseholdContacts = pgTable("crm_household_contacts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  role: crmContactRoleEnum("role").notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  preferredName: text("preferred_name"),
+  dateOfBirth: date("date_of_birth"),
+  email: text("email"),
+  phone: text("phone"),
+  mobile: text("mobile"),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  city: text("city"),
+  state: text("state"),
+  postalCode: text("postal_code"),
+  country: text("country"),
+  ssnLast4: text("ssn_last4"),
+  maritalStatus: text("marital_status"),
+  employmentStatus: text("employment_status"),
+  employer: text("employer"),
+  occupation: text("occupation"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_contacts_household_idx").on(t.householdId),
+  index("crm_contacts_name_idx").on(t.lastName, t.firstName),
+  uniqueIndex("crm_contacts_one_primary_per_household")
+    .on(t.householdId)
+    .where(sql`role = 'primary'`),
+  uniqueIndex("crm_contacts_one_spouse_per_household")
+    .on(t.householdId)
+    .where(sql`role = 'spouse'`),
+]);
+
+export const crmHouseholdAccounts = pgTable("crm_household_accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id")
+    .references(() => crmHouseholdContacts.id, { onDelete: "set null" }),
+  accountType: text("account_type"),
+  custodian: text("custodian"),
+  accountNumberLast4: text("account_number_last4"),
+  balance: numeric("balance", { precision: 14, scale: 2 }),
+  balanceAsOf: date("balance_as_of"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_accounts_household_idx").on(t.householdId),
+]);
+
+export const crmActivity = pgTable("crm_activity", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  firmId: text("firm_id").notNull(),
+  actorUserId: text("actor_user_id"),
+  kind: crmActivityKindEnum("kind").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  metadata: jsonb("metadata"),
+  occurredAt: timestamp("occurred_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_activity_household_occurred_idx").on(t.householdId, t.occurredAt.desc()),
+]);
+
+export const crmHouseholdDocuments = pgTable("crm_household_documents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  storageProvider: text("storage_provider").notNull(),
+  storageKey: text("storage_key").notNull(),
+  mimeType: text("mime_type"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
+  uploadedBy: text("uploaded_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_documents_household_idx").on(t.householdId),
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
   id: uuid("id").defaultRandom().primaryKey(),
   firmId: text("firm_id").notNull(),
   advisorId: text("advisor_id").notNull(),
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
-  dateOfBirth: date("date_of_birth").notNull(),
   retirementAge: integer("retirement_age").notNull(),
   // Calendar month (1-12) within the retirement year when retirement starts.
   // Income/expenses linked to the retirement transition are pro-rated for this
@@ -354,21 +487,18 @@ export const clients = pgTable("clients", {
   // Life expectancies are the source of truth for the plan horizon; plan_end_age
   // is derived (= max(death year across client + spouse) - clientBirthYear).
   lifeExpectancy: integer("life_expectancy").notNull().default(95),
-  spouseName: text("spouse_name"),
-  spouseLastName: text("spouse_last_name"),
-  spouseDob: date("spouse_dob"),
   spouseRetirementAge: integer("spouse_retirement_age"),
   spouseRetirementMonth: integer("spouse_retirement_month"),
   spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
-  email: text("email"),
-  address: text("address"),
-  spouseEmail: text("spouse_email"),
-  spouseAddress: text("spouse_address"),
   onboardingState: jsonb("onboarding_state").notNull().default({}),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  crmHouseholdId: uuid("crm_household_id")
+    .notNull()
+    .unique()
+    .references(() => crmHouseholds.id, { onDelete: "restrict" }),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);
@@ -1485,6 +1615,53 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   lifeInsuranceSolverSettings: one(lifeInsuranceSolverSettings, {
     fields: [clients.id],
     references: [lifeInsuranceSolverSettings.clientId],
+  }),
+  crmHousehold: one(crmHouseholds, {
+    fields: [clients.crmHouseholdId],
+    references: [crmHouseholds.id],
+  }),
+}));
+
+export const crmHouseholdsRelations = relations(crmHouseholds, ({ many, one }) => ({
+  contacts: many(crmHouseholdContacts),
+  accounts: many(crmHouseholdAccounts),
+  activity: many(crmActivity),
+  documents: many(crmHouseholdDocuments),
+  planningClient: one(clients, {
+    fields: [crmHouseholds.id],
+    references: [clients.crmHouseholdId],
+  }),
+}));
+
+export const crmHouseholdContactsRelations = relations(crmHouseholdContacts, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmHouseholdContacts.householdId],
+    references: [crmHouseholds.id],
+  }),
+}));
+
+export const crmHouseholdAccountsRelations = relations(crmHouseholdAccounts, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmHouseholdAccounts.householdId],
+    references: [crmHouseholds.id],
+  }),
+  contact: one(crmHouseholdContacts, {
+    fields: [crmHouseholdAccounts.contactId],
+    references: [crmHouseholdContacts.id],
+  }),
+}));
+
+export const crmActivityRelations = relations(crmActivity, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmActivity.householdId],
+    references: [crmHouseholds.id],
+  }),
+}));
+
+export const crmHouseholdDocumentsRelations = relations(crmHouseholdDocuments, ({ one }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmHouseholdDocuments.householdId],
+    references: [crmHouseholds.id],
   }),
 }));
 

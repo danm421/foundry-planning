@@ -5,6 +5,7 @@ import {
   assetClasses,
   clientCmaOverrides,
   clients,
+  crmHouseholdContacts,
   entities,
   entityOwners,
   familyMembers,
@@ -28,11 +29,27 @@ import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
  * wizard steps over the same underlying view — duplicating the loader would
  * be 150+ lines of drift risk for zero benefit. */
 export async function loadBalanceSheetStepData(clientId: string, firmId: string) {
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return null;
+  if (!clientRow) return null;
+
+  // CRM contacts — sole source of identity (firstName, lastName, DOB) +
+  // spouseLastName display fallback.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) return null;
+  const client = {
+    ...clientRow,
+    dateOfBirth: primaryContact.dateOfBirth,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
+  };
 
   const [scenario] = await db
     .select()
@@ -304,9 +321,9 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       };
 
   const ownerNames = {
-    clientName: `${client.firstName} ${client.lastName}`,
-    spouseName: client.spouseName
-      ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+    clientName: `${effectiveTree.client.firstName} ${effectiveTree.client.lastName}`,
+    spouseName: effectiveTree.client.spouseName
+      ? `${effectiveTree.client.spouseName} ${client.spouseLastName ?? effectiveTree.client.lastName}`.trim()
       : null,
   };
 

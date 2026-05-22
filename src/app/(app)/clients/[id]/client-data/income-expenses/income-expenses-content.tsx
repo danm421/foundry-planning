@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import {
   clients,
+  crmHouseholdContacts,
   scenarios,
   incomeScheduleOverrides,
   expenseScheduleOverrides,
@@ -32,12 +33,30 @@ interface IncomeExpensesContentProps {
 export async function IncomeExpensesContent({ clientId: id, scenarioParam }: IncomeExpensesContentProps) {
   const firmId = await getOrgId();
 
-  const [client] = await db
+  const [clientRow] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
-  if (!client) notFound();
+  if (!clientRow) notFound();
+
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact?.dateOfBirth) notFound();
+  const client = {
+    ...clientRow,
+    firstName: primaryContact.firstName,
+    lastName: primaryContact.lastName,
+    dateOfBirth: primaryContact.dateOfBirth,
+    spouseName: spouseContact?.firstName ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
+    spouseDob: spouseContact?.dateOfBirth ?? null,
+  };
 
   const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioParam ?? "base", {});
 

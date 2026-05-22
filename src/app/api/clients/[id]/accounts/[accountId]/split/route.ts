@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { accounts, accountOwners, clients, familyMembers } from "@/db/schema";
+import { accounts, accountOwners, clients, crmHouseholdContacts, familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordCreate, recordDelete } from "@/lib/audit";
@@ -25,6 +25,20 @@ export async function POST(
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
+
+    // CRM contact — source for the split account label.
+    const [primaryContact] = client.crmHouseholdId
+      ? await db
+          .select({ firstName: crmHouseholdContacts.firstName })
+          .from(crmHouseholdContacts)
+          .where(
+            and(
+              eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
+              eq(crmHouseholdContacts.role, "primary"),
+            ),
+          )
+      : [];
+    const clientFirstName = primaryContact?.firstName;
 
     const [target] = await db
       .select()
@@ -108,7 +122,7 @@ export async function POST(
           value: clientValueRounded.toFixed(2),
           basis: clientBasisRounded.toFixed(2),
           rothValue: clientRothValueRounded.toFixed(2),
-          name: `${target.name} (${client.firstName ?? "Client"} share)`,
+          name: `${target.name} (${clientFirstName ?? "Client"} share)`,
         })
         .returning();
 

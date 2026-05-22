@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -20,12 +20,20 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
   const [client] = await db
     .select({
       filingStatus: clients.filingStatus,
-      firstName: clients.firstName,
-      spouseName: clients.spouseName,
+      crmHouseholdId: clients.crmHouseholdId,
     })
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   if (!client) notFound();
+
+  // CRM contacts — sole identity source.
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primaryContact = contactRows.find((c) => c.role === "primary");
+  const spouseContact = contactRows.find((c) => c.role === "spouse");
+  if (!primaryContact) notFound();
 
   const scenarioId = sp.scenario ?? "base";
 
@@ -35,8 +43,8 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
         clientId={id}
         firmId={firmId}
         filingStatus={client.filingStatus}
-        firstName={client.firstName}
-        spouseName={client.spouseName}
+        firstName={primaryContact.firstName}
+        spouseName={spouseContact?.firstName ?? null}
         scenarioId={scenarioId}
       />
     </Suspense>

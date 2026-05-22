@@ -18,6 +18,7 @@
  *   7. PATCH on a series owned by a different client returns 404.
  */
 import { readFileSync } from "node:fs";
+import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
@@ -98,19 +99,54 @@ d("gift_series CRUD", () => {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
 
+    const [_crmHousehold] = await db
+
+
+      .insert(crmHouseholds)
+
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_series_test", name: "Test Household" })
+
+
+      .returning();
+
+
+    await db.insert(crmHouseholdContacts).values({
+
+
+      householdId: _crmHousehold.id,
+
+
+      role: "primary",
+
+
+      firstName: "Series",
+
+
+      lastName: "Test",
+
+
+      dateOfBirth: "1970-01-01",
+
+
+    });
+
+
     const [client] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_series_test",
-        firstName: "Series",
-        lastName: "Test",
-        dateOfBirth: "1970-01-01",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "single",
+
+
       })
+
+
       .returning();
 
     const [scenario] = await db
@@ -416,19 +452,41 @@ d("gift_series CRUD", () => {
     // Create a second client under the same firm
     const { db } = dbMod;
     const { clients, scenarios } = schema;
+    const [_crmHousehold] = await db
+
+      .insert(crmHouseholds)
+
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_series_test", name: "Test Household" })
+
+      .returning();
+
+    await db.insert(crmHouseholdContacts).values({
+
+      householdId: _crmHousehold.id,
+
+      role: "primary",
+
+      firstName: "Other",
+
+      lastName: "Client",
+
+      dateOfBirth: "1975-06-15",
+
+    });
+
     const [clientB] = await db
       .insert(clients)
       .values({
         firmId: TEST_FIRM,
         advisorId: "advisor_series_test",
-        firstName: "Other",
-        lastName: "Client",
-        dateOfBirth: "1975-06-15",
+        crmHouseholdId: _crmHousehold.id,
         retirementAge: 65,
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "single",
+
       })
+
       .returning();
     await db
       .insert(scenarios)

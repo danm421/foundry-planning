@@ -1,0 +1,99 @@
+src/app/(app)/clients/[id]/client-data/balance-sheet/balance-sheet-content.tsx(243,17): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+src/app/(app)/clients/[id]/estate-planning/dnd-context-provider.tsx(332,47): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/app/(app)/clients/[id]/estate-planning/lib/render-rows.ts(137,64): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/app/(app)/clients/[id]/estate-planning/lib/tree-as-of-year.ts(74,19): error TS2339: Property 'familyMemberId' does not exist on type '{ kind: "family_member"; familyMemberId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'familyMemberId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/app/(app)/clients/[id]/onboarding/steps/balance-sheet-step-data.ts(225,17): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+src/app/api/clients/[id]/entities/route.ts(85,41): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(51,49): error TS2345: Argument of type 'boolean' is not assignable to parameter of type '{ id: string; }'.
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(52,50): error TS2345: Argument of type '{ effectiveTree: never; }' is not assignable to parameter of type 'LoadEffectiveTreeResult'.
+  Property 'warnings' is missing in type '{ effectiveTree: never; }' but required in type 'LoadEffectiveTreeResult'.
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(62,28): error TS2345: Argument of type 'Request' is not assignable to parameter of type 'NextRequest'.
+  Type 'Request' is missing the following properties from type 'NextRequest': cookies, nextUrl, page, ua
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(67,55): error TS2345: Argument of type 'boolean' is not assignable to parameter of type '{ id: string; }'.
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(69,7): error TS2345: Argument of type 'Request' is not assignable to parameter of type 'NextRequest'.
+  Type 'Request' is missing the following properties from type 'NextRequest': cookies, nextUrl, page, ua
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(95,7): error TS2345: Argument of type 'Request' is not assignable to parameter of type 'NextRequest'.
+  Type 'Request' is missing the following properties from type 'NextRequest': cookies, nextUrl, page, ua
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(117,7): error TS2345: Argument of type 'Request' is not assignable to parameter of type 'NextRequest'.
+  Type 'Request' is missing the following properties from type 'NextRequest': cookies, nextUrl, page, ua
+src/app/api/clients/[id]/solver/solve/__tests__/route.test.ts(133,7): error TS2345: Argument of type 'Request' is not assignable to parameter of type 'NextRequest'.
+  Type 'Request' is missing the following properties from type 'NextRequest': cookies, nextUrl, page, ua
+src/components/balance-sheet-report/view-model.ts(290,41): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(436,38): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(458,47): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(465,27): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(720,47): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(726,42): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(728,27): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(731,44): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(735,34): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(1092,42): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/balance-sheet-report/view-model.ts(1126,42): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/comparison/__tests__/asset-allocation-comparison-section.test.tsx(15,5): error TS2322: Type '{ kind: "scenario"; id: string; }' is not assignable to type 'ScenarioRef'.
+  Property 'toggleState' is missing in type '{ kind: "scenario"; id: string; }' but required in type '{ kind: "scenario"; id: string; toggleState: ToggleState; }'.
+src/components/comparison/__tests__/asset-allocation-comparison-section.test.tsx(19,13): error TS2352: Conversion of type '{ years: never[]; }' to type 'ProjectionResult' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ years: never[]; }' is missing the following properties from type 'ProjectionResult': todayHypotheticalEstateTax, giftLedger
+src/components/comparison/__tests__/balance-sheet-comparison-section.test.tsx(11,5): error TS2322: Type '{ kind: "scenario"; id: string; }' is not assignable to type 'ScenarioRef'.
+  Property 'toggleState' is missing in type '{ kind: "scenario"; id: string; }' but required in type '{ kind: "scenario"; id: string; toggleState: ToggleState; }'.
+src/components/comparison/__tests__/client-profile-comparison-section.test.tsx(11,5): error TS2322: Type '{ kind: "scenario"; id: string; }' is not assignable to type 'ScenarioRef'.
+  Property 'toggleState' is missing in type '{ kind: "scenario"; id: string; }' but required in type '{ kind: "scenario"; id: string; toggleState: ToggleState; }'.
+src/components/comparison/__tests__/expense-detail-comparison-section.test.tsx(11,5): error TS2322: Type '{ kind: "scenario"; id: string; }' is not assignable to type 'ScenarioRef'.
+  Property 'toggleState' is missing in type '{ kind: "scenario"; id: string; }' but required in type '{ kind: "scenario"; id: string; toggleState: ToggleState; }'.
+src/components/comparison/__tests__/income-sources-comparison-section.test.tsx(16,5): error TS2322: Type '{ kind: "scenario"; id: string; }' is not assignable to type 'ScenarioRef'.
+  Property 'toggleState' is missing in type '{ kind: "scenario"; id: string; }' but required in type '{ kind: "scenario"; id: string; toggleState: ToggleState; }'.
+src/components/comparison/__tests__/major-transactions-comparison-section.test.tsx(11,5): error TS2322: Type '{ kind: "scenario"; id: string; }' is not assignable to type 'ScenarioRef'.
+  Property 'toggleState' is missing in type '{ kind: "scenario"; id: string; }' but required in type '{ kind: "scenario"; id: string; toggleState: ToggleState; }'.
+src/components/comparison/__tests__/scenario-changes-comparison-section.test.tsx(13,5): error TS2322: Type '{ kind: "scenario"; id: string; }' is not assignable to type 'ScenarioRef'.
+  Property 'toggleState' is missing in type '{ kind: "scenario"; id: string; }' but required in type '{ kind: "scenario"; id: string; toggleState: ToggleState; }'.
+src/components/comparison/__tests__/scenario-changes-comparison-section.test.tsx(17,13): error TS2352: Conversion of type '{ years: never[]; }' to type 'ProjectionResult' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ years: never[]; }' is missing the following properties from type 'ProjectionResult': todayHypotheticalEstateTax, giftLedger
+src/components/estate-flow-change-owner-dialog.tsx(76,11): error TS2339: Property 'familyMemberId' does not exist on type '{ kind: "family_member"; familyMemberId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'familyMemberId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/estate-flow-change-owner-dialog.tsx(76,52): error TS2339: Property 'familyMemberId' does not exist on type '{ kind: "family_member"; familyMemberId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'familyMemberId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/estate-flow-change-owner-dialog.tsx(78,18): error TS2339: Property 'familyMemberId' does not exist on type '{ kind: "family_member"; familyMemberId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'familyMemberId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/estate-flow-change-owner-dialog.tsx(81,74): error TS2339: Property 'familyMemberId' does not exist on type '{ kind: "family_member"; familyMemberId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'familyMemberId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/estate-flow-change-owner-dialog.tsx(82,69): error TS2339: Property 'familyMemberId' does not exist on type '{ kind: "family_member"; familyMemberId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'familyMemberId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/estate-flow-change-owner-dialog.tsx(267,71): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/components/forms/ownership-editor.tsx(122,75): error TS2339: Property 'entityId' does not exist on type '{ kind: "entity"; entityId: string; percent: number; } | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+  Property 'entityId' does not exist on type '{ kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number; }'.
+src/engine/__tests__/death-event.test.ts(596,52): error TS2322: Type '"spouse"' is not assignable to type '"other" | "child" | "stepchild" | "grandchild" | "great_grandchild" | "parent" | "grandparent" | "sibling" | "sibling_in_law" | "child_in_law" | "niece_nephew" | "aunt_uncle" | "cousin" | "grand_aunt_uncle"'.
+src/engine/__tests__/death-event.test.ts(832,52): error TS2322: Type '"spouse"' is not assignable to type '"other" | "child" | "stepchild" | "grandchild" | "great_grandchild" | "parent" | "grandparent" | "sibling" | "sibling_in_law" | "child_in_law" | "niece_nephew" | "aunt_uncle" | "cousin" | "grand_aunt_uncle"'.
+src/engine/__tests__/golden-fixtures-data.ts(31,41): error TS2459: Module '"../types"' declares 'TaxYearParameters' locally, but it is not exported.
+src/lib/comparison/__tests__/charity-flows.test.ts(14,3): error TS2741: Property 'allocation' is missing in type '{ index: number; isBaseline: true; ref: { kind: "scenario"; id: string; toggleState: {}; }; id: string; label: string; tree: ComparisonPlan["tree"]; result: ComparisonPlan["result"]; lifetime: ComparisonPlan["lifetime"]; liquidityRows: never[]; finalEstate: null; panelData: null; }' but required in type 'ComparisonPlan'.
+src/lib/comparison/widgets/__tests__/widget-contract.test.ts(23,35): error TS2345: Argument of type 'ComparisonWidgetCategory' is not assignable to parameter of type '"monte-carlo" | "text" | "tax" | "kpis" | "cashflow" | "investments" | "retirement-income" | "estate"'.
+  Type '"scenario"' is not assignable to type '"monte-carlo" | "text" | "tax" | "kpis" | "cashflow" | "investments" | "retirement-income" | "estate"'.
+src/lib/estate/__tests__/estate-flow-gifts.test.ts(28,3): error TS2322: Type '{ id: string; name: string; balance: number; interestRate: number; monthlyPayment: number; startYear: number; startMonth: number; termMonths: number; balanceAsOfMonth?: number | undefined; balanceAsOfYear?: number | undefined; ... 4 more ...; owners?: AccountOwner[] | undefined; }' is not assignable to type 'Liability'.
+  Types of property 'extraPayments' are incompatible.
+    Type 'ExtraPayment[] | undefined' is not assignable to type 'ExtraPayment[]'.
+      Type 'undefined' is not assignable to type 'ExtraPayment[]'.
+src/lib/estate/__tests__/transfer-report-insurance-pour-out.test.ts(5,3): error TS2305: Module '"@/engine/types"' has no exported member 'ProjectionResult'.
+src/lib/life-insurance/__tests__/existing-coverage.test.ts(8,5): error TS2783: 'name' is specified more than once, so this usage will be overwritten.
+src/lib/solver/__tests__/apply-mutations.test.ts(6,3): error TS2741: Property 'giftEvents' is missing in type '{ client: { firstName: string; lastName: string; dateOfBirth: string; retirementAge: number; retirementMonth: number; planEndAge: number; lifeExpectancy: number; spouseName: string; spouseDob: string; spouseRetirementAge: number; spouseRetirementMonth: number; spouseLifeExpectancy: number; filingStatus: "married_joi...' but required in type 'ClientData'.
+src/lib/solver/__tests__/apply-mutations.test.ts(463,3): error TS2741: Property 'giftEvents' is missing in type '{ client: { firstName: string; lastName: string; dateOfBirth: string; retirementAge: number; retirementMonth: number; planEndAge: number; lifeExpectancy: number; spouseName: string; spouseDob: string; spouseRetirementAge: number; spouseRetirementMonth: number; spouseLifeExpectancy: number; filingStatus: "married_joi...' but required in type 'ClientData'.
+src/lib/solver/__tests__/build-solver-comparison-plan.test.ts(14,14): error TS2352: Conversion of type '{ client: ClientInfo; accounts: never[]; incomes: never[]; expenses: never[]; liabilities: never[]; savingsRules: never[]; withdrawalStrategy: never[]; planSettings: ClientData["planSettings"]; }' to type 'ClientData' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'giftEvents' is missing in type '{ client: ClientInfo; accounts: never[]; incomes: never[]; expenses: never[]; liabilities: never[]; savingsRules: never[]; withdrawalStrategy: never[]; planSettings: ClientData["planSettings"]; }' but required in type 'ClientData'.
+src/lib/solver/__tests__/mutations-to-scenario-changes.test.ts(8,10): error TS2352: Conversion of type '{ client: { firstName: string; lastName: string; dateOfBirth: string; retirementAge: number; retirementMonth: number; planEndAge: number; lifeExpectancy: number; spouseRetirementAge: number; spouseLifeExpectancy: number; filingStatus: "married_joint"; }; ... 6 more ...; planSettings: ClientData["planSettings"]; }' to type 'ClientData' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'giftEvents' is missing in type '{ client: { firstName: string; lastName: string; dateOfBirth: string; retirementAge: number; retirementMonth: number; planEndAge: number; lifeExpectancy: number; spouseRetirementAge: number; spouseLifeExpectancy: number; filingStatus: "married_joint"; }; ... 6 more ...; planSettings: ClientData["planSettings"]; }' but required in type 'ClientData'.
+src/lib/solver/technique-form-data.ts(77,3): error TS2741: Property 'entityId' is missing in type '{ id: string; name: string; type: "buy" | "sell"; year: number; accountId: string | null; purchaseTransactionId: string | null; fractionSold: string | null; overrideSaleValue: string | null; ... 14 more ...; mortgageTermMonths: number | null; }' but required in type 'AssetTransactionInitialData'.

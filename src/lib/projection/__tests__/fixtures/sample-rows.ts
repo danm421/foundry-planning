@@ -11,6 +11,9 @@ const NOW = new Date("2026-01-01T00:00:00Z");
 
 export const FIXTURE_FIRM_ID = "fixture-firm-001";
 export const FIXTURE_CLIENT_ID = "00000000-0000-0000-0000-000000000001";
+export const FIXTURE_CRM_HOUSEHOLD_ID = "00000000-0000-0000-0000-000000000002";
+export const FIXTURE_CRM_PRIMARY_CONTACT_ID = "00000000-0000-0000-0000-000000000003";
+export const FIXTURE_CRM_SPOUSE_CONTACT_ID = "00000000-0000-0000-0000-000000000004";
 export const FIXTURE_SCENARIO_ID = "00000000-0000-0000-0000-000000000010";
 export const FIXTURE_ACCOUNT_ID_1 = "00000000-0000-0000-0000-000000000020";
 export const FIXTURE_ACCOUNT_ID_2 = "00000000-0000-0000-0000-000000000021";
@@ -35,28 +38,92 @@ export const FIXTURE_ACCOUNT_ASSET_ALLOC_ID = "00000000-0000-0000-0000-000000000
 export const FIXTURE_CORRELATION_ID = "00000000-0000-0000-0000-000000000400";
 export const WRONG_FIRM_ID = "wrong-firm-999";
 
+// ── crm_households + crm_household_contacts ──────────────────────────────────
+// Identity (firstName/lastName/dateOfBirth) lives in the CRM contacts table
+// since Phase 9; clients.crm_household_id is the sole link to identity.
+
+export const crmHouseholdRow = {
+  id: FIXTURE_CRM_HOUSEHOLD_ID,
+  firmId: FIXTURE_FIRM_ID,
+  advisorId: "advisor-001",
+  name: "Sample Household",
+  status: "active" as const,
+  notes: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+export const crmPrimaryContactRow = {
+  id: FIXTURE_CRM_PRIMARY_CONTACT_ID,
+  householdId: FIXTURE_CRM_HOUSEHOLD_ID,
+  role: "primary" as const,
+  firstName: "Alice",
+  lastName: "Sample",
+  preferredName: null,
+  dateOfBirth: "1968-06-15",
+  email: "alice@example.com",
+  phone: null,
+  mobile: null,
+  addressLine1: null,
+  addressLine2: null,
+  city: null,
+  state: null,
+  postalCode: null,
+  country: null,
+  ssnLast4: null,
+  maritalStatus: null,
+  employmentStatus: null,
+  employer: null,
+  occupation: null,
+  notes: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+export const crmSpouseContactRow = {
+  id: FIXTURE_CRM_SPOUSE_CONTACT_ID,
+  householdId: FIXTURE_CRM_HOUSEHOLD_ID,
+  role: "spouse" as const,
+  firstName: "Bob",
+  lastName: "Sample",
+  preferredName: null,
+  dateOfBirth: "1970-03-22",
+  email: null,
+  phone: null,
+  mobile: null,
+  addressLine1: null,
+  addressLine2: null,
+  city: null,
+  state: null,
+  postalCode: null,
+  country: null,
+  ssnLast4: null,
+  maritalStatus: null,
+  employmentStatus: null,
+  employer: null,
+  occupation: null,
+  notes: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
 // ── clients ──────────────────────────────────────────────────────────────────
 
 export const clientRow = {
   id: FIXTURE_CLIENT_ID,
   firmId: FIXTURE_FIRM_ID,
   advisorId: "advisor-001",
-  firstName: "Alice",
-  lastName: "Sample",
-  dateOfBirth: "1968-06-15",
+  crmHouseholdId: FIXTURE_CRM_HOUSEHOLD_ID,
   retirementAge: 65,
+  retirementMonth: 1,
   planEndAge: 95,
   lifeExpectancy: 95,
-  spouseName: "Bob",
-  spouseLastName: "Sample",
-  spouseDob: "1970-03-22",
   spouseRetirementAge: 65,
+  spouseRetirementMonth: null,
   spouseLifeExpectancy: 92,
   filingStatus: "married_joint" as const,
-  email: "alice@example.com",
-  address: null,
-  spouseEmail: null,
-  spouseAddress: null,
+  onboardingState: {},
+  onboardingCompletedAt: null,
   createdAt: NOW,
   updatedAt: NOW,
 };

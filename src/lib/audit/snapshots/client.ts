@@ -3,16 +3,10 @@ import { clients } from "@/db/schema";
 import type { EntitySnapshot, FieldLabels } from "../types";
 
 export const CLIENT_FIELD_LABELS: FieldLabels = {
-  firstName: { label: "First name", format: "text" },
-  lastName: { label: "Last name", format: "text" },
-  dateOfBirth: { label: "Date of birth", format: "date" },
   retirementAge: { label: "Retirement age", format: "text" },
   retirementMonth: { label: "Retirement month", format: "text" },
   planEndAge: { label: "Plan end age", format: "text" },
   lifeExpectancy: { label: "Life expectancy", format: "text" },
-  spouseName: { label: "Spouse first name", format: "text" },
-  spouseLastName: { label: "Spouse last name", format: "text" },
-  spouseDob: { label: "Spouse date of birth", format: "date" },
   spouseRetirementAge: { label: "Spouse retirement age", format: "text" },
   spouseRetirementMonth: { label: "Spouse retirement month", format: "text" },
   spouseLifeExpectancy: { label: "Spouse life expectancy", format: "text" },
@@ -22,21 +16,16 @@ export const CLIENT_FIELD_LABELS: FieldLabels = {
 type ClientRow = typeof clients.$inferSelect;
 
 /**
- * Snapshot for client identity and plan-horizon fields. PII fields
- * (email/address) are intentionally excluded — see plan §B6.
+ * Snapshot for planning fields on the clients row. Identity (first/last name,
+ * DOB, spouse identity, email/address) now lives on CRM contacts — audited
+ * separately via crm.contact.update events.
  */
 export function toClientSnapshot(row: ClientRow): EntitySnapshot {
   return {
-    firstName: row.firstName,
-    lastName: row.lastName,
-    dateOfBirth: row.dateOfBirth,
     retirementAge: row.retirementAge,
     retirementMonth: row.retirementMonth,
     planEndAge: row.planEndAge,
     lifeExpectancy: row.lifeExpectancy,
-    spouseName: row.spouseName,
-    spouseLastName: row.spouseLastName,
-    spouseDob: row.spouseDob,
     spouseRetirementAge: row.spouseRetirementAge,
     spouseRetirementMonth: row.spouseRetirementMonth,
     spouseLifeExpectancy: row.spouseLifeExpectancy,

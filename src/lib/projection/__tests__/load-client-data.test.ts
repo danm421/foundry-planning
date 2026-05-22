@@ -25,6 +25,9 @@ import {
   FIXTURE_CLIENT_ID,
   WRONG_FIRM_ID,
   clientRow,
+  crmHouseholdRow,
+  crmPrimaryContactRow,
+  crmSpouseContactRow,
   scenarioRow,
   planSettingsRow,
   accountRows,
@@ -51,6 +54,8 @@ import {
 // ---------------------------------------------------------------------------
 type DbState = {
   clients: typeof clientRow[];
+  crmHouseholds: typeof crmHouseholdRow[];
+  crmHouseholdContacts: (typeof crmPrimaryContactRow | typeof crmSpouseContactRow)[];
   scenarios: typeof scenarioRow[];
   planSettings: typeof planSettingsRow[];
   accounts: (typeof accountRows)[0][];
@@ -87,6 +92,8 @@ type DbState = {
 
 const dbState: DbState = {
   clients: [],
+  crmHouseholds: [],
+  crmHouseholdContacts: [],
   scenarios: [],
   planSettings: [],
   accounts: [],
@@ -138,6 +145,8 @@ vi.mock("@/db", async () => {
   const rowsFor = (t: unknown): unknown[] => {
     const n = getTableNameSafe(t);
     if (t === schema.clients || n === "clients") return dbState.clients;
+    if (t === schema.crmHouseholds || n === "crm_households") return dbState.crmHouseholds;
+    if (t === schema.crmHouseholdContacts || n === "crm_household_contacts") return dbState.crmHouseholdContacts;
     if (t === schema.scenarios || n === "scenarios") return dbState.scenarios;
     if (t === schema.planSettings || n === "plan_settings") return dbState.planSettings;
     if (t === schema.accounts || n === "accounts") return dbState.accounts;
@@ -212,6 +221,8 @@ function clearState() {
 function seedValidFixture(clientOverride?: typeof clientRow[]) {
   clearState();
   dbState.clients = clientOverride ?? [clientRow];
+  dbState.crmHouseholds = [crmHouseholdRow];
+  dbState.crmHouseholdContacts = [crmPrimaryContactRow, crmSpouseContactRow];
   dbState.scenarios = [scenarioRow];
   dbState.planSettings = [planSettingsRow];
   dbState.accounts = accountRows as typeof dbState.accounts;

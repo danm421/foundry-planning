@@ -1,0 +1,61 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { db } from "@/db";
+import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { createCrmContact } from "../contacts";
+
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return { ...actual, requireOrgId: vi.fn().mockResolvedValue("test_org_contacts") };
+});
+
+vi.mock("@clerk/nextjs/server", async () => {
+  const actual = await vi.importActual<typeof import("@clerk/nextjs/server")>("@clerk/nextjs/server");
+  return {
+    ...actual,
+    auth: vi.fn().mockResolvedValue({ userId: "test_user", orgId: "test_org_contacts" }),
+  };
+});
+
+describe("createCrmContact primary/spouse invariant", () => {
+  let householdId: string;
+
+  beforeEach(async () => {
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, "test_org_contacts"));
+    const [h] = await db.insert(crmHouseholds).values({
+      firmId: "test_org_contacts",
+      advisorId: "test_advisor",
+      name: "Test",
+    }).returning();
+    householdId = h.id;
+  });
+
+  it("allows one primary contact", async () => {
+    await createCrmContact(householdId, {
+      role: "primary", firstName: "Jane", lastName: "Doe",
+    });
+    const rows = await db.query.crmHouseholdContacts.findMany({ where: eq(crmHouseholdContacts.householdId, householdId) });
+    expect(rows).toHaveLength(1);
+  });
+
+  it("rejects a second primary contact", async () => {
+    await createCrmContact(householdId, { role: "primary", firstName: "Jane", lastName: "Doe" });
+    await expect(createCrmContact(householdId, { role: "primary", firstName: "Bob", lastName: "Doe" }))
+      .rejects.toThrow();
+  });
+
+  it("allows one spouse contact alongside primary", async () => {
+    await createCrmContact(householdId, { role: "primary", firstName: "Jane", lastName: "Doe" });
+    await createCrmContact(householdId, { role: "spouse", firstName: "Jim", lastName: "Doe" });
+    const rows = await db.query.crmHouseholdContacts.findMany({ where: eq(crmHouseholdContacts.householdId, householdId) });
+    expect(rows).toHaveLength(2);
+  });
+
+  it("allows multiple dependents and 'other' contacts", async () => {
+    await createCrmContact(householdId, { role: "dependent", firstName: "Kid1", lastName: "Doe" });
+    await createCrmContact(householdId, { role: "dependent", firstName: "Kid2", lastName: "Doe" });
+    await createCrmContact(householdId, { role: "other", firstName: "Friend", lastName: "Smith" });
+    const rows = await db.query.crmHouseholdContacts.findMany({ where: eq(crmHouseholdContacts.householdId, householdId) });
+    expect(rows).toHaveLength(3);
+  });
+});

@@ -43,11 +43,16 @@ describe("commitClientsIdentity", () => {
     const { tx, calls } = makeFakeTx();
     const result = await commitClientsIdentity(tx, emptyPayload(), ctx);
     expect(result).toEqual({ created: 0, updated: 0, skipped: 1 });
-    expect(calls).toHaveLength(0);
+    // A single select against `clients` is allowed (to discover the linked
+    // crm_household_id); no writes should land on the legacy table.
+    expect(calls.filter((c) => c.op !== "select")).toHaveLength(0);
   });
 
-  it("updates client row with primary + spouse fields", async () => {
-    const { tx, calls } = makeFakeTx();
+  it("updates client row + mirrors identity to CRM contacts", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    // Pretend the planning client is linked to a CRM household so the mirror
+    // path actually fires.
+    setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);
     const payload: ImportPayload = {
       ...emptyPayload(),
       primary: {
@@ -60,7 +65,10 @@ describe("commitClientsIdentity", () => {
     };
     const result = await commitClientsIdentity(tx, payload, ctx);
     expect(result.updated).toBe(1);
-    const updates = callsForTable(calls, "clients");
+
+    // Legacy clients update — still dual-written until Phase 9 drops the
+    // columns.
+    const updates = callsForTable(calls, "clients").filter((c) => c.op === "update");
     expect(updates).toHaveLength(1);
     const setValues = updates[0].op === "update" ? (updates[0].values as Record<string, unknown>) : {};
     expect(setValues.firstName).toBe("Jordan");
@@ -70,20 +78,43 @@ describe("commitClientsIdentity", () => {
     expect(setValues.spouseName).toBe("Riley");
     expect(setValues.spouseLastName).toBe("Doe");
     expect(setValues.spouseDob).toBe("1982-02-02");
+
+    // CRM mirror — one update per CRM contact role.
+    const crmUpdates = callsForTable(calls, "crm_household_contacts").filter((c) => c.op === "update");
+    expect(crmUpdates).toHaveLength(2);
+    const crmValues = crmUpdates.map((u) => (u.op === "update" ? (u.values as Record<string, unknown>) : {}));
+    expect(crmValues[0].firstName).toBe("Jordan");
+    expect(crmValues[0].lastName).toBe("Doe");
+    expect(crmValues[0].dateOfBirth).toBe("1980-01-01");
+    expect(crmValues[1].firstName).toBe("Riley");
   });
 
   it("skips empty fields rather than overwriting with undefined", async () => {
-    const { tx, calls } = makeFakeTx();
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);
     const payload: ImportPayload = {
       ...emptyPayload(),
       primary: { firstName: "Jordan" },
     };
     await commitClientsIdentity(tx, payload, ctx);
-    const updates = callsForTable(calls, "clients");
+    const updates = callsForTable(calls, "clients").filter((c) => c.op === "update");
     const setValues = updates[0].op === "update" ? (updates[0].values as Record<string, unknown>) : {};
     expect(setValues.firstName).toBe("Jordan");
     expect(setValues.lastName).toBeUndefined();
     expect(setValues.spouseName).toBeUndefined();
+  });
+
+  it("skips CRM mirror when the planning client has no crm_household_id", async () => {
+    const { tx, calls } = makeFakeTx();
+    // Default select returns [] — no household link.
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      primary: { firstName: "Jordan", lastName: "Doe" },
+    };
+    await commitClientsIdentity(tx, payload, ctx);
+    // Legacy update still fires; CRM never gets touched.
+    expect(callsForTable(calls, "clients").filter((c) => c.op === "update")).toHaveLength(1);
+    expect(callsForTable(calls, "crm_household_contacts")).toHaveLength(0);
   });
 });
 

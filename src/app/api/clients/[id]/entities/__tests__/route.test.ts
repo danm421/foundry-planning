@@ -9,8 +9,7 @@ import {
   accounts,
   externalBeneficiaries,
   trustSplitInterestDetails,
-  gifts,
-} from "@/db/schema";
+  gifts, crmHouseholds, crmHouseholdContacts} from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
@@ -25,17 +24,39 @@ let charityId: string;
 let measuringLifeId: string;
 
 beforeAll(async () => {
+  const [_crmHousehold] = await db
+
+    .insert(crmHouseholds)
+
+    .values({ firmId: FIRM_A, advisorId: "advisor_test", name: "Test Household" })
+
+    .returning();
+
+  await db.insert(crmHouseholdContacts).values({
+
+    householdId: _crmHousehold.id,
+
+    role: "primary",
+
+    firstName: "Entity",
+
+    lastName: "Tester",
+
+    dateOfBirth: "1965-06-01",
+
+  });
+
   const [client] = await db
     .insert(clients)
     .values({
       firmId: FIRM_A,
       advisorId: "advisor_test",
-      firstName: "Entity",
-      lastName: "Tester",
-      dateOfBirth: "1965-06-01",
+      crmHouseholdId: _crmHousehold.id,
       retirementAge: 65,
       planEndAge: 95,
+
     })
+
     .returning();
   clientId = client.id;
 

@@ -26,53 +26,23 @@ const filingStatusSchema = z.enum([
 
 const ownerSchema = z.enum(["client", "spouse", "joint"]);
 
+// Identity (firstName, lastName, dateOfBirth, email, address + spouse equivalents)
+// lives in the CRM now (crm_household_contacts). The planning client row carries
+// only the CRM link + planning-specific fields. The route handler reads the CRM
+// contacts during insert and dual-writes the still-notNull legacy columns until
+// Phase 9 drops them.
 export const clientCreateSchema = z
   .object({
-    firstName: z.string().min(1).max(120),
-    lastName: z.string().min(1).max(120),
-    dateOfBirth: z.string().min(1).max(40),
+    crmHouseholdId: z.string().uuid(),
     retirementAge: z.coerce.number().int().min(18).max(100),
     retirementMonth: z.coerce.number().int().min(1).max(12).optional(),
     lifeExpectancy: z.coerce.number().int().min(1).max(130),
     filingStatus: filingStatusSchema,
-    spouseName: z.string().max(120).optional().nullable(),
-    spouseLastName: z.string().max(120).optional().nullable(),
-    spouseDob: z.string().max(40).optional().nullable(),
     spouseRetirementAge: z.coerce.number().int().min(18).max(100).optional().nullable(),
     spouseRetirementMonth: z.coerce.number().int().min(1).max(12).optional().nullable(),
     spouseLifeExpectancy: z.coerce.number().int().min(1).max(130).optional().nullable(),
-    email: z.string().max(200).optional().nullable(),
-    address: z.string().max(500).optional().nullable(),
-    spouseEmail: z.string().max(200).optional().nullable(),
-    spouseAddress: z.string().max(500).optional().nullable(),
   })
-  .strict()
-  // A death year equal to the current year is allowed (>=) — modeling a death
-  // this year is a valid premature-death what-if. Only a death strictly in the
-  // past is rejected.
-  .refine(
-    (d) => {
-      const birthYear = Number(d.dateOfBirth.slice(0, 4));
-      if (!Number.isFinite(birthYear)) return true; // bad DOB caught elsewhere
-      return birthYear + d.lifeExpectancy >= new Date().getFullYear();
-    },
-    {
-      message: "Life expectancy implies a death year in the past.",
-      path: ["lifeExpectancy"],
-    },
-  )
-  .refine(
-    (d) => {
-      if (d.spouseLifeExpectancy == null || !d.spouseDob) return true;
-      const birthYear = Number(d.spouseDob.slice(0, 4));
-      if (!Number.isFinite(birthYear)) return true;
-      return birthYear + d.spouseLifeExpectancy >= new Date().getFullYear();
-    },
-    {
-      message: "Spouse life expectancy implies a death year in the past.",
-      path: ["spouseLifeExpectancy"],
-    },
-  );
+  .strict();
 
 export const accountCreateSchema = z
   .object({

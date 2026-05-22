@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import {
   clients,
+  crmHouseholdContacts,
   familyMembers,
   entities,
   entityOwners,
@@ -38,6 +39,13 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
   if (!client) notFound();
+
+  // CRM contacts — source of spouseLastName (and other identity fallbacks).
+  const contactRows = await db
+    .select()
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
   const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
     await Promise.all([
@@ -260,7 +268,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     lifeExpectancy: effectiveClient.lifeExpectancy ?? client.lifeExpectancy,
     filingStatus: effectiveClient.filingStatus,
     spouseName: effectiveClient.spouseName ?? null,
-    spouseLastName: client.spouseLastName ?? null,
+    spouseLastName: spouseContact?.lastName ?? null,
     spouseDob: effectiveClient.spouseDob ?? null,
     spouseRetirementAge: effectiveClient.spouseRetirementAge ?? null,
     spouseRetirementMonth: client.spouseRetirementMonth ?? null,

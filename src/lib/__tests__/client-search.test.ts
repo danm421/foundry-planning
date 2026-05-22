@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
+import { inArray } from "drizzle-orm";
 import { searchClients, countClientsForFirm } from "../client-search";
 
 const FIRM_A = "firm_search_a";
@@ -9,18 +9,86 @@ const FIRM_B = "firm_search_b";
 const ADVISOR_A = "advisor_search_a";
 const ADVISOR_B = "advisor_search_b";
 
+type Seed = {
+  firmId: string;
+  advisorId: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  retirementAge: number;
+  planEndAge: number;
+  spouseFirstName?: string;
+  spouseLastName?: string;
+  spouseDob?: string;
+};
+
+async function insertSeed(seed: Seed): Promise<void> {
+  const [household] = await db
+    .insert(crmHouseholds)
+    .values({ firmId: seed.firmId, advisorId: seed.advisorId, name: `${seed.lastName} Household` })
+    .returning();
+  await db.insert(crmHouseholdContacts).values({
+    householdId: household.id,
+    role: "primary",
+    firstName: seed.firstName,
+    lastName: seed.lastName,
+    dateOfBirth: seed.dateOfBirth,
+  });
+  if (seed.spouseFirstName) {
+    await db.insert(crmHouseholdContacts).values({
+      householdId: household.id,
+      role: "spouse",
+      firstName: seed.spouseFirstName,
+      lastName: seed.spouseLastName ?? seed.lastName,
+      dateOfBirth: seed.spouseDob ?? null,
+    });
+  }
+  await db.insert(clients).values({
+    firmId: seed.firmId,
+    advisorId: seed.advisorId,
+    crmHouseholdId: household.id,
+    retirementAge: seed.retirementAge,
+    planEndAge: seed.planEndAge,
+  });
+}
+
 async function cleanup() {
-  await db.delete(clients).where(eq(clients.firmId, FIRM_A));
-  await db.delete(clients).where(eq(clients.firmId, FIRM_B));
+  await db.delete(clients).where(inArray(clients.firmId, [FIRM_A, FIRM_B]));
+  await db.delete(crmHouseholds).where(inArray(crmHouseholds.firmId, [FIRM_A, FIRM_B]));
 }
 
 async function seed() {
   await cleanup();
-  await db.insert(clients).values([
-    { firmId: FIRM_A, advisorId: ADVISOR_A, firstName: "Alice", lastName: "Anderson", dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 95 },
-    { firmId: FIRM_A, advisorId: ADVISOR_A, firstName: "Bob", lastName: "Baxter", dateOfBirth: "1965-06-15", retirementAge: 67, planEndAge: 95, spouseName: "Beth", spouseLastName: "Baxter", spouseDob: "1967-09-20", spouseRetirementAge: 67, spouseLifeExpectancy: 95 },
-    { firmId: FIRM_B, advisorId: ADVISOR_B, firstName: "Alice", lastName: "Zelenko", dateOfBirth: "1980-02-02", retirementAge: 65, planEndAge: 95 },
-  ] as (typeof clients.$inferInsert)[]);
+  await insertSeed({
+    firmId: FIRM_A,
+    advisorId: ADVISOR_A,
+    firstName: "Alice",
+    lastName: "Anderson",
+    dateOfBirth: "1970-01-01",
+    retirementAge: 65,
+    planEndAge: 95,
+  });
+  await insertSeed({
+    firmId: FIRM_A,
+    advisorId: ADVISOR_A,
+    firstName: "Bob",
+    lastName: "Baxter",
+    dateOfBirth: "1965-06-15",
+    retirementAge: 67,
+    planEndAge: 95,
+    spouseFirstName: "Beth",
+    spouseLastName: "Baxter",
+    spouseDob: "1967-09-20",
+  });
+  await insertSeed({
+    firmId: FIRM_B,
+    advisorId: ADVISOR_B,
+    firstName: "Alice",
+    lastName: "Zelenko",
+    dateOfBirth: "1980-02-02",
+    retirementAge: 65,
+    planEndAge: 95,
+  });
 }
 
 beforeAll(seed);
@@ -60,16 +128,17 @@ describe("searchClients", () => {
   });
 
   it("caps results at 8", async () => {
-    const more = Array.from({ length: 12 }, (_, i) => ({
-      firmId: FIRM_A,
-      advisorId: ADVISOR_A,
-      firstName: `Spammer${i}`,
-      lastName: "Anderson",
-      dateOfBirth: "1970-01-01",
-      retirementAge: 65,
-      planEndAge: 95,
-    }));
-    await db.insert(clients).values(more as (typeof clients.$inferInsert)[]);
+    for (let i = 0; i < 12; i++) {
+      await insertSeed({
+        firmId: FIRM_A,
+        advisorId: ADVISOR_A,
+        firstName: `Spammer${i}`,
+        lastName: "Anderson",
+        dateOfBirth: "1970-01-01",
+        retirementAge: 65,
+        planEndAge: 95,
+      });
+    }
     const results = await searchClients("anderson", FIRM_A);
     expect(results.length).toBeLessThanOrEqual(8);
   });
