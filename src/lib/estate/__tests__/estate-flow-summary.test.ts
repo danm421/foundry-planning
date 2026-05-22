@@ -898,6 +898,149 @@ describe("buildEstateFlowSummary — heir panel sections", () => {
   });
 });
 
+describe("buildEstateFlowSummary — totals + value-conservation invariants", () => {
+  it("totalToHeirs equals Σ heirBoxes.total for a second-death-only scenario with 2 heirs", () => {
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2032,
+      recipients: [
+        group({
+          key: "kevin",
+          kind: "family_member",
+          recipientId: "kevin",
+          label: "Kevin Sample",
+          byMechanism: [mech("will_residuary", [asset("401k", 200_000)])],
+        }),
+        group({
+          key: "caroline",
+          kind: "family_member",
+          recipientId: "caroline",
+          label: "Caroline Sample",
+          byMechanism: [mech("will_residuary", [asset("Home", 175_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary(baseInput({ secondDeath }))!;
+
+    const expected = summary.heirBoxes.reduce((s, h) => s + h.total, 0);
+    expect(expected).toBe(375_000);
+    expect(summary.totals.totalToHeirs).toBe(expected);
+  });
+
+  it("totalTaxesAndExpenses equals Σ reductions across both deaths", () => {
+    const firstDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2028,
+      recipients: [],
+      reductions: [
+        reduction("admin_expenses", -10_000),
+        reduction("ird_tax", -5_000),
+      ],
+    });
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2032,
+      recipients: [],
+      reductions: [
+        reduction("admin_expenses", -3_000),
+        reduction("ird_tax", -2_000),
+      ],
+    });
+
+    const summary = buildEstateFlowSummary(
+      baseInput({ firstDeath, secondDeath }),
+    )!;
+
+    // Sum of all reduction line amounts across both deaths.
+    expect(summary.totals.totalTaxesAndExpenses).toBe(
+      -10_000 + -5_000 + -3_000 + -2_000,
+    );
+  });
+
+  it("HeirBox.total equals outright + inTrust for every heir box (mix of rule 1 + OOE irrev trust)", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin", lastName: "Sample" },
+      { id: "fm-caroline", role: "child", firstName: "Caroline", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "snt",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Special Needs Trust FBO Kevin",
+        remainderBeneficiaries: [
+          {
+            familyMemberId: "fm-kevin",
+            percentage: 1,
+            distributionForm: "in_trust",
+          },
+        ],
+      },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "snt-acct",
+        name: "Trust Brokerage",
+        subType: "brokerage",
+        value: 150_000,
+        owners: [{ kind: "entity", entityId: "snt", percent: 1 }],
+      },
+    ] as unknown as ClientData["accounts"];
+
+    // Rule 1: Kevin and Caroline both receive at-death outright at secondDeath.
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2032,
+      recipients: [
+        group({
+          key: "fm-kevin",
+          kind: "family_member",
+          recipientId: "fm-kevin",
+          label: "Kevin Sample",
+          byMechanism: [mech("will_residuary", [asset("401k", 80_000)])],
+        }),
+        group({
+          key: "fm-caroline",
+          kind: "family_member",
+          recipientId: "fm-caroline",
+          label: "Caroline Sample",
+          byMechanism: [mech("will_residuary", [asset("Home", 175_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ secondDeath }),
+      clientData,
+    })!;
+
+    // Sanity: there are heir boxes to check.
+    expect(summary.heirBoxes.length).toBeGreaterThan(0);
+
+    // Invariant must hold exactly for every box.
+    for (const box of summary.heirBoxes) {
+      expect(box.total).toBe(box.outright + box.inTrust);
+    }
+
+    // Sanity on specific composition: Kevin gets $80k outright + $150k inTrust.
+    const kevin = summary.heirBoxes.find((h) =>
+      h.recipientLabel.includes("Kevin"),
+    )!;
+    expect(kevin.outright).toBe(80_000);
+    expect(kevin.inTrust).toBe(150_000);
+    expect(kevin.total).toBe(230_000);
+  });
+});
+
 describe("buildEstateFlowSummary — first death sub-boxes", () => {
   it("emits taxes + trusts + inheritance_spouse for a married first death", () => {
     const clientData = emptyClientData();

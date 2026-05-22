@@ -836,12 +836,29 @@ export function buildEstateFlowSummary(
     reportData.secondDeath?.decedentName ?? null,
   );
 
+  // Value-conservation roll-ups for the Overview header.
+  //   totalTaxesAndExpenses = Σ reductions across both deaths (signed; the
+  //     report stores admin/IRD/estate-tax draws as negatives so this stays
+  //     consistent with the per-death taxes sub-box totals).
+  //   totalToHeirs        = Σ heirBoxes.total (which itself == outright +
+  //     inTrust per box, locked by tests in this file).
+  const totalTaxesAndExpenses =
+    (reportData.firstDeath?.reductions ?? []).reduce(
+      (s, r) => s + r.amount,
+      0,
+    ) +
+    (reportData.secondDeath?.reductions ?? []).reduce(
+      (s, r) => s + r.amount,
+      0,
+    );
+  const totalToHeirs = heirBoxes.reduce((s, h) => s + h.total, 0);
+
   return {
     spouseNetWorth,
     firstDeath,
     secondDeath,
     outOfEstate,
     heirBoxes,
-    totals: { totalTaxesAndExpenses: 0, totalToHeirs: 0 },
+    totals: { totalTaxesAndExpenses, totalToHeirs },
   };
 }
