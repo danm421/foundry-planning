@@ -19,6 +19,19 @@ import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
 import { clientCreateSchema } from "@/lib/schemas/resources";
 import { recordAudit } from "@/lib/audit";
+import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
+
+// Contact fields the POST body may carry. We extract them from the parsed
+// body and atomically mirror them onto the CRM primary/spouse contact rows
+// inside the same transaction as the clients insert — so a partial failure
+// can't leave the planning client ahead of (or behind) its CRM contact info.
+const CONTACT_FIELDS = [
+  "email", "phone", "mobile",
+  "addressLine1", "addressLine2", "city", "state", "postalCode", "country",
+  "spouseEmail", "spousePhone", "spouseMobile",
+  "spouseAddressLine1", "spouseAddressLine2", "spouseCity", "spouseState",
+  "spousePostalCode", "spouseCountry",
+] as const;
 
 export const dynamic = "force-dynamic";
 
@@ -142,24 +155,44 @@ export async function POST(request: NextRequest) {
 
     const currentYear = new Date().getFullYear();
 
+    // Extract any contact fields from the parsed body so we can atomically
+    // mirror them onto the CRM contact rows inside the same transaction as
+    // the clients insert.
+    const contactPatch: Record<string, unknown> = {};
+    const incoming = parsed.data as Record<string, unknown>;
+    for (const key of CONTACT_FIELDS) {
+      if (key in incoming) contactPatch[key] = incoming[key];
+    }
+
     // Insert client — identity lives on CRM contacts (linked via crmHouseholdId),
-    // so the clients row only carries planning fields.
-    const [client] = await db
-      .insert(clients)
-      .values({
-        firmId,
-        advisorId: userId,
-        crmHouseholdId,
-        retirementAge: Number(retirementAge),
-        retirementMonth: retirementMonth != null ? Number(retirementMonth) : 1,
-        planEndAge,
-        lifeExpectancy: Number(lifeExpectancy),
-        filingStatus,
-        spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
-        spouseRetirementMonth: spouseRetirementMonth != null ? Number(spouseRetirementMonth) : null,
-        spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
-      })
-      .returning();
+    // so the clients row only carries planning fields. Wrapped in a transaction
+    // alongside the contact mirror so a partial failure can't leave the
+    // planning row out of sync with CRM. The downstream seeds (scenario,
+    // plan settings, family members, accounts, expenses, incomes, audit)
+    // are intentionally outside the tx — they're idempotent and not
+    // load-bearing for contact-info correctness.
+    const client = await db.transaction(async (tx) => {
+      const [c] = await tx
+        .insert(clients)
+        .values({
+          firmId,
+          advisorId: userId,
+          crmHouseholdId,
+          retirementAge: Number(retirementAge),
+          retirementMonth: retirementMonth != null ? Number(retirementMonth) : 1,
+          planEndAge,
+          lifeExpectancy: Number(lifeExpectancy),
+          filingStatus,
+          spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
+          spouseRetirementMonth: spouseRetirementMonth != null ? Number(spouseRetirementMonth) : null,
+          spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
+        })
+        .returning();
+      if (Object.keys(contactPatch).length > 0) {
+        await mirrorContactToCrm(tx, crmHouseholdId, contactPatch);
+      }
+      return c;
+    });
 
     // Insert base case scenario
     const [scenario] = await db
