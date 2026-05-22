@@ -200,7 +200,7 @@ interface FamilyViewProps {
   initialFullBusinesses?: AssetsTabBusiness[];
   initialAssetFamilyMembers?: AssetsTabFamilyMember[];
   /** Contact info from CRM contact rows; pre-populates the edit dialog. */
-  contacts?: ClientWithContacts | null;
+  contacts: ClientWithContacts | null;
   embed?: "page" | "wizard";
   /** When `embed === "wizard"`, only render this section. */
   section?: "household" | "family" | "entities" | "externals";

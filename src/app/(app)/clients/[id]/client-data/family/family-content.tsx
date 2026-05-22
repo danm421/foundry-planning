@@ -48,7 +48,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
   const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
-  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
+  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }, contacts] =
     await Promise.all([
       db
         .select()
@@ -81,6 +81,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         .where(eq(gifts.clientId, id))
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
       loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+      getClientWithContacts(id, firmId),
     ]);
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
@@ -259,8 +260,6 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       useCrummeyPowers: g.useCrummeyPowers,
       notes: g.notes ?? null,
     }));
-
-  const contacts = await getClientWithContacts(id, firmId);
 
   const primary: PrimaryInfo = {
     firstName: effectiveClient.firstName,
