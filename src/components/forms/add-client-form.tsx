@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
@@ -24,9 +24,23 @@ export interface ClientFormInitial {
   spouseRetirementMonth?: number | null;
   spouseLifeExpectancy?: number | null;
   email?: string | null;
-  address?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
   spouseEmail?: string | null;
-  spouseAddress?: string | null;
+  spousePhone?: string | null;
+  spouseMobile?: string | null;
+  spouseAddressLine1?: string | null;
+  spouseAddressLine2?: string | null;
+  spouseCity?: string | null;
+  spouseState?: string | null;
+  spousePostalCode?: string | null;
+  spouseCountry?: string | null;
 }
 
 const MONTH_OPTIONS: { value: number; label: string }[] = [
@@ -101,8 +115,15 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       retirementMonth: Number(data.get("retirementMonth") ?? 1),
       lifeExpectancy: Number(data.get("lifeExpectancy")),
       filingStatus: data.get("filingStatus") as string,
-      email: (data.get("email") as string) || null,
-      address: (data.get("address") as string) || null,
+      email:        (data.get("email") as string) || null,
+      phone:        (data.get("phone") as string) || null,
+      mobile:       (data.get("mobile") as string) || null,
+      addressLine1: (data.get("addressLine1") as string) || null,
+      addressLine2: (data.get("addressLine2") as string) || null,
+      city:         (data.get("city") as string) || null,
+      state:        (data.get("state") as string) || null,
+      postalCode:   (data.get("postalCode") as string) || null,
+      country:      (data.get("country") as string) || null,
     };
 
     if (showSpouse) {
@@ -112,8 +133,6 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       const spouseRetirementAge = data.get("spouseRetirementAge") as string;
       const spouseRetirementMonth = data.get("spouseRetirementMonth") as string;
       const spouseLifeExpectancy = data.get("spouseLifeExpectancy") as string;
-      const spouseEmail = data.get("spouseEmail") as string;
-      const spouseAddress = data.get("spouseAddress") as string;
 
       body.spouseName = spouseName || null;
       body.spouseLastName = spouseLastName || null;
@@ -121,8 +140,15 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       body.spouseRetirementAge = spouseRetirementAge ? Number(spouseRetirementAge) : null;
       body.spouseRetirementMonth = spouseRetirementMonth ? Number(spouseRetirementMonth) : null;
       body.spouseLifeExpectancy = spouseLifeExpectancy ? Number(spouseLifeExpectancy) : null;
-      body.spouseEmail = spouseEmail || null;
-      body.spouseAddress = spouseAddress || null;
+      body.spouseEmail        = (data.get("spouseEmail") as string)        || null;
+      body.spousePhone        = (data.get("spousePhone") as string)        || null;
+      body.spouseMobile       = (data.get("spouseMobile") as string)       || null;
+      body.spouseAddressLine1 = (data.get("spouseAddressLine1") as string) || null;
+      body.spouseAddressLine2 = (data.get("spouseAddressLine2") as string) || null;
+      body.spouseCity         = (data.get("spouseCity") as string)         || null;
+      body.spouseState        = (data.get("spouseState") as string)        || null;
+      body.spousePostalCode   = (data.get("spousePostalCode") as string)   || null;
+      body.spouseCountry      = (data.get("spouseCountry") as string)      || null;
     } else if (isEdit) {
       body.spouseName = null;
       body.spouseLastName = null;
@@ -131,7 +157,14 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       body.spouseRetirementMonth = null;
       body.spouseLifeExpectancy = null;
       body.spouseEmail = null;
-      body.spouseAddress = null;
+      body.spousePhone = null;
+      body.spouseMobile = null;
+      body.spouseAddressLine1 = null;
+      body.spouseAddressLine2 = null;
+      body.spouseCity = null;
+      body.spouseState = null;
+      body.spousePostalCode = null;
+      body.spouseCountry = null;
     }
     return body;
   }
@@ -470,68 +503,78 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       </div>
       </div>
 
-      <div role="tabpanel" hidden={activeTab !== "contact"} className="space-y-4">
-        <div>
-          <h3 className="text-sm font-medium text-gray-300">Client</h3>
-          <div className="mt-2 space-y-3">
-            <div>
-              <label className={fieldLabelClassName} htmlFor="email">Email</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                defaultValue={initial?.email ?? ""}
-                className={`mt-1 ${inputClassName}`}
-              />
-            </div>
-            <div>
-              <label className={fieldLabelClassName} htmlFor="address">Address</label>
-              <textarea
-                id="address"
-                name="address"
-                rows={2}
-                defaultValue={initial?.address ?? ""}
-                placeholder="Street, City, State ZIP"
-                className={`mt-1 ${textareaClassName}`}
-              />
-            </div>
-          </div>
-        </div>
-
-        {showSpouse && (
+      <div role="tabpanel" hidden={activeTab !== "contact"} className="space-y-6">
+        <ContactInfoSection
+          heading="Client"
+          initial={initial}
+          prefix=""
+        />
+        {showSpouse ? (
           <div className="border-t border-gray-700 pt-4">
-            <h3 className="text-sm font-medium text-gray-300">Spouse</h3>
-            <div className="mt-2 space-y-3">
-              <div>
-                <label className={fieldLabelClassName} htmlFor="spouseEmail">Spouse Email</label>
-                <input
-                  id="spouseEmail"
-                  name="spouseEmail"
-                  type="email"
-                  defaultValue={initial?.spouseEmail ?? ""}
-                  className={`mt-1 ${inputClassName}`}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClassName} htmlFor="spouseAddress">Spouse Address</label>
-                <textarea
-                  id="spouseAddress"
-                  name="spouseAddress"
-                  rows={2}
-                  defaultValue={initial?.spouseAddress ?? ""}
-                  placeholder="Leave blank if same as client"
-                  className={`mt-1 ${textareaClassName}`}
-                />
-              </div>
-            </div>
+            <ContactInfoSection
+              heading="Spouse"
+              initial={initial}
+              prefix="spouse"
+            />
           </div>
-        )}
-        {!showSpouse && (
-          <p className="text-xs text-gray-400">Add a spouse on the Details tab to enter separate spouse contact info.</p>
+        ) : (
+          <p className="text-xs text-gray-400">
+            Add a spouse on the Details tab to enter separate spouse contact info.
+          </p>
         )}
       </div>
 
     </form>
+  );
+}
+
+function ContactInfoSection({
+  heading,
+  initial,
+  prefix,
+}: {
+  heading: string;
+  initial?: ClientFormInitial;
+  prefix: "" | "spouse";
+}) {
+  // Field-name helpers: primary uses "email", spouse uses "spouseEmail".
+  const fieldName = (base: string) =>
+    prefix === "" ? base : `${prefix}${base[0].toUpperCase()}${base.slice(1)}`;
+  const v = (base: string) =>
+    (initial?.[fieldName(base) as keyof ClientFormInitial] as string | null | undefined) ?? "";
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-gray-300">{heading}</h3>
+      <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <ContactInput label="Email"       name={fieldName("email")}       type="email" defaultValue={v("email")} />
+        <ContactInput label="Phone"       name={fieldName("phone")}       type="tel"   defaultValue={v("phone")} />
+        <ContactInput label="Mobile"      name={fieldName("mobile")}      type="tel"   defaultValue={v("mobile")} />
+        <ContactInput label="Address line 1" name={fieldName("addressLine1")}          defaultValue={v("addressLine1")} className="md:col-span-2" />
+        <ContactInput label="Address line 2" name={fieldName("addressLine2")}          defaultValue={v("addressLine2")} className="md:col-span-2" />
+        <ContactInput label="City"        name={fieldName("city")}                     defaultValue={v("city")} />
+        <ContactInput label="State"       name={fieldName("state")}                    defaultValue={v("state")} />
+        <ContactInput label="Postal code" name={fieldName("postalCode")}               defaultValue={v("postalCode")} />
+        <ContactInput label="Country"     name={fieldName("country")}                  defaultValue={v("country")} />
+      </div>
+    </div>
+  );
+}
+
+function ContactInput({
+  label, name, type = "text", defaultValue, className,
+}: { label: string; name: string; type?: string; defaultValue?: string; className?: string }) {
+  return (
+    <div className={className}>
+      <label className={fieldLabelClassName} htmlFor={name}>{label}</label>
+      <input
+        id={name}
+        name={name}
+        type={type}
+        defaultValue={defaultValue ?? ""}
+        className={`mt-1 ${inputClassName}`}
+      />
+    </div>
   );
 }
 

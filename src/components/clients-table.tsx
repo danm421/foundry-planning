@@ -22,9 +22,23 @@ interface ClientRow {
   spouseRetirementAge?: number | null;
   spouseLifeExpectancy?: number | null;
   email?: string | null;
-  address?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
   spouseEmail?: string | null;
-  spouseAddress?: string | null;
+  spousePhone?: string | null;
+  spouseMobile?: string | null;
+  spouseAddressLine1?: string | null;
+  spouseAddressLine2?: string | null;
+  spouseCity?: string | null;
+  spouseState?: string | null;
+  spousePostalCode?: string | null;
+  spouseCountry?: string | null;
   createdAt: string | Date;
   updatedAt?: string | Date;
 }
@@ -59,9 +73,23 @@ function toInitial(c: ClientRow): ClientFormInitial {
     spouseRetirementAge: c.spouseRetirementAge ?? null,
     spouseLifeExpectancy: c.spouseLifeExpectancy ?? null,
     email: c.email ?? null,
-    address: c.address ?? null,
+    phone: c.phone ?? null,
+    mobile: c.mobile ?? null,
+    addressLine1: c.addressLine1 ?? null,
+    addressLine2: c.addressLine2 ?? null,
+    city: c.city ?? null,
+    state: c.state ?? null,
+    postalCode: c.postalCode ?? null,
+    country: c.country ?? null,
     spouseEmail: c.spouseEmail ?? null,
-    spouseAddress: c.spouseAddress ?? null,
+    spousePhone: c.spousePhone ?? null,
+    spouseMobile: c.spouseMobile ?? null,
+    spouseAddressLine1: c.spouseAddressLine1 ?? null,
+    spouseAddressLine2: c.spouseAddressLine2 ?? null,
+    spouseCity: c.spouseCity ?? null,
+    spouseState: c.spouseState ?? null,
+    spousePostalCode: c.spousePostalCode ?? null,
+    spouseCountry: c.spouseCountry ?? null,
   };
 }
 

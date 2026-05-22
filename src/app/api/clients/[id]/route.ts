@@ -17,6 +17,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/client";
+import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 
 export const dynamic = "force-dynamic";
 
@@ -146,7 +147,6 @@ export async function PUT(
     for (const key of IDENTITY_FIELDS) {
       if (key in updateBody) identityPatch[key] = updateBody[key];
     }
-    await mirrorIdentityToCrm(existing.crmHouseholdId, identityPatch);
 
     // Explicit allowlist of mutable columns on the clients row itself.
     // Identity fields live on CRM contacts and are mirrored above — not
@@ -168,14 +168,22 @@ export async function PUT(
       if (key in incoming) safeUpdate[key] = incoming[key];
     }
 
-    const [updated] = await db
-      .update(clients)
-      .set({
-        ...safeUpdate,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
-      .returning();
+    // Atomically mirror identity to CRM and update the clients row so a partial
+    // failure can't leave CRM contacts ahead of the planning row (or vice
+    // versa). Audit/plan-settings/family-member sync below stay outside — they
+    // are idempotent and not load-bearing for contact-info correctness.
+    const updated = await db.transaction(async (tx) => {
+      await mirrorContactToCrm(tx, existing.crmHouseholdId, identityPatch);
+      const [u] = await tx
+        .update(clients)
+        .set({
+          ...safeUpdate,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
+        .returning();
+      return u;
+    });
 
     // If the horizon moved, push the new planEndYear through to all the
     // client's scenarios so the engine and UI stay in sync without the
@@ -228,15 +236,35 @@ export async function PUT(
 // the corresponding clients columns have been dropped. Keep both flat name
 // fields (legacy advisor habit) and CRM-shaped fields as accepted input.
 const IDENTITY_FIELDS = [
+  // legacy identity (CRM-owned)
   "firstName",
   "lastName",
   "dateOfBirth",
   "spouseName",
   "spouseLastName",
   "spouseDob",
+  // primary contact info
   "email",
+  "phone",
+  "mobile",
+  "addressLine1",
+  "addressLine2",
+  "city",
+  "state",
+  "postalCode",
+  "country",
+  // legacy single-line address blob — accepted for back-compat; routed to addressLine1
   "address",
+  // spouse contact info
   "spouseEmail",
+  "spousePhone",
+  "spouseMobile",
+  "spouseAddressLine1",
+  "spouseAddressLine2",
+  "spouseCity",
+  "spouseState",
+  "spousePostalCode",
+  "spouseCountry",
   "spouseAddress",
 ] as const;
 
@@ -309,60 +337,6 @@ async function collectSpouseDependents(spouseFmId: string): Promise<string[]> {
   if (beneRefs.length) out.push("beneficiary designations");
   if (giftRefs.length) out.push("gifts");
   return out;
-}
-
-// Pushes any identity fields in the PUT body through to the CRM household
-// contacts. We split fields into the primary contact (firstName/lastName/
-// dateOfBirth/email/address) and the spouse contact (spouseName/...). Address
-// is a single legacy text blob; we drop it into addressLine1 and leave the
-// other parts null — the CRM contact form can re-parse later. CRM is now the
-// SOLE source of truth for identity; this is no longer a "mirror" but the
-// canonical write path.
-async function mirrorIdentityToCrm(
-  crmHouseholdId: string,
-  safeUpdate: Record<string, unknown>,
-): Promise<void> {
-  // Primary contact patch.
-  const primaryPatch: Record<string, unknown> = {};
-  if ("firstName" in safeUpdate) primaryPatch.firstName = safeUpdate.firstName;
-  if ("lastName" in safeUpdate) primaryPatch.lastName = safeUpdate.lastName;
-  if ("dateOfBirth" in safeUpdate) primaryPatch.dateOfBirth = safeUpdate.dateOfBirth;
-  if ("email" in safeUpdate) primaryPatch.email = safeUpdate.email ?? null;
-  if ("address" in safeUpdate) primaryPatch.addressLine1 = safeUpdate.address ?? null;
-  if (Object.keys(primaryPatch).length > 0) {
-    primaryPatch.updatedAt = new Date();
-    await db
-      .update(crmHouseholdContacts)
-      .set(primaryPatch)
-      .where(
-        and(
-          eq(crmHouseholdContacts.householdId, crmHouseholdId),
-          eq(crmHouseholdContacts.role, "primary"),
-        ),
-      );
-  }
-
-  // Spouse contact patch. Only run if at least one spouse identity field is
-  // present in the body — keeps a spouse-less household from getting a stray
-  // empty update.
-  const spousePatch: Record<string, unknown> = {};
-  if ("spouseName" in safeUpdate) spousePatch.firstName = safeUpdate.spouseName;
-  if ("spouseLastName" in safeUpdate) spousePatch.lastName = safeUpdate.spouseLastName;
-  if ("spouseDob" in safeUpdate) spousePatch.dateOfBirth = safeUpdate.spouseDob;
-  if ("spouseEmail" in safeUpdate) spousePatch.email = safeUpdate.spouseEmail ?? null;
-  if ("spouseAddress" in safeUpdate) spousePatch.addressLine1 = safeUpdate.spouseAddress ?? null;
-  if (Object.keys(spousePatch).length > 0) {
-    spousePatch.updatedAt = new Date();
-    await db
-      .update(crmHouseholdContacts)
-      .set(spousePatch)
-      .where(
-        and(
-          eq(crmHouseholdContacts.householdId, crmHouseholdId),
-          eq(crmHouseholdContacts.role, "spouse"),
-        ),
-      );
-  }
 }
 
 // Identity-only snapshot used by syncHouseholdFamilyMembers. Built by

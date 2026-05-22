@@ -24,6 +24,7 @@ import FamilyView, {
 import OpenItemsPanel from "@/components/open-items/open-items-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
 interface FamilyContentProps {
   clientId: string;
@@ -47,7 +48,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
   const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
-  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
+  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }, contacts] =
     await Promise.all([
       db
         .select()
@@ -80,6 +81,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         .where(eq(gifts.clientId, id))
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
       loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+      getClientWithContacts(id, firmId),
     ]);
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
@@ -292,6 +294,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialFullExpenses={fullExpenses}
         initialFullBusinesses={fullBusinesses}
         initialAssetFamilyMembers={assetFamilyMembers}
+        contacts={contacts}
       />
       <OpenItemsPanel clientId={id} firmId={firmId} />
     </>

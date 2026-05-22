@@ -26,6 +26,31 @@ const filingStatusSchema = z.enum([
 
 const ownerSchema = z.enum(["client", "spouse", "joint"]);
 
+// Per-contact info that's mirrored to crm_household_contacts. All fields
+// optional — the PUT/POST handlers PATCH only the keys present in the body.
+export const clientContactInfoSchema = z
+  .object({
+    email: z.string().email().max(254).optional().nullable(),
+    phone: z.string().max(40).optional().nullable(),
+    mobile: z.string().max(40).optional().nullable(),
+    addressLine1: z.string().max(200).optional().nullable(),
+    addressLine2: z.string().max(200).optional().nullable(),
+    city: z.string().max(100).optional().nullable(),
+    state: z.string().max(100).optional().nullable(),
+    postalCode: z.string().max(20).optional().nullable(),
+    country: z.string().max(100).optional().nullable(),
+    spouseEmail: z.string().email().max(254).optional().nullable(),
+    spousePhone: z.string().max(40).optional().nullable(),
+    spouseMobile: z.string().max(40).optional().nullable(),
+    spouseAddressLine1: z.string().max(200).optional().nullable(),
+    spouseAddressLine2: z.string().max(200).optional().nullable(),
+    spouseCity: z.string().max(100).optional().nullable(),
+    spouseState: z.string().max(100).optional().nullable(),
+    spousePostalCode: z.string().max(20).optional().nullable(),
+    spouseCountry: z.string().max(100).optional().nullable(),
+  })
+  .strict();
+
 // Identity (firstName, lastName, dateOfBirth, email, address + spouse equivalents)
 // lives in the CRM now (crm_household_contacts). The planning client row carries
 // only the CRM link + planning-specific fields. The route handler reads the CRM
@@ -42,6 +67,7 @@ export const clientCreateSchema = z
     spouseRetirementMonth: z.coerce.number().int().min(1).max(12).optional().nullable(),
     spouseLifeExpectancy: z.coerce.number().int().min(1).max(130).optional().nullable(),
   })
+  .merge(clientContactInfoSchema)
   .strict();
 
 export const accountCreateSchema = z
