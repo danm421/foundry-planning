@@ -26,26 +26,32 @@ function fmtTimestamp(d: Date | string | null | undefined): string {
   });
 }
 
-export function OverviewTab({ household }: { household: Household }) {
+export function OverviewTab({
+  household,
+  advisorName,
+}: {
+  household: Household;
+  advisorName: string;
+}) {
   const [editOpen, setEditOpen] = useState(false);
 
   return (
     <div className="space-y-6">
       <section className="rounded-[var(--radius)] border border-hair bg-card p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex items-baseline gap-3">
           <h2 className="text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
             Identity
           </h2>
           <button
             type="button"
             onClick={() => setEditOpen(true)}
-            className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
+            className="text-[11px] font-medium uppercase tracking-[1.2px] text-ink-3 transition-colors hover:text-accent"
           >
             Edit
           </button>
         </div>
 
-        <dl className="grid grid-cols-1 gap-y-4 sm:grid-cols-[140px_1fr] sm:gap-x-6">
+        <dl className="grid grid-cols-1 gap-y-4 sm:grid-cols-[96px_1fr] sm:gap-x-4">
           <dt className="text-[12px] font-medium text-ink-3">Name</dt>
           <dd className="text-[14px] text-ink">{household.name}</dd>
 
@@ -55,7 +61,7 @@ export function OverviewTab({ household }: { household: Household }) {
           </dd>
 
           <dt className="text-[12px] font-medium text-ink-3">Advisor</dt>
-          <dd className="font-mono text-[12px] text-ink-2">{household.advisorId}</dd>
+          <dd className="text-[14px] text-ink-2">{advisorName}</dd>
 
           <dt className="text-[12px] font-medium text-ink-3">Notes</dt>
           <dd className="whitespace-pre-wrap text-[14px] text-ink-2">
@@ -68,7 +74,7 @@ export function OverviewTab({ household }: { household: Household }) {
         <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
           Timestamps
         </h2>
-        <dl className="grid grid-cols-1 gap-y-3 sm:grid-cols-[140px_1fr] sm:gap-x-6">
+        <dl className="grid grid-cols-1 gap-y-3 sm:grid-cols-[96px_1fr] sm:gap-x-4">
           <dt className="text-[12px] font-medium text-ink-3">Created</dt>
           <dd className="text-[14px] text-ink-2">{fmtTimestamp(household.createdAt)}</dd>
 

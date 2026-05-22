@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getCrmHousehold } from "@/lib/crm/households";
+import { resolveActors } from "@/lib/activity/resolve-actors";
 import { HouseholdDetail } from "./household-detail";
 
 export default async function CrmHouseholdPage({
@@ -13,5 +14,13 @@ export default async function CrmHouseholdPage({
   const { tab } = await searchParams;
   const household = await getCrmHousehold(id);
   if (!household) notFound();
-  return <HouseholdDetail household={household} initialTab={tab ?? "overview"} />;
+  const actors = await resolveActors([household.advisorId]);
+  const advisorName = actors.get(household.advisorId)?.name ?? household.advisorId;
+  return (
+    <HouseholdDetail
+      household={household}
+      advisorName={advisorName}
+      initialTab={tab ?? "overview"}
+    />
+  );
 }

@@ -22,9 +22,11 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function HouseholdDetail({
   household,
+  advisorName,
   initialTab,
 }: {
   household: Household;
+  advisorName: string;
   initialTab: string;
 }) {
   const [tab, setTab] = useState<Tab>(
@@ -58,7 +60,9 @@ export function HouseholdDetail({
       </div>
 
       <div className="mt-6">
-        {tab === "overview" && <OverviewTab household={household} />}
+        {tab === "overview" && (
+          <OverviewTab household={household} advisorName={advisorName} />
+        )}
         {tab === "contacts" && <ContactsTab household={household} />}
         {tab === "accounts" && <AccountsTab household={household} />}
         {tab === "activity" && <ActivityTab household={household} />}
