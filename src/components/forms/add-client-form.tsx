@@ -550,12 +550,12 @@ function ContactInfoSection({
         <ContactInput label="Email"       name={fieldName("email")}       type="email" defaultValue={v("email")} />
         <ContactInput label="Phone"       name={fieldName("phone")}       type="tel"   defaultValue={v("phone")} />
         <ContactInput label="Mobile"      name={fieldName("mobile")}      type="tel"   defaultValue={v("mobile")} />
-        <ContactInput label="Country"     name={fieldName("country")}                  defaultValue={v("country")} />
         <ContactInput label="Address line 1" name={fieldName("addressLine1")}          defaultValue={v("addressLine1")} className="md:col-span-2" />
         <ContactInput label="Address line 2" name={fieldName("addressLine2")}          defaultValue={v("addressLine2")} className="md:col-span-2" />
         <ContactInput label="City"        name={fieldName("city")}                     defaultValue={v("city")} />
         <ContactInput label="State"       name={fieldName("state")}                    defaultValue={v("state")} />
         <ContactInput label="Postal code" name={fieldName("postalCode")}               defaultValue={v("postalCode")} />
+        <ContactInput label="Country"     name={fieldName("country")}                  defaultValue={v("country")} />
       </div>
     </div>
   );
