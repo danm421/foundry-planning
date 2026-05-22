@@ -73,6 +73,7 @@ export function TasksPage({
   scopeHouseholdId,
   members,
   households,
+  firmTags,
   initialTaskDetail,
 }: TasksPageProps) {
   const pathname = usePathname();
@@ -227,6 +228,8 @@ export function TasksPage({
               }}
               members={members}
               households={households}
+              firmTags={firmTags}
+              initialTags={detail.tags}
             />
           }
           commentsTab={
@@ -245,7 +248,7 @@ export function TasksPage({
         />
       )}
 
-      {/* Reserved: detailLoading + firmTags will get wired by Task 29 */}
+      {/* Reserved: detailLoading skeleton will get wired by Task 29 */}
       {detailLoading ? null : null}
     </>
   );

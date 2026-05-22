@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { CrmTaskFieldRow } from "./crm-task-field-row";
 import { CrmTaskAssigneePicker } from "./crm-task-assignee-picker";
+import { CrmTaskTagPicker, type CrmTagOption } from "./crm-task-tag-picker";
 import {
   inputBaseClassName,
   selectBaseClassName,
@@ -42,6 +43,11 @@ interface CrmTaskSidePanelDetailsProps {
   /** Lightweight pre-fetched list of firm households for the picker; the
    *  side panel doesn't need full search-as-you-type here. */
   households: HouseholdOption[];
+  /** All tags defined for the firm — fed into the tag picker so the user
+   *  can attach existing tags without a separate fetch. */
+  firmTags: CrmTagOption[];
+  /** Tags currently attached to this task. */
+  initialTags: CrmTagOption[];
 }
 
 const STATUS_LABEL: Record<CrmTaskStatus, string> = {
@@ -96,6 +102,8 @@ export function CrmTaskSidePanelDetails({
   initial,
   members,
   households,
+  firmTags,
+  initialTags,
 }: CrmTaskSidePanelDetailsProps) {
   const router = useRouter();
   const [status, setStatus] = useState<CrmTaskStatus>(initial.status);
@@ -106,9 +114,75 @@ export function CrmTaskSidePanelDetails({
   const [householdId, setHouseholdId] = useState<string | null>(initial.householdId);
   const [assignee, setAssignee] = useState<string | null>(initial.assigneeUserId);
   const [description, setDescription] = useState(initial.description);
+  // Tag state is split: `attachedTags` drives the chip display, and
+  // `availableTags` is the picker's firmTags pool — it grows when the
+  // user creates a brand-new tag inline.
+  const [attachedTags, setAttachedTags] = useState<CrmTagOption[]>(initialTags);
+  const [availableTags, setAvailableTags] = useState<CrmTagOption[]>(() => {
+    // Merge initialTags into the firm-wide pool so freshly-attached tags
+    // that aren't yet in the SSR firmTags snapshot still render. (Should
+    // be a no-op for normal navigation but cheap insurance.)
+    const seen = new Set(firmTags.map((t) => t.id));
+    return [...firmTags, ...initialTags.filter((t) => !seen.has(t.id))];
+  });
+  const [tagError, setTagError] = useState<string | null>(null);
 
   function refresh() {
     router.refresh();
+  }
+
+  async function attachTag(tagId: string) {
+    setTagError(null);
+    const tag = availableTags.find((t) => t.id === tagId);
+    if (!tag) return;
+    // Optimistic update — revert on failure.
+    const prev = attachedTags;
+    if (prev.some((t) => t.id === tagId)) return;
+    setAttachedTags([...prev, tag]);
+    try {
+      const res = await fetch(`/api/crm/tasks/${taskId}/tags`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tagId }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j.error === "string" ? j.error : `Attach failed (${res.status})`,
+        );
+      }
+      refresh();
+    } catch (err) {
+      setAttachedTags(prev);
+      setTagError(err instanceof Error ? err.message : "Attach failed");
+    }
+  }
+
+  async function detachTag(tagId: string) {
+    setTagError(null);
+    const prev = attachedTags;
+    setAttachedTags(prev.filter((t) => t.id !== tagId));
+    try {
+      const res = await fetch(`/api/crm/tasks/${taskId}/tags/${tagId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j.error === "string" ? j.error : `Remove failed (${res.status})`,
+        );
+      }
+      refresh();
+    } catch (err) {
+      setAttachedTags(prev);
+      setTagError(err instanceof Error ? err.message : "Remove failed");
+    }
+  }
+
+  function handleTagCreated(tag: CrmTagOption) {
+    setAvailableTags((existing) =>
+      existing.some((t) => t.id === tag.id) ? existing : [...existing, tag],
+    );
   }
 
   const householdName =
@@ -320,6 +394,26 @@ export function CrmTaskSidePanelDetails({
           />
         )}
       />
+
+      <div className="flex items-start gap-3 border-b border-hair px-1 py-2.5 last:border-b-0">
+        <div className="w-32 shrink-0 pt-1.5 text-[12px] font-medium uppercase tracking-wide text-ink-3">
+          Tags
+        </div>
+        <div className="min-w-0 flex-1">
+          <CrmTaskTagPicker
+            value={attachedTags.map((t) => t.id)}
+            firmTags={availableTags}
+            onAttach={attachTag}
+            onDetach={detachTag}
+            onTagCreated={handleTagCreated}
+          />
+          {tagError && (
+            <p role="alert" className="mt-1 text-[11px] text-crit">
+              {tagError}
+            </p>
+          )}
+        </div>
+      </div>
 
       <div className="pt-3 text-[11px] text-ink-3">
         Created {new Date(initial.createdAt).toLocaleString()} by{" "}
