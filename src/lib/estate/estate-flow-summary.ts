@@ -60,6 +60,11 @@ export interface HeirBox {
   inTrust: number;
   total: number;
   sections: HeirSection[];
+  recipientGroups: {
+    firstDeath: RecipientGroup | null;
+    secondDeath: RecipientGroup | null;
+  };
+  trustInterests: { trustId: string; trustLabel: string; amount: number }[];
 }
 
 export interface HeirSection {
@@ -294,6 +299,21 @@ interface HeirAccumulator {
   recipientLabel: string;
   outright: number;
   inTrust: number;
+  firstDeathGroup: RecipientGroup | null;
+  secondDeathGroup: RecipientGroup | null;
+  trustInterests: { trustId: string; trustLabel: string; amount: number }[];
+}
+
+function emptyHeirAcc(key: string, label: string): HeirAccumulator {
+  return {
+    recipientKey: key,
+    recipientLabel: label,
+    outright: 0,
+    inTrust: 0,
+    firstDeathGroup: null,
+    secondDeathGroup: null,
+    trustInterests: [],
+  };
 }
 
 interface HeirSectionAccumulator {
@@ -477,19 +497,21 @@ function collectTrustBequestsInTrust(
     if (splits.length === 0) continue;
     const label = trustLabel(g.recipientId, clientData);
     for (const s of splits) {
-      const entry = acc.get(s.recipientKey) ?? {
-        recipientKey: s.recipientKey,
-        recipientLabel: s.recipientLabel,
-        outright: 0,
-        inTrust: 0,
-      };
-      entry.inTrust += g.netTotal * s.weight;
+      const entry =
+        acc.get(s.recipientKey) ?? emptyHeirAcc(s.recipientKey, s.recipientLabel);
+      const amount = g.netTotal * s.weight;
+      entry.inTrust += amount;
+      entry.trustInterests.push({
+        trustId: g.recipientId,
+        trustLabel: label,
+        amount,
+      });
       acc.set(s.recipientKey, entry);
 
       const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
       sectionEntry.trustInterests.push({
         label,
-        amount: g.netTotal * s.weight,
+        amount,
       });
     }
   }
@@ -552,12 +574,7 @@ function collectOoeAttribution(
         ? resolved.map((r) => r.percentage / pctSum)
         : resolved.map(() => 1 / resolved.length);
     resolved.forEach((r, i) => {
-      const entry = acc.get(r.key) ?? {
-        recipientKey: r.key,
-        recipientLabel: r.label,
-        outright: 0,
-        inTrust: 0,
-      };
+      const entry = acc.get(r.key) ?? emptyHeirAcc(r.key, r.label);
       entry.outright += entity.amount * weights[i];
       acc.set(r.key, entry);
 
@@ -574,19 +591,21 @@ function collectOoeAttribution(
     const splits = resolveTrustBeneficiaries(entity.entityId, clientData);
     if (splits.length === 0) continue;
     for (const s of splits) {
-      const entry = acc.get(s.recipientKey) ?? {
-        recipientKey: s.recipientKey,
-        recipientLabel: s.recipientLabel,
-        outright: 0,
-        inTrust: 0,
-      };
-      entry.inTrust += entity.amount * s.weight;
+      const entry =
+        acc.get(s.recipientKey) ?? emptyHeirAcc(s.recipientKey, s.recipientLabel);
+      const amount = entity.amount * s.weight;
+      entry.inTrust += amount;
+      entry.trustInterests.push({
+        trustId: entity.entityId,
+        trustLabel: entity.entityLabel,
+        amount,
+      });
       acc.set(s.recipientKey, entry);
 
       const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
       sectionEntry.trustInterests.push({
         label: entity.entityLabel,
-        amount: entity.amount * s.weight,
+        amount,
       });
     }
   }
@@ -651,12 +670,7 @@ function collectLifetimeGifts(
     const recipient = gift.recipient;
     if (recipient.kind === "family_member") {
       const label = familyMemberLabel(recipient.id, clientData);
-      const entry = acc.get(recipient.id) ?? {
-        recipientKey: recipient.id,
-        recipientLabel: label,
-        outright: 0,
-        inTrust: 0,
-      };
+      const entry = acc.get(recipient.id) ?? emptyHeirAcc(recipient.id, label);
       entry.outright += amount;
       acc.set(recipient.id, entry);
 
@@ -671,19 +685,22 @@ function collectLifetimeGifts(
       if (splits.length === 0) continue;
       const label = trustLabel(recipient.id, clientData);
       for (const s of splits) {
-        const entry = acc.get(s.recipientKey) ?? {
-          recipientKey: s.recipientKey,
-          recipientLabel: s.recipientLabel,
-          outright: 0,
-          inTrust: 0,
-        };
-        entry.inTrust += amount * s.weight;
+        const entry =
+          acc.get(s.recipientKey) ??
+          emptyHeirAcc(s.recipientKey, s.recipientLabel);
+        const split = amount * s.weight;
+        entry.inTrust += split;
+        entry.trustInterests.push({
+          trustId: recipient.id,
+          trustLabel: label,
+          amount: split,
+        });
         acc.set(s.recipientKey, entry);
 
         const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
         sectionEntry.trustInterests.push({
           label,
-          amount: amount * s.weight,
+          amount: split,
         });
       }
     }
@@ -708,13 +725,12 @@ function collectAtDeathOutright(
   for (const g of death.recipients) {
     if (!OUTRIGHT_HEIR_KINDS.has(g.recipientKind)) continue;
     const key = keyForGroup(g);
-    const entry = acc.get(key) ?? {
-      recipientKey: key,
-      recipientLabel: g.recipientLabel,
-      outright: 0,
-      inTrust: 0,
-    };
+    const entry = acc.get(key) ?? emptyHeirAcc(key, g.recipientLabel);
     entry.outright += g.netTotal;
+    // One group per recipientId per death is expected; last-write-wins
+    // is acceptable for the unlikely collision case.
+    if (bucket === "firstDeath") entry.firstDeathGroup = g;
+    else entry.secondDeathGroup = g;
     acc.set(key, entry);
 
     // Section lines use the gross asset amounts. Drain attribution per asset
@@ -776,6 +792,11 @@ function finalizeHeirBoxes(
         firstDecedentLabel,
         secondDecedentLabel,
       ),
+      recipientGroups: {
+        firstDeath: h.firstDeathGroup,
+        secondDeath: h.secondDeathGroup,
+      },
+      trustInterests: h.trustInterests,
     }))
     .sort((a, b) => b.total - a.total);
 }

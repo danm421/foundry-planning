@@ -1093,6 +1093,60 @@ describe("buildEstateFlowSummary — first death sub-boxes", () => {
   });
 });
 
+describe("buildEstateFlowSummary — heir-box: recipientGroups + trustInterests", () => {
+  it("captures the RecipientGroup at each death and a trust-interests entry", () => {
+    const clientData = emptyClientData();
+    clientData.entities = [
+      {
+        id: "snt",
+        entityType: "trust",
+        isIrrevocable: false, // bequest at death is not OOE
+        name: "SNT",
+        remainderBeneficiaries: [{ familyMemberId: "kevin", percentage: 1 }],
+      },
+    ] as ClientData["entities"];
+    clientData.familyMembers = [
+      { id: "kevin", firstName: "Kevin", lastName: "Sample", role: "child" },
+    ] as ClientData["familyMembers"];
+
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2032,
+      recipients: [
+        group({
+          key: "kevin",
+          kind: "family_member",
+          recipientId: "kevin",
+          label: "Kevin Sample",
+          byMechanism: [mech("will_residuary", [asset("401k", 400_000)])],
+        }),
+        group({
+          key: "snt",
+          kind: "entity",
+          recipientId: "snt",
+          label: "SNT",
+          byMechanism: [mech("will", [asset("Cash", 100_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ secondDeath }),
+      clientData,
+    })!;
+    const kevin = summary.heirBoxes.find((h) =>
+      h.recipientKey.includes("kevin"),
+    )!;
+
+    expect(kevin.recipientGroups.secondDeath?.recipientLabel).toBe("Kevin Sample");
+    expect(kevin.trustInterests).toEqual([
+      { trustId: "snt", trustLabel: "SNT", amount: 100_000 },
+    ]);
+  });
+});
+
 describe("buildEstateFlowSummary — single-filer + isEmpty", () => {
   it("returns null when reportData.isEmpty is true", () => {
     const summary = buildEstateFlowSummary(

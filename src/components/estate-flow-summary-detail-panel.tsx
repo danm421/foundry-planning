@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import type { SelectedPanel } from "./estate-flow-summary";
 import { EstateTransferReductionsCard } from "./estate-transfer-reductions-card";
+import { EstateTransferRecipientCard } from "./estate-transfer-recipient-card";
+import { EstateFlowSummaryTrustInterests } from "./estate-flow-summary-trust-interests";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -137,29 +139,25 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
           ))}
         </div>
       );
-    case "heirDistribution":
+    case "heirDistribution": {
+      const heir = selected.payload.heir;
       return (
         <div className="space-y-4">
-          {selected.payload.heir.sections.map((s) => (
-            <section key={s.title} className="rounded-lg border border-gray-800 px-3 py-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
-                  {s.title}
-                </h3>
-                {s.subtotal != null && (
-                  <span className="text-sm tabular-nums text-gray-200">
-                    {fmt.format(s.subtotal)}
-                  </span>
-                )}
-              </div>
-              <LineList lines={s.lines} />
-            </section>
-          ))}
-          <Stat label="Outright" amount={selected.payload.heir.outright} />
-          <Stat label="In Trust" amount={selected.payload.heir.inTrust} />
-          <Stat label="Total" amount={selected.payload.heir.total} bold />
+          {heir.recipientGroups.firstDeath && (
+            <EstateTransferRecipientCard group={heir.recipientGroups.firstDeath} />
+          )}
+          {heir.recipientGroups.secondDeath && (
+            <EstateTransferRecipientCard group={heir.recipientGroups.secondDeath} />
+          )}
+          <EstateFlowSummaryTrustInterests trustInterests={heir.trustInterests} />
+          <div className="border-t border-gray-800 pt-2">
+            <Stat label="Outright" amount={heir.outright} />
+            <Stat label="In Trust" amount={heir.inTrust} />
+            <Stat label="Total" amount={heir.total} bold />
+          </div>
         </div>
       );
+    }
     case "allHeirs":
       return (
         <div className="space-y-2">
