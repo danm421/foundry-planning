@@ -838,6 +838,66 @@ describe("buildEstateFlowSummary — merge contract", () => {
   });
 });
 
+describe("buildEstateFlowSummary — heir panel sections", () => {
+  it("groups Caroline's flows into Prior Transfers + At Susan's Death", () => {
+    const clientData = emptyClientData();
+    clientData.accounts = [
+      {
+        id: "529",
+        name: "529 Plan - Caroline",
+        subType: "529",
+        value: 30_000,
+        owners: [
+          { kind: "family_member", familyMemberId: "caroline", percent: 1 },
+        ],
+        beneficiaries: [
+          {
+            id: "b1",
+            tier: "primary",
+            percentage: 1,
+            sortOrder: 0,
+            familyMemberId: "caroline",
+          },
+        ],
+      },
+    ] as unknown as ClientData["accounts"];
+    clientData.familyMembers = [
+      { id: "caroline", firstName: "Caroline", lastName: "Sample", role: "child" },
+    ] as ClientData["familyMembers"];
+
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2032,
+      recipients: [
+        group({
+          key: "caroline",
+          kind: "family_member",
+          recipientId: "caroline",
+          label: "Caroline Sample",
+          byMechanism: [mech("will_residuary", [asset("Home", 175_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ secondDeath }),
+      clientData,
+    })!;
+    const caroline = summary.heirBoxes.find((h) =>
+      h.recipientKey.includes("caroline"),
+    )!;
+
+    const titles = caroline.sections.map((s) => s.title);
+    expect(titles).toEqual(["Prior Transfers", "At Susan's Death"]);
+    expect(caroline.sections[0].lines).toEqual([
+      { label: "529 Plan - Caroline", amount: 30_000 },
+    ]);
+    expect(caroline.sections[1].subtotal).toBe(175_000);
+  });
+});
+
 describe("buildEstateFlowSummary — first death sub-boxes", () => {
   it("emits taxes + trusts + inheritance_spouse for a married first death", () => {
     const clientData = emptyClientData();
