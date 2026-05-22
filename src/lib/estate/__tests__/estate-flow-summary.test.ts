@@ -301,6 +301,104 @@ describe("buildEstateFlowSummary — spouseNetWorth", () => {
   });
 });
 
+describe("buildEstateFlowSummary — out of estate", () => {
+  it("groups irrevocable trusts under irrevTrusts; 529 plans under heirs", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-caroline", role: "child", firstName: "Caroline" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "snt",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Special Needs Trust FBO Kevin",
+      },
+      {
+        id: "rev",
+        entityType: "trust",
+        isIrrevocable: false,
+        name: "Revocable Living Trust",
+      },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "529-caroline",
+        name: "529 Plan - Caroline",
+        subType: "529",
+        value: 30_000,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      },
+      {
+        id: "snt-acct",
+        name: "Trust Account",
+        subType: "brokerage",
+        value: 150_000,
+        owners: [{ kind: "entity", entityId: "snt", percent: 1 }],
+      },
+      {
+        id: "snt-acct-2",
+        name: "Trust Cash",
+        subType: "checking",
+        value: 25_000,
+        owners: [{ kind: "entity", entityId: "snt", percent: 1 }],
+      },
+      {
+        id: "rev-acct",
+        name: "Revocable Trust Brokerage",
+        subType: "brokerage",
+        value: 500_000,
+        owners: [{ kind: "entity", entityId: "rev", percent: 1 }],
+      },
+      {
+        id: "personal",
+        name: "Joint Brokerage",
+        subType: "brokerage",
+        value: 999_999,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      },
+    ] as unknown as ClientData["accounts"];
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({}),
+      clientData,
+    })!;
+
+    expect(summary.outOfEstate.heirs.total).toBe(30_000);
+    expect(summary.outOfEstate.heirs.entities).toEqual([
+      expect.objectContaining({
+        entityId: "529-caroline",
+        entityLabel: "529 Plan - Caroline",
+        amount: 30_000,
+        assets: [{ label: "529 Plan - Caroline", amount: 30_000 }],
+      }),
+    ]);
+
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(175_000);
+    expect(summary.outOfEstate.irrevTrusts.entities).toEqual([
+      expect.objectContaining({
+        entityId: "snt",
+        entityLabel: "Special Needs Trust FBO Kevin",
+        amount: 175_000,
+      }),
+    ]);
+    expect(summary.outOfEstate.irrevTrusts.entities[0].assets).toEqual([
+      { label: "Trust Account", amount: 150_000 },
+      { label: "Trust Cash", amount: 25_000 },
+    ]);
+  });
+
+  it("returns empty buckets when no OOE entities or 529 accounts exist", () => {
+    const summary = buildEstateFlowSummary({
+      ...baseInput({}),
+      clientData: emptyClientData(),
+    })!;
+    expect(summary.outOfEstate.heirs).toEqual({ total: 0, entities: [] });
+    expect(summary.outOfEstate.irrevTrusts).toEqual({ total: 0, entities: [] });
+  });
+});
+
 describe("buildEstateFlowSummary — first death sub-boxes", () => {
   it("emits taxes + trusts + inheritance_spouse for a married first death", () => {
     const clientData = emptyClientData();

@@ -5,9 +5,15 @@ import type {
   RecipientGroup,
   ReductionsLine,
 } from "@/lib/estate/transfer-report";
-import type { ClientData } from "@/engine/types";
-import { controllingFamilyMember } from "@/engine/ownership";
+import type { Account, ClientData } from "@/engine/types";
+import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+
+// Account subTypes that the estate-flow Overview treats as already
+// out-of-estate for the household (assets earmarked for heirs that bypass
+// the gross estate). The DB schema only models 529 today; UTMA/UGMA are not
+// yet first-class subtypes — track in future-work/client-data when added.
+const OOE_PERSON_ACCOUNT_SUBTYPES: ReadonlySet<string> = new Set(["529"]);
 
 export interface EstateFlowSummary {
   spouseNetWorth: { ownerLabel: string; amount: number } | null;
@@ -215,6 +221,70 @@ function computeSpouseNetWorth(
   return { ownerLabel: spouseLabel, amount: total };
 }
 
+function accountAmount(a: Account): number {
+  return typeof a.value === "number" ? a.value : 0;
+}
+
+/**
+ * Group out-of-estate balances for the Overview's right rail:
+ *  - irrevTrusts: irrevocable trusts and the accounts wholly owned by each.
+ *  - heirs: person-owned OOE accounts (today: 529 plans).
+ * Wholly-owned-by-entity is detected via `controllingEntity` (single entity
+ * owner at 100%, matches the Sankey source rail). Mixed-ownership trust
+ * accounts intentionally fall through — they'd already be split by the
+ * normal owner-bucket flow.
+ */
+function computeOutOfEstate(
+  clientData: ClientData,
+): EstateFlowSummary["outOfEstate"] {
+  const accounts = clientData.accounts ?? [];
+  const entities = clientData.entities ?? [];
+
+  // irrevocable trusts → entities[]
+  const irrevTrustEntities: OoeEntity[] = [];
+  for (const entity of entities) {
+    if (entity.entityType !== "trust") continue;
+    if (entity.isIrrevocable !== true) continue;
+    const ownedAccounts = accounts.filter(
+      (a) => controllingEntity(a) === entity.id,
+    );
+    if (ownedAccounts.length === 0) continue;
+    const assets = ownedAccounts.map((a) => ({
+      label: a.name,
+      amount: accountAmount(a),
+    }));
+    const amount = assets.reduce((s, x) => s + x.amount, 0);
+    if (amount <= 0) continue;
+    irrevTrustEntities.push({
+      entityId: entity.id,
+      entityLabel: entity.name,
+      amount,
+      assets,
+    });
+  }
+  const irrevTotal = irrevTrustEntities.reduce((s, e) => s + e.amount, 0);
+
+  // Person-owned OOE accounts (529s) → one OoeEntity per account.
+  const heirEntities: OoeEntity[] = [];
+  for (const account of accounts) {
+    if (!OOE_PERSON_ACCOUNT_SUBTYPES.has(account.subType)) continue;
+    const amount = accountAmount(account);
+    if (amount <= 0) continue;
+    heirEntities.push({
+      entityId: account.id,
+      entityLabel: account.name,
+      amount,
+      assets: [{ label: account.name, amount }],
+    });
+  }
+  const heirsTotal = heirEntities.reduce((s, e) => s + e.amount, 0);
+
+  return {
+    heirs: { total: heirsTotal, entities: heirEntities },
+    irrevTrusts: { total: irrevTotal, entities: irrevTrustEntities },
+  };
+}
+
 export function buildEstateFlowSummary(
   input: BuildEstateFlowSummaryInput,
 ): EstateFlowSummary | null {
@@ -249,14 +319,13 @@ export function buildEstateFlowSummary(
     ownerNames.spouseName,
   );
 
+  const outOfEstate = computeOutOfEstate(clientData);
+
   return {
     spouseNetWorth,
     firstDeath,
     secondDeath,
-    outOfEstate: {
-      heirs: { total: 0, entities: [] },
-      irrevTrusts: { total: 0, entities: [] },
-    },
+    outOfEstate,
     heirBoxes: [],
     totals: { totalTaxesAndExpenses: 0, totalToHeirs: 0 },
   };
