@@ -260,7 +260,9 @@ export default function EntityDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={title}
-      size="md"
+      // Trusts pack two side-by-side beneficiary lists (income + remainder), plus
+      // CLT details with a 2-col grid — md is too tight and forces clipping.
+      size={kind === "trust" ? "lg" : "md"}
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={onTabChange}

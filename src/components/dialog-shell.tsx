@@ -131,7 +131,7 @@ export default function DialogShell({
         )}
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-6">{children}</div>
 
         {/* Footer */}
         {showFooter && (
