@@ -58,11 +58,10 @@ describe("singleLifeAnnuityFactor", () => {
     expect(a65).toBeGreaterThan(a85);
   });
 
-  it("pinned snapshot: age 65, r=4% (regression guard)", () => {
+  it("pinned snapshot matches Pub 1457 Table S formula: age 65, r=4%", () => {
+    // (1 - A_x) / i against 2010CM mortality, per Treas. Reg. §20.2031-7(d)(2)(ii)(B).
     const a = singleLifeAnnuityFactor({ age: 65, irc7520Rate: 0.04 });
-    // EOY annuity-in-arrears (Σ v^t × tpx) against 2010CM; this is below the
-    // Pub 1457 Table S figure (~13.4) because Table S uses half-year timing.
-    expect(a).toBeCloseTo(11.47, 2);
+    expect(a).toBeCloseTo(11.987, 2);
   });
 });
 
