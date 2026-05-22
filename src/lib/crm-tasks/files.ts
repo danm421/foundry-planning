@@ -18,8 +18,10 @@ import { recordAudit } from "@/lib/audit";
  *
  * Filenames are sanitized to a shell-safe subset and namespaced under
  * `crm-tasks/<firmId>/<taskId>/` so listing a single task's blobs is
- * cheap. The storage key (pathname returned by `put`) is what we
- * persist — never the public-looking blob URL.
+ * cheap. We persist the public blob `url` returned by `put` so the
+ * side-panel "Open" link can resolve directly — uploads use
+ * `access: "public"` so the URL is self-serving and `del()` accepts
+ * either a URL or a pathname.
  *
  * Callers pass `firmId`, `taskId`, and `uploadedByUserId` explicitly;
  * this module performs no auth (it stays out of Clerk territory so it
@@ -69,9 +71,11 @@ export async function uploadCrmTaskFile(args: {
         uploadedByUserId: args.uploadedByUserId,
         filename: args.file.name,
         storageProvider: STORAGE_PROVIDER,
-        // Persist the pathname so reads route through the SDK and we
-        // can swap providers without rewriting URLs.
-        storageKey: blob.pathname,
+        // Persist the full public blob URL so the side-panel "Open" link
+        // can resolve directly. `access: "public"` above means the URL
+        // is self-serving; `del()` accepts either a URL or a pathname,
+        // so swapping providers later still works without rewrites.
+        storageKey: blob.url,
         mimeType: args.file.type || null,
         sizeBytes: args.file.size,
       })
