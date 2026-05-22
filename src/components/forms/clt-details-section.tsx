@@ -8,6 +8,7 @@ import CltFundingPicker, {
   type CltFundingPickerAccount,
 } from "./clt-funding-picker";
 import type { CltFundingPick } from "@/lib/forms/clt-funding-diff";
+import { FieldTooltip } from "./field-tooltip";
 
 const TERM_TYPE_LABELS = {
   years: "Years (term certain)",
@@ -99,7 +100,10 @@ export default function CltDetailsSection({
 
       {/* Origin: new (funded in plan) vs existing (funded historically) */}
       <div className="space-y-1">
-        <span className={fieldLabelClassName}>Trust origin</span>
+        <div className="flex items-center gap-1.5">
+          <span className={fieldLabelClassName}>Trust origin</span>
+          <FieldTooltip text="New: we compute the income & remainder interest from the inputs below and emit the remainder-interest gift on save. Existing: enter the historical values from the return — no fresh deduction or gift is emitted, we just project payments and termination forward." />
+        </div>
         <div role="radiogroup" aria-label="Trust origin" className="flex gap-2">
           {(
             [
@@ -127,16 +131,14 @@ export default function CltDetailsSection({
             );
           })}
         </div>
-        <p className="text-xs text-ink-3">
-          {isNew
-            ? "We'll compute the income and remainder interest from the inputs below and emit the remainder-interest gift on save."
-            : "Enter the income and remainder interest values from the historical return. No fresh deduction or gift is emitted; we just project unitrust payments + termination forward."}
-        </p>
       </div>
 
       {/* Payment type: CLUT (unitrust — % of trust value) vs CLAT (annuity — fixed $) */}
       <div className="space-y-1">
-        <span className={fieldLabelClassName}>Payment type</span>
+        <div className="flex items-center gap-1.5">
+          <span className={fieldLabelClassName}>Payment type</span>
+          <FieldTooltip text="CLUT pays a percentage of trust value each year (recalculated as the trust grows or shrinks). CLAT pays a fixed dollar amount regardless of trust value. Locked for existing trusts — it was set at funding." />
+        </div>
         <div role="radiogroup" aria-label="Payment type" className="flex gap-2">
           {(
             [
@@ -178,18 +180,16 @@ export default function CltDetailsSection({
             );
           })}
         </div>
-        <p className="text-xs text-ink-3">
-          {!isNew
-            ? "Payment type is locked for existing trusts — it was set when the trust was funded."
-            : "Charitable Lead Trusts pay either a percentage of trust value (CLUT) or a fixed dollar amount (CLAT) each year."}
-        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={fieldLabelClassName} htmlFor="clt-inception-year">
-            {isNew ? "Inception year" : "Original funding year"}
-          </label>
+          <div className="flex items-center gap-1.5">
+            <label className={fieldLabelClassName} htmlFor="clt-inception-year">
+              {isNew ? "Inception year" : "Original funding year"}
+            </label>
+            <FieldTooltip text="Year the trust is (or was) funded. Drives the §7520 lookup and the start year for the payment stream the engine projects forward." />
+          </div>
           <input
             id="clt-inception-year"
             type="number"
@@ -200,9 +200,12 @@ export default function CltDetailsSection({
         </div>
 
         <div>
-          <label className={fieldLabelClassName} htmlFor="clt-fmv">
-            {isNew ? "Funding-year FMV" : "FMV at original funding"}
-          </label>
+          <div className="flex items-center gap-1.5">
+            <label className={fieldLabelClassName} htmlFor="clt-fmv">
+              {isNew ? "Funding-year FMV" : "FMV at original funding"}
+            </label>
+            <FieldTooltip text="Fair market value of the assets contributed at inception. Anchors the income-interest calculation and sizes the taxable remainder gift the engine emits." />
+          </div>
           {isNew ? (
             <CltFundingPicker
               id="clt-fmv"
@@ -227,9 +230,12 @@ export default function CltDetailsSection({
 
         {value.payoutType === "unitrust" ? (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clt-payout">
-              Payout percentage
-            </label>
+            <div className="flex items-center gap-1.5">
+              <label className={fieldLabelClassName} htmlFor="clt-payout">
+                Payout percentage
+              </label>
+              <FieldTooltip text="Annual distribution as a percent of trust FMV — recomputed each year as the trust grows or shrinks. Higher percentages produce a larger charitable deduction and a smaller taxable remainder gift." />
+            </div>
             <div className="relative">
               <input
                 id="clt-payout"
@@ -250,9 +256,12 @@ export default function CltDetailsSection({
           </div>
         ) : (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clt-payout-amount">
-              Annual payment
-            </label>
+            <div className="flex items-center gap-1.5">
+              <label className={fieldLabelClassName} htmlFor="clt-payout-amount">
+                Annual payment
+              </label>
+              <FieldTooltip text="Fixed dollar amount paid to the charity each year regardless of trust value. Higher payments produce a larger charitable deduction and a smaller taxable remainder gift." />
+            </div>
             <div className="relative">
               <input
                 id="clt-payout-amount"
@@ -276,9 +285,12 @@ export default function CltDetailsSection({
         )}
 
         <div>
-          <label className={fieldLabelClassName} htmlFor="clt-7520">
-            IRC §7520 rate
-          </label>
+          <div className="flex items-center gap-1.5">
+            <label className={fieldLabelClassName} htmlFor="clt-7520">
+              IRC §7520 rate
+            </label>
+            <FieldTooltip text="IRS-published assumed earnings rate used to discount future trust payments. Locked at inception per Reg §1.7520-2 — drives the income-vs-remainder split that determines the charitable deduction and remainder gift." />
+          </div>
           <div className="relative">
             <input
               id="clt-7520"
@@ -296,9 +308,6 @@ export default function CltDetailsSection({
               %
             </span>
           </div>
-          <p className="text-xs text-ink-3 mt-1">
-            Locked at inception per Reg §1.7520-2.
-          </p>
         </div>
 
         <div>

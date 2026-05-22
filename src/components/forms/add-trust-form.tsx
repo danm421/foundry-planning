@@ -26,8 +26,8 @@ import TransferSeriesForm from "./transfer-series-form";
 import SellToTrustDialog from "./sell-to-trust-dialog";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import DialogShell from "../dialog-shell";
-import { HelpTip } from "../help-tip";
 import CltDetailsSection from "./clt-details-section";
+import { FieldTooltip } from "./field-tooltip";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import {
   diffCltFundingPicks,
@@ -845,7 +845,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             {isIrrevocable && (
               <ProvisionRow
                 label="Crummey powers"
-                tooltip="Beneficiaries hold a limited-time right to withdraw new contributions (typically 30–60 days), qualifying gifts for the annual gift-tax exclusion."
+                tooltip="Gives beneficiaries a short window (typically 30–60 days) to withdraw new contributions. Qualifies gifts to the trust for the annual gift-tax exclusion."
                 checked={crummeyPowers}
                 onChange={setCrummeyPowers}
               />
@@ -853,14 +853,14 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             {isIrrevocable && (
               <ProvisionRow
                 label="Sprinkle provisions"
-                tooltip="HEMS / distribution-committee clause that lets the client tap trust liquid assets once household liquid assets are exhausted. Surfaces in the “Accessible Trust Assets” column on the cash-flow drill."
+                tooltip="Lets the client tap trust liquid assets once household liquid assets run out (HEMS / distribution-committee clause). Surfaces the trust in the Accessible Trust Assets column on the cash-flow drill."
                 checked={sprinkleProvisions}
                 onChange={setSprinkleProvisions}
               />
             )}
             <ProvisionRow
               label="Grantor trust"
-              tooltip="Trust income flows to the grantor’s 1040 — household pays tax instead of the trust."
+              tooltip="Trust income is taxed on the grantor's personal 1040 — the household pays the tax instead of the trust."
               checked={isGrantor}
               onChange={(v) => {
                 setIsGrantor(v);
@@ -1111,12 +1111,10 @@ function ProvisionRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-      <div className="flex items-center gap-1.5 text-sm text-ink-2">
-        <span>{label}</span>
-        <HelpTip text={tooltip} />
-      </div>
+    <div className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
       <Switch checked={checked} onChange={onChange} aria-label={label} />
+      <span className="text-sm text-ink-2">{label}</span>
+      <FieldTooltip text={tooltip} />
     </div>
   );
 }
