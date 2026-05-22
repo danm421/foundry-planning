@@ -57,6 +57,11 @@ function group(opts: {
 }): RecipientGroup {
   const total = opts.byMechanism.reduce((s, m) => s + m.total, 0);
   const drains = { ...ZERO_DRAINS, ...(opts.drains ?? {}) };
+  // Drains in this fixture are written as negative signed deductions (e.g.
+  // -1_000 admin expenses) — mirrors how `ReductionsLine` carries signed
+  // amounts in this file. netTotal therefore *adds* drains: a negative drain
+  // reduces gross. (The real engine stores positive drain magnitudes and
+  // subtracts; this helper is fixture-only.)
   const drainSum =
     drains.federal_estate_tax +
     drains.state_estate_tax +
@@ -71,7 +76,7 @@ function group(opts: {
     total,
     byMechanism: opts.byMechanism,
     drainsByKind: drains,
-    netTotal: total - drainSum,
+    netTotal: total + drainSum,
   };
 }
 
@@ -396,6 +401,74 @@ describe("buildEstateFlowSummary — out of estate", () => {
     })!;
     expect(summary.outOfEstate.heirs).toEqual({ total: 0, entities: [] });
     expect(summary.outOfEstate.irrevTrusts).toEqual({ total: 0, entities: [] });
+  });
+});
+
+describe("buildEstateFlowSummary — heir composition rule 1: at-death receipts", () => {
+  it("sums person netTotal across both deaths into Outright", () => {
+    const firstDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2028,
+      recipients: [
+        group({
+          key: "kevin",
+          kind: "family_member",
+          recipientId: "kevin",
+          label: "Kevin Sample",
+          byMechanism: [mech("will", [asset("Joint", 50_000)])],
+          drains: { admin_expenses: -1_000 },
+        }),
+      ],
+      reductions: [],
+    });
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2032,
+      recipients: [
+        group({
+          key: "kevin",
+          kind: "family_member",
+          recipientId: "kevin",
+          label: "Kevin Sample",
+          byMechanism: [
+            mech("will_residuary", [asset("401k", 400_000)]),
+          ],
+          drains: { ird_tax: -70_000 },
+        }),
+        group({
+          key: "caroline",
+          kind: "family_member",
+          recipientId: "caroline",
+          label: "Caroline Sample",
+          byMechanism: [
+            mech("will_residuary", [asset("Home", 175_000)]),
+          ],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary(
+      baseInput({ firstDeath, secondDeath }),
+    )!;
+
+    const kevin = summary.heirBoxes.find((h) => h.recipientLabel === "Kevin Sample")!;
+    expect(kevin.outright).toBe(49_000 + 330_000); // 50k-1k + 400k-70k
+    expect(kevin.inTrust).toBe(0);
+    expect(kevin.total).toBe(379_000);
+
+    const caroline = summary.heirBoxes.find((h) => h.recipientLabel === "Caroline Sample")!;
+    expect(caroline.outright).toBe(175_000);
+    expect(caroline.inTrust).toBe(0);
+    expect(caroline.total).toBe(175_000);
+
+    // sorted desc by total
+    expect(summary.heirBoxes.map((h) => h.recipientLabel)).toEqual([
+      "Kevin Sample",
+      "Caroline Sample",
+    ]);
   });
 });
 

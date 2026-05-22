@@ -285,6 +285,56 @@ function computeOutOfEstate(
   };
 }
 
+interface HeirAccumulator {
+  recipientKey: string;
+  recipientLabel: string;
+  outright: number;
+  inTrust: number;
+}
+
+function keyForGroup(g: RecipientGroup): string {
+  return g.recipientId ?? `${g.recipientKind}:${g.recipientLabel}`;
+}
+
+/**
+ * Rule 1 — at-death receipts go to Outright for person-like recipients
+ * (family_member / external_beneficiary / system_default). Accumulates
+ * `RecipientGroup.netTotal` (gross minus this recipient's drain share) into
+ * a shared map keyed by recipient identity, so contributions across both
+ * deaths land in the same heir box.
+ */
+function collectAtDeathOutright(
+  acc: Map<string, HeirAccumulator>,
+  death: DeathSectionData | null,
+): void {
+  if (!death) return;
+  for (const g of death.recipients) {
+    if (!OUTRIGHT_HEIR_KINDS.has(g.recipientKind)) continue;
+    const key = keyForGroup(g);
+    const entry = acc.get(key) ?? {
+      recipientKey: key,
+      recipientLabel: g.recipientLabel,
+      outright: 0,
+      inTrust: 0,
+    };
+    entry.outright += g.netTotal;
+    acc.set(key, entry);
+  }
+}
+
+function finalizeHeirBoxes(acc: Map<string, HeirAccumulator>): HeirBox[] {
+  return [...acc.values()]
+    .map((h) => ({
+      recipientKey: h.recipientKey,
+      recipientLabel: h.recipientLabel,
+      outright: h.outright,
+      inTrust: h.inTrust,
+      total: h.outright + h.inTrust,
+      sections: [], // populated in Task 10
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 export function buildEstateFlowSummary(
   input: BuildEstateFlowSummaryInput,
 ): EstateFlowSummary | null {
@@ -321,12 +371,19 @@ export function buildEstateFlowSummary(
 
   const outOfEstate = computeOutOfEstate(clientData);
 
+  // Per-heir composition. Rule 1 populates `outright` from at-death receipts;
+  // rules 2-5 will layer on top of this same accumulator in subsequent tasks.
+  const heirAcc = new Map<string, HeirAccumulator>();
+  collectAtDeathOutright(heirAcc, reportData.firstDeath);
+  collectAtDeathOutright(heirAcc, reportData.secondDeath);
+  const heirBoxes = finalizeHeirBoxes(heirAcc);
+
   return {
     spouseNetWorth,
     firstDeath,
     secondDeath,
     outOfEstate,
-    heirBoxes: [],
+    heirBoxes,
     totals: { totalTaxesAndExpenses: 0, totalToHeirs: 0 },
   };
 }
