@@ -134,6 +134,57 @@ export default function CltDetailsSection({
         </p>
       </div>
 
+      {/* Payment type: CLUT (unitrust — % of trust value) vs CLAT (annuity — fixed $) */}
+      <div className="space-y-1">
+        <span className={fieldLabelClassName}>Payment type</span>
+        <div role="radiogroup" aria-label="Payment type" className="flex gap-2">
+          {(
+            [
+              ["unitrust", "CLUT", "CLUT (Unitrust — % of trust value)"],
+              ["annuity", "CLAT", "CLAT (Annuity — fixed $ amount)"],
+            ] as const
+          ).map(([val, ariaName, label]) => {
+            const active = value.payoutType === val;
+            const disabled = !isNew;
+            return (
+              <button
+                key={val}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                aria-label={ariaName}
+                disabled={disabled}
+                onClick={() => {
+                  if (disabled || active) return;
+                  onChange({
+                    ...value,
+                    payoutType: val,
+                    payoutPercent:
+                      val === "unitrust" ? value.payoutPercent ?? 0.05 : undefined,
+                    payoutAmount:
+                      val === "annuity" ? value.payoutAmount ?? 0 : undefined,
+                  });
+                }}
+                className={
+                  "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
+                  (active
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2") +
+                  (disabled ? " opacity-50 cursor-not-allowed" : "")
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-ink-3">
+          {!isNew
+            ? "Payment type is locked for existing trusts — it was set when the trust was funded."
+            : "Charitable Lead Trusts pay either a percentage of trust value (CLUT) or a fixed dollar amount (CLAT) each year."}
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={fieldLabelClassName} htmlFor="clt-inception-year">
@@ -174,28 +225,55 @@ export default function CltDetailsSection({
           )}
         </div>
 
-        <div>
-          <label className={fieldLabelClassName} htmlFor="clt-payout">
-            Payout percentage
-          </label>
-          <div className="relative">
-            <input
-              id="clt-payout"
-              type="number"
-              step="0.0001"
-              min={0}
-              max={100}
-              className={`${inputClassName} pr-7`}
-              value={percentToDisplay(value.payoutPercent)}
-              onChange={(e) =>
-                set("payoutPercent", percentFromDisplay(e.target.value))
-              }
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
-              %
-            </span>
+        {value.payoutType === "unitrust" ? (
+          <div>
+            <label className={fieldLabelClassName} htmlFor="clt-payout">
+              Payout percentage
+            </label>
+            <div className="relative">
+              <input
+                id="clt-payout"
+                type="number"
+                step="0.0001"
+                min={0}
+                max={100}
+                className={`${inputClassName} pr-7`}
+                value={percentToDisplay(value.payoutPercent)}
+                onChange={(e) =>
+                  set("payoutPercent", percentFromDisplay(e.target.value))
+                }
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
+                %
+              </span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            <label className={fieldLabelClassName} htmlFor="clt-payout-amount">
+              Annual payment
+            </label>
+            <div className="relative">
+              <input
+                id="clt-payout-amount"
+                type="number"
+                step="1"
+                min={0}
+                className={`${inputClassName} pl-6`}
+                value={value.payoutAmount ?? ""}
+                onChange={(e) =>
+                  set(
+                    "payoutAmount",
+                    e.target.value === "" ? undefined : Number(e.target.value),
+                  )
+                }
+              />
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
+                $
+              </span>
+            </div>
+          </div>
+        )}
 
         <div>
           <label className={fieldLabelClassName} htmlFor="clt-7520">

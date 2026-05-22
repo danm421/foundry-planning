@@ -137,3 +137,63 @@ describe("<CltDetailsSection>", () => {
     ).toBeNull();
   });
 });
+
+describe("<CltDetailsSection> subtype toggle (CLUT/CLAT)", () => {
+  it("defaults to CLUT (unitrust) on new entity and shows payout percent field", () => {
+    render(<CltDetailsSection {...baseProps} />);
+    expect(screen.getByRole("radio", { name: /^CLUT$/i })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: /^CLAT$/i })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    expect(screen.getByLabelText(/payout percentage/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/annual payment/i)).not.toBeInTheDocument();
+  });
+
+  it("clicking CLAT calls onChange with payoutType='annuity' and clears payoutPercent", () => {
+    const onChange = vi.fn();
+    render(<CltDetailsSection {...baseProps} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("radio", { name: /^CLAT$/i }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payoutType: "annuity",
+        payoutPercent: undefined,
+      }),
+    );
+  });
+
+  it("renders annual payment field (and no percent field) when payoutType is annuity", () => {
+    render(
+      <CltDetailsSection
+        {...baseProps}
+        value={{
+          ...baseProps.value,
+          payoutType: "annuity",
+          payoutPercent: undefined,
+          payoutAmount: 60_000,
+        }}
+      />,
+    );
+    expect(screen.getByLabelText(/annual payment/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/payout percentage/i)).not.toBeInTheDocument();
+  });
+
+  it("disables CLUT/CLAT radios when editing an existing trust (origin='existing')", () => {
+    render(
+      <CltDetailsSection
+        {...baseProps}
+        value={{
+          ...baseProps.value,
+          origin: "existing",
+          originalIncomeInterest: 461_385,
+          originalRemainderInterest: 538_615,
+        }}
+      />,
+    );
+    expect(screen.getByRole("radio", { name: /^CLUT$/i })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /^CLAT$/i })).toBeDisabled();
+  });
+});
