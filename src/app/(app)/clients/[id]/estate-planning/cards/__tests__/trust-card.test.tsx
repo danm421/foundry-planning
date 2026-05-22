@@ -103,6 +103,7 @@ describe("TrustCard", () => {
         inceptionValue: 1_000_000,
         payoutType: "unitrust",
         payoutPercent: 0.06,
+        payoutAmount: null,
         irc7520Rate: 0.022,
         termType: "years",
         termYears: 10,
@@ -113,12 +114,36 @@ describe("TrustCard", () => {
     });
     render(<TrustCard data={trust} defaultExpanded />);
     expect(screen.getByText(/split-interest details/i)).toBeInTheDocument();
-    expect(screen.getByText("6.00% unitrust")).toBeInTheDocument();
+    expect(screen.getByText("6.00% / yr (CLUT)")).toBeInTheDocument();
     expect(screen.getByText("2.20%")).toBeInTheDocument();
     expect(screen.getByText(/10 years/)).toBeInTheDocument();
     expect(screen.getByText("Acme Foundation")).toBeInTheDocument();
     expect(screen.getByText("$461,385")).toBeInTheDocument();
     expect(screen.getByText("$538,615")).toBeInTheDocument();
+  });
+
+  it("renders CLAT split-interest panel with annual payment label", () => {
+    const trust = makeTrustCardData({
+      subType: "clt",
+      splitInterest: {
+        inceptionYear: 2026,
+        inceptionValue: 1_000_000,
+        payoutType: "annuity",
+        payoutPercent: null,
+        payoutAmount: 60_000,
+        irc7520Rate: 0.04,
+        termType: "years",
+        termYears: 10,
+        charityName: "Acme Foundation",
+        originalIncomeInterest: 486_654,
+        originalRemainderInterest: 513_346,
+      },
+    });
+    render(<TrustCard data={trust} defaultExpanded />);
+    expect(screen.getByText(/split-interest details/i)).toBeInTheDocument();
+    expect(screen.getByText("$60,000 / yr (CLAT)")).toBeInTheDocument();
+    expect(screen.getByText("$486,654")).toBeInTheDocument();
+    expect(screen.getByText("$513,346")).toBeInTheDocument();
   });
 
   it("omits split-interest panel when splitInterest is undefined", () => {
