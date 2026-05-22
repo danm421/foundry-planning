@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { crmHouseholds } from "@/db/schema";
+import { crmHouseholds, crmTasks } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 
@@ -18,4 +18,21 @@ export async function requireCrmHouseholdAccess(householdId: string) {
     throw new Error(`CRM household not found or access denied: ${householdId}`);
   }
   return { household, orgId };
+}
+
+/**
+ * Org-scoped accessor for a CRM task. Mirrors `requireCrmHouseholdAccess` —
+ * fetch the row scoped to the caller's firm (Clerk orgId) and throw if it
+ * isn't visible. Returns both the row and the firm id so callers can thread
+ * them into audit/recordActivity.
+ */
+export async function requireCrmTaskAccess(taskId: string) {
+  const orgId = await requireOrgId();
+  const task = await db.query.crmTasks.findFirst({
+    where: and(eq(crmTasks.id, taskId), eq(crmTasks.firmId, orgId)),
+  });
+  if (!task) {
+    throw new Error(`CRM task not found or access denied: ${taskId}`);
+  }
+  return { task, orgId };
 }

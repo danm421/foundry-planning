@@ -18,6 +18,7 @@ import {
   customType,
   foreignKey,
   bigint,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
@@ -1663,6 +1664,114 @@ export const crmHouseholdDocumentsRelations = relations(crmHouseholdDocuments, (
     fields: [crmHouseholdDocuments.householdId],
     references: [crmHouseholds.id],
   }),
+}));
+
+// ── CRM Tasks ────────────────────────────────────────────────────────────────
+
+export const crmTaskPriorityEnum   = pgEnum("crm_task_priority",   ["low", "med", "high"]);
+export const crmTaskStatusEnum     = pgEnum("crm_task_status",     ["open", "in_progress", "blocked", "done"]);
+export const crmTaskRecurrenceEnum = pgEnum("crm_task_recurrence", ["none", "weekly", "monthly", "quarterly"]);
+export const crmTaskActivityKindEnum = pgEnum("crm_task_activity_kind", [
+  "created", "status_changed", "priority_changed", "assignee_changed",
+  "household_changed", "due_date_changed", "start_date_changed",
+  "title_changed", "description_changed", "recurrence_changed",
+  "tags_changed", "file_uploaded", "file_deleted",
+  "completed", "reopened", "comment_posted",
+]);
+
+export const crmTasks = pgTable("crm_tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  priority: crmTaskPriorityEnum("priority").notNull().default("med"),
+  status: crmTaskStatusEnum("status").notNull().default("open"),
+  dueDate: date("due_date"),
+  startDate: date("start_date"),
+  recurrence: crmTaskRecurrenceEnum("recurrence").notNull().default("none"),
+  householdId: uuid("household_id").references(() => crmHouseholds.id, { onDelete: "set null" }),
+  assigneeUserId: text("assignee_user_id"),
+  createdByUserId: text("created_by_user_id").notNull(),
+  completedByUserId: text("completed_by_user_id"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_tasks_firm_status_idx").on(t.firmId, t.status),
+  index("crm_tasks_household_idx").on(t.householdId),
+  index("crm_tasks_assignee_idx").on(t.assigneeUserId),
+  index("crm_tasks_firm_due_idx").on(t.firmId, t.dueDate),
+]);
+
+export const crmTags = pgTable("crm_tags", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  label: text("label").notNull(),
+  color: text("color").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("crm_tags_firm_label_idx").on(t.firmId, t.label),
+]);
+
+export const crmTaskTags = pgTable("crm_task_tags", {
+  taskId: uuid("task_id").notNull().references(() => crmTasks.id, { onDelete: "cascade" }),
+  tagId:  uuid("tag_id").notNull().references(() => crmTags.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.taskId, t.tagId] })]);
+
+export const crmTaskComments = pgTable("crm_task_comments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taskId: uuid("task_id").notNull().references(() => crmTasks.id, { onDelete: "cascade" }),
+  authorUserId: text("author_user_id").notNull(),
+  bodyMarkdown: text("body_markdown").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_task_comments_task_created_idx").on(t.taskId, t.createdAt),
+]);
+
+export const crmTaskActivity = pgTable("crm_task_activity", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taskId: uuid("task_id").notNull().references(() => crmTasks.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
+  kind: crmTaskActivityKindEnum("kind").notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_task_activity_task_created_idx").on(t.taskId, t.createdAt),
+]);
+
+export const crmTaskFiles = pgTable("crm_task_files", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taskId: uuid("task_id").notNull().references(() => crmTasks.id, { onDelete: "cascade" }),
+  uploadedByUserId: text("uploaded_by_user_id").notNull(),
+  filename: text("filename").notNull(),
+  storageProvider: text("storage_provider").notNull(),
+  storageKey: text("storage_key").notNull(),
+  mimeType: text("mime_type"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_task_files_task_idx").on(t.taskId),
+]);
+
+// Relations
+export const crmTasksRelations = relations(crmTasks, ({ one, many }) => ({
+  household: one(crmHouseholds, {
+    fields: [crmTasks.householdId],
+    references: [crmHouseholds.id],
+  }),
+  tags:       many(crmTaskTags),
+  comments:   many(crmTaskComments),
+  activity:   many(crmTaskActivity),
+  files:      many(crmTaskFiles),
+}));
+
+export const crmTagsRelations = relations(crmTags, ({ many }) => ({
+  taskTags: many(crmTaskTags),
+}));
+
+export const crmTaskTagsRelations = relations(crmTaskTags, ({ one }) => ({
+  task: one(crmTasks, { fields: [crmTaskTags.taskId], references: [crmTasks.id] }),
+  tag:  one(crmTags,  { fields: [crmTaskTags.tagId],  references: [crmTags.id] }),
 }));
 
 export const entitiesRelations = relations(entities, ({ one, many }) => ({

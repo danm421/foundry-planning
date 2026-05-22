@@ -196,7 +196,16 @@ export type AuditAction =
   | "crm.import.preview"
   | "crm.import.commit"
   | "crm.document.create"
-  | "crm.document.delete";
+  | "crm.document.delete"
+  // CRM Tasks
+  | "crm.task.create"
+  | "crm.task.update"
+  | "crm.task.delete"
+  | "crm.task.status_changed"
+  | "crm.task.comment"
+  | "crm.task.file_uploaded"
+  | "crm.task.file_deleted"
+  | "crm.tag.create";
 
 type Args = {
   action: AuditAction;

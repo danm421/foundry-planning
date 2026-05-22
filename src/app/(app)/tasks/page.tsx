@@ -1,10 +1,8 @@
-import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { crmHouseholds } from "@/db/schema";
-import { getCrmHousehold } from "@/lib/crm/households";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import {
   getTaskById,
@@ -14,46 +12,46 @@ import {
   listTaskFiles,
   listTasks,
 } from "@/lib/crm-tasks/queries";
-import { normalizeQuickFilters } from "@/lib/crm-tasks/filters";
+import { normalizeQuickFilters, type TaskQuickFilter } from "@/lib/crm-tasks/filters";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { requireOrgId } from "@/lib/db-helpers";
 
-import { HouseholdDetail, type HouseholdDetailTasksBootstrap } from "./household-detail";
-import type { TaskDetailBundle } from "@/app/(app)/tasks/_components/tasks-page";
+import { TasksPage, type TaskDetailBundle } from "./_components/tasks-page";
 
-export default async function CrmHouseholdPage({
-  params,
+const QUICK_VALUES: ReadonlyArray<TaskQuickFilter> = ["all", "mine", "open", "overdue", "done"];
+
+function coerceQuick(value: string | undefined): TaskQuickFilter | null {
+  if (!value) return null;
+  return QUICK_VALUES.includes(value as TaskQuickFilter) ? (value as TaskQuickFilter) : null;
+}
+
+function coercePriority(value: string | undefined): "low" | "med" | "high" | undefined {
+  if (value === "low" || value === "med" || value === "high") return value;
+  return undefined;
+}
+
+export default async function TasksRoute({
   searchParams,
 }: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; task?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const { id } = await params;
-  const { tab, task } = await searchParams;
-  const household = await getCrmHousehold(id);
-  if (!household) notFound();
-
-  // Always load tasks-tab bootstrap so the tab switch is instant — these
-  // queries are scoped to a single firm/household and stay cheap.
+  const sp = await searchParams;
   const firmId = await requireOrgId();
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   const filters = normalizeQuickFilters({
-    quick: null,
-    explicitAssignee: null,
+    quick: coerceQuick(sp.quick),
+    explicitAssignee: sp.assignee ?? null,
     currentUserId: userId,
   });
 
-  const [
-    advisorActors,
-    initialRows,
-    members,
-    firmTags,
-    households,
-  ] = await Promise.all([
-    resolveActors([household.advisorId]),
-    listTasks(firmId, { householdId: id }, filters),
+  const [initialRows, members, firmTags, households] = await Promise.all([
+    listTasks(
+      firmId,
+      { tagId: sp.tagId, priority: coercePriority(sp.priority) },
+      filters,
+    ),
     listFirmMembers(firmId),
     listFirmTags(firmId),
     db
@@ -62,16 +60,19 @@ export default async function CrmHouseholdPage({
       .where(eq(crmHouseholds.firmId, firmId))
       .orderBy(crmHouseholds.name),
   ]);
-  const advisorName = advisorActors.get(household.advisorId)?.name ?? household.advisorId;
 
+  // Pre-load the side panel bundle server-side when the URL has `?task=`.
+  // The client `TasksPage` will fall back to fetching via the REST API if
+  // we don't pass one in (e.g. when the user opens a task by clicking a
+  // row after the initial render).
   let initialTaskDetail: TaskDetailBundle | null = null;
-  if (task) {
-    const found = await getTaskById(task, firmId);
+  if (sp.task) {
+    const found = await getTaskById(sp.task, firmId);
     if (found) {
       const [comments, activityRows, files] = await Promise.all([
-        listTaskComments(task),
-        listTaskActivity(task),
-        listTaskFiles(task),
+        listTaskComments(sp.task),
+        listTaskActivity(sp.task),
+        listTaskFiles(sp.task),
       ]);
       const actorIds = Array.from(new Set(activityRows.map((r) => r.userId)));
       const actors = await resolveActors(actorIds);
@@ -121,21 +122,19 @@ export default async function CrmHouseholdPage({
     }
   }
 
-  const tasksBootstrap: HouseholdDetailTasksBootstrap = {
-    initialRows,
-    members,
-    firmTags,
-    households,
-    initialTaskDetail,
-  };
-
   return (
-    <HouseholdDetail
-      household={household}
-      advisorName={advisorName}
-      initialTab={tab ?? "overview"}
-      initialTaskId={task}
-      tasksBootstrap={tasksBootstrap}
-    />
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold text-ink">Tasks</h1>
+      <div className="mt-6">
+        <TasksPage
+          initialRows={initialRows}
+          initialTaskId={sp.task}
+          members={members}
+          households={households}
+          firmTags={firmTags}
+          initialTaskDetail={initialTaskDetail}
+        />
+      </div>
+    </div>
   );
 }

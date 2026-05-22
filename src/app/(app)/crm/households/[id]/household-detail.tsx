@@ -2,15 +2,19 @@
 
 import { useState } from "react";
 import type { getCrmHousehold } from "@/lib/crm/households";
+import type { TaskListRow } from "@/lib/crm-tasks/queries";
+import type { FirmMember } from "@/lib/crm-tasks/members";
+import type { TaskDetailBundle } from "@/app/(app)/tasks/_components/tasks-page";
 import { OverviewTab } from "./tabs/overview-tab";
 import { ContactsTab } from "./tabs/contacts-tab";
 import { AccountsTab } from "./tabs/accounts-tab";
 import { ActivityTab } from "./tabs/activity-tab";
 import { DocumentsTab } from "./tabs/documents-tab";
+import { TasksTab } from "./tabs/tasks-tab";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
-const TABS = ["overview", "contacts", "accounts", "activity", "documents"] as const;
+const TABS = ["overview", "contacts", "accounts", "activity", "documents", "tasks"] as const;
 type Tab = (typeof TABS)[number];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -20,14 +24,26 @@ const STATUS_LABELS: Record<string, string> = {
   archived: "Archived",
 };
 
+export interface HouseholdDetailTasksBootstrap {
+  initialRows: TaskListRow[];
+  members: FirmMember[];
+  firmTags: { id: string; label: string; color: string }[];
+  households: { id: string; name: string }[];
+  initialTaskDetail: TaskDetailBundle | null;
+}
+
 export function HouseholdDetail({
   household,
   advisorName,
   initialTab,
+  initialTaskId,
+  tasksBootstrap,
 }: {
   household: Household;
   advisorName: string;
   initialTab: string;
+  initialTaskId?: string;
+  tasksBootstrap: HouseholdDetailTasksBootstrap;
 }) {
   const [tab, setTab] = useState<Tab>(
     (TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "overview"),
@@ -67,6 +83,17 @@ export function HouseholdDetail({
         {tab === "accounts" && <AccountsTab household={household} />}
         {tab === "activity" && <ActivityTab household={household} />}
         {tab === "documents" && <DocumentsTab household={household} />}
+        {tab === "tasks" && (
+          <TasksTab
+            household={{ id: household.id, name: household.name }}
+            initialTaskId={initialTaskId}
+            initialRows={tasksBootstrap.initialRows}
+            members={tasksBootstrap.members}
+            firmTags={tasksBootstrap.firmTags}
+            households={tasksBootstrap.households}
+            initialTaskDetail={tasksBootstrap.initialTaskDetail}
+          />
+        )}
       </div>
     </div>
   );

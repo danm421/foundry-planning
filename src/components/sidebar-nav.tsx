@@ -35,7 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
       { icon: <FileTextIcon />, label: "Presentations", placeholder: true },
-      { icon: <ListCheckIcon />, label: "Tasks", placeholder: true },
+      { icon: <ListCheckIcon />, label: "Tasks", href: "/tasks" },
     ],
   },
   {
