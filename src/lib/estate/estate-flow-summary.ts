@@ -381,8 +381,14 @@ function resolveTrustBeneficiaries(
       key = b.familyMemberId;
       label = familyMemberLabel(b.familyMemberId, clientData);
     } else if (b.householdRole) {
-      key = b.householdRole;
-      label = familyMemberLabel(b.householdRole, clientData);
+      // Mirror the engine: a householdRole beneficiary resolves to the
+      // matching familyMembers[] id so trust contributions merge with that
+      // person's at-death residuary box (which is keyed by familyMemberId).
+      const roleFm = (clientData.familyMembers ?? []).find(
+        (f) => f.role === b.householdRole,
+      );
+      key = roleFm?.id ?? b.householdRole;
+      label = familyMemberLabel(roleFm?.id ?? b.householdRole, clientData);
     } else if (b.externalBeneficiaryId) {
       key = b.externalBeneficiaryId;
       label = externalBeneficiaryLabel(b.externalBeneficiaryId, clientData);
@@ -533,6 +539,83 @@ function collectOoeAttribution(
 }
 
 /**
+ * Nominal total dollar amount transferred by a lifetime gift, matching the
+ * Sankey's value computation:
+ *  - cash-once → `amount`
+ *  - asset-once → `amountOverride ?? account.value * percent`
+ *  - series → `annualAmount * (endYear - startYear + 1)` (nominal — series
+ *             inflation growth is intentionally not modelled here)
+ *
+ * Returns 0 when an asset gift's source account can't be resolved.
+ */
+function giftTotalAmount(gift: EstateFlowGift, clientData: ClientData): number {
+  if (gift.kind === "cash-once") return gift.amount;
+  if (gift.kind === "asset-once") {
+    if (gift.amountOverride != null) return gift.amountOverride;
+    const account = (clientData.accounts ?? []).find(
+      (a) => a.id === gift.accountId,
+    );
+    if (!account) return 0;
+    const value = typeof account.value === "number" ? account.value : 0;
+    return value * gift.percent;
+  }
+  // series
+  const years = gift.endYear - gift.startYear + 1;
+  return gift.annualAmount * Math.max(0, years);
+}
+
+/**
+ * Rules 4 & 5 — lifetime gifts.
+ *  - Gift to a family member → that person's `outright` gets the full amount.
+ *  - Gift to a trust entity → the trust's beneficiaries' `inTrust` get the
+ *    amount apportioned by `resolveTrustBeneficiaries` weights.
+ *  - Gift to a non-trust entity (LLC etc.) or external beneficiary → skipped
+ *    (no estate-side heir box to attribute to).
+ */
+function collectLifetimeGifts(
+  acc: Map<string, HeirAccumulator>,
+  gifts: EstateFlowGift[],
+  clientData: ClientData,
+): void {
+  const trustEntityIds = new Set(
+    (clientData.entities ?? [])
+      .filter((e) => e.entityType === "trust")
+      .map((e) => e.id),
+  );
+  for (const gift of gifts) {
+    const amount = giftTotalAmount(gift, clientData);
+    if (amount <= 0) continue;
+    const recipient = gift.recipient;
+    if (recipient.kind === "family_member") {
+      const label = familyMemberLabel(recipient.id, clientData);
+      const entry = acc.get(recipient.id) ?? {
+        recipientKey: recipient.id,
+        recipientLabel: label,
+        outright: 0,
+        inTrust: 0,
+      };
+      entry.outright += amount;
+      acc.set(recipient.id, entry);
+    } else if (recipient.kind === "entity") {
+      if (!trustEntityIds.has(recipient.id)) continue;
+      const splits = resolveTrustBeneficiaries(recipient.id, clientData);
+      if (splits.length === 0) continue;
+      for (const s of splits) {
+        const entry = acc.get(s.recipientKey) ?? {
+          recipientKey: s.recipientKey,
+          recipientLabel: s.recipientLabel,
+          outright: 0,
+          inTrust: 0,
+        };
+        entry.inTrust += amount * s.weight;
+        acc.set(s.recipientKey, entry);
+      }
+    }
+    // external_beneficiary → no household-side heir box; skip.
+  }
+}
+
+/**
  * Rule 1 — at-death receipts go to Outright for person-like recipients
  * (family_member / external_beneficiary / system_default). Accumulates
  * `RecipientGroup.netTotal` (gross minus this recipient's drain share) into
@@ -610,14 +693,15 @@ export function buildEstateFlowSummary(
   // Per-heir composition. Rule 1 populates `outright` from at-death receipts;
   // rule 2 attributes trust bequests to the trust's beneficiaries as `inTrust`;
   // rule 3 attributes OOE balances (529 plans → outright, irrevocable trusts →
-  // inTrust); rules 4-5 will layer on top of this same accumulator in
-  // subsequent tasks.
+  // inTrust); rules 4-5 attribute lifetime gifts (person → outright,
+  // trust → inTrust via beneficiary weights).
   const heirAcc = new Map<string, HeirAccumulator>();
   collectAtDeathOutright(heirAcc, reportData.firstDeath);
   collectAtDeathOutright(heirAcc, reportData.secondDeath);
   collectTrustBequestsInTrust(heirAcc, reportData.firstDeath, clientData);
   collectTrustBequestsInTrust(heirAcc, reportData.secondDeath, clientData);
   collectOoeAttribution(heirAcc, outOfEstate, clientData);
+  collectLifetimeGifts(heirAcc, input.gifts, clientData);
   const heirBoxes = finalizeHeirBoxes(heirAcc);
 
   return {

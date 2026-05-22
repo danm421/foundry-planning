@@ -677,6 +677,167 @@ describe("buildEstateFlowSummary — heir composition rule 3: OOE attribution", 
   });
 });
 
+describe("buildEstateFlowSummary — heir composition rules 4 & 5: lifetime gifts", () => {
+  it("attributes a lifetime cash gift to a family member as Outright (rule 4)", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-caroline", role: "child", firstName: "Caroline", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "cash-once",
+        id: "g1",
+        year: 2026,
+        amount: 18_000,
+        grantor: "client",
+        recipient: { kind: "family_member", id: "fm-caroline" },
+        crummey: false,
+      },
+    ];
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({}),
+      clientData,
+      gifts,
+    })!;
+
+    const caroline = summary.heirBoxes.find((h) =>
+      h.recipientLabel.includes("Caroline"),
+    )!;
+    expect(caroline).toBeDefined();
+    expect(caroline.outright).toBe(18_000);
+    expect(caroline.inTrust).toBe(0);
+    expect(caroline.total).toBe(18_000);
+  });
+
+  it("attributes a lifetime cash gift to a trust to its remainder beneficiaries as inTrust (rule 5)", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "slat",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Spousal Lifetime Access Trust",
+        remainderBeneficiaries: [
+          {
+            familyMemberId: "fm-kevin",
+            percentage: 1,
+            distributionForm: "in_trust",
+          },
+        ],
+      },
+    ] as ClientData["entities"];
+
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "cash-once",
+        id: "g1",
+        year: 2026,
+        amount: 250_000,
+        grantor: "client",
+        recipient: { kind: "entity", id: "slat" },
+        crummey: false,
+      },
+    ];
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({}),
+      clientData,
+      gifts,
+    })!;
+
+    const kevin = summary.heirBoxes.find((h) =>
+      h.recipientLabel.includes("Kevin"),
+    )!;
+    expect(kevin).toBeDefined();
+    expect(kevin.outright).toBe(0);
+    expect(kevin.inTrust).toBe(250_000);
+    expect(kevin.total).toBe(250_000);
+  });
+});
+
+describe("buildEstateFlowSummary — merge contract", () => {
+  it("merges a bequest and a trust remainder for the spouse into ONE heir box when the trust beneficiary is declared via householdRole", () => {
+    // The engine emits at-death residuary groups keyed by familyMemberId. A
+    // trust remainder declared via householdRole='spouse' must resolve to the
+    // matching familyMembers[] id so the two contributions land in the same
+    // heir box. Without that resolution the trust contribution gets its own
+    // box keyed by the literal string "spouse".
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-susan", role: "spouse", firstName: "Susan", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "ft",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Family Trust",
+        remainderBeneficiaries: [
+          {
+            // householdRole-keyed beneficiary — should resolve to fm-susan.
+            householdRole: "spouse",
+            percentage: 1,
+            distributionForm: "in_trust",
+          },
+        ],
+      },
+    ] as ClientData["entities"];
+
+    // We use a secondDeath section because spouse-kind groups in firstDeath
+    // are funnelled into the inheritance_spouse sub-box; the heir-box merge
+    // surface we want to lock is the post-secondDeath residuary path. Here
+    // we model: $50k outright to Susan keyed by family_member at secondDeath
+    // plus $100k trust contribution whose remainder beneficiary is "spouse".
+    const secondDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2032,
+      recipients: [
+        group({
+          key: "fm-susan",
+          kind: "family_member",
+          recipientId: "fm-susan",
+          label: "Susan Sample",
+          byMechanism: [mech("will", [asset("Cash", 50_000)])],
+        }),
+        group({
+          key: "ft",
+          kind: "entity",
+          recipientId: "ft",
+          label: "Family Trust",
+          byMechanism: [mech("will", [asset("Brokerage", 100_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ secondDeath }),
+      clientData,
+    })!;
+
+    const susanBoxes = summary.heirBoxes.filter((h) =>
+      h.recipientLabel.includes("Susan"),
+    );
+    expect(susanBoxes).toHaveLength(1);
+    expect(susanBoxes[0].outright).toBe(50_000);
+    expect(susanBoxes[0].inTrust).toBe(100_000);
+    expect(susanBoxes[0].total).toBe(150_000);
+    // No stray box keyed by the literal "spouse" string.
+    expect(
+      summary.heirBoxes.find((h) => h.recipientKey === "spouse"),
+    ).toBeUndefined();
+  });
+});
+
 describe("buildEstateFlowSummary — first death sub-boxes", () => {
   it("emits taxes + trusts + inheritance_spouse for a married first death", () => {
     const clientData = emptyClientData();
