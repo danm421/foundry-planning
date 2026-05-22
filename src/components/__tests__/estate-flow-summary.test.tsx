@@ -6,7 +6,12 @@ import type { EstateFlowSummary } from "@/lib/estate/estate-flow-summary";
 
 function fixture(): EstateFlowSummary {
   return {
-    spouseNetWorth: { ownerLabel: "Susan", amount: 573_284 },
+    survivorNetWorth: {
+      ownerLabel: "Susan",
+      role: "spouse",
+      amount: 573_284,
+      lines: [],
+    },
     firstDeath: {
       decedentLabel: "Cooper's Estate",
       year: 2028,
@@ -35,8 +40,28 @@ function fixture(): EstateFlowSummary {
       ],
     },
     outOfEstate: {
-      heirs: { total: 30_000, entities: [] },
-      irrevTrusts: { total: 150_000, entities: [] },
+      heirs: {
+        total: 30_000,
+        entities: [
+          {
+            entityId: "529-c",
+            entityLabel: "529 - Caroline",
+            amount: 30_000,
+            assets: [{ label: "529", amount: 30_000 }],
+          },
+        ],
+      },
+      irrevTrusts: {
+        total: 150_000,
+        entities: [
+          {
+            entityId: "ilit",
+            entityLabel: "ILIT",
+            amount: 150_000,
+            assets: [{ label: "Trust Acct", amount: 150_000 }],
+          },
+        ],
+      },
     },
     heirBoxes: [
       {

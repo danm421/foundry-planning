@@ -19,7 +19,7 @@ const fmt = new Intl.NumberFormat("en-US", {
 
 export type SelectedPanel =
   | {
-      kind: "spouseNetWorth";
+      kind: "survivorNetWorth";
       payload: {
         ownerLabel: string;
         amount: number;
@@ -58,7 +58,7 @@ export function EstateFlowSummaryView({
     );
   }
 
-  const { spouseNetWorth, firstDeath, secondDeath, outOfEstate, heirBoxes, totals } = summary;
+  const { survivorNetWorth, firstDeath, secondDeath, outOfEstate, heirBoxes, totals } = summary;
 
   const roleFor = (label: string): Role => {
     if (!clientName) return "client";
@@ -66,21 +66,44 @@ export function EstateFlowSummaryView({
   };
 
   const showTotals = Boolean(firstDeath || secondDeath);
+  const hasOoe =
+    outOfEstate.heirs.entities.length > 0 ||
+    outOfEstate.irrevTrusts.entities.length > 0;
+
+  // Three-column grid with a shared header row above the data row so the
+  // "Net Worth" box and the first-death "Estate" box anchor at the same y —
+  // putting the section headers inside the data columns made each column
+  // start at a different vertical offset depending on whether it had a label.
+  const gridCols = hasOoe
+    ? "lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)_minmax(0,1fr)]"
+    : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]";
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)_minmax(0,1fr)]">
-        {/* LEFT: Net Worth + detail panel */}
-        <div className="flex flex-col items-start gap-3 lg:items-end">
+      <div className={`grid grid-cols-1 gap-x-6 gap-y-3 ${gridCols}`}>
+        {/* Header row — In Estate spans the net-worth + death-chain columns */}
+        <div className="hidden lg:col-span-2 lg:flex lg:justify-center">
           <SectionHeader tone="estate" label="In Estate" />
-          {spouseNetWorth && (
+        </div>
+        {hasOoe && (
+          <div className="hidden lg:flex lg:justify-start">
+            <SectionHeader tone="neutral" label="Out of Estate" />
+          </div>
+        )}
+
+        {/* LEFT: Survivor Net Worth + detail panel */}
+        <div className="flex flex-col items-start gap-3 lg:items-end">
+          <div className="lg:hidden">
+            <SectionHeader tone="estate" label="In Estate" />
+          </div>
+          {survivorNetWorth && (
             <div className="w-full max-w-[280px]">
               <BoxButton
-                tone={roleFor(spouseNetWorth.ownerLabel)}
-                title={`${spouseNetWorth.ownerLabel}'s Net Worth`}
-                value={spouseNetWorth.amount}
+                tone={roleFor(survivorNetWorth.ownerLabel)}
+                title={`${survivorNetWorth.ownerLabel}'s Net Worth`}
+                value={survivorNetWorth.amount}
                 onClick={() =>
-                  setSelected({ kind: "spouseNetWorth", payload: spouseNetWorth })
+                  setSelected({ kind: "survivorNetWorth", payload: survivorNetWorth })
                 }
               />
             </div>
@@ -150,44 +173,48 @@ export function EstateFlowSummaryView({
           )}
         </div>
 
-        {/* RIGHT: Out of Estate */}
-        <div className="flex flex-col items-start gap-3">
-          <SectionHeader tone="neutral" label="Out of Estate" />
-          <div className="flex w-full max-w-[280px] flex-col gap-2">
-            {outOfEstate.heirs.total > 0 && (
-              <BoxButton
-                tone="neutral"
-                title="Heirs"
-                value={outOfEstate.heirs.total}
-                onClick={() =>
-                  setSelected({
-                    kind: "ooeGroup",
-                    payload: {
-                      groupLabel: "Heirs (Out of Estate)",
-                      entities: outOfEstate.heirs.entities,
-                    },
-                  })
-                }
-              />
-            )}
-            {outOfEstate.irrevTrusts.total > 0 && (
-              <BoxButton
-                tone="neutral"
-                title="Irrev Trusts"
-                value={outOfEstate.irrevTrusts.total}
-                onClick={() =>
-                  setSelected({
-                    kind: "ooeGroup",
-                    payload: {
-                      groupLabel: "Irrevocable Trusts (Out of Estate)",
-                      entities: outOfEstate.irrevTrusts.entities,
-                    },
-                  })
-                }
-              />
-            )}
+        {/* RIGHT: Out of Estate (column hidden entirely when empty) */}
+        {hasOoe && (
+          <div className="flex flex-col items-start gap-3">
+            <div className="lg:hidden">
+              <SectionHeader tone="neutral" label="Out of Estate" />
+            </div>
+            <div className="flex w-full max-w-[280px] flex-col gap-2">
+              {outOfEstate.heirs.entities.length > 0 && (
+                <BoxButton
+                  tone="neutral"
+                  title="Heirs"
+                  value={outOfEstate.heirs.total}
+                  onClick={() =>
+                    setSelected({
+                      kind: "ooeGroup",
+                      payload: {
+                        groupLabel: "Heirs (Out of Estate)",
+                        entities: outOfEstate.heirs.entities,
+                      },
+                    })
+                  }
+                />
+              )}
+              {outOfEstate.irrevTrusts.entities.length > 0 && (
+                <BoxButton
+                  tone="neutral"
+                  title="Irrev Trusts"
+                  value={outOfEstate.irrevTrusts.total}
+                  onClick={() =>
+                    setSelected({
+                      kind: "ooeGroup",
+                      payload: {
+                        groupLabel: "Irrevocable Trusts (Out of Estate)",
+                        entities: outOfEstate.irrevTrusts.entities,
+                      },
+                    })
+                  }
+                />
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {heirBoxes.length > 0 && (

@@ -20,8 +20,13 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 const OOE_PERSON_ACCOUNT_SUBTYPES: ReadonlySet<string> = new Set(["529"]);
 
 export interface EstateFlowSummary {
-  spouseNetWorth: {
+  /** Net worth of whichever spouse survives the first death — sourced from the
+   *  decedent in `firstDeath` (or `secondDeath` for single-decedent views), not
+   *  the household-role "spouse" — so toggling the death-order picker swaps
+   *  which spouse appears on the left rail. Null for single-filer households. */
+  survivorNetWorth: {
     ownerLabel: string;
+    role: "client" | "spouse";
     amount: number;
     lines: { label: string; amount: number }[];
   } | null;
@@ -130,6 +135,30 @@ function buildDeathStage(
 
   const subBoxes: DeathSubBox[] = [];
 
+  // Recipient sub-boxes sum the *gross asset value* flowing to each bucket
+  // (positive asset transfers only). Liability transfers — a mortgage that
+  // moves with the home to the surviving spouse, for example — are excluded
+  // so the sub-boxes tally exactly to the parent's gross estate. The debt
+  // still shows up in the per-asset detail panel as a negative line.
+  const grossAssetTotal = (groups: RecipientGroup[]): number =>
+    groups.reduce(
+      (s, g) =>
+        s +
+        g.byMechanism.reduce(
+          (ms, m) =>
+            ms +
+            m.assets.reduce(
+              (as, a) =>
+                a.sourceLiabilityId == null && a.amount > 0
+                  ? as + a.amount
+                  : as,
+              0,
+            ),
+          0,
+        ),
+      0,
+    );
+
   // taxes — only when there are reductions (federal/state estate, admin, debts, IRD).
   if (section.reductions.length > 0) {
     const taxLines: ReductionsLine[] = section.reductions.map((r) => ({
@@ -162,7 +191,7 @@ function buildDeathStage(
     subBoxes.push({
       kind: "trusts",
       label: "Trusts",
-      total: trustGroups.reduce((s, g) => s + g.total, 0),
+      total: grossAssetTotal(trustGroups),
       lines: trustAssets,
     });
   }
@@ -179,17 +208,27 @@ function buildDeathStage(
       subBoxes.push({
         kind: "inheritance_spouse",
         label: "Surviving Spouse",
-        total: spouseGroup.total,
+        total: grossAssetTotal([spouseGroup]),
         lines: spouseAssets,
         targetLabel: spouseLabel ? `${spouseLabel}'s Estate` : "Surviving Spouse",
       });
     }
   }
 
-  // heirs_outright — family_member | external_beneficiary | system_default groups.
-  const outrightGroups = section.recipients.filter((g) =>
-    OUTRIGHT_HEIR_KINDS.has(g.recipientKind),
+  // heirs_outright — family_member | external_beneficiary | system_default groups,
+  // plus non-trust entity recipients (LLCs, partnerships) which would otherwise
+  // disappear from the breakdown. Folding them in keeps the visible flow from
+  // dropping value silently; nested-entity attribution to ultimate heirs is
+  // future work, tracked in future-work/estate.
+  const entityNonTrustGroups = section.recipients.filter(
+    (g) =>
+      g.recipientKind === "entity" &&
+      (g.recipientId == null || !trustEntityIds.has(g.recipientId)),
   );
+  const outrightGroups = [
+    ...section.recipients.filter((g) => OUTRIGHT_HEIR_KINDS.has(g.recipientKind)),
+    ...entityNonTrustGroups,
+  ];
   if (outrightGroups.length > 0) {
     const outrightAssets: AssetTransferLine[] = outrightGroups.flatMap((g) =>
       g.byMechanism.flatMap((m) => m.assets),
@@ -197,7 +236,7 @@ function buildDeathStage(
     subBoxes.push({
       kind: "heirs_outright",
       label: "Heirs",
-      total: outrightGroups.reduce((s, g) => s + g.total, 0),
+      total: grossAssetTotal(outrightGroups),
       lines: outrightAssets,
     });
   }
@@ -212,29 +251,31 @@ function buildDeathStage(
 }
 
 /**
- * Sum of accounts owned 100% by the surviving spouse — the leftmost top-row
- * box on the estate flow chart. Joint and mixed-ownership accounts don't
- * count; only sole-ownership lands here (matches `controllingFamilyMember`,
- * the same helper used by the Sankey source rail in `owner-bucket.ts`).
- * Returns null when there's no spouse on the household.
+ * Sum of accounts owned 100% by the survivor of the first death — the leftmost
+ * top-row box on the estate flow chart. Joint and mixed-ownership accounts
+ * don't count; only sole-ownership lands here (matches `controllingFamilyMember`,
+ * the same helper used by the Sankey source rail in `owner-bucket.ts`). Returns
+ * null when there's no surviving spouse (single-filer household).
  */
-function computeSpouseNetWorth(
+function computeSurvivorNetWorth(
   clientData: ClientData,
-  spouseLabel: string | null,
-): EstateFlowSummary["spouseNetWorth"] {
-  if (!spouseLabel) return null;
-  const spouseFmId = (clientData.familyMembers ?? []).find(
-    (fm) => fm.role === "spouse",
+  survivor: { role: "client" | "spouse"; label: string } | null,
+): EstateFlowSummary["survivorNetWorth"] {
+  if (!survivor) return null;
+  const survivorFmId = (clientData.familyMembers ?? []).find(
+    (fm) => fm.role === survivor.role,
   )?.id;
-  if (!spouseFmId) return { ownerLabel: spouseLabel, amount: 0, lines: [] };
+  if (!survivorFmId) {
+    return { ownerLabel: survivor.label, role: survivor.role, amount: 0, lines: [] };
+  }
   const lines: { label: string; amount: number }[] = [];
   for (const account of clientData.accounts ?? []) {
-    if (controllingFamilyMember(account) !== spouseFmId) continue;
+    if (controllingFamilyMember(account) !== survivorFmId) continue;
     const amount = typeof account.value === "number" ? account.value : 0;
     lines.push({ label: account.name, amount });
   }
   const total = lines.reduce((s, l) => s + l.amount, 0);
-  return { ownerLabel: spouseLabel, amount: total, lines };
+  return { ownerLabel: survivor.label, role: survivor.role, amount: total, lines };
 }
 
 function accountAmount(a: Account): number {
@@ -256,7 +297,9 @@ function computeOutOfEstate(
   const accounts = clientData.accounts ?? [];
   const entities = clientData.entities ?? [];
 
-  // irrevocable trusts → entities[]
+  // irrevocable trusts → entities[]. Include trusts with no funded accounts so
+  // the planning vehicle still surfaces on the chart (advisor expectation:
+  // empty SLAT/ILIT/IDGT shells should be visible, not silently dropped).
   const irrevTrustEntities: OoeEntity[] = [];
   for (const entity of entities) {
     if (entity.entityType !== "trust") continue;
@@ -264,16 +307,14 @@ function computeOutOfEstate(
     const ownedAccounts = accounts.filter(
       (a) => controllingEntity(a) === entity.id,
     );
-    if (ownedAccounts.length === 0) continue;
     const assets = ownedAccounts.map((a) => ({
       label: a.name,
       amount: accountAmount(a),
     }));
     const amount = assets.reduce((s, x) => s + x.amount, 0);
-    if (amount <= 0) continue;
     irrevTrustEntities.push({
       entityId: entity.id,
-      entityLabel: entity.name,
+      entityLabel: entity.name ?? "Irrevocable Trust",
       amount,
       assets,
     });
@@ -837,10 +878,26 @@ export function buildEstateFlowSummary(
       )
     : null;
 
-  const spouseNetWorth = computeSpouseNetWorth(
-    clientData,
-    ownerNames.spouseName,
-  );
+  // The survivor of the first death sits on the left rail. With a death-order
+  // toggle in the chart UI, the decedent picked for `firstDeath` flips and the
+  // survivor flips with it — driving from `firstDeath.decedent` (falling back
+  // to `secondDeath.decedent`'s opposite when only a second death is rendered)
+  // keeps the left box in sync with the toggle.
+  const decedent =
+    reportData.firstDeath?.decedent ?? reportData.secondDeath?.decedent ?? null;
+  const survivorRole: "client" | "spouse" | null =
+    decedent === "client" ? "spouse" : decedent === "spouse" ? "client" : null;
+  const survivorLabel =
+    survivorRole === "client"
+      ? ownerNames.clientName
+      : survivorRole === "spouse"
+        ? ownerNames.spouseName
+        : null;
+  const survivor =
+    survivorRole && survivorLabel
+      ? { role: survivorRole, label: survivorLabel }
+      : null;
+  const survivorNetWorth = computeSurvivorNetWorth(clientData, survivor);
 
   const outOfEstate = computeOutOfEstate(clientData);
 
@@ -882,7 +939,7 @@ export function buildEstateFlowSummary(
   const totalToHeirs = heirBoxes.reduce((s, h) => s + h.total, 0);
 
   return {
-    spouseNetWorth,
+    survivorNetWorth,
     firstDeath,
     secondDeath,
     outOfEstate,

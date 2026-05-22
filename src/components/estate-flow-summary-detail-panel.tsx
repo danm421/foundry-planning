@@ -74,7 +74,7 @@ export function EstateFlowSummaryDetailPanel({ selected, onClose }: Props) {
 
 function panelTitle(s: SelectedPanel): string {
   switch (s.kind) {
-    case "spouseNetWorth":
+    case "survivorNetWorth":
       return `${s.payload.ownerLabel}'s Net Worth`;
     case "estateValue":
       return `${s.payload.stage.decedentLabel} — Estate Value`;
@@ -106,7 +106,7 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
       );
       return <EstateTransferReductionsCard reductions={lines} />;
     }
-    case "spouseNetWorth":
+    case "survivorNetWorth":
       return (
         <div className="space-y-3">
           <LineList lines={selected.payload.lines} />
@@ -130,15 +130,51 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
       );
     case "bequestsToTrusts":
     case "transfersToSpouse":
-    case "transfersToHeirs":
-      return (
-        <LineList
-          lines={(selected.payload.box.lines as import("@/lib/estate/transfer-report").AssetTransferLine[]).map((l) => ({
-            label: l.label,
-            amount: l.amount,
-          }))}
-        />
+    case "transfersToHeirs": {
+      // Sub-box totals are gross asset values; liabilities passing with the
+      // asset (a mortgage assumed by the spouse with the home, e.g.) are
+      // excluded from the parent so the chart reconciles. Surface them here as
+      // a separate "Debts Assumed" section so the advisor still sees what the
+      // recipient is taking on, even though it isn't part of the headline.
+      const allLines = selected.payload.box
+        .lines as import("@/lib/estate/transfer-report").AssetTransferLine[];
+      const assetLines = allLines.filter(
+        (l) => l.sourceLiabilityId == null && l.amount > 0,
       );
+      const debtLines = allLines.filter((l) => l.sourceLiabilityId != null);
+      const grossAssets = assetLines.reduce((s, l) => s + l.amount, 0);
+      const totalDebt = debtLines.reduce((s, l) => s + l.amount, 0);
+      return (
+        <div className="space-y-3">
+          <LineList
+            lines={assetLines.map((l) => ({ label: l.label, amount: l.amount }))}
+          />
+          <div className="border-t border-white/10 pt-3">
+            <Stat label="Gross assets received" amount={grossAssets} bold />
+          </div>
+          {debtLines.length > 0 && (
+            <>
+              <div className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                Debts Assumed
+              </div>
+              <LineList
+                lines={debtLines.map((l) => ({
+                  label: l.label,
+                  amount: l.amount,
+                }))}
+              />
+              <div className="border-t border-white/10 pt-2">
+                <Stat
+                  label="Net equity received"
+                  amount={grossAssets + totalDebt}
+                  bold
+                />
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
     case "ooeGroup":
       return (
         <div className="space-y-4">

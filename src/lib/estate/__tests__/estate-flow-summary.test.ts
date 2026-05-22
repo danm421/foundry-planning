@@ -239,7 +239,7 @@ describe("buildEstateFlowSummary — entity disambiguation", () => {
   });
 });
 
-describe("buildEstateFlowSummary — spouseNetWorth", () => {
+describe("buildEstateFlowSummary — survivorNetWorth", () => {
   it("returns the surviving spouse's separately-owned account total", () => {
     const clientData = emptyClientData();
     clientData.familyMembers = [
@@ -283,10 +283,53 @@ describe("buildEstateFlowSummary — spouseNetWorth", () => {
       clientData,
     })!;
 
-    expect(summary.spouseNetWorth).toEqual({
+    expect(summary.survivorNetWorth).toEqual({
       ownerLabel: "Susan",
+      role: "spouse",
       amount: 500_000,
       lines: [{ label: "Susan Roth", amount: 500_000 }],
+    });
+  });
+
+  it("swaps to the client's net worth when the spouse dies first", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-spouse", role: "spouse", firstName: "Susan" },
+    ] as ClientData["familyMembers"];
+    clientData.accounts = [
+      {
+        id: "a1",
+        name: "Cooper Solo",
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        value: 750_000,
+      },
+      {
+        id: "a2",
+        name: "Susan Solo",
+        owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+        value: 320_000,
+      },
+    ] as unknown as ClientData["accounts"];
+
+    const firstDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2028,
+      recipients: [],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ firstDeath }),
+      clientData,
+    })!;
+
+    expect(summary.survivorNetWorth).toEqual({
+      ownerLabel: "Cooper",
+      role: "client",
+      amount: 750_000,
+      lines: [{ label: "Cooper Solo", amount: 750_000 }],
     });
   });
 
@@ -303,7 +346,7 @@ describe("buildEstateFlowSummary — spouseNetWorth", () => {
       }),
       ownerNames: { clientName: "Cooper", spouseName: null },
     })!;
-    expect(summary.spouseNetWorth).toBeNull();
+    expect(summary.survivorNetWorth).toBeNull();
   });
 });
 
@@ -1177,7 +1220,7 @@ describe("buildEstateFlowSummary — single-filer + isEmpty", () => {
       ownerNames: { clientName: "Cooper", spouseName: null },
     })!;
 
-    expect(summary.spouseNetWorth).toBeNull();
+    expect(summary.survivorNetWorth).toBeNull();
     expect(summary.firstDeath).toBeNull();
     expect(summary.secondDeath).not.toBeNull();
     expect(summary.heirBoxes).toHaveLength(1);
