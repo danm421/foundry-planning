@@ -449,6 +449,90 @@ function collectTrustBequestsInTrust(
 }
 
 /**
+ * Rule 3 — out-of-estate balances attribute to their beneficiaries:
+ *  - Person-owned OOE accounts (529 plans): each `OoeEntity.entityId` is the
+ *    source account id. The account's `beneficiaries[]` are filtered to the
+ *    primary tier with a resolvable `familyMemberId` / `householdRole`. Weights
+ *    are proportional to `percentage` (equal split when the sum is zero) and
+ *    the amount lands in each beneficiary's `outright`.
+ *  - Irrevocable trusts: `resolveTrustBeneficiaries` (same helper as rule 2)
+ *    picks remainder beneficiaries; the trust's amount is apportioned by
+ *    weight into each beneficiary's `inTrust`.
+ *
+ * Beneficiaries that point to another entity, an external beneficiary, or
+ * have no resolvable identity are skipped — leftover percentage falls through
+ * silently to keep the heir-box totals stable.
+ */
+function collectOoeAttribution(
+  acc: Map<string, HeirAccumulator>,
+  ooe: EstateFlowSummary["outOfEstate"],
+  clientData: ClientData,
+): void {
+  // Person-owned OOE accounts (529s) → primary beneficiaries get Outright.
+  const accountsById = new Map(
+    (clientData.accounts ?? []).map((a) => [a.id, a] as const),
+  );
+  for (const entity of ooe.heirs.entities) {
+    const account = accountsById.get(entity.entityId);
+    if (!account) continue;
+    type Resolved = { key: string; label: string; percentage: number };
+    const resolved: Resolved[] = [];
+    for (const b of account.beneficiaries ?? []) {
+      if (b.tier !== "primary") continue;
+      let key: string | null = null;
+      let label: string | null = null;
+      if (b.familyMemberId) {
+        key = b.familyMemberId;
+        label = familyMemberLabel(b.familyMemberId, clientData);
+      } else if (b.householdRole) {
+        key = b.householdRole;
+        label = familyMemberLabel(b.householdRole, clientData);
+      } else {
+        // External beneficiaries / nested-entity targets fall through here.
+        continue;
+      }
+      resolved.push({
+        key,
+        label,
+        percentage: typeof b.percentage === "number" ? b.percentage : 0,
+      });
+    }
+    if (resolved.length === 0) continue;
+    const pctSum = resolved.reduce((s, r) => s + r.percentage, 0);
+    const weights =
+      pctSum > 0
+        ? resolved.map((r) => r.percentage / pctSum)
+        : resolved.map(() => 1 / resolved.length);
+    resolved.forEach((r, i) => {
+      const entry = acc.get(r.key) ?? {
+        recipientKey: r.key,
+        recipientLabel: r.label,
+        outright: 0,
+        inTrust: 0,
+      };
+      entry.outright += entity.amount * weights[i];
+      acc.set(r.key, entry);
+    });
+  }
+
+  // Irrevocable trusts → remainder beneficiaries get inTrust.
+  for (const entity of ooe.irrevTrusts.entities) {
+    const splits = resolveTrustBeneficiaries(entity.entityId, clientData);
+    if (splits.length === 0) continue;
+    for (const s of splits) {
+      const entry = acc.get(s.recipientKey) ?? {
+        recipientKey: s.recipientKey,
+        recipientLabel: s.recipientLabel,
+        outright: 0,
+        inTrust: 0,
+      };
+      entry.inTrust += entity.amount * s.weight;
+      acc.set(s.recipientKey, entry);
+    }
+  }
+}
+
+/**
  * Rule 1 — at-death receipts go to Outright for person-like recipients
  * (family_member / external_beneficiary / system_default). Accumulates
  * `RecipientGroup.netTotal` (gross minus this recipient's drain share) into
@@ -525,12 +609,15 @@ export function buildEstateFlowSummary(
 
   // Per-heir composition. Rule 1 populates `outright` from at-death receipts;
   // rule 2 attributes trust bequests to the trust's beneficiaries as `inTrust`;
-  // rules 3-5 will layer on top of this same accumulator in subsequent tasks.
+  // rule 3 attributes OOE balances (529 plans → outright, irrevocable trusts →
+  // inTrust); rules 4-5 will layer on top of this same accumulator in
+  // subsequent tasks.
   const heirAcc = new Map<string, HeirAccumulator>();
   collectAtDeathOutright(heirAcc, reportData.firstDeath);
   collectAtDeathOutright(heirAcc, reportData.secondDeath);
   collectTrustBequestsInTrust(heirAcc, reportData.firstDeath, clientData);
   collectTrustBequestsInTrust(heirAcc, reportData.secondDeath, clientData);
+  collectOoeAttribution(heirAcc, outOfEstate, clientData);
   const heirBoxes = finalizeHeirBoxes(heirAcc);
 
   return {
