@@ -1,9 +1,12 @@
+import { termCertainAnnuityFactor } from "@/engine/actuarial/annuity-factors";
 import type {
   BeneficiaryRef,
   ClientData,
   FamilyMember,
   Gift,
 } from "@/engine/types";
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 const PUBLIC_CHARITY_ID = "00000000-0000-0000-0000-000000000aaa";
 const PRIVATE_CHARITY_ID = "00000000-0000-0000-0000-000000000bbb";
@@ -17,6 +20,7 @@ const REMAINDER_GIFT_ID = "00000000-0000-0000-0000-000000000fff";
 
 export interface ClutLifecycleOpts {
   inceptionYear: number;
+  /** CLUT path: percent of FMV paid annually. Required when payoutType='unitrust'. */
   payoutPercent: number;
   termYears: number;
   inceptionValue: number;
@@ -44,6 +48,10 @@ export interface ClutLifecycleOpts {
    * triggers a death event in this year. Used by Task 11+ tests to exercise
    * the §170(f)(2)(B) recapture and grantor flip pipeline. */
   grantorDeathYear?: number;
+  /** New: choose between CLUT (unitrust) and CLAT (annuity). Defaults to 'unitrust'. */
+  payoutType?: "unitrust" | "annuity";
+  /** Required when payoutType='annuity'. Annual fixed payment to charity. */
+  payoutAmount?: number;
 }
 
 /**
@@ -59,14 +67,31 @@ export interface ClutLifecycleOpts {
 export function buildClutLifecycleFixture(opts: ClutLifecycleOpts): ClientData {
   const irc7520 = opts.irc7520Rate ?? 0.06;
   const planEnd = opts.inceptionYear + opts.termYears + (opts.trailingYears ?? 2);
+  const payoutType = opts.payoutType ?? "unitrust";
 
-  // Compute the original interest split using the eMoney CRUT-style formula
-  // (Task 2 actuarial helpers). For the lifecycle test the exact split doesn't
-  // matter as long as income + remainder = inceptionValue, so use a simple
-  // approximation: present value of an N-year annuity certain at irc7520.
-  const remainderFactor = (1 - opts.payoutPercent) ** opts.termYears;
-  const originalRemainder = Math.round(opts.inceptionValue * remainderFactor * 100) / 100;
-  const originalIncome = Math.round((opts.inceptionValue - originalRemainder) * 100) / 100;
+  // Compute the original interest split. For unitrust we use the existing
+  // (1 - payoutPercent)^n FMV-decay approximation (income + remainder =
+  // inceptionValue). For annuity we use the real term-certain annuity
+  // factor a_n from Pub 1457 Table B: income = payoutAmount × a_n.
+  let originalRemainder: number;
+  let originalIncome: number;
+  if (payoutType === "annuity") {
+    if (opts.payoutAmount == null) {
+      throw new Error(
+        "buildClutLifecycleFixture: payoutAmount is required when payoutType='annuity'",
+      );
+    }
+    const aN = termCertainAnnuityFactor({
+      irc7520Rate: irc7520,
+      termYears: opts.termYears,
+    });
+    originalIncome = round2(opts.payoutAmount * aN);
+    originalRemainder = round2(opts.inceptionValue - originalIncome);
+  } else {
+    const remainderFactor = (1 - opts.payoutPercent) ** opts.termYears;
+    originalRemainder = round2(opts.inceptionValue * remainderFactor);
+    originalIncome = round2(opts.inceptionValue - originalRemainder);
+  }
 
   const charityId =
     opts.charityType === "public" ? PUBLIC_CHARITY_ID : PRIVATE_CHARITY_ID;
@@ -214,9 +239,9 @@ export function buildClutLifecycleFixture(opts: ClutLifecycleOpts): ClientData {
         splitInterest: {
           inceptionYear: opts.inceptionYear,
           inceptionValue: opts.inceptionValue,
-          payoutType: "unitrust",
-          payoutPercent: opts.payoutPercent,
-          payoutAmount: null,
+          payoutType,
+          payoutPercent: payoutType === "unitrust" ? opts.payoutPercent : null,
+          payoutAmount: payoutType === "annuity" ? opts.payoutAmount! : null,
           irc7520Rate: irc7520,
           termType: "years",
           termYears: opts.termYears,
