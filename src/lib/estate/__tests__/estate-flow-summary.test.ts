@@ -1092,3 +1092,39 @@ describe("buildEstateFlowSummary — first death sub-boxes", () => {
     expect(trusts.total).toBe(50_000);
   });
 });
+
+describe("buildEstateFlowSummary — single-filer + isEmpty", () => {
+  it("returns null when reportData.isEmpty is true", () => {
+    const summary = buildEstateFlowSummary(
+      baseInput({ isEmpty: true }),
+    );
+    expect(summary).toBeNull();
+  });
+
+  it("collapses for a single-filer (no spouse, firstDeath null)", () => {
+    const secondDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2030,
+      recipients: [
+        group({
+          key: "caroline",
+          kind: "family_member",
+          recipientId: "caroline",
+          label: "Caroline",
+          byMechanism: [mech("will", [asset("Home", 100_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ firstDeath: null, secondDeath }),
+      ownerNames: { clientName: "Cooper", spouseName: null },
+    })!;
+
+    expect(summary.spouseNetWorth).toBeNull();
+    expect(summary.firstDeath).toBeNull();
+    expect(summary.secondDeath).not.toBeNull();
+    expect(summary.heirBoxes).toHaveLength(1);
+  });
+});
