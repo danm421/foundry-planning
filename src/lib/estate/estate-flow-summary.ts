@@ -93,10 +93,19 @@ function buildDeathStage(
   section: DeathSectionData,
   spouseLabel: string | null,
   isFirstDeath: boolean,
+  clientData: ClientData,
 ): DeathStage {
   // Flatten estate-source lines from the section's recipients.
   const estateLines: AssetTransferLine[] = section.recipients.flatMap((r) =>
     r.byMechanism.flatMap((m) => m.assets),
+  );
+
+  // Entities with recipientKind === "entity" cover trusts, LLCs, S-corps, etc.
+  // Narrow the trusts sub-box to actual trust entities by id lookup.
+  const trustEntityIds = new Set(
+    (clientData.entities ?? [])
+      .filter((e) => e.entityType === "trust")
+      .map((e) => e.id),
   );
 
   const subBoxes: DeathSubBox[] = [];
@@ -117,8 +126,15 @@ function buildDeathStage(
     });
   }
 
-  // trusts — recipientKind === "entity" (the engine's bucket for trust recipients).
-  const trustGroups = section.recipients.filter((g) => g.recipientKind === "entity");
+  // trusts — recipientKind === "entity" narrowed to entities whose entityType is "trust".
+  // Non-trust entities (LLCs, partnerships, etc.) fall through; they're not represented
+  // in any sub-box yet — tracked as future work.
+  const trustGroups = section.recipients.filter(
+    (g) =>
+      g.recipientKind === "entity" &&
+      g.recipientId != null &&
+      trustEntityIds.has(g.recipientId),
+  );
   if (trustGroups.length > 0) {
     const trustAssets: AssetTransferLine[] = trustGroups.flatMap((g) =>
       g.byMechanism.flatMap((m) => m.assets),
@@ -178,7 +194,7 @@ function buildDeathStage(
 export function buildEstateFlowSummary(
   input: BuildEstateFlowSummaryInput,
 ): EstateFlowSummary | null {
-  const { reportData, ownerNames } = input;
+  const { reportData, clientData, ownerNames } = input;
   if (reportData.isEmpty) return null;
 
   const firstDeath = reportData.firstDeath
@@ -189,6 +205,7 @@ export function buildEstateFlowSummary(
           ? ownerNames.spouseName
           : ownerNames.clientName,
         true,
+        clientData,
       )
     : null;
 
@@ -199,6 +216,7 @@ export function buildEstateFlowSummary(
           ? ownerNames.spouseName
           : ownerNames.clientName,
         false,
+        clientData,
       )
     : null;
 

@@ -193,3 +193,43 @@ describe("buildEstateFlowSummary — second death sub-boxes", () => {
     expect(subBoxes.find((b) => b.kind === "trusts")).toBeUndefined();
   });
 });
+
+describe("buildEstateFlowSummary — entity disambiguation", () => {
+  it("filters trusts sub-box by entityType, excluding non-trust entities", () => {
+    const clientData = emptyClientData();
+    clientData.entities = [
+      { id: "trust-1", entityType: "trust", name: "Family Trust" },
+      { id: "llc-1", entityType: "llc", name: "Family LLC" },
+    ] as ClientData["entities"];
+
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2030,
+      recipients: [
+        group({
+          key: "trust-1",
+          kind: "entity",
+          recipientId: "trust-1",
+          label: "Family Trust",
+          byMechanism: [mech("will", [asset("Cash", 100_000)])],
+        }),
+        group({
+          key: "llc-1",
+          kind: "entity",
+          recipientId: "llc-1",
+          label: "Family LLC",
+          byMechanism: [mech("will", [asset("LLC Interest", 200_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ secondDeath }),
+      clientData,
+    })!;
+    const trusts = summary.secondDeath!.subBoxes.find((b) => b.kind === "trusts")!;
+    expect(trusts.total).toBe(100_000);
+  });
+});
