@@ -20,7 +20,11 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 const OOE_PERSON_ACCOUNT_SUBTYPES: ReadonlySet<string> = new Set(["529"]);
 
 export interface EstateFlowSummary {
-  spouseNetWorth: { ownerLabel: string; amount: number } | null;
+  spouseNetWorth: {
+    ownerLabel: string;
+    amount: number;
+    lines: { label: string; amount: number }[];
+  } | null;
   firstDeath: DeathStage | null;
   secondDeath: DeathStage | null;
   outOfEstate: {
@@ -222,12 +226,15 @@ function computeSpouseNetWorth(
   const spouseFmId = (clientData.familyMembers ?? []).find(
     (fm) => fm.role === "spouse",
   )?.id;
-  if (!spouseFmId) return { ownerLabel: spouseLabel, amount: 0 };
-  const total = (clientData.accounts ?? []).reduce((sum, account) => {
-    if (controllingFamilyMember(account) !== spouseFmId) return sum;
-    return sum + (typeof account.value === "number" ? account.value : 0);
-  }, 0);
-  return { ownerLabel: spouseLabel, amount: total };
+  if (!spouseFmId) return { ownerLabel: spouseLabel, amount: 0, lines: [] };
+  const lines: { label: string; amount: number }[] = [];
+  for (const account of clientData.accounts ?? []) {
+    if (controllingFamilyMember(account) !== spouseFmId) continue;
+    const amount = typeof account.value === "number" ? account.value : 0;
+    lines.push({ label: account.name, amount });
+  }
+  const total = lines.reduce((s, l) => s + l.amount, 0);
+  return { ownerLabel: spouseLabel, amount: total, lines };
 }
 
 function accountAmount(a: Account): number {

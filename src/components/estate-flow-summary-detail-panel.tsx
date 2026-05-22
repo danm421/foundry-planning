@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { SelectedPanel } from "./estate-flow-summary";
 import { EstateTransferReductionsCard } from "./estate-transfer-reductions-card";
 import { EstateTransferRecipientCard } from "./estate-transfer-recipient-card";
@@ -19,51 +19,56 @@ interface Props {
 }
 
 export function EstateFlowSummaryDetailPanel({ selected, onClose }: Props) {
+  const panelRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!selected) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (panelRef.current?.contains(target)) return;
+      // Clicks on flow boxes re-target the panel — let their handlers run.
+      if (target.closest("button")) return;
+      onClose();
+    };
     document.addEventListener("keydown", onKey);
-    document.body.classList.add("overflow-hidden");
+    document.addEventListener("mousedown", onMouseDown);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.classList.remove("overflow-hidden");
+      document.removeEventListener("mousedown", onMouseDown);
     };
   }, [selected, onClose]);
 
   if (!selected) return null;
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-40 bg-black/40"
-        onClick={onClose}
-        aria-hidden
-      />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-md flex-col border-l border-gray-800 bg-gray-950 shadow-xl"
-      >
-        <header className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-gray-100">
-            {panelTitle(selected)}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 text-gray-400 hover:bg-gray-800"
-            aria-label="Close panel"
-          >
-            ✕
-          </button>
-        </header>
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          <PanelBody selected={selected} />
-        </div>
-      </aside>
-    </>
+    <aside
+      ref={panelRef}
+      role="dialog"
+      aria-modal="false"
+      aria-label={panelTitle(selected)}
+      className="flex max-h-[60vh] w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-gradient-to-b from-slate-900 to-slate-950 shadow-xl shadow-black/40 ring-1 ring-inset ring-white/5"
+    >
+      <header className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+        <h2 className="truncate text-xs font-semibold uppercase tracking-wider text-gray-100">
+          {panelTitle(selected)}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-100"
+          aria-label="Close panel"
+        >
+          ✕
+        </button>
+      </header>
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        <PanelBody selected={selected} />
+      </div>
+    </aside>
   );
 }
 
@@ -103,7 +108,16 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
     }
     case "spouseNetWorth":
       return (
-        <Stat label={selected.payload.ownerLabel} amount={selected.payload.amount} />
+        <div className="space-y-3">
+          <LineList lines={selected.payload.lines} />
+          <div className="border-t border-white/10 pt-3">
+            <Stat
+              label={`${selected.payload.ownerLabel}'s Total`}
+              amount={selected.payload.amount}
+              bold
+            />
+          </div>
+        </div>
       );
     case "estateValue":
       return (

@@ -286,6 +286,7 @@ describe("buildEstateFlowSummary — spouseNetWorth", () => {
     expect(summary.spouseNetWorth).toEqual({
       ownerLabel: "Susan",
       amount: 500_000,
+      lines: [{ label: "Susan Roth", amount: 500_000 }],
     });
   });
 

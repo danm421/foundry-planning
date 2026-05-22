@@ -123,7 +123,7 @@ export function EstateFlowChartTab({
           />
         )}
       </div>
-      <EstateFlowSummaryView summary={summary} />
+      <EstateFlowSummaryView summary={summary} clientName={ownerNames.clientName} />
     </div>
   );
 }
