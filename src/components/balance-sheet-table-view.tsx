@@ -548,6 +548,44 @@ export default function BalanceSheetTableView({
     emptySplit(),
   );
 
+  function liabilityToTableRow(l: LiabilityRow): AssetTableRow {
+    const balance = currentYearBalance(l);
+    const split = attributeToColumns(
+      { id: l.id, value: balance, owners: l.owners ?? [] },
+      ctx,
+    );
+    return {
+      key: l.id,
+      kind: "account", // re-uses AssetRow styling; the row label tells the story
+      label: l.name,
+      sublabel:
+        Number(l.interestRate) > 0
+          ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest`
+          : undefined,
+      split,
+      onClick: () => {
+        if (edit) return;
+        setEditingLiability(l);
+      },
+      onDelete: () => setDeletingLiability(l),
+      deletable: true,
+    };
+  }
+
+  const liabilityRows = liabilities.map(liabilityToTableRow);
+  const totalLiabilities = liabilityRows.reduce<ColumnSplit>(
+    (s, r) => addSplits(s, r.split),
+    emptySplit(),
+  );
+
+  const netWorth: ColumnSplit = {
+    cooper: totalAssets.cooper - totalLiabilities.cooper,
+    sarah: totalAssets.sarah - totalLiabilities.sarah,
+    joint: totalAssets.joint - totalLiabilities.joint,
+    ooe: totalAssets.ooe - totalLiabilities.ooe,
+    representedPct: 1,
+  };
+
   return (
     <div className="space-y-4">
       {/* Header strip with actions */}
@@ -636,6 +674,48 @@ export default function BalanceSheetTableView({
                 hasSpouse={hasSpouse}
                 emphasis="grand"
               />
+            )}
+            {liabilityRows.length > 0 && (
+              <>
+                <tr className="bg-card-2">
+                  <td
+                    colSpan={hasSpouse ? 7 : 5}
+                    className="sticky left-0 z-[1] bg-card-2 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-2"
+                  >
+                    Liabilities
+                  </td>
+                </tr>
+                {liabilityRows.map((r) => (
+                  <LiabilityRowRender key={r.key} row={r} hasSpouse={hasSpouse} edit={edit} />
+                ))}
+                <TotalRow
+                  label="Total Liabilities"
+                  split={totalLiabilities}
+                  hasSpouse={hasSpouse}
+                  emphasis="grand"
+                />
+              </>
+            )}
+            {(categoryGroups.length > 0 || liabilityRows.length > 0) && (
+              <TotalRow
+                label="Net Worth"
+                split={netWorth}
+                hasSpouse={hasSpouse}
+                emphasis="net-worth"
+                signColor
+              />
+            )}
+            {(categoryGroups.length > 0 || liabilityRows.length > 0) && (
+              <tr className="bg-accent/15 border-t border-hair-2">
+                <td
+                  colSpan={hasSpouse ? 5 : 3}
+                  className="sticky left-0 z-[1] bg-accent/15 px-4 py-3 text-sm font-semibold uppercase tracking-wider text-accent-ink"
+                >
+                  Out of Estate
+                </td>
+                <Cell value={totalAssets.ooe - totalLiabilities.ooe} accent variant="total" />
+                <td className="w-8 px-2 py-3" />
+              </tr>
             )}
           </tbody>
         </table>
@@ -840,6 +920,65 @@ function AssetRow({
       </td>
     </tr>
   );
+}
+
+function LiabilityRowRender({
+  row,
+  hasSpouse,
+  edit,
+}: {
+  row: AssetTableRow;
+  hasSpouse: boolean;
+  edit: boolean;
+}) {
+  const clickable = !!row.onClick && !edit;
+  return (
+    <tr
+      onClick={clickable ? row.onClick : undefined}
+      onKeyDown={(e) => {
+        if (!clickable) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          row.onClick?.();
+        }
+      }}
+      tabIndex={clickable ? 0 : -1}
+      role={clickable ? "button" : undefined}
+      className={`border-t border-hair ${clickable ? "cursor-pointer hover:bg-card-hover" : ""}`}
+    >
+      <td className="sticky left-0 z-[1] bg-card px-4 py-2 shadow-[inset_-8px_0_8px_-8px_rgba(0,0,0,0.4)]">
+        <div className="text-sm font-medium text-ink">{row.label}</div>
+        {row.sublabel && <div className="text-xs text-ink-3">{row.sublabel}</div>}
+      </td>
+      <LiabilityCell value={row.split.cooper} />
+      {hasSpouse && <LiabilityCell value={row.split.sarah} />}
+      {hasSpouse && <LiabilityCell value={row.split.joint} />}
+      <LiabilityCell value={row.split.cooper + row.split.sarah + row.split.joint} />
+      <LiabilityCell value={row.split.ooe} accent />
+      <td className="w-8 px-2 py-2 text-right">
+        {edit && row.onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              row.onDelete?.();
+            }}
+            className="text-ink hover:text-crit"
+            aria-label={`Delete ${row.label}`}
+          >
+            <TrashIcon />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function LiabilityCell({ value, accent }: { value: number; accent?: boolean }) {
+  const isZero = Math.abs(value) < 0.5;
+  let cls = "px-4 py-2 text-right text-sm tabular-nums";
+  cls += isZero ? " text-ink-4" : " text-crit";
+  if (accent) cls += " bg-accent/8";
+  return <td className={cls}>{isZero ? <span>—</span> : fmt(value)}</td>;
 }
 
 function SubtotalRow({ split, hasSpouse }: { split: ColumnSplit; hasSpouse: boolean }) {
