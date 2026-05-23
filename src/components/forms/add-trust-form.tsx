@@ -27,6 +27,7 @@ import SellToTrustDialog from "./sell-to-trust-dialog";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import DialogShell from "../dialog-shell";
 import CltDetailsSection from "./clt-details-section";
+import CrtDetailsSection from "./crt-details-section";
 import { FieldTooltip } from "./field-tooltip";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import {
@@ -105,6 +106,7 @@ const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
   ilit: "ILIT",
   clt: "CLT (Charitable Lead Trust)",
   idgt: "IDGT (Intentionally Defective Grantor Trust)",
+  crt: "CRT (Charitable Remainder Trust)",
 };
 
 function ownerSummary(owners: import("@/engine/ownership").AccountOwner[]): string {
@@ -231,12 +233,15 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   });
 
   const isIrrevocable = trustSubType !== "" && deriveIsIrrevocable(trustSubType);
-  // For CLTs, distribution to the income beneficiary (charity) is computed
-  // from payoutPercent × FMV, and the charity is captured in CLT Details —
-  // so the generic Distribution Policy + Income Beneficiaries panels are
-  // suppressed entirely.
-  const isClut = trustSubType === "clt";
-  const showDistributionAndIncome = isIrrevocable && !isClut;
+  // For split-interest trusts (CLT and CRT), the generic Distribution Policy
+  // + Income Beneficiaries panels are suppressed. CLT income recipient is the
+  // charity; CRT income beneficiary is captured by grantor + measuring life.
+  // In both cases these panels don't apply.
+  const isSplitInterest = trustSubType === "clt" || trustSubType === "crt";
+  // CRT income beneficiary is captured by grantor + measuring life; CLT income
+  // recipient is the charity. In both cases the generic Distribution + Income
+  // beneficiary panels are suppressed.
+  const showDistributionAndIncome = isIrrevocable && !isSplitInterest;
 
   // Push live state up so the parent dialog can conditionally show/hide tabs
   // (e.g. the Notes & sales tab visibility depends on these values).
@@ -270,7 +275,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     grantorStatusEndYear, crummeyPowers, sprinkleProvisions, notes,
     distributionMode, distributionAmount, distributionPercent,
     incomeRows, remainderRows,
-    ...(trustSubType === "clt" ? { splitInterest, splitInterestFundingPicks } : {}),
+    ...(isSplitInterest ? { splitInterest, splitInterestFundingPicks } : {}),
   }), [
     name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
     grantorStatusEndYear, crummeyPowers, sprinkleProvisions, notes,
@@ -308,7 +313,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     // tab also needs inception-year gifts for the CLT funding picker).
     if (!editing) return;
     // Skip the fetch on Details tab for non-CLT trusts to avoid the network hit.
-    const needsGifts = activeTab === "transfers" || trustSubType === "clt";
+    const needsGifts = activeTab === "transfers" || isSplitInterest;
     if (!needsGifts) return;
     let alive = true;
     setTransferFetchError(null);
@@ -328,10 +333,10 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities, trustSubType]);
 
-  // Seed CLT funding picks from transferEvents at the inception year.
+  // Seed split-interest funding picks from transferEvents at the inception year.
   // Re-runs when the inception year changes or when transferEvents reload.
   useEffect(() => {
-    if (trustSubType !== "clt") return;
+    if (!isSplitInterest) return;
     if (splitInterest.origin !== "new") return;
     if (!editing) return; // create mode has no fetched gifts to seed from
     const year = splitInterest.inceptionYear;
@@ -364,7 +369,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   }, [trustSubType, splitInterest.origin, splitInterest.inceptionYear, transferEvents, accounts, editing]);
 
   const fundingAccounts = useMemo<SplitInterestFundingPickerAccount[]>(() => {
-    if (trustSubType !== "clt") return [];
+    if (!isSplitInterest) return [];
     const trustId = editing?.id;
     return (accounts ?? [])
       .filter((a) => {
@@ -396,7 +401,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
 
   // Sync splitInterest.inceptionValue to Σ(asset.value × pct) + Σ(cash.amount) whenever picks change.
   useEffect(() => {
-    if (trustSubType !== "clt") return;
+    if (!isSplitInterest) return;
     if (splitInterest.origin !== "new") return;
     const total = splitInterestFundingPicks.reduce((sum, p) => {
       if (p.kind === "asset") {
@@ -518,7 +523,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     if (distributionMode != null && incomeRows.filter((r) => r.source.kind !== "empty").length === 0) {
       return { ok: false, error: "Distribution mode is set but no income beneficiaries are listed." };
     }
-    if (trustSubType === "clt" && splitInterest.origin === "new") {
+    if (isSplitInterest && splitInterest.origin === "new") {
       if (splitInterestFundingPicks.length === 0) {
         return { ok: false, error: "Pick at least one funding asset or cash gift for the CLT." };
       }
@@ -567,7 +572,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         distributionMode: showDistributionAndIncome ? distributionMode : null,
         distributionAmount: showDistributionAndIncome && distributionMode === "fixed" && distributionAmount.trim() !== "" ? Number(distributionAmount) : null,
         distributionPercent: showDistributionAndIncome && (distributionMode === "pct_liquid" || distributionMode === "pct_income") && distributionPercent.trim() !== "" ? Number(distributionPercent) / 100 : null,
-        ...(trustSubType === "clt" && { splitInterest }),
+        ...(isSplitInterest && { splitInterest }),
       };
 
       // Choose POST vs PUT based on whether we have a persisted id yet.
@@ -586,8 +591,8 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       }
       const saved = (await res.json()) as Entity;
 
-      // Apply CLT funding-pick changes as gift ops.
-      if (trustSubType === "clt" && splitInterest.origin === "new") {
+      // Apply split-interest funding-pick changes as gift ops.
+      if (isSplitInterest && splitInterest.origin === "new") {
         const ops = diffSplitInterestFundingPicks({
           original: originalSplitInterestFundingPicks,
           current: splitInterestFundingPicks,
@@ -818,6 +823,27 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         {trustSubType === "clt" && (
           <div className="mt-4">
             <CltDetailsSection
+              value={splitInterest}
+              onChange={setSplitInterest}
+              familyMembers={members.map((m) => ({
+                id: m.id,
+                firstName: m.firstName,
+                dateOfBirth: m.dateOfBirth ?? null,
+              }))}
+              charities={externals
+                .filter((e) => e.kind === "charity")
+                .map((e) => ({ id: e.id, name: e.name }))}
+              fundingAccounts={fundingAccounts}
+              fundingPicks={splitInterestFundingPicks}
+              onFundingPicksChange={setSplitInterestFundingPicks}
+              defaultGrantor={grantor === "" ? "client" : grantor}
+            />
+          </div>
+        )}
+
+        {trustSubType === "crt" && (
+          <div className="mt-4">
+            <CrtDetailsSection
               value={splitInterest}
               onChange={setSplitInterest}
               familyMembers={members.map((m) => ({
