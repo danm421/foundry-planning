@@ -501,6 +501,12 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               policyId={effectivePolicyId}
               members={props.familyMembers}
               externals={props.externalBeneficiaries}
+              entities={props.entities}
+              policyOwners={
+                state.ownerRef.kind === "entity"
+                  ? [{ kind: "entity", entityId: state.ownerRef.id }]
+                  : [{ kind: state.ownerRef.kind }]
+              }
             />
           </div>
         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   Designation,
@@ -18,6 +18,13 @@ interface InsurancePolicyBeneficiariesTabProps {
   policyId?: string;
   members: FamilyMember[];
   externals: ExternalBeneficiary[];
+  /** All entities for the client — used to detect when the policy account
+   *  is owned by a trust and to seed a default primary beneficiary
+   *  pointing at that trust. */
+  entities: { id: string; name: string | null; entityType: string }[];
+  /** Owners of the policy account — used to detect trust ownership. Pass
+   *  `[]` for mode === "create" (no account yet). */
+  policyOwners: { kind: string; entityId?: string }[];
 }
 
 // DB rows ship `percentage` as a decimal string. `Designation` wants a number,
@@ -341,12 +348,51 @@ export default function InsurancePolicyBeneficiariesTab({
   policyId,
   members,
   externals,
+  entities,
+  policyOwners,
 }: InsurancePolicyBeneficiariesTabProps) {
   const isCreate = mode === "create" || !policyId;
 
   const [loading, setLoading] = useState(!isCreate);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // If the policy is solely owned by a trust entity, surface that entity's id
+  // so we can seed a default primary beneficiary pointing at it (the canonical
+  // ILIT shape: trust is both owner and beneficiary).
+  const trustOwnerId = useMemo(() => {
+    const entityOwners = policyOwners.filter(
+      (o) => o.kind === "entity" && o.entityId,
+    );
+    if (entityOwners.length !== 1) return null;
+    const ent = entities.find((e) => e.id === entityOwners[0].entityId);
+    return ent && ent.entityType === "trust" ? ent.id : null;
+  }, [policyOwners, entities]);
+
+  // If the DB has no designations yet and the policy is trust-owned, seed a
+  // single primary row at 100% with `entityIdRef` pointing at the trust. The
+  // advisor can edit/remove this row like any other; Save (via the
+  // entityIdRef-aware PUT body) persists it. When the DB already has rows,
+  // leave them untouched.
+  const seededDesignations = useMemo<Designation[]>(() => {
+    if (designations.length > 0) return designations;
+    if (!trustOwnerId || !policyId) return designations;
+    return [
+      {
+        id: `seed-${trustOwnerId}`,
+        targetKind: "account",
+        accountId: policyId,
+        entityId: null,
+        tier: "primary",
+        familyMemberId: null,
+        externalBeneficiaryId: null,
+        entityIdRef: trustOwnerId,
+        householdRole: null,
+        percentage: 100,
+        sortOrder: 0,
+      },
+    ];
+  }, [designations, trustOwnerId, policyId]);
 
   useEffect(() => {
     if (isCreate) return;
@@ -421,7 +467,7 @@ export default function InsurancePolicyBeneficiariesTab({
       spouseFirstName={spouseFirstName}
       members={members}
       externals={externals}
-      initial={designations}
+      initial={seededDesignations}
     />
   );
 }
