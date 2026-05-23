@@ -17,7 +17,8 @@ import {
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
+import BalanceSheetTableView from "@/components/balance-sheet-table-view";
+import type { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -337,7 +338,7 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       };
 
   return (
-    <BalanceSheetView
+    <BalanceSheetTableView
       clientId={id}
       accounts={accountProps}
       liabilities={liabilityProps}
