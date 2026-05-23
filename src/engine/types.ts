@@ -649,6 +649,8 @@ export interface Account {
    */
   titlingType: "jtwros" | "community_property";
   owners: AccountOwner[];
+  /** For business-owned child accounts: the id of the parent business account. */
+  parentAccountId?: string | null;
 }
 
 export interface Income {
