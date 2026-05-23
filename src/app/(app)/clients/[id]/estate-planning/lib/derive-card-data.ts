@@ -48,12 +48,13 @@ export interface TrustCardData {
   /** Promissory notes (from notesReceivable) where this trust is the debtor (linkedTrustEntityId === entityId). */
   linkedNotes: LinkedNoteRow[];
   /**
-   * Split-interest snapshot for CLUT/CLAT trusts. Populated only when
-   * trustSubType = 'clt'. Drives the "Split-interest details" card panel.
+   * Split-interest snapshot for CLUT/CLAT/CRUT/CRAT trusts. Populated only when
+   * trustSubType = 'clt' or 'crt'. Drives the "Split-interest details" card panel.
    * `charityName` is resolved from externalBeneficiaries here so the card
    * doesn't have to do another lookup at render time.
    */
   splitInterest?: {
+    trustSubType: "clt" | "crt";
     inceptionYear: number;
     inceptionValue: number;
     payoutType: "unitrust" | "annuity";
@@ -202,6 +203,7 @@ export function deriveTrustCardData(
     const si = e.splitInterest;
     const splitInterest = si
       ? {
+          trustSubType: e.trustSubType as "clt" | "crt",
           inceptionYear: si.inceptionYear,
           inceptionValue: Number(si.inceptionValue),
           payoutType: si.payoutType,

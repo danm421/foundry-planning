@@ -99,6 +99,7 @@ describe("TrustCard", () => {
     const trust = makeTrustCardData({
       subType: "clt",
       splitInterest: {
+        trustSubType: "clt",
         inceptionYear: 2026,
         inceptionValue: 1_000_000,
         payoutType: "unitrust",
@@ -126,6 +127,7 @@ describe("TrustCard", () => {
     const trust = makeTrustCardData({
       subType: "clt",
       splitInterest: {
+        trustSubType: "clt",
         inceptionYear: 2026,
         inceptionValue: 1_000_000,
         payoutType: "annuity",
@@ -149,5 +151,30 @@ describe("TrustCard", () => {
   it("omits split-interest panel when splitInterest is undefined", () => {
     render(<TrustCard data={data} defaultExpanded />);
     expect(screen.queryByText(/split-interest details/i)).not.toBeInTheDocument();
+  });
+
+  it("renders CRT split-interest with charitable-deduction label", () => {
+    const trust = makeTrustCardData({
+      subType: "crt",
+      splitInterest: {
+        trustSubType: "crt",
+        inceptionYear: 2026,
+        inceptionValue: 1_000_000,
+        payoutType: "annuity",
+        payoutPercent: null,
+        payoutAmount: 60_000,
+        irc7520Rate: 0.04,
+        termType: "years",
+        termYears: 10,
+        charityName: "Acme Charity",
+        originalIncomeInterest: 486_654,
+        originalRemainderInterest: 513_346,
+      },
+    });
+    render(<TrustCard data={trust} defaultExpanded />);
+    expect(screen.getByText(/Charitable deduction \(remainder\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Income interest \(retained\)/)).toBeInTheDocument();
+    expect(screen.getByText(/\(CRAT\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/Remainder interest \(gift\)/)).not.toBeInTheDocument();
   });
 });

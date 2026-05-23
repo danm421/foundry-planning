@@ -39,7 +39,12 @@ export function isTrustTerminationYear(
   currentYear: number,
   deathYears: TerminationDeathYears,
 ): boolean {
-  if (trust.trustSubType !== "clt" || !trust.splitInterest) return false;
+  if (
+    (trust.trustSubType !== "clt" && trust.trustSubType !== "crt") ||
+    !trust.splitInterest
+  ) {
+    return false;
+  }
   const si = trust.splitInterest;
   switch (si.termType) {
     case "years":
@@ -66,16 +71,47 @@ export function isTrustTerminationYear(
   }
 }
 
+export interface TerminationOptions {
+  recipientMode?: "family" | "charity";
+  /** Required when recipientMode === "charity". Single recipient id. */
+  charityId?: string;
+}
+
 /**
  * Distributes the trust's remaining assets to primary remainder beneficiaries
  * by percentage. Caller is responsible for actually moving the assets — this
  * function only computes the bookkeeping breakdown. Rounding drift (sub-cent)
  * is reconciled to the largest share.
+ *
+ * When `options.recipientMode === "charity"`, the entire corpus is routed to
+ * the named charity (CRT remainder path). All designations are ignored.
  */
 export function distributeAtTermination(
   ctx: TerminationContext,
   totalAvailable: number,
+  options: TerminationOptions = {},
 ): TrustTerminationResult {
+  if (options.recipientMode === "charity") {
+    if (!options.charityId) {
+      throw new Error(
+        "distributeAtTermination: charityId is required when recipientMode='charity'",
+      );
+    }
+    return {
+      trustId: ctx.trust.id,
+      trustName: ctx.trust.name ?? ctx.trust.id,
+      totalDistributed: totalAvailable,
+      toBeneficiaries: [
+        {
+          designationId: `charity:${options.charityId}`,
+          recipientLabel: `Charity ${options.charityId}`,
+          externalBeneficiaryId: options.charityId,
+          amount: totalAvailable,
+        },
+      ],
+    };
+  }
+
   const primaries = ctx.designations.filter((d) => d.tier === "primary");
   if (primaries.length === 0) {
     return {

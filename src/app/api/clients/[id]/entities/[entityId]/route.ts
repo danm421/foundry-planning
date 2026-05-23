@@ -16,6 +16,7 @@ import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
+import { computeCrtInceptionInterests } from "@/lib/entities/compute-crt-inception";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 
 function deriveLegacyOwner(
@@ -354,12 +355,17 @@ export async function PUT(
       await db.delete(entityOwners).where(eq(entityOwners.entityId, entityId));
     }
 
-    if (patch.splitInterest && updated.trustSubType === "clt") {
+    if (
+      patch.splitInterest &&
+      (updated.trustSubType === "clt" || updated.trustSubType === "crt")
+    ) {
       const si = patch.splitInterest;
       const grantor = updated.grantor;
       if (grantor !== "client" && grantor !== "spouse") {
         return NextResponse.json(
-          { error: "grantor ('client' or 'spouse') is required for CLTs" },
+          {
+            error: `grantor ('client' or 'spouse') is required for ${updated.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
+          },
           { status: 400 },
         );
       }
@@ -397,31 +403,56 @@ export async function PUT(
         return year - parseInt(dob.slice(0, 4), 10);
       };
 
-      // For 'new' CLTs we compute income/remainder from inputs; for
-      // 'existing' the caller supplies historical values from the prior
-      // return and we trust them (origin-aware branch).
-      const isExistingClut = si.origin === "existing";
-      const interests = isExistingClut
+      const isExisting = si.origin === "existing";
+      const isCrt = updated.trustSubType === "crt";
+
+      // Normalize both compute paths to the same DB-row shape:
+      //   originalIncomeInterest    = the "income side" PV (gift for CLT, retained-income PV for CRT)
+      //   originalRemainderInterest = the "remainder side" PV (taxable gift for CLT, charitable deduction for CRT)
+      const interests = isExisting
         ? {
             originalIncomeInterest: si.originalIncomeInterest!,
             originalRemainderInterest: si.originalRemainderInterest!,
-            remainderFactor: undefined,
+            remainderFactor: undefined as number | undefined,
           }
-        : computeCltInceptionInterests({
-            inceptionValue: si.inceptionValue,
-            payoutType: si.payoutType,
-            payoutPercent: si.payoutPercent,
-            payoutAmount: si.payoutAmount,
-            irc7520Rate: si.irc7520Rate,
-            termType: si.termType,
-            termYears: si.termYears,
-            measuringLifeAge1: measuringLife1
-              ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
-              : undefined,
-            measuringLifeAge2: measuringLife2
-              ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
-              : undefined,
-          });
+        : isCrt
+          ? (() => {
+              const r = computeCrtInceptionInterests({
+                inceptionValue: si.inceptionValue,
+                payoutType: si.payoutType,
+                payoutPercent: si.payoutPercent,
+                payoutAmount: si.payoutAmount,
+                irc7520Rate: si.irc7520Rate,
+                termType: si.termType,
+                termYears: si.termYears,
+                measuringLifeAge1: measuringLife1
+                  ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
+                  : undefined,
+                measuringLifeAge2: measuringLife2
+                  ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
+                  : undefined,
+              });
+              return {
+                originalIncomeInterest: r.incomeInterest,
+                originalRemainderInterest: r.charitableDeduction,
+                remainderFactor: r.remainderFactor,
+              };
+            })()
+          : computeCltInceptionInterests({
+              inceptionValue: si.inceptionValue,
+              payoutType: si.payoutType,
+              payoutPercent: si.payoutPercent,
+              payoutAmount: si.payoutAmount,
+              irc7520Rate: si.irc7520Rate,
+              termType: si.termType,
+              termYears: si.termYears,
+              measuringLifeAge1: measuringLife1
+                ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
+                : undefined,
+              measuringLifeAge2: measuringLife2
+                ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
+                : undefined,
+            });
 
       const valuesToWrite = {
         entityId,
@@ -451,50 +482,51 @@ export async function PUT(
         await db.insert(trustSplitInterestDetails).values(valuesToWrite);
       }
 
-      // Auto-emit the remainder-interest gift only for new CLTs. Existing
-      // CLTs already filed this gift on the original §709. If a previous
-      // 'new'-mode save left an auto-emitted gift on this entity and the
-      // user later flipped origin to 'existing', delete that ledger row to
-      // avoid double-counting against the lifetime exemption.
-      if (isExistingClut) {
-        await db
-          .delete(gifts)
-          .where(
-            and(
-              eq(gifts.recipientEntityId, entityId),
-              eq(gifts.eventKind, "clt_remainder_interest"),
-            ),
-          );
-      } else {
-        const remainderAmount = interests.originalRemainderInterest.toString();
-        const noteText = `Auto-emitted at CLT '${updated.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`;
-        const updatedGift = await db
-          .update(gifts)
-          .set({
-            year: si.inceptionYear,
-            amount: remainderAmount,
-            grantor,
-            notes: noteText,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(gifts.recipientEntityId, entityId),
-              eq(gifts.eventKind, "clt_remainder_interest"),
-            ),
-          )
-          .returning({ id: gifts.id });
+      // Auto-emit the remainder-interest gift only for new CLTs. CRTs never
+      // emit a gift (income beneficiary = grantor / spouse). Existing CLTs
+      // already filed this gift on the original §709 — delete the auto-emitted
+      // row if origin was flipped to 'existing' to avoid double-counting.
+      if (!isCrt) {
+        if (isExisting) {
+          await db
+            .delete(gifts)
+            .where(
+              and(
+                eq(gifts.recipientEntityId, entityId),
+                eq(gifts.eventKind, "clt_remainder_interest"),
+              ),
+            );
+        } else {
+          const remainderAmount = interests.originalRemainderInterest.toString();
+          const noteText = `Auto-emitted at CLT '${updated.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`;
+          const updatedGift = await db
+            .update(gifts)
+            .set({
+              year: si.inceptionYear,
+              amount: remainderAmount,
+              grantor,
+              notes: noteText,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(gifts.recipientEntityId, entityId),
+                eq(gifts.eventKind, "clt_remainder_interest"),
+              ),
+            )
+            .returning({ id: gifts.id });
 
-        if (updatedGift.length === 0) {
-          await db.insert(gifts).values({
-            clientId: id,
-            year: si.inceptionYear,
-            amount: remainderAmount,
-            grantor,
-            recipientEntityId: entityId,
-            eventKind: "clt_remainder_interest",
-            notes: noteText,
-          });
+          if (updatedGift.length === 0) {
+            await db.insert(gifts).values({
+              clientId: id,
+              year: si.inceptionYear,
+              amount: remainderAmount,
+              grantor,
+              recipientEntityId: entityId,
+              eventKind: "clt_remainder_interest",
+              notes: noteText,
+            });
+          }
         }
       }
 

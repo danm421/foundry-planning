@@ -2,20 +2,20 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import CltFundingPicker, {
-  type CltFundingPickerAccount,
-} from "../clt-funding-picker";
-import type { CltFundingPick } from "@/lib/forms/clt-funding-diff";
+import SplitInterestFundingPicker, {
+  type SplitInterestFundingPickerAccount,
+} from "../split-interest-funding-picker";
+import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-funding-diff";
 
-const accounts: CltFundingPickerAccount[] = [
+const accounts: SplitInterestFundingPickerAccount[] = [
   { id: "a1", name: "Schwab Brokerage", subType: "Taxable", ownerSummary: "Client 100%", value: 850_000 },
   { id: "a2", name: "Joint Vanguard", subType: "Taxable", ownerSummary: "Joint 50/50", value: 600_000 },
 ];
 
-function renderPicker(overrides: Partial<React.ComponentProps<typeof CltFundingPicker>> = {}) {
+function renderPicker(overrides: Partial<React.ComponentProps<typeof SplitInterestFundingPicker>> = {}) {
   const onChange = vi.fn();
   const result = render(
-    <CltFundingPicker
+    <SplitInterestFundingPicker
       accounts={accounts}
       picks={[]}
       inceptionValue={0}
@@ -27,7 +27,7 @@ function renderPicker(overrides: Partial<React.ComponentProps<typeof CltFundingP
   return { onChange, ...result };
 }
 
-describe("<CltFundingPicker>", () => {
+describe("<SplitInterestFundingPicker>", () => {
   it("renders a closed disclosure trigger with the empty placeholder", () => {
     renderPicker();
     const trigger = screen.getByRole("button", { name: /select assets to fund the trust/i });
@@ -72,7 +72,7 @@ describe("<CltFundingPicker>", () => {
   });
 
   it("shows the count + total in the closed trigger when picks exist", () => {
-    const picks: CltFundingPick[] = [
+    const picks: SplitInterestFundingPick[] = [
       { kind: "asset", accountId: "a1", percent: 1.0 },
       { kind: "cash", grantor: "client", amount: 50_000 },
     ];
@@ -91,7 +91,7 @@ describe("<CltFundingPicker>", () => {
   });
 
   it("calls onChange with the pick removed when an already-checked asset is unticked", () => {
-    const picks: CltFundingPick[] = [
+    const picks: SplitInterestFundingPick[] = [
       { kind: "asset", accountId: "a1", percent: 1.0 },
     ];
     const { onChange } = renderPicker({ picks });

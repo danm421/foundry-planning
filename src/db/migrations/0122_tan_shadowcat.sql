@@ -1,0 +1,1 @@
+ALTER TYPE "public"."trust_sub_type" ADD VALUE 'crt';

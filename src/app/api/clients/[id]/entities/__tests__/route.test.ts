@@ -645,3 +645,206 @@ describe("POST /api/clients/[id]/entities — CLT creation", () => {
     ).toBe(true);
   });
 });
+
+// ── CRT creation tests ───────────────────────────────────────────────────────
+
+describe("POST /api/clients/[id]/entities — CRT", () => {
+  it("creates a new CRT with charitable deduction stored in the remainder column", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Test CRAT",
+        entityType: "trust",
+        trustSubType: "crt",
+        isIrrevocable: true,
+        grantor: "client",
+        isGrantor: true,
+        splitInterest: {
+          origin: "new",
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "annuity",
+          payoutAmount: 60_000,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.trustSubType).toBe("crt");
+
+    const [details] = await db
+      .select()
+      .from(trustSplitInterestDetails)
+      .where(eq(trustSplitInterestDetails.entityId, created.id));
+    expect(details).toBeDefined();
+    // CRT charitable deduction = 1,000,000 − 60,000 × 8.110896 = 513,346
+    // stored in originalRemainderInterest (semantic flip vs CLT)
+    expect(Number(details.originalRemainderInterest)).toBeCloseTo(513_346, 0);
+    expect(Number(details.originalIncomeInterest)).toBeCloseTo(486_654, 0);
+
+    // CRTs MUST NOT auto-emit a gift.
+    const giftRows = await db
+      .select()
+      .from(gifts)
+      .where(eq(gifts.recipientEntityId, created.id));
+    expect(giftRows).toHaveLength(0);
+  });
+
+  it("creates a CRT with origin=existing and stores caller-supplied values verbatim", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Existing CRT",
+        entityType: "trust",
+        trustSubType: "crt",
+        isIrrevocable: true,
+        grantor: "spouse",
+        isGrantor: true,
+        splitInterest: {
+          origin: "existing",
+          inceptionYear: 2020,
+          inceptionValue: 1_500_000,
+          payoutType: "unitrust",
+          payoutPercent: 0.07,
+          irc7520Rate: 0.018,
+          termType: "years",
+          termYears: 12,
+          charityId,
+          originalIncomeInterest: 700_000,
+          originalRemainderInterest: 800_000,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+    const created = await res.json();
+
+    const [details] = await db
+      .select()
+      .from(trustSplitInterestDetails)
+      .where(eq(trustSplitInterestDetails.entityId, created.id));
+    expect(Number(details.originalRemainderInterest)).toBe(800_000);
+    expect(Number(details.originalIncomeInterest)).toBe(700_000);
+
+    // Still no gift on origin=existing.
+    const giftRows = await db
+      .select()
+      .from(gifts)
+      .where(eq(gifts.recipientEntityId, created.id));
+    expect(giftRows).toHaveLength(0);
+  });
+
+  it("rejects a term-certain CRT with termYears > 20", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Too-long CRT",
+        entityType: "trust",
+        trustSubType: "crt",
+        isIrrevocable: true,
+        grantor: "client",
+        isGrantor: true,
+        splitInterest: {
+          origin: "new",
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "annuity",
+          payoutAmount: 50_000,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 21,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts a CRT with a sub-5% payout (warnings are soft, not blocking)", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Low-payout CRUT",
+        entityType: "trust",
+        trustSubType: "crt",
+        isIrrevocable: true,
+        grantor: "client",
+        isGrantor: true,
+        splitInterest: {
+          origin: "new",
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "unitrust",
+          payoutPercent: 0.04,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+  });
+});
+
+// ── CRT PUT tests ─────────────────────────────────────────────────────────────
+
+describe("PUT /api/clients/[id]/entities/[entityId] — CRT splitInterest", () => {
+  it("PUT updates CRT splitInterest and recomputes charitable deduction", async () => {
+    // 1. Create initial CRT (CRAT with $60k/year × 10yr term)
+    const createRes = await POST(
+      makePostReq({
+        name: "CRT for PUT test",
+        entityType: "trust",
+        trustSubType: "crt",
+        isIrrevocable: true,
+        grantor: "client",
+        isGrantor: true,
+        splitInterest: {
+          origin: "new",
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "annuity",
+          payoutAmount: 60_000,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(createRes.status).toBe(201);
+    const created = await createRes.json();
+
+    // 2. PUT update raising payoutAmount to $80k/year
+    const putRes = await PUT(
+      makePutReq({
+        splitInterest: {
+          origin: "new",
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "annuity",
+          payoutAmount: 80_000,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId, entityId: created.id }) },
+    );
+    expect(putRes.status).toBe(200);
+
+    const [details] = await db
+      .select()
+      .from(trustSplitInterestDetails)
+      .where(eq(trustSplitInterestDetails.entityId, created.id));
+    // a_n(4%, 10) = 8.110896 → income = 80,000 × 8.110896 = 648,872; deduction = 351,128
+    expect(Number(details.originalRemainderInterest)).toBeCloseTo(351_128, 0);
+    expect(Number(details.originalIncomeInterest)).toBeCloseTo(648_872, 0);
+  });
+});

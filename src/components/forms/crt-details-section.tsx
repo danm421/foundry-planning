@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
-import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
+import { computeCrtInceptionInterests } from "@/lib/entities/compute-crt-inception";
+import { computeCrtQualificationWarnings, type CrtWarning } from "@/lib/entities/crt-qualification";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import SplitInterestFundingPicker, {
   type SplitInterestFundingPickerAccount,
@@ -11,28 +12,24 @@ import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-fundin
 import { FieldTooltip } from "./field-tooltip";
 
 const TERM_TYPE_LABELS = {
-  years: "Years (term certain)",
+  years: "Years (term certain, ≤ 20)",
   single_life: "Single life",
   joint_life: "Joint life (last survivor)",
   shorter_of_years_or_life: "Shorter of years or life",
 } as const;
 
-interface CltDetailsSectionProps {
+interface CrtDetailsSectionProps {
   value: TrustSplitInterestInput;
   onChange: (next: TrustSplitInterestInput) => void;
   familyMembers: { id: string; firstName: string; dateOfBirth: string | null }[];
   charities: { id: string; name: string }[];
-  /** Required for origin === "new". Filtered list of accounts available for funding. */
   fundingAccounts?: SplitInterestFundingPickerAccount[];
-  /** Required for origin === "new". Current picks. */
   fundingPicks?: SplitInterestFundingPick[];
-  /** Required for origin === "new". Picks change handler. */
   onFundingPicksChange?: (next: SplitInterestFundingPick[]) => void;
-  /** Default grantor for new cash picks (the trust's grantor). Defaults to "client". */
   defaultGrantor?: "client" | "spouse";
 }
 
-export default function CltDetailsSection({
+export default function CrtDetailsSection({
   value,
   onChange,
   familyMembers,
@@ -41,7 +38,7 @@ export default function CltDetailsSection({
   fundingPicks,
   onFundingPicksChange,
   defaultGrantor,
-}: CltDetailsSectionProps) {
+}: CrtDetailsSectionProps) {
   const origin = value.origin ?? "new";
   const isNew = origin === "new";
   const showTermYears =
@@ -58,7 +55,7 @@ export default function CltDetailsSection({
 
   const preview = useMemo(() => {
     try {
-      return computeCltInceptionInterests({
+      return computeCrtInceptionInterests({
         inceptionValue: value.inceptionValue,
         payoutType: value.payoutType,
         payoutPercent: value.payoutPercent,
@@ -74,6 +71,23 @@ export default function CltDetailsSection({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, familyMembers]);
+
+  const warnings: CrtWarning[] = useMemo(() => {
+    if (!preview) return [];
+    return computeCrtQualificationWarnings({
+      inceptionValue: value.inceptionValue,
+      payoutType: value.payoutType,
+      payoutPercent: value.payoutPercent,
+      payoutAmount: value.payoutAmount,
+      irc7520Rate: value.irc7520Rate,
+      termType: value.termType,
+      termYears: value.termYears,
+      measuringLifeAge1: ageAt(value.measuringLife1Id, value.inceptionYear),
+      measuringLifeAge2: ageAt(value.measuringLife2Id, value.inceptionYear),
+      charitableDeduction: preview.charitableDeduction,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, familyMembers, preview]);
 
   const termEndYear = useMemo(() => {
     if (value.termType === "years" && value.termYears) {
@@ -96,13 +110,13 @@ export default function CltDetailsSection({
 
   return (
     <fieldset className="rounded-md border border-hair p-4 space-y-3">
-      <legend className="px-2 text-sm font-semibold text-ink">CLT Details</legend>
+      <legend className="px-2 text-sm font-semibold text-ink">CRT Details</legend>
 
-      {/* Origin: new (funded in plan) vs existing (funded historically) */}
+      {/* Origin radio (same UX as CLT) */}
       <div className="space-y-1">
         <div className="flex items-center gap-1.5">
           <span className={fieldLabelClassName}>Trust origin</span>
-          <FieldTooltip text="New: we compute the income & remainder interest from the inputs below and emit the remainder-interest gift on save. Existing: enter the historical values from the return — no fresh deduction or gift is emitted, we just project payments and termination forward." />
+          <FieldTooltip text="New: we compute the charitable deduction & income interest from the inputs below. Existing: enter the values that were recorded when the CRT was funded — they were calculated from the §7520 rate and mortality table in effect at that time." />
         </div>
         <div role="radiogroup" aria-label="Trust origin" className="flex gap-2">
           {(
@@ -133,17 +147,17 @@ export default function CltDetailsSection({
         </div>
       </div>
 
-      {/* Payment type: CLUT (unitrust — % of trust value) vs CLAT (annuity — fixed $) */}
+      {/* Payment type radio: CRUT vs CRAT */}
       <div className="space-y-1">
         <div className="flex items-center gap-1.5">
           <span className={fieldLabelClassName}>Payment type</span>
-          <FieldTooltip text="CLUT pays a percentage of trust value each year (recalculated as the trust grows or shrinks). CLAT pays a fixed dollar amount regardless of trust value. Locked for existing trusts — it was set at funding." />
+          <FieldTooltip text="CRUT pays a percentage of trust value each year (recalculated as the trust grows or shrinks). CRAT pays a fixed dollar amount regardless of trust value. Higher % → smaller charitable deduction (more income retained)." />
         </div>
         <div role="radiogroup" aria-label="Payment type" className="flex gap-2">
           {(
             [
-              ["unitrust", "CLUT", "CLUT (Unitrust — % of trust value)"],
-              ["annuity", "CLAT", "CLAT (Annuity — fixed $ amount)"],
+              ["unitrust", "CRUT", "CRUT (Unitrust — % of trust value)"],
+              ["annuity", "CRAT", "CRAT (Annuity — fixed $ amount)"],
             ] as const
           ).map(([val, ariaName, label]) => {
             const active = value.payoutType === val;
@@ -182,16 +196,17 @@ export default function CltDetailsSection({
         </div>
       </div>
 
+      {/* Inception year / FMV / payout / 7520 / term */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <div className="flex items-center gap-1.5">
-            <label className={fieldLabelClassName} htmlFor="clt-inception-year">
+            <label className={fieldLabelClassName} htmlFor="crt-inception-year">
               {isNew ? "Inception year" : "Original funding year"}
             </label>
             <FieldTooltip text="Year the trust is (or was) funded. Drives the §7520 lookup and the start year for the payment stream the engine projects forward." />
           </div>
           <input
-            id="clt-inception-year"
+            id="crt-inception-year"
             type="number"
             className={inputClassName}
             value={value.inceptionYear}
@@ -201,14 +216,14 @@ export default function CltDetailsSection({
 
         <div>
           <div className="flex items-center gap-1.5">
-            <label className={fieldLabelClassName} htmlFor="clt-fmv">
+            <label className={fieldLabelClassName} htmlFor="crt-fmv">
               {isNew ? "Funding-year FMV" : "FMV at original funding"}
             </label>
-            <FieldTooltip text="Fair market value of the assets contributed at inception. Anchors the income-interest calculation and sizes the taxable remainder gift the engine emits." />
+            <FieldTooltip text="Fair market value of the assets contributed at inception. Anchors the charitable-deduction calculation." />
           </div>
           {isNew ? (
             <SplitInterestFundingPicker
-              id="clt-fmv"
+              id="crt-fmv"
               accounts={fundingAccounts ?? []}
               picks={fundingPicks ?? []}
               inceptionValue={value.inceptionValue}
@@ -217,7 +232,7 @@ export default function CltDetailsSection({
             />
           ) : (
             <input
-              id="clt-fmv"
+              id="crt-fmv"
               type="number"
               min={0}
               step={1}
@@ -231,14 +246,14 @@ export default function CltDetailsSection({
         {value.payoutType === "unitrust" ? (
           <div>
             <div className="flex items-center gap-1.5">
-              <label className={fieldLabelClassName} htmlFor="clt-payout">
+              <label className={fieldLabelClassName} htmlFor="crt-payout">
                 Payout percentage
               </label>
-              <FieldTooltip text="Annual distribution as a percent of trust FMV — recomputed each year as the trust grows or shrinks. Higher percentages produce a larger charitable deduction and a smaller taxable remainder gift." />
+              <FieldTooltip text="Annual distribution as a percent of trust FMV — paid to the income beneficiary (grantor / spouse). §664 requires 5%-50%." />
             </div>
             <div className="relative">
               <input
-                id="clt-payout"
+                id="crt-payout"
                 type="number"
                 step="0.0001"
                 min={0}
@@ -257,14 +272,14 @@ export default function CltDetailsSection({
         ) : (
           <div>
             <div className="flex items-center gap-1.5">
-              <label className={fieldLabelClassName} htmlFor="clt-payout-amount">
+              <label className={fieldLabelClassName} htmlFor="crt-payout-amount">
                 Annual payment
               </label>
-              <FieldTooltip text="Fixed dollar amount paid to the charity each year regardless of trust value. Higher payments produce a larger charitable deduction and a smaller taxable remainder gift." />
+              <FieldTooltip text="Fixed dollar amount paid to the income beneficiary each year regardless of trust value. §664 requires year-1 payout between 5% and 50% of inception value." />
             </div>
             <div className="relative">
               <input
-                id="clt-payout-amount"
+                id="crt-payout-amount"
                 type="number"
                 step="1"
                 min={0}
@@ -286,14 +301,14 @@ export default function CltDetailsSection({
 
         <div>
           <div className="flex items-center gap-1.5">
-            <label className={fieldLabelClassName} htmlFor="clt-7520">
+            <label className={fieldLabelClassName} htmlFor="crt-7520">
               IRC §7520 rate
             </label>
-            <FieldTooltip text="IRS-published assumed earnings rate used to discount future trust payments. Locked at inception per Reg §1.7520-2 — drives the income-vs-remainder split that determines the charitable deduction and remainder gift." />
+            <FieldTooltip text="IRS-published assumed earnings rate used to value future trust payments. Locked at inception per Reg §1.7520-2 — drives the income-vs-deduction split." />
           </div>
           <div className="relative">
             <input
-              id="clt-7520"
+              id="crt-7520"
               type="number"
               step="0.001"
               min={0}
@@ -311,11 +326,11 @@ export default function CltDetailsSection({
         </div>
 
         <div>
-          <label className={fieldLabelClassName} htmlFor="clt-term-type">
+          <label className={fieldLabelClassName} htmlFor="crt-term-type">
             Term type
           </label>
           <select
-            id="clt-term-type"
+            id="crt-term-type"
             className={selectClassName}
             value={value.termType}
             onChange={(e) =>
@@ -335,13 +350,14 @@ export default function CltDetailsSection({
 
         {showTermYears && (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clt-term-years">
+            <label className={fieldLabelClassName} htmlFor="crt-term-years">
               Term years
             </label>
             <input
-              id="clt-term-years"
+              id="crt-term-years"
               type="number"
               min={1}
+              max={20}
               className={inputClassName}
               value={value.termYears ?? ""}
               onChange={(e) =>
@@ -356,11 +372,11 @@ export default function CltDetailsSection({
 
         {showLife1 && (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clt-life-1">
+            <label className={fieldLabelClassName} htmlFor="crt-life-1">
               Measuring life 1
             </label>
             <select
-              id="clt-life-1"
+              id="crt-life-1"
               className={selectClassName}
               value={value.measuringLife1Id ?? ""}
               onChange={(e) =>
@@ -379,11 +395,11 @@ export default function CltDetailsSection({
 
         {showLife2 && (
           <div>
-            <label className={fieldLabelClassName} htmlFor="clt-life-2">
+            <label className={fieldLabelClassName} htmlFor="crt-life-2">
               Measuring life 2
             </label>
             <select
-              id="clt-life-2"
+              id="crt-life-2"
               className={selectClassName}
               value={value.measuringLife2Id ?? ""}
               onChange={(e) =>
@@ -401,11 +417,11 @@ export default function CltDetailsSection({
         )}
 
         <div className="col-span-2">
-          <label className={fieldLabelClassName} htmlFor="clt-charity">
-            Charitable beneficiary
+          <label className={fieldLabelClassName} htmlFor="crt-charity">
+            Remainder charity
           </label>
           <select
-            id="clt-charity"
+            id="crt-charity"
             className={selectClassName}
             value={value.charityId ?? ""}
             onChange={(e) => set("charityId", e.target.value)}
@@ -424,13 +440,13 @@ export default function CltDetailsSection({
         <div className="rounded-md bg-card-2 p-3 text-sm space-y-1">
           <div className="font-medium text-ink">Computed at inception</div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-            <span className="text-ink-2">Income interest (charitable deduction)</span>
-            <span data-testid="clt-income-interest" className="text-right font-mono">
-              {preview ? `$${preview.originalIncomeInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
+            <span className="text-ink-2">Charitable deduction (remainder interest)</span>
+            <span data-testid="crt-charitable-deduction" className="text-right font-mono">
+              {preview ? `$${preview.charitableDeduction.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
             </span>
-            <span className="text-ink-2">Remainder interest (taxable gift)</span>
-            <span data-testid="clt-remainder-interest" className="text-right font-mono">
-              {preview ? `$${preview.originalRemainderInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
+            <span className="text-ink-2">Income interest (retained — no gift)</span>
+            <span data-testid="crt-income-interest" className="text-right font-mono">
+              {preview ? `$${preview.incomeInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
             </span>
             {termEndYear !== null && (
               <>
@@ -444,36 +460,16 @@ export default function CltDetailsSection({
         <div className="rounded-md bg-card-2 p-3 space-y-3">
           <div className="text-sm font-medium text-ink">Historical values from the return</div>
           <p className="text-xs text-ink-3">
-            Enter the values that were recorded when the CLT was funded — they
-            were calculated from the §7520 rate and mortality table in effect at
-            that time.
+            Enter the values that were recorded when the CRT was funded — they were
+            calculated from the §7520 rate and mortality table in effect at that time.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={fieldLabelClassName} htmlFor="clt-original-income">
-                Income interest (deduction taken)
+              <label className={fieldLabelClassName} htmlFor="crt-original-deduction">
+                Charitable deduction filed
               </label>
               <input
-                id="clt-original-income"
-                type="number"
-                min={0}
-                step={1}
-                className={inputClassName}
-                value={value.originalIncomeInterest ?? ""}
-                onChange={(e) =>
-                  set(
-                    "originalIncomeInterest",
-                    e.target.value === "" ? undefined : Number(e.target.value),
-                  )
-                }
-              />
-            </div>
-            <div>
-              <label className={fieldLabelClassName} htmlFor="clt-original-remainder">
-                Remainder interest (gift filed)
-              </label>
-              <input
-                id="clt-original-remainder"
+                id="crt-original-deduction"
                 type="number"
                 min={0}
                 step={1}
@@ -487,6 +483,25 @@ export default function CltDetailsSection({
                 }
               />
             </div>
+            <div>
+              <label className={fieldLabelClassName} htmlFor="crt-original-income">
+                Income interest (retained)
+              </label>
+              <input
+                id="crt-original-income"
+                type="number"
+                min={0}
+                step={1}
+                className={inputClassName}
+                value={value.originalIncomeInterest ?? ""}
+                onChange={(e) =>
+                  set(
+                    "originalIncomeInterest",
+                    e.target.value === "" ? undefined : Number(e.target.value),
+                  )
+                }
+              />
+            </div>
             {termEndYear !== null && (
               <div className="col-span-2 text-xs text-ink-3">
                 Term ends {termEndYear} (based on original funding year + term).
@@ -494,6 +509,17 @@ export default function CltDetailsSection({
             )}
           </div>
         </div>
+      )}
+
+      {warnings.length > 0 && (
+        <ul data-testid="crt-warnings" className="space-y-1 rounded-md border border-warn/40 bg-warn/5 p-2 text-xs text-warn">
+          {warnings.map((w) => (
+            <li key={w.code} className="flex gap-1.5">
+              <span aria-hidden>⚠</span>
+              <span>{w.message}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </fieldset>
   );

@@ -478,8 +478,8 @@ export interface EntitySummary {
    *  (e.g. a trust that holds the business). Sum may be < 1 when legacy data
    *  has unassigned slack. */
   owners?: import("./ownership").EntityOwner[];
-  /** Frozen split-interest snapshot for CLUT/CLAT trusts. Populated only when
-   *  trustSubType = 'clt'. Captures inception-time inputs and computed
+  /** Frozen split-interest snapshot for CLT and CRT trusts. Populated only when
+   *  trustSubType = 'clt' or 'crt'. Captures inception-time inputs and computed
    *  income/remainder interests so engine passes don't recompute mid-projection. */
   splitInterest?: TrustSplitInterestSnapshot;
 }

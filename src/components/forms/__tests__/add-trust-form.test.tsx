@@ -493,6 +493,100 @@ describe("<AddTrustForm> CLT funding picks", () => {
 });
 
 // ---------------------------------------------------------------------------
+// CRT submission test (Task 11)
+// ---------------------------------------------------------------------------
+
+/** One brokerage account eligible for CRT funding. */
+const CRT_ACCOUNT = {
+  id: "acct-crt",
+  name: "Vanguard Brokerage",
+  value: 1_000_000,
+  subType: "brokerage",
+  isDefaultChecking: false,
+  owners: [{ kind: "family_member" as const, familyMemberId: "fm-c", percent: 1.0 }],
+};
+
+/** External charity for CRT remainder beneficiary. */
+const CRT_CHARITY: import("../../family-view").ExternalBeneficiary = {
+  id: "00000000-0000-0000-0000-000000000bbb",
+  name: "Test Foundation",
+  kind: "charity",
+};
+
+describe("<AddTrustForm> CRT submission", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("submits a CRT entity with splitInterest payload and does not emit a gift", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (typeof url === "string" && url.includes("/entities") && init?.method === "POST") {
+        return new Response(JSON.stringify({ id: "ent-new", trustSubType: "crt" }), { status: 201 });
+      }
+      return new Response("[]", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AddTrustForm
+        {...defaultProps("details")}
+        editing={undefined}
+        accounts={[CRT_ACCOUNT]}
+        externals={[CRT_CHARITY]}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: "Test CRT" } });
+    fireEvent.change(screen.getByLabelText(/^Type/i), { target: { value: "crt" } });
+
+    // Open the funding picker (button is labelled by the "Funding-year FMV" label)
+    fireEvent.click(screen.getByRole("button", { name: /funding-year fmv/i }));
+
+    // Pick the first asset checkbox (Vanguard Brokerage / acct-crt)
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[0]);
+
+    // Close the popover by clicking Done
+    fireEvent.click(screen.getByRole("button", { name: /done/i }));
+
+    // Select the remainder charity
+    const charitySelect = screen.getByLabelText(/Remainder charity/i);
+    fireEvent.change(charitySelect, { target: { value: CRT_CHARITY.id } });
+
+    // Submit the form
+    const form = document.getElementById("add-trust-form")!;
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const postCall = fetchMock.mock.calls.find(
+      ([url, init]: [string, RequestInit | undefined]) =>
+        typeof url === "string" && url.includes("/entities") && init?.method === "POST",
+    );
+    expect(postCall).toBeDefined();
+    const body = JSON.parse((postCall![1] as RequestInit).body as string);
+    expect(body.trustSubType).toBe("crt");
+    expect(body.splitInterest).toBeDefined();
+    expect(body.splitInterest.payoutType).toBe("unitrust");
+    expect(body.splitInterest.payoutPercent).toBeCloseTo(0.06);
+
+    // CRT shares the same splitInterestFundingPicks / diffSplitInterestFundingPicks
+    // path as CLT: picking one asset generates exactly one gift POST for the
+    // inception-year funding transfer. There is no *extra* auto-emitted gift
+    // (e.g. a remainder-interest gift) beyond the funding pick ops.
+    const giftPosts = fetchMock.mock.calls.filter(
+      ([url, init]: [string, RequestInit | undefined]) =>
+        typeof url === "string" && url.includes("/gifts") && init?.method === "POST",
+    );
+    expect(giftPosts).toHaveLength(1);
+    const giftBody = JSON.parse((giftPosts[0][1] as RequestInit).body as string);
+    expect(giftBody.recipientEntityId).toBe("ent-new");
+    expect(giftBody.accountId).toBe("acct-crt");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // designationsToRows / rowsToDesignationPayload round-trip (regression: distributionForm)
 // ---------------------------------------------------------------------------
 
