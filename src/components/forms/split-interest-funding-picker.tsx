@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CltFundingPick } from "@/lib/forms/clt-funding-diff";
+import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-funding-diff";
 import { inputBaseClassName } from "./input-styles";
 import { formatCompact } from "@/lib/format-compact";
 
-export interface CltFundingPickerAccount {
+export interface SplitInterestFundingPickerAccount {
   id: string;
   name: string;
   subType?: string;
@@ -13,12 +13,12 @@ export interface CltFundingPickerAccount {
   value: number;
 }
 
-interface CltFundingPickerProps {
-  accounts: CltFundingPickerAccount[];
-  picks: CltFundingPick[];
+interface SplitInterestFundingPickerProps {
+  accounts: SplitInterestFundingPickerAccount[];
+  picks: SplitInterestFundingPick[];
   inceptionValue: number;
   defaultGrantor: "client" | "spouse";
-  onChange: (next: CltFundingPick[]) => void;
+  onChange: (next: SplitInterestFundingPick[]) => void;
   /** Optional DOM id for the trigger button — used for label-htmlFor association. */
   id?: string;
 }
@@ -29,33 +29,33 @@ const MONEY_FMT = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-function summary(picks: CltFundingPick[], inceptionValue: number): string {
+function summary(picks: SplitInterestFundingPick[], inceptionValue: number): string {
   const count = picks.length;
   if (count === 0) return "Select assets to fund the trust";
   const noun = count === 1 ? "row" : "rows";
   return `${count} ${noun} · ${formatCompact(inceptionValue)}`;
 }
 
-function findAssetPick(picks: CltFundingPick[], accountId: string) {
+function findAssetPick(picks: SplitInterestFundingPick[], accountId: string) {
   return picks.find((p) => p.kind === "asset" && p.accountId === accountId) as
-    | (CltFundingPick & { kind: "asset" })
+    | (SplitInterestFundingPick & { kind: "asset" })
     | undefined;
 }
 
-function findCashPick(picks: CltFundingPick[]) {
+function findCashPick(picks: SplitInterestFundingPick[]) {
   return picks.find((p) => p.kind === "cash") as
-    | (CltFundingPick & { kind: "cash" })
+    | (SplitInterestFundingPick & { kind: "cash" })
     | undefined;
 }
 
-export default function CltFundingPicker({
+export default function SplitInterestFundingPicker({
   accounts,
   picks,
   inceptionValue,
   defaultGrantor,
   onChange,
   id,
-}: CltFundingPickerProps) {
+}: SplitInterestFundingPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -86,7 +86,7 @@ export default function CltFundingPicker({
 
   const cashPick = findCashPick(picks);
 
-  function toggleAsset(account: CltFundingPickerAccount) {
+  function toggleAsset(account: SplitInterestFundingPickerAccount) {
     const existing = findAssetPick(picks, account.id);
     if (existing) {
       onChange(picks.filter((p) => p !== existing));

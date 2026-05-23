@@ -4,10 +4,10 @@ import { useMemo } from "react";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
-import CltFundingPicker, {
-  type CltFundingPickerAccount,
-} from "./clt-funding-picker";
-import type { CltFundingPick } from "@/lib/forms/clt-funding-diff";
+import SplitInterestFundingPicker, {
+  type SplitInterestFundingPickerAccount,
+} from "./split-interest-funding-picker";
+import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-funding-diff";
 import { FieldTooltip } from "./field-tooltip";
 
 const TERM_TYPE_LABELS = {
@@ -23,11 +23,11 @@ interface CltDetailsSectionProps {
   familyMembers: { id: string; firstName: string; dateOfBirth: string | null }[];
   charities: { id: string; name: string }[];
   /** Required for origin === "new". Filtered list of accounts available for funding. */
-  fundingAccounts?: CltFundingPickerAccount[];
+  fundingAccounts?: SplitInterestFundingPickerAccount[];
   /** Required for origin === "new". Current picks. */
-  fundingPicks?: CltFundingPick[];
+  fundingPicks?: SplitInterestFundingPick[];
   /** Required for origin === "new". Picks change handler. */
-  onFundingPicksChange?: (next: CltFundingPick[]) => void;
+  onFundingPicksChange?: (next: SplitInterestFundingPick[]) => void;
   /** Default grantor for new cash picks (the trust's grantor). Defaults to "client". */
   defaultGrantor?: "client" | "spouse";
 }
@@ -207,7 +207,7 @@ export default function CltDetailsSection({
             <FieldTooltip text="Fair market value of the assets contributed at inception. Anchors the income-interest calculation and sizes the taxable remainder gift the engine emits." />
           </div>
           {isNew ? (
-            <CltFundingPicker
+            <SplitInterestFundingPicker
               id="clt-fmv"
               accounts={fundingAccounts ?? []}
               picks={fundingPicks ?? []}

@@ -30,10 +30,10 @@ import CltDetailsSection from "./clt-details-section";
 import { FieldTooltip } from "./field-tooltip";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import {
-  diffCltFundingPicks,
-  type CltFundingPick,
-} from "@/lib/forms/clt-funding-diff";
-import type { CltFundingPickerAccount } from "./clt-funding-picker";
+  diffSplitInterestFundingPicks,
+  type SplitInterestFundingPick,
+} from "@/lib/forms/split-interest-funding-diff";
+import type { SplitInterestFundingPickerAccount } from "./split-interest-funding-picker";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
 
@@ -258,8 +258,8 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   }));
 
   // Picks for the CLT funding-year FMV dropdown. Seeded from inception-year asset/cash transfers when editing.
-  const [cltFundingPicks, setCltFundingPicks] = useState<CltFundingPick[]>([]);
-  const [originalCltFundingPicks, setOriginalCltFundingPicks] = useState<CltFundingPick[]>([]);
+  const [splitInterestFundingPicks, setSplitInterestFundingPicks] = useState<SplitInterestFundingPick[]>([]);
+  const [originalSplitInterestFundingPicks, setOriginalSplitInterestFundingPicks] = useState<SplitInterestFundingPick[]>([]);
 
   // ── Dirty-tracking ──────────────────────────────────────────────────────────
 
@@ -270,12 +270,12 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     grantorStatusEndYear, crummeyPowers, sprinkleProvisions, notes,
     distributionMode, distributionAmount, distributionPercent,
     incomeRows, remainderRows,
-    ...(trustSubType === "clt" ? { splitInterest, cltFundingPicks } : {}),
+    ...(trustSubType === "clt" ? { splitInterest, splitInterestFundingPicks } : {}),
   }), [
     name, trustSubType, isIrrevocable, isGrantor, grantor, trustee, trustEnds,
     grantorStatusEndYear, crummeyPowers, sprinkleProvisions, notes,
     distributionMode, distributionAmount, distributionPercent,
-    incomeRows, remainderRows, splitInterest, cltFundingPicks,
+    incomeRows, remainderRows, splitInterest, splitInterestFundingPicks,
   ]);
 
   // Seeded to the current snapshot on mount so a freshly-opened dialog starts clean.
@@ -335,7 +335,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     if (splitInterest.origin !== "new") return;
     if (!editing) return; // create mode has no fetched gifts to seed from
     const year = splitInterest.inceptionYear;
-    const seeded: CltFundingPick[] = [];
+    const seeded: SplitInterestFundingPick[] = [];
     for (const ev of transferEvents) {
       if (ev.year !== year) continue;
       if (ev.kind === "asset") {
@@ -359,11 +359,11 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       }
       // liability_only: not in scope — left on the Transfers tab.
     }
-    setCltFundingPicks(seeded);
-    setOriginalCltFundingPicks(seeded);
+    setSplitInterestFundingPicks(seeded);
+    setOriginalSplitInterestFundingPicks(seeded);
   }, [trustSubType, splitInterest.origin, splitInterest.inceptionYear, transferEvents, accounts, editing]);
 
-  const fundingAccounts = useMemo<CltFundingPickerAccount[]>(() => {
+  const fundingAccounts = useMemo<SplitInterestFundingPickerAccount[]>(() => {
     if (trustSubType !== "clt") return [];
     const trustId = editing?.id;
     return (accounts ?? [])
@@ -398,7 +398,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   useEffect(() => {
     if (trustSubType !== "clt") return;
     if (splitInterest.origin !== "new") return;
-    const total = cltFundingPicks.reduce((sum, p) => {
+    const total = splitInterestFundingPicks.reduce((sum, p) => {
       if (p.kind === "asset") {
         const acct = fundingAccounts.find((a) => a.id === p.accountId);
         if (!acct) return sum;
@@ -410,7 +410,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       setSplitInterest((prev) => ({ ...prev, inceptionValue: total }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cltFundingPicks, fundingAccounts, trustSubType, splitInterest.origin]);
+  }, [splitInterestFundingPicks, fundingAccounts, trustSubType, splitInterest.origin]);
 
   // ── Asset tab op handler ───────────────────────────────────────────────────
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
@@ -519,10 +519,10 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       return { ok: false, error: "Distribution mode is set but no income beneficiaries are listed." };
     }
     if (trustSubType === "clt" && splitInterest.origin === "new") {
-      if (cltFundingPicks.length === 0) {
+      if (splitInterestFundingPicks.length === 0) {
         return { ok: false, error: "Pick at least one funding asset or cash gift for the CLT." };
       }
-      const bad = cltFundingPicks.find(
+      const bad = splitInterestFundingPicks.find(
         (p) => (p.kind === "asset" ? p.percent <= 0 : p.amount <= 0),
       );
       if (bad) {
@@ -588,9 +588,9 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
 
       // Apply CLT funding-pick changes as gift ops.
       if (trustSubType === "clt" && splitInterest.origin === "new") {
-        const ops = diffCltFundingPicks({
-          original: originalCltFundingPicks,
-          current: cltFundingPicks,
+        const ops = diffSplitInterestFundingPicks({
+          original: originalSplitInterestFundingPicks,
+          current: splitInterestFundingPicks,
           entityId: saved.id,
           year: splitInterest.inceptionYear,
           defaultAssetGrantor: grantor === "" ? "client" : grantor,
@@ -661,13 +661,13 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       setLoading(false);
     }
   }, [
-    canSave, trustSubType, distributionMode, incomeRows, splitInterest, cltFundingPicks,
+    canSave, trustSubType, distributionMode, incomeRows, splitInterest, splitInterestFundingPicks,
     effectiveEntityId, editing, clientId, currentSerialized,
     name, notes, editingIncludeInPortfolio, sprinkleProvisions, crummeyPowers,
     isGrantor, grantorStatusEndYear,
     isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
     distributionAmount, distributionPercent, remainderRows,
-    originalCltFundingPicks, onAutoSaved,
+    originalSplitInterestFundingPicks, onAutoSaved,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -829,8 +829,8 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
                 .filter((e) => e.kind === "charity")
                 .map((e) => ({ id: e.id, name: e.name }))}
               fundingAccounts={fundingAccounts}
-              fundingPicks={cltFundingPicks}
-              onFundingPicksChange={setCltFundingPicks}
+              fundingPicks={splitInterestFundingPicks}
+              onFundingPicksChange={setSplitInterestFundingPicks}
               defaultGrantor={grantor === "" ? "client" : grantor}
             />
           </div>
