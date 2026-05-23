@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import { EstateFlowGiftFields } from "@/components/estate-flow-gift-fields";
-import type { Account, ClientData } from "@/engine/types";
+import type { Account, BeneficiaryRef, ClientData } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
@@ -18,6 +18,15 @@ interface Props {
   onApply: (owners: Account["owners"]) => void;
   /** Called when a gift destination is chosen and the gift form is applied. */
   onApplyGift: (draft: EstateFlowGift) => void;
+  /**
+   * Called when a life-insurance policy with no existing beneficiary
+   * designations is being retitled into a trust entity — emits a single
+   * primary BeneficiaryRef pointing at that trust (the ILIT shape: trust
+   * is both owner and beneficiary). Mirrors the auto-seed in the
+   * insurance-policy beneficiaries tab. Optional: callers that don't care
+   * about this case can omit it.
+   */
+  onSeedBeneficiary?: (ref: BeneficiaryRef) => void;
   /** Gift exemption ledger from the live projection — for the gift-fields warning. */
   ledger: GiftLedgerYear[];
   /** Plan tax-inflation rate, threaded to the gift-fields warning preview. */
@@ -94,6 +103,7 @@ export default function EstateFlowChangeOwnerDialog({
   clientData,
   onApply,
   onApplyGift,
+  onSeedBeneficiary,
   ledger,
   taxInflationRate,
   onClose,
@@ -336,6 +346,32 @@ export default function EstateFlowChangeOwnerDialog({
     }
 
     onApply(owners);
+
+    // Auto-seed: when a life-insurance policy with no existing beneficiaries
+    // is retitled to a trust entity, also write a default primary beneficiary
+    // pointing at that trust. Mirrors the seed in the insurance-policy
+    // beneficiaries tab so the canonical ILIT shape (trust = owner =
+    // beneficiary) lands in the data regardless of which UI path the advisor
+    // takes. Existing designations are never touched.
+    if (
+      onSeedBeneficiary &&
+      account.category === "life_insurance" &&
+      selectedDest.entityId &&
+      owners.length === 1 &&
+      owners[0].kind === "entity" &&
+      (account.beneficiaries == null || account.beneficiaries.length === 0)
+    ) {
+      onSeedBeneficiary({
+        id:
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `seed-${selectedDest.entityId}`,
+        tier: "primary",
+        percentage: 100,
+        entityIdRef: selectedDest.entityId,
+        sortOrder: 0,
+      });
+    }
   }
 
   // ── Ensure joint split percents are initialised when switching to joint ───

@@ -118,4 +118,115 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
     fireEvent.click(screen.getByRole("button", { name: "Add gift" }));
     expect(onApply).not.toHaveBeenCalled();
   });
+
+  it("seeds the trust as a primary beneficiary when an empty policy is retitled into a trust", () => {
+    const onApply = vi.fn();
+    const onApplyGift = vi.fn();
+    const onSeedBeneficiary = vi.fn();
+
+    // `insuranceAccount` has no `beneficiaries` field — the seed criterion
+    // (empty / undefined) is met out of the box.
+    render(
+      <EstateFlowChangeOwnerDialog
+        account={insuranceAccount}
+        clientData={clientData}
+        onApply={onApply}
+        onApplyGift={onApplyGift}
+        onSeedBeneficiary={onSeedBeneficiary}
+        ledger={[]}
+        taxInflationRate={0}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // Retitle into the ILIT (direct retitling, not a gift — same as the
+    // first test above).
+    fireEvent.click(screen.getByRole("radio", { name: /alice ilit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    // Ownership change fires as usual.
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply.mock.calls[0][0]).toEqual([
+      { kind: "entity", entityId: "ilit-1", percent: 1 },
+    ]);
+
+    // Seed fires with a single primary BeneficiaryRef pointing at the ILIT.
+    expect(onSeedBeneficiary).toHaveBeenCalledTimes(1);
+    const seed = onSeedBeneficiary.mock.calls[0][0];
+    expect(seed).toMatchObject({
+      tier: "primary",
+      percentage: 100,
+      entityIdRef: "ilit-1",
+      sortOrder: 0,
+    });
+    expect(typeof seed.id).toBe("string");
+    expect(seed.id.length).toBeGreaterThan(0);
+  });
+
+  it("does NOT seed when the policy already has beneficiary designations", () => {
+    const onApply = vi.fn();
+    const onApplyGift = vi.fn();
+    const onSeedBeneficiary = vi.fn();
+
+    const accountWithBene = {
+      ...insuranceAccount,
+      beneficiaries: [
+        {
+          id: "bene-1",
+          tier: "primary",
+          percentage: 100,
+          familyMemberId: "fm-s",
+          sortOrder: 0,
+        },
+      ],
+    } as unknown as Account;
+
+    render(
+      <EstateFlowChangeOwnerDialog
+        account={accountWithBene}
+        clientData={clientData}
+        onApply={onApply}
+        onApplyGift={onApplyGift}
+        onSeedBeneficiary={onSeedBeneficiary}
+        ledger={[]}
+        taxInflationRate={0}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: /alice ilit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    // Existing designations must be left untouched.
+    expect(onSeedBeneficiary).not.toHaveBeenCalled();
+  });
+
+  it("does NOT seed when a non-insurance account is moved to a (revocable) trust", () => {
+    const onApply = vi.fn();
+    const onApplyGift = vi.fn();
+    const onSeedBeneficiary = vi.fn();
+
+    render(
+      <EstateFlowChangeOwnerDialog
+        account={taxableAccount}
+        clientData={clientData}
+        onApply={onApply}
+        onApplyGift={onApplyGift}
+        onSeedBeneficiary={onSeedBeneficiary}
+        ledger={[]}
+        taxInflationRate={0}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // Revocable trust is a direct retitling destination for any account
+    // category, so we can fire Apply without invoking the gift form.
+    fireEvent.click(screen.getByRole("radio", { name: /alice revocable trust/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    // Seed must NOT fire — the auto-seed is life-insurance-only.
+    expect(onSeedBeneficiary).not.toHaveBeenCalled();
+  });
 });

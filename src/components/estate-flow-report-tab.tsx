@@ -276,6 +276,11 @@ export function EstateFlowReportTab({
             applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
             setOwnerDialogId(null);
           }}
+          onSeedBeneficiary={(ref) => {
+            applyEdit((d) =>
+              changeBeneficiaries(d, "account", ownerDialogId!, [ref]),
+            );
+          }}
           onApplyGift={(draft) => {
             setWorkingGifts((cur) => addGift(cur, draft));
             setOwnerDialogId(null);
