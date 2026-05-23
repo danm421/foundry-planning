@@ -32,7 +32,13 @@ import {
   type AttributionCtx,
   type ColumnSplit,
 } from "@/lib/balance-sheet/attribute";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, type AccountOwner } from "@/engine/ownership";
 import type { AccountRow, LiabilityRow } from "./balance-sheet-view";
+
+export interface ExternalBeneficiaryOption {
+  id: string;
+  name: string;
+}
 
 interface BalanceSheetTableViewProps {
   clientId: string;
@@ -40,6 +46,7 @@ interface BalanceSheetTableViewProps {
   liabilities: LiabilityRow[];
   notesReceivable?: NoteReceivable[];
   entities: EntityOption[];
+  externalBeneficiaries?: ExternalBeneficiaryOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
@@ -244,6 +251,16 @@ function currentYearBalance(l: LiabilityRow): number {
 
 const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
 
+const ENTITY_TYPE_LABEL: Record<string, string> = {
+  trust: "Trust",
+  llc: "LLC",
+  s_corp: "S-Corp",
+  c_corp: "C-Corp",
+  partnership: "Partnership",
+  foundation: "Foundation",
+  other: "Entity",
+};
+
 function buildCtx(props: {
   familyMembers?: BalanceSheetTableViewProps["familyMembers"];
   entities: EntityOption[];
@@ -260,13 +277,16 @@ function buildCtx(props: {
     if (fm.role === "spouse") spouseFamilyMemberId = fm.id;
   }
 
-  // Mirror the in-estate predicate used in balance-sheet-view.tsx: a business
-  // entity is in-estate when its `entity_owners` rows sum to ≥99.99% (or
-  // owners are absent — legacy fixtures pre-date the join table).
+  // A business entity is in-estate when its `entity_owners` rows sum to
+  // ≥99.99% (or owners are absent — legacy fixtures pre-date the join table).
+  // Membership here drives both (a) rule-3 hold-back of underlying accounts/
+  // liabilities so they don't double-count on category rows and (b) which
+  // entities surface as a single rolled-up row in Business. Note: no value
+  // gate — a household-owned business with $0 flat value but funded internal
+  // accounts must still hold those accounts back from their category rows so
+  // they can be rolled into the entity row instead of leaking to OOE.
   const inEstateFlatValuedEntityIds = new Set<string>();
   for (const e of props.entities) {
-    const value = Number(e.value ?? "0");
-    if (value <= 0) continue;
     if (!e.entityType || !BUSINESS_ENTITY_TYPES.has(e.entityType)) continue;
     if (e.owners == null) {
       inEstateFlatValuedEntityIds.add(e.id);
@@ -349,6 +369,7 @@ export default function BalanceSheetTableView({
   liabilities,
   notesReceivable = [],
   entities,
+  externalBeneficiaries = [],
   familyMembers,
   categoryDefaults,
   modelPortfolios,
@@ -374,6 +395,15 @@ export default function BalanceSheetTableView({
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<"standard" | "by-owner">("standard");
+  const [collapsedOwners, setCollapsedOwners] = useState<Set<string>>(new Set());
+  const toggleOwner = (id: string) =>
+    setCollapsedOwners((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const toggleCategory = (key: string) =>
     setCollapsedCategories((prev) => {
       const next = new Set(prev);
@@ -468,14 +498,33 @@ export default function BalanceSheetTableView({
   };
   for (const a of visibleAccounts) accountsByCategory[a.category].push(a);
 
-  // In-estate business entities with positive flat value — surface as rows in Business.
-  const inEstateBusinessEntityRows = entities.filter(
-    (e) =>
-      e.entityType &&
-      BUSINESS_ENTITY_TYPES.has(e.entityType) &&
-      Number(e.value ?? "0") > 0 &&
-      ctx.inEstateFlatValuedEntityIds.has(e.id),
-  );
+  // Per-entity sum of internally-held account dollars (rule 3 holds these back
+  // from their category rows; we roll them into the single Business entity row
+  // here so the household-owned business shows its true total — flat valuation
+  // plus the assets it owns). Skips notes_receivable (sourced elsewhere) and
+  // $0 accounts (already excluded from `visibleAccounts`).
+  const entityHoldingsById = new Map<string, number>();
+  for (const a of visibleAccounts) {
+    for (const owner of a.owners ?? []) {
+      if (owner.kind !== "entity") continue;
+      if (!ctx.inEstateFlatValuedEntityIds.has(owner.entityId)) continue;
+      const contribution = Number(a.value) * owner.percent;
+      entityHoldingsById.set(
+        owner.entityId,
+        (entityHoldingsById.get(owner.entityId) ?? 0) + contribution,
+      );
+    }
+  }
+
+  // In-estate business entities — surface as rows in Business when flat
+  // valuation plus rolled-up entity-owned account holdings is positive.
+  const inEstateBusinessEntityRows = entities.filter((e) => {
+    if (!e.entityType || !BUSINESS_ENTITY_TYPES.has(e.entityType)) return false;
+    if (!ctx.inEstateFlatValuedEntityIds.has(e.id)) return false;
+    const flat = Number(e.value ?? "0");
+    const holdings = entityHoldingsById.get(e.id) ?? 0;
+    return flat + holdings > 0;
+  });
 
   // Notes receivable display year: prior year-end, matching the existing logic.
   const noteDisplayYear = new Date().getFullYear() - 1;
@@ -542,7 +591,9 @@ export default function BalanceSheetTableView({
   }
 
   function entityFlatToTableRow(e: EntityOption): AssetTableRow {
-    const value = Number(e.value ?? "0");
+    const flat = Number(e.value ?? "0");
+    const holdings = entityHoldingsById.get(e.id) ?? 0;
+    const value = flat + holdings;
     const split = attributeEntityFlatValue(
       {
         id: e.id,
@@ -558,7 +609,9 @@ export default function BalanceSheetTableView({
       key: `flat-${e.id}`,
       kind: "business-entity",
       label: e.name,
-      sublabel: "edit in Family",
+      sublabel: holdings > 0 && flat > 0
+        ? `${fmt(flat)} valuation + ${fmt(holdings)} in accounts`
+        : "edit in Family",
       split,
       onClick: () => router.push(withScenario(`/clients/${clientId}/client-data/family`)),
       deletable: false,
@@ -660,11 +713,310 @@ export default function BalanceSheetTableView({
   const ooeAssetCategoryGroups = categoryGroups.filter((g) => g.ooeRows.length > 0);
   const hasOoeContent = ooeAssetCategoryGroups.length > 0 || ooeLiabilityRows.length > 0;
 
+  // ── By-owner view: one card per family member / OOE entity / external
+  // beneficiary that has any attributable assets or liabilities. Each item
+  // contributes `value × ownership%` to its owner. In-estate flat-valued
+  // businesses bypass the per-account walk (their underlying rows are scaled
+  // out by the engine when family share is 100%) and instead surface their
+  // single flat value under each family-member owner — matching how the
+  // standard view treats them on the Business row.
+  type OwnerKind = "family_member" | "entity" | "external_beneficiary";
+  interface OwnerRowItem {
+    key: string;
+    label: string;
+    sublabel?: string;
+    value: number;
+    onClick?: () => void;
+    onDelete?: () => void;
+    deletable: boolean;
+  }
+  interface OwnerGroup {
+    key: string;
+    kind: OwnerKind;
+    name: string;
+    typeLabel: string;
+    assetRows: OwnerRowItem[];
+    liabilityRows: OwnerRowItem[];
+    assetTotal: number;
+    liabilityTotal: number;
+    netWorth: number;
+  }
+
+  const fmDisplayName = (id: string): string => {
+    if (id === LEGACY_FM_CLIENT) return cooperLabel;
+    if (id === LEGACY_FM_SPOUSE) return sarahLabel ?? "Spouse";
+    const fm = familyMembers?.find((f) => f.id === id);
+    if (!fm) return "Family member";
+    if (fm.role === "client") return cooperLabel;
+    if (fm.role === "spouse" && sarahLabel) return sarahLabel;
+    return fm.firstName;
+  };
+
+  const fmRoleLabel = (id: string): string => {
+    if (id === LEGACY_FM_CLIENT) return "Client";
+    if (id === LEGACY_FM_SPOUSE) return "Spouse";
+    const fm = familyMembers?.find((f) => f.id === id);
+    if (!fm) return "Family";
+    return fm.role === "client"
+      ? "Client"
+      : fm.role === "spouse"
+        ? "Spouse"
+        : fm.role === "child"
+          ? "Child"
+          : "Family";
+  };
+
+  const ownerGroupsMap = new Map<string, OwnerGroup>();
+  const getOrCreateOwner = (
+    key: string,
+    kind: OwnerKind,
+    name: string,
+    typeLabel: string,
+  ): OwnerGroup => {
+    let g = ownerGroupsMap.get(key);
+    if (!g) {
+      g = {
+        key,
+        kind,
+        name,
+        typeLabel,
+        assetRows: [],
+        liabilityRows: [],
+        assetTotal: 0,
+        liabilityTotal: 0,
+        netWorth: 0,
+      };
+      ownerGroupsMap.set(key, g);
+    }
+    return g;
+  };
+
+  const resolveOwner = (
+    owner: AccountOwner,
+  ): { group: OwnerGroup; ownerKey: string } | null => {
+    if (owner.kind === "family_member") {
+      const ownerKey = `fm:${owner.familyMemberId}`;
+      return {
+        ownerKey,
+        group: getOrCreateOwner(
+          ownerKey,
+          "family_member",
+          fmDisplayName(owner.familyMemberId),
+          fmRoleLabel(owner.familyMemberId),
+        ),
+      };
+    }
+    if (owner.kind === "entity") {
+      if (ctx.inEstateFlatValuedEntityIds.has(owner.entityId)) return null;
+      const ent = entityMap[owner.entityId];
+      const ownerKey = `ent:${owner.entityId}`;
+      const typeLabel =
+        (ent?.entityType && ENTITY_TYPE_LABEL[ent.entityType]) ?? ENTITY_TYPE_LABEL.other;
+      return {
+        ownerKey,
+        group: getOrCreateOwner(ownerKey, "entity", ent?.name ?? "Entity", typeLabel),
+      };
+    }
+    // external_beneficiary
+    const eb = externalBeneficiaries.find((b) => b.id === owner.externalBeneficiaryId);
+    const ownerKey = `eb:${owner.externalBeneficiaryId}`;
+    return {
+      ownerKey,
+      group: getOrCreateOwner(
+        ownerKey,
+        "external_beneficiary",
+        eb?.name ?? "External beneficiary",
+        "External",
+      ),
+    };
+  };
+
+  for (const a of visibleAccounts) {
+    const total = Number(a.value);
+    for (const owner of a.owners ?? []) {
+      const slot = resolveOwner(owner);
+      if (!slot) continue;
+      const value = total * owner.percent;
+      if (Math.abs(value) <= ZERO_EPSILON) continue;
+      slot.group.assetRows.push({
+        key: `${slot.ownerKey}-acct-${a.id}`,
+        label: a.name,
+        sublabel:
+          owner.percent < 0.9999
+            ? `${Math.round(owner.percent * 100)}% share of ${fmt(total)}`
+            : undefined,
+        value,
+        onClick: () => {
+          if (edit) return;
+          if (a.category === "life_insurance") {
+            router.push(
+              withScenario(`/clients/${clientId}/client-data/insurance?policy=${a.id}`),
+            );
+            return;
+          }
+          setEditingAccount(a);
+        },
+        onDelete: () => setDeletingAccount(a),
+        deletable: !a.isDefaultChecking,
+      });
+    }
+  }
+
+  for (const n of notesReceivable) {
+    const total = noteBalanceAtYear(n, noteDisplayYear);
+    if (total <= 0) continue;
+    for (const owner of n.owners ?? []) {
+      const slot = resolveOwner(owner);
+      if (!slot) continue;
+      const value = total * owner.percent;
+      if (Math.abs(value) <= ZERO_EPSILON) continue;
+      slot.group.assetRows.push({
+        key: `${slot.ownerKey}-note-${n.id}`,
+        label: n.name,
+        sublabel:
+          owner.percent < 0.9999
+            ? `${Math.round(owner.percent * 100)}% share of ${fmt(total)}`
+            : undefined,
+        value,
+        onClick: () => {
+          if (!edit) setEditingNote(n);
+        },
+        onDelete: () => setDeletingNote(n),
+        deletable: true,
+      });
+    }
+  }
+
+  for (const l of liabilities) {
+    const balance = currentYearBalance(l);
+    for (const owner of l.owners ?? []) {
+      const slot = resolveOwner(owner);
+      if (!slot) continue;
+      const value = balance * owner.percent;
+      if (Math.abs(value) <= ZERO_EPSILON) continue;
+      slot.group.liabilityRows.push({
+        key: `${slot.ownerKey}-liab-${l.id}`,
+        label: l.name,
+        sublabel:
+          Number(l.interestRate) > 0
+            ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest`
+            : undefined,
+        value,
+        onClick: () => {
+          if (!edit) setEditingLiability(l);
+        },
+        onDelete: () => setDeletingLiability(l),
+        deletable: true,
+      });
+    }
+  }
+
+  // In-estate flat-valued businesses → attribute their total value (flat
+  // valuation + rolled-up entity-owned account holdings) to each family-member
+  // owner. Entity-kind owners of the business (e.g. a trust holding part of
+  // an LLC) intentionally skipped here; the trust gets the share via the
+  // underlying accounts (rule 4) when the business isn't wholly in-estate.
+  for (const e of entities) {
+    if (!ctx.inEstateFlatValuedEntityIds.has(e.id)) continue;
+    const flat = Number(e.value ?? "0");
+    const holdings = entityHoldingsById.get(e.id) ?? 0;
+    const total = flat + holdings;
+    if (total <= 0) continue;
+    if (!e.owners || e.owners.length === 0) {
+      // Legacy: missing entity_owners → treat as 100% client.
+      const ownerKey = `fm:${LEGACY_FM_CLIENT}`;
+      const group = getOrCreateOwner(
+        ownerKey,
+        "family_member",
+        cooperLabel,
+        "Client",
+      );
+      group.assetRows.push({
+        key: `${ownerKey}-ent-${e.id}`,
+        label: e.name,
+        sublabel: "Business value",
+        value: total,
+        onClick: () => router.push(withScenario(`/clients/${clientId}/client-data/family`)),
+        deletable: false,
+      });
+      continue;
+    }
+    for (const owner of e.owners) {
+      const value = total * owner.percent;
+      if (Math.abs(value) <= ZERO_EPSILON) continue;
+      const ownerKey = `fm:${owner.familyMemberId}`;
+      const group = getOrCreateOwner(
+        ownerKey,
+        "family_member",
+        fmDisplayName(owner.familyMemberId),
+        fmRoleLabel(owner.familyMemberId),
+      );
+      group.assetRows.push({
+        key: `${ownerKey}-ent-${e.id}`,
+        label: e.name,
+        sublabel:
+          owner.percent < 0.9999
+            ? `${Math.round(owner.percent * 100)}% of business`
+            : "Business value",
+        value,
+        onClick: () => router.push(withScenario(`/clients/${clientId}/client-data/family`)),
+        deletable: false,
+      });
+    }
+  }
+
+  for (const g of ownerGroupsMap.values()) {
+    g.assetTotal = g.assetRows.reduce((s, r) => s + r.value, 0);
+    g.liabilityTotal = g.liabilityRows.reduce((s, r) => s + r.value, 0);
+    g.netWorth = g.assetTotal - g.liabilityTotal;
+  }
+
+  const ownerGroups = [...ownerGroupsMap.values()]
+    .filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0)
+    .sort((a, b) => {
+      const kindOrder = (g: OwnerGroup) =>
+        g.kind === "family_member" ? 0 : g.kind === "entity" ? 1 : 2;
+      if (kindOrder(a) !== kindOrder(b)) return kindOrder(a) - kindOrder(b);
+      return b.netWorth - a.netWorth;
+    });
+
   return (
     <div className="space-y-4">
       {/* Header strip with actions */}
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">Balance Sheet</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-ink">Balance Sheet</h2>
+          <div
+            role="tablist"
+            aria-label="Balance sheet view"
+            className="inline-flex overflow-hidden rounded-md border border-hair-2 bg-card text-xs"
+          >
+            <button
+              role="tab"
+              aria-selected={viewMode === "standard"}
+              onClick={() => setViewMode("standard")}
+              className={`px-3 py-1 font-medium transition-colors ${
+                viewMode === "standard"
+                  ? "bg-accent/15 text-accent-ink"
+                  : "text-ink-3 hover:bg-card-hover hover:text-ink-2"
+              }`}
+            >
+              Standard
+            </button>
+            <button
+              role="tab"
+              aria-selected={viewMode === "by-owner"}
+              onClick={() => setViewMode("by-owner")}
+              className={`border-l border-hair-2 px-3 py-1 font-medium transition-colors ${
+                viewMode === "by-owner"
+                  ? "bg-accent/15 text-accent-ink"
+                  : "text-ink-3 hover:bg-card-hover hover:text-ink-2"
+              }`}
+            >
+              By Owner
+            </button>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           {(accounts.length > 0 || liabilities.length > 0 || notesReceivable.length > 0) && (
             <button
@@ -690,6 +1042,8 @@ export default function BalanceSheetTableView({
         </div>
       </div>
 
+      {viewMode === "standard" && (
+        <>
       {/* Main balance sheet (in-estate) */}
       <div className="overflow-x-auto">
         <table className="min-w-[520px] w-full text-[13px] border-collapse">
@@ -875,6 +1229,27 @@ export default function BalanceSheetTableView({
               />
             </tbody>
           </table>
+        </div>
+      )}
+        </>
+      )}
+
+      {viewMode === "by-owner" && (
+        <div className="space-y-3">
+          {ownerGroups.length === 0 && (
+            <div className="rounded-md border border-hair-2 bg-card p-6 text-center text-[13px] text-ink-3">
+              No owners with attributable assets or liabilities yet.
+            </div>
+          )}
+          {ownerGroups.map((g) => (
+            <OwnerCard
+              key={g.key}
+              group={g}
+              collapsed={collapsedOwners.has(g.key)}
+              onToggle={() => toggleOwner(g.key)}
+              edit={edit}
+            />
+          ))}
         </div>
       )}
 
@@ -1480,3 +1855,169 @@ function OoeTotalRow({
     </tr>
   );
 }
+
+interface OwnerCardRowItem {
+  key: string;
+  label: string;
+  sublabel?: string;
+  value: number;
+  onClick?: () => void;
+  onDelete?: () => void;
+  deletable: boolean;
+}
+
+interface OwnerCardGroup {
+  key: string;
+  kind: "family_member" | "entity" | "external_beneficiary";
+  name: string;
+  typeLabel: string;
+  assetRows: OwnerCardRowItem[];
+  liabilityRows: OwnerCardRowItem[];
+  assetTotal: number;
+  liabilityTotal: number;
+  netWorth: number;
+}
+
+function OwnerCard({
+  group,
+  collapsed,
+  onToggle,
+  edit,
+}: {
+  group: OwnerCardGroup;
+  collapsed: boolean;
+  onToggle: () => void;
+  edit: boolean;
+}) {
+  return (
+    <div className="overflow-hidden rounded-md border border-hair-2 bg-card">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+      >
+        <span className="inline-flex items-center gap-2">
+          {collapsed ? <ChevronRight /> : <ChevronDown />}
+          <span className="text-[13px] font-semibold text-ink">{group.name}</span>
+          <span className="rounded bg-card-2 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">
+            {group.typeLabel}
+          </span>
+        </span>
+        <span className="inline-flex items-baseline gap-3">
+          <span className="text-[10px] uppercase tracking-wider text-ink-3">Assets</span>
+          <span className="text-[13px] font-semibold tabular-nums text-ink">
+            {fmt(group.assetTotal)}
+          </span>
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="border-t border-hair">
+          <table className="w-full text-[13px] border-collapse">
+            <tbody>
+              {group.assetRows.length > 0 && (
+                <tr>
+                  <td className="bg-paper/40 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-accent-ink">
+                    Assets
+                  </td>
+                  <td className="bg-paper/40 px-3 py-1 text-right text-[11px] font-semibold tabular-nums text-ink-2">
+                    {fmt(group.assetTotal)}
+                  </td>
+                  <td className="w-6 bg-paper/40 px-1 py-1" />
+                </tr>
+              )}
+              {group.assetRows.map((r) => (
+                <OwnerCardItemRow key={r.key} row={r} tone="asset" edit={edit} />
+              ))}
+              {group.liabilityRows.length > 0 && (
+                <tr>
+                  <td className="bg-paper/40 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-crit">
+                    Liabilities
+                  </td>
+                  <td className="bg-paper/40 px-3 py-1 text-right text-[11px] font-semibold tabular-nums text-ink-2">
+                    {fmt(group.liabilityTotal)}
+                  </td>
+                  <td className="w-6 bg-paper/40 px-1 py-1" />
+                </tr>
+              )}
+              {group.liabilityRows.map((r) => (
+                <OwnerCardItemRow key={r.key} row={r} tone="liability" edit={edit} />
+              ))}
+              <tr className="border-t-2 border-hair-2">
+                <td className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink">
+                  Net Worth
+                </td>
+                <td
+                  className={`px-3 py-1.5 text-right text-[13px] font-bold tabular-nums ${
+                    group.netWorth >= 0 ? "text-good" : "text-crit"
+                  }`}
+                >
+                  {fmt(group.netWorth)}
+                </td>
+                <td className="w-6 px-1 py-1" />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OwnerCardItemRow({
+  row,
+  tone,
+  edit,
+}: {
+  row: OwnerCardRowItem;
+  tone: Tone;
+  edit: boolean;
+}) {
+  const clickable = !!row.onClick && !edit;
+  return (
+    <tr
+      onClick={clickable ? row.onClick : undefined}
+      onKeyDown={(e) => {
+        if (!clickable) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          row.onClick?.();
+        }
+      }}
+      tabIndex={clickable ? 0 : -1}
+      role={clickable ? "button" : undefined}
+      className={
+        clickable
+          ? "cursor-pointer hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+          : undefined
+      }
+    >
+      <td className="px-3 py-1 pl-8">
+        <div className="text-[13px] text-ink-2">{row.label}</div>
+        {row.sublabel && <div className="text-[11px] text-ink-3">{row.sublabel}</div>}
+      </td>
+      <td
+        className={`px-3 py-1 text-right text-[13px] tabular-nums ${
+          tone === "asset" ? "text-ink" : "text-crit"
+        }`}
+      >
+        {fmt(row.value)}
+      </td>
+      <td className="w-6 px-1 py-1 text-right">
+        {edit && row.deletable && row.onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              row.onDelete?.();
+            }}
+            className="text-ink hover:text-crit"
+            aria-label={`Delete ${row.label}`}
+          >
+            <TrashIcon />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
