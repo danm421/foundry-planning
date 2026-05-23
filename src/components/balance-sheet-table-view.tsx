@@ -115,6 +115,30 @@ function ChevronDown() {
   );
 }
 
+function ChevronRight() {
+  return (
+    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+      <path
+        fillRule="evenodd"
+        d="M7.293 4.293a1 1 0 011.414 0l5 5a1 1 0 010 1.414l-5 5a1 1 0 11-1.414-1.414L11.586 10 7.293 5.707a1 1 0 010-1.414z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+function ChevronUp() {
+  return (
+    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+      <path
+        fillRule="evenodd"
+        d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 function accountToInitial(a: AccountRow): AccountFormInitial {
   return {
     id: a.id,
@@ -348,6 +372,23 @@ export default function BalanceSheetTableView({
   const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
   const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
 
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const toggleCategory = (key: string) =>
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const toggleSection = (key: string) =>
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   const realEstateAccounts = accounts
     .filter((a) => a.category === "real_estate")
     .map((a) => ({ id: a.id, name: a.name }));
@@ -410,12 +451,9 @@ export default function BalanceSheetTableView({
 
   const entityMap = Object.fromEntries(entities.map((e) => [e.id, e]));
 
-  // Term policies (cash_value = 0) excluded — same rule as balance-sheet-view.
-  const isVisibleInNetWorth = (a: AccountRow) =>
-    !(a.category === "life_insurance" && Number(a.value) === 0);
-
+  // Zero-value assets are hidden on this report.
   const visibleAccounts = accounts.filter(
-    (a) => a.category !== "notes_receivable" && isVisibleInNetWorth(a),
+    (a) => a.category !== "notes_receivable" && Number(a.value) > 0,
   );
 
   // Bucket accounts by category.
@@ -527,8 +565,20 @@ export default function BalanceSheetTableView({
     };
   }
 
-  // Build one ordered list of (category, rows) for rendering.
-  const categoryGroups: { category: AccountCategory; rows: AssetTableRow[]; subtotal: ColumnSplit }[] = [];
+  const ZERO_EPSILON = 0.5;
+  const hasInEstateValue = (s: ColumnSplit) =>
+    Math.abs(s.cooper) + Math.abs(s.sarah) + Math.abs(s.joint) > ZERO_EPSILON;
+  const hasOoeValue = (s: ColumnSplit) => Math.abs(s.ooe) > ZERO_EPSILON;
+
+  // Build one ordered list of (category, rows) split into in-estate and OOE.
+  type CategoryGroup = {
+    category: AccountCategory;
+    inEstateRows: AssetTableRow[];
+    ooeRows: AssetTableRow[];
+    inEstateSubtotal: ColumnSplit;
+    ooeSubtotal: ColumnSplit;
+  };
+  const categoryGroups: CategoryGroup[] = [];
   for (const cat of CATEGORY_ORDER) {
     const rows: AssetTableRow[] = [];
     for (const a of accountsByCategory[cat]) rows.push(accountToTableRow(a));
@@ -536,15 +586,26 @@ export default function BalanceSheetTableView({
       for (const e of inEstateBusinessEntityRows) rows.push(entityFlatToTableRow(e));
     }
     if (cat === "notes_receivable") {
-      for (const n of notesReceivable) rows.push(noteToTableRow(n));
+      for (const n of notesReceivable) {
+        if (noteBalanceAtYear(n, noteDisplayYear) > 0) rows.push(noteToTableRow(n));
+      }
     }
-    if (rows.length === 0) continue;
-    const subtotal = rows.reduce<ColumnSplit>((s, r) => addSplits(s, r.split), emptySplit());
-    categoryGroups.push({ category: cat, rows, subtotal });
+    const inEstateRows = rows.filter((r) => hasInEstateValue(r.split));
+    const ooeRows = rows.filter((r) => hasOoeValue(r.split));
+    if (inEstateRows.length === 0 && ooeRows.length === 0) continue;
+    const inEstateSubtotal = inEstateRows.reduce<ColumnSplit>(
+      (s, r) => addSplits(s, r.split),
+      emptySplit(),
+    );
+    const ooeSubtotal = ooeRows.reduce<ColumnSplit>(
+      (s, r) => addSplits(s, r.split),
+      emptySplit(),
+    );
+    categoryGroups.push({ category: cat, inEstateRows, ooeRows, inEstateSubtotal, ooeSubtotal });
   }
 
   const totalAssets = categoryGroups.reduce<ColumnSplit>(
-    (s, g) => addSplits(s, g.subtotal),
+    (s, g) => addSplits(s, addSplits(g.inEstateSubtotal, g.ooeSubtotal)),
     emptySplit(),
   );
 
@@ -572,8 +633,18 @@ export default function BalanceSheetTableView({
     };
   }
 
-  const liabilityRows = liabilities.map(liabilityToTableRow);
-  const totalLiabilities = liabilityRows.reduce<ColumnSplit>(
+  const allLiabilityRows = liabilities.map(liabilityToTableRow);
+  const inEstateLiabilityRows = allLiabilityRows.filter((r) => hasInEstateValue(r.split));
+  const ooeLiabilityRows = allLiabilityRows.filter((r) => hasOoeValue(r.split));
+  const totalLiabilities = allLiabilityRows.reduce<ColumnSplit>(
+    (s, r) => addSplits(s, r.split),
+    emptySplit(),
+  );
+  const inEstateTotalLiabilities = inEstateLiabilityRows.reduce<ColumnSplit>(
+    (s, r) => addSplits(s, r.split),
+    emptySplit(),
+  );
+  const ooeTotalLiabilities = ooeLiabilityRows.reduce<ColumnSplit>(
     (s, r) => addSplits(s, r.split),
     emptySplit(),
   );
@@ -585,6 +656,9 @@ export default function BalanceSheetTableView({
     ooe: totalAssets.ooe - totalLiabilities.ooe,
     representedPct: 1,
   };
+
+  const ooeAssetCategoryGroups = categoryGroups.filter((g) => g.ooeRows.length > 0);
+  const hasOoeContent = ooeAssetCategoryGroups.length > 0 || ooeLiabilityRows.length > 0;
 
   return (
     <div className="space-y-4">
@@ -616,110 +690,193 @@ export default function BalanceSheetTableView({
         </div>
       </div>
 
-      {/* Table shell — filled in subsequent tasks */}
-      <div className="overflow-x-auto rounded-lg border border-hair bg-card">
-        <table className="min-w-[760px] w-full text-sm">
+      {/* Main balance sheet (in-estate) */}
+      <div className="overflow-x-auto">
+        <table className="min-w-[520px] w-full text-[13px] border-collapse">
           <thead>
-            <tr className="border-b border-hair">
-              <th className="sticky left-0 z-10 bg-card px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-ink-3">
-                Asset / Liability
+            <tr className="border-b border-hair-2">
+              <th className="sticky left-0 z-10 bg-paper px-2 py-1 text-left text-[10px] font-medium uppercase tracking-wider text-ink-3">
+                Category / Account
               </th>
-              <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-ink-3">
+              <th className="px-2 py-1 text-right text-[10px] font-medium uppercase tracking-wider text-ink-3">
                 {cooperLabel}
               </th>
               {hasSpouse && (
                 <>
-                  <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-ink-3">
+                  <th className="px-2 py-1 text-right text-[10px] font-medium uppercase tracking-wider text-ink-3">
                     {sarahLabel}
                   </th>
-                  <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-ink-3">
+                  <th className="px-2 py-1 text-right text-[10px] font-medium uppercase tracking-wider text-ink-3">
                     Joint
                   </th>
                 </>
               )}
-              <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-ink-3">
+              <th className="px-2 py-1 text-right text-[10px] font-medium uppercase tracking-wider text-ink-3">
                 Total
               </th>
-              <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-accent-ink bg-accent/8">
-                Out of Estate
-              </th>
-              <th className="w-8 px-2 py-2" aria-hidden="true" />
+              <th className="w-6 px-1 py-1" aria-hidden="true" />
             </tr>
           </thead>
           <tbody>
-            {categoryGroups.length === 0 && liabilities.length === 0 && (
+            {categoryGroups.length === 0 && allLiabilityRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={hasSpouse ? 7 : 5}
-                  className="px-4 py-8 text-center text-sm text-ink-3"
+                  colSpan={hasSpouse ? 6 : 4}
+                  className="px-2 py-6 text-center text-[13px] text-ink-3"
                 >
                   No assets or liabilities yet. Use the actions above to get started.
                 </td>
               </tr>
             )}
-            {categoryGroups.map((g) => (
-              <CategorySection
-                key={g.category}
-                label={CATEGORY_LABELS[g.category]}
-                rows={g.rows}
-                subtotal={g.subtotal}
+            {categoryGroups.some((g) => g.inEstateRows.length > 0) && (
+              <SectionBanner
+                label="Assets"
+                tone="asset"
+                collapsed={collapsedSections.has("assets")}
+                onToggle={() => toggleSection("assets")}
                 hasSpouse={hasSpouse}
-                edit={edit}
-              />
-            ))}
-            {categoryGroups.length > 0 && (
-              <TotalRow
-                label="Total Assets"
-                split={totalAssets}
-                hasSpouse={hasSpouse}
-                emphasis="grand"
               />
             )}
-            {liabilityRows.length > 0 && (
+            {!collapsedSections.has("assets") &&
+              categoryGroups.map((g) =>
+                g.inEstateRows.length > 0 ? (
+                  <CategorySection
+                    key={g.category}
+                    label={CATEGORY_LABELS[g.category]}
+                    rows={g.inEstateRows}
+                    subtotal={g.inEstateSubtotal}
+                    hasSpouse={hasSpouse}
+                    edit={edit}
+                    tone="asset"
+                    collapsed={collapsedCategories.has(`asset-${g.category}`)}
+                    onToggle={() => toggleCategory(`asset-${g.category}`)}
+                  />
+                ) : null,
+              )}
+            {categoryGroups.some((g) => g.inEstateRows.length > 0) && (
+              <TotalRow
+                label="Total Assets"
+                split={{ ...totalAssets, ooe: 0 }}
+                hasSpouse={hasSpouse}
+                emphasis="grand"
+                tone="asset"
+              />
+            )}
+            {inEstateLiabilityRows.length > 0 && (
               <>
-                <tr className="bg-card-2">
-                  <td
-                    colSpan={hasSpouse ? 7 : 5}
-                    className="sticky left-0 z-[1] bg-card-2 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-2"
-                  >
-                    Liabilities
-                  </td>
-                </tr>
-                {liabilityRows.map((r) => (
-                  <LiabilityRowRender key={r.key} row={r} hasSpouse={hasSpouse} edit={edit} />
-                ))}
+                <SectionBanner
+                  label="Liabilities"
+                  tone="liability"
+                  collapsed={collapsedSections.has("liabilities")}
+                  onToggle={() => toggleSection("liabilities")}
+                  hasSpouse={hasSpouse}
+                />
+                {!collapsedSections.has("liabilities") && (
+                  <LiabilityCategoryRows
+                    rows={inEstateLiabilityRows}
+                    subtotal={inEstateTotalLiabilities}
+                    hasSpouse={hasSpouse}
+                    edit={edit}
+                    collapsedCategories={collapsedCategories}
+                    toggleCategory={toggleCategory}
+                  />
+                )}
                 <TotalRow
                   label="Total Liabilities"
-                  split={totalLiabilities}
+                  split={{ ...inEstateTotalLiabilities, ooe: 0 }}
                   hasSpouse={hasSpouse}
                   emphasis="grand"
+                  tone="liability"
                 />
               </>
             )}
-            {(categoryGroups.length > 0 || liabilityRows.length > 0) && (
+            {(categoryGroups.length > 0 || allLiabilityRows.length > 0) && (
               <TotalRow
                 label="Net Worth"
-                split={netWorth}
+                split={{ ...netWorth, ooe: 0 }}
                 hasSpouse={hasSpouse}
                 emphasis="net-worth"
                 signColor
               />
             )}
-            {(categoryGroups.length > 0 || liabilityRows.length > 0) && (
-              <tr className="bg-accent/15 border-t border-hair-2">
-                <td
-                  colSpan={hasSpouse ? 5 : 3}
-                  className="sticky left-0 z-[1] bg-accent/15 px-4 py-3 text-sm font-semibold uppercase tracking-wider text-accent-ink"
-                >
-                  Out of Estate
-                </td>
-                <Cell value={totalAssets.ooe - totalLiabilities.ooe} accent variant="total" />
-                <td className="w-8 px-2 py-3" />
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
+
+      {/* Out-of-estate assets — separate table below net worth */}
+      {hasOoeContent && (
+        <div className="overflow-x-auto">
+          <table className="min-w-[360px] w-full text-[13px] border-collapse">
+            <thead>
+              <tr className="border-b border-hair-2">
+                <th className="sticky left-0 z-10 bg-paper px-2 py-1 text-left text-[10px] font-medium uppercase tracking-wider text-ink-3">
+                  Category / Account
+                </th>
+                <th className="px-2 py-1 text-right text-[10px] font-medium uppercase tracking-wider text-ink-3">
+                  Value
+                </th>
+                <th className="w-6 px-1 py-1" aria-hidden="true" />
+              </tr>
+            </thead>
+            <tbody>
+              {ooeAssetCategoryGroups.length > 0 && (
+                <OoeSectionBanner
+                  label="Out of Estate Assets"
+                  tone="asset"
+                  collapsed={collapsedSections.has("ooe-assets")}
+                  onToggle={() => toggleSection("ooe-assets")}
+                />
+              )}
+              {!collapsedSections.has("ooe-assets") &&
+                ooeAssetCategoryGroups.map((g) => (
+                  <OoeCategorySection
+                    key={g.category}
+                    label={CATEGORY_LABELS[g.category]}
+                    rows={g.ooeRows}
+                    subtotal={g.ooeSubtotal.ooe}
+                    edit={edit}
+                    collapsed={collapsedCategories.has(`ooe-${g.category}`)}
+                    onToggle={() => toggleCategory(`ooe-${g.category}`)}
+                  />
+                ))}
+              {ooeAssetCategoryGroups.length > 0 && (
+                <OoeTotalRow
+                  label="Total OOE Assets"
+                  value={totalAssets.ooe}
+                  emphasis="grand"
+                  tone="asset"
+                />
+              )}
+              {ooeLiabilityRows.length > 0 && (
+                <>
+                  <OoeSectionBanner
+                    label="Out of Estate Liabilities"
+                    tone="liability"
+                    collapsed={collapsedSections.has("ooe-liabilities")}
+                    onToggle={() => toggleSection("ooe-liabilities")}
+                  />
+                  {!collapsedSections.has("ooe-liabilities") &&
+                    ooeLiabilityRows.map((r) => (
+                      <OoeLiabilityRowRender key={r.key} row={r} edit={edit} />
+                    ))}
+                  <OoeTotalRow
+                    label="Total OOE Liabilities"
+                    value={ooeTotalLiabilities.ooe}
+                    emphasis="grand"
+                    tone="liability"
+                  />
+                </>
+              )}
+              <OoeTotalRow
+                label="Net OOE"
+                value={totalAssets.ooe - ooeTotalLiabilities.ooe}
+                emphasis="net-worth"
+                signColor
+              />
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Dialogs */}
       <AddAccountDialog
@@ -839,34 +996,105 @@ export default function BalanceSheetTableView({
   );
 }
 
+type Tone = "asset" | "liability";
+
+const toneTextClass = (tone: Tone) =>
+  tone === "asset" ? "text-accent-ink" : "text-crit";
+
+function SectionBanner({
+  label,
+  tone,
+  collapsed,
+  onToggle,
+  hasSpouse,
+}: {
+  label: string;
+  tone: Tone;
+  collapsed: boolean;
+  onToggle: () => void;
+  hasSpouse: boolean;
+}) {
+  const colSpan = hasSpouse ? 6 : 4;
+  return (
+    <tr
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+      tabIndex={0}
+      role="button"
+      aria-expanded={!collapsed}
+      className="cursor-pointer hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+    >
+      <td
+        colSpan={colSpan}
+        className={`sticky left-0 z-[1] bg-paper px-2 py-1 text-[11px] font-bold uppercase tracking-wider ${toneTextClass(tone)}`}
+      >
+        <span className="inline-flex items-center gap-1.5">
+          {collapsed ? <ChevronRight /> : <ChevronUp />}
+          {label}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
 function CategorySection({
   label,
   rows,
   subtotal,
   hasSpouse,
   edit,
+  tone,
+  collapsed,
+  onToggle,
 }: {
   label: string;
   rows: AssetTableRow[];
   subtotal: ColumnSplit;
   hasSpouse: boolean;
   edit: boolean;
+  tone: Tone;
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
-  const colSpan = hasSpouse ? 7 : 5;
+  const inEstateTotal = subtotal.cooper + subtotal.sarah + subtotal.joint;
   return (
     <>
-      <tr className="bg-card-2">
+      <tr
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        aria-expanded={!collapsed}
+        className="cursor-pointer border-t border-hair hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      >
         <td
-          colSpan={colSpan}
-          className="sticky left-0 z-[1] bg-card-2 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-2"
+          className={`sticky left-0 z-[1] bg-paper px-2 py-1 text-[12px] font-semibold ${toneTextClass(tone)}`}
         >
-          {label}
+          <span className="inline-flex items-center gap-1.5 pl-2">
+            {collapsed ? <ChevronRight /> : <ChevronDown />}
+            {label}
+          </span>
         </td>
+        <SubtotalCell value={subtotal.cooper} tone={tone} />
+        {hasSpouse && <SubtotalCell value={subtotal.sarah} tone={tone} />}
+        {hasSpouse && <SubtotalCell value={subtotal.joint} tone={tone} />}
+        <SubtotalCell value={inEstateTotal} tone={tone} />
+        <td className="w-6 px-1 py-1" />
       </tr>
-      {rows.map((r) => (
-        <AssetRow key={r.key} row={r} hasSpouse={hasSpouse} edit={edit} />
-      ))}
-      <SubtotalRow split={subtotal} hasSpouse={hasSpouse} />
+      {!collapsed &&
+        rows.map((r) => (
+          <AssetRow key={r.key} row={r} hasSpouse={hasSpouse} edit={edit} tone={tone} />
+        ))}
     </>
   );
 }
@@ -875,10 +1103,12 @@ function AssetRow({
   row,
   hasSpouse,
   edit,
+  tone,
 }: {
   row: AssetTableRow;
   hasSpouse: boolean;
   edit: boolean;
+  tone: Tone;
 }) {
   const clickable = !!row.onClick && !edit;
   return (
@@ -893,18 +1123,21 @@ function AssetRow({
       }}
       tabIndex={clickable ? 0 : -1}
       role={clickable ? "button" : undefined}
-      className={`border-t border-hair ${clickable ? "cursor-pointer hover:bg-card-hover" : ""}`}
+      className={
+        clickable
+          ? "cursor-pointer hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+          : undefined
+      }
     >
-      <td className="sticky left-0 z-[1] bg-card px-4 py-2 shadow-[inset_-8px_0_8px_-8px_rgba(0,0,0,0.4)]">
-        <div className="text-sm font-medium text-ink">{row.label}</div>
-        {row.sublabel && <div className="text-xs text-ink-3">{row.sublabel}</div>}
+      <td className="sticky left-0 z-[1] bg-paper px-2 py-1 pl-10">
+        <div className="text-[13px] text-ink-2">{row.label}</div>
+        {row.sublabel && <div className="text-[11px] text-ink-3">{row.sublabel}</div>}
       </td>
-      <Cell value={row.split.cooper} />
-      {hasSpouse && <Cell value={row.split.sarah} />}
-      {hasSpouse && <Cell value={row.split.joint} />}
-      <Cell value={row.split.cooper + row.split.sarah + row.split.joint} />
-      <Cell value={row.split.ooe} accent />
-      <td className="w-8 px-2 py-2 text-right">
+      <ValueCell value={row.split.cooper} tone={tone} />
+      {hasSpouse && <ValueCell value={row.split.sarah} tone={tone} />}
+      {hasSpouse && <ValueCell value={row.split.joint} tone={tone} />}
+      <ValueCell value={row.split.cooper + row.split.sarah + row.split.joint} tone={tone} />
+      <td className="w-6 px-1 py-1 text-right">
         {edit && row.deletable && row.onDelete && (
           <button
             onClick={(e) => {
@@ -922,15 +1155,219 @@ function AssetRow({
   );
 }
 
-function LiabilityRowRender({
-  row,
+function LiabilityCategoryRows({
+  rows,
+  subtotal,
   hasSpouse,
   edit,
+  collapsedCategories,
+  toggleCategory,
 }: {
-  row: AssetTableRow;
+  rows: AssetTableRow[];
+  subtotal: ColumnSplit;
   hasSpouse: boolean;
   edit: boolean;
+  collapsedCategories: Set<string>;
+  toggleCategory: (key: string) => void;
 }) {
+  // Liabilities aren't bucketed by sub-category today — render under a single
+  // "Liabilities" pseudo-category so the chevron + inline subtotal pattern is
+  // consistent with the asset side.
+  const key = "liability-all";
+  const collapsed = collapsedCategories.has(key);
+  const inEstateTotal = subtotal.cooper + subtotal.sarah + subtotal.joint;
+  return (
+    <>
+      <tr
+        onClick={() => toggleCategory(key)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleCategory(key);
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        aria-expanded={!collapsed}
+        className="cursor-pointer border-t border-hair hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <td className="sticky left-0 z-[1] bg-paper px-2 py-1 text-[12px] font-semibold text-crit">
+          <span className="inline-flex items-center gap-1.5 pl-2">
+            {collapsed ? <ChevronRight /> : <ChevronDown />}
+            Debts & Loans
+          </span>
+        </td>
+        <SubtotalCell value={subtotal.cooper} tone="liability" />
+        {hasSpouse && <SubtotalCell value={subtotal.sarah} tone="liability" />}
+        {hasSpouse && <SubtotalCell value={subtotal.joint} tone="liability" />}
+        <SubtotalCell value={inEstateTotal} tone="liability" />
+        <td className="w-6 px-1 py-1" />
+      </tr>
+      {!collapsed &&
+        rows.map((r) => (
+          <AssetRow key={r.key} row={r} hasSpouse={hasSpouse} edit={edit} tone="liability" />
+        ))}
+    </>
+  );
+}
+
+function ValueCell({ value, tone }: { value: number; tone: Tone }) {
+  const isZero = Math.abs(value) < 0.5;
+  let cls = "px-2 py-1 text-right text-[13px] tabular-nums";
+  if (isZero) cls += " text-ink-4";
+  else cls += tone === "asset" ? " text-ink" : " text-crit";
+  return <td className={cls}>{fmt(isZero ? 0 : value)}</td>;
+}
+
+function SubtotalCell({ value, tone }: { value: number; tone: Tone }) {
+  const isZero = Math.abs(value) < 0.5;
+  let cls = "px-2 py-1 text-right text-[13px] font-semibold tabular-nums";
+  if (isZero) cls += " text-ink-4";
+  else cls += tone === "asset" ? " text-ink" : " text-crit";
+  return <td className={cls}>{fmt(isZero ? 0 : value)}</td>;
+}
+
+function TotalRow({
+  label,
+  split,
+  hasSpouse,
+  emphasis,
+  signColor,
+  tone,
+}: {
+  label: string;
+  split: ColumnSplit;
+  hasSpouse: boolean;
+  emphasis: "grand" | "net-worth";
+  signColor?: boolean;
+  tone?: Tone;
+}) {
+  const labelToneClass = tone ? toneTextClass(tone) : "text-ink";
+  const labelClass =
+    emphasis === "grand"
+      ? `text-[12px] font-bold uppercase tracking-wider ${labelToneClass}`
+      : "text-[13px] font-bold uppercase tracking-wider text-ink";
+  const valueVariant = emphasis === "grand" ? "total" : "net-worth";
+  const inEstateTotal = split.cooper + split.sarah + split.joint;
+  return (
+    <tr className="border-t-2 border-hair-2">
+      <td className={`sticky left-0 z-[1] bg-paper px-2 py-1 ${labelClass}`}>{label}</td>
+      <TotalCell value={split.cooper} variant={valueVariant} signColor={signColor} tone={tone} />
+      {hasSpouse && (
+        <TotalCell value={split.sarah} variant={valueVariant} signColor={signColor} tone={tone} />
+      )}
+      {hasSpouse && (
+        <TotalCell value={split.joint} variant={valueVariant} signColor={signColor} tone={tone} />
+      )}
+      <TotalCell value={inEstateTotal} variant={valueVariant} signColor={signColor} tone={tone} />
+      <td className="w-6 px-1 py-1" />
+    </tr>
+  );
+}
+
+function TotalCell({
+  value,
+  variant,
+  signColor,
+  tone,
+}: {
+  value: number;
+  variant: "total" | "net-worth";
+  signColor?: boolean;
+  tone?: Tone;
+}) {
+  const isZero = Math.abs(value) < 0.5;
+  let cls = "px-2 py-1 text-right tabular-nums";
+  if (variant === "net-worth") cls += " text-[14px] font-bold text-ink";
+  else cls += ` text-[13px] font-bold ${tone ? toneTextClass(tone) : "text-ink"}`;
+  if (isZero) cls += " text-ink-4";
+  if (signColor && !isZero) cls += value >= 0 ? " text-good" : " text-crit";
+  return <td className={cls}>{fmt(isZero ? 0 : value)}</td>;
+}
+
+function OoeSectionBanner({
+  label,
+  tone,
+  collapsed,
+  onToggle,
+}: {
+  label: string;
+  tone: Tone;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <tr
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+      tabIndex={0}
+      role="button"
+      aria-expanded={!collapsed}
+      className="cursor-pointer hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+    >
+      <td
+        colSpan={3}
+        className={`sticky left-0 z-[1] bg-paper px-2 py-1 text-[11px] font-bold uppercase tracking-wider ${toneTextClass(tone)}`}
+      >
+        <span className="inline-flex items-center gap-1.5">
+          {collapsed ? <ChevronRight /> : <ChevronUp />}
+          {label}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+function OoeCategorySection({
+  label,
+  rows,
+  subtotal,
+  edit,
+  collapsed,
+  onToggle,
+}: {
+  label: string;
+  rows: AssetTableRow[];
+  subtotal: number;
+  edit: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <tr
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        aria-expanded={!collapsed}
+        className="cursor-pointer border-t border-hair hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <td className="sticky left-0 z-[1] bg-paper px-2 py-1 text-[12px] font-semibold text-accent-ink">
+          <span className="inline-flex items-center gap-1.5 pl-2">
+            {collapsed ? <ChevronRight /> : <ChevronDown />}
+            {label}
+          </span>
+        </td>
+        <SubtotalCell value={subtotal} tone="asset" />
+        <td className="w-6 px-1 py-1" />
+      </tr>
+      {!collapsed && rows.map((r) => <OoeAssetRow key={r.key} row={r} edit={edit} />)}
+    </>
+  );
+}
+
+function OoeAssetRow({ row, edit }: { row: AssetTableRow; edit: boolean }) {
   const clickable = !!row.onClick && !edit;
   return (
     <tr
@@ -944,18 +1381,61 @@ function LiabilityRowRender({
       }}
       tabIndex={clickable ? 0 : -1}
       role={clickable ? "button" : undefined}
-      className={`border-t border-hair ${clickable ? "cursor-pointer hover:bg-card-hover" : ""}`}
+      className={
+        clickable
+          ? "cursor-pointer hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+          : undefined
+      }
     >
-      <td className="sticky left-0 z-[1] bg-card px-4 py-2 shadow-[inset_-8px_0_8px_-8px_rgba(0,0,0,0.4)]">
-        <div className="text-sm font-medium text-ink">{row.label}</div>
-        {row.sublabel && <div className="text-xs text-ink-3">{row.sublabel}</div>}
+      <td className="sticky left-0 z-[1] bg-paper px-2 py-1 pl-10">
+        <div className="text-[13px] text-ink-2">{row.label}</div>
+        {row.sublabel && <div className="text-[11px] text-ink-3">{row.sublabel}</div>}
       </td>
-      <LiabilityCell value={row.split.cooper} />
-      {hasSpouse && <LiabilityCell value={row.split.sarah} />}
-      {hasSpouse && <LiabilityCell value={row.split.joint} />}
-      <LiabilityCell value={row.split.cooper + row.split.sarah + row.split.joint} />
-      <LiabilityCell value={row.split.ooe} accent />
-      <td className="w-8 px-2 py-2 text-right">
+      <ValueCell value={row.split.ooe} tone="asset" />
+      <td className="w-6 px-1 py-1 text-right">
+        {edit && row.deletable && row.onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              row.onDelete?.();
+            }}
+            className="text-ink hover:text-crit"
+            aria-label={`Delete ${row.label}`}
+          >
+            <TrashIcon />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function OoeLiabilityRowRender({ row, edit }: { row: AssetTableRow; edit: boolean }) {
+  const clickable = !!row.onClick && !edit;
+  return (
+    <tr
+      onClick={clickable ? row.onClick : undefined}
+      onKeyDown={(e) => {
+        if (!clickable) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          row.onClick?.();
+        }
+      }}
+      tabIndex={clickable ? 0 : -1}
+      role={clickable ? "button" : undefined}
+      className={
+        clickable
+          ? "cursor-pointer hover:bg-card-hover focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+          : undefined
+      }
+    >
+      <td className="sticky left-0 z-[1] bg-paper px-2 py-1 pl-10">
+        <div className="text-[13px] text-ink-2">{row.label}</div>
+        {row.sublabel && <div className="text-[11px] text-ink-3">{row.sublabel}</div>}
+      </td>
+      <ValueCell value={row.split.ooe} tone="liability" />
+      <td className="w-6 px-1 py-1 text-right">
         {edit && row.onDelete && (
           <button
             onClick={(e) => {
@@ -973,90 +1453,30 @@ function LiabilityRowRender({
   );
 }
 
-function LiabilityCell({ value, accent }: { value: number; accent?: boolean }) {
-  const isZero = Math.abs(value) < 0.5;
-  let cls = "px-4 py-2 text-right text-sm tabular-nums";
-  cls += isZero ? " text-ink-4" : " text-crit";
-  if (accent) cls += " bg-accent/8";
-  return <td className={cls}>{isZero ? <span>—</span> : fmt(value)}</td>;
-}
-
-function SubtotalRow({ split, hasSpouse }: { split: ColumnSplit; hasSpouse: boolean }) {
-  return (
-    <tr className="border-t border-hair bg-card-2/60">
-      <td className="sticky left-0 z-[1] bg-card-2/60 px-4 py-2 text-xs font-medium uppercase tracking-wider text-ink-3">
-        Subtotal
-      </td>
-      <Cell value={split.cooper} variant="subtotal" />
-      {hasSpouse && <Cell value={split.sarah} variant="subtotal" />}
-      {hasSpouse && <Cell value={split.joint} variant="subtotal" />}
-      <Cell value={split.cooper + split.sarah + split.joint} variant="subtotal" />
-      <Cell value={split.ooe} accent variant="subtotal" />
-      <td className="w-8 px-2 py-2" />
-    </tr>
-  );
-}
-
-function TotalRow({
+function OoeTotalRow({
   label,
-  split,
-  hasSpouse,
+  value,
   emphasis,
   signColor,
+  tone,
 }: {
   label: string;
-  split: ColumnSplit;
-  hasSpouse: boolean;
+  value: number;
   emphasis: "grand" | "net-worth";
   signColor?: boolean;
+  tone?: Tone;
 }) {
-  const borderClass =
-    emphasis === "grand"
-      ? "border-t-2 border-hair-2 bg-card-2"
-      : "border-t-2 border-hair-2 bg-card-2";
+  const labelToneClass = tone ? toneTextClass(tone) : "text-ink";
   const labelClass =
     emphasis === "grand"
-      ? "text-sm font-semibold uppercase tracking-wider text-ink"
-      : "text-sm font-bold uppercase tracking-wider text-ink";
+      ? `text-[12px] font-bold uppercase tracking-wider ${labelToneClass}`
+      : "text-[13px] font-bold uppercase tracking-wider text-ink";
   const valueVariant = emphasis === "grand" ? "total" : "net-worth";
-  const inEstateTotal = split.cooper + split.sarah + split.joint;
   return (
-    <tr className={borderClass}>
-      <td className={`sticky left-0 z-[1] ${borderClass.includes("bg-card-2") ? "bg-card-2" : ""} px-4 py-3 ${labelClass}`}>
-        {label}
-      </td>
-      <Cell value={split.cooper} variant={valueVariant} signColor={signColor} />
-      {hasSpouse && <Cell value={split.sarah} variant={valueVariant} signColor={signColor} />}
-      {hasSpouse && <Cell value={split.joint} variant={valueVariant} signColor={signColor} />}
-      <Cell value={inEstateTotal} variant={valueVariant} signColor={signColor} />
-      {emphasis === "net-worth" ? (
-        <td className="bg-accent/8 px-4 py-3" aria-hidden="true" />
-      ) : (
-        <Cell value={split.ooe} accent variant={valueVariant} />
-      )}
-      <td className="w-8 px-2 py-3" />
+    <tr className="border-t-2 border-hair-2">
+      <td className={`sticky left-0 z-[1] bg-paper px-2 py-1 ${labelClass}`}>{label}</td>
+      <TotalCell value={value} variant={valueVariant} signColor={signColor} tone={tone} />
+      <td className="w-6 px-1 py-1" />
     </tr>
   );
-}
-
-function Cell({
-  value,
-  accent,
-  variant = "row",
-  signColor,
-}: {
-  value: number;
-  accent?: boolean;
-  variant?: "row" | "subtotal" | "total" | "net-worth";
-  signColor?: boolean;
-}) {
-  const isZero = Math.abs(value) < 0.5;
-  let cls = "px-4 py-2 text-right text-sm tabular-nums";
-  if (variant === "subtotal") cls += " font-medium text-ink-2";
-  else if (variant === "total") cls += " font-semibold text-ink";
-  else if (variant === "net-worth") cls += " text-base font-bold";
-  else cls += " text-ink";
-  if (accent) cls += " bg-accent/8 text-accent-ink";
-  if (signColor && !isZero) cls += value >= 0 ? " text-good" : " text-crit";
-  return <td className={cls}>{isZero ? <span className="text-ink-4">—</span> : fmt(value)}</td>;
 }
