@@ -16,6 +16,7 @@ export type {
   TerminationContext,
   TerminationDeathYears,
   TrustTerminationResult,
+  TerminationOptions,
 } from "./trust-termination";
 export { computeCltRecapture } from "./recapture";
 export type { RecaptureInput, RecaptureResult } from "./recapture";

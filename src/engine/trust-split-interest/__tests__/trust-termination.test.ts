@@ -221,3 +221,101 @@ describe("CLT trust-termination integration in projection", () => {
     expect(yr2032.trustTerminations ?? []).toEqual([]);
   });
 });
+
+describe("distributeAtTermination with recipientMode=charity (CRT)", () => {
+  const baseTrust: EntitySummary = {
+    id: "trust-1",
+    name: "Test CRT",
+    entityType: "trust",
+    trustSubType: "crt",
+    isIrrevocable: true,
+    isGrantor: true,
+    includeInPortfolio: false,
+    grantor: "client",
+    splitInterest: {
+      inceptionYear: 2026,
+      inceptionValue: 1_000_000,
+      payoutType: "annuity",
+      payoutPercent: null,
+      payoutAmount: 60_000,
+      irc7520Rate: 0.04,
+      termType: "years",
+      termYears: 10,
+      measuringLife1Id: null,
+      measuringLife2Id: null,
+      charityId: "charity-1",
+      originalIncomeInterest: 486_654,
+      originalRemainderInterest: 513_346,
+    },
+  };
+
+  it("routes the entire termination amount to the charity id when recipientMode=charity", () => {
+    const result = distributeAtTermination(
+      {
+        trust: baseTrust,
+        currentYear: 2036,
+        designations: [],
+      },
+      750_000,
+      { recipientMode: "charity", charityId: "charity-1" },
+    );
+    expect(result.totalDistributed).toBe(750_000);
+    expect(result.toBeneficiaries).toHaveLength(1);
+    expect(result.toBeneficiaries[0].externalBeneficiaryId).toBe("charity-1");
+    expect(result.toBeneficiaries[0].amount).toBe(750_000);
+  });
+
+  it("ignores designations passed alongside recipientMode=charity", () => {
+    const result = distributeAtTermination(
+      {
+        trust: baseTrust,
+        currentYear: 2036,
+        designations: [
+          {
+            id: "des-1",
+            tier: "primary",
+            percentage: 100,
+            familyMemberId: "fm-1",
+          } as BeneficiaryRef,
+        ],
+      },
+      500_000,
+      { recipientMode: "charity", charityId: "charity-1" },
+    );
+    expect(result.toBeneficiaries).toHaveLength(1);
+    expect(result.toBeneficiaries[0].familyMemberId).toBeUndefined();
+    expect(result.toBeneficiaries[0].externalBeneficiaryId).toBe("charity-1");
+  });
+});
+
+describe("isTrustTerminationYear with CRT subtype", () => {
+  it("returns true for a CRT term-certain trust in the year-after-term-end", () => {
+    const trust: EntitySummary = {
+      id: "crt-1",
+      name: "Test CRT",
+      entityType: "trust",
+      trustSubType: "crt",
+      isIrrevocable: true,
+      isGrantor: true,
+      includeInPortfolio: false,
+      grantor: "client",
+      splitInterest: {
+        inceptionYear: 2026,
+        inceptionValue: 1_000_000,
+        payoutType: "annuity",
+        payoutPercent: null,
+        payoutAmount: 60_000,
+        irc7520Rate: 0.04,
+        termType: "years",
+        termYears: 10,
+        measuringLife1Id: null,
+        measuringLife2Id: null,
+        charityId: "charity-1",
+        originalIncomeInterest: 486_654,
+        originalRemainderInterest: 513_346,
+      },
+    };
+    expect(isTrustTerminationYear(trust, 2036, {})).toBe(true);
+    expect(isTrustTerminationYear(trust, 2035, {})).toBe(false);
+  });
+});
