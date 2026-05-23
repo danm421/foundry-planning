@@ -86,6 +86,10 @@ const AccountBeneficiaryEditor = forwardRef<
     spouseFirstName: string | null;
     members: FamilyMember[];
     externals: ExternalBeneficiary[];
+    /** Trust entities available for this client. Non-trust entities are
+     *  excluded — ILITs / revocable trusts are the realistic beneficiary case
+     *  for life insurance, matching the auto-seed filter below. */
+    trusts: { id: string; name: string | null }[];
     initial: Designation[];
     onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
   }
@@ -97,6 +101,7 @@ const AccountBeneficiaryEditor = forwardRef<
     spouseFirstName,
     members,
     externals,
+    trusts,
     initial,
     onAutoSaveStateChange,
   },
@@ -279,35 +284,29 @@ const AccountBeneficiaryEditor = forwardRef<
                       ? `fm:${r.familyMemberId}`
                       : r.externalBeneficiaryId
                         ? `ext:${r.externalBeneficiaryId}`
-                        : ""
+                        : r.entityIdRef
+                          ? `ent:${r.entityIdRef}`
+                          : ""
                 }
                 onChange={(e) => {
                   const v = e.target.value;
+                  const clear = {
+                    familyMemberId: null,
+                    externalBeneficiaryId: null,
+                    entityIdRef: null,
+                    householdRole: null,
+                  };
                   if (v.startsWith("hh:")) {
                     const role = v.slice(3) as "client" | "spouse";
-                    updateRow(r.id, {
-                      householdRole: role,
-                      familyMemberId: null,
-                      externalBeneficiaryId: null,
-                    });
+                    updateRow(r.id, { ...clear, householdRole: role });
                   } else if (v.startsWith("fm:")) {
-                    updateRow(r.id, {
-                      familyMemberId: v.slice(3),
-                      externalBeneficiaryId: null,
-                      householdRole: null,
-                    });
+                    updateRow(r.id, { ...clear, familyMemberId: v.slice(3) });
                   } else if (v.startsWith("ext:")) {
-                    updateRow(r.id, {
-                      externalBeneficiaryId: v.slice(4),
-                      familyMemberId: null,
-                      householdRole: null,
-                    });
+                    updateRow(r.id, { ...clear, externalBeneficiaryId: v.slice(4) });
+                  } else if (v.startsWith("ent:")) {
+                    updateRow(r.id, { ...clear, entityIdRef: v.slice(4) });
                   } else {
-                    updateRow(r.id, {
-                      familyMemberId: null,
-                      externalBeneficiaryId: null,
-                      householdRole: null,
-                    });
+                    updateRow(r.id, clear);
                   }
                 }}
                 className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
@@ -326,6 +325,15 @@ const AccountBeneficiaryEditor = forwardRef<
                     </option>
                   ))}
                 </optgroup>
+                {trusts.length > 0 && (
+                  <optgroup label="Trust">
+                    {trusts.map((t) => (
+                      <option key={t.id} value={`ent:${t.id}`}>
+                        {t.name ?? "Trust"}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
                 <optgroup label="External">
                   {externals.map((x) => (
                     <option key={x.id} value={`ext:${x.id}`}>
@@ -547,6 +555,10 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
     return <p className="py-6 text-sm text-crit">{error}</p>;
   }
 
+  const trusts = entities
+    .filter((e) => e.entityType === "trust")
+    .map((e) => ({ id: e.id, name: e.name }));
+
   return (
     <AccountBeneficiaryEditor
       ref={ref}
@@ -556,6 +568,7 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
       spouseFirstName={spouseFirstName}
       members={members}
       externals={externals}
+      trusts={trusts}
       initial={seededDesignations}
       onAutoSaveStateChange={onAutoSaveStateChange}
     />
