@@ -137,10 +137,14 @@ function SplitInterestPanel({
 }: {
   splitInterest: NonNullable<TrustCardData["splitInterest"]>;
 }) {
+  const isCrt = si.trustSubType === "crt";
+  const payoutLabelSuffix = isCrt
+    ? si.payoutType === "unitrust" ? "(CRUT)" : "(CRAT)"
+    : si.payoutType === "unitrust" ? "(CLUT)" : "(CLAT)";
   const payoutLabel =
     si.payoutType === "unitrust"
-      ? `${((si.payoutPercent ?? 0) * 100).toFixed(2)}% / yr (CLUT)`
-      : `$${Math.round(si.payoutAmount ?? 0).toLocaleString("en-US")} / yr (CLAT)`;
+      ? `${((si.payoutPercent ?? 0) * 100).toFixed(2)}% / yr ${payoutLabelSuffix}`
+      : `$${Math.round(si.payoutAmount ?? 0).toLocaleString("en-US")} / yr ${payoutLabelSuffix}`;
   return (
     <section className="mt-3 border-t border-[var(--color-hair)] pt-3">
       <h4 className="mb-2 text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-ink-3)]">
@@ -153,16 +157,31 @@ function SplitInterestPanel({
         <dd className="text-[var(--color-ink-2)]">{(si.irc7520Rate * 100).toFixed(2)}%</dd>
         <dt className="text-[var(--color-ink-3)]">Term</dt>
         <dd className="text-[var(--color-ink-2)]">{describeTerm(si)}</dd>
-        <dt className="text-[var(--color-ink-3)]">Charity</dt>
+        <dt className="text-[var(--color-ink-3)]">{isCrt ? "Remainder to" : "Charity"}</dt>
         <dd className="text-[var(--color-ink-2)]">{si.charityName ?? "—"}</dd>
-        <dt className="text-[var(--color-ink-3)]">Income interest (deduction)</dt>
-        <dd className="tabular-nums text-[var(--color-ink-2)]">
-          ${Math.round(si.originalIncomeInterest).toLocaleString("en-US")}
-        </dd>
-        <dt className="text-[var(--color-ink-3)]">Remainder interest (gift)</dt>
-        <dd className="tabular-nums text-[var(--color-ink-2)]">
-          ${Math.round(si.originalRemainderInterest).toLocaleString("en-US")}
-        </dd>
+        {isCrt ? (
+          <>
+            <dt className="text-[var(--color-ink-3)]">Charitable deduction (remainder)</dt>
+            <dd className="tabular-nums text-[var(--color-ink-2)]">
+              ${Math.round(si.originalRemainderInterest).toLocaleString("en-US")}
+            </dd>
+            <dt className="text-[var(--color-ink-3)]">Income interest (retained)</dt>
+            <dd className="tabular-nums text-[var(--color-ink-2)]">
+              ${Math.round(si.originalIncomeInterest).toLocaleString("en-US")}
+            </dd>
+          </>
+        ) : (
+          <>
+            <dt className="text-[var(--color-ink-3)]">Income interest (deduction)</dt>
+            <dd className="tabular-nums text-[var(--color-ink-2)]">
+              ${Math.round(si.originalIncomeInterest).toLocaleString("en-US")}
+            </dd>
+            <dt className="text-[var(--color-ink-3)]">Remainder interest (gift)</dt>
+            <dd className="tabular-nums text-[var(--color-ink-2)]">
+              ${Math.round(si.originalRemainderInterest).toLocaleString("en-US")}
+            </dd>
+          </>
+        )}
       </dl>
     </section>
   );
