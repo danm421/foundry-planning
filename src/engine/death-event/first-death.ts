@@ -369,10 +369,8 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     deceasedFmId,
     survivorFmId,
     deathOrder: 1,
-    entities: prepared.entities,
     accounts: prepared.accounts,
     accountBalances: prepared.accountBalances,
-    entityAccountSharesEoY: input.entityAccountSharesEoY,
     will: input.will ?? null,
     familyMembers: input.familyMembers,
     externalBeneficiaries: input.externalBeneficiaries,
@@ -514,7 +512,11 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     }
 
     // Business-interest owner succession: remove the deceased's row, add successor rows.
-    const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.entityId === e.id);
+    // Under the account-based business model the businessSuccession output is
+    // keyed by account id, so this lookup against an entity id no longer
+    // matches — left in place as a no-op pending full entity-business removal
+    // (Task 1.7).
+    const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.accountId === e.id);
     if (ownerUpd && next.owners != null) {
       // Clone each kept row so the `existing.percent +=` merge below never
       // mutates the original input entity's owner objects. Entity-kind owners
@@ -534,7 +536,9 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     }
 
     // §1014 basis step-up on the entity's flat operating value.
-    const basisUpd = businessSuccession.basisUpdates.find((u) => u.entityId === e.id);
+    // Same caveat: businessSuccession.basisUpdates is account-keyed under the
+    // new model and won't match an entity id — inert until Task 1.7.
+    const basisUpd = businessSuccession.basisUpdates.find((u) => u.accountId === e.id);
     if (basisUpd) next = { ...next, basis: basisUpd.newBasis };
 
     return next;

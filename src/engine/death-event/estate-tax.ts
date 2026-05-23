@@ -69,6 +69,22 @@ function deceasedBusinessShare(
 }
 
 /**
+ * Account-based analogue of `deceasedBusinessShare`: the deceased family
+ * member's ownership share of a business account. Accounts always carry an
+ * owners array (possibly empty), so the legacy null-owners joint convention
+ * does not apply here — a deceased who is not in the array contributes 0.
+ */
+function deceasedBusinessAccountShare(
+  business: Account,
+  deceasedFmId: string | null,
+): number {
+  if (deceasedFmId == null) return 0;
+  return business.owners
+    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
+    .reduce((s, o) => s + (o.percent ?? 0), 0);
+}
+
+/**
  * Fraction of an entity-owned slice that belongs in the deceased's gross
  * estate. Business entities are included by the deceased's entity_owners share
  * (they have no grantor). Trusts are included 100% only when revocable AND the
@@ -273,28 +289,28 @@ export function computeGrossEstate(input: {
     });
   }
 
-  // Business-entity consolidation. A business (LLC / S-corp / etc.) is valued
-  // as one unit (canonical rule): its flat operating value (`entity.value`)
-  // plus every account slice it owns — default cash and partial slices of
-  // mixed accounts included. Those account slices were deliberately excluded
-  // from the account loop above. One gross-estate line per business entity,
-  // weighted by the deceased's entity_owners share. Trusts hold value through
-  // accounts and carry no flat value, so isBusinessEntity gates them out.
-  for (const ent of input.entities) {
-    if (!isBusinessEntity(ent)) continue;
-    const pct = deceasedBusinessShare(ent, input.deceasedFmId, input.deathOrder);
+  // Business consolidation. A business (LLC / S-corp / etc.) is valued as one
+  // unit (canonical rule): its own account value plus every child account
+  // reachable via parentAccountId. Top-level business accounts only — child
+  // business accounts roll into their parent. One gross-estate line per
+  // business, weighted by the deceased's family-member ownership share.
+  const businessAccounts = input.accounts.filter(
+    (a) => a.category === "business" && a.parentAccountId == null,
+  );
+  for (const business of businessAccounts) {
+    const pct = deceasedBusinessAccountShare(business, input.deceasedFmId);
     if (pct <= 0) continue;
 
     const entityTotal = businessConsolidatedValue(
-      ent, input.accounts, input.accountBalances, input.entityAccountSharesEoY,
+      business, input.accounts, input.accountBalances,
     );
     if (entityTotal <= 0) continue;
 
     lines.push({
-      label: formatLabel(ent.name ?? "Business", pct, "Business"),
-      accountId: null,
+      label: formatLabel(business.name, pct, "Business"),
+      accountId: business.id,
       liabilityId: null,
-      entityId: ent.id,
+      entityId: null,
       percentage: pct,
       amount: entityTotal * pct,
     });
