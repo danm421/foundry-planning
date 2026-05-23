@@ -755,7 +755,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       currentIncomes,
       year,
       client,
-      (inc) => inc.ownerEntityId == null
+      // Exclude business-owned (ownerAccountId) rows from household totals.
+      // Business income is taxed via the Phase 3 K-1 incidence block (which
+      // adds the household share directly to taxDetail/taxableIncome) and
+      // routed to household cash via the Phase 3 distribution sweep — so it
+      // must not also contribute to income.total / income.bySource here, or
+      // we double-count it in the household tax base and cashflow surplus.
+      (inc) => inc.ownerEntityId == null && inc.ownerAccountId == null
     );
     const grantorIncome = computeIncome(
       currentIncomes,
@@ -775,7 +781,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       data.expenses,
       year,
       data.client,
-      (exp) => exp.ownerEntityId == null
+      // Exclude business-owned (ownerAccountId) rows: those are netted against
+      // business income inside the Phase 3 distribution sweep, not paid from
+      // household cash. Including them here would inflate household
+      // non-savings outflows and depress the cashflow surplus.
+      (exp) => exp.ownerEntityId == null && exp.ownerAccountId == null
     );
 
     // Initialize per-account ledgers with the year-start balances. Ledgers are
@@ -2891,6 +2901,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const inc of currentIncomes) {
       const incRouteGate = itemProrationGate(inc, year, data.client);
       if (!incRouteGate.include) continue;
+      // Business-owned income (ownerAccountId set) is routed via the Phase 3
+      // business-distribution loop below, not the household cash routing here.
+      // Without this guard the row is credited twice: once to defaultChecking
+      // via resolveCashAccount (since ownerEntityId is null), and again as
+      // part of the business-distribution sweep.
+      if (inc.ownerAccountId != null) continue;
       // Schedule-mode entities are handled in a dedicated loop below — the
       // schedule grid is the source of truth, so base income rows are not
       // routed here (would double-count or, worse, miss override-only cells
@@ -2947,6 +2963,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const exp of allExpenses) {
       const expRouteGate = itemProrationGate(exp, year, data.client);
       if (!expRouteGate.include) continue;
+      // Business-owned expense (ownerAccountId set) is paid out of business cash
+      // and netted against business income in the Phase 3 distribution loop —
+      // not paid from household cash here. Without this guard the row is
+      // debited twice: once from defaultChecking via resolveCashAccount, and
+      // again implicitly when the Phase 3 sweep nets it against gross income.
+      if (exp.ownerAccountId != null) continue;
       // Schedule-mode entities are handled below.
       if (
         exp.ownerEntityId != null &&
