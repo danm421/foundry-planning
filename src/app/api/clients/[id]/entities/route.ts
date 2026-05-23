@@ -17,6 +17,7 @@ import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
+import { computeCrtInceptionInterests } from "@/lib/entities/compute-crt-inception";
 
 /** Derive the legacy `owner` enum from the multi-owner allocation. Used to
  *  keep the deprecated column populated for back-compat readers (balance-sheet
@@ -249,12 +250,17 @@ export async function POST(
       }
     }
 
-    if (data.trustSubType === "clt" && data.splitInterest) {
+    if (
+      (data.trustSubType === "clt" || data.trustSubType === "crt") &&
+      data.splitInterest
+    ) {
       const si = data.splitInterest;
 
       if (data.grantor !== "client" && data.grantor !== "spouse") {
         return NextResponse.json(
-          { error: "grantor ('client' or 'spouse') is required for CLTs" },
+          {
+            error: `grantor ('client' or 'spouse') is required for ${data.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
+          },
           { status: 400 },
         );
       }
@@ -330,29 +336,48 @@ export async function POST(
         );
       }
 
-      // For 'new' CLTs we compute income/remainder from the actuarial inputs.
-      // For 'existing' CLTs the caller supplies the historical values that
-      // were recorded on the prior return — we trust them and skip the
-      // recompute (the §7520 rate and mortality table at original funding may
-      // not match what we'd compute today).
-      const isExistingClut = si.origin === "existing";
-      const interests = isExistingClut
+      const isExisting = si.origin === "existing";
+      const isCrt = data.trustSubType === "crt";
+
+      // Normalize both compute paths to the same DB-row shape:
+      //   originalIncomeInterest    = the "income side" PV (gift for CLT, retained-income PV for CRT)
+      //   originalRemainderInterest = the "remainder side" PV (taxable gift for CLT, charitable deduction for CRT)
+      const interests = isExisting
         ? {
             originalIncomeInterest: si.originalIncomeInterest!,
             originalRemainderInterest: si.originalRemainderInterest!,
-            remainderFactor: undefined,
+            remainderFactor: undefined as number | undefined,
           }
-        : computeCltInceptionInterests({
-            inceptionValue: si.inceptionValue,
-            payoutType: si.payoutType,
-            payoutPercent: si.payoutPercent,
-            payoutAmount: si.payoutAmount,
-            irc7520Rate: si.irc7520Rate,
-            termType: si.termType,
-            termYears: si.termYears,
-            measuringLifeAge1: age1,
-            measuringLifeAge2: age2,
-          });
+        : isCrt
+          ? (() => {
+              const r = computeCrtInceptionInterests({
+                inceptionValue: si.inceptionValue,
+                payoutType: si.payoutType,
+                payoutPercent: si.payoutPercent,
+                payoutAmount: si.payoutAmount,
+                irc7520Rate: si.irc7520Rate,
+                termType: si.termType,
+                termYears: si.termYears,
+                measuringLifeAge1: age1,
+                measuringLifeAge2: age2,
+              });
+              return {
+                originalIncomeInterest: r.incomeInterest,
+                originalRemainderInterest: r.charitableDeduction,
+                remainderFactor: r.remainderFactor,
+              };
+            })()
+          : computeCltInceptionInterests({
+              inceptionValue: si.inceptionValue,
+              payoutType: si.payoutType,
+              payoutPercent: si.payoutPercent,
+              payoutAmount: si.payoutAmount,
+              irc7520Rate: si.irc7520Rate,
+              termType: si.termType,
+              termYears: si.termYears,
+              measuringLifeAge1: age1,
+              measuringLifeAge2: age2,
+            });
 
       await db.insert(trustSplitInterestDetails).values({
         entityId: entity.id,
@@ -372,10 +397,10 @@ export async function POST(
         originalRemainderInterest: interests.originalRemainderInterest.toString(),
       });
 
-      // Auto-emit the remainder-interest gift only for new CLTs. Existing
-      // CLTs already filed this gift on the original §709 — we don't want
-      // to double-count it on the lifetime-exemption ledger.
-      if (!isExistingClut) {
+      // Auto-emit the remainder-interest gift only for NEW CLTs. CRTs do not
+      // emit a gift at inception (income beneficiary = grantor / spouse, so
+      // there's either no transfer or a marital deduction applies).
+      if (!isExisting && !isCrt) {
         await db.insert(gifts).values({
           clientId: id,
           year: si.inceptionYear,
@@ -394,6 +419,7 @@ export async function POST(
         clientId: id,
         firmId,
         metadata: {
+          subType: data.trustSubType,
           origin: si.origin ?? "new",
           inceptionYear: si.inceptionYear,
           inceptionValue: si.inceptionValue,
