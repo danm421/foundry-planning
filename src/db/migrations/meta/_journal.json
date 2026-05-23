@@ -855,6 +855,13 @@
       "when": 1779465556325,
       "tag": "0121_gigantic_stone_men",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1779496696223,
+      "tag": "0122_tan_shadowcat",
+      "breakpoints": true
     }
   ]
 }

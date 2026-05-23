@@ -208,6 +208,7 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "ilit",
   "clt",
   "idgt",
+  "crt",
 ]);
 
 export const trustTermTypeEnum = pgEnum("trust_term_type", [
