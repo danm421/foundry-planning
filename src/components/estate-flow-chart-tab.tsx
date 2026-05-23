@@ -54,6 +54,22 @@ export function EstateFlowChartTab({
     [projection, asOfSelection, ordering, engineData, ownerNames],
   );
 
+  // Derive years list and todayYear from the projection.
+  const projectionYears = useMemo(
+    () => projection.years.map((y) => y.year),
+    [projection],
+  );
+  const todayYear = projectionYears[0] ?? new Date().getFullYear();
+
+  // The OOE Irrev Trusts box gates trust-owned policies on `isPolicyInForce`,
+  // which needs a concrete year. "split" doesn't pick a single year — use
+  // `todayYear` as the default. The death-stage boxes already key off the
+  // transfer-report's per-death year independently, so this only affects OOE.
+  const asOfYear =
+    selectedAsOf === "today" || selectedAsOf === "split"
+      ? todayYear
+      : selectedAsOf;
+
   const summary = useMemo(
     () =>
       buildEstateFlowSummary({
@@ -61,16 +77,10 @@ export function EstateFlowChartTab({
         clientData: engineData,
         gifts: workingGifts,
         ownerNames,
+        asOfYear,
       }),
-    [reportData, engineData, workingGifts, ownerNames],
+    [reportData, engineData, workingGifts, ownerNames, asOfYear],
   );
-
-  // Derive years list and todayYear from the projection.
-  const projectionYears = useMemo(
-    () => projection.years.map((y) => y.year),
-    [projection],
-  );
-  const todayYear = projectionYears[0] ?? new Date().getFullYear();
 
   // Death years from the projection's firstDeathEvent / secondDeathEvent.
   const firstDeathYear = projection.firstDeathEvent?.year;

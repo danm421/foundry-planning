@@ -101,6 +101,10 @@ export interface BuildEstateFlowSummaryInput {
   clientData: ClientData;
   gifts: EstateFlowGift[];
   ownerNames: { clientName: string; spouseName: string | null };
+  /** The year the user selected on the chart's "As Of" dropdown. Used by
+   *  `computeOutOfEstate` to gate `isPolicyInForce` on trust-owned policies.
+   *  When omitted, callers default to the projection's start year. */
+  asOfYear: number;
 }
 
 // Friendly labels for ReductionsLine kinds, used inside the death-stage taxes box.
@@ -380,6 +384,7 @@ function accountAmount(a: Account): number {
  */
 function computeOutOfEstate(
   clientData: ClientData,
+  _asOfYear: number,
 ): EstateFlowSummary["outOfEstate"] {
   const accounts = clientData.accounts ?? [];
   const entities = clientData.entities ?? [];
@@ -986,7 +991,7 @@ export function buildEstateFlowSummary(
       : null;
   const survivorNetWorth = computeSurvivorNetWorth(clientData, survivor);
 
-  const outOfEstate = computeOutOfEstate(clientData);
+  const outOfEstate = computeOutOfEstate(clientData, input.asOfYear);
 
   // Per-heir composition. Rule 1 populates `outright` from at-death receipts;
   // rule 2 attributes trust bequests to the trust's beneficiaries as `inTrust`;

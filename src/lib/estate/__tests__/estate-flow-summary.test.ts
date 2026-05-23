@@ -146,6 +146,7 @@ function baseInput(overrides: Partial<EstateTransferReportData> = {}): {
   clientData: ClientData;
   gifts: EstateFlowGift[];
   ownerNames: { clientName: string; spouseName: string | null };
+  asOfYear: number;
 } {
   return {
     reportData: {
@@ -160,6 +161,7 @@ function baseInput(overrides: Partial<EstateTransferReportData> = {}): {
     clientData: emptyClientData(),
     gifts: [],
     ownerNames: { clientName: "Cooper", spouseName: "Susan" },
+    asOfYear: 2026,
   };
 }
 
