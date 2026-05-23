@@ -114,10 +114,30 @@ function isJointTitledClientSpouseHalfHalf(
 }
 
 export function attributeEntityFlatValue(
-  _entity: { id: string; value: number; owners: { familyMemberId: string; percent: number }[] | undefined },
-  _ctx: AttributionCtx,
+  entity: {
+    id: string;
+    value: number;
+    owners: { familyMemberId: string; percent: number }[] | undefined;
+  },
+  ctx: AttributionCtx,
 ): ColumnSplit {
-  return { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
+  const split: ColumnSplit = { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
+
+  // Legacy: missing entity_owners rows → treat as 100% client (matches
+  // the current `isFamilyOwnedBusiness` precedent that empty owners == family).
+  if (!entity.owners || entity.owners.length === 0) {
+    split.cooper = entity.value;
+    return split;
+  }
+
+  for (const owner of entity.owners) {
+    const dollars = entity.value * owner.percent;
+    const role = roleOf(owner.familyMemberId, ctx);
+    if (role === "client") split.cooper += dollars;
+    else if (role === "spouse") split.sarah += dollars;
+    else split.ooe += dollars;
+  }
+  return split;
 }
 
 export function emptySplit(): ColumnSplit {

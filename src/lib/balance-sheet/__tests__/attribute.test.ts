@@ -47,15 +47,6 @@ describe("attributeToColumns — placeholder", () => {
   });
 });
 
-describe("attributeEntityFlatValue — placeholder", () => {
-  it("returns zeros from the stub", () => {
-    const result = attributeEntityFlatValue(
-      { id: "e1", value: 100, owners: [] },
-      baseCtx(),
-    );
-    expect(result).toEqual({ cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 });
-  });
-});
 
 describe("rule 1: direct family-member ownership", () => {
   it("client 100% → Cooper column", () => {
@@ -247,5 +238,45 @@ describe("rule 5: external beneficiaries → OOE column", () => {
       baseCtx(),
     );
     expect(r).toEqual({ cooper: 60_000, sarah: 0, joint: 0, ooe: 40_000, representedPct: 1 });
+  });
+});
+
+describe("attributeEntityFlatValue — in-estate business rows", () => {
+  it("100% client → Cooper column", () => {
+    const r = attributeEntityFlatValue(
+      { id: "e1", value: 800_000, owners: [{ familyMemberId: CLIENT_FM, percent: 1 }] },
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 800_000, sarah: 0, joint: 0, ooe: 0, representedPct: 1 });
+  });
+
+  it("50/50 client + spouse → Cooper + Sarah (no joint column for entities)", () => {
+    const r = attributeEntityFlatValue(
+      { id: "e1", value: 1_000_000, owners: [
+        { familyMemberId: CLIENT_FM, percent: 0.5 },
+        { familyMemberId: SPOUSE_FM, percent: 0.5 },
+      ] },
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 500_000, sarah: 500_000, joint: 0, ooe: 0, representedPct: 1 });
+  });
+
+  it("client 80% + child 20% → Cooper $80k, OOE $20k", () => {
+    const r = attributeEntityFlatValue(
+      { id: "e1", value: 100_000, owners: [
+        { familyMemberId: CLIENT_FM, percent: 0.8 },
+        { familyMemberId: CHILD_FM, percent: 0.2 },
+      ] },
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 80_000, sarah: 0, joint: 0, ooe: 20_000, representedPct: 1 });
+  });
+
+  it("owners=undefined (legacy: assume 100% client) → Cooper column", () => {
+    const r = attributeEntityFlatValue(
+      { id: "e1", value: 500_000, owners: undefined },
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 500_000, sarah: 0, joint: 0, ooe: 0, representedPct: 1 });
   });
 });
