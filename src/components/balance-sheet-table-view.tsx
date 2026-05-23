@@ -218,6 +218,68 @@ function currentYearBalance(l: LiabilityRow): number {
   return lastRow ? lastRow.endingBalance : 0;
 }
 
+const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
+
+function buildCtx(props: {
+  familyMembers?: BalanceSheetTableViewProps["familyMembers"];
+  entities: EntityOption[];
+  accounts: AccountRow[];
+  liabilities: LiabilityRow[];
+  notesReceivable: NoteReceivable[];
+}): AttributionCtx {
+  const rolesByFamilyMemberId = new Map<string, "client" | "spouse" | "child" | "other">();
+  let clientFamilyMemberId: string | null = null;
+  let spouseFamilyMemberId: string | null = null;
+  for (const fm of props.familyMembers ?? []) {
+    rolesByFamilyMemberId.set(fm.id, fm.role);
+    if (fm.role === "client") clientFamilyMemberId = fm.id;
+    if (fm.role === "spouse") spouseFamilyMemberId = fm.id;
+  }
+
+  // Mirror the in-estate predicate used in balance-sheet-view.tsx: a business
+  // entity is in-estate when its `entity_owners` rows sum to ≥99.99% (or
+  // owners are absent — legacy fixtures pre-date the join table).
+  const inEstateFlatValuedEntityIds = new Set<string>();
+  for (const e of props.entities) {
+    const value = Number(e.value ?? "0");
+    if (value <= 0) continue;
+    if (!e.entityType || !BUSINESS_ENTITY_TYPES.has(e.entityType)) continue;
+    if (e.owners == null) {
+      inEstateFlatValuedEntityIds.add(e.id);
+      continue;
+    }
+    const sum = e.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
+    if (sum >= 0.9999) inEstateFlatValuedEntityIds.add(e.id);
+  }
+
+  const titlingByItemId = new Map<string, "jtwros" | "community_property" | null>();
+  for (const a of props.accounts) {
+    if (a.titlingType) titlingByItemId.set(a.id, a.titlingType);
+  }
+  // Liabilities don't carry titlingType on the prop today. They follow rule 1
+  // by default; if/when joint titling is added to liabilities the prop wires
+  // up here automatically.
+
+  return {
+    clientFamilyMemberId,
+    spouseFamilyMemberId,
+    rolesByFamilyMemberId,
+    inEstateFlatValuedEntityIds,
+    titlingByItemId,
+  };
+}
+
+interface AssetTableRow {
+  key: string;
+  kind: "account" | "note" | "business-entity";
+  label: string;
+  sublabel?: string;
+  split: ColumnSplit;
+  onClick?: () => void;
+  onDelete?: () => void;
+  deletable: boolean;
+}
+
 function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -338,6 +400,154 @@ export default function BalanceSheetTableView({
   const cooperLabel = ownerNames.clientName.split(" ")[0];
   const sarahLabel = hasSpouse ? ownerNames.spouseName!.split(" ")[0] : null;
 
+  const ctx = buildCtx({
+    familyMembers,
+    entities,
+    accounts,
+    liabilities,
+    notesReceivable,
+  });
+
+  const entityMap = Object.fromEntries(entities.map((e) => [e.id, e]));
+
+  // Term policies (cash_value = 0) excluded — same rule as balance-sheet-view.
+  const isVisibleInNetWorth = (a: AccountRow) =>
+    !(a.category === "life_insurance" && Number(a.value) === 0);
+
+  const visibleAccounts = accounts.filter(
+    (a) => a.category !== "notes_receivable" && isVisibleInNetWorth(a),
+  );
+
+  // Bucket accounts by category.
+  const accountsByCategory: Record<AccountCategory, AccountRow[]> = {
+    cash: [],
+    taxable: [],
+    retirement: [],
+    real_estate: [],
+    business: [],
+    life_insurance: [],
+    notes_receivable: [],
+  };
+  for (const a of visibleAccounts) accountsByCategory[a.category].push(a);
+
+  // In-estate business entities with positive flat value — surface as rows in Business.
+  const inEstateBusinessEntityRows = entities.filter(
+    (e) =>
+      e.entityType &&
+      BUSINESS_ENTITY_TYPES.has(e.entityType) &&
+      Number(e.value ?? "0") > 0 &&
+      ctx.inEstateFlatValuedEntityIds.has(e.id),
+  );
+
+  // Notes receivable display year: prior year-end, matching the existing logic.
+  const noteDisplayYear = new Date().getFullYear() - 1;
+
+  function accountToTableRow(a: AccountRow): AssetTableRow {
+    const value = Number(a.value);
+    const split = attributeToColumns(
+      { id: a.id, value, owners: a.owners ?? [] },
+      ctx,
+    );
+    const fractionNote =
+      split.representedPct < 0.9999
+        ? `(${Math.round(split.representedPct * 100)}% of ${fmt(value)})`
+        : undefined;
+    // Add entity-name suffix if the account is wholly OOE-entity-owned.
+    let labelSuffix = "";
+    const soleEntity = a.owners?.length === 1 && a.owners[0].kind === "entity"
+      ? a.owners[0]
+      : null;
+    if (soleEntity && !ctx.inEstateFlatValuedEntityIds.has(soleEntity.entityId)) {
+      const ent = entityMap[soleEntity.entityId];
+      if (ent) labelSuffix = ` @ ${ent.name}`;
+    }
+    return {
+      key: a.id,
+      kind: "account",
+      label: a.name + labelSuffix,
+      sublabel: fractionNote,
+      split,
+      onClick: () => {
+        if (edit) return;
+        if (a.category === "life_insurance") {
+          router.push(withScenario(`/clients/${clientId}/client-data/insurance?policy=${a.id}`));
+          return;
+        }
+        setEditingAccount(a);
+      },
+      onDelete: () => setDeletingAccount(a),
+      deletable: !a.isDefaultChecking,
+    };
+  }
+
+  function noteToTableRow(n: NoteReceivable): AssetTableRow {
+    const value = noteBalanceAtYear(n, noteDisplayYear);
+    const split = attributeToColumns(
+      { id: n.id, value, owners: n.owners ?? [] },
+      ctx,
+    );
+    return {
+      key: n.id,
+      kind: "note",
+      label: n.name,
+      sublabel: n.linkedTrustEntityId
+        ? `→ ${entityMap[n.linkedTrustEntityId]?.name ?? "Trust"}`
+        : undefined,
+      split,
+      onClick: () => {
+        if (edit) return;
+        setEditingNote(n);
+      },
+      onDelete: () => setDeletingNote(n),
+      deletable: true,
+    };
+  }
+
+  function entityFlatToTableRow(e: EntityOption): AssetTableRow {
+    const value = Number(e.value ?? "0");
+    const split = attributeEntityFlatValue(
+      {
+        id: e.id,
+        value,
+        owners: e.owners?.map((o) => ({
+          familyMemberId: o.familyMemberId,
+          percent: o.percent,
+        })),
+      },
+      ctx,
+    );
+    return {
+      key: `flat-${e.id}`,
+      kind: "business-entity",
+      label: e.name,
+      sublabel: "edit in Family",
+      split,
+      onClick: () => router.push(withScenario(`/clients/${clientId}/client-data/family`)),
+      deletable: false,
+    };
+  }
+
+  // Build one ordered list of (category, rows) for rendering.
+  const categoryGroups: { category: AccountCategory; rows: AssetTableRow[]; subtotal: ColumnSplit }[] = [];
+  for (const cat of CATEGORY_ORDER) {
+    const rows: AssetTableRow[] = [];
+    for (const a of accountsByCategory[cat]) rows.push(accountToTableRow(a));
+    if (cat === "business") {
+      for (const e of inEstateBusinessEntityRows) rows.push(entityFlatToTableRow(e));
+    }
+    if (cat === "notes_receivable") {
+      for (const n of notesReceivable) rows.push(noteToTableRow(n));
+    }
+    if (rows.length === 0) continue;
+    const subtotal = rows.reduce<ColumnSplit>((s, r) => addSplits(s, r.split), emptySplit());
+    categoryGroups.push({ category: cat, rows, subtotal });
+  }
+
+  const totalAssets = categoryGroups.reduce<ColumnSplit>(
+    (s, g) => addSplits(s, g.subtotal),
+    emptySplit(),
+  );
+
   return (
     <div className="space-y-4">
       {/* Header strip with actions */}
@@ -399,15 +609,34 @@ export default function BalanceSheetTableView({
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td
-                colSpan={hasSpouse ? 7 : 5}
-                className="px-4 py-8 text-center text-sm text-ink-3"
-              >
-                {/* Body rendered in subsequent tasks */}
-                (table body pending)
-              </td>
-            </tr>
+            {categoryGroups.length === 0 && liabilities.length === 0 && (
+              <tr>
+                <td
+                  colSpan={hasSpouse ? 7 : 5}
+                  className="px-4 py-8 text-center text-sm text-ink-3"
+                >
+                  No assets or liabilities yet. Use the actions above to get started.
+                </td>
+              </tr>
+            )}
+            {categoryGroups.map((g) => (
+              <CategorySection
+                key={g.category}
+                label={CATEGORY_LABELS[g.category]}
+                rows={g.rows}
+                subtotal={g.subtotal}
+                hasSpouse={hasSpouse}
+                edit={edit}
+              />
+            ))}
+            {categoryGroups.length > 0 && (
+              <TotalRow
+                label="Total Assets"
+                split={totalAssets}
+                hasSpouse={hasSpouse}
+                emphasis="grand"
+              />
+            )}
           </tbody>
         </table>
       </div>
@@ -528,4 +757,167 @@ export default function BalanceSheetTableView({
       />
     </div>
   );
+}
+
+function CategorySection({
+  label,
+  rows,
+  subtotal,
+  hasSpouse,
+  edit,
+}: {
+  label: string;
+  rows: AssetTableRow[];
+  subtotal: ColumnSplit;
+  hasSpouse: boolean;
+  edit: boolean;
+}) {
+  const colSpan = hasSpouse ? 7 : 5;
+  return (
+    <>
+      <tr className="bg-card-2">
+        <td
+          colSpan={colSpan}
+          className="sticky left-0 z-[1] bg-card-2 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-2"
+        >
+          {label}
+        </td>
+      </tr>
+      {rows.map((r) => (
+        <AssetRow key={r.key} row={r} hasSpouse={hasSpouse} edit={edit} />
+      ))}
+      <SubtotalRow split={subtotal} hasSpouse={hasSpouse} />
+    </>
+  );
+}
+
+function AssetRow({
+  row,
+  hasSpouse,
+  edit,
+}: {
+  row: AssetTableRow;
+  hasSpouse: boolean;
+  edit: boolean;
+}) {
+  const clickable = !!row.onClick && !edit;
+  return (
+    <tr
+      onClick={clickable ? row.onClick : undefined}
+      onKeyDown={(e) => {
+        if (!clickable) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          row.onClick?.();
+        }
+      }}
+      tabIndex={clickable ? 0 : -1}
+      role={clickable ? "button" : undefined}
+      className={`border-t border-hair ${clickable ? "cursor-pointer hover:bg-card-hover" : ""}`}
+    >
+      <td className="sticky left-0 z-[1] bg-card px-4 py-2 shadow-[inset_-8px_0_8px_-8px_rgba(0,0,0,0.4)]">
+        <div className="text-sm font-medium text-ink">{row.label}</div>
+        {row.sublabel && <div className="text-xs text-ink-3">{row.sublabel}</div>}
+      </td>
+      <Cell value={row.split.cooper} />
+      {hasSpouse && <Cell value={row.split.sarah} />}
+      {hasSpouse && <Cell value={row.split.joint} />}
+      <Cell value={row.split.cooper + row.split.sarah + row.split.joint} />
+      <Cell value={row.split.ooe} accent />
+      <td className="w-8 px-2 py-2 text-right">
+        {edit && row.deletable && row.onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              row.onDelete?.();
+            }}
+            className="text-ink hover:text-crit"
+            aria-label={`Delete ${row.label}`}
+          >
+            <TrashIcon />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function SubtotalRow({ split, hasSpouse }: { split: ColumnSplit; hasSpouse: boolean }) {
+  return (
+    <tr className="border-t border-hair bg-card-2/60">
+      <td className="sticky left-0 z-[1] bg-card-2/60 px-4 py-2 text-xs font-medium uppercase tracking-wider text-ink-3">
+        Subtotal
+      </td>
+      <Cell value={split.cooper} variant="subtotal" />
+      {hasSpouse && <Cell value={split.sarah} variant="subtotal" />}
+      {hasSpouse && <Cell value={split.joint} variant="subtotal" />}
+      <Cell value={split.cooper + split.sarah + split.joint} variant="subtotal" />
+      <Cell value={split.ooe} accent variant="subtotal" />
+      <td className="w-8 px-2 py-2" />
+    </tr>
+  );
+}
+
+function TotalRow({
+  label,
+  split,
+  hasSpouse,
+  emphasis,
+  signColor,
+}: {
+  label: string;
+  split: ColumnSplit;
+  hasSpouse: boolean;
+  emphasis: "grand" | "net-worth";
+  signColor?: boolean;
+}) {
+  const borderClass =
+    emphasis === "grand"
+      ? "border-t-2 border-hair-2 bg-card-2"
+      : "border-t-2 border-hair-2 bg-card-2";
+  const labelClass =
+    emphasis === "grand"
+      ? "text-sm font-semibold uppercase tracking-wider text-ink"
+      : "text-sm font-bold uppercase tracking-wider text-ink";
+  const valueVariant = emphasis === "grand" ? "total" : "net-worth";
+  const inEstateTotal = split.cooper + split.sarah + split.joint;
+  return (
+    <tr className={borderClass}>
+      <td className={`sticky left-0 z-[1] ${borderClass.includes("bg-card-2") ? "bg-card-2" : ""} px-4 py-3 ${labelClass}`}>
+        {label}
+      </td>
+      <Cell value={split.cooper} variant={valueVariant} signColor={signColor} />
+      {hasSpouse && <Cell value={split.sarah} variant={valueVariant} signColor={signColor} />}
+      {hasSpouse && <Cell value={split.joint} variant={valueVariant} signColor={signColor} />}
+      <Cell value={inEstateTotal} variant={valueVariant} signColor={signColor} />
+      {emphasis === "net-worth" ? (
+        <td className="bg-accent/8 px-4 py-3" aria-hidden="true" />
+      ) : (
+        <Cell value={split.ooe} accent variant={valueVariant} />
+      )}
+      <td className="w-8 px-2 py-3" />
+    </tr>
+  );
+}
+
+function Cell({
+  value,
+  accent,
+  variant = "row",
+  signColor,
+}: {
+  value: number;
+  accent?: boolean;
+  variant?: "row" | "subtotal" | "total" | "net-worth";
+  signColor?: boolean;
+}) {
+  const isZero = Math.abs(value) < 0.5;
+  let cls = "px-4 py-2 text-right text-sm tabular-nums";
+  if (variant === "subtotal") cls += " font-medium text-ink-2";
+  else if (variant === "total") cls += " font-semibold text-ink";
+  else if (variant === "net-worth") cls += " text-base font-bold";
+  else cls += " text-ink";
+  if (accent) cls += " bg-accent/8 text-accent-ink";
+  if (signColor && !isZero) cls += value >= 0 ? " text-good" : " text-crit";
+  return <td className={cls}>{isZero ? <span className="text-ink-4">—</span> : fmt(value)}</td>;
 }
