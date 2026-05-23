@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
 import type {
   Designation,
   FamilyMember,
@@ -9,6 +15,12 @@ import type {
   Tier,
 } from "./family-view";
 import { redistributeTier, splitEvenly } from "./forms/auto-split-percentages";
+import type { SaveResult } from "@/lib/use-tab-auto-save";
+
+/** Imperative handle the dialog uses to trigger a save on tab switch / submit. */
+export interface InsurancePolicyBeneficiariesAutoSaveHandle {
+  saveAsync: () => Promise<SaveResult>;
+}
 
 interface InsurancePolicyBeneficiariesTabProps {
   clientId: string;
@@ -25,6 +37,9 @@ interface InsurancePolicyBeneficiariesTabProps {
   /** Owners of the policy account — used to detect trust ownership. Pass
    *  `[]` for mode === "create" (no account yet). */
   policyOwners: { kind: string; entityId?: string }[];
+  /** Reports dirty/canSave so the dialog can drive the unified Save Changes /
+   *  auto-save-on-tab-switch flow. */
+  onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
 }
 
 // DB rows ship `percentage` as a decimal string. `Designation` wants a number,
@@ -41,28 +56,56 @@ function normalize(rows: DesignationRow[]): Designation[] {
   }));
 }
 
-function AccountBeneficiaryEditor({
-  clientId,
-  accountId,
-  clientFirstName,
-  spouseFirstName,
-  members,
-  externals,
-  initial,
-}: {
-  clientId: string;
-  accountId: string;
-  clientFirstName: string;
-  spouseFirstName: string | null;
-  members: FamilyMember[];
-  externals: ExternalBeneficiary[];
-  initial: Designation[];
-}) {
-  const router = useRouter();
+function rowHasSelection(r: Designation): boolean {
+  return Boolean(
+    r.familyMemberId || r.externalBeneficiaryId || r.entityIdRef || r.householdRole,
+  );
+}
+
+function computeCanSave(rows: Designation[]): boolean {
+  const tiers: Tier[] = ["primary", "contingent"];
+  for (const tier of tiers) {
+    const inTier = rows.filter((r) => r.tier === tier);
+    if (inTier.length === 0) continue;
+    if (inTier.some((r) => !rowHasSelection(r))) return false;
+    const sum = inTier.reduce(
+      (acc, r) => acc + (isFinite(r.percentage) ? r.percentage : 0),
+      0,
+    );
+    if (Math.abs(sum - 100) > 0.01) return false;
+  }
+  return true;
+}
+
+const AccountBeneficiaryEditor = forwardRef<
+  InsurancePolicyBeneficiariesAutoSaveHandle,
+  {
+    clientId: string;
+    accountId: string;
+    clientFirstName: string;
+    spouseFirstName: string | null;
+    members: FamilyMember[];
+    externals: ExternalBeneficiary[];
+    initial: Designation[];
+    onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
+  }
+>(function AccountBeneficiaryEditor(
+  {
+    clientId,
+    accountId,
+    clientFirstName,
+    spouseFirstName,
+    members,
+    externals,
+    initial,
+    onAutoSaveStateChange,
+  },
+  ref,
+) {
   const [rows, setRows] = useState<Designation[]>(initial);
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lockedKeys, setLockedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const [baseline, setBaseline] = useState<string>(() => JSON.stringify(initial));
 
   const url = `/api/clients/${clientId}/accounts/${accountId}/beneficiaries`;
 
@@ -76,8 +119,14 @@ function AccountBeneficiaryEditor({
   const applyToTier = (allRows: Designation[], tier: Tier, locked: ReadonlySet<string>): Designation[] =>
     redistributeTier(allRows, tier, locked, getRowKey, (r) => r.tier, setRowPct);
 
-  async function save() {
-    setSaving(true);
+  const isDirty = JSON.stringify(rows) !== baseline;
+  const canSave = computeCanSave(rows);
+
+  useEffect(() => {
+    onAutoSaveStateChange?.({ isDirty, canSave });
+  }, [isDirty, canSave, onAutoSaveStateChange]);
+
+  const saveAsync = useCallback(async (): Promise<SaveResult> => {
     setSaveError(null);
     try {
       const body = rows.map((r) => ({
@@ -96,7 +145,9 @@ function AccountBeneficiaryEditor({
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
+        const message = (j as { error?: string }).error ?? `HTTP ${res.status}`;
+        setSaveError(message);
+        return { ok: false, error: message };
       }
       const saved = (await res.json()) as Designation[];
       const normalized = saved.map((d) => ({
@@ -105,13 +156,16 @@ function AccountBeneficiaryEditor({
           typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
       }));
       setRows(normalized);
-      router.refresh();
+      setBaseline(JSON.stringify(normalized));
+      return { ok: true };
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
+      const message = e instanceof Error ? e.message : String(e);
+      setSaveError(message);
+      return { ok: false, error: message };
     }
-  }
+  }, [rows, url]);
+
+  useImperativeHandle(ref, () => ({ saveAsync }), [saveAsync]);
 
   function addRow(tier: Tier) {
     setRows((r) => {
@@ -293,9 +347,24 @@ function AccountBeneficiaryEditor({
               <button
                 type="button"
                 onClick={() => removeRow(r.id)}
-                className="text-xs text-white hover:text-white"
+                aria-label="Remove beneficiary"
+                title="Remove beneficiary"
+                className="text-white/80 hover:text-white"
               >
-                remove
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M6 6 L18 18" />
+                  <path d="M18 6 L6 18" />
+                </svg>
               </button>
             </li>
           ))}
@@ -328,34 +397,53 @@ function AccountBeneficiaryEditor({
       {renderTier("primary")}
       {renderTier("contingent")}
       {saveError && <div className="mt-2 text-sm text-red-400">{saveError}</div>}
-      <button
-        type="button"
-        disabled={saving}
-        onClick={save}
-        className="mt-3 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Save beneficiaries"}
-      </button>
     </div>
   );
-}
+});
 
-export default function InsurancePolicyBeneficiariesTab({
-  clientId,
-  clientFirstName,
-  spouseFirstName,
-  mode,
-  policyId,
-  members,
-  externals,
-  entities,
-  policyOwners,
-}: InsurancePolicyBeneficiariesTabProps) {
+const InsurancePolicyBeneficiariesTab = forwardRef<
+  InsurancePolicyBeneficiariesAutoSaveHandle,
+  InsurancePolicyBeneficiariesTabProps
+>(function InsurancePolicyBeneficiariesTab(
+  {
+    clientId,
+    clientFirstName,
+    spouseFirstName,
+    mode,
+    policyId,
+    members,
+    externals,
+    entities,
+    policyOwners,
+    onAutoSaveStateChange,
+  },
+  ref,
+) {
   const isCreate = mode === "create" || !policyId;
 
   const [loading, setLoading] = useState(!isCreate);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // While the editor isn't mounted (create mode, loading, error) there is
+  // nothing to save — report a clean state so the parent's auto-save flow
+  // doesn't block tab switches or submits.
+  useEffect(() => {
+    if (isCreate || loading || error) {
+      onAutoSaveStateChange?.({ isDirty: false, canSave: true });
+    }
+  }, [isCreate, loading, error, onAutoSaveStateChange]);
+
+  // Expose a no-op saveAsync until the editor mounts and overrides this via
+  // its own forwardRef. Without this, the dialog's ref would be null when
+  // submit fires from another tab and dirty=false (which is the common case).
+  useImperativeHandle(
+    ref,
+    () => ({
+      saveAsync: async () => ({ ok: true as const }),
+    }),
+    [],
+  );
 
   // If the policy is solely owned by a trust entity, surface that entity's id
   // so we can seed a default primary beneficiary pointing at it (the canonical
@@ -461,6 +549,7 @@ export default function InsurancePolicyBeneficiariesTab({
 
   return (
     <AccountBeneficiaryEditor
+      ref={ref}
       clientId={clientId}
       accountId={policyId!}
       clientFirstName={clientFirstName}
@@ -468,6 +557,9 @@ export default function InsurancePolicyBeneficiariesTab({
       members={members}
       externals={externals}
       initial={seededDesignations}
+      onAutoSaveStateChange={onAutoSaveStateChange}
     />
   );
-}
+});
+
+export default InsurancePolicyBeneficiariesTab;

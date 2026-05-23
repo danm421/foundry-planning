@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LifeInsurancePolicy } from "@/engine/types";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
@@ -13,7 +13,9 @@ import type {
   InsurancePanelModelPortfolio,
 } from "./insurance-panel";
 import InsurancePolicyDetailsTab from "./insurance-policy-details-tab";
-import InsurancePolicyBeneficiariesTab from "./insurance-policy-beneficiaries-tab";
+import InsurancePolicyBeneficiariesTab, {
+  type InsurancePolicyBeneficiariesAutoSaveHandle,
+} from "./insurance-policy-beneficiaries-tab";
 import InsurancePolicyCashValueTab from "./insurance-policy-cash-value-tab";
 import DialogShell from "./dialog-shell";
 import TabAutoSaveIndicator from "./tab-auto-save-indicator";
@@ -291,20 +293,53 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   // close so the parent panel picks up the new/updated policy.
   const autoSavedRef = useRef(false);
 
+  // Beneficiaries-tab handle — exposes saveAsync, reports dirty/canSave.
+  const beneficiariesRef = useRef<InsurancePolicyBeneficiariesAutoSaveHandle | null>(null);
+  const [beneficiariesAutoSaveState, setBeneficiariesAutoSaveState] = useState<{
+    isDirty: boolean;
+    canSave: boolean;
+  }>({ isDirty: false, canSave: true });
+  const handleBeneficiariesStateChange = useCallback(
+    (next: { isDirty: boolean; canSave: boolean }) => {
+      setBeneficiariesAutoSaveState((prev) =>
+        prev.isDirty === next.isDirty && prev.canSave === next.canSave ? prev : next,
+      );
+    },
+    [],
+  );
+
   // Auto-save hook — kept above the edit-mode guard so the hook order is
   // stable on every render (rules-of-hooks). The guard branches the JSX, not
   // the hook calls.
-  const isDirty = JSON.stringify(state) !== lastSavedSnapshotRef.current;
-  const canSave = state.name.trim().length > 0;
+  const policyIsDirty = JSON.stringify(state) !== lastSavedSnapshotRef.current;
+  const isDirty = policyIsDirty || beneficiariesAutoSaveState.isDirty;
+  const canSave =
+    state.name.trim().length > 0 && beneficiariesAutoSaveState.canSave;
   const autoSave = useTabAutoSave({
     isDirty,
     canSave,
     saveAsync: async () => {
-      const result = await performSave();
-      if (result.ok) applySaveSuccess(result.recordId);
-      return result;
+      if (policyIsDirty) {
+        const result = await performSave();
+        if (!result.ok) return result;
+        applySaveSuccess(result.recordId);
+      }
+      if (beneficiariesAutoSaveState.isDirty) {
+        const handle = beneficiariesRef.current;
+        if (handle) {
+          const result = await handle.saveAsync();
+          if (!result.ok) return result;
+          autoSavedRef.current = true;
+          // The editor will unmount as the tab switches, so its own
+          // state-reporting effect may not flush — reset here.
+          setBeneficiariesAutoSaveState({ isDirty: false, canSave: true });
+        }
+      }
+      return { ok: true };
     },
-    onBlocked: () => setNameInvalid(true),
+    onBlocked: () => {
+      if (state.name.trim().length === 0) setNameInvalid(true);
+    },
   });
 
   // Edit-mode guard: if we couldn't find the policy, render an error card.
@@ -387,15 +422,26 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canSave) {
-      setNameInvalid(true);
+      if (state.name.trim().length === 0) setNameInvalid(true);
       return;
     }
     setError(null);
     setSubmitting(true);
     try {
-      const result = await performSave();
-      if (!result.ok) throw new Error(result.error);
-      applySaveSuccess(result.recordId);
+      if (policyIsDirty) {
+        const result = await performSave();
+        if (!result.ok) throw new Error(result.error);
+        applySaveSuccess(result.recordId);
+      }
+      if (beneficiariesAutoSaveState.isDirty) {
+        const handle = beneficiariesRef.current;
+        if (handle) {
+          const result = await handle.saveAsync();
+          if (!result.ok) throw new Error(result.error);
+          autoSavedRef.current = true;
+          setBeneficiariesAutoSaveState({ isDirty: false, canSave: true });
+        }
+      }
       router.refresh();
       onClose();
     } catch (err) {
@@ -494,6 +540,7 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
         {tab === "beneficiaries" && (
           <div role="tabpanel" id="panel-beneficiaries" aria-labelledby="tab-beneficiaries">
             <InsurancePolicyBeneficiariesTab
+              ref={beneficiariesRef}
               clientId={clientId}
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
@@ -507,6 +554,7 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
                   ? [{ kind: "entity", entityId: state.ownerRef.id }]
                   : [{ kind: state.ownerRef.kind }]
               }
+              onAutoSaveStateChange={handleBeneficiariesStateChange}
             />
           </div>
         )}

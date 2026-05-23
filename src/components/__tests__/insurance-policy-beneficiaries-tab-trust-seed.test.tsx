@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
+import { createRef } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import InsurancePolicyBeneficiariesTab from "@/components/insurance-policy-beneficiaries-tab";
+import { render, waitFor } from "@testing-library/react";
+import InsurancePolicyBeneficiariesTab, {
+  type InsurancePolicyBeneficiariesAutoSaveHandle,
+} from "@/components/insurance-policy-beneficiaries-tab";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -29,10 +32,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function waitForHandle(
+  ref: React.RefObject<InsurancePolicyBeneficiariesAutoSaveHandle | null>,
+) {
+  await waitFor(() => {
+    expect(ref.current).not.toBeNull();
+  });
+  return ref.current!;
+}
+
 describe("InsurancePolicyBeneficiariesTab — trust auto-seed", () => {
   it("seeds the trust as primary beneficiary when the policy is trust-owned and DB is empty", async () => {
+    const ref = createRef<InsurancePolicyBeneficiariesAutoSaveHandle>();
     render(
       <InsurancePolicyBeneficiariesTab
+        ref={ref}
         clientId="c-1"
         clientFirstName="Cooper"
         spouseFirstName="Susan"
@@ -45,23 +59,20 @@ describe("InsurancePolicyBeneficiariesTab — trust auto-seed", () => {
       />,
     );
 
-    const saveButton = await screen.findByRole("button", {
-      name: /save beneficiaries/i,
-    });
-    fireEvent.click(saveButton);
+    const handle = await waitForHandle(ref);
+    const result = await handle.saveAsync();
+    expect(result.ok).toBe(true);
 
-    await waitFor(() => {
-      const calls = (global.fetch as ReturnType<typeof vi.fn>).mock
-        .calls as Array<[string, RequestInit | undefined]>;
-      const putCall = calls.find(([, init]) => init?.method === "PUT");
-      expect(putCall).toBeDefined();
-      const body = JSON.parse((putCall![1] as RequestInit).body as string);
-      expect(body).toHaveLength(1);
-      expect(body[0]).toMatchObject({
-        tier: "primary",
-        percentage: 100,
-        entityIdRef: "ilit-1",
-      });
+    const calls = (global.fetch as ReturnType<typeof vi.fn>).mock
+      .calls as Array<[string, RequestInit | undefined]>;
+    const putCall = calls.find(([, init]) => init?.method === "PUT");
+    expect(putCall).toBeDefined();
+    const body = JSON.parse((putCall![1] as RequestInit).body as string);
+    expect(body).toHaveLength(1);
+    expect(body[0]).toMatchObject({
+      tier: "primary",
+      percentage: 100,
+      entityIdRef: "ilit-1",
     });
   });
 
@@ -94,8 +105,10 @@ describe("InsurancePolicyBeneficiariesTab — trust auto-seed", () => {
       }),
     );
 
+    const ref = createRef<InsurancePolicyBeneficiariesAutoSaveHandle>();
     render(
       <InsurancePolicyBeneficiariesTab
+        ref={ref}
         clientId="c-1"
         clientFirstName="Cooper"
         spouseFirstName="Susan"
@@ -114,21 +127,18 @@ describe("InsurancePolicyBeneficiariesTab — trust auto-seed", () => {
       />,
     );
 
-    const saveButton = await screen.findByRole("button", {
-      name: /save beneficiaries/i,
-    });
-    fireEvent.click(saveButton);
+    const handle = await waitForHandle(ref);
+    const result = await handle.saveAsync();
+    expect(result.ok).toBe(true);
 
-    await waitFor(() => {
-      const calls = (global.fetch as ReturnType<typeof vi.fn>).mock
-        .calls as Array<[string, RequestInit | undefined]>;
-      const putCall = calls.find(([, init]) => init?.method === "PUT");
-      expect(putCall).toBeDefined();
-      const body = JSON.parse((putCall![1] as RequestInit).body as string);
-      // Existing spouse row preserved; no trust row injected.
-      expect(body).toHaveLength(1);
-      expect(body[0].familyMemberId).toBe("fm-spouse");
-      expect(body[0].entityIdRef).toBeUndefined();
-    });
+    const calls = (global.fetch as ReturnType<typeof vi.fn>).mock
+      .calls as Array<[string, RequestInit | undefined]>;
+    const putCall = calls.find(([, init]) => init?.method === "PUT");
+    expect(putCall).toBeDefined();
+    const body = JSON.parse((putCall![1] as RequestInit).body as string);
+    // Existing spouse row preserved; no trust row injected.
+    expect(body).toHaveLength(1);
+    expect(body[0].familyMemberId).toBe("fm-spouse");
+    expect(body[0].entityIdRef).toBeUndefined();
   });
 });
