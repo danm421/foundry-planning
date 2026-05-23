@@ -190,3 +190,62 @@ describe("rule 2: joint titling", () => {
     expect(r.ooe).toBeCloseTo(100_000);
   });
 });
+
+describe("rule 3: in-estate flat-valued entity held back from row", () => {
+  it("client 80% + in-estate LLC 20% → Cooper $80k, no OOE, representedPct=0.8", () => {
+    const r = attributeToColumns(
+      item("a", 100_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.8 },
+        { kind: "entity", entityId: COOPER_LLC, percent: 0.2 },
+      ]),
+      baseCtx(),
+    );
+    expect(r.cooper).toBe(80_000);
+    expect(r.sarah).toBe(0);
+    expect(r.joint).toBe(0);
+    expect(r.ooe).toBe(0);
+    expect(r.representedPct).toBeCloseTo(0.8);
+  });
+
+  it("in-estate LLC 100% → row contributes nothing, representedPct=0", () => {
+    const r = attributeToColumns(
+      item("a", 50_000, [{ kind: "entity", entityId: COOPER_LLC, percent: 1 }]),
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 0 });
+  });
+});
+
+describe("rule 4: OOE entity ownership → OOE column", () => {
+  it("Dynasty Trust 100% → OOE $300k", () => {
+    const r = attributeToColumns(
+      item("a", 300_000, [{ kind: "entity", entityId: DYNASTY_TRUST, percent: 1 }]),
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 0, sarah: 0, joint: 0, ooe: 300_000, representedPct: 1 });
+  });
+
+  it("client 80% + OOE Dynasty Trust 20% → Cooper $80k, OOE $20k", () => {
+    const r = attributeToColumns(
+      item("a", 100_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.8 },
+        { kind: "entity", entityId: DYNASTY_TRUST, percent: 0.2 },
+      ]),
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 80_000, sarah: 0, joint: 0, ooe: 20_000, representedPct: 1 });
+  });
+});
+
+describe("rule 5: external beneficiaries → OOE column", () => {
+  it("client 60% + external beneficiary 40% → Cooper $60k, OOE $40k", () => {
+    const r = attributeToColumns(
+      item("a", 100_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.6 },
+        { kind: "external_beneficiary", externalBeneficiaryId: "ext-1", percent: 0.4 },
+      ]),
+      baseCtx(),
+    );
+    expect(r).toEqual({ cooper: 60_000, sarah: 0, joint: 0, ooe: 40_000, representedPct: 1 });
+  });
+});

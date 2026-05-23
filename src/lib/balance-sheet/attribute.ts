@@ -48,14 +48,38 @@ export function attributeToColumns(
   }
 
   const split: ColumnSplit = { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
+  let heldBackPct = 0;
+
   for (const owner of item.owners) {
-    if (owner.kind !== "family_member") continue;
     const dollars = item.value * owner.percent;
-    const role = roleOf(owner.familyMemberId, ctx);
-    if (role === "client") split.cooper += dollars;
-    else if (role === "spouse") split.sarah += dollars;
-    else split.ooe += dollars;
+
+    if (owner.kind === "family_member") {
+      const role = roleOf(owner.familyMemberId, ctx);
+      if (role === "client") split.cooper += dollars;
+      else if (role === "spouse") split.sarah += dollars;
+      else split.ooe += dollars; // child / other / unknown → OOE
+      continue;
+    }
+
+    if (owner.kind === "entity") {
+      if (ctx.inEstateFlatValuedEntityIds.has(owner.entityId)) {
+        // Rule 3: omit from the row; entity has its own row in Business.
+        heldBackPct += owner.percent;
+      } else {
+        // Rule 4: OOE entity (irrevocable trust, etc.) → OOE column.
+        split.ooe += dollars;
+      }
+      continue;
+    }
+
+    if (owner.kind === "external_beneficiary") {
+      // Rule 5.
+      split.ooe += dollars;
+      continue;
+    }
   }
+
+  split.representedPct = Math.max(0, 1 - heldBackPct);
   return split;
 }
 
