@@ -116,3 +116,77 @@ describe("rule 1: direct family-member ownership", () => {
     expect(r).toEqual({ cooper: 0, sarah: 0, joint: 0, ooe: 100_000, representedPct: 1 });
   });
 });
+
+describe("rule 2: joint titling", () => {
+  it("client+spouse 50/50 with jtwros → whole value to Joint column", () => {
+    const ctx = baseCtx({
+      titlingByItemId: new Map([["a", "jtwros"]]),
+    });
+    const r = attributeToColumns(
+      item("a", 1_000_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.5 },
+        { kind: "family_member", familyMemberId: SPOUSE_FM, percent: 0.5 },
+      ]),
+      ctx,
+    );
+    expect(r).toEqual({ cooper: 0, sarah: 0, joint: 1_000_000, ooe: 0, representedPct: 1 });
+  });
+
+  it("client+spouse 50/50 with community_property → whole value to Joint column", () => {
+    const ctx = baseCtx({
+      titlingByItemId: new Map([["a", "community_property"]]),
+    });
+    const r = attributeToColumns(
+      item("a", 1_000_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.5 },
+        { kind: "family_member", familyMemberId: SPOUSE_FM, percent: 0.5 },
+      ]),
+      ctx,
+    );
+    expect(r.joint).toBe(1_000_000);
+  });
+
+  it("client+spouse 50/50 with NO titling → proportional split, not Joint", () => {
+    const r = attributeToColumns(
+      item("a", 1_000_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.5 },
+        { kind: "family_member", familyMemberId: SPOUSE_FM, percent: 0.5 },
+      ]),
+      baseCtx(), // titlingByItemId is empty
+    );
+    expect(r).toEqual({ cooper: 500_000, sarah: 500_000, joint: 0, ooe: 0, representedPct: 1 });
+  });
+
+  it("client+spouse 60/40 with jtwros titling → NOT joint (split proportionally)", () => {
+    const ctx = baseCtx({
+      titlingByItemId: new Map([["a", "jtwros"]]),
+    });
+    const r = attributeToColumns(
+      item("a", 1_000_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.6 },
+        { kind: "family_member", familyMemberId: SPOUSE_FM, percent: 0.4 },
+      ]),
+      ctx,
+    );
+    expect(r).toEqual({ cooper: 600_000, sarah: 400_000, joint: 0, ooe: 0, representedPct: 1 });
+  });
+
+  it("joint titling with extra non-spouse owner → NOT joint", () => {
+    const ctx = baseCtx({
+      titlingByItemId: new Map([["a", "jtwros"]]),
+    });
+    const r = attributeToColumns(
+      item("a", 1_000_000, [
+        { kind: "family_member", familyMemberId: CLIENT_FM, percent: 0.45 },
+        { kind: "family_member", familyMemberId: SPOUSE_FM, percent: 0.45 },
+        { kind: "family_member", familyMemberId: CHILD_FM, percent: 0.1 },
+      ]),
+      ctx,
+    );
+    // Not the 2-owner-50/50 pattern; falls back to rule 1.
+    expect(r.joint).toBe(0);
+    expect(r.cooper).toBeCloseTo(450_000);
+    expect(r.sarah).toBeCloseTo(450_000);
+    expect(r.ooe).toBeCloseTo(100_000);
+  });
+});

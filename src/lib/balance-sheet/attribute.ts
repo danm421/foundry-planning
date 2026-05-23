@@ -37,22 +37,25 @@ export interface AttributableItem {
 }
 
 const EPSILON = 1e-9;
+const HALF_EPSILON = 1e-6;
 
 export function attributeToColumns(
   item: AttributableItem,
   ctx: AttributionCtx,
 ): ColumnSplit {
-  const split: ColumnSplit = { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
+  if (isJointTitledClientSpouseHalfHalf(item, ctx)) {
+    return { cooper: 0, sarah: 0, joint: item.value, ooe: 0, representedPct: 1 };
+  }
 
+  const split: ColumnSplit = { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
   for (const owner of item.owners) {
     if (owner.kind !== "family_member") continue;
     const dollars = item.value * owner.percent;
     const role = roleOf(owner.familyMemberId, ctx);
     if (role === "client") split.cooper += dollars;
     else if (role === "spouse") split.sarah += dollars;
-    else split.ooe += dollars; // child / other / unknown
+    else split.ooe += dollars;
   }
-
   return split;
 }
 
@@ -64,6 +67,26 @@ function roleOf(
   if (familyMemberId === LEGACY_FM_CLIENT) return "client";
   if (familyMemberId === LEGACY_FM_SPOUSE) return "spouse";
   return ctx.rolesByFamilyMemberId.get(familyMemberId) ?? "other";
+}
+
+function isJointTitledClientSpouseHalfHalf(
+  item: AttributableItem,
+  ctx: AttributionCtx,
+): boolean {
+  const titling = ctx.titlingByItemId.get(item.id);
+  if (titling !== "jtwros" && titling !== "community_property") return false;
+  if (item.owners.length !== 2) return false;
+
+  const roles = item.owners.map((o) =>
+    o.kind === "family_member" ? roleOf(o.familyMemberId, ctx) : null,
+  );
+  const hasClient = roles.includes("client");
+  const hasSpouse = roles.includes("spouse");
+  if (!hasClient || !hasSpouse) return false;
+
+  return item.owners.every(
+    (o) => o.kind === "family_member" && Math.abs(o.percent - 0.5) < HALF_EPSILON,
+  );
 }
 
 export function attributeEntityFlatValue(
