@@ -179,34 +179,32 @@ export function EstateFlowSummaryView({
             <div className="lg:hidden">
               <SectionHeader tone="neutral" label="Out of Estate" />
             </div>
-            <div className="flex w-full max-w-[280px] flex-col gap-2">
+            <div className="flex w-full max-w-[280px] flex-col gap-3">
               {outOfEstate.heirs.entities.length > 0 && (
-                <BoxButton
-                  tone="neutral"
-                  title="Heirs"
-                  value={outOfEstate.heirs.total}
-                  onClick={() =>
+                <OoeEntityGroup
+                  label="Heirs"
+                  entities={outOfEstate.heirs.entities}
+                  onSelect={(entity) =>
                     setSelected({
                       kind: "ooeGroup",
                       payload: {
-                        groupLabel: "Heirs (Out of Estate)",
-                        entities: outOfEstate.heirs.entities,
+                        groupLabel: entity.entityLabel,
+                        entities: [entity],
                       },
                     })
                   }
                 />
               )}
               {outOfEstate.irrevTrusts.entities.length > 0 && (
-                <BoxButton
-                  tone="neutral"
-                  title="Irrev Trusts"
-                  value={outOfEstate.irrevTrusts.total}
-                  onClick={() =>
+                <OoeEntityGroup
+                  label="Irrev Trusts"
+                  entities={outOfEstate.irrevTrusts.entities}
+                  onSelect={(entity) =>
                     setSelected({
                       kind: "ooeGroup",
                       payload: {
-                        groupLabel: "Irrevocable Trusts (Out of Estate)",
-                        entities: outOfEstate.irrevTrusts.entities,
+                        groupLabel: entity.entityLabel,
+                        entities: [entity],
                       },
                     })
                   }
@@ -296,6 +294,33 @@ function DeathColumn({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function OoeEntityGroup({
+  label,
+  entities,
+  onSelect,
+}: {
+  label: string;
+  entities: OoeEntity[];
+  onSelect: (entity: OoeEntity) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </div>
+      {entities.map((entity) => (
+        <BoxButton
+          key={entity.entityId}
+          tone="neutral"
+          title={entity.entityLabel}
+          value={entity.amount}
+          onClick={() => onSelect(entity)}
+        />
+      ))}
     </div>
   );
 }

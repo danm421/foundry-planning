@@ -41,7 +41,13 @@ export function ScenarioChipRow({
   const { openCreate } = useScenarioModeUI();
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const baseId = scenarios.find((s) => s.isBaseCase)?.id ?? null;
+  // Orphan integration-test scenarios (changes-writer.test.ts mints
+  // `writer-test-<uuid>` rows and deletes them in afterEach; crashes leak them)
+  // pile up in the chip row. Hide them in the UI; leave DB rows alone.
+  const visibleScenarios = scenarios.filter(
+    (s) => !s.name.startsWith("writer-test-"),
+  );
+  const baseId = visibleScenarios.find((s) => s.isBaseCase)?.id ?? null;
   const effectiveActive = active ?? baseId;
 
   async function handleDelete(s: ScenarioChip) {
@@ -67,7 +73,7 @@ export function ScenarioChipRow({
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      {scenarios.map((s) => {
+      {visibleScenarios.map((s) => {
         const isActive = s.id === effectiveActive;
         const isDeleting = deletingId === s.id;
         return (

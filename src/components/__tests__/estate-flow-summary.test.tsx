@@ -90,12 +90,16 @@ function fixture(): EstateFlowSummary {
 }
 
 describe("EstateFlowSummaryView", () => {
-  it("renders headline boxes for both deaths + OOE groups + heir boxes", () => {
+  it("renders headline boxes for both deaths + per-entity OOE boxes + heir boxes", () => {
     render(<EstateFlowSummaryView summary={fixture()} />);
     expect(screen.getByText(/Cooper's Estate/)).toBeInTheDocument();
     expect(screen.getByText(/Susan's Estate/)).toBeInTheDocument();
     expect(screen.getAllByText(/Heirs/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Irrev Trusts/)).toBeInTheDocument();
+    // OOE entities render as individual boxes, not a single "Heirs" /
+    // "Irrev Trusts" group total — advisors see one box per trust/529.
+    expect(screen.getByText("529 - Caroline")).toBeInTheDocument();
+    expect(screen.getByText("ILIT")).toBeInTheDocument();
     expect(screen.getByText(/Kevin Sample/)).toBeInTheDocument();
     expect(screen.getByText(/Caroline Sample/)).toBeInTheDocument();
   });
