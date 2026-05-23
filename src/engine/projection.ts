@@ -2128,6 +2128,88 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       cltPaymentsByTrustId.set(trust.id, existing);
     }
 
+    // ── CRT annual payment pass ───────────────────────────────────────────
+    // Each year of a CRT's term, the trust pays either a fixed % of its BoY
+    // FMV (CRUT) or a fixed annuity amount (CRAT) to the GRANTOR (household),
+    // the opposite direction from a CLT. Per Spec A, the distribution is
+    // taxed as ordinary income on the household 1040 (the §664(b) four-tier
+    // characterization — ordinary, capital gain, tax-exempt, return-of-corpus
+    // — is deferred to Spec B). NO §170(f)(2)(B) recapture applies on grantor
+    // death; recapture is a CLT-only concept.
+    for (const trust of currentEntities) {
+      if (trust.trustSubType !== "crt" || !trust.splitInterest) continue;
+      const si = trust.splitInterest;
+      const yearsSinceInception = year - si.inceptionYear;
+      if (yearsSinceInception < 0) continue;
+      if (
+        si.termType === "years" &&
+        yearsSinceInception >= (si.termYears ?? 0)
+      ) {
+        continue;
+      }
+      // Life-based termination is handled in a later phase (Spec A ships
+      // term-certain only).
+      const checkingId = entityCheckingByEntityId[trust.id];
+      if (!checkingId) continue;
+
+      let startOfYearFmv = 0;
+      for (const acct of workingAccounts) {
+        const trustShare = ownedByEntityAtYear(
+          acct,
+          data.giftEvents,
+          trust.id,
+          year,
+          planSettings.planStartYear,
+        );
+        if (trustShare <= 0) continue;
+        const ledger = accountLedgers[acct.id];
+        if (!ledger) continue;
+        startOfYearFmv += ledger.beginningValue * trustShare;
+      }
+      if (startOfYearFmv <= 0 && si.payoutType !== "annuity") continue;
+
+      let annualPayment: number;
+      let paymentLabel: string;
+      if (si.payoutType === "annuity") {
+        const { annuityAmount } = computeAnnualAnnuityPayment({
+          payoutAmount: Number(si.payoutAmount ?? 0),
+        });
+        annualPayment = annuityAmount;
+        paymentLabel = "CRAT annuity payment to grantor";
+      } else {
+        const { unitrustAmount } = computeAnnualUnitrustPayment({
+          payoutPercent: Number(si.payoutPercent ?? 0),
+          startOfYearFmv,
+        });
+        annualPayment = unitrustAmount;
+        paymentLabel = "CRUT unitrust payment to grantor";
+      }
+      if (annualPayment <= 0) continue;
+
+      // Debit the trust checking…
+      creditCash(checkingId, -annualPayment, {
+        category: "expense",
+        label: paymentLabel,
+        sourceId: trust.id,
+      });
+      // …and credit the household default checking.
+      creditCash(defaultChecking?.id, annualPayment, {
+        category: "income",
+        label: paymentLabel,
+        sourceId: trust.id,
+      });
+
+      // Tag as ordinary income on the household 1040 with a stable per-trust
+      // source key so report consumers can attribute it.
+      taxDetail.ordinaryIncome += annualPayment;
+      taxDetail.bySource[`crt_distribution:${trust.id}`] = {
+        type: "ordinary_income",
+        amount:
+          (taxDetail.bySource[`crt_distribution:${trust.id}`]?.amount ?? 0) +
+          annualPayment,
+      };
+    }
+
     // ── CLT trust-termination pass ────────────────────────────────────────
     // The year after a CLT's lead term ends, remaining trust assets are
     // distributed to the trust's primary remainder beneficiaries. Cash leaves
@@ -2188,6 +2270,63 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         creditCash(acct.id, -drain, {
           category: "expense",
           label: `CLT termination distribution`,
+          sourceId: trust.id,
+        });
+      }
+    }
+
+    // ── CRT trust-termination pass ────────────────────────────────────────
+    // The year after a CRT's lead term ends, remaining trust corpus goes to
+    // the named CHARITY (the opposite of CLT, where remainder goes to
+    // family). Cash exits the projection scope at termination; the
+    // TrustTerminationResult is recorded for downstream report consumers.
+    for (const trust of currentEntities) {
+      if (trust.trustSubType !== "crt" || !trust.splitInterest) continue;
+      if (!isTrustTerminationYear(trust, year, {})) continue;
+      const si = trust.splitInterest;
+
+      let totalAvailable = 0;
+      for (const acct of workingAccounts) {
+        const trustShare = ownedByEntityAtYear(
+          acct,
+          data.giftEvents,
+          trust.id,
+          year,
+          planSettings.planStartYear,
+        );
+        if (trustShare <= 0) continue;
+        const balance = accountBalances[acct.id] ?? 0;
+        totalAvailable += balance * trustShare;
+      }
+      if (totalAvailable <= 0) continue;
+
+      const result = distributeAtTermination(
+        {
+          trust,
+          currentYear: year,
+          designations: trust.beneficiaries ?? [],
+        },
+        totalAvailable,
+        { recipientMode: "charity", charityId: si.charityId },
+      );
+      yearTrustTerminations.push(result);
+
+      // Drain each trust account pro-rata.
+      for (const acct of workingAccounts) {
+        const trustShare = ownedByEntityAtYear(
+          acct,
+          data.giftEvents,
+          trust.id,
+          year,
+          planSettings.planStartYear,
+        );
+        if (trustShare <= 0) continue;
+        const balance = accountBalances[acct.id] ?? 0;
+        const drain = balance * trustShare;
+        if (drain <= 0) continue;
+        creditCash(acct.id, -drain, {
+          category: "expense",
+          label: `CRT termination distribution to charity`,
           sourceId: trust.id,
         });
       }
