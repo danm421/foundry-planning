@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { entityCreateSchema, entityUpdateSchema } from "../entities";
+import { entityCreateSchema } from "../entities";
 
 describe("entityCreateSchema — CRT", () => {
   const baseCrt = {

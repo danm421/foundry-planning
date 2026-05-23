@@ -289,17 +289,20 @@ export const entityUpdateSchema = z
       d.trustSubType === "crt" &&
       d.splitInterest &&
       typeof d.splitInterest === "object" &&
-      d.splitInterest !== null &&
-      "termType" in d.splitInterest &&
-      d.splitInterest.termType === "years" &&
-      typeof d.splitInterest.termYears === "number" &&
-      d.splitInterest.termYears > 20
+      d.splitInterest !== null
     ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["splitInterest", "termYears"],
-        message: "CRT term-certain trusts are capped at 20 years (§664)",
-      });
+      const si = d.splitInterest as { termType?: unknown; termYears?: unknown };
+      if (
+        si.termType === "years" &&
+        typeof si.termYears === "number" &&
+        si.termYears > 20
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["splitInterest", "termYears"],
+          message: "CRT term-certain trusts are capped at 20 years (§664)",
+        });
+      }
     }
 
     if (
