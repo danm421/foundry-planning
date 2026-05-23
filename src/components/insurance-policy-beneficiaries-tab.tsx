@@ -78,6 +78,7 @@ function AccountBeneficiaryEditor({
         percentage: r.percentage,
         familyMemberId: r.familyMemberId ?? undefined,
         externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
+        entityIdRef: r.entityIdRef ?? undefined,
         householdRole: r.householdRole ?? undefined,
         sortOrder: r.sortOrder,
       }));
