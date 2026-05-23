@@ -1,5 +1,5 @@
 // src/lib/balance-sheet/attribute.ts
-import type { AccountOwner } from "@/engine/ownership";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, type AccountOwner } from "@/engine/ownership";
 
 export interface ColumnSplit {
   cooper: number;
@@ -39,10 +39,31 @@ export interface AttributableItem {
 const EPSILON = 1e-9;
 
 export function attributeToColumns(
-  _item: AttributableItem,
-  _ctx: AttributionCtx,
+  item: AttributableItem,
+  ctx: AttributionCtx,
 ): ColumnSplit {
-  return { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
+  const split: ColumnSplit = { cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
+
+  for (const owner of item.owners) {
+    if (owner.kind !== "family_member") continue;
+    const dollars = item.value * owner.percent;
+    const role = roleOf(owner.familyMemberId, ctx);
+    if (role === "client") split.cooper += dollars;
+    else if (role === "spouse") split.sarah += dollars;
+    else split.ooe += dollars; // child / other / unknown
+  }
+
+  return split;
+}
+
+function roleOf(
+  familyMemberId: string,
+  ctx: AttributionCtx,
+): "client" | "spouse" | "child" | "other" {
+  // Legacy fixture ids predate `familyMembers` rows; map them directly.
+  if (familyMemberId === LEGACY_FM_CLIENT) return "client";
+  if (familyMemberId === LEGACY_FM_SPOUSE) return "spouse";
+  return ctx.rolesByFamilyMemberId.get(familyMemberId) ?? "other";
 }
 
 export function attributeEntityFlatValue(
