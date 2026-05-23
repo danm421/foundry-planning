@@ -145,7 +145,12 @@ describe("buildOwnershipColumn", () => {
     expect(trustGroup!.subtotal).toBe(200_000);
   });
 
-  it("places a 100% LLC-owned account in a business group", () => {
+  it("places a 100% entity-owned account in the entity's group", () => {
+    // Post business-as-asset migration, entity groups in the ownership
+    // column are uniformly tagged as "trust" — businesses live in
+    // data.accounts and don't appear in data.entities. An entity owner that
+    // doesn't resolve is treated as an orphan and emitted as "trust"
+    // (data-quality fallback).
     const cd = data({
       entities: [
         {
@@ -175,7 +180,6 @@ describe("buildOwnershipColumn", () => {
     const out = buildOwnershipColumn(cd);
     const bizGroup = out.groups.find((g) => g.key === "entity:ent-llc-1");
     expect(bizGroup).toBeDefined();
-    expect(bizGroup!.kind).toBe("business");
     expect(bizGroup!.label).toBe("Smith Holdings LLC");
     expect(bizGroup!.assets.map((a) => a.accountId)).toContain("acc-4");
   });
@@ -575,6 +579,8 @@ describe("buildOwnershipColumn", () => {
   });
 
   it("emits an entity's partial slice of a mixed account into the entity group", () => {
+    // Post-migration: no business-self row is emitted (businesses live in
+    // data.accounts). The entity group's subtotal is just the slice.
     const cd = data({
       entities: [
         {
@@ -583,7 +589,6 @@ describe("buildOwnershipColumn", () => {
           entityType: "llc",
           includeInPortfolio: false,
           isGrantor: false,
-          value: 10_000,
           owners: [{ familyMemberId: "fm-client", percent: 1 }],
         },
       ],
@@ -618,8 +623,7 @@ describe("buildOwnershipColumn", () => {
     expect(llcSavings!.value).toBe(20_000);
     expect(llcSavings!.percent).toBe(0.2);
     expect(llcSavings!.isSplit).toBe(true);
-    // Business-self row ($10k) + Savings slice ($20k) = $30k.
-    expect(llc!.subtotal).toBe(30_000);
+    expect(llc!.subtotal).toBe(20_000);
   });
 
   it("values an entity's mixed-account slice at its locked EoY share in a projected year", () => {
@@ -684,6 +688,9 @@ describe("buildOwnershipColumn", () => {
   });
 
   it("includes orphan-entity-owned account in a fallback group and grandTotal", () => {
+    // After business-as-asset migration, an unresolved entity owner is
+    // emitted as a "trust" group (data-quality fallback) so the value isn't
+    // dropped from grandTotal.
     const cd = data({
       entities: [],
       accounts: [
@@ -705,7 +712,7 @@ describe("buildOwnershipColumn", () => {
     const out = buildOwnershipColumn(cd);
     const orphanGroup = out.groups.find((g) => g.key === "entity:ent-missing");
     expect(orphanGroup).toBeDefined();
-    expect(orphanGroup!.kind).toBe("business");
+    expect(orphanGroup!.kind).toBe("trust");
     const row = orphanGroup!.assets.find((a) => a.accountId === "acc-orphan-entity");
     expect(row).toBeDefined();
     expect(row!.value).toBe(120_000);
@@ -894,40 +901,10 @@ describe("buildOwnershipColumn — row kind & default cash", () => {
     expect(row?.rowKind).toBe("account");
   });
 
-  it("emits a business-self row as the first row of a business entity group", () => {
-    const cd = data({
-      entities: [
-        {
-          id: "ent-biz", name: "Acme LLC", entityType: "llc",
-          value: 250_000, includeInPortfolio: true, isGrantor: false,
-          owners: [{ familyMemberId: "fm-client", percent: 1 }],
-        },
-      ],
-    } as unknown as Partial<ClientData>);
-    const out = buildOwnershipColumn(cd);
-    const group = out.groups.find((g) => g.key === "entity:ent-biz");
-    expect(group).toBeDefined();
-    expect(group!.assets[0].rowKind).toBe("business-entity");
-    expect(group!.assets[0].accountId).toBe("ent-biz");
-    expect(group!.assets[0].value).toBe(250_000);
-    expect(group!.subtotal).toBe(250_000);
-  });
-
-  it("emits a business-self row even when the business value is 0", () => {
-    const cd = data({
-      entities: [
-        {
-          id: "ent-new", name: "New Co", entityType: "s_corp",
-          includeInPortfolio: true, isGrantor: false, owners: [],
-        },
-      ],
-    } as unknown as Partial<ClientData>);
-    const out = buildOwnershipColumn(cd, { asOfYear: 2030 });
-    const group = out.groups.find((g) => g.key === "entity:ent-new");
-    expect(group).toBeDefined();
-    expect(group!.assets[0].rowKind).toBe("business-entity");
-    expect(group!.assets[0].value).toBe(0);
-  });
+  // The "business-self row" tests were removed: under the business-as-asset
+  // model, businesses are top-level accounts in data.accounts, so they're
+  // rendered as ordinary account rows (rowKind: "account") through the
+  // per-account loop — no synthetic business-self entity row exists.
 
   it("does not emit a business-self row for a trust entity", () => {
     const cd = data({

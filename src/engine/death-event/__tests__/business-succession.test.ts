@@ -1,44 +1,62 @@
 import { describe, it, expect } from "vitest";
 import { applyBusinessSuccession } from "../business-succession";
-import type { Account, EntitySummary, FamilyMember, Will } from "../../types";
+import type { Account, FamilyMember, Will } from "../../types";
 
 const cooper: FamilyMember = { id: "fmCooper", role: "client", relationship: "other", firstName: "Cooper", lastName: "", dateOfBirth: "1960-01-01" } as FamilyMember;
 const spouse: FamilyMember = { id: "fmSpouse", role: "spouse", relationship: "other", firstName: "Sam", lastName: "", dateOfBirth: "1962-01-01" } as FamilyMember;
 const child: FamilyMember = { id: "fmChild", role: "child", relationship: "child", firstName: "Kid", lastName: "", dateOfBirth: "1990-01-01" } as FamilyMember;
 
-function llc(owners: Array<{ familyMemberId: string; percent: number }>): EntitySummary {
-  // Synthesize `kind: "family_member"` on each owner so the fixture matches the
-  // discriminated EntityOwner shape that the engine's narrowing predicates expect.
-  const taggedOwners = owners.map((o) => ({ kind: "family_member" as const, ...o }));
-  return { id: "e1", name: "Test Bus", entityType: "llc", value: 10_000, basis: 4_000, owners: taggedOwners } as EntitySummary;
+/** Build a top-level business account with the given family-member ownership.
+ *  Default value $10k flat / $4k basis (matches the legacy entity fixture). */
+function llcAccount(owners: Array<{ familyMemberId: string; percent: number }>): Account {
+  const taggedOwners = owners.map((o) => ({
+    kind: "family_member" as const,
+    familyMemberId: o.familyMemberId,
+    percent: o.percent,
+  }));
+  return {
+    id: "biz-1",
+    name: "Test Bus",
+    category: "business",
+    subType: "llc",
+    value: 10_000,
+    basis: 4_000,
+    businessType: "llc",
+    parentAccountId: null,
+    growthRate: 0,
+    rmdEnabled: false,
+    titlingType: "jtwros",
+    owners: taggedOwners,
+  } as Account;
 }
-const accounts: Account[] = [];
-const balances: Record<string, number> = {};
+
+/** balances Record keyed on the business account so businessConsolidatedValue sees its flat value. */
+const balances = { "biz-1": 10_000 };
 
 describe("applyBusinessSuccession", () => {
   it("first death, no will, spouse survives → routes to spouse, basis steps up", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 1, accounts: [biz], accountBalances: balances,
       will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers).toHaveLength(1);
-    expect(r.transfers[0].sourceEntityId).toBe("e1");
+    expect(r.transfers[0].sourceAccountId).toBe("biz-1");
     expect(r.transfers[0].recipientKind).toBe("spouse");
     expect(r.transfers[0].amount).toBe(10_000);
     expect(r.ownerUpdates[0]).toEqual({
-      entityId: "e1", removeFamilyMemberId: "fmCooper",
+      accountId: "biz-1", removeFamilyMemberId: "fmCooper",
       successors: [{ familyMemberId: "fmSpouse", percent: 1 }],
     });
-    expect(r.basisUpdates[0]).toEqual({ entityId: "e1", newBasis: 10_000 });
+    expect(r.basisUpdates[0]).toEqual({ accountId: "biz-1", newBasis: 10_000 });
   });
 
   it("no will, no spouse → routes to children fallback", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
-      deathOrder: 2, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 2, accounts: [biz], accountBalances: balances,
       will: null, familyMembers: [cooper, child], externalBeneficiaries: [], year: 2040,
     });
     expect(r.transfers[0].recipientKind).toBe("family_member");
@@ -47,14 +65,14 @@ describe("applyBusinessSuccession", () => {
   });
 
   it("60/40 client/spouse → only the 60% client share routes", () => {
+    const biz = llcAccount([
+      { familyMemberId: "fmCooper", percent: 0.6 },
+      { familyMemberId: "fmSpouse", percent: 0.4 },
+    ]);
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
       deathOrder: 1,
-      entities: [llc([
-        { familyMemberId: "fmCooper", percent: 0.6 },
-        { familyMemberId: "fmSpouse", percent: 0.4 },
-      ])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      accounts: [biz], accountBalances: balances,
       will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers[0].amount).toBe(6_000); // 10k × 0.6
@@ -62,19 +80,19 @@ describe("applyBusinessSuccession", () => {
     expect(r.basisUpdates[0].newBasis).toBeCloseTo(7_600);
   });
 
-  it("specific will bequest naming the entity beats fallback", () => {
+  it("specific will bequest naming the business beats fallback", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const will: Will = {
       id: "w1", grantor: "client", bequests: [{
         id: "b1", name: "LLC to child", kind: "asset", assetMode: "specific",
-        accountId: null, entityId: "e1", liabilityId: null, percentage: 100,
+        accountId: null, entityId: "biz-1", liabilityId: null, percentage: 100,
         condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "fmChild", percentage: 100, sortOrder: 0 }],
       }],
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 1, accounts: [biz], accountBalances: balances,
       will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers[0].recipientId).toBe("fmChild");
@@ -82,45 +100,47 @@ describe("applyBusinessSuccession", () => {
   });
 
   it("non-family recipient (charity) → rows removed, no successor", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const will: Will = {
       id: "w1", grantor: "client", bequests: [{
         id: "b1", name: "LLC to charity", kind: "asset", assetMode: "specific",
-        accountId: null, entityId: "e1", liabilityId: null, percentage: 100,
+        accountId: null, entityId: "biz-1", liabilityId: null, percentage: 100,
         condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "external_beneficiary", recipientId: "charity1", percentage: 100, sortOrder: 0 }],
       }],
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 1, accounts: [biz], accountBalances: balances,
       will, familyMembers: [cooper, spouse],
       externalBeneficiaries: [{ id: "charity1", name: "Charity", kind: "charity" }],
       year: 2030,
     });
     expect(r.transfers[0].recipientKind).toBe("external_beneficiary");
     expect(r.ownerUpdates[0]).toEqual({
-      entityId: "e1", removeFamilyMemberId: "fmCooper", successors: [],
+      accountId: "biz-1", removeFamilyMemberId: "fmCooper", successors: [],
     });
   });
 
-  it("legacy owners == null → joint convention", () => {
-    const legacy = { id: "e1", name: "Old Co", entityType: "llc", value: 10_000, basis: 4_000 } as EntitySummary;
+  it("zero consolidated value → no transfers, ownerUpdates, or basisUpdates", () => {
+    const zeroBiz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
+    zeroBiz.value = 0;
+    zeroBiz.basis = 0;
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, entities: [legacy],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 1, accounts: [zeroBiz], accountBalances: { "biz-1": 0 },
       will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
     });
-    expect(r.transfers[0].amount).toBe(5_000); // 10k × 0.5 joint at first death
-    expect(r.warnings).toContain("business_legacy_owners_joint: e1");
+    expect(r.transfers).toHaveLength(0);
+    expect(r.ownerUpdates).toHaveLength(0);
+    expect(r.basisUpdates).toHaveLength(0);
   });
 
   it("deathOrder 2, no survivor, no children → fallback_other_heirs / system_default, successors empty", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
-      deathOrder: 2, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 2, accounts: [biz], accountBalances: balances,
       will: null, familyMembers: [cooper], externalBeneficiaries: [], year: 2045,
     });
     expect(r.transfers).toHaveLength(1);
@@ -129,35 +149,19 @@ describe("applyBusinessSuccession", () => {
     expect(r.ownerUpdates[0].successors).toHaveLength(0);
   });
 
-  it("zero consolidated value → no transfers, ownerUpdates, or basisUpdates", () => {
-    const zeroEntity: EntitySummary = {
-      id: "e1", name: "Empty Co", entityType: "llc", value: 0, basis: 0,
-      owners: [{ familyMemberId: "fmCooper", percent: 1 }],
-    } as EntitySummary;
-    const r = applyBusinessSuccession({
-      deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, entities: [zeroEntity],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
-      will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
-    });
-    expect(r.transfers).toHaveLength(0);
-    expect(r.ownerUpdates).toHaveLength(0);
-    expect(r.basisUpdates).toHaveLength(0);
-  });
-
   it("condition-gated bequest: if_spouse_predeceased at first death (spouse alive) → ignored, routes to spouse fallback", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const will: Will = {
       id: "w1", grantor: "client", bequests: [{
         id: "b1", name: "LLC to child if spouse predeceased", kind: "asset", assetMode: "specific",
-        accountId: null, entityId: "e1", liabilityId: null, percentage: 100,
+        accountId: null, entityId: "biz-1", liabilityId: null, percentage: 100,
         condition: "if_spouse_predeceased", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "fmChild", percentage: 100, sortOrder: 0 }],
       }],
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 1, accounts: [biz], accountBalances: balances,
       will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers[0].recipientKind).toBe("spouse");
@@ -166,18 +170,18 @@ describe("applyBusinessSuccession", () => {
   });
 
   it("condition-gated bequest: if_spouse_predeceased at final death (no survivor) → fires, routes to child", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const will: Will = {
       id: "w1", grantor: "client", bequests: [{
         id: "b1", name: "LLC to child if spouse predeceased", kind: "asset", assetMode: "specific",
-        accountId: null, entityId: "e1", liabilityId: null, percentage: 100,
+        accountId: null, entityId: "biz-1", liabilityId: null, percentage: 100,
         condition: "if_spouse_predeceased", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "fmChild", percentage: 100, sortOrder: 0 }],
       }],
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
-      deathOrder: 2, entities: [llc([{ familyMemberId: "fmCooper", percent: 1 }])],
-      accounts, accountBalances: balances, entityAccountSharesEoY: undefined,
+      deathOrder: 2, accounts: [biz], accountBalances: balances,
       will, familyMembers: [cooper, child], externalBeneficiaries: [], year: 2035,
     });
     expect(r.transfers[0].recipientId).toBe("fmChild");
