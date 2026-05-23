@@ -8,6 +8,7 @@ const SUBTYPE_PILL: Record<TrustSubType, string> = {
   ilit: "bg-warn/15 text-warn",
   clt: "bg-cat-life/15 text-cat-life",
   idgt: "bg-warn/15 text-warn",
+  crt: "bg-cat-life/15 text-cat-life",
 };
 
 export function TrustFundingRows({
