@@ -651,6 +651,30 @@ export interface Account {
   owners: AccountOwner[];
   /** For business-owned child accounts: the id of the parent business account. */
   parentAccountId?: string | null;
+  /** Business-as-asset fields. Present only when `category === "business"` and
+   *  `parentAccountId == null` (top-level business accounts). Child business
+   *  accounts and non-business accounts leave these undefined. */
+  businessType?:
+    | "sole_prop"
+    | "partnership"
+    | "s_corp"
+    | "c_corp"
+    | "llc"
+    | "other"
+    | null;
+  /** Fraction (0-1) of net income flowing to household checking each year.
+   *  Null defaults to 1.0 (full pass-through). */
+  distributionPolicyPercent?: number | null;
+  /** 'annual' = engine reads income/expense rows (annualAmount + growthRate)
+   *  and distributionPolicyPercent. 'schedule' = engine reads per-year
+   *  overrides exclusively. Defaults to 'annual'. */
+  flowMode?: "annual" | "schedule";
+  /** Tax treatment of the business' pass-through income.
+   *    qbi          → taxDetail.qbi
+   *    ordinary     → taxDetail.ordinaryIncome
+   *    non_taxable  → taxDetail.taxExempt
+   */
+  businessTaxTreatment?: "qbi" | "ordinary" | "non_taxable" | null;
 }
 
 export interface Income {
@@ -670,6 +694,10 @@ export interface Income {
   owner: "client" | "spouse" | "joint";
   claimingAge?: number;
   ownerEntityId?: string;
+  /** Business-account owner (business-as-asset model). Mutually exclusive with
+   *  ownerEntityId. When set, the income belongs to the named top-level business
+   *  account and flows through its distribution policy / tax treatment. */
+  ownerAccountId?: string;
   // Cash account this income deposits into. When unset, the engine falls back to the
   // household default checking (or the entity's default checking if ownerEntityId is set).
   cashAccountId?: string;
@@ -713,6 +741,10 @@ export interface Expense {
   /** See Income.inflationStartYear. */
   inflationStartYear?: number;
   ownerEntityId?: string;
+  /** Business-account owner (business-as-asset model). Mutually exclusive with
+   *  ownerEntityId. When set, the expense is incurred by the named top-level
+   *  business account and reduces its net income. */
+  ownerAccountId?: string;
   // Cash account this expense is paid from.
   cashAccountId?: string;
   deductionType?: "charitable" | "above_line" | "below_line" | "property_tax" | null;

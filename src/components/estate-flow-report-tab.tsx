@@ -210,10 +210,7 @@ export function EstateFlowReportTab({
         <div className="rounded border border-gray-800/60 p-3">
           <EstateFlowOwnershipColumn
             data={ownership}
-            onAssetClick={(id, rowKind) => {
-              if (rowKind === "business-entity") setEntityDialogId(id);
-              else setOwnerDialogId(id);
-            }}
+            onAssetClick={(id) => setOwnerDialogId(id)}
             minYear={planStartYear}
             maxYear={planEndYear}
             asOfYear={asOfYear}

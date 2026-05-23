@@ -7,10 +7,26 @@ import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import { computeStateEstateTax } from "@/lib/tax/state-estate";
 import type { USPSStateCode } from "@/lib/usps-states";
 import { STATE_INHERITANCE_TAX } from "@/lib/tax/state-inheritance";
-import { isBusinessEntity } from "@/lib/estate/in-estate-weights";
-import type { ExternalBeneficiarySummary } from "./shared";
+import {
+  deceasedBusinessAccountShare,
+  type ExternalBeneficiarySummary,
+} from "./shared";
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
 import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
+
+// Local helper: legacy business-entity gate. After Task 1.7 purges non-trust
+// entities from `data.entities`, this always returns false and the related
+// branches in computeGrossEstate become dead code — to be removed then.
+function isBusinessEntity(e: EntitySummary | undefined): boolean {
+  if (!e || !e.entityType) return false;
+  return (
+    e.entityType === "llc" ||
+    e.entityType === "s_corp" ||
+    e.entityType === "c_corp" ||
+    e.entityType === "partnership" ||
+    e.entityType === "other"
+  );
+}
 
 // ── Form 706 federal tax formula ────────────────────────────────────────────
 
@@ -64,22 +80,6 @@ function deceasedBusinessShare(
   if (entity.owners == null) return deathOrder === 1 ? 0.5 : 1;
   if (deceasedFmId == null) return 0;
   return entity.owners
-    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
-    .reduce((s, o) => s + (o.percent ?? 0), 0);
-}
-
-/**
- * Account-based analogue of `deceasedBusinessShare`: the deceased family
- * member's ownership share of a business account. Accounts always carry an
- * owners array (possibly empty), so the legacy null-owners joint convention
- * does not apply here — a deceased who is not in the array contributes 0.
- */
-function deceasedBusinessAccountShare(
-  business: Account,
-  deceasedFmId: string | null,
-): number {
-  if (deceasedFmId == null) return 0;
-  return business.owners
     .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
     .reduce((s, o) => s + (o.percent ?? 0), 0);
 }

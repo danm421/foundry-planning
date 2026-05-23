@@ -2,7 +2,11 @@ import type {
   Account, DeathTransfer, FamilyMember, Will, WillBequest,
 } from "../types";
 import { businessConsolidatedValue } from "./business-value";
-import { type ExternalBeneficiarySummary, firesAtDeath } from "./shared";
+import {
+  deceasedBusinessAccountShare,
+  type ExternalBeneficiarySummary,
+  firesAtDeath,
+} from "./shared";
 
 /** Account-owner succession: the deceased's rows for one business account move
  *  to the resolved successors. successors is empty for a non-family recipient
@@ -30,16 +34,6 @@ interface ResolvedRecipient {
   /** account-owner successor for a family-member/spouse recipient; null for
    *  non-family recipients (rows removed, value exits the household). */
   successorFmId: string | null;
-}
-
-/** Deceased's family-member ownership share of a business account. Accounts
- *  always carry an owners array (possibly empty); a deceased who is not in
- *  the array contributes 0. The legacy null-owners convention is dead. */
-function deceasedShare(business: Account, deceasedFmId: string | null): number {
-  if (deceasedFmId == null) return 0;
-  return business.owners
-    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
-    .reduce((s, o) => s + (o.percent ?? 0), 0);
 }
 
 /** Resolve who receives a business interest: will entity-bequest → will
@@ -150,7 +144,7 @@ export function applyBusinessSuccession(input: {
   );
 
   for (const business of businesses) {
-    const share = deceasedShare(business, input.deceasedFmId);
+    const share = deceasedBusinessAccountShare(business, input.deceasedFmId);
     if (share <= 1e-9) continue;
 
     const consolidated = businessConsolidatedValue(

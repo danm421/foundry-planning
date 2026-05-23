@@ -695,6 +695,21 @@ export function applyBeneficiaryDesignations(
   };
 }
 
+/** Deceased's family-member ownership share of a business account.
+ *  Accounts always carry an owners array (possibly empty); a deceased who is
+ *  not in the array contributes 0. Shared between succession (which moves the
+ *  deceased's share to heirs) and estate-tax (which counts the deceased's
+ *  share in the gross estate). */
+export function deceasedBusinessAccountShare(
+  business: Account,
+  deceasedFmId: string | null,
+): number {
+  if (deceasedFmId == null) return 0;
+  return business.owners
+    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
+    .reduce((s, o) => s + (o.percent ?? 0), 0);
+}
+
 /** Predicate: which condition-tier bequests fire at a given death order.
  *  At first death (order 1): `always` and `if_spouse_survives` fire.
  *  At final death (order 2): `always` and `if_spouse_predeceased` fire.
