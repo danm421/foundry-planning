@@ -10,7 +10,10 @@ import type {
   ClientData,
   RemainderBeneficiaryRef,
 } from "@/engine/types";
-import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import {
+  controllingEntity,
+  ownedByFamilyMember,
+} from "@/engine/ownership";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 // Account subTypes that the estate-flow Overview treats as already
@@ -322,11 +325,13 @@ function consolidateBySource(
 }
 
 /**
- * Sum of accounts owned 100% by the survivor of the first death — the leftmost
- * top-row box on the estate flow chart. Joint and mixed-ownership accounts
- * don't count; only sole-ownership lands here (matches `controllingFamilyMember`,
- * the same helper used by the Sankey source rail in `owner-bucket.ts`). Returns
- * null when there's no surviving spouse (single-filer household).
+ * Survivor's net-worth box on the left rail of the chart — `Σ pct × value`
+ * over every account in which they hold any household-side ownership, minus
+ * the same percent-weighted share of every liability. Joint accounts thus
+ * contribute their share (e.g. 50% of a JTWROS home), matching how the
+ * first-death stage box already scales decedent transfers by
+ * `chargeableShareByAccount`. Returns null when there's no surviving spouse
+ * (single-filer household).
  */
 function computeSurvivorNetWorth(
   clientData: ClientData,
@@ -341,9 +346,20 @@ function computeSurvivorNetWorth(
   }
   const lines: { label: string; amount: number }[] = [];
   for (const account of clientData.accounts ?? []) {
-    if (controllingFamilyMember(account) !== survivorFmId) continue;
-    const amount = typeof account.value === "number" ? account.value : 0;
+    const pct = ownedByFamilyMember(account, survivorFmId);
+    if (pct <= 0) continue;
+    const value = typeof account.value === "number" ? account.value : 0;
+    const amount = value * pct;
+    if (amount === 0) continue;
     lines.push({ label: account.name, amount });
+  }
+  for (const liability of clientData.liabilities ?? []) {
+    const pct = ownedByFamilyMember(liability, survivorFmId);
+    if (pct <= 0) continue;
+    const balance = typeof liability.balance === "number" ? liability.balance : 0;
+    const amount = -balance * pct;
+    if (amount === 0) continue;
+    lines.push({ label: liability.name, amount });
   }
   const total = lines.reduce((s, l) => s + l.amount, 0);
   return { ownerLabel: survivor.label, role: survivor.role, amount: total, lines };

@@ -423,11 +423,17 @@ describe("buildEstateFlowSummary — survivorNetWorth", () => {
       clientData,
     })!;
 
+    // Susan's box = 100% of Susan Roth ($500k) + 50% of Joint ($200k × 0.5 =
+    // $100k) = $600k. The 100%-client-owned account doesn't contribute. See
+    // 2026-05-22-estate-flow-survivor-share-and-ilit-routing-design.
     expect(summary.survivorNetWorth).toEqual({
       ownerLabel: "Susan",
       role: "spouse",
-      amount: 500_000,
-      lines: [{ label: "Susan Roth", amount: 500_000 }],
+      amount: 600_000,
+      lines: [
+        { label: "Susan Roth", amount: 500_000 },
+        { label: "Joint", amount: 100_000 },
+      ],
     });
   });
 
@@ -1364,5 +1370,200 @@ describe("buildEstateFlowSummary — single-filer + isEmpty", () => {
     expect(summary.firstDeath).toBeNull();
     expect(summary.secondDeath).not.toBeNull();
     expect(summary.heirBoxes).toHaveLength(1);
+  });
+});
+
+describe("buildEstateFlowSummary — survivor net worth includes joint shares", () => {
+  // The surviving spouse's left-rail box should reflect their actual financial
+  // position: 100% of sole-owned + their share of joint − their share of joint
+  // liabilities. Pre-fix it only counted 100%-sole-owned accounts and ignored
+  // all liabilities; see spec
+  // 2026-05-22-estate-flow-survivor-share-and-ilit-routing-design.
+
+  it("includes 50% share of a joint account in the survivor's box", () => {
+    const firstDeath: DeathSectionData = {
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2026,
+      taxableEstate: 0,
+      assetEstateValue: 0,
+      assetCount: 0,
+      recipients: [],
+      reductions: [],
+      conflicts: [],
+      chargeableShareByAccount: {},
+      chargeableShareByLiability: {},
+      reconciliation: {
+        sumLiabilityTransfers: 0,
+        sumRecipients: 0,
+        sumReductions: 0,
+        unattributed: 0,
+        reconciles: true,
+      },
+    };
+
+    const clientData = {
+      ...emptyClientData(),
+      familyMembers: [
+        { id: "fm-client", role: "client", firstName: "Cooper" },
+        { id: "fm-spouse", role: "spouse", firstName: "Susan" },
+      ],
+      accounts: [
+        {
+          id: "joint-realty",
+          name: "Real Estate",
+          category: "real_estate",
+          subType: "other",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+            { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        },
+      ],
+    } as unknown as ClientData;
+
+    const input = { ...baseInput({ firstDeath }), clientData };
+    const summary = buildEstateFlowSummary(input)!;
+
+    expect(summary.survivorNetWorth).not.toBeNull();
+    expect(summary.survivorNetWorth!.role).toBe("spouse");
+    expect(summary.survivorNetWorth!.amount).toBe(500_000);
+    expect(summary.survivorNetWorth!.lines).toEqual([
+      { label: "Real Estate", amount: 500_000 },
+    ]);
+  });
+
+  it("subtracts the survivor's share of joint liabilities", () => {
+    const firstDeath: DeathSectionData = {
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2026,
+      taxableEstate: 0,
+      assetEstateValue: 0,
+      assetCount: 0,
+      recipients: [],
+      reductions: [],
+      conflicts: [],
+      chargeableShareByAccount: {},
+      chargeableShareByLiability: {},
+      reconciliation: {
+        sumLiabilityTransfers: 0,
+        sumRecipients: 0,
+        sumReductions: 0,
+        unattributed: 0,
+        reconciles: true,
+      },
+    };
+
+    const clientData = {
+      ...emptyClientData(),
+      familyMembers: [
+        { id: "fm-client", role: "client", firstName: "Cooper" },
+        { id: "fm-spouse", role: "spouse", firstName: "Susan" },
+      ],
+      accounts: [
+        {
+          id: "joint-home",
+          name: "Home",
+          category: "real_estate",
+          subType: "primary_residence",
+          value: 950_000,
+          basis: 600_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+            { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        },
+      ],
+      liabilities: [
+        {
+          id: "joint-mortgage",
+          name: "Home Mortgage",
+          balance: 600_000,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+            { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        },
+      ],
+    } as unknown as ClientData;
+
+    const input = { ...baseInput({ firstDeath }), clientData };
+    const summary = buildEstateFlowSummary(input)!;
+
+    // 950k × 0.5 − 600k × 0.5 = 475k − 300k = 175k.
+    expect(summary.survivorNetWorth!.amount).toBe(175_000);
+    expect(summary.survivorNetWorth!.lines).toEqual([
+      { label: "Home", amount: 475_000 },
+      { label: "Home Mortgage", amount: -300_000 },
+    ]);
+  });
+
+  it("returns null when there is no surviving spouse", () => {
+    const input = baseInput({
+      firstDeath: null,
+      secondDeath: null,
+    });
+    const summary = buildEstateFlowSummary(input)!;
+    // baseInput's reportData has no death events, so the decedent can't be
+    // resolved and there's no survivor to spotlight. Sanity check that the
+    // legacy null path is preserved (the summary itself is still built — only
+    // `reportData.isEmpty: true` short-circuits the whole struct).
+    expect(summary.survivorNetWorth).toBeNull();
+  });
+
+  it("ignores accounts with empty owners[] without crashing", () => {
+    const firstDeath: DeathSectionData = {
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2026,
+      taxableEstate: 0,
+      assetEstateValue: 0,
+      assetCount: 0,
+      recipients: [],
+      reductions: [],
+      conflicts: [],
+      chargeableShareByAccount: {},
+      chargeableShareByLiability: {},
+      reconciliation: {
+        sumLiabilityTransfers: 0,
+        sumRecipients: 0,
+        sumReductions: 0,
+        unattributed: 0,
+        reconciles: true,
+      },
+    };
+
+    const clientData = {
+      ...emptyClientData(),
+      familyMembers: [
+        { id: "fm-client", role: "client", firstName: "Cooper" },
+        { id: "fm-spouse", role: "spouse", firstName: "Susan" },
+      ],
+      accounts: [
+        {
+          id: "orphan",
+          name: "Orphan",
+          category: "cash",
+          subType: "checking",
+          value: 1_000,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [],
+        },
+      ],
+    } as unknown as ClientData;
+
+    const input = { ...baseInput({ firstDeath }), clientData };
+    const summary = buildEstateFlowSummary(input)!;
+    expect(summary.survivorNetWorth!.amount).toBe(0);
+    expect(summary.survivorNetWorth!.lines).toEqual([]);
   });
 });
