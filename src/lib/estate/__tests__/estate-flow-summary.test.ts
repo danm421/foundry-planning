@@ -1569,3 +1569,212 @@ describe("buildEstateFlowSummary — survivor net worth includes joint shares", 
     expect(summary.survivorNetWorth!.lines).toEqual([]);
   });
 });
+
+describe("buildEstateFlowSummary — Irrev Trusts box counts policy face value", () => {
+  const ilitEntity = {
+    id: "ilit-1",
+    name: "Cooper ILIT",
+    entityType: "trust" as const,
+    trustSubType: "ilit" as const,
+    isIrrevocable: true,
+    isGrantor: false,
+    grantor: "client" as const,
+    includeInPortfolio: false,
+    remainderBeneficiaries: [
+      { familyMemberId: "kid-a", percentage: 100, distributionForm: "outright" as const },
+    ],
+  };
+
+  function ilitTermPolicy(opts: {
+    id?: string;
+    name?: string;
+    faceValue: number;
+    cashValue?: number;
+    beneficiaries?: { tier: "primary" | "contingent"; entityIdRef?: string; familyMemberId?: string; percentage: number; sortOrder: number }[];
+    termIssueYear?: number;
+    termLengthYears?: number;
+  }) {
+    return {
+      id: opts.id ?? "policy-1",
+      name: opts.name ?? "ILIT Policy",
+      category: "life_insurance" as const,
+      subType: "term",
+      value: opts.cashValue ?? 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      insuredPerson: "client" as const,
+      lifeInsurance: {
+        faceValue: opts.faceValue,
+        costBasis: 0,
+        premiumAmount: 1000,
+        premiumYears: 20,
+        policyType: "term" as const,
+        termIssueYear: opts.termIssueYear ?? 2020,
+        termLengthYears: opts.termLengthYears ?? 30,
+        endsAtInsuredRetirement: false,
+        cashValueGrowthMode: "basic" as const,
+        postPayoutGrowthRate: 0.06,
+        cashValueSchedule: [],
+      },
+      owners: [{ kind: "entity" as const, entityId: "ilit-1", percent: 1 }],
+      ...(opts.beneficiaries ? { beneficiaries: opts.beneficiaries } : {}),
+    };
+  }
+
+  it("trust named primary beneficiary → box reads face value, not cash value", () => {
+    const clientData = {
+      ...emptyClientData(),
+      entities: [ilitEntity],
+      accounts: [
+        ilitTermPolicy({
+          faceValue: 1_000_000,
+          cashValue: 0,
+          beneficiaries: [
+            { tier: "primary", entityIdRef: "ilit-1", percentage: 100, sortOrder: 0 },
+          ],
+        }),
+      ],
+    } as unknown as ClientData;
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+    })!;
+
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(1_000_000);
+    expect(summary.outOfEstate.irrevTrusts.entities).toHaveLength(1);
+    expect(summary.outOfEstate.irrevTrusts.entities[0].assets).toEqual([
+      { label: "ILIT Policy (death benefit)", amount: 1_000_000 },
+    ]);
+  });
+
+  it("empty beneficiaries on a trust-owned policy → box still reads face value (legacy data fallback)", () => {
+    const clientData = {
+      ...emptyClientData(),
+      entities: [ilitEntity],
+      accounts: [
+        ilitTermPolicy({
+          faceValue: 1_000_000,
+          cashValue: 0,
+          // No beneficiaries property at all.
+        }),
+      ],
+    } as unknown as ClientData;
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+    })!;
+
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(1_000_000);
+  });
+
+  it("trust-owned whole-life policy → face value wins over cash value", () => {
+    const clientData = {
+      ...emptyClientData(),
+      entities: [ilitEntity],
+      accounts: [
+        {
+          ...ilitTermPolicy({ faceValue: 800_000, cashValue: 50_000 }),
+          lifeInsurance: {
+            faceValue: 800_000,
+            costBasis: 0,
+            premiumAmount: 5_000,
+            premiumYears: null,
+            policyType: "whole" as const,
+            termIssueYear: null,
+            termLengthYears: null,
+            endsAtInsuredRetirement: false,
+            cashValueGrowthMode: "basic" as const,
+            postPayoutGrowthRate: 0.06,
+            cashValueSchedule: [],
+          },
+          beneficiaries: [
+            { tier: "primary", entityIdRef: "ilit-1", percentage: 100, sortOrder: 0 },
+          ],
+        },
+      ],
+    } as unknown as ClientData;
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+    })!;
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(800_000);
+  });
+
+  it("trust owns policy but individual is named primary → face value drops out (malformed-ILIT path)", () => {
+    const clientData = {
+      ...emptyClientData(),
+      entities: [ilitEntity],
+      accounts: [
+        ilitTermPolicy({
+          faceValue: 1_000_000,
+          cashValue: 0,
+          beneficiaries: [
+            { tier: "primary", familyMemberId: "fm-spouse", percentage: 100, sortOrder: 0 },
+          ],
+        }),
+      ],
+    } as unknown as ClientData;
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+    })!;
+    // Cash value (here $0) is what shows when the policy doesn't name the trust.
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(0);
+  });
+
+  it("term policy past expiration → face value drops out", () => {
+    const clientData = {
+      ...emptyClientData(),
+      entities: [ilitEntity],
+      accounts: [
+        ilitTermPolicy({
+          faceValue: 1_000_000,
+          cashValue: 0,
+          termIssueYear: 1990,
+          termLengthYears: 20, // expires in 2010
+          beneficiaries: [
+            { tier: "primary", entityIdRef: "ilit-1", percentage: 100, sortOrder: 0 },
+          ],
+        }),
+      ],
+    } as unknown as ClientData;
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({}),
+      clientData,
+      asOfYear: 2026, // policy lapsed by now
+    })!;
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(0);
+  });
+
+  it("non-insurance trust-owned account → still reads account.value (unchanged behavior)", () => {
+    const clientData = {
+      ...emptyClientData(),
+      entities: [ilitEntity],
+      accounts: [
+        {
+          id: "trust-cash",
+          name: "ILIT Premium Reserve",
+          category: "cash" as const,
+          subType: "checking",
+          value: 25_000,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "entity" as const, entityId: "ilit-1", percent: 1 }],
+        },
+      ],
+    } as unknown as ClientData;
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+    })!;
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(25_000);
+  });
+});

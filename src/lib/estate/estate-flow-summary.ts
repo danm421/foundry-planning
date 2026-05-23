@@ -15,6 +15,11 @@ import {
   ownedByFamilyMember,
 } from "@/engine/ownership";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import {
+  isPolicyInForce,
+  insuredRetirementYearFor,
+  resolveOwnerRetirementYears,
+} from "@/lib/estate/insurance-in-force";
 
 // Account subTypes that the estate-flow Overview treats as already
 // out-of-estate for the household (assets earmarked for heirs that bypass
@@ -385,10 +390,20 @@ function accountAmount(a: Account): number {
  */
 function computeOutOfEstate(
   clientData: ClientData,
-  _asOfYear: number,
+  asOfYear: number,
 ): EstateFlowSummary["outOfEstate"] {
   const accounts = clientData.accounts ?? [];
   const entities = clientData.entities ?? [];
+
+  // Pre-compute retirement years once so every trust-owned policy can ask
+  // `insuredRetirementYearFor` without re-parsing DOBs. Fixtures that omit
+  // `clientData.client` (vault tests, raw OOE smoke tests) skip the lookup
+  // entirely — the `endsAtInsuredRetirement` check then treats the policy
+  // as having no retirement bound, matching the helper's documented null
+  // contract.
+  const { clientRetirementYear, spouseRetirementYear } = clientData.client
+    ? resolveOwnerRetirementYears(clientData.client)
+    : { clientRetirementYear: null, spouseRetirementYear: null };
 
   // irrevocable trusts → entities[]. Include trusts with no funded accounts so
   // the planning vehicle still surfaces on the chart (advisor expectation:
@@ -400,10 +415,41 @@ function computeOutOfEstate(
     const ownedAccounts = accounts.filter(
       (a) => controllingEntity(a) === entity.id,
     );
-    const assets = ownedAccounts.map((a) => ({
-      label: a.name,
-      amount: accountAmount(a),
-    }));
+    const assets: { label: string; amount: number }[] = [];
+    for (const a of ownedAccounts) {
+      // Trust-owned life-insurance policies: show the **death benefit** (face
+      // value), not the cash value. The trust is the implicit beneficiary
+      // when `beneficiaries` is empty (legacy data — the UI didn't support
+      // setting a trust as beneficiary until Phase 2a of this fix), or
+      // explicit when `entityIdRef` is set. A non-trust primary beneficiary
+      // on a trust-owned policy is a malformed ILIT — fall through to cash
+      // value so the diagnostic surfaces. Gated on `isPolicyInForce` so a
+      // lapsed term policy doesn't keep contributing $1M forever.
+      if (a.category === "life_insurance" && a.lifeInsurance) {
+        const bens = a.beneficiaries ?? [];
+        const trustIsNamedBene =
+          bens.length === 0 ||
+          bens.some(
+            (b) =>
+              b.tier === "primary" && b.entityIdRef === entity.id,
+          );
+        if (trustIsNamedBene) {
+          const insuredRetYear = insuredRetirementYearFor(
+            a,
+            clientRetirementYear,
+            spouseRetirementYear,
+          );
+          if (isPolicyInForce(a, asOfYear, insuredRetYear)) {
+            assets.push({
+              label: `${a.name} (death benefit)`,
+              amount: a.lifeInsurance.faceValue,
+            });
+            continue;
+          }
+        }
+      }
+      assets.push({ label: a.name, amount: accountAmount(a) });
+    }
     const amount = assets.reduce((s, x) => s + x.amount, 0);
     irrevTrustEntities.push({
       entityId: entity.id,
