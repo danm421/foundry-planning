@@ -103,7 +103,8 @@ export interface BuildEstateFlowSummaryInput {
   ownerNames: { clientName: string; spouseName: string | null };
   /** The year the user selected on the chart's "As Of" dropdown. Used by
    *  `computeOutOfEstate` to gate `isPolicyInForce` on trust-owned policies.
-   *  When omitted, callers default to the projection's start year. */
+   *  Callers should pass the projection's start year when the AsOf
+   *  selection isn't a concrete year (e.g. "today" or "split"). */
   asOfYear: number;
 }
 
