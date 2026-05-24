@@ -2128,7 +2128,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-300">
                 {chartView === "portfolio" ? "Total Portfolio Assets" : "Cash Flow Analysis"}
-                <span className="ml-2 text-xs font-normal text-gray-400">— click a point to jump to that year</span>
               </h2>
               <div className="flex rounded-md border border-gray-600 bg-gray-800 text-xs">
                 <button
