@@ -1485,6 +1485,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const inc of currentIncomes) {
       const incGate = itemProrationGate(inc, year, data.client);
       if (!incGate.include) continue;
+      // Business-account income is taxed in the Phase 3 K-1 incidence block
+      // below — skipping here prevents a double-count (legacyTaxType would
+      // land it in ordinaryIncome AND Phase 3 would re-add it as qbi).
+      if (inc.ownerAccountId != null) continue;
       if (inc.ownerEntityId != null) {
         // Non-grantor entity rows → handled below (Phase 3 K-1 incidence for
         // non-trust; trust-tax pass for trust). Grantor BUSINESS entity rows

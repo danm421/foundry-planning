@@ -231,16 +231,13 @@ describe("estate-flow — personal savings + family-owned business account", () 
     expect(bizLine!.label).toContain("Cooper Holdings LLC");
   });
 
-  // Re-enable after Task 1.7's gross-estate double-count fix. Right now the
-  // summary's consolidateBySource folds both the per-account routing
-  // transfer ($200k) and the business-succession transfer ($216k) into a
-  // single estate line for biz-1, scaling each by cap/total. Because the
-  // gross-estate cap itself double-counts ($200k per-account + $216k
-  // consolidation = $416k), the scaling is a no-op and the LLC row reads
-  // as $416k. Once Task 1.7 suppresses the per-account business line, the
-  // LLC row collapses back to the consolidated $216k and the total
-  // Cooper's Estate value lands at the intended $280k.
-  it.skip("estate flow's Cooper's Estate detail panel lists Savings ($64k) AND the LLC ($216k) — pending Task 1.7", () => {
+  // With Task 1.7's gross-estate double-count fix, the per-account business
+  // line is suppressed and only the consolidated $216k line remains in the
+  // gross-estate cap. consolidateBySource then scales the LLC's
+  // transfers (per-account routing $200k + business-succession $216k = $416k)
+  // back to that $216k cap, so the LLC row reads $216k and Cooper's Estate
+  // totals $280k.
+  it("estate flow's Cooper's Estate detail panel lists Savings ($64k) AND the LLC ($216k)", () => {
     const { summary } = buildPipeline();
     const lines = summary.firstDeath!.estateLines;
 

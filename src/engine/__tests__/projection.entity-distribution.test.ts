@@ -162,10 +162,11 @@ describe("Phase 3: tax-treatment mapping", () => {
     const y0 = years[0];
 
     // Phase 3 K-1 attributes the business's pass-through to taxDetail.qbi
-    // (in addition to the legacy income-row tax classification that runs
-    // upstream — fixing that double-counted into ordinaryIncome is tracked in
-    // Task 1.7 production cleanup).
+    // exclusively. The upstream per-income tax classifier skips
+    // ownerAccountId rows so the same dollars no longer also land in
+    // ordinaryIncome.
     expect(y0.taxDetail!.qbi).toBeCloseTo(100_000, 0);
+    expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(0, 0);
     expect(y0.taxDetail!.bySource["business_passthrough:biz-llc"]).toEqual({
       type: "qbi",
       amount: 100_000,

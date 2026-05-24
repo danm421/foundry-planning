@@ -144,6 +144,14 @@ export function computeGrossEstate(input: {
     const fmv = input.accountBalances[a.id] ?? 0;
     if (fmv <= 0) continue;
 
+    // Business accounts (and their child accounts) are aggregated by the
+    // business-consolidation loop below into one line per top-level business.
+    // Skipping them here prevents a double-count: without this, a $200k LLC
+    // with a $16k sub-account owned 100% by the client would emit a $200k
+    // per-account line PLUS a $216k consolidation line.
+    if (a.category === "business") continue;
+    if (a.parentAccountId != null) continue;
+
     // Compute per-owner locked entity slices once. Used both to derive the
     // family pool and to evaluate rev-trust-grantor inclusion below.
     const entitySlices: Array<{ entityId: string; locked: number }> = [];
