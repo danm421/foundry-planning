@@ -3,7 +3,6 @@ import { applyFirstDeath } from "../first-death";
 import type { DeathEventInput } from "../shared";
 import type {
   Account,
-  EntitySummary,
   FamilyMember,
   PlanSettings,
   Will,

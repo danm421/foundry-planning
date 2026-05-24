@@ -3,7 +3,6 @@ import { applyFinalDeath } from "../final-death";
 import type { DeathEventInput } from "../shared";
 import type {
   Account,
-  EntitySummary,
   FamilyMember,
   Liability,
   PlanSettings,
