@@ -12,7 +12,7 @@ import {
   clientDeductions,
   crmHouseholdContacts,
 } from "@/db/schema";
-import AssumptionsClient from "../../client-data/assumptions/assumptions-client";
+import AssumptionsClient from "../../details/assumptions/assumptions-client";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
@@ -25,7 +25,7 @@ interface AssumptionsStepProps {
 }
 
 /** Wizard step over AssumptionsClient. Mirrors the standard
- * `/clients/[id]/client-data/assumptions/page.tsx` loader. */
+ * `/clients/[id]/details/assumptions/page.tsx` loader. */
 export default async function AssumptionsStep({ clientId, firmId }: AssumptionsStepProps) {
   const [clientRow] = await db
     .select()

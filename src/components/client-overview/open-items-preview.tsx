@@ -90,7 +90,7 @@ export default function OpenItemsPreview({
           {totalOpen} open · {totalCompleted} completed
         </span>
         <Link
-          href={`/clients/${clientId}/client-data`}
+          href={`/clients/${clientId}/details`}
           className="text-accent hover:text-accent-ink"
         >
           Manage on Details →

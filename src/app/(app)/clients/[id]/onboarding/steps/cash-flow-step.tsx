@@ -29,7 +29,7 @@ interface CashFlowStepProps {
 }
 
 /** Wizard step over IncomeExpensesView. The loader mirrors the standard
- * `/clients/[id]/client-data/income-expenses/page.tsx` — see that page for the
+ * `/clients/[id]/details/income-expenses/page.tsx` — see that page for the
  * canonical version. Kept inline because it has exactly one other caller. */
 export default async function CashFlowStep({ clientId, firmId }: CashFlowStepProps) {
   const [clientRow] = await db

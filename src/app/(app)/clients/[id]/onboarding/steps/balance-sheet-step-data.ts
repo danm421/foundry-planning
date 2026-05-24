@@ -23,7 +23,7 @@ import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 /** Bundle of props the wizard's Accounts and Liabilities steps both need.
  * Mirrors the standard balance-sheet page loader at
- * `src/app/(app)/clients/[id]/client-data/balance-sheet/page.tsx`.
+ * `src/app/(app)/clients/[id]/details/net-worth/page.tsx`.
  *
  * Kept as a single helper because Accounts and Liabilities are sibling
  * wizard steps over the same underlying view — duplicating the loader would

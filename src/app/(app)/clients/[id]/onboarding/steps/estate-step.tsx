@@ -29,7 +29,7 @@ interface EstateStepProps {
 }
 
 /** Wizard step over WillsPanel. Mirrors the standard
- * `/clients/[id]/client-data/wills/page.tsx` loader. */
+ * `/clients/[id]/details/wills/page.tsx` loader. */
 export default async function EstateStep({ clientId, firmId }: EstateStepProps) {
   const [client] = await db
     .select()

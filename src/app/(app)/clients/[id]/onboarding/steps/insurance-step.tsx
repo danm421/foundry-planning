@@ -31,7 +31,7 @@ interface InsuranceStepProps {
 }
 
 /** Wizard step over InsurancePanel. Mirrors the standard
- * `/clients/[id]/client-data/insurance/page.tsx` loader. */
+ * `/clients/[id]/details/insurance/page.tsx` loader. */
 export default async function InsuranceStep({ clientId, firmId }: InsuranceStepProps) {
   const [client] = await db
     .select()

@@ -21,7 +21,7 @@ export default function EmptyHouseholdBanner({ clientId }: Props): ReactElement 
         </p>
       </div>
       <Link
-        href={`/clients/${clientId}/client-data`}
+        href={`/clients/${clientId}/details`}
         className="rounded-sm bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on hover:bg-accent-ink"
       >
         Add accounts

@@ -14,7 +14,7 @@ const TABS: ReadonlyArray<{
   subTabs?: ReadonlyArray<SubTab>;
 }> = [
   { label: "Overview", href: "overview" },
-  { label: "Details", href: "client-data" },
+  { label: "Details", href: "details" },
   {
     label: "Assets",
     href: "assets",

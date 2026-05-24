@@ -70,7 +70,7 @@ export function computeAlerts(client: ClientLike, projection: ProjectionLike): A
       severity: "warning",
       title: `Details ${Math.floor(ageDays)}d stale`,
       detail: `Client data hasn't been updated in over ${STALE_CLIENT_DATA_DAYS} days.`,
-      href: `/clients/${client.id}/client-data`,
+      href: `/clients/${client.id}/details`,
     });
   }
 
