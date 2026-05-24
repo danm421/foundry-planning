@@ -68,7 +68,7 @@ function toDateInput(v: string | null | undefined): string {
   return String(v).slice(0, 10);
 }
 
-export default function AddClientForm({ mode, initial, onSuccess, onSubmitStateChange, onAutoSaved }: AddClientFormProps) {
+export default function AddClientForm({ initial, onSuccess, onSubmitStateChange, onAutoSaved }: AddClientFormProps) {
   const router = useRouter();
   const { user } = useUser();
   const [effectiveClientId, setEffectiveClientId] = useState<string | null>(initial?.id ?? null);
