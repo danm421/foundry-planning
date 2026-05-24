@@ -171,64 +171,13 @@ describe("computeHypotheticalEstateTax", () => {
     );
   });
 
-  it("threads entityAccountSharesEoY so a business's slice of a drained split-owned account isn't understated", () => {
-    // Savings account split 80% client / 20% an LLC the client owns 100%.
-    // The household drew its cash shortfall down to a $50k year-end balance.
-    // The business's locked EoY share — protected from household flows — is
-    // still $20k. Without the locked share threaded through, the business
-    // gross-estate line falls back to drainedBalance × 20% = $10k, netting
-    // the household's liquidation against the business's own cash.
-    const savings: Account = {
-      id: "savings",
-      name: "Savings Account",
-      category: "cash",
-      subType: "savings",
-      value: 50_000,
-      basis: 50_000,
-      growthRate: 0,
-      rmdEnabled: false,
-      owners: [
-        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.8 },
-        { kind: "entity", entityId: "biz", percent: 0.2 },
-      ],
-    } as unknown as Account;
-
-    const business: EntitySummary = {
-      id: "biz",
-      name: "Test Bus",
-      includeInPortfolio: true,
-      isGrantor: false,
-      entityType: "llc",
-      value: 0,
-      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
-    } as unknown as EntitySummary;
-
-    const result = computeHypotheticalEstateTax({
-      year: 2030,
-      isMarried: false,
-      accounts: [savings],
-      accountBalances: { savings: 50_000 },
-      basisMap: { savings: 50_000 },
-      incomes: [] as Income[],
-      liabilities: [] as Liability[],
-      familyMembers: principalFamilyMembers,
-      externalBeneficiaries: [],
-      entities: [business],
-      wills: [] as Will[],
-      planSettings: basePlanSettings(),
-      gifts: [] as Gift[],
-      annualExclusionsByYear: {},
-      // Business's locked share of the savings account: $20k, untouched by
-      // the household's drawdown that took the account balance to $50k.
-      entityAccountSharesEoY: new Map([["biz", new Map([["savings", 20_000]])]]),
-    });
-
-    const businessLine = result.primaryFirst.firstDeath.grossEstateLines?.find(
-      (l) => l.entityId === "biz",
-    );
-    expect(businessLine).toBeDefined();
-    expect(businessLine!.amount).toBeCloseTo(20_000, 2);
-  });
+  // The "threads entityAccountSharesEoY so a business's slice…" test relied
+  // on an account having a kind:"entity" owner pointing at a business
+  // EntitySummary. Under the new account-based business model, businesses are
+  // separate top-level accounts and there is no cross-ownership where a
+  // single account is co-owned by family + business. The locked-share
+  // mechanism that the test exercised survives (still applies to trust
+  // entities); the business-specific path is no longer reachable.
 
   it("single: only primaryFirst populated; no finalDeath; totals reflect one death", () => {
     const accounts = [makeAccount("client-401k", "client", 5_000_000)];

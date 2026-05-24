@@ -78,8 +78,9 @@ export function EstateFlowChartTab({
         gifts: workingGifts,
         ownerNames,
         asOfYear,
+        projection,
       }),
-    [reportData, engineData, workingGifts, ownerNames, asOfYear],
+    [reportData, engineData, workingGifts, ownerNames, asOfYear, projection],
   );
 
   // Death years from the projection's firstDeathEvent / secondDeathEvent.

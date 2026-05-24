@@ -1,4 +1,4 @@
-import type { Account, ClientData, EntitySummary, Will } from "@/engine/types";
+import type { Account, ClientData, Will } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import {
   type AccountOwner,
@@ -18,12 +18,12 @@ import {
 // ── Output Types ─────────────────────────────────────────────────────────────
 
 export interface OwnershipAssetRow {
-  /** "account" id, or the entity id for a business-self row. */
+  /** Account id. */
   accountId: string;
-  /** Distinguishes a normal account row from the business entity's own value row. */
-  rowKind: "account" | "business-entity";
+  /** Row provenance — kept for forward-compat. All rows are now "account". */
+  rowKind: "account";
   /** True for auto-provisioned default-checking accounts (household + entity cash).
-   *  Such rows are not clickable to retitle. Always false for business-self rows. */
+   *  Such rows are not clickable to retitle. */
   isDefaultCash: boolean;
   name: string;
   /** Account category (e.g. "taxable", "retirement", "real_estate"). */
@@ -46,7 +46,7 @@ export interface OwnershipAssetRow {
 export interface OwnershipGroup {
   /** "client" | "spouse" | "joint" | `entity:<id>` */
   key: string;
-  kind: "client" | "spouse" | "joint" | "trust" | "business";
+  kind: "client" | "spouse" | "joint" | "trust";
   label: string;
   assets: OwnershipAssetRow[];
   /** Sum of netValue across all assets. */
@@ -81,24 +81,6 @@ export interface OwnershipColumnOptions {
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
-
-function entityKind(entity: EntitySummary): "trust" | "business" {
-  return entity.entityType === "trust" ? "trust" : "business";
-}
-
-/** Business entities (not trusts, not foundations) carry a flat `value` and
- *  get a clickable "business-self" row in Column 1. */
-function isBusinessEntity(entity: EntitySummary): boolean {
-  // "foundation" is intentionally excluded: foundations hold value through accounts
-  // (like trusts), not a flat entity.value.
-  return (
-    entity.entityType === "llc" ||
-    entity.entityType === "s_corp" ||
-    entity.entityType === "c_corp" ||
-    entity.entityType === "partnership" ||
-    entity.entityType === "other"
-  );
-}
 
 /**
  * Structural conflict check for column-1 (as-of-today, no death event).
@@ -262,30 +244,15 @@ export function buildOwnershipColumn(
 
   const entityGroups = new Map<string, OwnershipGroup>();
   for (const entity of entities) {
-    const selfRows: OwnershipAssetRow[] = isBusinessEntity(entity)
-      ? [
-          {
-            accountId: entity.id,
-            rowKind: "business-entity",
-            isDefaultCash: false,
-            name: entity.name ?? "Business",
-            accountType: "business",
-            value: entity.value ?? 0,
-            percent: 1,
-            isSplit: false,
-            linkedLiabilities: [],
-            netValue: entity.value ?? 0,
-            hasBeneficiaries: false,
-            hasConflict: false,
-          },
-        ]
-      : [];
+    // Business accounts live in `data.accounts` (business-as-asset model) and
+    // are picked up by the per-account loop below. Trust groups start empty
+    // and gather the accounts they own as that loop runs.
     entityGroups.set(entity.id, {
       key: `entity:${entity.id}`,
-      kind: entityKind(entity),
+      kind: "trust",
       label: entity.name ?? entity.id,
-      assets: selfRows,
-      subtotal: selfRows.reduce((s, a) => s + a.netValue, 0),
+      assets: [],
+      subtotal: 0,
     });
   }
 
@@ -318,9 +285,11 @@ export function buildOwnershipColumn(
         // account value is not silently dropped from grandTotal.
         group = {
           key: `entity:${soloEntityId}`,
-          // Entity type is unknown here; default to "business". The rendering layer
-          // should treat this as a data-quality fallback, not a deterministic label.
-          kind: "business",
+          // Entity type is unknown here; default to "trust" — the only valid
+          // entity kind after the business-as-asset migration. The rendering
+          // layer should treat this as a data-quality fallback, not a
+          // deterministic label.
+          kind: "trust",
           label: "Unknown entity",
           assets: [],
           subtotal: 0,
@@ -459,7 +428,7 @@ export function buildOwnershipColumn(
       if (!group) {
         group = {
           key: `entity:${ownerRow.entityId}`,
-          kind: "business",
+          kind: "trust",
           label: "Unknown entity",
           assets: [],
           subtotal: 0,
@@ -504,9 +473,7 @@ export function buildOwnershipColumn(
   const nonEmptyGroups = allGroups
     .map((g) => {
       const assets = dropZeroed
-        ? g.assets.filter(
-            (a) => a.rowKind === "business-entity" || Math.abs(a.value) >= 1,
-          )
+        ? g.assets.filter((a) => Math.abs(a.value) >= 1)
         : g.assets;
       // Recompute the subtotal from the surviving rows so totals stay consistent.
       return { ...g, assets, subtotal: assets.reduce((s, a) => s + a.netValue, 0) };

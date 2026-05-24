@@ -97,11 +97,7 @@ import {
   LEGACY_FM_CLIENT,
   LEGACY_FM_SPOUSE,
 } from "./ownership";
-import {
-  computeBusinessEntityNetIncome,
-  resolveEntityFlowAmount,
-  resolveDistributionPercent,
-} from "./entity-flows";
+import { resolveEntityFlowAmount } from "./entity-flows";
 import { type CharityBucket } from "./charitable-deduction";
 import {
   emptyCharityCarryforward,
@@ -759,7 +755,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       currentIncomes,
       year,
       client,
-      (inc) => inc.ownerEntityId == null
+      // Exclude business-owned (ownerAccountId) rows from household totals.
+      // Business income is taxed via the Phase 3 K-1 incidence block (which
+      // adds the household share directly to taxDetail/taxableIncome) and
+      // routed to household cash via the Phase 3 distribution sweep — so it
+      // must not also contribute to income.total / income.bySource here, or
+      // we double-count it in the household tax base and cashflow surplus.
+      (inc) => inc.ownerEntityId == null && inc.ownerAccountId == null
     );
     const grantorIncome = computeIncome(
       currentIncomes,
@@ -779,7 +781,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       data.expenses,
       year,
       data.client,
-      (exp) => exp.ownerEntityId == null
+      // Exclude business-owned (ownerAccountId) rows: those are netted against
+      // business income inside the Phase 3 distribution sweep, not paid from
+      // household cash. Including them here would inflate household
+      // non-savings outflows and depress the cashflow surplus.
+      (exp) => exp.ownerEntityId == null && exp.ownerAccountId == null
     );
 
     // Initialize per-account ledgers with the year-start balances. Ledgers are
@@ -1479,6 +1485,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const inc of currentIncomes) {
       const incGate = itemProrationGate(inc, year, data.client);
       if (!incGate.include) continue;
+      // Business-account income is taxed in the Phase 3 K-1 incidence block
+      // below — skipping here prevents a double-count (legacyTaxType would
+      // land it in ordinaryIncome AND Phase 3 would re-add it as qbi).
+      if (inc.ownerAccountId != null) continue;
       if (inc.ownerEntityId != null) {
         // Non-grantor entity rows → handled below (Phase 3 K-1 incidence for
         // non-trust; trust-tax pass for trust). Grantor BUSINESS entity rows
@@ -1645,51 +1655,51 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // ── Phase 3: business-entity tax incidence (passthrough K-1) ──────────
-    // For each business entity (entityType !== 'trust'), compute net income
-    // and flow it to owners' 1040 buckets per the entity's taxTreatment,
-    // scaled by each family-member owner's percent. Trusts are skipped —
-    // they keep the existing 1041 / grantor pass.
+    // ── Phase 3: business-account tax incidence (passthrough K-1) ─────────
+    // For each top-level business account, compute net income (income rows
+    // tagged with ownerAccountId minus expense rows tagged with
+    // ownerAccountId) and flow it to family-member owners' 1040 buckets per
+    // the business' taxTreatment, scaled by each owner's percent.
     // Per spec § Phase 3 decisions:
     //   P3-2: qbi → qbi; ordinary → ordinaryIncome; non_taxable → taxExempt
-    //   P3-3: skip when entityType === 'trust'
     //   P3-6: ownership gap (sum < 1) → only known shares are taxed
     //   P3-8: losses (net ≤ 0) → no tax incidence
     //
     // Also adds family-owned taxable share to `taxableIncome` so flat-rate mode
     // (which reads taxableIncome, not taxDetail buckets) picks it up correctly.
     // Bracket mode reads taxDetail directly, so both modes are covered.
-    for (const entity of currentEntities) {
-      if (entity.entityType === "trust") continue;
-      // Grantor and non-grantor non-trust entities both flow through here:
-      // net income (gross − entity expenses) is the K-1 amount, which is
-      // the only correct value when an entity is in schedule mode (the
-      // raw inc.annualAmount on a base income row is no longer authoritative
-      // once entityFlowOverrides supply per-year cells). The grantorIncome
-      // filter above excludes non-trust entities for the same reason.
-      const netIncome = computeBusinessEntityNetIncome(
-        entity.id,
-        currentIncomes,
-        allExpenses,
-        year,
-        data.entityFlowOverrides ?? [],
-        entity.flowMode ?? "annual",
-        data.client,
-      );
+    const businessAccountsThisYear = data.accounts.filter(
+      (a) => a.category === "business" && a.parentAccountId == null,
+    );
+    for (const business of businessAccountsThisYear) {
+      let gross = 0;
+      for (const inc of currentIncomes) {
+        if (inc.ownerAccountId !== business.id) continue;
+        if (year < inc.startYear || year > inc.endYear) continue;
+        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+        gross += inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      }
+      let exp = 0;
+      for (const e of allExpenses) {
+        if (e.ownerAccountId !== business.id) continue;
+        if (year < e.startYear || year > e.endYear) continue;
+        const inflateFrom = e.inflationStartYear ?? e.startYear;
+        exp += e.annualAmount * Math.pow(1 + e.growthRate, year - inflateFrom);
+      }
+      const netIncome = gross - exp;
       if (netIncome <= 0) continue;
-      const treatment = entity.taxTreatment ?? "ordinary";
+      const treatment = business.businessTaxTreatment ?? "ordinary";
       // Pass-through taxation attributes to household owners only. Entity-kind
       // owners (e.g. a trust holding the business) don't pass income through
-      // to the household 1040; they retain it at the holder level. Filter
-      // preserves pre-polymorphic behavior for the (current) all-family case.
-      const familyOwners = (entity.owners ?? []).filter(
+      // to the household 1040; they retain it at the holder level.
+      const familyOwners = business.owners.filter(
         (o) => o.kind === "family_member",
       );
-      let entityFamilyTaxable = 0;
+      let businessFamilyTaxable = 0;
       for (const owner of familyOwners) {
         const taxableShare = netIncome * owner.percent;
         if (taxableShare === 0) continue;
-        entityFamilyTaxable += taxableShare;
+        businessFamilyTaxable += taxableShare;
         switch (treatment) {
           case "qbi":
             taxDetail.qbi += taxableShare;
@@ -1705,9 +1715,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Flat-rate mode: add to taxableIncome so calculateTaxYearFlat sees it.
       // Non-taxable treatment is excluded — it should not count as taxable income.
       if (treatment !== "non_taxable") {
-        taxableIncome += entityFamilyTaxable;
+        taxableIncome += businessFamilyTaxable;
       }
-      // Drilldown: attribute the entity's total taxable amount under one bySource
+      // Drilldown: attribute the business's total taxable amount under one bySource
       // key so reports can identify the source. Owner % split is a 1040 detail
       // not surfaced in bySource.
       const totalTaxable = netIncome * familyOwners.reduce((s, o) => s + o.percent, 0);
@@ -1716,7 +1726,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           treatment === "qbi" ? "qbi"
           : treatment === "non_taxable" ? "tax_exempt"
           : "ordinary_income";
-        taxDetail.bySource[`entity_passthrough:${entity.id}`] = {
+        taxDetail.bySource[`business_passthrough:${business.id}`] = {
           type: bySourceType,
           amount: totalTaxable,
         };
@@ -2895,6 +2905,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const inc of currentIncomes) {
       const incRouteGate = itemProrationGate(inc, year, data.client);
       if (!incRouteGate.include) continue;
+      // Business-owned income (ownerAccountId set) is routed via the Phase 3
+      // business-distribution loop below, not the household cash routing here.
+      // Without this guard the row is credited twice: once to defaultChecking
+      // via resolveCashAccount (since ownerEntityId is null), and again as
+      // part of the business-distribution sweep.
+      if (inc.ownerAccountId != null) continue;
       // Schedule-mode entities are handled in a dedicated loop below — the
       // schedule grid is the source of truth, so base income rows are not
       // routed here (would double-count or, worse, miss override-only cells
@@ -2951,6 +2967,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const exp of allExpenses) {
       const expRouteGate = itemProrationGate(exp, year, data.client);
       if (!expRouteGate.include) continue;
+      // Business-owned expense (ownerAccountId set) is paid out of business cash
+      // and netted against business income in the Phase 3 distribution loop —
+      // not paid from household cash here. Without this guard the row is
+      // debited twice: once from defaultChecking via resolveCashAccount, and
+      // again implicitly when the Phase 3 sweep nets it against gross income.
+      if (exp.ownerAccountId != null) continue;
       // Schedule-mode entities are handled below.
       if (
         exp.ownerEntityId != null &&
@@ -3011,72 +3033,74 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // ── Phase 3: business-entity distribution to household ─────────────────
-    // After income/expense crediting on entity checking, sweep net income to
-    // household checking per the entity's distributionPolicyPercent. Trusts
-    // skipped (they keep the existing distribution-policy mechanic).
+    // ── Phase 3: business-account distribution to household ───────────────
+    // After income/expense crediting on the business's child cash account,
+    // sweep net income to household checking per the business's
+    // distributionPolicyPercent.
     //
-    // Grantor businesses are included: tax pass-through (handled separately
-    // via grantorIncome → household taxableIncome) is orthogonal to cash
-    // pass-through. Without this, cash earned by a grantor entity would
-    // strand in entity checking forever even when the user sets a 100%
-    // distribution policy.
+    // Grantor / family-owned businesses are included unconditionally: tax
+    // pass-through (handled in the Phase 3 tax block above) is orthogonal to
+    // cash pass-through. Without this, cash earned by a business would strand
+    // in its checking forever even when the user sets a 100% distribution
+    // policy.
     //
     // Per spec § Phase 3 decisions:
-    //   P3-3: skip when entityType === 'trust'
     //   P3-4: same year, audit category "entity_distribution"
     //   P3-5: null distributionPolicyPercent defaults to 1.0
-    //   P3-7: target is household defaultChecking always
+    //   P3-7: target is the primary family-member owner's default cash; else
+    //         household defaultChecking
     //   P3-8: losses → no distribution (skip net ≤ 0)
-    for (const entity of currentEntities) {
-      if (entity.entityType === "trust") continue;
-      const netIncome = computeBusinessEntityNetIncome(
-        entity.id,
-        currentIncomes,
-        allExpenses,
-        year,
-        data.entityFlowOverrides ?? [],
-        entity.flowMode ?? "annual",
-        data.client,
-      );
+    for (const business of businessAccountsThisYear) {
+      let gross = 0;
+      for (const inc of currentIncomes) {
+        if (inc.ownerAccountId !== business.id) continue;
+        if (year < inc.startYear || year > inc.endYear) continue;
+        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+        gross += inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      }
+      let exp = 0;
+      for (const e of allExpenses) {
+        if (e.ownerAccountId !== business.id) continue;
+        if (year < e.startYear || year > e.endYear) continue;
+        const inflateFrom = e.inflationStartYear ?? e.startYear;
+        exp += e.annualAmount * Math.pow(1 + e.growthRate, year - inflateFrom);
+      }
+      const netIncome = gross - exp;
       if (netIncome <= 0) continue;
-      const distPercent = resolveDistributionPercent(
-        entity,
-        year,
-        data.entityFlowOverrides ?? [],
-      );
+      const distPercent = business.distributionPolicyPercent ?? 1.0;
       const distAmount = netIncome * distPercent;
       if (distAmount === 0) continue;
-      const entityCheckingId = entityCheckingByEntityId[entity.id];
-      if (!entityCheckingId) continue; // entity has no cash account → cannot distribute
-      // Destination: primary owner's default cash account. Falls back to the
-      // household defaultChecking when the entity has no defined owners or the
-      // owner has no associated cash account. Previously this always credited
-      // defaultChecking, which could route the cash to the wrong account (or
-      // nowhere) when the grantor's actual cash lived in an account that wasn't
-      // the first .find(isDefaultChecking) match.
-      // Cash distributions route to a household cash account — only family_member
-      // owners are eligible. Entity-owner rows (e.g. a trust holding the
-      // business) are skipped here; their distribution accumulates via the
-      // entity's own checking account in a later pass.
-      const primaryOwner = (entity.owners ?? [])
+      // Source: the business's own child cash account if one exists; otherwise
+      // skip (we have nothing to drain).
+      const businessCash = data.accounts.find(
+        (a) =>
+          a.parentAccountId === business.id &&
+          a.category === "cash" &&
+          a.isDefaultChecking === true,
+      );
+      if (!businessCash) continue;
+      // Destination: primary family-member owner's default cash account.
+      // Falls back to household defaultChecking when the business has no
+      // family owners or the owner has no associated cash account.
+      const primaryOwner = business.owners
         .filter((o) => o.kind === "family_member")
         .slice()
         .sort((x, y) => y.percent - x.percent)[0];
       const destinationId =
-        (primaryOwner ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId) : undefined)
-        ?? defaultChecking?.id;
-      // Debit entity checking
-      creditCash(entityCheckingId, -distAmount, {
+        (primaryOwner
+          ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId)
+          : undefined) ?? defaultChecking?.id;
+      // Debit business cash
+      creditCash(businessCash.id, -distAmount, {
         category: "entity_distribution",
-        label: `Distribution from ${entity.name ?? entity.id}`,
-        sourceId: entity.id,
+        label: `Distribution from ${business.name}`,
+        sourceId: business.id,
       });
       // Credit owner's default cash account
       creditCash(destinationId, distAmount, {
         category: "entity_distribution",
-        label: `Distribution from ${entity.name ?? entity.id}`,
-        sourceId: entity.id,
+        label: `Distribution from ${business.name}`,
+        sourceId: business.id,
       });
     }
 

@@ -369,10 +369,8 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     deceasedFmId,
     survivorFmId,
     deathOrder: 1,
-    entities: prepared.entities,
     accounts: prepared.accounts,
     accountBalances: prepared.accountBalances,
-    entityAccountSharesEoY: input.entityAccountSharesEoY,
     will: input.will ?? null,
     familyMembers: input.familyMembers,
     externalBeneficiaries: input.externalBeneficiaries,
@@ -498,46 +496,19 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
   }
 
-  // Phase 9 — apply grantor-succession updates and business-interest updates now.
+  // Phase 9 — apply grantor-succession updates. businessSuccession.ownerUpdates
+  // / basisUpdates are account-keyed under the account-based business model;
+  // wiring them through to accounts is deferred future work — the entity-keyed
+  // application that used to live here was inert (find never matched).
   const mutatedEntities = input.entities.map((e) => {
-    let next = e;
-
-    // Existing grantor-succession entityUpdates block (unchanged).
     const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
-    if (upd) {
-      next = {
-        ...next,
-        ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
-        ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
-        ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
-      };
-    }
-
-    // Business-interest owner succession: remove the deceased's row, add successor rows.
-    const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.entityId === e.id);
-    if (ownerUpd && next.owners != null) {
-      // Clone each kept row so the `existing.percent +=` merge below never
-      // mutates the original input entity's owner objects. Entity-kind owners
-      // pass through untouched — only family_member rows participate in
-      // deceased-removal / successor-merge.
-      const merged = next.owners
-        .filter((o) => o.kind !== "family_member" || o.familyMemberId !== ownerUpd.removeFamilyMemberId)
-        .map((o) => ({ ...o }));
-      for (const s of ownerUpd.successors) {
-        const existing = merged.find(
-          (o) => o.kind === "family_member" && o.familyMemberId === s.familyMemberId,
-        );
-        if (existing) existing.percent += s.percent;
-        else merged.push({ kind: "family_member", familyMemberId: s.familyMemberId, percent: s.percent });
-      }
-      next = { ...next, owners: merged };
-    }
-
-    // §1014 basis step-up on the entity's flat operating value.
-    const basisUpd = businessSuccession.basisUpdates.find((u) => u.entityId === e.id);
-    if (basisUpd) next = { ...next, basis: basisUpd.newBasis };
-
-    return next;
+    if (!upd) return e;
+    return {
+      ...e,
+      ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
+      ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
+      ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
+    };
   });
 
   // Phase 10 — pour-out distribution (stubbed; the common empty-queue path

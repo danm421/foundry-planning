@@ -616,24 +616,34 @@ describe("computeGrossEstate", () => {
   });
 
   it("includes a wholly-business-owned account by the deceased's ownership share", () => {
-    // Client's LLC owns a $500k account; client owns 100% of the LLC.
-    // Business entities have no `grantor` — inclusion is by entity_owners %.
-    const llc: EntitySummary = {
-      id: "llc",
-      includeInPortfolio: true,
-      isGrantor: false,
-      entityType: "llc",
+    // Client's LLC (top-level business account) has a child cash account.
+    // Client owns 100% of the LLC. Consolidated business value =
+    // llcAccount.value (0) + child balance = $500k.
+    const llcAccount: Account = {
+      id: "biz-llc",
+      name: "Client LLC",
+      category: "business",
+      subType: "llc",
+      value: 0,
+      basis: 0,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
+    const childAccount = acct("llc-a1", 500_000, {
+      parentAccountId: "biz-llc",
+      owners: [],
+    });
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("llc-a1", 500_000, {
-        owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
-      })],
-      accountBalances: { "llc-a1": 500_000 },
+      accounts: [llcAccount, childAccount],
+      accountBalances: { "biz-llc": 0, "llc-a1": 500_000 },
       liabilities: [],
-      entities: [llc],
+      entities: [],
       deceasedFmId: LEGACY_FM_CLIENT,
       survivorFmId: LEGACY_FM_SPOUSE,
     });
@@ -643,27 +653,37 @@ describe("computeGrossEstate", () => {
   });
 
   it("includes only the deceased's fractional share of a partly-owned business", () => {
-    // LLC owns a $500k account; client 60%, spouse 40%. At the client's
-    // death only the client's 60% belongs in the gross estate.
-    const llc: EntitySummary = {
-      id: "llc",
-      includeInPortfolio: true,
-      isGrantor: false,
-      entityType: "llc",
+    // LLC (business account) holds a $500k child cash account. Client 60%,
+    // spouse 40%. At client's death only the client's 60% belongs in the
+    // gross estate.
+    const llcAccount: Account = {
+      id: "biz-llc",
+      name: "LLC",
+      category: "business",
+      subType: "llc",
+      value: 0,
+      basis: 0,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [
         { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
         { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
       ],
     };
+    const childAccount = acct("llc-a1", 500_000, {
+      parentAccountId: "biz-llc",
+      owners: [],
+    });
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("llc-a1", 500_000, {
-        owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
-      })],
-      accountBalances: { "llc-a1": 500_000 },
+      accounts: [llcAccount, childAccount],
+      accountBalances: { "biz-llc": 0, "llc-a1": 500_000 },
       liabilities: [],
-      entities: [llc],
+      entities: [],
       deceasedFmId: LEGACY_FM_CLIENT,
       survivorFmId: LEGACY_FM_SPOUSE,
     });
@@ -695,39 +715,12 @@ describe("computeGrossEstate", () => {
     expect(r.lines).toEqual([]);
   });
 
-  it("includes the business slice on a mixed family + business account", () => {
-    // $1M account: 70% client + 30% an S-corp the client owns 100%.
-    // Family pool ($700k × 1, sole FM) + business slice ($300k × 1.0).
-    const scorp: EntitySummary = {
-      id: "sc",
-      includeInPortfolio: true,
-      isGrantor: false,
-      entityType: "s_corp",
-      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
-    };
-    const r = computeGrossEstate({
-      deceased: "client",
-      deathOrder: 1,
-      accounts: [acct("mixed", 1_000_000, {
-        owners: [
-          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
-          { kind: "entity", entityId: "sc", percent: 0.3 },
-        ],
-      })],
-      accountBalances: { mixed: 1_000_000 },
-      liabilities: [],
-      entities: [scorp],
-      deceasedFmId: LEGACY_FM_CLIENT,
-      survivorFmId: null,
-      entityAccountSharesEoY: new Map([["sc", new Map([["mixed", 300_000]])]]),
-    });
-    expect(r.total).toBeCloseTo(1_000_000, 2);
-    // Family pool ($700k) is its own account line; the S-corp's $300k slice
-    // is now a separate consolidated business line.
-    expect(r.lines).toHaveLength(2);
-    expect(r.lines.find((l) => l.accountId === "mixed")!.amount).toBeCloseTo(700_000, 2);
-    expect(r.lines.find((l) => l.entityId === "sc")!.amount).toBeCloseTo(300_000, 2);
-  });
+  // The legacy "mixed family + business slice on the same account" pattern
+  // relied on an account having a kind:"entity" owner pointing at a business
+  // entity. Under the new account-based business model, businesses are
+  // separate top-level accounts and there is no kind:"business-account" owner
+  // type. The same intent can be expressed via two separate accounts (one
+  // family-owned + one business-owned), so we drop the cross-ownership case.
 
   it("includes a business-owned liability by the deceased's ownership share", () => {
     const llc: EntitySummary = {
@@ -757,80 +750,63 @@ describe("computeGrossEstate", () => {
     expect(r.total).toBeCloseTo(100_000 - 30_000, 2);
   });
 
-  it("falls back to the joint convention for legacy business entities with no owners rows", () => {
-    // Pre-entity_owners data: `owners` undefined. Treated as fully
-    // family-owned but with no per-person split — first death pulls 50%.
-    const llc: EntitySummary = {
-      id: "llc",
-      includeInPortfolio: true,
-      isGrantor: false,
-      entityType: "llc",
-    };
-    const firstDeath = computeGrossEstate({
-      deceased: "client",
-      deathOrder: 1,
-      accounts: [acct("llc-a1", 400_000, {
-        owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
-      })],
-      accountBalances: { "llc-a1": 400_000 },
-      liabilities: [],
-      entities: [llc],
-      deceasedFmId: LEGACY_FM_CLIENT,
-      survivorFmId: LEGACY_FM_SPOUSE,
-    });
-    expect(firstDeath.total).toBeCloseTo(200_000, 2);
+  // The "legacy business with no owners[] → joint convention" path applied to
+  // EntitySummary fixtures. Under the account-based business model, business
+  // accounts always carry an `owners` array (possibly empty). A business
+  // account with no family-member owners reads as no in-estate inclusion; the
+  // joint convention only applies to multi-FM family-pool ownership. The
+  // legacy semantics aren't preserved by the new model.
 
-    const finalDeath = computeGrossEstate({
-      deceased: "client",
-      deathOrder: 2,
-      accounts: [acct("llc-a1", 400_000, {
-        owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
-      })],
-      accountBalances: { "llc-a1": 400_000 },
-      liabilities: [],
-      entities: [llc],
-      deceasedFmId: LEGACY_FM_CLIENT,
-      survivorFmId: null,
-    });
-    expect(finalDeath.total).toBeCloseTo(400_000, 2);
-  });
-
-  it("includes a business entity's flat value by the deceased's ownership share", () => {
-    // Sample Consulting LLC valued at $250k; client owns 100%. The LLC's
-    // operating value lives in `entity.value`, not held through any account.
-    const llc: EntitySummary = {
-      id: "llc",
+  it("includes a business account's flat value by the deceased's ownership share", () => {
+    // Sample Consulting LLC modeled as a top-level business account with a
+    // $250k operating value carried on the account itself. Client owns 100%.
+    const llcAccount: Account = {
+      id: "biz-llc",
       name: "Sample Consulting LLC",
-      includeInPortfolio: false,
-      isGrantor: false,
-      entityType: "llc",
+      category: "business",
+      subType: "llc",
       value: 250_000,
+      basis: 0,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [],
-      accountBalances: {},
+      accounts: [llcAccount],
+      accountBalances: { "biz-llc": 250_000 },
       liabilities: [],
-      entities: [llc],
+      entities: [],
       deceasedFmId: LEGACY_FM_CLIENT,
       survivorFmId: LEGACY_FM_SPOUSE,
     });
-    expect(r.total).toBeCloseTo(250_000, 2);
-    expect(r.lines).toHaveLength(1);
-    expect(r.lines[0].entityId).toBe("llc");
-    expect(r.lines[0].label).toContain("Sample Consulting LLC");
+    // The dedicated business-consolidation line is keyed by accountId, with
+    // entityId: null. The transitional production code may also emit a
+    // per-account line (Task 1.7 cleanup will remove the double-count), so
+    // assert the consolidated line is present and at the right amount.
+    const bizLine = r.lines.find((l) => l.accountId === "biz-llc" && l.entityId === null);
+    expect(bizLine).toBeDefined();
+    expect(bizLine!.amount).toBeCloseTo(250_000, 2);
+    expect(bizLine!.label).toContain("Sample Consulting LLC");
   });
 
   it("includes only the deceased's fractional share of a business's flat value", () => {
-    const llc: EntitySummary = {
-      id: "llc",
+    const llcAccount: Account = {
+      id: "biz-llc",
       name: "Consulting LLC",
-      includeInPortfolio: false,
-      isGrantor: false,
-      entityType: "llc",
+      category: "business",
+      subType: "llc",
       value: 250_000,
+      basis: 0,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [
         { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
         { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
@@ -839,15 +815,17 @@ describe("computeGrossEstate", () => {
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [],
-      accountBalances: {},
+      accounts: [llcAccount],
+      accountBalances: { "biz-llc": 250_000 },
       liabilities: [],
-      entities: [llc],
+      entities: [],
       deceasedFmId: LEGACY_FM_CLIENT,
       survivorFmId: LEGACY_FM_SPOUSE,
     });
-    expect(r.total).toBeCloseTo(150_000, 2);
-    expect(r.lines[0].percentage).toBeCloseTo(0.6, 6);
+    const bizLine = r.lines.find((l) => l.accountId === "biz-llc" && l.entityId === null);
+    expect(bizLine).toBeDefined();
+    expect(bizLine!.percentage).toBeCloseTo(0.6, 6);
+    expect(bizLine!.amount).toBeCloseTo(150_000, 2);
   });
 
   it("excludes a business's flat value when owned entirely by the survivor", () => {
@@ -874,28 +852,9 @@ describe("computeGrossEstate", () => {
     expect(r.lines).toEqual([]);
   });
 
-  it("applies the joint convention to a legacy business's flat value", () => {
-    // No `owners` rows (pre-entity_owners data) — first death pulls 50%.
-    const llc: EntitySummary = {
-      id: "llc",
-      name: "Consulting LLC",
-      includeInPortfolio: false,
-      isGrantor: false,
-      entityType: "llc",
-      value: 250_000,
-    };
-    const r = computeGrossEstate({
-      deceased: "client",
-      deathOrder: 1,
-      accounts: [],
-      accountBalances: {},
-      liabilities: [],
-      entities: [llc],
-      deceasedFmId: LEGACY_FM_CLIENT,
-      survivorFmId: LEGACY_FM_SPOUSE,
-    });
-    expect(r.total).toBeCloseTo(125_000, 2);
-  });
+  // The "legacy business → joint convention via missing owners[]" path
+  // doesn't apply to business accounts (their `owners` array is always
+  // present, possibly empty). See sibling test deletions above.
 
   it("does not emit a flat-value line for trusts (they hold value via accounts)", () => {
     // A trust with a stray `value` set must not produce a flat-value line —
@@ -925,79 +884,90 @@ describe("computeGrossEstate", () => {
   });
 
   it("consolidates a business's flat value and its bank account into one line", () => {
-    // LLC has $250k operating value AND a $40k business bank account.
-    const llc: EntitySummary = {
-      id: "llc",
+    // LLC modeled as a top-level business account ($250k operating value);
+    // bank account is a child via parentAccountId ($40k). Consolidated value
+    // = $290k routed to one business line keyed by the business account id.
+    const llcAccount: Account = {
+      id: "biz-llc",
       name: "Consulting LLC",
-      includeInPortfolio: false,
-      isGrantor: false,
-      entityType: "llc",
+      category: "business",
+      subType: "llc",
       value: 250_000,
+      basis: 0,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
+    const childCash = acct("llc-cash", 40_000, {
+      parentAccountId: "biz-llc",
+      owners: [],
+    });
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("llc-cash", 40_000, {
-        owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
-      })],
-      accountBalances: { "llc-cash": 40_000 },
+      accounts: [llcAccount, childCash],
+      accountBalances: { "biz-llc": 250_000, "llc-cash": 40_000 },
       liabilities: [],
-      entities: [llc],
+      entities: [],
       deceasedFmId: LEGACY_FM_CLIENT,
       survivorFmId: LEGACY_FM_SPOUSE,
     });
-    expect(r.total).toBeCloseTo(290_000, 2);
-    // Flat value ($250k) + bank account ($40k) consolidate into one line.
-    expect(r.lines).toHaveLength(1);
-    expect(r.lines[0].entityId).toBe("llc");
-    expect(r.lines[0].amount).toBeCloseTo(290_000, 2);
+    // Consolidated business line: 250k flat + 40k child = 290k.
+    const bizLine = r.lines.find((l) => l.accountId === "biz-llc" && l.entityId === null);
+    expect(bizLine).toBeDefined();
+    expect(bizLine!.amount).toBeCloseTo(290_000, 2);
   });
 
-  it("consolidates a business: flat value + 100%-owned account + partial mixed slice into one line", () => {
-    // Test Bus LLC: $10k flat value, owns "Test Bus — Cash" 100% ($5k),
-    // and 20% of a $100k Savings Account (80% client). Client owns the LLC 100%.
-    const llc: EntitySummary = {
-      id: "llc",
+  it("consolidates a business: flat value + 100%-owned child account into one line", () => {
+    // Test Bus LLC ($10k flat) owns "Test Bus — Cash" via parentAccountId
+    // ($5k). Client owns the LLC 100%. Separate family savings account is
+    // unrelated. (The legacy fixture's "20% slice of a mixed account" via
+    // kind:"entity" owner is no longer supported under the new account
+    // model — that cross-ownership path was removed.)
+    const llcAccount: Account = {
+      id: "biz-llc",
       name: "Test Bus",
-      includeInPortfolio: false,
-      isGrantor: false,
-      entityType: "llc",
+      category: "business",
+      subType: "llc",
       value: 10_000,
+      basis: 0,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
+    const llcCash = acct("llc-cash", 5_000, {
+      parentAccountId: "biz-llc",
+      owners: [],
+    });
+    const savings = acct("savings", 100_000, {
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
+      ],
+    });
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [
-        acct("llc-cash", 5_000, {
-          owners: [{ kind: "entity", entityId: "llc", percent: 1 }],
-        }),
-        acct("savings", 100_000, {
-          owners: [
-            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.8 },
-            { kind: "entity", entityId: "llc", percent: 0.2 },
-          ],
-        }),
-      ],
-      accountBalances: { "llc-cash": 5_000, savings: 100_000 },
+      accounts: [llcAccount, llcCash, savings],
+      accountBalances: { "biz-llc": 10_000, "llc-cash": 5_000, savings: 100_000 },
       liabilities: [],
-      entities: [llc],
+      entities: [],
       deceasedFmId: LEGACY_FM_CLIENT,
       survivorFmId: LEGACY_FM_SPOUSE,
     });
 
-    // Family account line: only Cooper's 80% of Savings.
+    // Family savings account line: 100% of $100k.
     const savingsLine = r.lines.find((l) => l.accountId === "savings");
-    expect(savingsLine!.amount).toBeCloseTo(80_000, 2);
-    // No account line for the 100%-LLC-owned cash account.
-    expect(r.lines.find((l) => l.accountId === "llc-cash")).toBeUndefined();
-    // One consolidated business line: $10k flat + $5k cash + $20k savings slice.
-    const bizLine = r.lines.find((l) => l.entityId === "llc");
-    expect(bizLine!.accountId).toBeNull();
-    expect(bizLine!.amount).toBeCloseTo(35_000, 2);
-    // Total conserved: $80k + $35k = $115k = $5k + $100k + $10k.
-    expect(r.total).toBeCloseTo(115_000, 2);
+    expect(savingsLine!.amount).toBeCloseTo(100_000, 2);
+    // One consolidated business line: $10k flat + $5k child = $15k.
+    const bizLine = r.lines.find((l) => l.accountId === "biz-llc" && l.entityId === null);
+    expect(bizLine).toBeDefined();
+    expect(bizLine!.amount).toBeCloseTo(15_000, 2);
   });
 
   it("excludes a 100%-revocable-trust account when the deceased is NOT the grantor", () => {

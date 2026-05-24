@@ -4,7 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
-import { BUSINESS_ENTITY_TYPES } from "@/lib/estate/in-estate-weights";
+// Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
+// in the business-as-asset migration. This UI is being phased out separately;
+// keep the gate inline until then.
+const BUSINESS_ENTITY_TYPES = new Set([
+  "llc",
+  "s_corp",
+  "c_corp",
+  "partnership",
+  "other",
+]);
 
 export type WillGrantor = "client" | "spouse";
 export type WillAssetMode = "specific" | "all_assets";

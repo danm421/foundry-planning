@@ -1,15 +1,18 @@
 import type {
-  Account, DeathTransfer, EntitySummary, FamilyMember, Will, WillBequest,
+  Account, DeathTransfer, FamilyMember, Will, WillBequest,
 } from "../types";
-import { isBusinessEntity } from "@/lib/estate/in-estate-weights";
 import { businessConsolidatedValue } from "./business-value";
-import { type ExternalBeneficiarySummary, firesAtDeath } from "./shared";
+import {
+  deceasedBusinessAccountShare,
+  type ExternalBeneficiarySummary,
+  firesAtDeath,
+} from "./shared";
 
-/** entity_owners succession: the deceased's rows for one entity move to the
- *  resolved successors. successors is empty for a non-family recipient
+/** Account-owner succession: the deceased's rows for one business account move
+ *  to the resolved successors. successors is empty for a non-family recipient
  *  (charity / external / trust) — the value exits the household. */
 export interface BusinessOwnerSuccession {
-  entityId: string;
+  accountId: string;
   removeFamilyMemberId: string;
   successors: Array<{ familyMemberId: string; percent: number }>;
 }
@@ -17,7 +20,7 @@ export interface BusinessOwnerSuccession {
 export interface BusinessSuccessionResult {
   transfers: DeathTransfer[];
   ownerUpdates: BusinessOwnerSuccession[];
-  basisUpdates: Array<{ entityId: string; newBasis: number }>;
+  basisUpdates: Array<{ accountId: string; newBasis: number }>;
   warnings: string[];
 }
 
@@ -28,30 +31,15 @@ interface ResolvedRecipient {
   via: DeathTransfer["via"];
   /** Fraction of the deceased's share this recipient takes (residuary splits). */
   fraction: number;
-  /** entity_owners successor for a family-member/spouse recipient; null for
+  /** account-owner successor for a family-member/spouse recipient; null for
    *  non-family recipients (rows removed, value exits the household). */
   successorFmId: string | null;
-}
-
-/** Deceased's entity_owners fraction. Mirrors estate-tax.ts deceasedBusinessShare:
- *  legacy owners == null → joint convention (50% first / 100% final). */
-function deceasedShare(
-  entity: EntitySummary, deceasedFmId: string | null, deathOrder: 1 | 2,
-): { share: number; legacy: boolean } {
-  if (entity.owners == null) {
-    return { share: deathOrder === 1 ? 0.5 : 1, legacy: true };
-  }
-  if (deceasedFmId == null) return { share: 0, legacy: false };
-  const share = entity.owners
-    .filter((o) => o.kind === "family_member" && o.familyMemberId === deceasedFmId)
-    .reduce((s, o) => s + (o.percent ?? 0), 0);
-  return { share, legacy: false };
 }
 
 /** Resolve who receives a business interest: will entity-bequest → will
  *  residuary → fallback (spouse → children → other heirs). */
 function resolveBusinessRecipient(input: {
-  entity: EntitySummary;
+  business: Account;
   will: Will | null;
   deceased: "client" | "spouse";
   deathOrder: 1 | 2;
@@ -59,7 +47,7 @@ function resolveBusinessRecipient(input: {
   familyMembers: FamilyMember[];
   warnings: string[];
 }): ResolvedRecipient[] {
-  const { entity, will, deceased, deathOrder, survivorFmId, familyMembers, warnings } = input;
+  const { business, will, deceased, deathOrder, survivorFmId, familyMembers, warnings } = input;
   const deceasedWill = will && will.grantor === deceased ? will : null;
 
   const mapRecipient = (
@@ -78,9 +66,9 @@ function resolveBusinessRecipient(input: {
         via: "will", fraction, successorFmId: id };
     }
     if (kind === "entity") {
-      // successorFmId is null — no entity_owners succession is recorded; the
+      // successorFmId is null — no account-owner succession is recorded; the
       // interest leaves the household. Warn so the advisor is aware.
-      warnings.push(`business_bequest_to_entity: ${id ?? entity.id}`);
+      warnings.push(`business_bequest_to_entity: ${id ?? business.id}`);
       return { recipientKind: "entity", recipientId: id, recipientLabel: "Entity (trust)",
         via: "will", fraction, successorFmId: null };
     }
@@ -88,10 +76,12 @@ function resolveBusinessRecipient(input: {
       recipientLabel: "External", via: "will", fraction, successorFmId: null };
   };
 
-  // 1. Specific will bequest naming this entity.
+  // 1. Specific will bequest naming this business. The will-bequest schema
+  //    still names the asset via the generic `entityId` field; migrating
+  //    will-bequest target ids to accountId is deferred future work.
   if (deceasedWill) {
     const bequest = deceasedWill.bequests.find(
-      (b) => b.kind === "asset" && b.assetMode === "specific" && b.entityId === entity.id
+      (b) => b.kind === "asset" && b.assetMode === "specific" && b.entityId === business.id
         && firesAtDeath(b, deathOrder),
     );
     if (bequest) {
@@ -137,10 +127,8 @@ export function applyBusinessSuccession(input: {
   deceasedFmId: string | null;
   survivorFmId: string | null;
   deathOrder: 1 | 2;
-  entities: EntitySummary[];
   accounts: Account[];
   accountBalances: Record<string, number>;
-  entityAccountSharesEoY: Map<string, Map<string, number>> | undefined;
   will: Will | null;
   familyMembers: FamilyMember[];
   externalBeneficiaries: ExternalBeneficiarySummary[]; // reserved for future external-recipient labeling; not yet consumed
@@ -148,41 +136,44 @@ export function applyBusinessSuccession(input: {
 }): BusinessSuccessionResult {
   const transfers: DeathTransfer[] = [];
   const ownerUpdates: BusinessOwnerSuccession[] = [];
-  const basisUpdates: Array<{ entityId: string; newBasis: number }> = [];
+  const basisUpdates: Array<{ accountId: string; newBasis: number }> = [];
   const warnings: string[] = [];
 
-  for (const entity of input.entities) {
-    if (!isBusinessEntity(entity)) continue;
-    const { share, legacy } = deceasedShare(entity, input.deceasedFmId, input.deathOrder);
+  const businesses = input.accounts.filter(
+    (a) => a.category === "business" && a.parentAccountId == null,
+  );
+
+  for (const business of businesses) {
+    const share = deceasedBusinessAccountShare(business, input.deceasedFmId);
     if (share <= 1e-9) continue;
-    if (legacy) warnings.push(`business_legacy_owners_joint: ${entity.id}`);
 
     const consolidated = businessConsolidatedValue(
-      entity, input.accounts, input.accountBalances, input.entityAccountSharesEoY);
+      business, input.accounts, input.accountBalances);
     if (consolidated <= 0) continue;
 
     const transferredValue = consolidated * share;
     const recipients = resolveBusinessRecipient({
-      entity, will: input.will, deceased: input.deceased,
+      business, will: input.will, deceased: input.deceased,
       deathOrder: input.deathOrder, survivorFmId: input.survivorFmId,
       familyMembers: input.familyMembers, warnings,
     });
 
-    // Proportional basis on the transferred portion.
-    // entity.basis tracks the flat operating-value basis only; account-slice
-    // basis is carried on each Account and does not flow through this field.
-    // That is why transfer.basis and the §1014 step-up use flatValue (entity.value)
-    // rather than businessConsolidatedValue — the two bases are accounted separately.
-    const oldBasis = entity.basis ?? 0;
-    const flatValue = entity.value ?? 0;
+    // Proportional basis on the transferred portion. business.basis is the
+    // operating-value basis of the business account itself; child-account
+    // bases are carried on each child Account and do not flow through this
+    // field. That is why transfer.basis and the §1014 step-up use
+    // `business.value` rather than businessConsolidatedValue — the two bases
+    // are accounted separately.
+    const oldBasis = business.basis ?? 0;
+    const flatValue = business.value ?? 0;
 
     const successors: BusinessOwnerSuccession["successors"] = [];
     for (const rec of recipients) {
       transfers.push({
         year: input.year, deathOrder: input.deathOrder, deceased: input.deceased,
-        sourceAccountId: null, sourceAccountName: entity.name ?? "Business",
+        sourceAccountId: business.id, sourceAccountName: business.name,
         sourceLiabilityId: null, sourceLiabilityName: null,
-        sourceEntityId: entity.id,
+        sourceEntityId: null,
         via: rec.via, recipientKind: rec.recipientKind, recipientId: rec.recipientId,
         recipientLabel: rec.recipientLabel,
         amount: transferredValue * rec.fraction,
@@ -190,37 +181,33 @@ export function applyBusinessSuccession(input: {
         resultingAccountId: null, resultingLiabilityId: null,
       });
       if (rec.successorFmId != null) {
-        // percent is the successor's ABSOLUTE entity-ownership share:
-        // deceased's share of the entity × this recipient's fraction of that share.
+        // percent is the successor's ABSOLUTE business-ownership share:
+        // deceased's share of the business × this recipient's fraction.
         successors.push({ familyMemberId: rec.successorFmId, percent: share * rec.fraction });
       }
     }
 
-    // Only record an ownerUpdates entry when the entity actually has an owners
-    // array. Legacy entities (owners == null) use the joint convention but have
-    // no owner rows to update — the orchestrator's mutatedEntities map silently
-    // skips entries for null-owners entities anyway, but there's no point
-    // emitting a dead entry. basisUpdates is unconditional: the §1014 step-up
-    // on the deceased's share is still correct for a legacy entity even though
-    // there is no owner table to rewrite.
-    if (input.deceasedFmId != null && entity.owners != null) {
+    // Record an ownerUpdates entry when there is a deceased family member to
+    // remove. basisUpdates is unconditional: the §1014 step-up on the
+    // deceased's share is correct regardless.
+    if (input.deceasedFmId != null) {
       ownerUpdates.push({
-        entityId: entity.id, removeFamilyMemberId: input.deceasedFmId, successors,
+        accountId: business.id, removeFamilyMemberId: input.deceasedFmId, successors,
       });
     }
 
     // §1014 step-up on the deceased's flat-value share.
     basisUpdates.push({
-      entityId: entity.id, newBasis: oldBasis * (1 - share) + flatValue * share,
+      accountId: business.id, newBasis: oldBasis * (1 - share) + flatValue * share,
     });
   }
 
-  // Warn on will bequests whose subject names a non-business entity (a trust —
-  // inert here, trusts route via grantor-succession) or a missing entity.
+  // Warn on will bequests whose subject doesn't name a top-level business
+  // account. (entityId is the legacy field name on the bequest schema; we
+  // still compare it to a business account id.)
   const deceasedWill =
     input.will && input.will.grantor === input.deceased ? input.will : null;
-  const businessIds = new Set(
-    input.entities.filter(isBusinessEntity).map((e) => e.id));
+  const businessIds = new Set(businesses.map((a) => a.id));
   for (const b of deceasedWill?.bequests ?? []) {
     if (b.entityId != null && !businessIds.has(b.entityId)) {
       warnings.push(`business_bequest_names_non_business: ${b.id}`);

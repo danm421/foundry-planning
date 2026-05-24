@@ -25,7 +25,6 @@ const KIND_LABEL: Record<OwnershipGroup["kind"], string> = {
   spouse: "Individual",
   joint: "Joint",
   trust: "Trust",
-  business: "Business",
 };
 
 // ── AccountType label ─────────────────────────────────────────────────────────
@@ -38,7 +37,7 @@ function formatAccountType(type: string): string {
 
 interface AssetRowProps {
   asset: OwnershipAssetRow;
-  onAssetClick: (id: string, rowKind: "account" | "business-entity") => void;
+  onAssetClick: (id: string) => void;
   gifts: EstateFlowGift[];
   recipientLabelById: Map<string, string>;
   onGiftClick: (giftId: string) => void;
@@ -64,7 +63,7 @@ function AssetRow({
             ? "Cash account — ownership is fixed to its household/entity"
             : undefined
         }
-        onClick={() => onAssetClick(asset.accountId, asset.rowKind)}
+        onClick={() => onAssetClick(asset.accountId)}
         aria-label={`${asset.name}, ${fmt.format(asset.value)}${asset.hasConflict ? ", no estate plan" : ""}${asset.hasBeneficiaries ? ", has beneficiary" : ""}${asset.isSplit ? `, ${Math.round(asset.percent * 100)}% split` : ""}${asset.isDefaultCash ? "" : ". Click to edit."}`}
         className={
           "group flex w-full items-baseline justify-between gap-3 py-0.5 pl-2 text-left text-xs text-gray-300 transition-colors " +
@@ -157,7 +156,7 @@ function AssetRow({
 
 interface GroupCardProps {
   group: OwnershipGroup;
-  onAssetClick: (id: string, rowKind: "account" | "business-entity") => void;
+  onAssetClick: (id: string) => void;
   gifts: EstateFlowGift[];
   recipientLabelById: Map<string, string>;
   onGiftClick: (giftId: string) => void;
@@ -208,7 +207,7 @@ function GroupCard({
 
 interface EstateFlowOwnershipColumnProps {
   data: OwnershipColumnData;
-  onAssetClick: (id: string, rowKind: "account" | "business-entity") => void;
+  onAssetClick: (id: string) => void;
   /** Plan's first year — treated as "today". */
   minYear: number;
   /** Plan's last projected year. */

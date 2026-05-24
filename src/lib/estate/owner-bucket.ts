@@ -5,7 +5,7 @@ import { controllingFamilyMember, controllingEntity } from "@/engine/ownership";
 export interface OwnerBucket {
   /** "client" | "spouse" | "joint" | "community_property" | `entity:<id>` */
   id: string;
-  kind: "client" | "spouse" | "joint" | "community_property" | "trust" | "business";
+  kind: "client" | "spouse" | "joint" | "community_property" | "trust";
   label: string;
 }
 
@@ -25,7 +25,7 @@ export function classifyAccountOwner(
     const entity = (data.entities ?? []).find((e) => e.id === entityId);
     return {
       id: `entity:${entityId}`,
-      kind: entity?.entityType === "trust" ? "trust" : "business",
+      kind: "trust",
       label: entity?.name ?? "Unknown entity",
     };
   }

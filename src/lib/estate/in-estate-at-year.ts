@@ -1,28 +1,27 @@
 /**
  * Year-aware fractional sums of in-estate vs. out-of-estate value.
  *
- * "In-estate" = family-member-owned slices + revocable-trust-owned slices
- *               + family-owned business-entity slices (LLC / S-Corp / etc.)
- *               + flat business-entity valuations weighted by recursive
- *                 in-estate weight (handles trust-owned and chain-held
- *                 businesses — e.g. LLC owned by a revocable trust is fully
- *                 in-estate; LLC owned by an ILIT is fully out).
- * "Out-of-estate" = irrevocable-trust-owned slices + the residual non-in-estate
- *                   share of partially-family-or-trust-owned business entities.
+ * "In-estate"     = family-member-owned slices + revocable-trust-owned slices.
+ * "Out-of-estate" = irrevocable-trust-owned slices.
  *
  * Composes Phase 3's `ownersForYear` to get year-resolved ownership.
+ *
+ * Businesses are accounts in the business-as-asset model. The parent business
+ * account's `accountBalances` entry is its flat operating value only; child
+ * business sub-accounts roll up via `consolidatedBusinessValue`. To avoid
+ * double-counting, the per-account loop skips children and consolidates each
+ * top-level business at its tree total.
  */
 
 import type { AccountOwner } from "@/engine/ownership";
-import type { ClientData, EntitySummary, GiftEvent } from "@/engine/types";
+import type { ClientData, GiftEvent } from "@/engine/types";
 import { resolveOwnerSlices } from "./account-owner-slices";
 import { ownersForYearOrHousehold } from "./owners-or-household";
 import {
-  entityInEstateWeight,
   inEstateWeight,
-  isBusinessEntity,
   outOfEstateWeight,
 } from "./in-estate-weights";
+import { consolidatedBusinessValue } from "@/engine/business/business-tree";
 
 export interface ComputeAtYearArgs {
   tree: ClientData;
@@ -53,15 +52,34 @@ function sumAccountsWhere(
     entityAccountSharesEoY,
     familyAccountSharesEoY,
   } = args;
+
+  // Convert the Map balances to a Record for `consolidatedBusinessValue`,
+  // which works in Record-shape balances (matches death-event call sites).
+  const balancesRecord: Record<string, number> = {};
+  for (const [id, bal] of accountBalances) balancesRecord[id] = bal;
+
   let total = 0;
   for (const account of tree.accounts) {
+    // Business child accounts roll into their parent — skip them so their
+    // value isn't counted twice (once via the parent's consolidated tree
+    // and once on its own row).
+    if (account.parentAccountId != null) continue;
+
     const owners = ownersForYearOrHousehold(
       account,
       giftEvents,
       year,
       projectionStartYear,
     );
-    const value = accountBalances.get(account.id) ?? account.value;
+
+    // For top-level business accounts, value = parent flat value + every
+    // descendant's balance (the canonical "one business = one value" rule).
+    // For everything else, value = the account's own year-resolved balance.
+    const isTopLevelBusiness =
+      account.category === "business" && account.parentAccountId == null;
+    const value = isTopLevelBusiness
+      ? consolidatedBusinessValue(account.id, tree.accounts, balancesRecord)
+      : accountBalances.get(account.id) ?? account.value;
 
     // Locked-share slice resolution (entity slice = locked EoY share; family
     // members absorb the residual) — shared with the Estate Flow ownership
@@ -82,39 +100,15 @@ function sumAccountsWhere(
   return total;
 }
 
-/** Sum of business-entity flat valuations weighted by `weight(entity)`. */
-function sumBusinessFlatValues(
-  tree: ClientData,
-  weight: (e: EntitySummary) => number,
-): number {
-  let total = 0;
-  for (const e of tree.entities ?? []) {
-    if (!isBusinessEntity(e)) continue;
-    const v = e.value ?? 0;
-    if (v <= 0) continue;
-    total += v * weight(e);
-  }
-  return total;
-}
-
 // Note on orphan-entity references: when an account's owner.entityId doesn't
 // resolve in tree.entities, both helpers return weight 0, dropping that slice
 // from BOTH totals. The invariant `in + out === total` then breaks. Production
 // data is FK-validated so this shouldn't trip; if loaders ever produce
 // orphans, fix at the loader rather than papering over here.
 export function computeInEstateAtYear(args: ComputeAtYearArgs): number {
-  const accounts = sumAccountsWhere(args, (o) => inEstateWeight(args.tree, o));
-  const flat = sumBusinessFlatValues(args.tree, (e) =>
-    entityInEstateWeight(args.tree, e.id),
-  );
-  return accounts + flat;
+  return sumAccountsWhere(args, (o) => inEstateWeight(args.tree, o));
 }
 
 export function computeOutOfEstateAtYear(args: ComputeAtYearArgs): number {
-  const accounts = sumAccountsWhere(args, (o) => outOfEstateWeight(args.tree, o));
-  const flat = sumBusinessFlatValues(
-    args.tree,
-    (e) => 1 - entityInEstateWeight(args.tree, e.id),
-  );
-  return accounts + flat;
+  return sumAccountsWhere(args, (o) => outOfEstateWeight(args.tree, o));
 }

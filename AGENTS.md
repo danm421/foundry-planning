@@ -36,6 +36,34 @@ Direct DB access via the Neon MCP (`mcp__Neon__*`, remote server at `https://mcp
 
 Drizzle remains the source of truth for schema (`src/db/schema.ts`) — use MCP to *inspect* and *test*, not to author migrations.
 
+## Model routing
+
+Opus is ~5x the cost of Sonnet per token (and ~15x Haiku). Past weekly audit showed Opus = 97.7% of spend, much of it on work that doesn't need it. Default to Opus only when the task genuinely needs it; route routine work to Sonnet.
+
+**Use Sonnet (suggest `/model sonnet` at the start of the session if the work fits these):**
+- DB inspection via Neon MCP — `run_sql`, `describe_table_schema`, `list_slow_queries`, schema diffs
+- Running tests, lint, typecheck, build — and reporting the result
+- Lookups: "where is X defined", "what calls Y", finding a symbol or file
+- Mechanical edits — renames, import fixes, moving a function, deleting dead code I just orphaned
+- Reading specs/handoffs/docs and summarizing
+- Git inspection — status, log, diff, blame
+- Verifying a change works locally (manual browser/dev-server check + reporting)
+
+**Stay on Opus:**
+- Anything inside `src/engine/` — tax, monte-carlo, social-security, withdrawal logic
+- Designing new features or writing specs/plans (the brainstorming/planning skills)
+- Debugging where the cause isn't yet known
+- Cross-cutting refactors that span engine + lib + UI
+- Estate flow, balance sheet, life-insurance solver logic — domain-heavy reasoning
+
+**Subagent dispatches MUST set the model explicitly.** The `Agent` tool accepts a `model` parameter — pass it. Subagents that don't override default to Opus, which is why subagent fanout was 28% of weekly cost.
+
+- `Explore` for finding a file/symbol → `model: "haiku"`
+- DB-inspection subagent, test-runner subagent, status-checker subagent → `model: "sonnet"`
+- `Plan` / design subagents, `general-purpose` for tricky multi-step research → `model: "opus"` (or omit)
+
+When unsure, prefer Sonnet and escalate to Opus only if Sonnet stalls.
+
 ## Folder map
 
 ```

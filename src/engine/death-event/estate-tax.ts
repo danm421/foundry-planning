@@ -7,10 +7,26 @@ import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import { computeStateEstateTax } from "@/lib/tax/state-estate";
 import type { USPSStateCode } from "@/lib/usps-states";
 import { STATE_INHERITANCE_TAX } from "@/lib/tax/state-inheritance";
-import { isBusinessEntity } from "@/lib/estate/in-estate-weights";
-import type { ExternalBeneficiarySummary } from "./shared";
+import {
+  deceasedBusinessAccountShare,
+  type ExternalBeneficiarySummary,
+} from "./shared";
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
 import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
+
+// Local helper: legacy business-entity gate. After Task 1.7 purges non-trust
+// entities from `data.entities`, this always returns false and the related
+// branches in computeGrossEstate become dead code — to be removed then.
+function isBusinessEntity(e: EntitySummary | undefined): boolean {
+  if (!e || !e.entityType) return false;
+  return (
+    e.entityType === "llc" ||
+    e.entityType === "s_corp" ||
+    e.entityType === "c_corp" ||
+    e.entityType === "partnership" ||
+    e.entityType === "other"
+  );
+}
 
 // ── Form 706 federal tax formula ────────────────────────────────────────────
 
@@ -127,6 +143,14 @@ export function computeGrossEstate(input: {
   for (const a of input.accounts) {
     const fmv = input.accountBalances[a.id] ?? 0;
     if (fmv <= 0) continue;
+
+    // Business accounts (and their child accounts) are aggregated by the
+    // business-consolidation loop below into one line per top-level business.
+    // Skipping them here prevents a double-count: without this, a $200k LLC
+    // with a $16k sub-account owned 100% by the client would emit a $200k
+    // per-account line PLUS a $216k consolidation line.
+    if (a.category === "business") continue;
+    if (a.parentAccountId != null) continue;
 
     // Compute per-owner locked entity slices once. Used both to derive the
     // family pool and to evaluate rev-trust-grantor inclusion below.
@@ -273,28 +297,28 @@ export function computeGrossEstate(input: {
     });
   }
 
-  // Business-entity consolidation. A business (LLC / S-corp / etc.) is valued
-  // as one unit (canonical rule): its flat operating value (`entity.value`)
-  // plus every account slice it owns — default cash and partial slices of
-  // mixed accounts included. Those account slices were deliberately excluded
-  // from the account loop above. One gross-estate line per business entity,
-  // weighted by the deceased's entity_owners share. Trusts hold value through
-  // accounts and carry no flat value, so isBusinessEntity gates them out.
-  for (const ent of input.entities) {
-    if (!isBusinessEntity(ent)) continue;
-    const pct = deceasedBusinessShare(ent, input.deceasedFmId, input.deathOrder);
+  // Business consolidation. A business (LLC / S-corp / etc.) is valued as one
+  // unit (canonical rule): its own account value plus every child account
+  // reachable via parentAccountId. Top-level business accounts only — child
+  // business accounts roll into their parent. One gross-estate line per
+  // business, weighted by the deceased's family-member ownership share.
+  const businessAccounts = input.accounts.filter(
+    (a) => a.category === "business" && a.parentAccountId == null,
+  );
+  for (const business of businessAccounts) {
+    const pct = deceasedBusinessAccountShare(business, input.deceasedFmId);
     if (pct <= 0) continue;
 
     const entityTotal = businessConsolidatedValue(
-      ent, input.accounts, input.accountBalances, input.entityAccountSharesEoY,
+      business, input.accounts, input.accountBalances,
     );
     if (entityTotal <= 0) continue;
 
     lines.push({
-      label: formatLabel(ent.name ?? "Business", pct, "Business"),
-      accountId: null,
+      label: formatLabel(business.name, pct, "Business"),
+      accountId: business.id,
       liabilityId: null,
-      entityId: ent.id,
+      entityId: null,
       percentage: pct,
       amount: entityTotal * pct,
     });
