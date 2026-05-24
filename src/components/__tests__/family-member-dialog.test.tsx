@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-  usePathname: () => "/clients/c1/client-data/family",
+  usePathname: () => "/clients/c1/details/family",
   useSearchParams: () => new URLSearchParams(),
 }));
 

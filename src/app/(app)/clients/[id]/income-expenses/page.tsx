@@ -6,5 +6,5 @@ interface PageProps {
 
 export default async function LegacyIncomeExpensesRedirect({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/clients/${id}/client-data/income-expenses`);
+  redirect(`/clients/${id}/details/income-expenses`);
 }

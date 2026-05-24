@@ -19,7 +19,7 @@ export default function LifeEventsPanel({ clientId, events }: Props): ReactEleme
         icon={<CalendarIcon width={22} height={22} />}
         title="Add a retirement year to populate"
         body="Life events are derived from retirement ages, Social Security claim ages, RMD years, and life expectancy."
-        cta={{ href: `/clients/${clientId}/client-data`, label: "Edit client details" }}
+        cta={{ href: `/clients/${clientId}/details`, label: "Edit client details" }}
       />
     );
   }

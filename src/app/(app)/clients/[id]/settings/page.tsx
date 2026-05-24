@@ -6,5 +6,5 @@ interface PageProps {
 
 export default async function LegacySettingsRedirect({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/clients/${id}/client-data/assumptions`);
+  redirect(`/clients/${id}/details/assumptions`);
 }

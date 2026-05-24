@@ -37,7 +37,7 @@ export default function AllocationPanel({ clientId, rollup }: Props): ReactEleme
         icon={<PieChartIcon width={22} height={22} />}
         title="No portfolio data yet"
         body="Add accounts on the Client Data tab to populate this block."
-        cta={{ href: `/clients/${clientId}/client-data`, label: "Add accounts" }}
+        cta={{ href: `/clients/${clientId}/details`, label: "Add accounts" }}
       />
     );
   }

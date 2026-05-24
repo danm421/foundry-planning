@@ -557,7 +557,7 @@ export default function BalanceSheetTableView({
       onClick: () => {
         if (edit) return;
         if (a.category === "life_insurance") {
-          router.push(withScenario(`/clients/${clientId}/client-data/insurance?policy=${a.id}`));
+          router.push(withScenario(`/clients/${clientId}/details/insurance?policy=${a.id}`));
           return;
         }
         setEditingAccount(a);
@@ -613,7 +613,7 @@ export default function BalanceSheetTableView({
         ? `${fmt(flat)} valuation + ${fmt(holdings)} in accounts`
         : "edit in Family",
       split,
-      onClick: () => router.push(withScenario(`/clients/${clientId}/client-data/family`)),
+      onClick: () => router.push(withScenario(`/clients/${clientId}/details/family`)),
       deletable: false,
     };
   }
@@ -850,7 +850,7 @@ export default function BalanceSheetTableView({
           if (edit) return;
           if (a.category === "life_insurance") {
             router.push(
-              withScenario(`/clients/${clientId}/client-data/insurance?policy=${a.id}`),
+              withScenario(`/clients/${clientId}/details/insurance?policy=${a.id}`),
             );
             return;
           }
@@ -936,7 +936,7 @@ export default function BalanceSheetTableView({
         label: e.name,
         sublabel: "Business value",
         value: total,
-        onClick: () => router.push(withScenario(`/clients/${clientId}/client-data/family`)),
+        onClick: () => router.push(withScenario(`/clients/${clientId}/details/family`)),
         deletable: false,
       });
       continue;
@@ -959,7 +959,7 @@ export default function BalanceSheetTableView({
             ? `${Math.round(owner.percent * 100)}% of business`
             : "Business value",
         value,
-        onClick: () => router.push(withScenario(`/clients/${clientId}/client-data/family`)),
+        onClick: () => router.push(withScenario(`/clients/${clientId}/details/family`)),
         deletable: false,
       });
     }

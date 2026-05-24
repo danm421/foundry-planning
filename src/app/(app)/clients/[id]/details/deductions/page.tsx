@@ -4,7 +4,7 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function LegacyClientDataIndexRedirect({ params }: PageProps) {
+export default async function LegacyDeductionsRedirect({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/clients/${id}/details`);
+  redirect(`/clients/${id}/details/assumptions`);
 }

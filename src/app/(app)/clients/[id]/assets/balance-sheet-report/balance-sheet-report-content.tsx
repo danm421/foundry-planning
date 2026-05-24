@@ -1,49 +1,55 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { notFound } from "next/navigation";
 import { db } from "@/db";
 import {
-  accounts,
-  assetClasses,
-  clientCmaOverrides,
   clients,
   crmHouseholdContacts,
+  scenarios,
+  accounts,
+  liabilities,
   entities,
   entityOwners,
+  externalBeneficiaries,
   familyMembers,
-  liabilities,
-  modelPortfolioAllocations,
-  modelPortfolios,
   planSettings,
-  scenarios,
+  modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
+  clientCmaOverrides,
 } from "@/db/schema";
+import { eq, and, asc, inArray } from "drizzle-orm";
+import { getOrgId } from "@/lib/db-helpers";
+import BalanceSheetTableView from "@/components/balance-sheet-table-view";
 import type { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
-/** Bundle of props the wizard's Accounts and Liabilities steps both need.
- * Mirrors the standard balance-sheet page loader at
- * `src/app/(app)/clients/[id]/details/net-worth/page.tsx`.
- *
- * Kept as a single helper because Accounts and Liabilities are sibling
- * wizard steps over the same underlying view — duplicating the loader would
- * be 150+ lines of drift risk for zero benefit. */
-export async function loadBalanceSheetStepData(clientId: string, firmId: string) {
+interface BalanceSheetReportContentProps {
+  clientId: string;
+  scenarioParam: string | undefined;
+}
+
+export async function BalanceSheetReportContent({ clientId: id, scenarioParam }: BalanceSheetReportContentProps) {
+  const firmId = await getOrgId();
+
   const [clientRow] = await db
     .select()
     .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!clientRow) return null;
+    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
-  // CRM contacts — sole source of identity (firstName, lastName, DOB) +
-  // spouseLastName display fallback.
+  if (!clientRow) notFound();
+
+  // CRM contacts — sole source of identity (firstName, lastName, DOB) for
+  // milestone math + spouseLastName display fallback.
   const contactRows = await db
     .select()
     .from(crmHouseholdContacts)
     .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
   const primaryContact = contactRows.find((c) => c.role === "primary");
   const spouseContact = contactRows.find((c) => c.role === "spouse");
-  if (!primaryContact?.dateOfBirth) return null;
+  if (!primaryContact?.dateOfBirth) notFound();
   const client = {
     ...clientRow,
     dateOfBirth: primaryContact.dateOfBirth,
@@ -54,19 +60,28 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
   const [scenario] = await db
     .select()
     .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-  if (!scenario) return null;
+    .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
+
+  if (!scenario) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No base case scenario found.
+      </div>
+    );
+  }
 
   const [
     accountMetaRows,
     liabilityMetaRows,
     entityRows,
+    externalBeneficiaryRows,
     familyMemberRows,
     settingsRows,
     portfolioRows,
     allocationRows,
     assetClassRows,
     { effectiveTree },
+    notesReceivableRows,
   ] = await Promise.all([
     db
       .select({
@@ -83,29 +98,40 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
         propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
       })
       .from(accounts)
-      .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id))),
+      .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
     db
-      .select({ id: liabilities.id, termUnit: liabilities.termUnit })
+      .select({
+        id: liabilities.id,
+        termUnit: liabilities.termUnit,
+      })
       .from(liabilities)
-      .where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenario.id))),
-    db.select().from(entities).where(eq(entities.clientId, clientId)).orderBy(asc(entities.name)),
+      .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
+    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+    db
+      .select({ id: externalBeneficiaries.id, name: externalBeneficiaries.name })
+      .from(externalBeneficiaries)
+      .where(eq(externalBeneficiaries.clientId, id))
+      .orderBy(asc(externalBeneficiaries.name)),
     db
       .select({ id: familyMembers.id, role: familyMembers.role, firstName: familyMembers.firstName })
       .from(familyMembers)
-      .where(eq(familyMembers.clientId, clientId))
+      .where(eq(familyMembers.clientId, id))
       .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
     db
       .select()
       .from(planSettings)
-      .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenario.id))),
+      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
-    loadEffectiveTree(clientId, firmId, "base", {}),
+    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    loadNotesReceivable(id, scenario.id),
   ]);
 
   const accountMetaById = new Map(accountMetaRows.map((r) => [r.id, r]));
   const liabilityMetaById = new Map(liabilityMetaRows.map((r) => [r.id, r]));
+
+  // Compute blended returns for each model portfolio
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
 
   const assetClassOptions = assetClassRows.map((ac) => ({
@@ -134,18 +160,17 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
 
   const settings = settingsRows[0];
 
+  // Resolve inflation rate for the account growth-source dropdown
   const firmInflationAc = assetClassRows.find((ac) => ac.slug === "inflation") ?? null;
   let clientInflationOverride: { geometricReturn: string } | null = null;
   if (settings?.useCustomCma && firmInflationAc) {
     const [override] = await db
       .select({ geometricReturn: clientCmaOverrides.geometricReturn })
       .from(clientCmaOverrides)
-      .where(
-        and(
-          eq(clientCmaOverrides.clientId, clientId),
-          eq(clientCmaOverrides.sourceAssetClassId, firmInflationAc.id),
-        ),
-      );
+      .where(and(
+        eq(clientCmaOverrides.clientId, id),
+        eq(clientCmaOverrides.sourceAssetClassId, firmInflationAc.id),
+      ));
     if (override) clientInflationOverride = override;
   }
   const resolvedInflationRate = resolveInflationRate(
@@ -157,16 +182,18 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
     clientInflationOverride,
   );
 
+  // Build milestones for MilestoneYearPicker in the savings sub-form
   const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
   const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
   const milestones = buildClientMilestones(client, planStartYear, planEndYear);
 
-  const clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
-  const spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
-  function ownerKeyOf(acct: (typeof effectiveTree.accounts)[number]): "client" | "spouse" | "joint" {
+  // Derive owner key for UI display from owners[].
+  const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const _spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+  function _ownerKeyOf(acct: (typeof effectiveTree.accounts)[number]): string {
     const cfm = controllingFamilyMember(acct);
-    if (cfm === spouseFmId && spouseFmId != null) return "spouse";
-    if (cfm === clientFmId && clientFmId != null) return "client";
+    if (cfm === _spouseFmId && _spouseFmId != null) return "spouse";
+    if (cfm === _clientFmId && _clientFmId != null) return "client";
     return "joint";
   }
 
@@ -177,7 +204,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       name: a.name,
       category: a.category as AccountRow["category"],
       subType: a.subType,
-      owner: ownerKeyOf(a),
+      owner: _ownerKeyOf(a),
       value: String(a.value),
       basis: String(a.basis),
       rothValue: a.rothValue != null ? String(a.rothValue) : null,
@@ -225,17 +252,16 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
   });
 
   const entityIds = entityRows.map((e) => e.id);
-  const entityOwnerRows =
-    entityIds.length > 0
-      ? await db
-          .select({
-            entityId: entityOwners.entityId,
-            familyMemberId: entityOwners.familyMemberId,
-            percent: entityOwners.percent,
-          })
-          .from(entityOwners)
-          .where(inArray(entityOwners.entityId, entityIds))
-      : [];
+  const entityOwnerRows = entityIds.length > 0
+    ? await db
+        .select({
+          entityId: entityOwners.entityId,
+          familyMemberId: entityOwners.familyMemberId,
+          percent: entityOwners.percent,
+        })
+        .from(entityOwners)
+        .where(inArray(entityOwners.entityId, entityIds))
+    : [];
   const ownersByEntity = new Map<string, { familyMemberId: string; percent: number }[]>();
   for (const row of entityOwnerRows) {
     const list = ownersByEntity.get(row.entityId) ?? [];
@@ -251,10 +277,8 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
     owners: ownersByEntity.get(e.id),
   }));
 
-  const categoryDefaultSources: Record<
-    string,
-    { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }
-  > = {};
+  // Build category default source info
+  const categoryDefaultSources: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }> = {};
   if (settings) {
     const investable = [
       { category: "taxable", source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable },
@@ -320,25 +344,28 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
         notes_receivable: "0",
       };
 
-  const ownerNames = {
-    clientName: `${effectiveTree.client.firstName} ${effectiveTree.client.lastName}`,
-    spouseName: effectiveTree.client.spouseName
-      ? `${effectiveTree.client.spouseName} ${client.spouseLastName ?? effectiveTree.client.lastName}`.trim()
-      : null,
-  };
-
-  return {
-    accountProps,
-    liabilityProps,
-    entityOptions,
-    familyMemberRows,
-    categoryDefaults,
-    modelPortfolioOptions,
-    ownerNames,
-    assetClassOptions,
-    portfolioAllocationsMap,
-    categoryDefaultSources,
-    milestones,
-    resolvedInflationRate,
-  };
+  return (
+    <BalanceSheetTableView
+      clientId={id}
+      accounts={accountProps}
+      liabilities={liabilityProps}
+      notesReceivable={notesReceivableRows}
+      entities={entityOptions}
+      externalBeneficiaries={externalBeneficiaryRows}
+      familyMembers={familyMemberRows}
+      categoryDefaults={categoryDefaults}
+      modelPortfolios={modelPortfolioOptions}
+      ownerNames={{
+        clientName: `${effectiveTree.client.firstName} ${effectiveTree.client.lastName}`,
+        spouseName: effectiveTree.client.spouseName
+          ? `${effectiveTree.client.spouseName} ${client.spouseLastName ?? effectiveTree.client.lastName}`.trim()
+          : null,
+      }}
+      assetClasses={assetClassOptions}
+      portfolioAllocationsMap={portfolioAllocationsMap}
+      categoryDefaultSources={categoryDefaultSources}
+      milestones={milestones}
+      resolvedInflationRate={resolvedInflationRate}
+    />
+  );
 }

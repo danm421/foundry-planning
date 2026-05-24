@@ -497,7 +497,7 @@ export default function BalanceSheetView({
   function handleAccountClick(a: AccountRow) {
     if (assetsEdit) return; // edit mode: user is toggling delete affordances, not opening details
     if (a.category === "life_insurance") {
-      router.push(withScenario(`/clients/${clientId}/client-data/insurance?policy=${a.id}`));
+      router.push(withScenario(`/clients/${clientId}/details/insurance?policy=${a.id}`));
       return;
     }
     setEditingAccount(a);
@@ -629,7 +629,7 @@ export default function BalanceSheetView({
                   {flatBusinessRows.map((e) => (
                     <a
                       key={`flat-${e.id}`}
-                      href={withScenario(`/clients/${clientId}/client-data/family`)}
+                      href={withScenario(`/clients/${clientId}/details/family`)}
                       className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
                     >
                       <div>
@@ -752,7 +752,7 @@ export default function BalanceSheetView({
                   {outOfEstateBusinessEntityRows.map((e) => (
                     <a
                       key={e.id}
-                      href={withScenario(`/clients/${clientId}/client-data/family`)}
+                      href={withScenario(`/clients/${clientId}/details/family`)}
                       className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
                     >
                       <div>

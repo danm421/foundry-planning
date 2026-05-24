@@ -7,7 +7,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 // mount in jsdom.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-  usePathname: () => "/clients/c1/client-data/wills",
+  usePathname: () => "/clients/c1/details/wills",
   useSearchParams: () => new URLSearchParams(),
 }));
 

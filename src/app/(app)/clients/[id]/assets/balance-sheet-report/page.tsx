@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { BalanceSheetContent } from "@/app/(app)/clients/[id]/client-data/balance-sheet/balance-sheet-content";
+import { BalanceSheetReportContent } from "./balance-sheet-report-content";
 import BalanceSheetReportSkeleton from "./loading-skeleton";
 import BalanceSheetPdfButton from "@/components/balance-sheet-pdf-button";
 
@@ -31,7 +31,7 @@ export default async function BalanceSheetReportPage({ params, searchParams }: P
         <BalanceSheetPdfButton clientId={id} />
       </div>
       <Suspense fallback={<BalanceSheetReportSkeleton />}>
-        <BalanceSheetContent clientId={id} scenarioParam={sp.scenario} />
+        <BalanceSheetReportContent clientId={id} scenarioParam={sp.scenario} />
       </Suspense>
     </div>
   );
