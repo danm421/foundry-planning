@@ -589,54 +589,19 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
   }
 
-  // Phase 7 — apply grantor-succession updates and business-interest updates now
-  // that gross estate + drains have read pre-flip state. The chain and pour-out
-  // both see mutated entities.
+  // Phase 7 — apply grantor-succession updates. businessSuccession.ownerUpdates
+  // / basisUpdates are account-keyed under the account-based business model;
+  // wiring them through to accounts is deferred future work — the entity-keyed
+  // application that used to live here was inert (find never matched).
   const mutatedEntities = input.entities.map((e) => {
-    let next = e;
-
-    // Existing grantor-succession entityUpdates block (unchanged).
     const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
-    if (upd) {
-      next = {
-        ...next,
-        ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
-        ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
-        ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
-      };
-    }
-
-    // Business-interest owner succession: remove the deceased's row, add successor rows.
-    // Under the account-based business model the businessSuccession output is
-    // keyed by account id, so this lookup against an entity id no longer
-    // matches — left in place as a no-op pending full entity-business removal
-    // (Task 1.7).
-    const ownerUpd = businessSuccession.ownerUpdates.find((u) => u.accountId === e.id);
-    if (ownerUpd && next.owners != null) {
-      // Clone each kept row so the `existing.percent +=` merge below never
-      // mutates the original input entity's owner objects. Entity-kind owners
-      // pass through untouched — only family_member rows participate in
-      // deceased-removal / successor-merge.
-      const merged = next.owners
-        .filter((o) => o.kind !== "family_member" || o.familyMemberId !== ownerUpd.removeFamilyMemberId)
-        .map((o) => ({ ...o }));
-      for (const s of ownerUpd.successors) {
-        const existing = merged.find(
-          (o) => o.kind === "family_member" && o.familyMemberId === s.familyMemberId,
-        );
-        if (existing) existing.percent += s.percent;
-        else merged.push({ kind: "family_member", familyMemberId: s.familyMemberId, percent: s.percent });
-      }
-      next = { ...next, owners: merged };
-    }
-
-    // §1014 basis step-up on the entity's flat operating value.
-    // Same caveat: businessSuccession.basisUpdates is account-keyed under the
-    // new model and won't match an entity id — inert until Task 1.7.
-    const basisUpd = businessSuccession.basisUpdates.find((u) => u.accountId === e.id);
-    if (basisUpd) next = { ...next, basis: basisUpd.newBasis };
-
-    return next;
+    if (!upd) return e;
+    return {
+      ...e,
+      ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
+      ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
+      ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
+    };
   });
 
   // Phase 8a — pour-out fold-in BEFORE the chain's will step runs. Trust
