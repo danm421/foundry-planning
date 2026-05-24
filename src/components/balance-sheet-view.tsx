@@ -113,13 +113,14 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "notes_receivable",
 ];
 
-// Categories the Add Asset menu offers. Business entities and life-insurance
-// policies are created from their own sections (Entities / Insurance), not here.
+// Categories the Add Asset menu offers. Life-insurance policies are created
+// from the Insurance section, not here.
 const ADDABLE_CATEGORIES: AccountCategory[] = [
   "taxable",
   "cash",
   "retirement",
   "real_estate",
+  "business",
   "notes_receivable",
 ];
 
