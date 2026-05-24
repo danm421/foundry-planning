@@ -46,6 +46,10 @@ interface CrmHouseholdPickerProps {
    *  after they finish creating in CRM. The CRM new-household form will
    *  redirect here with `?crmHouseholdId=...` appended. */
   returnTo?: string;
+  /** If true, suppress the "+ Create new CRM household" link. The Add Client
+   *  modal uses an inline "create new household" checkbox instead and doesn't
+   *  want the link navigating the user away from the modal. */
+  hideCreateLink?: boolean;
 }
 
 const STATUS_LABELS: Record<PickerHousehold["status"], string> = {
@@ -55,7 +59,7 @@ const STATUS_LABELS: Record<PickerHousehold["status"], string> = {
   archived: "Archived",
 };
 
-export function CrmHouseholdPicker({ onSelect, returnTo }: CrmHouseholdPickerProps) {
+export function CrmHouseholdPicker({ onSelect, returnTo, hideCreateLink }: CrmHouseholdPickerProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PickerHousehold[]>([]);
   const [loading, setLoading] = useState(false);
@@ -198,14 +202,16 @@ export function CrmHouseholdPicker({ onSelect, returnTo }: CrmHouseholdPickerPro
         <p className="text-[12px] text-ink-4">No households match &ldquo;{query.trim()}&rdquo;.</p>
       )}
 
-      <div className="pt-1">
-        <Link
-          href={createHref}
-          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-ink transition-colors hover:text-accent-deep"
-        >
-          + Create new CRM household
-        </Link>
-      </div>
+      {!hideCreateLink && (
+        <div className="pt-1">
+          <Link
+            href={createHref}
+            className="inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-ink transition-colors hover:text-accent-deep"
+          >
+            + Create new CRM household
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
