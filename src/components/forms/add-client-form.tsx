@@ -76,6 +76,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
+  const [lastName, setLastName] = useState(initial?.lastName ?? "");
   const [activeTab, setActiveTab] = useState<FormTab>("details");
   const formRef = useRef<HTMLFormElement | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -458,7 +459,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
                 <label className={fieldLabelClassName} htmlFor="lastName">
                   Last Name <span className="text-red-500">*</span>
                 </label>
-                <input id="lastName" name="lastName" type="text" required defaultValue={initial?.lastName ?? ""} className={`mt-1 ${inputClassName}`} />
+                <input id="lastName" name="lastName" type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} className={`mt-1 ${inputClassName}`} />
               </div>
 
               <div>
@@ -534,7 +535,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
 
                   <div>
                     <label className={fieldLabelClassName} htmlFor="spouseLastName">Spouse Last Name</label>
-                    <input id="spouseLastName" name="spouseLastName" type="text" placeholder="Leave blank to inherit client's" defaultValue={initial?.spouseLastName ?? ""} className={`mt-1 ${inputClassName}`} />
+                    <input id="spouseLastName" name="spouseLastName" type="text" placeholder="Leave blank to inherit client's" defaultValue={initial?.spouseLastName ?? lastName} className={`mt-1 ${inputClassName}`} />
                   </div>
 
                   <div>
@@ -546,7 +547,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
 
               <div>
                 <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">Spouse Retirement Age</label>
-                <input id="spouseRetirementAge" name="spouseRetirementAge" type="number" min={50} max={85} defaultValue={initial?.spouseRetirementAge ?? ""} className={`mt-1 ${inputClassName}`} />
+                <input id="spouseRetirementAge" name="spouseRetirementAge" type="number" min={50} max={85} defaultValue={initial?.spouseRetirementAge ?? 65} className={`mt-1 ${inputClassName}`} />
               </div>
 
               <div>
