@@ -2,10 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
+import { CrmHouseholdPicker } from "@/components/crm-household-picker";
+import { buildHouseholdName } from "@/lib/crm/household-name";
+import { CheckCircleIcon } from "@/components/icons";
 
 export interface ClientFormInitial {
   id: string;
@@ -16,7 +20,6 @@ export interface ClientFormInitial {
   retirementMonth?: number | null;
   lifeExpectancy: number;
   filingStatus: string;
-  /** Spouse first name. Stored in the legacy `spouseName` DB column. */
   spouseName?: string | null;
   spouseLastName?: string | null;
   spouseDob?: string | null;
@@ -44,18 +47,10 @@ export interface ClientFormInitial {
 }
 
 const MONTH_OPTIONS: { value: number; label: string }[] = [
-  { value: 1, label: "January" },
-  { value: 2, label: "February" },
-  { value: 3, label: "March" },
-  { value: 4, label: "April" },
-  { value: 5, label: "May" },
-  { value: 6, label: "June" },
-  { value: 7, label: "July" },
-  { value: 8, label: "August" },
-  { value: 9, label: "September" },
-  { value: 10, label: "October" },
-  { value: 11, label: "November" },
-  { value: 12, label: "December" },
+  { value: 1, label: "January" },   { value: 2, label: "February" }, { value: 3, label: "March" },
+  { value: 4, label: "April" },     { value: 5, label: "May" },      { value: 6, label: "June" },
+  { value: 7, label: "July" },      { value: 8, label: "August" },   { value: 9, label: "September" },
+  { value: 10, label: "October" },  { value: 11, label: "November" },{ value: 12, label: "December" },
 ];
 
 type FormTab = "details" | "contact";
@@ -65,23 +60,17 @@ interface AddClientFormProps {
   initial?: ClientFormInitial;
   onSuccess?: () => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
-  /** Fires when an auto-save on tab switch creates or updates the client.
-   *  The dialog uses this to refresh the parent on close. */
   onAutoSaved?: () => void;
 }
 
 function toDateInput(v: string | null | undefined): string {
   if (!v) return "";
-  // Accept "YYYY-MM-DD" or ISO — keep first 10 chars
   return String(v).slice(0, 10);
 }
 
 export default function AddClientForm({ initial, onSuccess, onSubmitStateChange, onAutoSaved }: AddClientFormProps) {
   const router = useRouter();
-  // After an auto-save POSTs a brand-new client, subsequent saves route
-  // against the returned id. We can't mutate the `writer` (which is bound to
-  // initial?.id), but the create path doesn't go through the writer anyway —
-  // it uses raw fetch — so we patch the URL inside saveCore() based on this.
+  const { user } = useUser();
   const [effectiveClientId, setEffectiveClientId] = useState<string | null>(initial?.id ?? null);
   const writer = useScenarioWriter(effectiveClientId ?? "");
   const [loading, setLoading] = useState(false);
@@ -89,54 +78,68 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
   const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
   const [activeTab, setActiveTab] = useState<FormTab>("details");
   const formRef = useRef<HTMLFormElement | null>(null);
-  // Dirty-tracking for tab-switch auto-save. We track at the form level via
-  // `onChange` so we don't have to convert every input to controlled state.
   const [dirty, setDirty] = useState(false);
   const [canSave, setCanSave] = useState(true);
+  // Create-mode-only: dual-mode household state.
+  // Edit mode skips both controls entirely.
+  const [selectedHouseholdId, setSelectedHouseholdId] = useState<string | null>(null);
+  const [createNewHousehold, setCreateNewHousehold] = useState(false);
+
+  const isEdit = effectiveClientId !== null;
+  // In create mode, identity fields (firstName/lastName/DOB) are rendered only
+  // when we're creating a new household. In edit mode they're rendered as
+  // today (legacy edit form still owns identity until that flow is migrated).
+  const showIdentityFields = isEdit || createNewHousehold;
+
+  // canSubmit gating:
+  //   edit         -> always (depends on HTML validity)
+  //   pick existing -> needs selectedHouseholdId
+  //   create new   -> needs the checkbox on + HTML validity
+  const householdReady = isEdit || createNewHousehold || selectedHouseholdId !== null;
 
   useEffect(() => {
-    onSubmitStateChange?.({ canSubmit: !loading, loading });
-  }, [loading, onSubmitStateChange]);
+    onSubmitStateChange?.({ canSubmit: !loading && householdReady && canSave, loading });
+  }, [loading, householdReady, canSave, onSubmitStateChange]);
 
-  // After auto-save in create mode, effectiveClientId is set and we route
-  // subsequent saves through PUT instead of POST.
-  const isEdit = effectiveClientId !== null;
-
-  // Build the request body from current FormData. Shared by the explicit-save
-  // submit handler and the auto-save-on-tab-switch path so both produce the
-  // same payload shape.
-  function buildBody(formEl: HTMLFormElement): Record<string, string | number | null | undefined> {
+  function buildPlanningBody(formEl: HTMLFormElement, crmHouseholdId: string): Record<string, string | number | null | undefined> {
     const data = new FormData(formEl);
     const body: Record<string, string | number | null | undefined> = {
-      firstName: data.get("firstName") as string,
-      lastName: data.get("lastName") as string,
-      dateOfBirth: data.get("dateOfBirth") as string,
+      crmHouseholdId,
       retirementAge: Number(data.get("retirementAge")),
       retirementMonth: Number(data.get("retirementMonth") ?? 1),
       lifeExpectancy: Number(data.get("lifeExpectancy")),
       filingStatus: data.get("filingStatus") as string,
-      email:        (data.get("email") as string) || null,
-      phone:        (data.get("phone") as string) || null,
-      mobile:       (data.get("mobile") as string) || null,
+      email:        (data.get("email") as string)        || null,
+      phone:        (data.get("phone") as string)        || null,
+      mobile:       (data.get("mobile") as string)       || null,
       addressLine1: (data.get("addressLine1") as string) || null,
       addressLine2: (data.get("addressLine2") as string) || null,
-      city:         (data.get("city") as string) || null,
-      state:        (data.get("state") as string) || null,
-      postalCode:   (data.get("postalCode") as string) || null,
-      country:      (data.get("country") as string) || null,
+      city:         (data.get("city") as string)         || null,
+      state:        (data.get("state") as string)        || null,
+      postalCode:   (data.get("postalCode") as string)   || null,
+      country:      (data.get("country") as string)      || null,
     };
 
+    // Edit mode still carries identity in the planning row (legacy schema —
+    // until that flow is migrated to CRM contacts). Create mode never sends
+    // identity here: it either lives on a CRM contact we just made, or on a
+    // contact the picked household already owns.
+    if (isEdit) {
+      body.firstName = data.get("firstName") as string;
+      body.lastName = data.get("lastName") as string;
+      body.dateOfBirth = data.get("dateOfBirth") as string;
+    }
+
     if (showSpouse) {
-      const spouseName = data.get("spouseName") as string;
-      const spouseLastName = data.get("spouseLastName") as string;
-      const spouseDob = data.get("spouseDob") as string;
       const spouseRetirementAge = data.get("spouseRetirementAge") as string;
       const spouseRetirementMonth = data.get("spouseRetirementMonth") as string;
       const spouseLifeExpectancy = data.get("spouseLifeExpectancy") as string;
 
-      body.spouseName = spouseName || null;
-      body.spouseLastName = spouseLastName || null;
-      body.spouseDob = spouseDob || null;
+      if (isEdit) {
+        body.spouseName = (data.get("spouseName") as string) || null;
+        body.spouseLastName = (data.get("spouseLastName") as string) || null;
+        body.spouseDob = (data.get("spouseDob") as string) || null;
+      }
       body.spouseRetirementAge = spouseRetirementAge ? Number(spouseRetirementAge) : null;
       body.spouseRetirementMonth = spouseRetirementMonth ? Number(spouseRetirementMonth) : null;
       body.spouseLifeExpectancy = spouseLifeExpectancy ? Number(spouseLifeExpectancy) : null;
@@ -169,12 +172,132 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
     return body;
   }
 
-  // Pure save: writes through the writer (PUT) when we already have an id,
-  // otherwise POSTs via raw fetch (matches existing behavior). Returns a
-  // SaveResult plus the recordId so the auto-save path can promote ADD→EDIT.
+  // Create a CRM household + 1-2 contacts from current form values and return
+  // the new household id. Called only when the "Create new household" checkbox
+  // is checked.
+  async function createHouseholdAndContacts(formEl: HTMLFormElement): Promise<string> {
+    if (!user?.id) throw new Error("Not signed in.");
+    const data = new FormData(formEl);
+    const firstName = String(data.get("firstName") ?? "").trim();
+    const lastName = String(data.get("lastName") ?? "").trim();
+    const dateOfBirth = String(data.get("dateOfBirth") ?? "");
+    const spouseFirstName = showSpouse ? String(data.get("spouseName") ?? "").trim() : "";
+    const spouseLastName = showSpouse ? String(data.get("spouseLastName") ?? "").trim() : "";
+    const spouseDob = showSpouse ? String(data.get("spouseDob") ?? "") : "";
+
+    const householdName = buildHouseholdName({ firstName, lastName, spouseFirstName, spouseLastName });
+
+    // 1. Household
+    const hRes = await fetch("/api/crm/households", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: householdName, status: "prospect", advisorId: user.id }),
+    });
+    if (!hRes.ok) {
+      const j = (await hRes.json().catch(() => ({}))) as { error?: string };
+      throw new Error(j.error ?? `Failed to create household (${hRes.status})`);
+    }
+    const { household } = (await hRes.json()) as { household: { id: string } };
+    const householdId = household.id;
+
+    // 2. Primary contact. We include the email/phone/address fields from the
+    //    Contact tab so the household lands with full identity in one shot.
+    const primaryBody: Record<string, unknown> = {
+      role: "primary",
+      firstName,
+      lastName,
+      dateOfBirth,
+    };
+    const email = String(data.get("email") ?? "").trim();
+    if (email) primaryBody.email = email;
+    const phone = String(data.get("phone") ?? "").trim();
+    if (phone) primaryBody.phone = phone;
+    const mobile = String(data.get("mobile") ?? "").trim();
+    if (mobile) primaryBody.mobile = mobile;
+    const addr1 = String(data.get("addressLine1") ?? "").trim();
+    if (addr1) primaryBody.addressLine1 = addr1;
+    const addr2 = String(data.get("addressLine2") ?? "").trim();
+    if (addr2) primaryBody.addressLine2 = addr2;
+    const city = String(data.get("city") ?? "").trim();
+    if (city) primaryBody.city = city;
+    const state = String(data.get("state") ?? "").trim();
+    if (state) primaryBody.state = state;
+    const postalCode = String(data.get("postalCode") ?? "").trim();
+    if (postalCode) primaryBody.postalCode = postalCode;
+    const country = String(data.get("country") ?? "").trim();
+    if (country) primaryBody.country = country;
+
+    const pRes = await fetch(`/api/crm/households/${householdId}/contacts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(primaryBody),
+    });
+    if (!pRes.ok) {
+      const j = (await pRes.json().catch(() => ({}))) as { error?: string };
+      throw new Error(j.error ?? `Failed to create primary contact (${pRes.status})`);
+    }
+
+    // 3. Spouse contact (optional)
+    if (showSpouse && spouseFirstName) {
+      const spouseBody: Record<string, unknown> = {
+        role: "spouse",
+        firstName: spouseFirstName,
+        lastName: spouseLastName || lastName,
+      };
+      if (spouseDob) spouseBody.dateOfBirth = spouseDob;
+      const sEmail = String(data.get("spouseEmail") ?? "").trim();
+      if (sEmail) spouseBody.email = sEmail;
+      const sPhone = String(data.get("spousePhone") ?? "").trim();
+      if (sPhone) spouseBody.phone = sPhone;
+      const sMobile = String(data.get("spouseMobile") ?? "").trim();
+      if (sMobile) spouseBody.mobile = sMobile;
+      const sAddr1 = String(data.get("spouseAddressLine1") ?? "").trim();
+      if (sAddr1) spouseBody.addressLine1 = sAddr1;
+      const sAddr2 = String(data.get("spouseAddressLine2") ?? "").trim();
+      if (sAddr2) spouseBody.addressLine2 = sAddr2;
+      const sCity = String(data.get("spouseCity") ?? "").trim();
+      if (sCity) spouseBody.city = sCity;
+      const sState = String(data.get("spouseState") ?? "").trim();
+      if (sState) spouseBody.state = sState;
+      const sPostalCode = String(data.get("spousePostalCode") ?? "").trim();
+      if (sPostalCode) spouseBody.postalCode = sPostalCode;
+      const sCountry = String(data.get("spouseCountry") ?? "").trim();
+      if (sCountry) spouseBody.country = sCountry;
+
+      const sRes = await fetch(`/api/crm/households/${householdId}/contacts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(spouseBody),
+      });
+      if (!sRes.ok) {
+        const j = (await sRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `Failed to create spouse contact (${sRes.status})`);
+      }
+    }
+
+    return householdId;
+  }
+
   async function saveCore(formEl: HTMLFormElement): Promise<SaveResult & { recordId?: string }> {
-    const body = buildBody(formEl);
     try {
+      // Resolve the household id for the planning POST.
+      let crmHouseholdId: string;
+      if (isEdit) {
+        // Edit mode never carries a household id in the body — PUT uses the
+        // existing one stored on the row.
+        crmHouseholdId = "";
+      } else if (createNewHousehold) {
+        crmHouseholdId = await createHouseholdAndContacts(formEl);
+      } else if (selectedHouseholdId) {
+        crmHouseholdId = selectedHouseholdId;
+      } else {
+        return { ok: false, error: "Pick a household or check 'Create a new household'." };
+      }
+
+      const body = buildPlanningBody(formEl, crmHouseholdId);
+      // Edit-mode PUT doesn't accept crmHouseholdId in the body; strip it.
+      if (isEdit) delete body.crmHouseholdId;
+
       const res = isEdit
         ? await writer.submit(
             {
@@ -218,7 +341,6 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       setError(result.error);
       return;
     }
-    // Edit path: writer auto-refreshes. Create path: manual refresh.
     if (!isEdit) router.refresh();
     onSuccess?.();
   }
@@ -229,6 +351,9 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
     saveAsync: async () => {
       const form = formRef.current;
       if (!form) return { ok: true };
+      // Don't auto-save on tab switch in create mode if we don't yet have a
+      // resolved household. The save would fail and pop a misleading error.
+      if (!isEdit && !householdReady) return { ok: true };
       setLoading(true);
       const result = await saveCore(form);
       setLoading(false);
@@ -261,12 +386,8 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
 
       <nav className="-mt-2 flex items-center justify-between border-b border-gray-700" role="tablist" aria-label="Client form sections">
         <div className="flex gap-1">
-          <TabButton active={activeTab === "details"} onClick={() => goToTab("details")}>
-            Details
-          </TabButton>
-          <TabButton active={activeTab === "contact"} onClick={() => goToTab("contact")}>
-            Contact
-          </TabButton>
+          <TabButton active={activeTab === "details"} onClick={() => goToTab("details")}>Details</TabButton>
+          <TabButton active={activeTab === "contact"} onClick={() => goToTab("contact")}>Contact</TabButton>
         </div>
         <div className="pr-2">
           <TabAutoSaveIndicator
@@ -278,244 +399,179 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       </nav>
 
       <div role="tabpanel" hidden={activeTab !== "details"} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={fieldLabelClassName} htmlFor="firstName">
-            First Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="firstName"
-            name="firstName"
-            type="text"
-            required
-            defaultValue={initial?.firstName ?? ""}
-            className={`mt-1 ${inputClassName}`}
-          />
-        </div>
 
-        <div>
-          <label className={fieldLabelClassName} htmlFor="lastName">
-            Last Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="lastName"
-            name="lastName"
-            type="text"
-            required
-            defaultValue={initial?.lastName ?? ""}
-            className={`mt-1 ${inputClassName}`}
-          />
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="dateOfBirth">
-            Date of Birth <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="dateOfBirth"
-            name="dateOfBirth"
-            type="date"
-            required
-            min="1910-01-01"
-            defaultValue={toDateInput(initial?.dateOfBirth)}
-            className={`mt-1 ${inputClassName}`}
-          />
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="filingStatus">
-            Filing Status <span className="text-red-500">*</span>
-          </label>
-          <select
-            id="filingStatus"
-            name="filingStatus"
-            required
-            defaultValue={initial?.filingStatus ?? "single"}
-            className={`mt-1 ${selectClassName}`}
-          >
-            <option value="single">Single</option>
-            <option value="married_joint">Married Filing Jointly</option>
-            <option value="married_separate">Married Filing Separately</option>
-            <option value="head_of_household">Head of Household</option>
-          </select>
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="retirementAge">
-            Retirement Age <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="retirementAge"
-            name="retirementAge"
-            type="number"
-            min={50}
-            max={85}
-            defaultValue={initial?.retirementAge ?? 65}
-            required
-            className={`mt-1 ${inputClassName}`}
-          />
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="retirementMonth">
-            Retirement Month
-          </label>
-          <select
-            id="retirementMonth"
-            name="retirementMonth"
-            defaultValue={initial?.retirementMonth ?? 1}
-            className={`mt-1 ${selectClassName}`}
-          >
-            {MONTH_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-gray-400">
-            Income/expenses linked to retirement are pro-rated for this month in the retirement year.
-          </p>
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
-            Life Expectancy <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="lifeExpectancy"
-            name="lifeExpectancy"
-            type="number"
-            min={1}
-            max={120}
-            defaultValue={initial?.lifeExpectancy ?? 95}
-            required
-            className={`mt-1 ${inputClassName}`}
-          />
-          <p className="mt-1 text-xs text-gray-400">
-            Plan horizon ends the year of the last spouse to die.
-          </p>
-        </div>
-      </div>
-
-      <div className="border-t border-gray-700 pt-4">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showSpouse}
-            onChange={(e) => setShowSpouse(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-          />
-          <span className="text-sm font-medium text-gray-300">Add Spouse</span>
-        </label>
-
-        {showSpouse && (
-          <div className="mt-3 grid grid-cols-2 gap-4">
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseName">
-                Spouse First Name
-              </label>
-              <input
-                id="spouseName"
-                name="spouseName"
-                type="text"
-                defaultValue={initial?.spouseName ?? ""}
-                className={`mt-1 ${inputClassName}`}
+        {/* Create mode: household picker / create-new toggle. Edit mode hides
+            this block — identity already lives in CRM under the existing
+            household and the form only edits planning fields. */}
+        {!isEdit && (
+          <div className="space-y-3 rounded-md border border-gray-700 bg-gray-800/40 p-3">
+            {!selectedHouseholdId && !createNewHousehold && (
+              <CrmHouseholdPicker
+                onSelect={(id) => setSelectedHouseholdId(id)}
+                hideCreateLink
               />
-            </div>
+            )}
 
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseLastName">
-                Spouse Last Name
-              </label>
+            {selectedHouseholdId && (
+              <div className="flex items-start gap-3 rounded-md border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-sm">
+                <CheckCircleIcon width={16} height={16} className="mt-0.5 shrink-0 text-emerald-400" aria-hidden="true" />
+                <span className="flex-1 text-gray-100">CRM household linked.</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHouseholdId(null)}
+                  className="text-xs text-gray-300 hover:text-gray-100"
+                >
+                  Change
+                </button>
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
               <input
-                id="spouseLastName"
-                name="spouseLastName"
-                type="text"
-                placeholder="Leave blank to inherit client's"
-                defaultValue={initial?.spouseLastName ?? ""}
-                className={`mt-1 ${inputClassName}`}
+                type="checkbox"
+                checked={createNewHousehold}
+                disabled={!!selectedHouseholdId}
+                onChange={(e) => setCreateNewHousehold(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
               />
-            </div>
-
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseDob">
-                Spouse Date of Birth
-              </label>
-              <input
-                id="spouseDob"
-                name="spouseDob"
-                type="date"
-                min="1910-01-01"
-                defaultValue={toDateInput(initial?.spouseDob)}
-                className={`mt-1 ${inputClassName}`}
-              />
-            </div>
-
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">
-                Spouse Retirement Age
-              </label>
-              <input
-                id="spouseRetirementAge"
-                name="spouseRetirementAge"
-                type="number"
-                min={50}
-                max={85}
-                defaultValue={initial?.spouseRetirementAge ?? ""}
-                className={`mt-1 ${inputClassName}`}
-              />
-            </div>
-
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">
-                Spouse Retirement Month
-              </label>
-              <select
-                id="spouseRetirementMonth"
-                name="spouseRetirementMonth"
-                defaultValue={initial?.spouseRetirementMonth ?? 1}
-                className={`mt-1 ${selectClassName}`}
-              >
-                {MONTH_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseLifeExpectancy">
-                Spouse Life Expectancy
-              </label>
-              <input
-                id="spouseLifeExpectancy"
-                name="spouseLifeExpectancy"
-                type="number"
-                min={1}
-                max={120}
-                defaultValue={initial?.spouseLifeExpectancy ?? 95}
-                className={`mt-1 ${inputClassName}`}
-              />
-            </div>
+              <span>Create a new household</span>
+            </label>
+            {createNewHousehold && (
+              <p className="text-xs text-gray-400">
+                A new CRM household will be created from the details below.
+              </p>
+            )}
           </div>
         )}
-      </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          {showIdentityFields && (
+            <>
+              <div>
+                <label className={fieldLabelClassName} htmlFor="firstName">
+                  First Name <span className="text-red-500">*</span>
+                </label>
+                <input id="firstName" name="firstName" type="text" required defaultValue={initial?.firstName ?? ""} className={`mt-1 ${inputClassName}`} />
+              </div>
+
+              <div>
+                <label className={fieldLabelClassName} htmlFor="lastName">
+                  Last Name <span className="text-red-500">*</span>
+                </label>
+                <input id="lastName" name="lastName" type="text" required defaultValue={initial?.lastName ?? ""} className={`mt-1 ${inputClassName}`} />
+              </div>
+
+              <div>
+                <label className={fieldLabelClassName} htmlFor="dateOfBirth">
+                  Date of Birth <span className="text-red-500">*</span>
+                </label>
+                <input id="dateOfBirth" name="dateOfBirth" type="date" required min="1910-01-01" defaultValue={toDateInput(initial?.dateOfBirth)} className={`mt-1 ${inputClassName}`} />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className={fieldLabelClassName} htmlFor="filingStatus">
+              Filing Status <span className="text-red-500">*</span>
+            </label>
+            <select id="filingStatus" name="filingStatus" required defaultValue={initial?.filingStatus ?? "single"} className={`mt-1 ${selectClassName}`}>
+              <option value="single">Single</option>
+              <option value="married_joint">Married Filing Jointly</option>
+              <option value="married_separate">Married Filing Separately</option>
+              <option value="head_of_household">Head of Household</option>
+            </select>
+          </div>
+
+          <div>
+            <label className={fieldLabelClassName} htmlFor="retirementAge">
+              Retirement Age <span className="text-red-500">*</span>
+            </label>
+            <input id="retirementAge" name="retirementAge" type="number" min={50} max={85} defaultValue={initial?.retirementAge ?? 65} required className={`mt-1 ${inputClassName}`} />
+          </div>
+
+          <div>
+            <label className={fieldLabelClassName} htmlFor="retirementMonth">Retirement Month</label>
+            <select id="retirementMonth" name="retirementMonth" defaultValue={initial?.retirementMonth ?? 1} className={`mt-1 ${selectClassName}`}>
+              {MONTH_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              Income/expenses linked to retirement are pro-rated for this month in the retirement year.
+            </p>
+          </div>
+
+          <div>
+            <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
+              Life Expectancy <span className="text-red-500">*</span>
+            </label>
+            <input id="lifeExpectancy" name="lifeExpectancy" type="number" min={1} max={120} defaultValue={initial?.lifeExpectancy ?? 95} required className={`mt-1 ${inputClassName}`} />
+            <p className="mt-1 text-xs text-gray-400">
+              Plan horizon ends the year of the last spouse to die.
+            </p>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-700 pt-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showSpouse}
+              onChange={(e) => setShowSpouse(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+            />
+            <span className="text-sm font-medium text-gray-300">Add Spouse</span>
+          </label>
+
+          {showSpouse && (
+            <div className="mt-3 grid grid-cols-2 gap-4">
+              {showIdentityFields && (
+                <>
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="spouseName">Spouse First Name</label>
+                    <input id="spouseName" name="spouseName" type="text" defaultValue={initial?.spouseName ?? ""} className={`mt-1 ${inputClassName}`} />
+                  </div>
+
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="spouseLastName">Spouse Last Name</label>
+                    <input id="spouseLastName" name="spouseLastName" type="text" placeholder="Leave blank to inherit client's" defaultValue={initial?.spouseLastName ?? ""} className={`mt-1 ${inputClassName}`} />
+                  </div>
+
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="spouseDob">Spouse Date of Birth</label>
+                    <input id="spouseDob" name="spouseDob" type="date" min="1910-01-01" defaultValue={toDateInput(initial?.spouseDob)} className={`mt-1 ${inputClassName}`} />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">Spouse Retirement Age</label>
+                <input id="spouseRetirementAge" name="spouseRetirementAge" type="number" min={50} max={85} defaultValue={initial?.spouseRetirementAge ?? ""} className={`mt-1 ${inputClassName}`} />
+              </div>
+
+              <div>
+                <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">Spouse Retirement Month</label>
+                <select id="spouseRetirementMonth" name="spouseRetirementMonth" defaultValue={initial?.spouseRetirementMonth ?? 1} className={`mt-1 ${selectClassName}`}>
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={fieldLabelClassName} htmlFor="spouseLifeExpectancy">Spouse Life Expectancy</label>
+                <input id="spouseLifeExpectancy" name="spouseLifeExpectancy" type="number" min={1} max={120} defaultValue={initial?.spouseLifeExpectancy ?? 95} className={`mt-1 ${inputClassName}`} />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div role="tabpanel" hidden={activeTab !== "contact"} className="space-y-6">
-        <ContactInfoSection
-          heading="Client"
-          initial={initial}
-          prefix=""
-        />
+        <ContactInfoSection heading="Client" initial={initial} prefix="" />
         {showSpouse ? (
           <div className="border-t border-gray-700 pt-4">
-            <ContactInfoSection
-              heading="Spouse"
-              initial={initial}
-              prefix="spouse"
-            />
+            <ContactInfoSection heading="Spouse" initial={initial} prefix="spouse" />
           </div>
         ) : (
           <p className="text-xs text-gray-400">
@@ -523,21 +579,13 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
           </p>
         )}
       </div>
-
     </form>
   );
 }
 
 function ContactInfoSection({
-  heading,
-  initial,
-  prefix,
-}: {
-  heading: string;
-  initial?: ClientFormInitial;
-  prefix: "" | "spouse";
-}) {
-  // Field-name helpers: primary uses "email", spouse uses "spouseEmail".
+  heading, initial, prefix,
+}: { heading: string; initial?: ClientFormInitial; prefix: "" | "spouse" }) {
   const fieldName = (base: string) =>
     prefix === "" ? base : `${prefix}${base[0].toUpperCase()}${base.slice(1)}`;
   const v = (base: string) =>
@@ -567,26 +615,14 @@ function ContactInput({
   return (
     <div className={className}>
       <label className={fieldLabelClassName} htmlFor={name}>{label}</label>
-      <input
-        id={name}
-        name={name}
-        type={type}
-        defaultValue={defaultValue ?? ""}
-        className={`mt-1 ${inputClassName}`}
-      />
+      <input id={name} name={name} type={type} defaultValue={defaultValue ?? ""} className={`mt-1 ${inputClassName}`} />
     </div>
   );
 }
 
 function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+  active, onClick, children,
+}: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -594,9 +630,7 @@ function TabButton({
       aria-selected={active}
       onClick={onClick}
       className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-        active
-          ? "border-accent text-gray-100"
-          : "border-transparent text-gray-300 hover:text-gray-200"
+        active ? "border-accent text-gray-100" : "border-transparent text-gray-300 hover:text-gray-200"
       }`}
     >
       {children}
