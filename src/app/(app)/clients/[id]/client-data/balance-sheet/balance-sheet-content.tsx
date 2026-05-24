@@ -8,7 +8,6 @@ import {
   liabilities,
   entities,
   entityOwners,
-  externalBeneficiaries,
   familyMembers,
   planSettings,
   modelPortfolios,
@@ -18,8 +17,7 @@ import {
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import BalanceSheetTableView from "@/components/balance-sheet-table-view";
-import type { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
+import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -74,7 +72,6 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
     accountMetaRows,
     liabilityMetaRows,
     entityRows,
-    externalBeneficiaryRows,
     familyMemberRows,
     settingsRows,
     portfolioRows,
@@ -107,11 +104,6 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       .from(liabilities)
       .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
-    db
-      .select({ id: externalBeneficiaries.id, name: externalBeneficiaries.name })
-      .from(externalBeneficiaries)
-      .where(eq(externalBeneficiaries.clientId, id))
-      .orderBy(asc(externalBeneficiaries.name)),
     db
       .select({ id: familyMembers.id, role: familyMembers.role, firstName: familyMembers.firstName })
       .from(familyMembers)
@@ -345,13 +337,12 @@ export async function BalanceSheetContent({ clientId: id, scenarioParam }: Balan
       };
 
   return (
-    <BalanceSheetTableView
+    <BalanceSheetView
       clientId={id}
       accounts={accountProps}
       liabilities={liabilityProps}
       notesReceivable={notesReceivableRows}
       entities={entityOptions}
-      externalBeneficiaries={externalBeneficiaryRows}
       familyMembers={familyMemberRows}
       categoryDefaults={categoryDefaults}
       modelPortfolios={modelPortfolioOptions}
