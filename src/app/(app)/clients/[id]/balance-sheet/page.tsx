@@ -6,5 +6,5 @@ interface PageProps {
 
 export default async function LegacyBalanceSheetRedirect({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/clients/${id}/client-data/balance-sheet`);
+  redirect(`/clients/${id}/client-data/net-worth`);
 }

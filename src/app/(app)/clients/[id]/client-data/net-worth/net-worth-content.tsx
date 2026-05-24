@@ -24,12 +24,12 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
-interface BalanceSheetContentProps {
+interface NetWorthContentProps {
   clientId: string;
   scenarioParam: string | undefined;
 }
 
-export async function BalanceSheetContent({ clientId: id, scenarioParam }: BalanceSheetContentProps) {
+export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthContentProps) {
   const firmId = await getOrgId();
 
   const [clientRow] = await db

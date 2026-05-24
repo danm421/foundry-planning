@@ -1,35 +1,10 @@
-import { Suspense } from "react";
-import { notFound } from "next/navigation";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
-import { BalanceSheetContent } from "./balance-sheet-content";
-import BalanceSheetSkeleton from "./loading-skeleton";
-import ClientDataPageShell from "@/components/client-data-page-shell";
+import { redirect } from "next/navigation";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function BalanceSheetPage({ params, searchParams }: PageProps) {
-  const firmId = await getOrgId();
+export default async function LegacyBalanceSheetRedirect({ params }: PageProps) {
   const { id } = await params;
-  const sp = await searchParams;
-
-  const [client] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-
-  if (!client) notFound();
-
-  return (
-    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
-      <Suspense fallback={<BalanceSheetSkeleton />}>
-        <BalanceSheetContent clientId={id} scenarioParam={sp.scenario} />
-      </Suspense>
-    </ClientDataPageShell>
-  );
+  redirect(`/clients/${id}/client-data/net-worth`);
 }

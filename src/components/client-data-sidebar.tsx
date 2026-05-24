@@ -27,7 +27,7 @@ function ProfileIcon() {
   );
 }
 
-function BalanceSheetIcon() {
+function NetWorthIcon() {
   return (
     <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="4" y="5" width="16" height="14" rx="1.5" />
@@ -96,7 +96,7 @@ function InsuranceIcon() {
 
 const TABS: SidebarTab[] = [
   { label: "Profile", href: "family", icon: <ProfileIcon /> },
-  { label: "Net Worth", href: "balance-sheet", icon: <BalanceSheetIcon /> },
+  { label: "Net Worth", href: "net-worth", icon: <NetWorthIcon /> },
   { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Insurance", href: "insurance", icon: <InsuranceIcon /> },
   { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
