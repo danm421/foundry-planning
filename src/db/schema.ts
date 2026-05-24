@@ -1212,7 +1212,7 @@ export const accounts = pgTable("accounts", {
   // owned inside the LLC, etc.) hang off its parent business. Null for top-level
   // accounts. Single-parent — splitting one sub-account across two parent
   // businesses is not supported.
-  parentAccountId: uuid("parent_account_id").references((): any => accounts.id, {
+  parentAccountId: uuid("parent_account_id").references((): AnyPgColumn => accounts.id, {
     onDelete: "set null",
   }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
