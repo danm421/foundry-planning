@@ -8,12 +8,15 @@ import type {
 import type {
   Account,
   ClientData,
+  ProjectionYear,
   RemainderBeneficiaryRef,
 } from "@/engine/types";
+import type { ProjectionResult } from "@/engine/projection";
 import {
-  controllingEntity,
   ownedByFamilyMember,
 } from "@/engine/ownership";
+import { ownersForYearOrHousehold } from "@/lib/estate/owners-or-household";
+import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   isPolicyInForce,
@@ -107,10 +110,18 @@ export interface BuildEstateFlowSummaryInput {
   gifts: EstateFlowGift[];
   ownerNames: { clientName: string; spouseName: string | null };
   /** The year the user selected on the chart's "As Of" dropdown. Used by
-   *  `computeOutOfEstate` to gate `isPolicyInForce` on trust-owned policies.
-   *  Callers should pass the projection's start year when the AsOf
-   *  selection isn't a concrete year (e.g. "today" or "split"). */
+   *  `computeOutOfEstate` to compose year-aware ownership and gate
+   *  `isPolicyInForce` on trust-owned policies. Callers should pass the
+   *  projection's start year when the AsOf selection isn't a concrete year
+   *  (e.g. "today" or "split"). */
   asOfYear: number;
+  /** Optional projection result. When provided, `computeOutOfEstate` consumes
+   *  per-year account balances and locked entity/family shares so the OOE
+   *  column reflects gift-driven ownership transfers, growth, and split
+   *  ownership at `asOfYear`. Tests that exercise only the heir-box rules can
+   *  omit this; the static fallback uses `account.value` and authored
+   *  `owners[]` slices. */
+  projection?: ProjectionResult | null;
 }
 
 // Friendly labels for ReductionsLine kinds, used inside the death-stage taxes box.
@@ -137,21 +148,52 @@ function buildDeathStage(
   isFirstDeath: boolean,
   clientData: ClientData,
 ): DeathStage {
-  // Scale a raw transfer amount down to the decedent's chargeable share.
-  // JTWROS real estate, for example, transfers 100% to the survivor by
-  // titling but only the decedent's 50% is in their estate; ditto a sole-
-  // FM-owned account at 100%. Lookups come from the engine's Form 706
-  // gross-estate lines (see transfer-report.ts). Anything the engine didn't
-  // emit (e.g. unlinked debt transfers with no chargeable share) defaults
-  // to its full amount — the report-side reductions track those separately.
+  // Pre-compute the total ledger amount transferred from each source. Used
+  // as the denominator when scaling each transfer to its proportional share
+  // of the decedent's chargeable dollar cap. We sum over every recipient so
+  // a will-split account or a multi-beneficiary policy footing reaches the
+  // full ledger total, not just one recipient's slice.
+  const totalLedgerByAccount = new Map<string, number>();
+  const totalLedgerByLiability = new Map<string, number>();
+  for (const r of section.recipients) {
+    for (const m of r.byMechanism) {
+      for (const a of m.assets) {
+        if (a.sourceAccountId != null) {
+          totalLedgerByAccount.set(
+            a.sourceAccountId,
+            (totalLedgerByAccount.get(a.sourceAccountId) ?? 0) + a.amount,
+          );
+        } else if (a.sourceLiabilityId != null) {
+          totalLedgerByLiability.set(
+            a.sourceLiabilityId,
+            (totalLedgerByLiability.get(a.sourceLiabilityId) ?? 0) + a.amount,
+          );
+        }
+      }
+    }
+  }
+
+  // Scale a raw transfer amount down to the decedent's chargeable dollar share.
+  // The Form 706 gross-estate line gives the *cap* (e.g. $500k of a $1M JTWROS
+  // home at first death). Each ledger row from that source takes its
+  // proportional slice of that cap: `t.amount × (cap / totalLedger)`. This
+  // matters for mixed family + entity accounts, where the engine pre-strips
+  // the entity slice off the routed transfer; the ledger amount is the family
+  // pool, not the full FMV, so a percentage-of-FMV scaling would double-count.
+  // Sources with no gross-estate line (unlinked debts, OOE pour-outs) fall
+  // through at full ledger value.
   const chargeable = (line: AssetTransferLine): number => {
     if (line.sourceAccountId != null) {
-      const pct = section.chargeableShareByAccount[line.sourceAccountId];
-      return pct != null ? line.amount * pct : line.amount;
+      const cap = section.grossEstateDollarsByAccount[line.sourceAccountId];
+      const total = totalLedgerByAccount.get(line.sourceAccountId);
+      if (cap == null || total == null || total === 0) return line.amount;
+      return line.amount * (cap / total);
     }
     if (line.sourceLiabilityId != null) {
-      const pct = section.chargeableShareByLiability[line.sourceLiabilityId];
-      return pct != null ? line.amount * pct : line.amount;
+      const cap = section.grossEstateDollarsByLiability[line.sourceLiabilityId];
+      const total = totalLedgerByLiability.get(line.sourceLiabilityId);
+      if (cap == null || total == null || total === 0) return line.amount;
+      return line.amount * (cap / total);
     }
     return line.amount;
   };
@@ -340,7 +382,7 @@ function consolidateBySource(
  * the same percent-weighted share of every liability. Joint accounts thus
  * contribute their share (e.g. 50% of a JTWROS home), matching how the
  * first-death stage box already scales decedent transfers by
- * `chargeableShareByAccount`. Returns null when there's no surviving spouse
+ * `grossEstateDollarsByAccount`. Returns null when there's no surviving spouse
  * (single-filer household).
  */
 function computeSurvivorNetWorth(
@@ -380,76 +422,162 @@ function accountAmount(a: Account): number {
 }
 
 /**
- * Group out-of-estate balances for the Overview's right rail:
- *  - irrevTrusts: irrevocable trusts and the accounts wholly owned by each.
- *  - heirs: person-owned OOE accounts (today: 529 plans).
- * Wholly-owned-by-entity is detected via `controllingEntity` (single entity
- * owner at 100%, matches the Sankey source rail). Mixed-ownership trust
- * accounts intentionally fall through — they'd already be split by the
- * normal owner-bucket flow.
+ * Group out-of-estate balances for the Overview's right rail at `asOfYear`:
+ *
+ *  - **irrevTrusts**: per irrevocable trust, the sum of every account slice the
+ *    trust owns at that year (composing static `account.owners` with any prior
+ *    `clientData.giftEvents`, then resolving locked entity/family shares from
+ *    the projection year row). Trust-owned in-force life insurance where the
+ *    trust is a named primary beneficiary (or no beneficiaries are set) is
+ *    swapped to face value × ownership percent — that's the ILIT pattern.
+ *  - **heirs**: person-owned OOE accounts (today: 529 plans) at their year-aware
+ *    balance, PLUS one synthetic entity per family member who has received
+ *    cumulative cash gifts on or before `asOfYear`. Cash gifts to persons sit
+ *    as a nominal balance (no growth — there's no tracked account on the
+ *    recipient side); cash gifts to trusts already flow through the trust's
+ *    own account slices via the projection.
+ *
+ * `projection` is optional: when omitted, the function falls back to static
+ * account values + authored ownership (the pre-projection behavior, used by
+ * fixture tests). With a projection, ownership is composed via
+ * `ownersForYearOrHousehold`, balances are read from `accountLedgers.endingValue`
+ * at the matching year row, and `resolveOwnerSlices` distributes locked shares.
  */
 function computeOutOfEstate(
   clientData: ClientData,
   asOfYear: number,
+  gifts: EstateFlowGift[],
+  projection: ProjectionResult | null | undefined,
 ): EstateFlowSummary["outOfEstate"] {
   const accounts = clientData.accounts ?? [];
   const entities = clientData.entities ?? [];
+  const giftEvents = clientData.giftEvents ?? [];
 
-  // Pre-compute retirement years once so every trust-owned policy can ask
-  // `insuredRetirementYearFor` without re-parsing DOBs. Fixtures that omit
-  // `clientData.client` (vault tests, raw OOE smoke tests) skip the lookup
-  // entirely — the `endsAtInsuredRetirement` check then treats the policy
-  // as having no retirement bound, matching the helper's documented null
-  // contract.
+  // Locate the projection year row for `asOfYear`. When the projection doesn't
+  // cover that year (e.g. a fixture without a projection, or an AsOf selection
+  // past plan-end), fall back to static account values and authored ownership.
+  const yearRow: ProjectionYear | undefined = projection?.years.find(
+    (y) => y.year === asOfYear,
+  );
+  const projectionStartYear = projection?.years[0]?.year ?? asOfYear;
+
+  const balanceAt = (accountId: string, account: Account): number => {
+    if (yearRow) {
+      const ledger = yearRow.accountLedgers?.[accountId];
+      if (ledger) return ledger.endingValue;
+    }
+    return accountAmount(account);
+  };
+
+  const ownersAt = (account: Account) => {
+    if (!yearRow) return account.owners ?? [];
+    try {
+      return ownersForYearOrHousehold(
+        account,
+        giftEvents,
+        asOfYear,
+        projectionStartYear,
+      );
+    } catch {
+      // Malformed gift events (overdraw / sum-to-1 violations) shouldn't crash
+      // the chart; fall back to authored owners so the panel still renders.
+      return account.owners ?? [];
+    }
+  };
+
   const { clientRetirementYear, spouseRetirementYear } = clientData.client
     ? resolveOwnerRetirementYears(clientData.client)
     : { clientRetirementYear: null, spouseRetirementYear: null };
 
-  // irrevocable trusts → entities[]. Include trusts with no funded accounts so
-  // the planning vehicle still surfaces on the chart (advisor expectation:
-  // empty SLAT/ILIT/IDGT shells should be visible, not silently dropped).
+  // Build a per-account slice map keyed by (accountId → entityId → dollars).
+  // `resolveOwnerSlices` distributes the year-aware balance across all owners
+  // using the engine's locked-share carry-forward so household drawdowns on a
+  // split-owned account don't bleed into entity slices.
+  const entitySliceByAccount = new Map<string, Map<string, number>>();
+  const entityPercentByAccount = new Map<string, Map<string, number>>();
+  for (const account of accounts) {
+    const owners = ownersAt(account);
+    const value = balanceAt(account.id, account);
+    const slices = resolveOwnerSlices(
+      account.id,
+      owners,
+      value,
+      yearRow?.entityAccountSharesEoY,
+      yearRow?.familyAccountSharesEoY,
+    );
+    const sliceByEntity = new Map<string, number>();
+    for (const s of slices) {
+      if (s.owner.kind !== "entity") continue;
+      sliceByEntity.set(
+        s.owner.entityId,
+        (sliceByEntity.get(s.owner.entityId) ?? 0) + s.value,
+      );
+    }
+    entitySliceByAccount.set(account.id, sliceByEntity);
+    const pctByEntity = new Map<string, number>();
+    for (const o of owners) {
+      if (o.kind !== "entity") continue;
+      pctByEntity.set(o.entityId, (pctByEntity.get(o.entityId) ?? 0) + o.percent);
+    }
+    entityPercentByAccount.set(account.id, pctByEntity);
+  }
+
+  // Irrevocable trusts → one OoeEntity each. Include trusts with no funded
+  // accounts so empty SLAT/ILIT/IDGT shells still surface on the chart
+  // (advisor expectation: planning vehicles shouldn't silently disappear).
   const irrevTrustEntities: OoeEntity[] = [];
   for (const entity of entities) {
     if (entity.entityType !== "trust") continue;
     if (entity.isIrrevocable !== true) continue;
-    const ownedAccounts = accounts.filter(
-      (a) => controllingEntity(a) === entity.id,
-    );
+
     const assets: { label: string; amount: number }[] = [];
-    for (const a of ownedAccounts) {
-      // Trust-owned life-insurance policies: show the **death benefit** (face
-      // value), not the cash value. The trust is the implicit beneficiary
-      // when `beneficiaries` is empty (legacy data — the UI didn't support
-      // setting a trust as beneficiary until Phase 2a of this fix), or
-      // explicit when `entityIdRef` is set. A non-trust primary beneficiary
-      // on a trust-owned policy is a malformed ILIT — fall through to cash
-      // value so the diagnostic surfaces. Gated on `isPolicyInForce` so a
-      // lapsed term policy doesn't keep contributing $1M forever.
-      if (a.category === "life_insurance" && a.lifeInsurance) {
-        const bens = a.beneficiaries ?? [];
+    for (const account of accounts) {
+      const ownerPct =
+        entityPercentByAccount.get(account.id)?.get(entity.id) ?? 0;
+
+      // ILIT face-value swap: trust-owned in-force life insurance where the
+      // trust is the named primary beneficiary (or no beneficiaries are set —
+      // legacy data, when the UI didn't yet support setting a trust as bene)
+      // is shown at death benefit × trust's ownership percent, not cash value.
+      // Checked BEFORE the slice-value short-circuit because term policies
+      // typically carry cash value $0 — gating on slice would drop them. A
+      // non-trust primary bene on a trust-owned policy is a malformed ILIT —
+      // falls through to cash value as a diagnostic. Gated on
+      // `isPolicyInForce` so a lapsed term policy doesn't keep contributing
+      // $1M forever.
+      if (
+        ownerPct > 0 &&
+        account.category === "life_insurance" &&
+        account.lifeInsurance
+      ) {
+        const bens = account.beneficiaries ?? [];
         const trustIsNamedBene =
           bens.length === 0 ||
           bens.some(
-            (b) =>
-              b.tier === "primary" && b.entityIdRef === entity.id,
+            (b) => b.tier === "primary" && b.entityIdRef === entity.id,
           );
         if (trustIsNamedBene) {
           const insuredRetYear = insuredRetirementYearFor(
-            a,
+            account,
             clientRetirementYear,
             spouseRetirementYear,
           );
-          if (isPolicyInForce(a, asOfYear, insuredRetYear)) {
+          if (isPolicyInForce(account, asOfYear, insuredRetYear)) {
             assets.push({
-              label: `${a.name} (death benefit)`,
-              amount: a.lifeInsurance.faceValue,
+              label: `${account.name} (death benefit)`,
+              amount: account.lifeInsurance.faceValue * ownerPct,
             });
             continue;
           }
         }
       }
-      assets.push({ label: a.name, amount: accountAmount(a) });
+
+      const sliceValue =
+        entitySliceByAccount.get(account.id)?.get(entity.id) ?? 0;
+      if (sliceValue <= 0) continue;
+      assets.push({ label: account.name, amount: sliceValue });
     }
+
     const amount = assets.reduce((s, x) => s + x.amount, 0);
     irrevTrustEntities.push({
       entityId: entity.id,
@@ -460,11 +588,16 @@ function computeOutOfEstate(
   }
   const irrevTotal = irrevTrustEntities.reduce((s, e) => s + e.amount, 0);
 
-  // Person-owned OOE accounts (529s) → one OoeEntity per account.
+  // OOE Heirs: person-owned OOE accounts (529s) at year-aware balance, plus
+  // one synthetic entity per family member with cumulative cash gifts on or
+  // before `asOfYear`. Bare cash gifts to persons carry no tracked account
+  // on the recipient side, so they sit as a nominal balance — growth on a
+  // gifted balance only happens when the gift lands in (or transfers
+  // ownership of) an account that itself grows in the projection.
   const heirEntities: OoeEntity[] = [];
   for (const account of accounts) {
     if (!OOE_PERSON_ACCOUNT_SUBTYPES.has(account.subType)) continue;
-    const amount = accountAmount(account);
+    const amount = balanceAt(account.id, account);
     if (amount <= 0) continue;
     heirEntities.push({
       entityId: account.id,
@@ -473,6 +606,37 @@ function computeOutOfEstate(
       assets: [{ label: account.name, amount }],
     });
   }
+
+  // Cumulative cash gifts to family members up to `asOfYear`. Series gifts
+  // and asset gifts target entities only — series flows ride the trust's
+  // account slices above; asset gifts to family members aren't representable
+  // on the engine side (the `GiftEvent` recipient is entity-only), so they
+  // never reach this branch.
+  const giftsByFm = new Map<
+    string,
+    { label: string; amount: number; gifts: { label: string; amount: number }[] }
+  >();
+  for (const gift of gifts) {
+    if (gift.kind !== "cash-once") continue;
+    if (gift.recipient.kind !== "family_member") continue;
+    if (gift.year > asOfYear) continue;
+    if (gift.amount <= 0) continue;
+    const fmId = gift.recipient.id;
+    const label = familyMemberLabel(fmId, clientData);
+    const existing = giftsByFm.get(fmId) ?? { label, amount: 0, gifts: [] };
+    existing.amount += gift.amount;
+    existing.gifts.push({ label: `Cash gift (${gift.year})`, amount: gift.amount });
+    giftsByFm.set(fmId, existing);
+  }
+  for (const [fmId, agg] of giftsByFm) {
+    heirEntities.push({
+      entityId: fmId,
+      entityLabel: agg.label,
+      amount: agg.amount,
+      assets: agg.gifts,
+    });
+  }
+
   const heirsTotal = heirEntities.reduce((s, e) => s + e.amount, 0);
 
   return {
@@ -988,6 +1152,62 @@ function finalizeHeirBoxes(
     .sort((a, b) => b.total - a.total);
 }
 
+/**
+ * Per-trust sum of cumulative gift-derived dollar amounts that rule 5 will
+ * attribute to that trust's beneficiaries' inTrust. Used to subtract from the
+ * year-aware OOE balance before it feeds rule 3, so the two rules don't
+ * double-count gift-driven trust value.
+ *
+ * Series gifts use the full series total (matching what `collectLifetimeGifts`
+ * attributes), since the heir-box represents the heir's eventual inheritance
+ * total, not just the part that's already vested. Cash + asset use
+ * `giftTotalAmount` for the same reason.
+ */
+function sumPastGiftsByTrustForAttribution(
+  gifts: EstateFlowGift[],
+  asOfYear: number,
+  clientData: ClientData,
+): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const gift of gifts) {
+    if (gift.recipient.kind !== "entity") continue;
+    // Only count gifts that have at least started by asOfYear; future gifts
+    // haven't moved value into the OOE column yet, so subtraction would
+    // double-undercount.
+    const startYear = gift.kind === "series" ? gift.startYear : gift.year;
+    if (startYear > asOfYear) continue;
+    const amount = giftTotalAmount(gift, clientData);
+    if (amount <= 0) continue;
+    result.set(
+      gift.recipient.id,
+      (result.get(gift.recipient.id) ?? 0) + amount,
+    );
+  }
+  return result;
+}
+
+function subtractPastGiftsForAttribution(
+  ooe: EstateFlowSummary["outOfEstate"],
+  gifts: EstateFlowGift[],
+  asOfYear: number,
+  clientData: ClientData,
+): EstateFlowSummary["outOfEstate"] {
+  const giftsByTrust = sumPastGiftsByTrustForAttribution(gifts, asOfYear, clientData);
+  if (giftsByTrust.size === 0) return ooe;
+  const irrevEntities = ooe.irrevTrusts.entities.map((e) => {
+    const subtract = giftsByTrust.get(e.entityId) ?? 0;
+    if (subtract <= 0) return e;
+    return { ...e, amount: Math.max(0, e.amount - subtract) };
+  });
+  return {
+    heirs: ooe.heirs,
+    irrevTrusts: {
+      total: irrevEntities.reduce((s, e) => s + e.amount, 0),
+      entities: irrevEntities,
+    },
+  };
+}
+
 export function buildEstateFlowSummary(
   input: BuildEstateFlowSummaryInput,
 ): EstateFlowSummary | null {
@@ -1038,7 +1258,26 @@ export function buildEstateFlowSummary(
       : null;
   const survivorNetWorth = computeSurvivorNetWorth(clientData, survivor);
 
-  const outOfEstate = computeOutOfEstate(clientData, input.asOfYear);
+  const outOfEstate = computeOutOfEstate(
+    clientData,
+    input.asOfYear,
+    input.gifts,
+    input.projection ?? null,
+  );
+
+  // When a projection is provided, `outOfEstate.irrevTrusts.entities[].amount`
+  // is year-aware: it includes any trust balance that arrived via gift events
+  // composed up to `asOfYear`. Rule 5 (`collectLifetimeGifts`) separately
+  // attributes the same gifts to the trust's beneficiaries. To avoid
+  // double-counting on the heir boxes, subtract the cumulative past-gift
+  // amount per trust from the OOE entity amount used for attribution. The
+  // *display* `outOfEstate` is unaffected — it keeps the full year-aware
+  // figure. When no projection is provided (fixture tests), the year-aware
+  // composition is bypassed and OOE balances are static, so no subtraction
+  // is needed.
+  const ooeForAttribution: EstateFlowSummary["outOfEstate"] = input.projection
+    ? subtractPastGiftsForAttribution(outOfEstate, input.gifts, input.asOfYear, clientData)
+    : outOfEstate;
 
   // Per-heir composition. Rule 1 populates `outright` from at-death receipts;
   // rule 2 attributes trust bequests to the trust's beneficiaries as `inTrust`;
@@ -1051,7 +1290,7 @@ export function buildEstateFlowSummary(
   collectAtDeathOutright(heirAcc, sectionsByHeir, reportData.secondDeath, "secondDeath");
   collectTrustBequestsInTrust(heirAcc, sectionsByHeir, reportData.firstDeath, clientData);
   collectTrustBequestsInTrust(heirAcc, sectionsByHeir, reportData.secondDeath, clientData);
-  collectOoeAttribution(heirAcc, sectionsByHeir, outOfEstate, clientData);
+  collectOoeAttribution(heirAcc, sectionsByHeir, ooeForAttribution, clientData);
   collectLifetimeGifts(heirAcc, sectionsByHeir, input.gifts, clientData);
   const heirBoxes = finalizeHeirBoxes(
     heirAcc,

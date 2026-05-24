@@ -7,7 +7,8 @@ import type {
   MechanismBreakdown,
   AssetTransferLine,
 } from "@/lib/estate/transfer-report";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { ProjectionResult } from "@/engine/projection";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { buildEstateFlowSummary } from "@/lib/estate/estate-flow-summary";
 
@@ -108,8 +109,8 @@ function deathSection(opts: {
     recipients: opts.recipients,
     reductions: opts.reductions,
     conflicts: [],
-    chargeableShareByAccount: {},
-    chargeableShareByLiability: {},
+    grossEstateDollarsByAccount: {},
+    grossEstateDollarsByLiability: {},
     reconciliation: {
       sumLiabilityTransfers: 0,
       sumRecipients: assetEstateValue,
@@ -231,11 +232,12 @@ describe("buildEstateFlowSummary — liability netting", () => {
       recipients: [spouseGroup],
       reductions: [],
       conflicts: [],
-      // Cooper is the sole owner of both rows (chargeable share = 1.0). The
-      // netting comes from the liability being signed-negative, not from a
-      // joint split. A separate test below covers the joint case.
-      chargeableShareByAccount: { "acct-home": 1 },
-      chargeableShareByLiability: { "liab-mortgage": 1 },
+      // Cooper is the sole owner of both rows. Dollar cap matches the
+      // ledger amount so each row passes through 1:1. The netting comes from
+      // the liability being signed-negative, not from a joint split. A
+      // separate test below covers the joint case.
+      grossEstateDollarsByAccount: { "acct-home": 950_000 },
+      grossEstateDollarsByLiability: { "liab-mortgage": -600_000 },
       reconciliation: {
         sumLiabilityTransfers: -600_000,
         sumRecipients: 350_000,
@@ -299,8 +301,10 @@ describe("buildEstateFlowSummary — liability netting", () => {
       recipients: [spouseGroup, heirA, heirB],
       reductions: [],
       conflicts: [],
-      chargeableShareByAccount: { "acct-re": 0.5, "acct-term2": 1 },
-      chargeableShareByLiability: {},
+      // Cooper's chargeable dollar cap: half of the $1M JTWROS Real Estate
+      // ($500k), full $500k of the sole-owned Term 2 policy.
+      grossEstateDollarsByAccount: { "acct-re": 500_000, "acct-term2": 500_000 },
+      grossEstateDollarsByLiability: {},
       reconciliation: {
         sumLiabilityTransfers: 0,
         sumRecipients: 1_500_000,
@@ -1393,8 +1397,8 @@ describe("buildEstateFlowSummary — survivor net worth includes joint shares", 
       recipients: [],
       reductions: [],
       conflicts: [],
-      chargeableShareByAccount: {},
-      chargeableShareByLiability: {},
+      grossEstateDollarsByAccount: {},
+      grossEstateDollarsByLiability: {},
       reconciliation: {
         sumLiabilityTransfers: 0,
         sumRecipients: 0,
@@ -1450,8 +1454,8 @@ describe("buildEstateFlowSummary — survivor net worth includes joint shares", 
       recipients: [],
       reductions: [],
       conflicts: [],
-      chargeableShareByAccount: {},
-      chargeableShareByLiability: {},
+      grossEstateDollarsByAccount: {},
+      grossEstateDollarsByLiability: {},
       reconciliation: {
         sumLiabilityTransfers: 0,
         sumRecipients: 0,
@@ -1531,8 +1535,8 @@ describe("buildEstateFlowSummary — survivor net worth includes joint shares", 
       recipients: [],
       reductions: [],
       conflicts: [],
-      chargeableShareByAccount: {},
-      chargeableShareByLiability: {},
+      grossEstateDollarsByAccount: {},
+      grossEstateDollarsByLiability: {},
       reconciliation: {
         sumLiabilityTransfers: 0,
         sumRecipients: 0,
@@ -1776,5 +1780,338 @@ describe("buildEstateFlowSummary — Irrev Trusts box counts policy face value",
       clientData,
     })!;
     expect(summary.outOfEstate.irrevTrusts.total).toBe(25_000);
+  });
+});
+
+// Builds a ProjectionResult stub spanning `[startYear, asOfYear]`. Only the
+// year row at `asOfYear` carries data — the leading rows are placeholders so
+// `ownersForYearOrHousehold` sees a `projectionStartYear` that's earlier than
+// any gift event the test wires up. Only `accountLedgers.endingValue`,
+// `entityAccountSharesEoY`, and `familyAccountSharesEoY` are consumed by
+// `computeOutOfEstate`; everything else is structurally satisfied via cast.
+function projectionAt(
+  asOfYear: number,
+  endingValues: Record<string, number>,
+  entityShares?: Map<string, Map<string, number>>,
+  familyShares?: Map<string, Map<string, number>>,
+  startYear: number = asOfYear - 3,
+): ProjectionResult {
+  const years: ProjectionYear[] = [];
+  for (let y = startYear; y <= asOfYear; y++) {
+    if (y === asOfYear) {
+      const accountLedgers: Record<string, unknown> = {};
+      for (const [id, endingValue] of Object.entries(endingValues)) {
+        accountLedgers[id] = {
+          beginningValue: endingValue,
+          growth: 0,
+          contributions: 0,
+          distributions: 0,
+          internalContributions: 0,
+          internalDistributions: 0,
+          rmdAmount: 0,
+          fees: 0,
+          endingValue,
+        };
+      }
+      const yearRow: Partial<ProjectionYear> = {
+        year: y,
+        accountLedgers: accountLedgers as ProjectionYear["accountLedgers"],
+        ...(entityShares ? { entityAccountSharesEoY: entityShares } : {}),
+        ...(familyShares ? { familyAccountSharesEoY: familyShares } : {}),
+      };
+      years.push(yearRow as ProjectionYear);
+    } else {
+      years.push({ year: y, accountLedgers: {} } as ProjectionYear);
+    }
+  }
+  return { years } as unknown as ProjectionResult;
+}
+
+describe("buildEstateFlowSummary — year-aware OOE (gifts + projection)", () => {
+  it("cumulative cash gifts to a child show in OOE Heirs in every year on/after the gift", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-caroline", role: "child", firstName: "Caroline", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "cash-once",
+        id: "g1",
+        year: 2025,
+        amount: 100_000,
+        grantor: "client",
+        recipient: { kind: "family_member", id: "fm-caroline" },
+        crummey: false,
+      },
+    ];
+
+    // AsOf 2027 (two years after the gift): the child should still show $100k.
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+      gifts,
+      asOfYear: 2027,
+      projection: projectionAt(2027, {}),
+    })!;
+
+    expect(summary.outOfEstate.heirs.total).toBe(100_000);
+    expect(summary.outOfEstate.heirs.entities).toHaveLength(1);
+    expect(summary.outOfEstate.heirs.entities[0]).toMatchObject({
+      entityId: "fm-caroline",
+      entityLabel: "Caroline Sample",
+      amount: 100_000,
+    });
+    // Heir-box attribution should still be $100k (via rule 4), not double-counted.
+    const caroline = summary.heirBoxes.find((h) => h.recipientKey === "fm-caroline")!;
+    expect(caroline.outright).toBe(100_000);
+    expect(caroline.total).toBe(100_000);
+  });
+
+  it("future-year cash gift to a child does NOT appear in OOE Heirs before the gift year", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-caroline", role: "child", firstName: "Caroline" },
+    ] as ClientData["familyMembers"];
+
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "cash-once",
+        id: "g1",
+        year: 2030,
+        amount: 100_000,
+        grantor: "client",
+        recipient: { kind: "family_member", id: "fm-caroline" },
+        crummey: false,
+      },
+    ];
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+      gifts,
+      asOfYear: 2026,
+      projection: projectionAt(2026, {}),
+    })!;
+
+    expect(summary.outOfEstate.heirs.total).toBe(0);
+    expect(summary.outOfEstate.heirs.entities).toHaveLength(0);
+  });
+
+  it("irrev trust acquires ownership via gift event → OOE picks up the trust's slice", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "slat",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "SLAT",
+        remainderBeneficiaries: [
+          { familyMemberId: "fm-kevin", percentage: 1, distributionForm: "in_trust" },
+        ],
+      },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "brokerage-1",
+        name: "Joint Brokerage",
+        subType: "brokerage",
+        value: 1_000_000,
+        // Static ownership: 100% household. The gift event below transfers 50%
+        // to the SLAT in 2025 — `ownersForYear` composes this at asOfYear=2027.
+        owners: [
+          { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+        ],
+      },
+    ] as unknown as ClientData["accounts"];
+    clientData.giftEvents = [
+      {
+        kind: "asset",
+        year: 2025,
+        accountId: "brokerage-1",
+        percent: 0.5,
+        grantor: "client",
+        recipientEntityId: "slat",
+        eventKind: "outright",
+      },
+    ] as ClientData["giftEvents"];
+
+    // Locked entity share at EoY 2027: SLAT holds $550k of the (grown) brokerage.
+    const entityShares = new Map([
+      ["slat", new Map([["brokerage-1", 550_000]])],
+    ]);
+    const projection = projectionAt(
+      2027,
+      { "brokerage-1": 1_100_000 },
+      entityShares,
+    );
+
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "asset-once",
+        id: "g1",
+        year: 2025,
+        accountId: "brokerage-1",
+        percent: 0.5,
+        grantor: "client",
+        recipient: { kind: "entity", id: "slat" },
+        // Without amountOverride, giftTotalAmount uses account.value * percent =
+        // $500k — matches the principal that's now in the SLAT (pre-growth).
+      },
+    ];
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+      gifts,
+      asOfYear: 2027,
+      projection,
+    })!;
+
+    // Display: SLAT shows its $550k locked-share slice of the brokerage at 2027.
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(550_000);
+    expect(summary.outOfEstate.irrevTrusts.entities).toHaveLength(1);
+    expect(summary.outOfEstate.irrevTrusts.entities[0]).toMatchObject({
+      entityId: "slat",
+      amount: 550_000,
+      assets: [{ label: "Joint Brokerage", amount: 550_000 }],
+    });
+
+    // Heir-box attribution: rule 5 attributes the $500k gift; rule 3 attributes
+    // the $50k growth (year-aware OOE $550k minus gift nominal $500k). Total
+    // $550k matches the trust's current value with no double-count.
+    const kevin = summary.heirBoxes.find((h) => h.recipientKey === "fm-kevin")!;
+    expect(kevin.inTrust).toBe(550_000);
+    expect(kevin.outright).toBe(0);
+  });
+
+  it("trust statically owns real-estate-like account → year-aware balance reflects growth", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "snt",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "SNT",
+        remainderBeneficiaries: [
+          { familyMemberId: "fm-kevin", percentage: 1, distributionForm: "in_trust" },
+        ],
+      },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "trust-realestate",
+        name: "Trust-Owned Vacation Home",
+        category: "real_estate",
+        subType: "primary_residence",
+        value: 500_000,
+        owners: [{ kind: "entity", entityId: "snt", percent: 1 }],
+      },
+    ] as unknown as ClientData["accounts"];
+
+    // Projection grew the home to $620k by 2030.
+    const projection = projectionAt(2030, { "trust-realestate": 620_000 });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+      asOfYear: 2030,
+      projection,
+    })!;
+
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(620_000);
+    expect(summary.outOfEstate.irrevTrusts.entities[0].assets).toEqual([
+      { label: "Trust-Owned Vacation Home", amount: 620_000 },
+    ]);
+  });
+
+  it("ILIT face value swap fires when trust ownership comes via gift event (term policy, cash value 0)", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "ilit",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "ILIT",
+        remainderBeneficiaries: [
+          { familyMemberId: "fm-kevin", percentage: 1, distributionForm: "in_trust" },
+        ],
+      },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "policy-1",
+        name: "Term Policy",
+        category: "life_insurance",
+        subType: "term",
+        value: 0,
+        basis: 0,
+        growthRate: 0,
+        rmdEnabled: false,
+        insuredPerson: "client",
+        lifeInsurance: {
+          faceValue: 2_000_000,
+          costBasis: 0,
+          premiumAmount: 1000,
+          premiumYears: 20,
+          policyType: "term",
+          termIssueYear: 2020,
+          termLengthYears: 30,
+          endsAtInsuredRetirement: false,
+          cashValueGrowthMode: "basic",
+          postPayoutGrowthRate: 0.06,
+          cashValueSchedule: [],
+        },
+        // Static ownership: still client. Gift event below moves ownership to
+        // the ILIT in 2025. The face-value swap must fire on ownership
+        // composed at asOfYear, not authored owners.
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        beneficiaries: [
+          { tier: "primary", entityIdRef: "ilit", percentage: 100, sortOrder: 0 },
+        ],
+      },
+    ] as unknown as ClientData["accounts"];
+    clientData.giftEvents = [
+      {
+        kind: "asset",
+        year: 2025,
+        accountId: "policy-1",
+        percent: 1,
+        grantor: "client",
+        recipientEntityId: "ilit",
+        eventKind: "outright",
+      },
+    ] as ClientData["giftEvents"];
+
+    const entityShares = new Map([
+      ["ilit", new Map([["policy-1", 0]])],
+    ]);
+    const projection = projectionAt(2027, { "policy-1": 0 }, entityShares);
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput(),
+      clientData,
+      asOfYear: 2027,
+      projection,
+    })!;
+
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(2_000_000);
+    expect(summary.outOfEstate.irrevTrusts.entities[0].assets).toEqual([
+      { label: "Term Policy (death benefit)", amount: 2_000_000 },
+    ]);
   });
 });

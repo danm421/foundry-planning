@@ -106,14 +106,18 @@ export interface DeathSectionData {
   recipients: RecipientGroup[];
   reductions: ReductionsLine[];
   conflicts: ConflictEntry[];
-  /** Chargeable-share factor per source account (Form 706 percentage; 1.0 for
-   *  sole-decedent, 0.5 for JTWROS at first death, etc.). Used by the Estate
-   *  Flow view to scale full-titled transfer amounts down to the decedent's
-   *  chargeable share so its totals reconcile with Form 706 Gross Estate. */
-  chargeableShareByAccount: Record<string, number>;
-  /** Chargeable-share factor per source liability — same semantic as
-   *  `chargeableShareByAccount` but for debts. */
-  chargeableShareByLiability: Record<string, number>;
+  /** Decedent's chargeable dollar amount per source account — `Σ` of Form 706
+   *  gross-estate `amount`s targeting this account. Stored as a dollar cap
+   *  (not an FMV ratio) so the Estate Flow view can scale ledger transfers
+   *  *proportionally* to the cap. This matters when the engine already
+   *  pre-stripped an entity slice off the routed transfer (mixed
+   *  family + entity ownership): the ledger amount is the family pool, not
+   *  the full FMV, so a percentage relative to FMV would double-count. */
+  grossEstateDollarsByAccount: Record<string, number>;
+  /** Decedent's chargeable dollar amount per source liability — same semantic
+   *  as `grossEstateDollarsByAccount` but for debts. Values are signed
+   *  (negative, matching the Form 706 line). */
+  grossEstateDollarsByLiability: Record<string, number>;
   /** Internal-consistency check on the ledger:
    *  `assetEstateValue + sumLiabilityTransfers == sumRecipients` */
   reconciliation: {
@@ -643,17 +647,26 @@ function buildDeathSection(
     }
   }
 
-  // Chargeable-share lookups derived from the engine's Form 706 gross-estate
-  // lines. Estate Flow uses these to scale full-titled transfer amounts down
-  // to the decedent's chargeable share (joint at first death → 0.5, etc.).
-  // `grossEstateLines` is required on the production EstateTaxResult; fall
-  // back to an empty array so older test fixtures (which omit it) still
-  // build a report — they just won't get any scaling.
-  const chargeableShareByAccount: Record<string, number> = {};
-  const chargeableShareByLiability: Record<string, number> = {};
+  // Chargeable dollar caps derived from the engine's Form 706 gross-estate
+  // lines. Estate Flow uses these to proportionally scale ledger transfers
+  // down to the decedent's chargeable share (joint at first death, mixed
+  // family/entity ownership, etc.). Multiple gross-estate lines per source
+  // are summed (the engine sometimes emits a family-pool line and a separate
+  // rev-trust slice line for the same account). `grossEstateLines` is
+  // required on the production EstateTaxResult; fall back to an empty array
+  // so older test fixtures still build a report — they just won't get any
+  // scaling.
+  const grossEstateDollarsByAccount: Record<string, number> = {};
+  const grossEstateDollarsByLiability: Record<string, number> = {};
   for (const line of tax.grossEstateLines ?? []) {
-    if (line.accountId) chargeableShareByAccount[line.accountId] = line.percentage;
-    if (line.liabilityId) chargeableShareByLiability[line.liabilityId] = line.percentage;
+    if (line.accountId) {
+      grossEstateDollarsByAccount[line.accountId] =
+        (grossEstateDollarsByAccount[line.accountId] ?? 0) + line.amount;
+    }
+    if (line.liabilityId) {
+      grossEstateDollarsByLiability[line.liabilityId] =
+        (grossEstateDollarsByLiability[line.liabilityId] ?? 0) + line.amount;
+    }
   }
 
   return {
@@ -666,8 +679,8 @@ function buildDeathSection(
     recipients,
     reductions,
     conflicts,
-    chargeableShareByAccount,
-    chargeableShareByLiability,
+    grossEstateDollarsByAccount,
+    grossEstateDollarsByLiability,
     reconciliation: {
       sumLiabilityTransfers,
       sumRecipients,
