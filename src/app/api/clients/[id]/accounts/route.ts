@@ -4,6 +4,7 @@ import { clients, scenarios, accounts, accountOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
+  assertAccountsInClient,
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
@@ -119,8 +120,10 @@ export async function POST(
       body = {
         ...rawBody,
         ...b,
-        // Map sub_type from businessType so non-business columns stay consistent.
-        subType: rawBody.subType ?? mapBusinessTypeToSubType(b.businessType),
+        // Always derive sub_type from businessType — never honor a client-supplied
+        // subType for business accounts (would let callers store nonsensical
+        // sub_types like "checking" on a business row).
+        subType: mapBusinessTypeToSubType(b.businessType),
         owners: b.owners.map((o) =>
           o.familyMemberId !== null
             ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }
@@ -168,6 +171,15 @@ export async function POST(
     const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+    // parentAccountId (business-only) must scope to the same client. The DB FK
+    // only checks existence — without this, a crafted POST could attach a
+    // business row to an account in another firm.
+    if (category === "business" && parentAccountId != null) {
+      const parentCheck = await assertAccountsInClient(id, [parentAccountId]);
+      if (!parentCheck.ok) {
+        return NextResponse.json({ error: parentCheck.reason }, { status: 400 });
+      }
     }
 
     // ── owners[] validation ────────────────────────────────────────────────

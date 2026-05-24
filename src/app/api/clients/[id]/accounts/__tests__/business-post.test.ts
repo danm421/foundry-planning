@@ -11,6 +11,7 @@ vi.mock("@/lib/db-helpers", () => ({
 vi.mock("@/lib/db-scoping", () => ({
   assertEntitiesInClient: vi.fn().mockResolvedValue({ ok: true }),
   assertModelPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
+  assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("@/lib/audit", async () => {
@@ -70,11 +71,13 @@ vi.mock("@/db", () => {
 });
 
 import { POST } from "../route";
+import { assertAccountsInClient } from "@/lib/db-scoping";
 
 // Valid v4-ish UUIDs (version nibble 4 at pos 14, variant nibble 8 at pos 19).
 const FM_CLIENT = "11111111-1111-4111-8111-111111111111";
 const FM_SPOUSE = "22222222-2222-4222-8222-222222222222";
 const ENT_TRUST = "33333333-3333-4333-8333-333333333333";
+const ACC_OTHER = "44444444-4444-4444-8444-444444444444";
 
 const buildReq = (body: object): Request =>
   new Request("http://localhost/api/clients/cli_test/accounts", {
@@ -166,6 +169,54 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
       { params: Promise.resolve({ id: "cli_test" }) },
     );
     expect(res.status).toBe(400);
+  });
+
+  it("ignores a client-supplied subType for business and re-derives from businessType", async () => {
+    // Issue 2 regression: a crafted POST with subType: 'checking' must NOT
+    // overwrite the derived value. The schema strips/ignores extras, and the
+    // route's mapBusinessTypeToSubType call is now unconditional.
+    const res = await POST(
+      buildReq({
+        category: "business",
+        name: "Acme LLC",
+        businessType: "s_corp",
+        subType: "checking", // attacker-supplied; should be ignored
+        value: 100_000,
+        basis: 100_000,
+        owners: [{ familyMemberId: FM_CLIENT, entityId: null, percent: 1 }],
+      }) as never,
+      { params: Promise.resolve({ id: "cli_test" }) },
+    );
+    expect(res.status).toBe(201);
+    const accountRow = insertedValues[0] as Record<string, unknown>;
+    expect(accountRow.subType).toBe("s_corp");
+  });
+
+  it("rejects a parentAccountId that belongs to a different client (tenant check)", async () => {
+    // Issue 1 regression: assertAccountsInClient must gate parentAccountId.
+    const mocked = vi.mocked(assertAccountsInClient);
+    mocked.mockResolvedValueOnce({
+      ok: false,
+      reason: `Account ${ACC_OTHER} not owned by this client`,
+    });
+
+    const res = await POST(
+      buildReq({
+        category: "business",
+        name: "Cross-tenant Co",
+        businessType: "llc",
+        value: 100_000,
+        basis: 100_000,
+        parentAccountId: ACC_OTHER,
+        owners: [{ familyMemberId: FM_CLIENT, entityId: null, percent: 1 }],
+      }) as never,
+      { params: Promise.resolve({ id: "cli_test" }) },
+    );
+
+    expect(res.status).toBe(400);
+    expect(mocked).toHaveBeenCalledWith("cli_test", [ACC_OTHER]);
+    // No insert should have happened.
+    expect(insertedValues.length).toBe(0);
   });
 
   it("leaves business columns null when category != 'business' (regression)", async () => {

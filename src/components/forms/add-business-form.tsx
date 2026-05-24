@@ -150,6 +150,9 @@ export default function AddBusinessForm({
       value: valueNum,
       basis: basisNum,
       growthRate,
+      // Mirrors add-account-form: a user-typed growth rate is "custom"; an
+      // empty input means "fall back to the plan/category default".
+      growthSource: growthRate === null ? "default" : "custom",
       distributionPolicyPercent,
       flowMode,
       businessTaxTreatment: taxTreatment,
