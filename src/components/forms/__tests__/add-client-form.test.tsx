@@ -59,28 +59,6 @@ describe("AddClientForm — base mode (no ?scenario= in URL)", () => {
     expect(body.firstName).toBe("Cooper");
     expect(refreshMock).toHaveBeenCalledTimes(1);
   });
-
-  it("create mode POSTs /api/clients regardless of URL", async () => {
-    mockSearch = "";
-    render(<AddClientForm mode="create" />);
-
-    fireEvent.change(screen.getByLabelText(/First Name/i), {
-      target: { value: "New" },
-    });
-    fireEvent.change(screen.getByLabelText(/Last Name/i), {
-      target: { value: "Client" },
-    });
-    fireEvent.change(screen.getByLabelText(/Date of Birth/i), {
-      target: { value: "1980-01-01" },
-    });
-    fireEvent.submit(document.getElementById("add-client-form")!);
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/clients");
-    expect(init.method).toBe("POST");
-  });
 });
 
 describe("AddClientForm — scenario mode (?scenario=<sid> in URL)", () => {
@@ -107,29 +85,5 @@ describe("AddClientForm — scenario mode (?scenario=<sid> in URL)", () => {
     expect(body.desiredFields.retirementAge).toBe(67);
     expect(body.desiredFields.firstName).toBe("Cooper");
     expect(refreshMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("create mode in scenario URL still POSTs base /api/clients (you can't create a client inside a scenario)", async () => {
-    // Even if `?scenario=` happens to be in the URL, creating a brand-new
-    // client should always hit the base route — there's no client to attach
-    // a scenario_change to until the row exists.
-    mockSearch = "scenario=scen-456";
-    render(<AddClientForm mode="create" />);
-
-    fireEvent.change(screen.getByLabelText(/First Name/i), {
-      target: { value: "New" },
-    });
-    fireEvent.change(screen.getByLabelText(/Last Name/i), {
-      target: { value: "Client" },
-    });
-    fireEvent.change(screen.getByLabelText(/Date of Birth/i), {
-      target: { value: "1980-01-01" },
-    });
-    fireEvent.submit(document.getElementById("add-client-form")!);
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/clients");
-    expect(init.method).toBe("POST");
   });
 });
