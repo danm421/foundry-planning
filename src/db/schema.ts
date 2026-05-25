@@ -897,6 +897,40 @@ export const entityFlowOverrides = pgTable(
   }),
 );
 
+// Parallel of entity_flow_overrides for business-as-asset accounts
+// (accounts.category = 'business' AND parent_account_id IS NULL). When
+// accounts.flow_mode = 'schedule', the engine reads these rows exclusively
+// for the business's net-income computation; missing cells resolve to 0
+// (income_amount / expense_amount) or to account.distribution_policy_percent
+// (distribution_percent). API-enforced: account must be a top-level business.
+export const accountFlowOverrides = pgTable(
+  "account_flow_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    // Null = base-plan override (no scenario active). Same NULLS NOT DISTINCT
+    // semantics as entity_flow_overrides.
+    scenarioId: uuid("scenario_id").references(() => scenarios.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    incomeAmount: decimal("income_amount", { precision: 15, scale: 2 }),
+    expenseAmount: decimal("expense_amount", { precision: 15, scale: 2 }),
+    distributionPercent: decimal("distribution_percent", { precision: 5, scale: 4 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueAccountScenarioYear: unique("account_flow_overrides_account_scenario_year_uniq")
+      .on(t.accountId, t.scenarioId, t.year)
+      .nullsNotDistinct(),
+    accountScenarioIdx: index("account_flow_overrides_account_scenario_idx").on(
+      t.accountId,
+      t.scenarioId,
+    ),
+  }),
+);
+
 export const familyMembers = pgTable("family_members", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1879,6 +1913,17 @@ export const entityFlowOverridesRelations = relations(entityFlowOverrides, ({ on
   }),
   scenario: one(scenarios, {
     fields: [entityFlowOverrides.scenarioId],
+    references: [scenarios.id],
+  }),
+}));
+
+export const accountFlowOverridesRelations = relations(accountFlowOverrides, ({ one }) => ({
+  account: one(accounts, {
+    fields: [accountFlowOverrides.accountId],
+    references: [accounts.id],
+  }),
+  scenario: one(scenarios, {
+    fields: [accountFlowOverrides.scenarioId],
     references: [scenarios.id],
   }),
 }));

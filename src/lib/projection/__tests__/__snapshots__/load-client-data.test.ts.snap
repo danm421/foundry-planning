@@ -2,6 +2,7 @@
 
 exports[`loadClientData > returns a fully populated ClientData for a valid client 1`] = `
 {
+  "accountFlowOverrides": [],
   "accounts": [
     {
       "annualPropertyTax": 0,

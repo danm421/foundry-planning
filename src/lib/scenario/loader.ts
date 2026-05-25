@@ -2,7 +2,7 @@
 import { cache } from "react";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, entityFlowOverrides, scenarioSnapshots, scenarios } from "@/db/schema";
+import { accountFlowOverrides, clients, entityFlowOverrides, scenarioSnapshots, scenarios } from "@/db/schema";
 import { loadClientDataWithContext } from "@/lib/projection/load-client-data";
 import {
   resolveAccountFromRaw,
@@ -11,7 +11,7 @@ import {
   resolveSavingsRuleFromRaw,
   type ResolutionContext,
 } from "@/lib/projection/resolve-entity";
-import type { ClientData, EntityFlowOverride } from "@/engine/types";
+import type { AccountFlowOverride, ClientData, EntityFlowOverride } from "@/engine/types";
 import {
   applyScenarioChanges,
   resolveEffectiveToggleState,
@@ -169,7 +169,11 @@ export const loadEffectiveTree = cache(
     }
 
     const entityIds = baseTree.entities?.map((e) => e.id) ?? [];
-    const [changes, groups, scenarioFlowOverrideRows] = await Promise.all([
+    const businessAccountIds =
+      baseTree.accounts
+        ?.filter((a) => a.category === "business" && a.parentAccountId == null)
+        .map((a) => a.id) ?? [];
+    const [changes, groups, scenarioFlowOverrideRows, scenarioAccountFlowOverrideRows] = await Promise.all([
       loadScenarioChanges(resolvedScenario.id),
       loadScenarioToggleGroups(resolvedScenario.id),
       // Per-entity scenario flow overrides. Empty entity list → skip the
@@ -191,6 +195,25 @@ export const loadEffectiveTree = cache(
                 eq(entityFlowOverrides.scenarioId, resolvedScenario.id),
               ),
             ),
+      // Per-business-account scenario flow overrides. Parallel to the entity
+      // case above; same isBaseCase + empty-list short-circuit semantics.
+      resolvedScenario.isBaseCase || businessAccountIds.length === 0
+        ? Promise.resolve([])
+        : db
+            .select({
+              accountId: accountFlowOverrides.accountId,
+              year: accountFlowOverrides.year,
+              incomeAmount: accountFlowOverrides.incomeAmount,
+              expenseAmount: accountFlowOverrides.expenseAmount,
+              distributionPercent: accountFlowOverrides.distributionPercent,
+            })
+            .from(accountFlowOverrides)
+            .where(
+              and(
+                inArray(accountFlowOverrides.accountId, businessAccountIds),
+                eq(accountFlowOverrides.scenarioId, resolvedScenario.id),
+              ),
+            ),
     ]);
 
     // Per-entity inheritance: the writer at PUT
@@ -208,6 +231,15 @@ export const loadEffectiveTree = cache(
     const inheritedBaseRows = (baseTree.entityFlowOverrides ?? []).filter(
       (r) => !scenarioEntityIdsWithOverrides.has(r.entityId),
     );
+    // Same per-key inheritance for account flow overrides: if the scenario has
+    // any rows for a given business account, those replace base; otherwise
+    // that business's base rows pass through unchanged.
+    const scenarioAccountIdsWithOverrides = new Set(
+      scenarioAccountFlowOverrideRows.map((r) => r.accountId),
+    );
+    const inheritedBaseAccountRows = (baseTree.accountFlowOverrides ?? []).filter(
+      (r) => !scenarioAccountIdsWithOverrides.has(r.accountId),
+    );
     const treeForChanges: ClientData = resolvedScenario.isBaseCase
       ? baseTree
       : {
@@ -217,6 +249,19 @@ export const loadEffectiveTree = cache(
             ...scenarioFlowOverrideRows.map(
               (r): EntityFlowOverride => ({
                 entityId: r.entityId,
+                year: r.year,
+                incomeAmount: r.incomeAmount != null ? parseFloat(r.incomeAmount) : null,
+                expenseAmount: r.expenseAmount != null ? parseFloat(r.expenseAmount) : null,
+                distributionPercent:
+                  r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
+              }),
+            ),
+          ],
+          accountFlowOverrides: [
+            ...inheritedBaseAccountRows,
+            ...scenarioAccountFlowOverrideRows.map(
+              (r): AccountFlowOverride => ({
+                accountId: r.accountId,
                 year: r.year,
                 incomeAmount: r.incomeAmount != null ? parseFloat(r.incomeAmount) : null,
                 expenseAmount: r.expenseAmount != null ? parseFloat(r.expenseAmount) : null,
