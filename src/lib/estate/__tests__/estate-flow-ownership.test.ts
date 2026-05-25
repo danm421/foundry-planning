@@ -934,4 +934,105 @@ describe("buildOwnershipColumn — row kind & default cash", () => {
     const foundationGroup = out.groups.find((g) => g.key === "entity:ent-foundation");
     expect(foundationGroup).toBeUndefined();
   });
+
+  // Business-as-asset rollup: a top-level business account is rendered as ONE
+  // row at its consolidated value (own value + every child account's balance).
+  // Child accounts under a business are not emitted as their own rows — they
+  // are subsumed by the parent. Mirrors `consolidatedBusinessValue` used by
+  // computeGrossEstate and applyBusinessSuccession (single source of truth).
+  it("rolls business child accounts into the parent business row", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-business",
+          name: "Test Bus",
+          category: "business",
+          subType: "other",
+          value: 50_000,
+          basis: 50_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          parentAccountId: null,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+        {
+          id: "acc-rental",
+          name: "Rental",
+          category: "real_estate",
+          subType: "rental",
+          value: 1_000_000,
+          basis: 600_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          parentAccountId: "acc-business",
+          owners: [],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+
+    const out = buildOwnershipColumn(cd);
+    const client = out.groups.find((g) => g.kind === "client");
+    expect(client).toBeDefined();
+
+    const businessRows = client!.assets.filter((a) => a.accountId === "acc-business");
+    const rentalRows = client!.assets.filter((a) => a.accountId === "acc-rental");
+    expect(businessRows).toHaveLength(1);
+    expect(rentalRows).toHaveLength(0);
+
+    expect(businessRows[0].value).toBe(1_050_000);
+    expect(businessRows[0].netValue).toBe(1_050_000);
+    expect(client!.subtotal).toBe(1_050_000);
+    expect(out.grandTotal).toBe(1_050_000);
+  });
+
+  it("fractional business ownership scales the consolidated value, not the flat value", () => {
+    // Cooper 60% / Susan 40% co-own a business with a real-estate child.
+    // Each owner row should show their fractional share of the CONSOLIDATED
+    // total ($1,050k), not of the flat business value ($50k).
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-business",
+          name: "Test Bus",
+          category: "business",
+          subType: "other",
+          value: 50_000,
+          basis: 50_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          parentAccountId: null,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.6 },
+            { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.4 },
+          ],
+          beneficiaries: [],
+        },
+        {
+          id: "acc-rental",
+          name: "Rental",
+          category: "real_estate",
+          subType: "rental",
+          value: 1_000_000,
+          basis: 600_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          parentAccountId: "acc-business",
+          owners: [],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+
+    const out = buildOwnershipColumn(cd);
+    const client = out.groups.find((g) => g.kind === "client");
+    const spouse = out.groups.find((g) => g.kind === "spouse");
+    const clientRow = client!.assets.find((a) => a.accountId === "acc-business");
+    const spouseRow = spouse!.assets.find((a) => a.accountId === "acc-business");
+    expect(clientRow!.value).toBeCloseTo(630_000);
+    expect(spouseRow!.value).toBeCloseTo(420_000);
+    expect(client!.assets.some((a) => a.accountId === "acc-rental")).toBe(false);
+    expect(spouse!.assets.some((a) => a.accountId === "acc-rental")).toBe(false);
+  });
 });
