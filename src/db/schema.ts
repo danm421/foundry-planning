@@ -1371,7 +1371,7 @@ export const medicareCoverage = pgTable("medicare_coverage", {
   clientId: uuid("client_id")
     .notNull()
     .references(() => clients.id, { onDelete: "cascade" }),
-  owner: ownerEnum("owner").notNull(),                       // "client" | "spouse"
+  owner: ownerEnum("owner").notNull(),
   enrollmentYear: integer("enrollment_year"),                // null = use year person turns 65
   coverageType: medicareCoverageTypeEnum("coverage_type").notNull().default("original"),
   medigapMonthlyAt65: decimal("medigap_monthly_at65", { precision: 10, scale: 2 }),
