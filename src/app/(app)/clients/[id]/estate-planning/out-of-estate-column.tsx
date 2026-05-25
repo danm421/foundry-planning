@@ -76,7 +76,6 @@ export function OutOfEstateColumn({
         clientId={clientId}
         open={trustDialogOpen}
         onOpenChange={setTrustDialogOpen}
-        createKind="trust"
         household={{
           client: { firstName: tree.client.firstName },
           spouse: tree.client.spouseName ? { firstName: tree.client.spouseName } : null,

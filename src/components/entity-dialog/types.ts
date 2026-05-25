@@ -1,10 +1,6 @@
 import type { Entity } from "../family-view";
 
-export type EntityKind = "trust" | "business";
-
-export function getEntityKind(entityType: Entity["entityType"]): EntityKind {
-  return entityType === "trust" || entityType === "foundation" ? "trust" : "business";
-}
+export type EntityKind = "trust";
 
 export interface EntityFormCommonProps {
   clientId: string;
