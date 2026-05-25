@@ -6,18 +6,20 @@ import { TaxDetailFlowTable } from "./tax-detail-flow-table";
 import { TaxDetailStateTable } from "./tax-detail-state-table";
 import { TaxBracketTab } from "./tax-bracket-tab";
 import { YearRangeSlider } from "./year-range-slider";
+import { MedicareTab } from "./medicare/medicare-tab";
 import type {
   IncomeColumnKey,
   BracketColumnKey,
 } from "@/lib/tax/cell-drill/types";
 
-export type TaxDetailTabId = "income" | "federal" | "state" | "bracket";
+export type TaxDetailTabId = "income" | "federal" | "state" | "bracket" | "medicare";
 
 export const TAX_DETAIL_TABS: { id: TaxDetailTabId; label: string }[] = [
   { id: "income", label: "Income Breakdown" },
   { id: "federal", label: "Federal Tax Breakdown" },
   { id: "state", label: "State Tax Breakdown" },
   { id: "bracket", label: "Tax Bracket" },
+  { id: "medicare", label: "Medicare & IRMAA" },
 ];
 
 interface TaxDetailViewProps {
@@ -92,6 +94,14 @@ export function TaxDetailView({
       )}
       {activeTab === "bracket" && (
         <TaxBracketTab years={years} onCellClick={onBracketCellClick} />
+      )}
+      {activeTab === "medicare" && (
+        <MedicareTab
+          years={years}
+          yearRange={yearRange}
+          clientLifeExpectancy={clientLifeExpectancy}
+          spouseLifeExpectancy={spouseLifeExpectancy}
+        />
       )}
     </>
   );
