@@ -52,6 +52,9 @@ export interface AccountRow {
    * Hydrated from `accounts.titling_type` so the edit form round-trips the
    * value instead of silently defaulting to "jtwros". */
   titlingType?: "jtwros" | "community_property";
+  /** Parent business account id when this account is a sub-asset of a
+   *  top-level business. Null for top-level accounts. */
+  parentAccountId?: string | null;
 }
 
 export interface LiabilityRow {
@@ -70,6 +73,9 @@ export interface LiabilityRow {
   ownerEntityId?: string | null;
   isInterestDeductible?: boolean;
   owners?: AccountOwner[];
+  /** Parent business account id when this liability hangs off a business
+   *  (e.g. an LLC's mortgage). Null for household liabilities. */
+  parentAccountId?: string | null;
 }
 
 interface BalanceSheetViewProps {
@@ -77,6 +83,10 @@ interface BalanceSheetViewProps {
   accounts: AccountRow[];
   liabilities: LiabilityRow[];
   notesReceivable?: NoteReceivable[];
+  /** Incomes attached to business accounts, used to render the "Incomes"
+   *  pill inside an expanded business row. Only rows with ownerAccountId
+   *  pointing at a business shown here are surfaced. */
+  incomes?: { id: string; name: string; ownerAccountId?: string | null }[];
   entities: EntityOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults: CategoryDefaults;
@@ -158,6 +168,14 @@ function ChevronDown() {
   return (
     <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
       <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function ChevronRight() {
+  return (
+    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
     </svg>
   );
 }
@@ -320,6 +338,7 @@ export default function BalanceSheetView({
   accounts,
   liabilities,
   notesReceivable = [],
+  incomes = [],
   entities,
   familyMembers,
   categoryDefaults,
@@ -355,6 +374,18 @@ export default function BalanceSheetView({
   const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
   const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
 
+  // Expand/collapse state for business rows — keyed by top-level business account id.
+  const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
+  const toggleBusiness = (id: string) =>
+    setExpandedBusinessIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // Which business' Incomes popover is open (null = none).
+  const [incomesPopoverFor, setIncomesPopoverFor] = useState<string | null>(null);
+
   const entityMap = Object.fromEntries(entities.map((e) => [e.id, e]));
   // Term policies (cash_value = 0) are hidden from Net Worth — face value pays out only on
   // death, so it's not an asset on the balance sheet. They're managed in the Insurance tab.
@@ -388,6 +419,38 @@ export default function BalanceSheetView({
     (a) => !accountInEstate(a) && isVisibleInNetWorth(a),
   );
 
+  // Build child indexes for the new business-as-account model. Top-level
+  // business accounts may own sub-accounts (parentAccountId set) and child
+  // liabilities. Children are hidden from the top-level category lists and
+  // surface beneath their parent when the row is expanded.
+  const childAccountsByParentId = new Map<string, AccountRow[]>();
+  for (const a of inEstate) {
+    if (!a.parentAccountId) continue;
+    const arr = childAccountsByParentId.get(a.parentAccountId) ?? [];
+    arr.push(a);
+    childAccountsByParentId.set(a.parentAccountId, arr);
+  }
+  const childLiabilitiesByParentId = new Map<string, LiabilityRow[]>();
+  for (const l of liabilities) {
+    if (!l.parentAccountId) continue;
+    const arr = childLiabilitiesByParentId.get(l.parentAccountId) ?? [];
+    arr.push(l);
+    childLiabilitiesByParentId.set(l.parentAccountId, arr);
+  }
+  const incomesByOwnerAccountId = new Map<string, { id: string; name: string }[]>();
+  for (const i of incomes) {
+    if (!i.ownerAccountId) continue;
+    const arr = incomesByOwnerAccountId.get(i.ownerAccountId) ?? [];
+    arr.push({ id: i.id, name: i.name });
+    incomesByOwnerAccountId.set(i.ownerAccountId, arr);
+  }
+  // Consolidated business value: own value + sum of in-estate child account
+  // values. Liabilities stay on the Liabilities column — not netted here.
+  const consolidatedBusinessValue = (biz: AccountRow): number => {
+    const kids = childAccountsByParentId.get(biz.id) ?? [];
+    return kids.reduce((s, k) => s + Number(k.value), Number(biz.value));
+  };
+
   const inEstateByCategory: Record<AccountCategory, AccountRow[]> = {
     taxable: [],
     cash: [],
@@ -397,7 +460,13 @@ export default function BalanceSheetView({
     life_insurance: [],
     notes_receivable: [],
   };
-  for (const a of inEstate) inEstateByCategory[a.category].push(a);
+  // Top-level accounts only — children render under their parent's expanded view.
+  for (const a of inEstate) {
+    if (a.parentAccountId) continue;
+    inEstateByCategory[a.category].push(a);
+  }
+  // Top-level liabilities only — children render under their parent business.
+  const topLevelLiabilities = liabilities.filter((l) => !l.parentAccountId);
 
   // Notes receivable: project balance to prior-year-end (≈ current balance),
   // matching how liability balances are displayed.
@@ -589,7 +658,11 @@ export default function BalanceSheetView({
                 noteCatRows.length === 0
               )
                 return null;
-              const accountSubtotal = items.reduce((s, a) => s + Number(a.value), 0);
+              const accountSubtotal = items.reduce(
+                (s, a) =>
+                  s + (cat === "business" ? consolidatedBusinessValue(a) : Number(a.value)),
+                0,
+              );
               const flatSubtotal = flatBusinessRows.reduce(
                 (s, e) => s + Number(e.value ?? "0"),
                 0,
@@ -598,18 +671,44 @@ export default function BalanceSheetView({
               const subtotal = accountSubtotal + flatSubtotal + noteSubtotal;
               return (
                 <CategoryGroup key={cat} label={CATEGORY_LABELS[cat]} total={fmt(subtotal)}>
-                  {items.map((a) => (
-                    <Row
-                      key={a.id}
-                      onClick={() => handleAccountClick(a)}
-                      editMode={assetsEdit}
-                      onDelete={() => setDeletingAccount(a)}
-                      deletable={!a.isDefaultChecking}
-                      label={a.name}
-                      subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
-                      value={fmt(a.value)}
-                    />
-                  ))}
+                  {items.map((a) =>
+                    cat === "business" ? (
+                      <BusinessRowGroup
+                        key={a.id}
+                        biz={a}
+                        children_={childAccountsByParentId.get(a.id) ?? []}
+                        childLiabilities={childLiabilitiesByParentId.get(a.id) ?? []}
+                        ownedIncomes={incomesByOwnerAccountId.get(a.id) ?? []}
+                        expanded={expandedBusinessIds.has(a.id)}
+                        onToggle={() => toggleBusiness(a.id)}
+                        incomesPopoverOpen={incomesPopoverFor === a.id}
+                        onToggleIncomesPopover={() =>
+                          setIncomesPopoverFor((cur) => (cur === a.id ? null : a.id))
+                        }
+                        consolidatedValue={consolidatedBusinessValue(a)}
+                        onClickRow={() => handleAccountClick(a)}
+                        onDeleteRow={() => setDeletingAccount(a)}
+                        onClickChild={(child) => handleAccountClick(child)}
+                        onDeleteChild={(child) => setDeletingAccount(child)}
+                        onClickChildLiability={(l) => !liabilitiesEdit && setEditingLiability(l)}
+                        editMode={assetsEdit}
+                        ownerDisplay={ownerDisplay}
+                        growthDisplay={growthDisplay}
+                        currentYearBalance={currentYearBalance}
+                      />
+                    ) : (
+                      <Row
+                        key={a.id}
+                        onClick={() => handleAccountClick(a)}
+                        editMode={assetsEdit}
+                        onDelete={() => setDeletingAccount(a)}
+                        deletable={!a.isDefaultChecking}
+                        label={a.name}
+                        subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
+                        value={fmt(a.value)}
+                      />
+                    ),
+                  )}
                   {noteCatRows.map(({ note, value }) => (
                     <Row
                       key={note.id}
@@ -672,12 +771,12 @@ export default function BalanceSheetView({
             </div>
           }
         >
-          {liabilities.length === 0 ? (
+          {topLevelLiabilities.length === 0 ? (
             <EmptyRow message="No liabilities yet." />
           ) : (
             <div className="overflow-hidden rounded-md border border-gray-700 bg-gray-900/60">
               <div className="divide-y divide-gray-800">
-                {liabilities.map((l) => (
+                {topLevelLiabilities.map((l) => (
                   <Row
                     key={l.id}
                     onClick={() => !liabilitiesEdit && setEditingLiability(l)}
@@ -1044,4 +1143,204 @@ function Row({
 
 function EmptyRow({ message }: { message: string }) {
   return <div className="px-4 py-8 text-center text-sm text-gray-400">{message}</div>;
+}
+
+interface BusinessRowGroupProps {
+  biz: AccountRow;
+  children_: AccountRow[];
+  childLiabilities: LiabilityRow[];
+  ownedIncomes: { id: string; name: string }[];
+  expanded: boolean;
+  onToggle: () => void;
+  incomesPopoverOpen: boolean;
+  onToggleIncomesPopover: () => void;
+  consolidatedValue: number;
+  onClickRow: () => void;
+  onDeleteRow: () => void;
+  onClickChild: (child: AccountRow) => void;
+  onDeleteChild: (child: AccountRow) => void;
+  onClickChildLiability: (l: LiabilityRow) => void;
+  editMode: boolean;
+  ownerDisplay: (a: AccountRow) => string;
+  growthDisplay: (a: AccountRow) => string;
+  currentYearBalance: (l: LiabilityRow) => number;
+}
+
+function BusinessRowGroup({
+  biz,
+  children_,
+  childLiabilities,
+  ownedIncomes,
+  expanded,
+  onToggle,
+  incomesPopoverOpen,
+  onToggleIncomesPopover,
+  consolidatedValue,
+  onClickRow,
+  onDeleteRow,
+  onClickChild,
+  onDeleteChild,
+  onClickChildLiability,
+  editMode,
+  ownerDisplay,
+  growthDisplay,
+  currentYearBalance,
+}: BusinessRowGroupProps) {
+  const hasChildren = children_.length > 0 || childLiabilities.length > 0 || ownedIncomes.length > 0;
+  return (
+    <>
+      <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 hover:text-gray-100 disabled:opacity-40"
+          aria-label={expanded ? "Collapse" : "Expand"}
+          aria-expanded={expanded}
+          disabled={!hasChildren}
+        >
+          {expanded ? <ChevronDown /> : <ChevronRight />}
+        </button>
+        <div
+          onClick={onClickRow}
+          className="flex flex-1 cursor-pointer items-center justify-between"
+        >
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-gray-100">{biz.name}</div>
+            <div className="truncate text-xs text-gray-400">
+              {ownerDisplay(biz)} · {growthDisplay(biz)}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-100">
+              {new Intl.NumberFormat("en-US", {
+                style: "currency",
+                currency: "USD",
+                maximumFractionDigits: 0,
+              }).format(consolidatedValue)}
+            </span>
+            {editMode && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteRow();
+                }}
+                className="text-white hover:text-white"
+                aria-label={`Delete ${biz.name}`}
+              >
+                <TrashIcon />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      {expanded && hasChildren && (
+        <div className="bg-gray-950/40 px-4 py-2 pl-12">
+          {children_.length > 0 && (
+            <div className="mb-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                Owned accounts
+              </div>
+              <div className="divide-y divide-gray-800/60 overflow-hidden rounded-md border border-gray-800/80">
+                {children_.map((c) => (
+                  <div
+                    key={c.id}
+                    onClick={() => onClickChild(c)}
+                    className="flex cursor-pointer items-center justify-between px-3 py-1.5 hover:bg-gray-800/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] text-gray-100">{c.name}</div>
+                      <div className="truncate text-[11px] text-gray-500">{c.category}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[13px] text-gray-100">
+                        {new Intl.NumberFormat("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                          maximumFractionDigits: 0,
+                        }).format(Number(c.value))}
+                      </span>
+                      {editMode && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteChild(c);
+                          }}
+                          className="text-white hover:text-white"
+                          aria-label={`Delete ${c.name}`}
+                        >
+                          <TrashIcon />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {childLiabilities.length > 0 && (
+            <div className="mb-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                Owed liabilities
+              </div>
+              <div className="divide-y divide-gray-800/60 overflow-hidden rounded-md border border-gray-800/80">
+                {childLiabilities.map((l) => (
+                  <div
+                    key={l.id}
+                    onClick={() => onClickChildLiability(l)}
+                    className="flex cursor-pointer items-center justify-between px-3 py-1.5 hover:bg-gray-800/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] text-gray-100">{l.name}</div>
+                    </div>
+                    <span className="text-[13px] text-red-400">
+                      (
+                      {new Intl.NumberFormat("en-US", {
+                        style: "currency",
+                        currency: "USD",
+                        maximumFractionDigits: 0,
+                      }).format(currentYearBalance(l))}
+                      )
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {ownedIncomes.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={onToggleIncomesPopover}
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-700/50 bg-emerald-900/30 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300 hover:bg-emerald-900/50"
+                aria-expanded={incomesPopoverOpen}
+                aria-haspopup="dialog"
+              >
+                Incomes · {ownedIncomes.length}
+              </button>
+              {incomesPopoverOpen && (
+                <div
+                  role="dialog"
+                  className="absolute left-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-gray-700 bg-gray-900 shadow-lg"
+                >
+                  <ul className="max-h-56 overflow-y-auto py-1">
+                    {ownedIncomes.map((i) => (
+                      <li
+                        key={i.id}
+                        className="px-3 py-1.5 text-[12px] text-gray-200"
+                      >
+                        {i.name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
 }

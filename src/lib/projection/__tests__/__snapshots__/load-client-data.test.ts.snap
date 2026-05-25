@@ -163,6 +163,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "monthlyPayment": 2530,
       "name": "Mortgage",
       "owners": [],
+      "parentAccountId": null,
       "startMonth": 1,
       "startYear": 2020,
       "termMonths": 360,

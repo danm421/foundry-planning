@@ -742,6 +742,7 @@ export const loadClientDataWithContext = cache(
           amount: parseFloat(ep.amount),
         })),
       owners: ownersByLiabilityId.get(l.id) ?? [],
+      parentAccountId: l.parentAccountId ?? null,
     }));
 
     const mappedSavingsRules = savingsRuleRows.map((s) =>

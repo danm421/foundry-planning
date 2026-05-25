@@ -794,6 +794,10 @@ export interface Liability {
   isInterestDeductible?: boolean;
   extraPayments: ExtraPayment[];
   owners: AccountOwner[];
+  /** Parent business account: lets a liability hang off the business that
+   *  carries it (e.g. an LLC's mortgage on its real estate). Null for
+   *  household / individually-owned liabilities. */
+  parentAccountId?: string | null;
 }
 
 export interface SavingsRule {

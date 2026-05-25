@@ -29,7 +29,7 @@ export default function HeaderControls(props: Props) {
     <div className="flex flex-col gap-4 border-b border-gray-800 px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-sm text-gray-300">
-          <span className="text-gray-400">Entity</span>
+          <span className="text-gray-400">Trust</span>
           <select
             className="rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
             value={props.selectedEntityId}

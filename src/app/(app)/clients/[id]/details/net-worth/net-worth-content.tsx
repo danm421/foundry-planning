@@ -219,6 +219,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
       titlingType: a.titlingType,
+      parentAccountId: a.parentAccountId ?? null,
     };
   });
 
@@ -240,6 +241,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
       owners: l.owners,
+      parentAccountId: l.parentAccountId ?? null,
     };
   });
 
@@ -342,6 +344,11 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       accounts={accountProps}
       liabilities={liabilityProps}
       notesReceivable={notesReceivableRows}
+      incomes={effectiveTree.incomes.map((i) => ({
+        id: i.id,
+        name: i.name,
+        ownerAccountId: i.ownerAccountId ?? null,
+      }))}
       entities={entityOptions}
       familyMembers={familyMemberRows}
       categoryDefaults={categoryDefaults}

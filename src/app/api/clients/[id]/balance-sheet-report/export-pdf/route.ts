@@ -26,7 +26,7 @@ const VIEW_LABELS: Record<OwnershipView, string> = {
   client: "Client only",
   spouse: "Spouse only",
   joint: "Joint only",
-  entities: "Entities only",
+  entities: "Trusts only",
 };
 
 function isOwnershipView(v: string): v is OwnershipView {

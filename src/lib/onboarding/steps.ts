@@ -43,8 +43,8 @@ export const STEPS: readonly StepDef[] = [
   },
   {
     slug: "entities",
-    label: "Entities",
-    description: "Trusts, LLCs, and other entities tied to the household.",
+    label: "Trusts",
+    description: "Trusts tied to the household.",
     icon: "entities",
     skippable: true,
   },

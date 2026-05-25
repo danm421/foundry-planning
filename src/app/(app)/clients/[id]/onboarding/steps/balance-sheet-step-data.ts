@@ -200,6 +200,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
       titlingType: a.titlingType,
+      parentAccountId: a.parentAccountId ?? null,
     };
   });
 
@@ -221,6 +222,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
       owners: l.owners,
+      parentAccountId: l.parentAccountId ?? null,
     };
   });
 

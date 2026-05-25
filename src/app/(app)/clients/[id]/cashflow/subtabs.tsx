@@ -23,7 +23,7 @@ export default function CashFlowSubtabs({
     { label: "Income Tax", href: `${root}/income-tax` },
     { label: "Monte Carlo", href: `${root}/monte-carlo` },
     { label: "Timeline", href: `${root}/timeline` },
-    { label: "Entities", href: `${root}/entities` },
+    { label: "Trusts", href: `${root}/entities` },
   ];
 
   return (
