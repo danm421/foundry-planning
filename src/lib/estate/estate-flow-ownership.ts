@@ -271,13 +271,35 @@ export function buildOwnershipColumn(
     subtotal: 0,
   };
 
+  // Phase 4: child accounts of a top-level business inherit their ownership
+  // from the parent's `account_owners` rows (they carry empty owners[]
+  // themselves). Walk up parentAccountId to find the controlling entity or
+  // family member so the child rows show under the right group.
+  const accountsById = new Map(data.accounts.map((a) => [a.id, a]));
+  function effectiveOwners(account: Account): AccountOwner[] {
+    if (account.owners.length > 0 || account.parentAccountId == null) {
+      return account.owners;
+    }
+    const parent = accountsById.get(account.parentAccountId);
+    if (!parent) return account.owners;
+    return effectiveOwners(parent);
+  }
+
   for (const account of data.accounts) {
     const accountId = account.id;
     const hasBeneficiaries = (account.beneficiaries ?? []).length > 0;
     const willProvision = hasWillProvision(accountId, wills);
     const hasConflict = !hasBeneficiaries && !willProvision;
 
-    const soloEntityId = controllingEntity(account);
+    // Substitute inherited owners for cascade resolution. Defers to the
+    // account's own owners when present; falls back to walking parent only
+    // when the account is a parented child with no direct owners.
+    const ownersForResolution = effectiveOwners(account);
+    const accountForResolution: Account = ownersForResolution === account.owners
+      ? account
+      : { ...account, owners: ownersForResolution };
+
+    const soloEntityId = controllingEntity(accountForResolution);
     if (soloEntityId !== null) {
       let group = entityGroups.get(soloEntityId);
       if (!group) {
@@ -319,7 +341,7 @@ export function buildOwnershipColumn(
       continue;
     }
 
-    const soloFmId = controllingFamilyMember(account);
+    const soloFmId = controllingFamilyMember(accountForResolution);
     if (soloFmId !== null) {
       const isClient = soloFmId === clientFmId;
       const isSpouse = soloFmId === spouseFmId;
@@ -365,7 +387,7 @@ export function buildOwnershipColumn(
     );
     const slices = resolveOwnerSlices(
       accountId,
-      account.owners,
+      ownersForResolution,
       accountValueForSlicing,
       yearState?.entityAccountSharesEoY,
       yearState?.familyAccountSharesEoY,
@@ -373,7 +395,7 @@ export function buildOwnershipColumn(
     const sliceValueOf = (owner: AccountOwner): number =>
       slices.find((s) => s.owner === owner)?.value ?? 0;
 
-    const ownerRows = account.owners.filter(
+    const ownerRows = ownersForResolution.filter(
       (o): o is Extract<AccountOwner, { kind: "family_member" }> => o.kind === "family_member",
     );
     const hasMultipleFmOwners = ownerRows.length > 1;
@@ -417,7 +439,7 @@ export function buildOwnershipColumn(
     // (Canonical rule: a business entity's value includes its partial slices
     // of mixed accounts.) Uses the same locked-share slice resolution as the
     // family rows above so the two sides always sum to the account balance.
-    const entityOwnerRows = account.owners.filter(
+    const entityOwnerRows = ownersForResolution.filter(
       (o): o is Extract<AccountOwner, { kind: "entity" }> => o.kind === "entity",
     );
     for (const ownerRow of entityOwnerRows) {
