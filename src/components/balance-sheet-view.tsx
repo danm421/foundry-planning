@@ -912,12 +912,11 @@ export default function BalanceSheetView({
         clientId={clientId}
         mode={editingBusiness ? "edit" : "add"}
         business={editingBusiness ?? undefined}
-        open={businessDialogOpen || addCategory === "business"}
+        open={businessDialogOpen}
         onOpenChange={(o) => {
           if (!o) {
             setBusinessDialogOpen(false);
             setEditingBusiness(null);
-            if (addCategory === "business") setAddCategory(null);
           }
         }}
         familyMembers={familyMembers}
@@ -931,28 +930,26 @@ export default function BalanceSheetView({
             : undefined
         }
       />
-      {addCategory !== "business" && (
-        <AddAccountDialog
-          clientId={clientId}
-          category={addCategory ?? undefined}
-          label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
-          entities={entities}
-          familyMembers={familyMembers}
-          categoryDefaults={categoryDefaults}
-          modelPortfolios={modelPortfolios}
-          ownerNames={ownerNames}
-          assetClasses={assetClasses}
-          portfolioAllocationsMap={portfolioAllocationsMap}
-          categoryDefaultSources={categoryDefaultSources}
-          milestones={milestones}
-          clientFirstName={ownerNames.clientName.split(" ")[0]}
-          spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-          existingAccountNames={accounts.map((a) => a.name)}
-          resolvedInflationRate={resolvedInflationRate}
-          open={addCategory !== null}
-          onOpenChange={(o) => !o && setAddCategory(null)}
-        />
-      )}
+      <AddAccountDialog
+        clientId={clientId}
+        category={addCategory ?? undefined}
+        label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
+        entities={entities}
+        familyMembers={familyMembers}
+        categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolios}
+        ownerNames={ownerNames}
+        assetClasses={assetClasses}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        categoryDefaultSources={categoryDefaultSources}
+        milestones={milestones}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        existingAccountNames={accounts.map((a) => a.name)}
+        resolvedInflationRate={resolvedInflationRate}
+        open={addCategory !== null}
+        onOpenChange={(o) => !o && setAddCategory(null)}
+      />
 
       {/* Edit dialogs */}
       <AddAccountDialog
