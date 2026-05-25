@@ -102,8 +102,6 @@ export function TaxDetailView({
           years={years}
           yearRange={yearRange}
           clientData={clientData}
-          clientLifeExpectancy={clientLifeExpectancy}
-          spouseLifeExpectancy={spouseLifeExpectancy}
         />
       )}
     </>

@@ -57,17 +57,16 @@ export default function IncomeTaxReport({ clientId }: Props) {
   const [cellDrill, setCellDrill] = useState<CellDrill | null>(null);
 
   const [showMigrationBanner, setShowMigrationBanner] = useState(false);
+  const migrationBannerKey = `medicare-migration-banner-dismissed:${clientId}`;
 
   useEffect(() => {
-    const key = `medicare-migration-banner-dismissed:${clientId}`;
-    if (typeof window !== "undefined" && !localStorage.getItem(key)) {
+    if (!localStorage.getItem(migrationBannerKey)) {
       setShowMigrationBanner(true);
     }
-  }, [clientId]);
+  }, [migrationBannerKey]);
 
   function dismissBanner() {
-    const key = `medicare-migration-banner-dismissed:${clientId}`;
-    localStorage.setItem(key, String(Date.now()));
+    localStorage.setItem(migrationBannerKey, String(Date.now()));
     setShowMigrationBanner(false);
   }
 

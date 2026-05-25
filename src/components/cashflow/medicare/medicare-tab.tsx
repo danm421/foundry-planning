@@ -10,8 +10,6 @@ interface Props {
   years: ProjectionYear[];
   yearRange: [number, number];
   clientData?: ClientData | null;
-  clientLifeExpectancy?: number;
-  spouseLifeExpectancy?: number | null;
 }
 
 export function MedicareTab({ years, yearRange, clientData }: Props) {

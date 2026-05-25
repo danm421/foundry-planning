@@ -32,8 +32,7 @@ interface Props {
   yearRange: [number, number];
 }
 
-const TIER_BAND_COLORS = [
-  "rgba(34,197,94,0.10)",   // tier 0 (green)
+const TIER_LABEL_COLORS = [
   "rgba(250,204,21,0.10)",  // tier 1 (yellow)
   "rgba(249,115,22,0.12)",  // tier 2 (orange)
   "rgba(239,68,68,0.12)",   // tier 3 (red)
@@ -103,7 +102,7 @@ export function MedicareMagiTierChart({ years, yearRange }: Props) {
                     display: true,
                     content: `Tier ${idx + 1} ($${(t / 1000).toFixed(0)}k ${filingStatus})`,
                     position: "end" as const,
-                    backgroundColor: TIER_BAND_COLORS[idx + 1],
+                    backgroundColor: TIER_LABEL_COLORS[idx],
                     color: "#000",
                     font: { size: 10 },
                   },
