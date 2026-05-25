@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { clients, scenarios, assetTransactions, entities } from "@/db/schema";
+import { clients, scenarios, assetTransactions, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -75,21 +75,21 @@ const postBodySchema = z
     mortgageTermMonths: z.number().int().nullable().optional(),
     // Resell fields
     purchaseTransactionId: z.string().uuid().nullable().optional(),
-    // Entity-sale source. Mutually exclusive with accountId / purchaseTransactionId.
-    entityId: z.string().uuid().nullable().optional(),
+    // Business-sale source. Mutually exclusive with accountId / purchaseTransactionId.
+    businessAccountId: z.string().uuid().nullable().optional(),
     fractionSold: z.number().gt(0).lte(1).nullable().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.type === "sell") {
-      const sources = [val.accountId, val.purchaseTransactionId, val.entityId].filter(
+      const sources = [val.accountId, val.purchaseTransactionId, val.businessAccountId].filter(
         (v) => v != null,
       ).length;
       if (sources > 1) {
         ctx.addIssue({
           code: "custom",
-          path: ["entityId"],
+          path: ["businessAccountId"],
           message:
-            "A sell must have exactly one source: accountId, purchaseTransactionId, or entityId.",
+            "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
       if (sources === 0) {
@@ -97,7 +97,7 @@ const postBodySchema = z
           code: "custom",
           path: ["accountId"],
           message:
-            "A sell must have exactly one source: accountId, purchaseTransactionId, or entityId.",
+            "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
     }
@@ -105,14 +105,14 @@ const postBodySchema = z
       if (
         val.purchaseTransactionId != null ||
         val.accountId != null ||
-        val.entityId != null ||
+        val.businessAccountId != null ||
         val.fractionSold != null
       ) {
         ctx.addIssue({
           code: "custom",
           path: ["type"],
           message:
-            "Buy rows cannot carry sell-side fields (accountId, purchaseTransactionId, entityId, fractionSold).",
+            "Buy rows cannot carry sell-side fields (accountId, purchaseTransactionId, businessAccountId, fractionSold).",
         });
       }
     }
@@ -181,22 +181,22 @@ const putBodySchema = z
     mortgageTermMonths: z.number().int().nullable().optional(),
     // Resell fields
     purchaseTransactionId: z.string().uuid().nullable().optional(),
-    // Entity-sale source. Mutually exclusive with accountId / purchaseTransactionId.
-    entityId: z.string().uuid().nullable().optional(),
+    // Business-sale source. Mutually exclusive with accountId / purchaseTransactionId.
+    businessAccountId: z.string().uuid().nullable().optional(),
     fractionSold: z.number().gt(0).lte(1).nullable().optional(),
   })
   .superRefine((val, ctx) => {
     // Only enforce sell/buy source rules when type is explicitly supplied.
     if (val.type === "sell") {
-      const sources = [val.accountId, val.purchaseTransactionId, val.entityId].filter(
+      const sources = [val.accountId, val.purchaseTransactionId, val.businessAccountId].filter(
         (v) => v != null,
       ).length;
       if (sources > 1) {
         ctx.addIssue({
           code: "custom",
-          path: ["entityId"],
+          path: ["businessAccountId"],
           message:
-            "A sell must have exactly one source: accountId, purchaseTransactionId, or entityId.",
+            "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
       if (sources === 0) {
@@ -204,7 +204,7 @@ const putBodySchema = z
           code: "custom",
           path: ["accountId"],
           message:
-            "A sell must have exactly one source: accountId, purchaseTransactionId, or entityId.",
+            "A sell must have exactly one source: accountId, purchaseTransactionId, or businessAccountId.",
         });
       }
     }
@@ -212,14 +212,14 @@ const putBodySchema = z
       if (
         val.purchaseTransactionId != null ||
         val.accountId != null ||
-        val.entityId != null ||
+        val.businessAccountId != null ||
         val.fractionSold != null
       ) {
         ctx.addIssue({
           code: "custom",
           path: ["type"],
           message:
-            "Buy rows cannot carry sell-side fields (accountId, purchaseTransactionId, entityId, fractionSold).",
+            "Buy rows cannot carry sell-side fields (accountId, purchaseTransactionId, businessAccountId, fractionSold).",
         });
       }
     }
@@ -324,7 +324,7 @@ export async function POST(
       mortgageTermMonths,
       // Resell fields
       purchaseTransactionId,
-      entityId,
+      businessAccountId,
       fractionSold,
     } = parsed;
 
@@ -332,6 +332,7 @@ export async function POST(
       accountId,
       proceedsAccountId,
       fundingAccountId,
+      businessAccountId,
     ]);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
@@ -341,24 +342,24 @@ export async function POST(
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
-    // Entity-sale validation: must reference an entity that belongs to this
-    // client, and trusts cannot be sold as asset transactions (transfer the
-    // beneficiary structure instead).
-    if (type === "sell" && entityId) {
-      const [entity] = await db
-        .select({ id: entities.id, entityType: entities.entityType })
-        .from(entities)
-        .where(and(eq(entities.id, entityId), eq(entities.clientId, id)))
+    // Business-sale validation: must reference a business account in this
+    // client. Trusts and other non-business categories can never be the
+    // source of a business-cascade sale.
+    if (type === "sell" && businessAccountId) {
+      const [business] = await db
+        .select({ id: accounts.id, category: accounts.category })
+        .from(accounts)
+        .where(and(eq(accounts.id, businessAccountId), eq(accounts.clientId, id)))
         .limit(1);
-      if (!entity) {
+      if (!business) {
         return NextResponse.json(
-          { error: "Entity not found for this client" },
+          { error: "Business account not found for this client" },
           { status: 404 },
         );
       }
-      if (entity.entityType === "trust") {
+      if (business.category !== "business") {
         return NextResponse.json(
-          { error: "Trusts cannot be sold as asset transactions" },
+          { error: "businessAccountId must reference a business account" },
           { status: 400 },
         );
       }
@@ -424,7 +425,7 @@ export async function POST(
         mortgageTermMonths: mortgageTermMonths ?? null,
         // Resell fields
         purchaseTransactionId: purchaseTransactionId ?? null,
-        entityId: entityId ?? null,
+        businessAccountId: businessAccountId ?? null,
         fractionSold:
           fractionSold != null ? String(fractionSold) : null,
       })
@@ -512,7 +513,7 @@ export async function PUT(
       mortgageTermMonths,
       // Resell fields
       purchaseTransactionId,
-      entityId,
+      businessAccountId,
       fractionSold,
     } = parsed;
 
@@ -520,6 +521,7 @@ export async function PUT(
       accountId,
       proceedsAccountId,
       fundingAccountId,
+      businessAccountId,
     ]);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
@@ -529,23 +531,23 @@ export async function PUT(
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
-    // Entity-sale validation on update: enforce client scoping and the
-    // trust-not-sellable rule whenever entityId is being set.
-    if (entityId) {
-      const [entity] = await db
-        .select({ id: entities.id, entityType: entities.entityType })
-        .from(entities)
-        .where(and(eq(entities.id, entityId), eq(entities.clientId, id)))
+    // Business-sale validation on update: enforce client scoping and the
+    // business-category rule whenever businessAccountId is being set.
+    if (businessAccountId) {
+      const [business] = await db
+        .select({ id: accounts.id, category: accounts.category })
+        .from(accounts)
+        .where(and(eq(accounts.id, businessAccountId), eq(accounts.clientId, id)))
         .limit(1);
-      if (!entity) {
+      if (!business) {
         return NextResponse.json(
-          { error: "Entity not found for this client" },
+          { error: "Business account not found for this client" },
           { status: 404 },
         );
       }
-      if (entity.entityType === "trust") {
+      if (business.category !== "business") {
         return NextResponse.json(
-          { error: "Trusts cannot be sold as asset transactions" },
+          { error: "businessAccountId must reference a business account" },
           { status: 400 },
         );
       }
@@ -611,7 +613,7 @@ export async function PUT(
         mortgageRate: mortgageRate !== undefined ? toStr(mortgageRate) : undefined,
         // Resell fields
         ...(purchaseTransactionId !== undefined && { purchaseTransactionId }),
-        ...(entityId !== undefined && { entityId }),
+        ...(businessAccountId !== undefined && { businessAccountId }),
         ...(fractionSold !== undefined && {
           fractionSold: fractionSold !== null ? String(fractionSold) : null,
         }),

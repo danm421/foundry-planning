@@ -11,7 +11,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import TechniquesView from "@/components/techniques-view";
-import type { EntityOption } from "@/components/techniques-view";
+import type { BusinessSaleOption } from "@/components/forms/add-asset-transaction-form";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 
@@ -135,7 +135,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     year: tx.year,
     accountId: tx.accountId ?? null,
     purchaseTransactionId: tx.purchaseTransactionId ?? null,
-    entityId: tx.entityId ?? null,
+    businessAccountId: tx.businessAccountId ?? null,
     fractionSold: tx.fractionSold == null ? null : String(tx.fractionSold),
     overrideSaleValue: tx.overrideSaleValue == null ? null : String(tx.overrideSaleValue),
     overrideBasis: tx.overrideBasis == null ? null : String(tx.overrideBasis),
@@ -192,60 +192,44 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     ]),
   );
 
-  // Build the entity options the asset-transaction form needs to drive its
-  // entity-sale subform: only sellable business entities, with owners and
-  // cascaded account/liability previews assembled from effectiveTree owner
-  // arrays. Trusts are filtered out so they never appear in the dropdown.
-  const entityOptions: EntityOption[] = (effectiveTree.entities ?? [])
+  // Build the business options the asset-transaction form needs to drive
+  // its business-sale subform: top-level business accounts (parentAccountId
+  // is null) with their child accounts/liabilities and family-member owners.
+  const BUSINESS_TYPE_LABELS: Record<string, string> = {
+    sole_prop: "Sole prop",
+    partnership: "Partnership",
+    s_corp: "S-Corp",
+    c_corp: "C-Corp",
+    llc: "LLC",
+    other: "Other",
+  };
+  const businessOptions: BusinessSaleOption[] = accountRows
     .filter(
-      (
-        e,
-      ): e is typeof e & {
-        name: string;
-        entityType: NonNullable<typeof e.entityType>;
-      } => !!e.name && !!e.entityType && e.entityType !== "trust",
+      (a) => a.category === "business" && a.parentAccountId == null,
     )
-    .map((e) => {
-      const ownedAccounts = accountRows
-        .map((a) => {
-          const row = a.owners?.find(
-            (o) => o.kind === "entity" && o.entityId === e.id,
-          );
-          if (!row || row.kind !== "entity") return null;
-          return {
-            id: a.id,
-            name: a.name,
-            entityPercent: row.percent,
-            currentValue: Number(a.value ?? 0),
-          };
-        })
-        .filter((x): x is NonNullable<typeof x> => x != null);
-
-      const ownedLiabilities = liabilityRows
-        .map((l) => {
-          const row = l.owners?.find(
-            (o) => o.kind === "entity" && o.entityId === e.id,
-          );
-          if (!row || row.kind !== "entity") return null;
-          return {
-            id: l.id,
-            name: l.name,
-            entityPercent: row.percent,
-            currentBalance: Number(l.balance ?? 0),
-          };
-        })
-        .filter((x): x is NonNullable<typeof x> => x != null);
-
+    .map((b) => {
+      const childAccounts = accountRows
+        .filter((a) => a.parentAccountId === b.id)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          currentValue: Number(a.value ?? 0),
+        }));
+      const childLiabilities = liabilityRows
+        .filter((l) => l.parentAccountId === b.id)
+        .map((l) => ({
+          id: l.id,
+          name: l.name,
+          currentBalance: Number(l.balance ?? 0),
+        }));
       return {
-        id: e.id,
-        name: e.name,
-        entityType: e.entityType,
-        value: Number(e.value ?? 0),
-        basis: Number(e.basis ?? 0),
-        // Techniques view models only know about family-member owners.
-        // Entity-kind owners (Task 4) are filtered out here; surfacing them
-        // requires a UI-level update to the EntityCard rendering.
-        owners: (e.owners ?? [])
+        id: b.id,
+        name: b.name,
+        businessTypeLabel:
+          BUSINESS_TYPE_LABELS[b.businessType ?? "other"] ?? "Business",
+        value: Number(b.value ?? 0),
+        basis: Number(b.basis ?? 0),
+        owners: (b.owners ?? [])
           .filter((o) => o.kind === "family_member")
           .map((o) => ({
             familyMemberId: o.familyMemberId,
@@ -253,8 +237,8 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
               familyMemberNameById.get(o.familyMemberId) ?? o.familyMemberId,
             percent: o.percent,
           })),
-        ownedAccounts,
-        ownedLiabilities,
+        childAccounts,
+        childLiabilities,
       };
     });
 
@@ -267,7 +251,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
       rothConversions={rothConversionProps}
       accounts={accountOptions}
       liabilities={liabilityOptions}
-      entities={entityOptions}
+      businesses={businessOptions}
       modelPortfolios={modelPortfolioRows}
       milestones={milestones}
       clientFirstName={effectiveTree.client.firstName}
