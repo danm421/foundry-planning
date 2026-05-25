@@ -368,6 +368,9 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
       categoryDefaultSources={categoryDefaultSources}
       milestones={milestones}
       resolvedInflationRate={resolvedInflationRate}
+      planStartYear={planStartYear}
+      planEndYear={planEndYear}
+      primaryClientBirthYear={parseInt(primaryContact.dateOfBirth.slice(0, 4), 10)}
     />
   );
 }

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import {
   accounts,
   accountAssetAllocations,
+  accountFlowOverrides,
   accountOwners,
   assetClasses,
   assetTransactions,
@@ -48,6 +49,7 @@ import {
   medicareCoverage,
 } from "@/db/schema";
 import type {
+  AccountFlowOverride,
   BeneficiaryRef,
   ClientData,
   EntityFlowOverride,
@@ -1278,6 +1280,38 @@ export const loadClientDataWithContext = cache(
         r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
     }));
 
+    // Business-as-asset per-year overrides — top-level business accounts only.
+    // Scenario-specific overrides are layered in by `loadEffectiveTree`.
+    const businessAccountIds = mappedAccounts
+      .filter((a) => a.category === "business" && a.parentAccountId == null)
+      .map((a) => a.id);
+    const accountFlowOverrideRows = businessAccountIds.length === 0
+      ? []
+      : await db
+          .select({
+            accountId: accountFlowOverrides.accountId,
+            year: accountFlowOverrides.year,
+            incomeAmount: accountFlowOverrides.incomeAmount,
+            expenseAmount: accountFlowOverrides.expenseAmount,
+            distributionPercent: accountFlowOverrides.distributionPercent,
+          })
+          .from(accountFlowOverrides)
+          .where(
+            and(
+              inArray(accountFlowOverrides.accountId, businessAccountIds),
+              isNull(accountFlowOverrides.scenarioId),
+            ),
+          );
+
+    const mappedAccountFlowOverrides: AccountFlowOverride[] = accountFlowOverrideRows.map((r) => ({
+      accountId: r.accountId,
+      year: r.year,
+      incomeAmount: r.incomeAmount != null ? parseFloat(r.incomeAmount) : null,
+      expenseAmount: r.expenseAmount != null ? parseFloat(r.expenseAmount) : null,
+      distributionPercent:
+        r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
+    }));
+
     const clientData: ClientData = {
       client: clientInfo,
       accounts: mappedAccounts,
@@ -1289,6 +1323,7 @@ export const loadClientDataWithContext = cache(
       planSettings: mappedPlanSettings,
       entities: mappedEntities,
       entityFlowOverrides: mappedFlowOverrides,
+      accountFlowOverrides: mappedAccountFlowOverrides,
       externalBeneficiaries: mappedExternalBeneficiaries,
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,

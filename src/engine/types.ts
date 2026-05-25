@@ -398,6 +398,10 @@ export interface ClientData {
   /** Phase 2: per-year overrides scoped to the active scenario. Empty/undefined
    *  means every entity uses its base flow values everywhere. */
   entityFlowOverrides?: EntityFlowOverride[];
+  /** Parallel of entityFlowOverrides for business-as-asset accounts
+   *  (category = 'business', top-level). Empty/undefined means every business
+   *  account uses annual+growth from its income/expense rows. */
+  accountFlowOverrides?: AccountFlowOverride[];
   /** IRS-published tax year parameters seeded from the DB. Empty = flat-mode fallback. */
   taxYearRows?: TaxYearParameters[];
   /** Itemized deduction line items (charitable, SALT, mortgage interest, etc.). */
@@ -532,6 +536,19 @@ export interface EntitySummary {
  *  Distribution % is ignored for trusts (P3-3 carries through). */
 export interface EntityFlowOverride {
   entityId: string;
+  year: number;
+  incomeAmount?: number | null;
+  expenseAmount?: number | null;
+  distributionPercent?: number | null;
+}
+
+/** Per-year override for a business-as-asset account's flows. Same shape as
+ *  EntityFlowOverride but keyed by accountId. Read only when the matching
+ *  account has flowMode = 'schedule'; in that mode null income/expense cells
+ *  resolve to 0 and a null distributionPercent falls through to
+ *  account.distributionPolicyPercent (or 1.0 if that's null). */
+export interface AccountFlowOverride {
+  accountId: string;
   year: number;
   incomeAmount?: number | null;
   expenseAmount?: number | null;

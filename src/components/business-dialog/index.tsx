@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 const NOOP = () => {};
 import DialogShell from "../dialog-shell";
@@ -11,6 +12,8 @@ import BusinessNotesTab from "./notes-tab";
 import BusinessAssetsTab from "./business-assets-tab";
 import type { BusinessAssetsTabProps } from "./business-assets-tab";
 import BusinessFlowsTab from "./business-flows-tab";
+import type { BusinessFlowRow } from "./business-flows-tab";
+import type { ScheduleSaveBinding, FlowScheduleGridOverride } from "../forms/flow-schedule-grid";
 import type {
   BusinessAccount,
   BusinessDialogMode,
@@ -38,12 +41,17 @@ export interface BusinessDialogProps {
   onDataChanged?: () => void;
   onOpenAddAccount?: () => void;
   onOpenAddLiability?: () => void;
-  incomes?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
-  expenses?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
+  incomes?: BusinessFlowRow[];
+  expenses?: BusinessFlowRow[];
   onOpenAddIncome?: () => void;
   onOpenAddExpense?: () => void;
   onEditIncome?: (id: string) => void;
   onEditExpense?: (id: string) => void;
+  /** Schedule-grid context — when all three are present the Flows tab shows the
+   *  Annual ↔ Schedule toggle and the schedule grid in schedule mode. */
+  planStartYear?: number;
+  planEndYear?: number;
+  primaryClientBirthYear?: number;
 }
 
 const TABS: { id: BusinessTab; label: string }[] = [
@@ -75,7 +83,13 @@ export default function BusinessDialog({
   onOpenAddExpense,
   onEditIncome,
   onEditExpense,
+  planStartYear,
+  planEndYear,
+  primaryClientBirthYear,
 }: BusinessDialogProps) {
+  const searchParams = useSearchParams();
+  const scenarioId = searchParams.get("scenario");
+
   const [tab, setTab] = useState<BusinessTab>("details");
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
     canSubmit: true,
@@ -90,6 +104,30 @@ export default function BusinessDialog({
     isDirty: false,
     canSave: true,
   });
+
+  // FlowScheduleGrid registers its save handler here so the dialog footer can drive it.
+  const [scheduleSaveBinding, setScheduleSaveBinding] =
+    useState<ScheduleSaveBinding | null>(null);
+
+  // Pre-loaded overrides for the schedule grid. Refetched whenever the business
+  // (or active scenario) changes. Matches entity-dialog's pattern: early-return
+  // without resetting state when there's no business yet (the dialog hides the
+  // schedule grid in that case anyway).
+  const [initialFlowOverrides, setInitialFlowOverrides] = useState<
+    FlowScheduleGridOverride[]
+  >([]);
+  useEffect(() => {
+    if (!currentBusiness?.id) return;
+    const url = scenarioId
+      ? `/api/clients/${clientId}/accounts/${currentBusiness.id}/flow-overrides?scenarioId=${scenarioId}`
+      : `/api/clients/${clientId}/accounts/${currentBusiness.id}/flow-overrides`;
+    fetch(url)
+      .then((r) => r.json())
+      .then((j: { overrides?: FlowScheduleGridOverride[] }) =>
+        setInitialFlowOverrides(j.overrides ?? []),
+      )
+      .catch(() => setInitialFlowOverrides([]));
+  }, [clientId, currentBusiness?.id, scenarioId]);
 
   const saveAsync = useCallback(async () => {
     const handle = formRef.current;
@@ -114,8 +152,14 @@ export default function BusinessDialog({
   const isEdit = mode === "edit";
   const title = isEdit ? "Edit Business" : "Add Business";
 
-  // Assets / Flows / Notes have no primary form action — their content is managed inline.
-  const noPrimaryAction = tab !== "details";
+  // Details has its primary form action; Assets / Notes are inline. Flows is
+  // special: in schedule mode the grid registers a save binding which we
+  // surface as the dialog primary action (mirrors entity-dialog).
+  const onFlowsTab = tab === "flows";
+  const noPrimaryAction =
+    tab === "assets" ||
+    tab === "notes" ||
+    (onFlowsTab && !scheduleSaveBinding);
 
   return (
     <DialogShell
@@ -138,6 +182,14 @@ export default function BusinessDialog({
       primaryAction={
         noPrimaryAction
           ? undefined
+          : onFlowsTab && scheduleSaveBinding
+          ? {
+              label: "Save schedule",
+              onClick: () => {
+                void scheduleSaveBinding.save();
+              },
+              loading: scheduleSaveBinding.saving,
+            }
           : {
               label: isEdit ? "Save Changes" : "Add Business",
               form: "business-details-form",
@@ -201,15 +253,20 @@ export default function BusinessDialog({
       )}
       {currentBusiness && (
         <BusinessFlowsTab
+          clientId={clientId}
           businessId={currentBusiness.id}
           incomes={incomes ?? []}
           expenses={expenses ?? []}
           hidden={tab !== "flows"}
-          onOpenAddIncome={
-            onOpenAddIncome ??
-            // TODO Task 11+: wire to existing income/expense dialogs in income-expenses-view
-            NOOP
-          }
+          flowMode={currentBusiness.flowMode ?? "annual"}
+          planStartYear={planStartYear}
+          planEndYear={planEndYear}
+          primaryClientBirthYear={primaryClientBirthYear}
+          distributionPolicyPercent={currentBusiness.distributionPolicyPercent ?? null}
+          taxTreatment={currentBusiness.businessTaxTreatment ?? "qbi"}
+          initialFlowOverrides={initialFlowOverrides}
+          onScheduleSaveBindingChange={setScheduleSaveBinding}
+          onOpenAddIncome={onOpenAddIncome ?? NOOP}
           onOpenAddExpense={onOpenAddExpense ?? NOOP}
           onEditIncome={onEditIncome ?? NOOP}
           onEditExpense={onEditExpense ?? NOOP}

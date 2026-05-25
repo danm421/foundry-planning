@@ -349,13 +349,24 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
         name: i.name,
         annualAmount: i.annualAmount,
         ownerAccountId: i.ownerAccountId ?? null,
+        startYear: i.startYear,
+        endYear: i.endYear,
+        growthRate: i.growthRate,
+        inflationStartYear: i.inflationStartYear ?? null,
       }))}
       expenses={effectiveTree.expenses.map((e) => ({
         id: e.id,
         name: e.name,
         annualAmount: e.annualAmount,
         ownerAccountId: e.ownerAccountId ?? null,
+        startYear: e.startYear,
+        endYear: e.endYear,
+        growthRate: e.growthRate,
+        inflationStartYear: e.inflationStartYear ?? null,
       }))}
+      planStartYear={planStartYear}
+      planEndYear={planEndYear}
+      primaryClientBirthYear={parseInt(primaryContact.dateOfBirth.slice(0, 4), 10)}
       entities={entityOptions}
       familyMembers={familyMemberRows}
       categoryDefaults={categoryDefaults}
