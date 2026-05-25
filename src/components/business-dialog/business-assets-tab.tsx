@@ -3,64 +3,99 @@
 import { useState } from "react";
 import MoneyText from "@/components/money-text";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
-
-export interface ChildAccount {
-  id: string;
-  name: string;
-  value: number | string;
-  parentAccountId?: string | null;
-  category: string;
-  subType?: string | null;
-}
-
-export interface ChildLiability {
-  id: string;
-  name: string;
-  balance: number | string;
-  parentAccountId?: string | null;
-}
+import ReparentPickerDialog from "./reparent-picker-dialog";
+import ReparentConfirmDialog from "./reparent-confirm-dialog";
 
 export interface BusinessAssetsTabProps {
   clientId: string;
   businessId: string;
   businessName: string;
-  accounts: ChildAccount[];
-  liabilities: ChildLiability[];
+  allAccounts: Array<{
+    id: string;
+    name: string;
+    value: number | string;
+    category: string;
+    subType?: string | null;
+    parentAccountId?: string | null;
+    owners?: Array<
+      | { kind: "family_member"; familyMemberId: string; percent: number }
+      | { kind: "entity"; entityId: string; percent: number }
+      | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number }
+    >;
+  }>;
+  allLiabilities: Array<{
+    id: string;
+    name: string;
+    balance: number | string;
+    parentAccountId?: string | null;
+    owners?: Array<
+      | { kind: "family_member"; familyMemberId: string; percent: number }
+      | { kind: "entity"; entityId: string; percent: number }
+      | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number }
+    >;
+  }>;
+  familyMembers: Array<{ id: string; firstName: string }>;
   hidden: boolean;
   onChanged: () => void;
   onOpenAddAccount: () => void;
   onOpenAddLiability: () => void;
-  onOpenReparentPicker: () => void;
 }
 
 function toNum(v: number | string): number {
-  return typeof v === "number" ? v : parseFloat(v) || 0;
+  return typeof v === "number" ? v : parseFloat(v as string) || 0;
 }
 
 type RemoveTarget = { kind: "account" | "liability"; id: string; name: string };
+type PendingReparent = {
+  kind: "account" | "liability";
+  id: string;
+  name: string;
+  currentOwnersLabel: string;
+};
 
 export default function BusinessAssetsTab({
   clientId,
   businessId,
   businessName,
-  accounts,
-  liabilities,
+  allAccounts,
+  allLiabilities,
+  familyMembers,
   hidden,
   onChanged,
   onOpenAddAccount,
   onOpenAddLiability,
-  onOpenReparentPicker,
 }: BusinessAssetsTabProps) {
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingReparent, setPendingReparent] = useState<PendingReparent | null>(null);
+  const [reparentLoading, setReparentLoading] = useState(false);
 
-  const ownedAccounts = accounts.filter((a) => (a.parentAccountId ?? null) === businessId);
-  const ownedLiabilities = liabilities.filter((l) => (l.parentAccountId ?? null) === businessId);
+  const ownedAccounts = allAccounts.filter((a) => (a.parentAccountId ?? null) === businessId);
+  const ownedLiabilities = allLiabilities.filter((l) => (l.parentAccountId ?? null) === businessId);
   const isEmpty = ownedAccounts.length === 0 && ownedLiabilities.length === 0;
 
   const total =
     ownedAccounts.reduce((s, a) => s + toNum(a.value), 0) -
     ownedLiabilities.reduce((s, l) => s + toNum(l.balance), 0);
+
+  function labelOwners(target: { kind: "account" | "liability"; id: string }): string {
+    const item =
+      target.kind === "account"
+        ? allAccounts.find((a) => a.id === target.id)
+        : allLiabilities.find((l) => l.id === target.id);
+    const owners = item?.owners ?? [];
+    if (owners.length === 0) return "Nobody";
+    return owners
+      .map((o) =>
+        o.kind === "family_member"
+          ? `${familyMembers.find((m) => m.id === o.familyMemberId)?.firstName ?? "?"} (${Math.round(o.percent * 100)}%)`
+          : o.kind === "entity"
+          ? `Entity (${Math.round(o.percent * 100)}%)`
+          : `Beneficiary (${Math.round(o.percent * 100)}%)`,
+      )
+      .join(", ");
+  }
 
   async function performRemove(target: RemoveTarget) {
     setError(null);
@@ -84,6 +119,32 @@ export default function BusinessAssetsTab({
       setError(e instanceof Error ? e.message : "Failed to remove from business");
     } finally {
       setRemoving(null);
+    }
+  }
+
+  async function confirmReparent() {
+    if (!pendingReparent) return;
+    setReparentLoading(true);
+    setError(null);
+    const url =
+      pendingReparent.kind === "account"
+        ? `/api/clients/${clientId}/accounts/${pendingReparent.id}`
+        : `/api/clients/${clientId}/liabilities/${pendingReparent.id}`;
+    try {
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentAccountId: businessId, owners: [] }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? "Failed to reassign");
+        return;
+      }
+      onChanged();
+      setPendingReparent(null);
+    } finally {
+      setReparentLoading(false);
     }
   }
 
@@ -117,7 +178,7 @@ export default function BusinessAssetsTab({
         </button>
         <button
           type="button"
-          onClick={onOpenReparentPicker}
+          onClick={() => setPickerOpen(true)}
           className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 h-8 text-[12px] font-medium text-ink-2 hover:bg-card-hover"
         >
           + Reassign existing asset
@@ -220,6 +281,27 @@ export default function BusinessAssetsTab({
           </div>
         </div>
       )}
+
+      <ReparentPickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        businessName={businessName}
+        accounts={allAccounts}
+        liabilities={allLiabilities}
+        onPick={(t) => {
+          setPickerOpen(false);
+          setPendingReparent({ ...t, currentOwnersLabel: labelOwners(t) });
+        }}
+      />
+      <ReparentConfirmDialog
+        open={pendingReparent !== null}
+        targetName={pendingReparent?.name ?? ""}
+        businessName={businessName}
+        currentOwnersLabel={pendingReparent?.currentOwnersLabel ?? ""}
+        onCancel={() => setPendingReparent(null)}
+        onConfirm={confirmReparent}
+        loading={reparentLoading}
+      />
     </div>
   );
 }

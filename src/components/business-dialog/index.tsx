@@ -8,7 +8,8 @@ import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
 import BusinessDetailsForm from "./details-form";
 import BusinessNotesTab from "./notes-tab";
-import BusinessAssetsTab, { type ChildAccount, type ChildLiability } from "./business-assets-tab";
+import BusinessAssetsTab from "./business-assets-tab";
+import type { BusinessAssetsTabProps } from "./business-assets-tab";
 import type {
   BusinessAccount,
   BusinessDialogMode,
@@ -31,12 +32,11 @@ export interface BusinessDialogProps {
   onRequestDelete?: () => void;
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   entities?: { id: string; name: string }[];
-  accounts?: ChildAccount[];
-  liabilities?: ChildLiability[];
+  allAccounts?: BusinessAssetsTabProps["allAccounts"];
+  allLiabilities?: BusinessAssetsTabProps["allLiabilities"];
   onDataChanged?: () => void;
   onOpenAddAccount?: () => void;
   onOpenAddLiability?: () => void;
-  onOpenReparentPicker?: () => void;
 }
 
 const TABS: { id: BusinessTab; label: string }[] = [
@@ -57,12 +57,11 @@ export default function BusinessDialog({
   onRequestDelete,
   familyMembers,
   entities,
-  accounts,
-  liabilities,
+  allAccounts,
+  allLiabilities,
   onDataChanged,
   onOpenAddAccount,
   onOpenAddLiability,
-  onOpenReparentPicker,
 }: BusinessDialogProps) {
   const [tab, setTab] = useState<BusinessTab>("details");
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
@@ -173,13 +172,13 @@ export default function BusinessDialog({
           clientId={clientId}
           businessId={currentBusiness.id}
           businessName={currentBusiness.name}
-          accounts={accounts ?? []}
-          liabilities={liabilities ?? []}
+          allAccounts={allAccounts ?? []}
+          allLiabilities={allLiabilities ?? []}
+          familyMembers={(familyMembers ?? []).map(({ id, firstName }) => ({ id, firstName }))}
           hidden={tab !== "assets"}
           onChanged={() => onDataChanged?.()}
           onOpenAddAccount={onOpenAddAccount ?? NOOP}
           onOpenAddLiability={onOpenAddLiability ?? NOOP}
-          onOpenReparentPicker={onOpenReparentPicker ?? NOOP}
         />
       )}
       {!currentBusiness && tab === "assets" && (

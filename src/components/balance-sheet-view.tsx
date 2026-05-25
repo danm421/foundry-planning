@@ -922,8 +922,8 @@ export default function BalanceSheetView({
         }}
         familyMembers={familyMembers}
         entities={entities}
-        accounts={accounts}
-        liabilities={liabilities}
+        allAccounts={accounts}
+        allLiabilities={liabilities}
         onDataChanged={() => router.refresh()}
         onSaved={() => {/* router.refresh handled inside the form */}}
         onRequestDelete={
@@ -935,7 +935,6 @@ export default function BalanceSheetView({
         }
         onOpenAddAccount={() => setAddCategory("cash")}
         onOpenAddLiability={() => setAddLiabilityOpen(true)}
-        onOpenReparentPicker={() => {}}
       />
       <AddAccountDialog
         clientId={clientId}

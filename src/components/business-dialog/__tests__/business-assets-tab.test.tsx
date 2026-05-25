@@ -20,6 +20,7 @@ function makeAccount(over: Partial<{ id: string; name: string; value: number; pa
     value: 50_000,
     parentAccountId: businessId,
     category: "cash",
+    owners: [] as Array<{ kind: "family_member"; familyMemberId: string; percent: number }>,
     ...over,
   };
 }
@@ -33,13 +34,13 @@ describe("BusinessAssetsTab — list view", () => {
         clientId={clientId}
         businessId={businessId}
         businessName="Test LLC"
-        accounts={[acc, other]}
-        liabilities={[]}
+        allAccounts={[acc, other]}
+        allLiabilities={[]}
+        familyMembers={[]}
         hidden={false}
         onChanged={() => {}}
         onOpenAddAccount={() => {}}
         onOpenAddLiability={() => {}}
-        onOpenReparentPicker={() => {}}
       />,
     );
     expect(screen.getByText("Op Checking")).toBeInTheDocument();
@@ -52,13 +53,13 @@ describe("BusinessAssetsTab — list view", () => {
         clientId={clientId}
         businessId={businessId}
         businessName="Test LLC"
-        accounts={[]}
-        liabilities={[]}
+        allAccounts={[]}
+        allLiabilities={[]}
+        familyMembers={[]}
         hidden={false}
         onChanged={() => {}}
         onOpenAddAccount={() => {}}
         onOpenAddLiability={() => {}}
-        onOpenReparentPicker={() => {}}
       />,
     );
     expect(screen.getByText(/No assets or liabilities/i)).toBeInTheDocument();
@@ -74,13 +75,13 @@ describe("BusinessAssetsTab — list view", () => {
         clientId={clientId}
         businessId={businessId}
         businessName="Test LLC"
-        accounts={[acc]}
-        liabilities={[]}
+        allAccounts={[acc]}
+        allLiabilities={[]}
+        familyMembers={[]}
         hidden={false}
         onChanged={onChanged}
         onOpenAddAccount={() => {}}
         onOpenAddLiability={() => {}}
-        onOpenReparentPicker={() => {}}
       />,
     );
 
@@ -95,6 +96,49 @@ describe("BusinessAssetsTab — list view", () => {
       expect.objectContaining({
         method: "PUT",
         body: JSON.stringify({ parentAccountId: null }),
+      }),
+    );
+  });
+
+  it("PUTs both parentAccountId and owners:[] on confirmed reparent", async () => {
+    const onChanged = vi.fn();
+    fetchMock.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+
+    const standalone = {
+      id: "acc-stand",
+      name: "Standalone Checking",
+      value: 25_000,
+      category: "cash",
+      parentAccountId: null,
+      owners: [{ kind: "family_member" as const, familyMemberId: "fm-susan", percent: 1 }],
+    };
+
+    render(
+      <BusinessAssetsTab
+        clientId={clientId}
+        businessId={businessId}
+        businessName="Test LLC"
+        allAccounts={[standalone]}
+        allLiabilities={[]}
+        familyMembers={[{ id: "fm-susan", firstName: "Susan" }]}
+        hidden={false}
+        onChanged={onChanged}
+        onOpenAddAccount={() => {}}
+        onOpenAddLiability={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /reassign existing asset/i }));
+    fireEvent.click(screen.getByRole("button", { name: /standalone checking/i }));
+    expect(screen.getByText(/Susan \(100%\)/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /confirm reassign/i }));
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/clients/${clientId}/accounts/${standalone.id}`,
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ parentAccountId: businessId, owners: [] }),
       }),
     );
   });
