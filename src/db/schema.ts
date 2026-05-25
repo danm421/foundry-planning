@@ -1215,6 +1215,7 @@ export const accounts = pgTable("accounts", {
   parentAccountId: uuid("parent_account_id").references((): AnyPgColumn => accounts.id, {
     onDelete: "set null",
   }),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

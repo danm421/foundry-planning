@@ -39,6 +39,12 @@ const baseRow: typeof accounts.$inferSelect = {
   source: "manual",
   accountNumberLast4: null,
   custodian: null,
+  notes: null,
+  businessType: null,
+  distributionPolicyPercent: null,
+  flowMode: "annual",
+  businessTaxTreatment: null,
+  parentAccountId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

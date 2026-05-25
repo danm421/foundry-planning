@@ -511,6 +511,7 @@ const CRT_CHARITY: import("../../family-view").ExternalBeneficiary = {
   id: "00000000-0000-0000-0000-000000000bbb",
   name: "Test Foundation",
   kind: "charity",
+  notes: null,
 };
 
 describe("<AddTrustForm> CRT submission", () => {
