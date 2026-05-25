@@ -308,6 +308,18 @@ type RawExpense = {
   endsAtMedicareEligibilityOwner?: "client" | "spouse" | "joint" | null;
 };
 
+function mapEndsAtMedicareEligibilityOwner(
+  raw: RawExpense["endsAtMedicareEligibilityOwner"],
+): "client" | "spouse" | undefined {
+  if (raw === "client" || raw === "spouse") return raw;
+  if (raw === "joint") {
+    console.warn(
+      `[resolveExpenseFromRaw] ignoring endsAtMedicareEligibilityOwner="joint" — column is per-person; expected "client" or "spouse"`,
+    );
+  }
+  return undefined;
+}
+
 export function resolveExpenseFromRaw(
   raw: RawExpense,
   ctx: ResolutionContext,
@@ -332,10 +344,7 @@ export function resolveExpenseFromRaw(
     endYearRef: raw.endYearRef ?? null,
     growthSource: raw.growthSource ?? null,
     isDefault: raw.isDefault ?? false,
-    endsAtMedicareEligibilityOwner:
-      raw.endsAtMedicareEligibilityOwner === "client" || raw.endsAtMedicareEligibilityOwner === "spouse"
-        ? raw.endsAtMedicareEligibilityOwner
-        : undefined,
+    endsAtMedicareEligibilityOwner: mapEndsAtMedicareEligibilityOwner(raw.endsAtMedicareEligibilityOwner),
   };
 }
 
