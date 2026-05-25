@@ -55,9 +55,13 @@ export async function PUT(
     }
 
     // ── owners[] validation (PUT) ──────────────────────────────────────────
+    // When parentAccountId is being set non-null, the liability becomes a child
+    // of a business account. Children have no per-row owners — skip validation
+    // entirely; the transaction will wipe liabilityOwners atomically.
+    const isReparentingToParent = body.parentAccountId != null;
     let validatedOwners: ValidatedOwner[] | undefined;
 
-    if (Array.isArray(body.owners)) {
+    if (!isReparentingToParent && Array.isArray(body.owners)) {
       const shapeResult = validateOwnersShape(body.owners);
       if ("error" in shapeResult) {
         return NextResponse.json({ error: shapeResult.error }, { status: 400 });
@@ -86,7 +90,10 @@ export async function PUT(
         .returning();
       updated = result;
 
-      if (validatedOwners) {
+      if (isReparentingToParent) {
+        // Child-of-business liabilities carry no per-row owners — clear atomically.
+        await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
+      } else if (validatedOwners) {
         await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
         for (const o of validatedOwners) {
           await tx.insert(liabilityOwners).values({

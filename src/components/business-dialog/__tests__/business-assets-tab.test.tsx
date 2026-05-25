@@ -100,7 +100,7 @@ describe("BusinessAssetsTab — list view", () => {
     );
   });
 
-  it("PUTs both parentAccountId and owners:[] on confirmed reparent", async () => {
+  it("PUTs parentAccountId (no owners) on confirmed reparent", async () => {
     const onChanged = vi.fn();
     fetchMock.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
 
@@ -138,7 +138,7 @@ describe("BusinessAssetsTab — list view", () => {
       `/api/clients/${clientId}/accounts/${standalone.id}`,
       expect.objectContaining({
         method: "PUT",
-        body: JSON.stringify({ parentAccountId: businessId, owners: [] }),
+        body: JSON.stringify({ parentAccountId: businessId }),
       }),
     );
   });

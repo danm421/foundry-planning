@@ -134,7 +134,7 @@ export default function BusinessAssetsTab({
       const res = await fetch(url, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parentAccountId: businessId, owners: [] }),
+        body: JSON.stringify({ parentAccountId: businessId }),
       });
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
