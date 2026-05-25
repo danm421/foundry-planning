@@ -157,8 +157,11 @@ export default function FlowsTab(props: FlowsTabProps) {
       {isSchedule && props.entityId ? (
         <FlowScheduleGrid
           clientId={props.clientId}
-          entityId={props.entityId}
-          entityType={props.entityType}
+          target={{
+            kind: "entity",
+            entityId: props.entityId,
+            entityType: props.entityType,
+          }}
           scenarioId={scenarioId}
           planStartYear={props.planStartYear}
           planEndYear={props.planEndYear}

@@ -28,6 +28,18 @@ interface BaseFlow {
   inflationStartYear: number | null;
 }
 
+/**
+ * Discriminates the save target. Entity targets save against the legacy
+ * entity_flow_overrides route; account targets hit the parallel account
+ * route added in business-account-flow-schedule Phase 3. The kind also drives
+ * the Distribution-% column rule:
+ *   entity → only business entity types (LLC, partnership, S-corp, etc.)
+ *   account → always shown (top-level business accounts only — enforced upstream)
+ */
+export type ScheduleTarget =
+  | { kind: "entity"; entityId: string; entityType: EntityType }
+  | { kind: "account"; accountId: string };
+
 export interface FlowScheduleGridOverride {
   year: number;
   incomeAmount: number | null;
@@ -37,15 +49,20 @@ export interface FlowScheduleGridOverride {
 
 export interface FlowScheduleGridProps {
   clientId: string;
-  entityId: string;
-  entityType: EntityType;
+  target: ScheduleTarget;
   /** Null = base-plan overrides (scenario_id IS NULL). */
   scenarioId: string | null;
   planStartYear: number;
   planEndYear: number;
   primaryClientBirthYear: number;
-  income: BaseFlow | null;
-  expense: BaseFlow | null;
+  /**
+   * Income/expense baseline used to render the per-year placeholder.
+   * Single flow for entity targets (one income + one expense per entity);
+   * array for account targets (a business may own N incomes and N expenses
+   * — the placeholder shows the summed annual+growth across all of them).
+   */
+  income: BaseFlow | BaseFlow[] | null;
+  expense: BaseFlow | BaseFlow[] | null;
   initialOverrides: FlowScheduleGridOverride[];
   /** Lifts save + saving state to the parent so the dialog footer can render the button. */
   onSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
@@ -53,11 +70,20 @@ export interface FlowScheduleGridProps {
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
 
-function baseAmount(row: BaseFlow | null, year: number): number {
-  if (!row) return 0;
+function baseAmountSingle(row: BaseFlow, year: number): number {
   if (year < row.startYear || year > row.endYear) return 0;
   const inflateFrom = row.inflationStartYear ?? row.startYear;
   return row.annualAmount * Math.pow(1 + row.growthRate, year - inflateFrom);
+}
+
+function baseAmount(row: BaseFlow | BaseFlow[] | null, year: number): number {
+  if (!row) return 0;
+  if (Array.isArray(row)) {
+    let total = 0;
+    for (const r of row) total += baseAmountSingle(r, year);
+    return total;
+  }
+  return baseAmountSingle(row, year);
 }
 
 type Cell = string; // "" = no override; otherwise the typed string
@@ -66,8 +92,20 @@ function fmtMoney(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
+function showDistColumn(target: ScheduleTarget): boolean {
+  return target.kind === "account" || isBusinessType(target.entityType);
+}
+
+function buildSaveUrl(clientId: string, target: ScheduleTarget, scenarioId: string | null): string {
+  const path =
+    target.kind === "entity"
+      ? `/api/clients/${clientId}/entities/${target.entityId}/flow-overrides`
+      : `/api/clients/${clientId}/accounts/${target.accountId}/flow-overrides`;
+  return scenarioId ? `${path}?scenarioId=${scenarioId}` : path;
+}
+
 export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
-  const showDist = isBusinessType(props.entityType);
+  const showDist = showDistColumn(props.target);
   const years = useMemo(() => {
     const out: number[] = [];
     for (let y = props.planStartYear; y <= props.planEndYear; y++) out.push(y);
@@ -165,9 +203,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
       }
     }
     try {
-      const url = props.scenarioId
-        ? `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides?scenarioId=${props.scenarioId}`
-        : `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides`;
+      const url = buildSaveUrl(props.clientId, props.target, props.scenarioId);
       const res = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

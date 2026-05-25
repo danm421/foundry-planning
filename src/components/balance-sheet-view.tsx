@@ -86,10 +86,34 @@ interface BalanceSheetViewProps {
   notesReceivable?: NoteReceivable[];
   /** Incomes attached to business accounts, used to render the "Incomes"
    *  pill inside an expanded business row. Only rows with ownerAccountId
-   *  pointing at a business shown here are surfaced. */
-  incomes?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
+   *  pointing at a business shown here are surfaced. The optional schedule
+   *  fields (startYear/endYear/growthRate/inflationStartYear) drive the
+   *  Custom-schedule placeholder math in BusinessFlowsTab. */
+  incomes?: {
+    id: string;
+    name: string;
+    annualAmount: number | string;
+    ownerAccountId?: string | null;
+    startYear?: number | null;
+    endYear?: number | null;
+    growthRate?: number | null;
+    inflationStartYear?: number | null;
+  }[];
   /** Expenses attached to business accounts, shown in the BusinessFlowsTab. */
-  expenses?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
+  expenses?: {
+    id: string;
+    name: string;
+    annualAmount: number | string;
+    ownerAccountId?: string | null;
+    startYear?: number | null;
+    endYear?: number | null;
+    growthRate?: number | null;
+    inflationStartYear?: number | null;
+  }[];
+  /** Schedule-grid context for the Flows tab on the BusinessDialog. */
+  planStartYear?: number;
+  planEndYear?: number;
+  primaryClientBirthYear?: number;
   entities: EntityOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults: CategoryDefaults;
@@ -377,6 +401,9 @@ export default function BalanceSheetView({
   resolvedInflationRate,
   embed = "page",
   section,
+  planStartYear,
+  planEndYear,
+  primaryClientBirthYear,
 }: BalanceSheetViewProps) {
   const isWizard = embed === "wizard";
   const showAssetsCol = !isWizard || section === "accounts";
@@ -949,6 +976,9 @@ export default function BalanceSheetView({
         onOpenAddLiability={() => setAddLiabilityOpen(true)}
         incomes={incomes}
         expenses={expenses}
+        planStartYear={planStartYear}
+        planEndYear={planEndYear}
+        primaryClientBirthYear={primaryClientBirthYear}
         // TODO Task 11+: wire onOpenAddIncome/onOpenAddExpense/onEditIncome/onEditExpense
         // to the existing IncomeDialog/ExpenseDialog in income-expenses-view.tsx.
         // Those dialogs are mounted in a sibling view so cross-component wiring is

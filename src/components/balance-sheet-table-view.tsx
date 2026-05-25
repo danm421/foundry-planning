@@ -61,6 +61,10 @@ interface BalanceSheetTableViewProps {
   >;
   milestones?: ClientMilestones;
   resolvedInflationRate?: number;
+  /** Schedule-grid context for the Flows tab on the BusinessDialog. */
+  planStartYear?: number;
+  planEndYear?: number;
+  primaryClientBirthYear?: number;
 }
 
 type AccountCategory = AccountRow["category"];
@@ -383,6 +387,9 @@ export default function BalanceSheetTableView({
   categoryDefaultSources,
   milestones,
   resolvedInflationRate,
+  planStartYear,
+  planEndYear,
+  primaryClientBirthYear,
 }: BalanceSheetTableViewProps) {
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
@@ -1351,6 +1358,9 @@ export default function BalanceSheetTableView({
               )
             : undefined
         }
+        planStartYear={planStartYear}
+        planEndYear={planEndYear}
+        primaryClientBirthYear={primaryClientBirthYear}
       />
 
       <AddLiabilityDialog

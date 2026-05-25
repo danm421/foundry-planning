@@ -1,14 +1,21 @@
 // @vitest-environment jsdom
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import FlowScheduleGrid, { type ScheduleSaveBinding } from "../flow-schedule-grid";
+import FlowScheduleGrid, {
+  type ScheduleSaveBinding,
+  type ScheduleTarget,
+} from "../flow-schedule-grid";
 
 /**
  * Renders the grid and exposes a `save()` helper. The grid no longer owns its
  * Save button — the dialog footer does — so tests drive saves through the
  * binding the grid registers with its parent.
  */
-function renderWithSave(overrideProps: Partial<typeof baseProps> = {}) {
+function renderWithSave(
+  overrideProps: Partial<Omit<typeof baseProps, "target">> & {
+    target?: ScheduleTarget;
+  } = {},
+) {
   const ref: { current: ScheduleSaveBinding | null } = { current: null };
   render(
     <FlowScheduleGrid
@@ -31,8 +38,11 @@ function renderWithSave(overrideProps: Partial<typeof baseProps> = {}) {
 
 const baseProps = {
   clientId: "client-1",
-  entityId: "ent-1",
-  entityType: "llc" as const,
+  target: {
+    kind: "entity",
+    entityId: "ent-1",
+    entityType: "llc",
+  } satisfies ScheduleTarget,
   scenarioId: "scenario-1" as string | null,
   planStartYear: 2026,
   planEndYear: 2028,
@@ -70,7 +80,12 @@ describe("FlowScheduleGrid", () => {
   });
 
   it("hides Distribution % column for trusts", () => {
-    render(<FlowScheduleGrid {...baseProps} entityType="trust" />);
+    render(
+      <FlowScheduleGrid
+        {...baseProps}
+        target={{ kind: "entity", entityId: "ent-1", entityType: "trust" }}
+      />,
+    );
     expect(screen.queryByText(/distribution/i)).not.toBeInTheDocument();
   });
 
@@ -171,8 +186,50 @@ describe("FlowScheduleGrid", () => {
   });
 
   it("0%/100% buttons are not rendered for trust entities", () => {
-    render(<FlowScheduleGrid {...baseProps} entityType="trust" />);
+    render(
+      <FlowScheduleGrid
+        {...baseProps}
+        target={{ kind: "entity", entityId: "ent-1", entityType: "trust" }}
+      />,
+    );
     expect(screen.queryByRole("button", { name: "0%" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "100%" })).not.toBeInTheDocument();
+  });
+
+  it("account target always shows Distribution % column and saves to the account route", async () => {
+    const { save } = renderWithSave({
+      target: { kind: "account", accountId: "acct-1" },
+    });
+    expect(screen.getByRole("button", { name: "0%" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "100%" })).toBeInTheDocument();
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.change(inputs[incomeInputForYearIndex(0)], {
+      target: { value: "500000" },
+    });
+    await save();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[0]).toContain("/api/clients/client-1/accounts/acct-1/flow-overrides");
+    expect(call[0]).toContain("scenarioId=scenario-1");
+  });
+
+  it("account target sums an array baseline across multiple owned flows", () => {
+    render(
+      <FlowScheduleGrid
+        {...baseProps}
+        target={{ kind: "account", accountId: "acct-1" }}
+        income={[
+          { annualAmount: 60_000, growthRate: 0, startYear: 2026, endYear: 2050, inflationStartYear: 2026 },
+          { annualAmount: 40_000, growthRate: 0, startYear: 2026, endYear: 2050, inflationStartYear: 2026 },
+        ]}
+        expense={null}
+      />,
+    );
+    // Two summed incomes (60k + 40k = 100k) should appear as a placeholder
+    // on the per-year row. Match the formatted currency string.
+    const placeholders = screen
+      .getAllByRole("textbox")
+      .map((el) => (el as HTMLInputElement).placeholder);
+    expect(placeholders).toContain("$100,000");
   });
 });
