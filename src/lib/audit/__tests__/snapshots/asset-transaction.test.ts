@@ -26,7 +26,7 @@ const buyRow: typeof assetTransactions.$inferSelect = {
   proceedsAccountId: null,
   qualifiesForHomeSaleExclusion: false,
   purchaseTransactionId: null,
-  entityId: null,
+  businessAccountId: null,
   fractionSold: null,
   assetName: "Florida condo",
   assetCategory: "real_estate",

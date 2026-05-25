@@ -210,7 +210,7 @@ describe("SOLVER_MUTATION_SCHEMA — technique upserts", () => {
 });
 
 describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine", () => {
-  it("rejects a sell with both accountId and entityId set", () => {
+  it("rejects a sell with both accountId and businessAccountId set", () => {
     const r = SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "asset-transaction-upsert",
       id: "at-1",
@@ -220,13 +220,13 @@ describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine
         type: "sell",
         year: 2030,
         accountId: "acc-1",
-        entityId: "ent-1",
+        businessAccountId: "ent-1",
       },
     });
     expect(r.success).toBe(false);
   });
 
-  it("accepts a sell with only entityId set", () => {
+  it("accepts a sell with only businessAccountId set", () => {
     const r = SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "asset-transaction-upsert",
       id: "at-1",
@@ -235,7 +235,7 @@ describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine
         name: "Sell",
         type: "sell",
         year: 2030,
-        entityId: "ent-1",
+        businessAccountId: "ent-1",
       },
     });
     expect(r.success).toBe(true);
@@ -251,7 +251,7 @@ describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine
         type: "buy",
         year: 2030,
         accountId: "acc-1",
-        entityId: "ent-1",
+        businessAccountId: "ent-1",
       },
     });
     expect(r.success).toBe(true);
@@ -268,7 +268,7 @@ describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine
         year: 2030,
         accountId: "acc-1",
         purchaseTransactionId: "pt-1",
-        entityId: "ent-1",
+        businessAccountId: "ent-1",
       },
     });
     expect(r.success).toBe(false);

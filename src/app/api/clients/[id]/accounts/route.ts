@@ -172,20 +172,50 @@ export async function POST(
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
-    // parentAccountId (business-only) must scope to the same client. The DB FK
-    // only checks existence — without this, a crafted POST could attach a
-    // business row to an account in another firm.
-    if (category === "business" && parentAccountId != null) {
+    // parentAccountId may be set on any category. Verify the referenced row
+    // is in this client AND is a business account — the DB FK only checks
+    // existence, so without this a crafted POST could attach to an account in
+    // another firm or to a non-business parent.
+    if (parentAccountId != null) {
       const parentCheck = await assertAccountsInClient(id, [parentAccountId]);
       if (!parentCheck.ok) {
         return NextResponse.json({ error: parentCheck.reason }, { status: 400 });
+      }
+      const [parentRow] = await db
+        .select({ category: accounts.category })
+        .from(accounts)
+        .where(eq(accounts.id, parentAccountId));
+      if (!parentRow || parentRow.category !== "business") {
+        return NextResponse.json(
+          { error: "parentAccountId must reference a business account" },
+          { status: 400 },
+        );
       }
     }
 
     // ── owners[] validation ────────────────────────────────────────────────
     let resolvedOwners: ValidatedOwner[] | undefined;
 
-    if ("owners" in body && body.owners !== undefined) {
+    if (parentAccountId != null) {
+      // Children of a business inherit their ownership via parentAccountId.
+      // Skip both the owners[] write and the legacy synthesis path so we
+      // don't create stray account_owners rows.
+      if (
+        "owners" in body &&
+        body.owners !== undefined &&
+        Array.isArray(body.owners) &&
+        body.owners.length > 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "An account cannot have both a parent business and explicit owners",
+          },
+          { status: 400 },
+        );
+      }
+      resolvedOwners = undefined;
+    } else if ("owners" in body && body.owners !== undefined) {
       // New owners[] path
       const shapeResult = validateOwnersShape(body.owners);
       if ("error" in shapeResult) {
@@ -256,7 +286,8 @@ export async function POST(
           flowMode: category === "business" ? (flowMode ?? "annual") : "annual",
           businessTaxTreatment:
             category === "business" ? (businessTaxTreatment ?? "qbi") : null,
-          parentAccountId: category === "business" ? (parentAccountId ?? null) : null,
+          // parentAccountId allowed on any category — tenant + business-target-validated above.
+          parentAccountId: parentAccountId ?? null,
         })
         .returning();
       account = inserted;

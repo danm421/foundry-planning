@@ -81,6 +81,7 @@ export function toAssetTransactionInitialData(
     year: at.year,
     accountId: at.accountId ?? null,
     purchaseTransactionId: at.purchaseTransactionId ?? null,
+    businessAccountId: at.businessAccountId ?? null,
     fractionSold:
       at.fractionSold != null ? String(at.fractionSold) : null,
     overrideSaleValue: numToString(at.overrideSaleValue),

@@ -1215,6 +1215,7 @@ export const accounts = pgTable("accounts", {
   parentAccountId: uuid("parent_account_id").references((): AnyPgColumn => accounts.id, {
     onDelete: "set null",
   }),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -2614,9 +2615,9 @@ export const assetTransactions = pgTable("asset_transactions", {
     { onDelete: "set null" },
   ),
   // Sell-only. Set when the transaction sells an entire (or fractional) business
-  // entity. Mutually exclusive with accountId and purchaseTransactionId.
-  // Entities of type 'trust' may not be referenced (API-enforced).
-  entityId: uuid("entity_id").references(() => entities.id, { onDelete: "set null" }),
+  // account. Mutually exclusive with accountId and purchaseTransactionId.
+  // Must reference an account with category = 'business' (API-enforced).
+  businessAccountId: uuid("business_account_id").references(() => accounts.id, { onDelete: "set null" }),
   // Partial-sale fraction. null = full sale (today's binary behavior). 0 < x ≤ 1
   // = partial. Sell-only via CHECK; null on buys.
   fractionSold: decimal("fraction_sold", { precision: 7, scale: 6 }),
@@ -2645,13 +2646,13 @@ export const assetTransactions = pgTable("asset_transactions", {
     sql`${t.type} <> 'sell' OR (
       (CASE WHEN ${t.accountId} IS NOT NULL THEN 1 ELSE 0 END) +
       (CASE WHEN ${t.purchaseTransactionId} IS NOT NULL THEN 1 ELSE 0 END) +
-      (CASE WHEN ${t.entityId} IS NOT NULL THEN 1 ELSE 0 END)
+      (CASE WHEN ${t.businessAccountId} IS NOT NULL THEN 1 ELSE 0 END)
     ) <= 1`,
   ),
   // Buys never carry sell-side fields.
   check(
     "asset_transactions_buy_no_source_check",
-    sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.entityId} IS NULL AND ${t.fractionSold} IS NULL)`,
+    sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.businessAccountId} IS NULL AND ${t.fractionSold} IS NULL)`,
   ),
   // fraction_sold must be in (0, 1] when present.
   check(

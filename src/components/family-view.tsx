@@ -10,7 +10,6 @@ import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
 import type { EntityFlowMode } from "@/engine/types";
-import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { type TrustSubType } from "@/lib/entities/trust";
@@ -312,7 +311,6 @@ export default function FamilyView({
   const [membersEdit, setMembersEdit] = useState(false);
 
   const [entityDialogOpen, setEntityDialogOpen] = useState(false);
-  const [entityCreateKind, setEntityCreateKind] = useState<EntityKind>("trust");
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
@@ -549,7 +547,6 @@ export default function FamilyView({
             <button
               onClick={() => {
                 setEditingEntity(undefined);
-                setEntityCreateKind("trust");
                 setEntityDialogOpen(true);
               }}
               className="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
@@ -677,7 +674,6 @@ export default function FamilyView({
           open={entityDialogOpen}
           onOpenChange={setEntityDialogOpen}
           editing={editingEntity}
-          createKind={entityCreateKind}
           household={{
             client: { firstName: primary.firstName },
             spouse: primary.spouseName ? { firstName: primary.spouseName } : null,

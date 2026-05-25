@@ -1,7 +1,6 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
-import { LEGACY_FM_CLIENT, rebalanceOwnersAfterEntityDisposition } from "./ownership";
-import type { EntityOwner } from "./ownership";
+import { LEGACY_FM_CLIENT } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -32,9 +31,9 @@ export function nextSyntheticId(prefix: string): string {
  *  the caller needs for capital-gain accumulation, proceeds routing, and
  *  cleanup.
  *
- *  Pure extraction from `applyAssetSales`: behavior on a non-entity sale is
- *  unchanged. The entity-sale cascade in `applyEntitySales` (Task 5+) calls
- *  this once per cascaded account.
+ *  Pure extraction from `applyAssetSales`: behavior on a non-business sale is
+ *  unchanged. The business-sale cascade in `applyBusinessSales` calls this
+ *  once per cascaded child account.
  *
  *  Note: this helper does NOT handle §121 home-sale exclusion or proceeds-
  *  account routing — those stay in `applyAssetSales` because entity-cascaded
@@ -225,9 +224,9 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
   for (const sale of sales) {
     if (sale.type !== "sell" || sale.year !== year) continue;
 
-    // Entity-source sales are cascaded across co-owned accounts by
-    // applyEntitySales; skip them here so we don't double-process.
-    if (sale.entityId) continue;
+    // Business-account-source sales are cascaded across child accounts by
+    // applyBusinessSales; skip them here so we don't double-process.
+    if (sale.businessAccountId) continue;
 
     const sourceAccountId = sale.accountId
       ?? (sale.purchaseTransactionId ? `technique-acct-${sale.purchaseTransactionId}` : null);
@@ -530,27 +529,11 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
   return { newAccounts, newLiabilities, breakdown };
 }
 
-// ── applyEntitySales ──────────────────────────────────────────────────────────
+// ── applyBusinessSales ────────────────────────────────────────────────────────
 
-/** Minimal shape of an entity row consumed by entity sales. Real callers pass
- *  EntitySummary from src/engine/types — structurally compatible. Kept local
- *  so the engine signature stays decoupled from the broader EntitySummary
- *  surface (which carries dozens of unrelated trust/distribution fields). */
-export interface EntitySaleInputEntity {
-  id: string;
-  name: string;
-  entityType: "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
-  value: number;
-  basis: number;
-  /** Polymorphic — same shape as EntitySummary.owners. Family-member owners
-   *  drive per-1040 capital-gain attribution; entity-kind owners are recognized
-   *  in totals but not yet attributed to a downstream taxpayer. */
-  owners: EntityOwner[];
-}
-
-export interface EntitySaleBreakdown {
+export interface BusinessSaleBreakdown {
   transactionId: string;
-  entityId: string;
+  businessAccountId: string;
   fractionSold: number;
   operatingSaleValue: number;
   operatingBasis: number;
@@ -564,31 +547,29 @@ export interface EntitySaleBreakdown {
   netProceeds: number;
 }
 
-export interface EntitySaleDiagnostic {
+export interface BusinessSaleDiagnostic {
   transactionId: string;
   reason:
-    | "trust-not-sellable"
-    | "entity-not-found"
+    | "business-not-found"
+    | "business-already-sold"
     | "no-owners"
     | "invalid-fraction"
-    | "owner-percents-not-summing-to-one"
     | "no-default-checking";
 }
 
-export interface EntitySalesResult {
+export interface BusinessSalesResult {
   capitalGains: number;
   capitalGainsByOwner: Record<string, number>;
   removedAccountIds: string[];
   removedLiabilityIds: string[];
-  removedEntityIds: string[];
+  removedBusinessAccountIds: string[];
   totalLiabilityPaydown: number;
-  breakdown: EntitySaleBreakdown[];
-  diagnostics: EntitySaleDiagnostic[];
+  breakdown: BusinessSaleBreakdown[];
+  diagnostics: BusinessSaleDiagnostic[];
 }
 
-export interface ApplyEntitySalesInput {
+export interface ApplyBusinessSalesInput {
   sales: AssetTransaction[];
-  entities: EntitySaleInputEntity[];
   accounts: Account[];
   liabilities: Liability[];
   accountBalances: Record<string, number>;
@@ -598,19 +579,24 @@ export interface ApplyEntitySalesInput {
   defaultCheckingId: string;
 }
 
-/** Process all entity-source asset sales for `year`. Mutates the following
- *  caller-owned working state in place:
+/** Process all business-account-source asset sales for `year`.
+ *
+ *  Phase 4 model: businesses live as account rows (category === "business").
+ *  Children — accounts/liabilities whose `parentAccountId` points at the
+ *  business — are 100% owned by their parent (no fractional `account_owners`
+ *  rows), so the cascade walks `parentAccountId` instead of the legacy
+ *  entity-percent walk. No per-child owner rebalancing is needed.
+ *
+ *  Mutates the following caller-owned working state in place:
  *  - `accountBalances` / `basisMap` / `accountLedgers` — debited for cascaded
- *    account sales; credited at `defaultCheckingId` for net proceeds.
- *  - `account.owners` — rebalanced for every account the entity co-owns.
- *  - `liability.balance` and `liability.owners` — paid down + rebalanced for
- *    every liability the entity co-owns (excluding those already settled by
- *    the account-cascade's helper, to avoid double-payoff of linked mortgages).
+ *    child account sales; credited at `defaultCheckingId` for net proceeds.
+ *  - `liability.balance` — paid down for each child liability, excluding
+ *    those already settled inside `sellAccountFraction` (linked mortgages).
+ *  - `business.value` — set to 0 on full sale, scaled by (1 − f) on partial.
  *  Returns aggregate results, removed IDs, breakdown, and diagnostics. */
-export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResult {
+export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSalesResult {
   const {
     sales,
-    entities,
     accounts,
     liabilities,
     accountBalances,
@@ -624,14 +610,14 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
   const capitalGainsByOwner: Record<string, number> = {};
   const removedAccountIds: string[] = [];
   const removedLiabilityIdsSet = new Set<string>();
-  const removedEntityIds: string[] = [];
+  const removedBusinessAccountIds: string[] = [];
   let totalLiabilityPaydown = 0;
-  const breakdown: EntitySaleBreakdown[] = [];
-  const diagnostics: EntitySaleDiagnostic[] = [];
+  const breakdown: BusinessSaleBreakdown[] = [];
+  const diagnostics: BusinessSaleDiagnostic[] = [];
 
   for (const sale of sales) {
     if (sale.type !== "sell" || sale.year !== year) continue;
-    if (!sale.entityId) continue;
+    if (!sale.businessAccountId) continue;
 
     const f = sale.fractionSold ?? 1;
     if (f <= 0 || f > 1) {
@@ -639,64 +625,59 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
       continue;
     }
 
-    const entity = entities.find((e) => e.id === sale.entityId);
-    if (!entity) {
-      diagnostics.push({ transactionId: sale.id, reason: "entity-not-found" });
+    const business = accounts.find(
+      (a) =>
+        a.id === sale.businessAccountId &&
+        a.category === "business" &&
+        a.parentAccountId == null,
+    );
+    if (!business) {
+      diagnostics.push({ transactionId: sale.id, reason: "business-not-found" });
       continue;
     }
-    if (entity.entityType === "trust") {
-      diagnostics.push({ transactionId: sale.id, reason: "trust-not-sellable" });
+    if (removedBusinessAccountIds.includes(business.id)) {
+      // Already fully sold earlier in this BoY pass — guard against multi-
+      // sale collisions inside the same year.
+      diagnostics.push({ transactionId: sale.id, reason: "business-already-sold" });
       continue;
     }
-    if (entity.owners.length === 0) {
+    if (business.owners.length === 0) {
       diagnostics.push({ transactionId: sale.id, reason: "no-owners" });
       continue;
     }
 
-    // Operating-value sale
-    const operatingValue = sale.overrideSaleValue ?? entity.value;
-    const operatingBasis = sale.overrideBasis ?? entity.basis;
+    // Operating-value sale on the business itself.
+    const operatingValue = sale.overrideSaleValue ?? business.value ?? 0;
+    const operatingBasis = sale.overrideBasis ?? business.basis ?? 0;
     const operatingGross = f * operatingValue;
     const operatingGain = Math.max(0, f * (operatingValue - operatingBasis));
 
-    // Cascade: for each account the entity owns, sell f × p of the account
-    // via sellAccountFraction, then rebalance the account's owners so the
-    // remaining co-owners' dollar exposure is preserved.
+    // Cascade through child accounts (parentAccountId === business.id).
+    // Children are 100% owned by the parent so the per-owner walk used by
+    // the legacy entity-sales path is unnecessary — fraction f applies
+    // directly to each child's balance.
     const cascadedAccountIds: string[] = [];
     let cascadedGross = 0;
     let cascadedGain = 0;
-    // Track liabilities already paid off inside `sellAccountFraction` (linked
-    // mortgages on full sales) so the liability-cascade loop below doesn't
-    // double-pay them out of the entity's gross.
     const liabilitiesSettledByAccountCascade = new Set<string>();
-    for (const account of accounts) {
-      const entityRow = account.owners.find(
-        (o) => o.kind === "entity" && o.entityId === entity.id,
-      );
-      if (!entityRow) continue;
-      const p = entityRow.percent;
-      const effectiveFraction = f * p;
-      if (effectiveFraction <= 0) continue;
+    for (const childAccount of accounts) {
+      if (childAccount.parentAccountId !== business.id) continue;
 
       const cascadeResult = sellAccountFraction({
-        accountId: account.id,
-        fraction: effectiveFraction,
+        accountId: childAccount.id,
+        fraction: f,
         liabilities,
         accountBalances,
         basisMap,
         accountLedgers,
-        saleLabel: `Entity-cascade sale: ${entity.name}`,
+        saleLabel: `Business-cascade sale: ${business.name}`,
         saleId: sale.id,
         transactionCostPct: 0,
         transactionCostFlat: 0,
       });
-
-      // netProceeds is already net of any linked-mortgage payoff inside the
-      // helper; that's the cash actually available to fold into the entity's
-      // gross.
       cascadedGross += cascadeResult.netProceeds;
       cascadedGain += cascadeResult.capitalGain;
-      cascadedAccountIds.push(account.id);
+      cascadedAccountIds.push(childAccount.id);
       if (cascadeResult.removedAccountId) {
         removedAccountIds.push(cascadeResult.removedAccountId);
       }
@@ -704,51 +685,29 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
         removedLiabilityIdsSet.add(id);
         liabilitiesSettledByAccountCascade.add(id);
       }
-      // Also fold in the mortgage-paid-off into total paydown so the
-      // aggregate accounting reconciles.
       totalLiabilityPaydown += cascadeResult.mortgagePaidOff;
-
-      account.owners = rebalanceOwnersAfterEntityDisposition(
-        account.owners,
-        entity.id,
-        f,
-      );
     }
 
-    // Cascade: pay off entity's share of each liability it co-owns from the
-    // entity's gross proceeds. Then rebalance the liability's owners using
-    // the same helper as accounts.
+    // Cascade through child liabilities — e.g. an LLC mortgage not linked
+    // to a specific property. Skip any already settled by the account
+    // cascade to avoid double-paying linked mortgages.
     const cascadedLiabilityIds: string[] = [];
     let cascadedPaydown = 0;
-    for (const liability of liabilities) {
-      // Skip liabilities already settled by sellAccountFraction (e.g. a
-      // linked mortgage on a property the entity owned). Double-paying
-      // would decrement cash twice and over-report paydown.
-      if (liabilitiesSettledByAccountCascade.has(liability.id)) continue;
-      const entityRow = liability.owners.find(
-        (o) => o.kind === "entity" && o.entityId === entity.id,
-      );
-      if (!entityRow) continue;
-      const q = entityRow.percent;
-      const paydown = f * q * liability.balance;
+    for (const childLiability of liabilities) {
+      if (childLiability.parentAccountId !== business.id) continue;
+      if (liabilitiesSettledByAccountCascade.has(childLiability.id)) continue;
+
+      const paydown = f * childLiability.balance;
       if (paydown <= 0) continue;
-
-      liability.balance = Math.max(0, liability.balance - paydown);
+      childLiability.balance = Math.max(0, childLiability.balance - paydown);
       cascadedPaydown += paydown;
-      cascadedLiabilityIds.push(liability.id);
-
-      liability.owners = rebalanceOwnersAfterEntityDisposition(
-        liability.owners,
-        entity.id,
-        f,
-      );
-
-      if (liability.balance <= 1) {
-        removedLiabilityIdsSet.add(liability.id);
+      cascadedLiabilityIds.push(childLiability.id);
+      if (f >= 1 || childLiability.balance <= 1) {
+        removedLiabilityIdsSet.add(childLiability.id);
       }
     }
 
-    // Costs apply to combined gross
+    // Transaction costs on combined gross (operating + cascaded child sales).
     const grossProceeds = operatingGross + cascadedGross;
     const costPct = (sale.transactionCostPct ?? 0) * grossProceeds;
     const costFlat = sale.transactionCostFlat ?? 0;
@@ -757,28 +716,12 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     const netProceeds = grossProceeds - transactionCosts - cascadedPaydown;
     const totalCapitalGain = operatingGain + cascadedGain;
 
-    // Distribute cap gain to owners pro-rata.
-    // Normalize against the sum of owner percents so that the per-owner shares
-    // always reconcile to `totalCapitalGain` even when `entity.owners` is from
-    // legacy/incomplete data and doesn't sum to exactly 1. Without this, the
-    // aggregate `capitalGains` and the per-owner `capitalGainsByOwner` would
-    // silently drift apart. If the drift exceeds a small epsilon, emit a
-    // diagnostic so the advisor can fix the underlying data.
-    // Capital-gain distribution is keyed by family-member id (1040 attribution).
-    // Normalize against the total owner sum (including any entity-kind rows) so
-    // legacy/incomplete data that doesn't sum to 1 still reconciles, but only
-    // emit per-family-member shares — entity-kind owners are skipped here.
-    // The diagnostic still fires on a non-unit total so the advisor can fix
-    // upstream data.
-    const ownerSum = entity.owners.reduce((s, o) => s + o.percent, 0);
+    // Capital-gain attribution to family-member owners pro-rata. Entity-kind
+    // owners (e.g. a holdco) are recognized in totals but not attributed —
+    // the upstream entity will receive distributions, not capital gain.
+    const ownerSum = business.owners.reduce((s, o) => s + o.percent, 0);
     if (ownerSum > 0) {
-      if (Math.abs(ownerSum - 1) > 1e-6) {
-        diagnostics.push({
-          transactionId: sale.id,
-          reason: "owner-percents-not-summing-to-one",
-        });
-      }
-      for (const owner of entity.owners) {
+      for (const owner of business.owners) {
         if (owner.kind !== "family_member") continue;
         const share = totalCapitalGain * (owner.percent / ownerSum);
         capitalGainsByOwner[owner.familyMemberId] =
@@ -788,11 +731,9 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     totalCapitalGains += totalCapitalGain;
     totalLiabilityPaydown += cascadedPaydown;
 
-    // Route proceeds to household default checking. If routing is impossible
-    // (no default checking configured, or the id doesn't map to a balance),
-    // the sale still proceeds — cap gain is recognized — but cash isn't
-    // deposited. Emit a diagnostic so the advisor knows to wire up a default
-    // checking account.
+    // Route proceeds to household default checking. If routing fails the
+    // cap gain is still recognized but cash isn't deposited; emit a
+    // diagnostic so the advisor wires up a default checking account.
     if (defaultCheckingId && accountBalances[defaultCheckingId] !== undefined) {
       accountBalances[defaultCheckingId] += netProceeds;
       basisMap[defaultCheckingId] = (basisMap[defaultCheckingId] ?? 0) + netProceeds;
@@ -801,7 +742,7 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
         accountLedgers[defaultCheckingId].endingValue += netProceeds;
         accountLedgers[defaultCheckingId].entries.push({
           category: "income",
-          label: `Entity sale proceeds: ${entity.name}`,
+          label: `Business sale proceeds: ${business.name}`,
           amount: netProceeds,
           sourceId: sale.id,
         });
@@ -813,12 +754,19 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
       });
     }
 
-    // Full sale → mark entity for removal
-    if (f >= 1) removedEntityIds.push(entity.id);
+    // On a full sale, mark the business itself for removal; on partial,
+    // scale its operating value so the residual interest persists.
+    if (f >= 1) {
+      removedBusinessAccountIds.push(business.id);
+      removedAccountIds.push(business.id);
+      business.value = 0;
+    } else {
+      business.value = operatingValue * (1 - f);
+    }
 
     breakdown.push({
       transactionId: sale.id,
-      entityId: entity.id,
+      businessAccountId: business.id,
       fractionSold: f,
       operatingSaleValue: operatingValue,
       operatingBasis,
@@ -838,7 +786,7 @@ export function applyEntitySales(input: ApplyEntitySalesInput): EntitySalesResul
     capitalGainsByOwner,
     removedAccountIds,
     removedLiabilityIds: Array.from(removedLiabilityIdsSet),
-    removedEntityIds,
+    removedBusinessAccountIds,
     totalLiabilityPaydown,
     breakdown,
     diagnostics,

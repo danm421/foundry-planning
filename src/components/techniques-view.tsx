@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
-import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
+import AddAssetTransactionForm, { type BusinessSaleOption } from "./forms/add-asset-transaction-form";
 import AddRothConversionForm, { type RothConversionInitialData } from "./forms/add-roth-conversion-form";
 import { HelpTip } from "@/components/help-tip";
 import { runProjection } from "@/engine";
@@ -47,8 +47,8 @@ export interface AssetTransactionRow {
   year: number;
   accountId: string | null;
   purchaseTransactionId: string | null;
-  /** Set when the sell sources a business entity instead of an account. */
-  entityId: string | null;
+  /** Set when the sell sources a business account instead of a regular account. */
+  businessAccountId: string | null;
   fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
@@ -138,7 +138,8 @@ interface TechniquesViewProps {
   rothConversions: RothConversionRow[];
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
-  entities: EntityOption[];
+  /** Top-level business accounts available as sell sources. */
+  businesses: BusinessSaleOption[];
   modelPortfolios: { id: string; name: string }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
@@ -584,30 +585,30 @@ function describeTransaction(
   transaction: AssetTransactionRow,
   accounts: AccountOption[],
   pastBuys: PastBuy[],
-  entities: EntityOption[],
+  businesses: BusinessSaleOption[],
 ): string {
   const accountMap = new Map(accounts.map((a) => [a.id, a]));
   const sellAccount = transaction.accountId ? accountMap.get(transaction.accountId) : null;
   const linkedBuy = transaction.purchaseTransactionId
     ? pastBuys.find((b) => b.id === transaction.purchaseTransactionId)
     : null;
-  const sellEntity = transaction.entityId
-    ? entities.find((e) => e.id === transaction.entityId)
+  const sellBusiness = transaction.businessAccountId
+    ? businesses.find((b) => b.id === transaction.businessAccountId)
     : null;
   const isSell = transaction.type === "sell";
   const isOrphanSell =
     isSell &&
     !transaction.accountId &&
     !transaction.purchaseTransactionId &&
-    !transaction.entityId;
-  const hasSellSource = !!sellAccount || !!linkedBuy || !!sellEntity;
+    !transaction.businessAccountId;
+  const hasSellSource = !!sellAccount || !!linkedBuy || !!sellBusiness;
   const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
 
   let sellLabel: string | null = null;
   if (isOrphanSell) {
     sellLabel = "Sell — source removed";
-  } else if (sellEntity) {
-    sellLabel = `Sell ${sellEntity.name} (entity)`;
+  } else if (sellBusiness) {
+    sellLabel = `Sell ${sellBusiness.name} (business)`;
   } else if (sellAccount) {
     sellLabel = `Sell ${sellAccount.name}`;
   } else if (linkedBuy) {
@@ -703,30 +704,30 @@ const TXN_GRID =
 function txnHeadlineFigure(
   txn: AssetTransactionRow,
   liabilities: LiabilityOption[],
-  entities: EntityOption[],
+  businesses: BusinessSaleOption[],
   projectedSaleValue: number | null,
   projectedMortgagePayoff: number | null,
 ): { value: string; tone: "ink" | "good" | "crit"; title: string } | null {
   const hasSell = !!txn.accountId;
   const hasBuy = !!(txn.assetName || (txn.purchasePrice && parseFloat(txn.purchasePrice) > 0));
-  const isEntitySell = !!txn.entityId;
+  const isBusinessSell = !!txn.businessAccountId;
   const net = computeTransactionNet(txn, liabilities, projectedSaleValue, projectedMortgagePayoff);
 
-  // Entity sales: show overrideSaleValue (or the entity's catalog value)
+  // Business sales: show overrideSaleValue (or the business's catalog value)
   // as the headline sale amount. Cascaded liquidations are not yet
   // pre-projected here, so this is an operating-value-only estimate.
-  if (isEntitySell) {
-    const entity = entities.find((e) => e.id === txn.entityId);
+  if (isBusinessSell) {
+    const business = businesses.find((b) => b.id === txn.businessAccountId);
     const override = txn.overrideSaleValue
       ? parseFloat(txn.overrideSaleValue)
       : null;
-    const baseValue = override ?? entity?.value ?? 0;
+    const baseValue = override ?? business?.value ?? 0;
     const fraction = txn.fractionSold ? parseFloat(txn.fractionSold) : 1;
     const operatingSale = baseValue * fraction;
     return {
       value: formatCurrency(operatingSale),
       tone: "ink",
-      title: `Entity sale: ${formatCurrency(operatingSale)} (operating value, before cascade)`,
+      title: `Business sale: ${formatCurrency(operatingSale)} (operating value, before cascade)`,
     };
   }
 
@@ -770,7 +771,7 @@ function AssetTransactionsTable({
   rows,
   accounts,
   liabilities,
-  entities,
+  businesses,
   pastBuys,
   projectedSaleValueFor,
   projectedMortgagePayoffFor,
@@ -780,7 +781,7 @@ function AssetTransactionsTable({
   rows: AssetTransactionRow[];
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
-  entities: EntityOption[];
+  businesses: BusinessSaleOption[];
   pastBuys: PastBuy[];
   projectedSaleValueFor: (accountId: string, year: number) => number | null;
   projectedMortgagePayoffFor: (liabilityId: string, year: number) => number | null;
@@ -814,14 +815,14 @@ function AssetTransactionsTable({
             ? projectedSaleValueFor(tx.accountId, tx.year)
             : null;
 
-          const isEntitySell = !!tx.entityId;
-          const hasSell = !!tx.accountId || isEntitySell;
+          const isBusinessSell = !!tx.businessAccountId;
+          const hasSell = !!tx.accountId || isBusinessSell;
           const hasBuy = !!(tx.assetName || (tx.purchasePrice && parseFloat(tx.purchasePrice) > 0));
           const isOrphanSell =
             tx.type === "sell" &&
             !tx.accountId &&
             !tx.purchaseTransactionId &&
-            !tx.entityId;
+            !tx.businessAccountId;
 
           let badgeLabel: string;
           let badgeClass: string;
@@ -836,8 +837,8 @@ function AssetTransactionsTable({
             badgeClass = "border-red-700/50 bg-red-900/40 text-red-300";
           }
 
-          const description = describeTransaction(tx, accounts, pastBuys, entities);
-          const headline = txnHeadlineFigure(tx, liabilities, entities, projectedSaleValue, projectedMortgagePayoff);
+          const description = describeTransaction(tx, accounts, pastBuys, businesses);
+          const headline = txnHeadlineFigure(tx, liabilities, businesses, projectedSaleValue, projectedMortgagePayoff);
           const headlineTone =
             headline?.tone === "good"
               ? "text-good"
@@ -851,9 +852,9 @@ function AssetTransactionsTable({
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span className="truncate text-sm font-medium text-ink">{tx.name}</span>
                 <Tag label={badgeLabel} className={badgeClass} />
-                {isEntitySell && (
+                {isBusinessSell && (
                   <Tag
-                    label="Entity"
+                    label="Business"
                     className="border-amber-700/50 bg-amber-900/30 text-amber-200"
                   />
                 )}
@@ -893,7 +894,7 @@ export default function TechniquesView({
   rothConversions,
   accounts,
   liabilities,
-  entities,
+  businesses,
   modelPortfolios,
   milestones,
   clientFirstName,
@@ -1064,7 +1065,7 @@ export default function TechniquesView({
           rows={assetTransactions}
           accounts={accounts}
           liabilities={liabilities}
-          entities={entities}
+          businesses={businesses}
           pastBuys={pastBuys}
           projectedSaleValueFor={projectedSaleValueFor}
           projectedMortgagePayoffFor={projectedMortgagePayoffFor}
@@ -1118,7 +1119,7 @@ export default function TechniquesView({
           clientId={clientId}
           accounts={accounts}
           liabilities={liabilities}
-          entities={entities}
+          businesses={businesses}
           pastBuys={pastBuys}
           milestones={milestones}
           clientFirstName={clientFirstName}

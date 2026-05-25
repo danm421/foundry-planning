@@ -36,6 +36,13 @@ export interface LiabilityFormInitial {
   owners?: AccountOwner[];
   startYearRef?: string | null;
   isInterestDeductible?: boolean;
+  /** Parent business account when this liability is a sub-liability of a business. */
+  parentAccountId?: string | null;
+}
+
+export interface LiabilityBusinessOption {
+  id: string;
+  name: string;
 }
 
 export interface LiabilityFormValues {
@@ -53,6 +60,8 @@ interface AddLiabilityFormProps {
   clientId: string;
   realEstateAccounts?: { id: string; name: string }[];
   entities?: { id: string; name: string }[];
+  /** Top-level business accounts that may own this liability. */
+  businesses?: LiabilityBusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
@@ -80,6 +89,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
   clientId,
   realEstateAccounts,
   entities,
+  businesses,
   familyMembers = [],
   milestones,
   clientFirstName,
@@ -105,6 +115,12 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
     : [];
   const [owners, setOwners] = useState<AccountOwner[]>(
     initial?.owners && initial.owners.length > 0 ? initial.owners : defaultOwners,
+  );
+  // Phase 4: when set, this liability is a sub-liability of the chosen
+  // business. OwnershipEditor hides and owners[] is sent as undefined.
+  // Mutually exclusive with individual owners.
+  const [parentBusinessId, setParentBusinessId] = useState<string | null>(
+    initial?.parentAccountId ?? null,
   );
   const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
   // Controlled state for previously-uncontrolled fields. The auto-save hook
@@ -248,7 +264,9 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
       balanceAsOfMonth,
       balanceAsOfYear,
       linkedPropertyId: linkedPropertyId || null,
-      owners,
+      // Omit owners when parented to a business — API rejects mutual presence.
+      ...(parentBusinessId ? {} : { owners }),
+      parentAccountId: parentBusinessId,
       startYearRef,
       isInterestDeductible,
     };
@@ -364,7 +382,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
     // The state values that matter (name, balance, etc.) are captured by
     // closure on every render anyway, so listing them is sufficient.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canSave, name, balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, linkedPropertyId, owners, startYearRef, isInterestDeductible, effectiveLiabilityId],
+    [canSave, name, balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, linkedPropertyId, owners, parentBusinessId, startYearRef, isInterestDeductible, effectiveLiabilityId],
   );
 
   // ============================================================================
@@ -587,17 +605,58 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
       </div>
 
       {/* Row 6: Ownership */}
+      {businesses && businesses.length > 0 && (
+        <div>
+          <label htmlFor="liab-parentBusinessId" className={fieldLabelClassName}>
+            Owner
+          </label>
+          <select
+            id="liab-parentBusinessId"
+            value={parentBusinessId ?? ""}
+            onChange={(e) => {
+              const next = e.target.value || null;
+              setParentBusinessId(next);
+              if (next) {
+                setOwners([]);
+              } else if (owners.length === 0 && clientFm) {
+                setOwners([
+                  { kind: "family_member", familyMemberId: clientFm.id, percent: 1 },
+                ]);
+              }
+            }}
+            className={selectClassName}
+          >
+            <option value="">Individual / joint owners (use picker below)</option>
+            <optgroup label="Businesses">
+              {businesses.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </optgroup>
+          </select>
+        </div>
+      )}
+
       <div>
-        {/* Liabilities have no titling concept; pass fixed jtwros so the editor's
-            required prop is satisfied, and a no-op handler. */}
-        <OwnershipEditor
-          familyMembers={familyMembers}
-          entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
-          value={owners}
-          onChange={setOwners}
-          titlingType="jtwros"
-          onTitlingTypeChange={() => {}}
-        />
+        {parentBusinessId ? (
+          <p className="text-[12px] text-ink-3 py-2">
+            This liability will be a sub-liability of{" "}
+            <strong className="text-ink">
+              {businesses?.find((b) => b.id === parentBusinessId)?.name ?? "the selected business"}
+            </strong>
+            . Owners are inherited from the business and cannot be set here.
+          </p>
+        ) : (
+          /* Liabilities have no titling concept; pass fixed jtwros so the editor's
+             required prop is satisfied, and a no-op handler. */
+          <OwnershipEditor
+            familyMembers={familyMembers}
+            entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
+            value={owners}
+            onChange={setOwners}
+            titlingType="jtwros"
+            onTitlingTypeChange={() => {}}
+          />
+        )}
       </div>
 
       {/* Row 7: Interest deductible checkbox */}

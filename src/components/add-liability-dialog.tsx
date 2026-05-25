@@ -6,6 +6,7 @@ import AddLiabilityForm, {
   type LiabilityFormInitial,
   type LiabilityFormValues,
   type LiabilityFormAutoSaveHandle,
+  type LiabilityBusinessOption,
 } from "./forms/add-liability-form";
 import LiabilityAmortizationTab from "./liability-amortization-tab";
 import DialogShell from "./dialog-shell";
@@ -19,6 +20,8 @@ interface AddLiabilityDialogProps {
   clientId: string;
   realEstateAccounts?: { id: string; name: string }[];
   entities?: { id: string; name: string }[];
+  /** Top-level business accounts that may own this liability. */
+  businesses?: LiabilityBusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
@@ -34,6 +37,7 @@ export default function AddLiabilityDialog({
   clientId,
   realEstateAccounts,
   entities,
+  businesses,
   familyMembers,
   milestones,
   clientFirstName,
@@ -147,6 +151,7 @@ export default function AddLiabilityDialog({
             clientId={clientId}
             realEstateAccounts={realEstateAccounts}
             entities={entities}
+            businesses={businesses}
             familyMembers={familyMembers}
             milestones={milestones}
             clientFirstName={clientFirstName}

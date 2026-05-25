@@ -51,13 +51,10 @@ import { applyRothConversions } from "./roth-conversions";
 import {
   applyAssetSales,
   applyAssetPurchases,
-  applyEntitySales,
+  applyBusinessSales,
   _resetSyntheticIdCounter,
 } from "./asset-transactions";
-import type {
-  EntitySaleInputEntity,
-  EntitySalesResult,
-} from "./asset-transactions";
+import type { BusinessSalesResult } from "./asset-transactions";
 import {
   computeFirstDeathYear,
   computeFinalDeathYear,
@@ -830,57 +827,29 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       liab.balance = boy;
     }
 
-    // ── BoY: Entity Sales ────────────────────────────────────────────────────
-    // Selling a business entity cascades to liquidate the entity's portion of
-    // every account and liability it co-owns. Runs before applyAssetSales so
-    // any account/liability the cascade fully drains is already gone before
-    // direct account sales fire in the same year.
-    let entitySaleResult: EntitySalesResult = {
+    // ── BoY: Business Sales ─────────────────────────────────────────────────
+    // Selling a business cascades to liquidate every child account and
+    // liability (accounts whose parentAccountId points at the business).
+    // Runs before applyAssetSales so any account/liability the cascade fully
+    // drains is already gone before direct account sales fire in the same
+    // year.
+    let businessSaleResult: BusinessSalesResult = {
       capitalGains: 0,
       capitalGainsByOwner: {},
       removedAccountIds: [],
       removedLiabilityIds: [],
-      removedEntityIds: [],
+      removedBusinessAccountIds: [],
       totalLiabilityPaydown: 0,
       breakdown: [],
       diagnostics: [],
     };
     if (data.assetTransactions && data.assetTransactions.length > 0) {
-      const entitySales = data.assetTransactions.filter(
-        (t) => t.type === "sell" && t.year === year && t.entityId,
+      const businessSales = data.assetTransactions.filter(
+        (t) => t.type === "sell" && t.year === year && t.businessAccountId,
       );
-      if (entitySales.length > 0) {
-        // Adapt EntitySummary[] → EntitySaleInputEntity[]. Entities missing
-        // required fields (name/value/basis/owners/entityType) are dropped so
-        // applyEntitySales can record an "entity-not-found" diagnostic and
-        // skip them cleanly.
-        const entityInputs: EntitySaleInputEntity[] = currentEntities
-          .filter(
-            (e): e is typeof e & {
-              name: string;
-              value: number;
-              basis: number;
-              owners: NonNullable<typeof e.owners>;
-              entityType: NonNullable<typeof e.entityType>;
-            } =>
-              !!e.name &&
-              !!e.entityType &&
-              !!e.owners &&
-              e.value !== undefined &&
-              e.basis !== undefined,
-          )
-          .map((e) => ({
-            id: e.id,
-            name: e.name,
-            entityType: e.entityType,
-            value: e.value,
-            basis: e.basis,
-            owners: e.owners,
-          }));
-
-        entitySaleResult = applyEntitySales({
-          sales: entitySales,
-          entities: entityInputs,
+      if (businessSales.length > 0) {
+        businessSaleResult = applyBusinessSales({
+          sales: businessSales,
           accounts: workingAccounts,
           liabilities: currentLiabilities,
           accountBalances,
@@ -890,22 +859,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           defaultCheckingId: defaultChecking?.id ?? "",
         });
 
-        if (entitySaleResult.removedAccountIds.length > 0) {
-          const removed = new Set(entitySaleResult.removedAccountIds);
+        if (businessSaleResult.removedAccountIds.length > 0) {
+          const removed = new Set(businessSaleResult.removedAccountIds);
           workingAccounts = workingAccounts.filter((a) => !removed.has(a.id));
         }
-        if (entitySaleResult.removedLiabilityIds.length > 0) {
-          const removed = new Set(entitySaleResult.removedLiabilityIds);
+        if (businessSaleResult.removedLiabilityIds.length > 0) {
+          const removed = new Set(businessSaleResult.removedLiabilityIds);
           currentLiabilities = currentLiabilities.filter(
             (l) => !removed.has(l.id),
           );
         }
-        if (entitySaleResult.removedEntityIds.length > 0) {
-          const removed = new Set(entitySaleResult.removedEntityIds);
-          currentEntities = currentEntities.filter((e) => !removed.has(e.id));
-          entityMap = {};
-          for (const e of currentEntities) entityMap[e.id] = e;
-        }
+        // No entity removal needed — businesses are account rows; their
+        // disposal is reflected in removedAccountIds above.
       }
     }
 
@@ -1463,7 +1428,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains +
-      entitySaleResult.capitalGains;
+      businessSaleResult.capitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
@@ -1748,7 +1713,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       transferResult.capitalGains +
       reinvestmentResult.capitalGains +
       saleResult.capitalGains +
-      entitySaleResult.capitalGains +
+      businessSaleResult.capitalGains +
       grantorCarryInCapGains;
     if (grantorCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
@@ -1773,9 +1738,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: item.capitalGain };
       }
     }
-    for (const item of entitySaleResult.breakdown) {
+    for (const item of businessSaleResult.breakdown) {
       if (item.totalCapitalGain > 0) {
-        taxDetail.bySource[`entity_sale:${item.transactionId}`] = {
+        taxDetail.bySource[`business_sale:${item.transactionId}`] = {
           type: "capital_gains",
           amount: item.totalCapitalGain,
         };

@@ -3,8 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import AddTrustForm from "../forms/add-trust-form";
-import BusinessForm from "./business-form";
-import { getEntityKind, type EntityKind } from "./types";
 import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../family-view";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "../forms/assets-tab";
 import type { FlowsTabIncome, FlowsTabExpense, ScheduleSaveBinding } from "../forms/flows-tab";
@@ -12,20 +10,16 @@ import DialogShell from "../dialog-shell";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
 import type { TrustFormAutoSaveHandle } from "../forms/add-trust-form";
-import type { BusinessFormAutoSaveHandle } from "./business-form";
 
 export interface EntityDialogProps {
   clientId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** When editing, kind is inferred from editing.entityType. When creating, the picker supplies kind. */
-  createKind?: EntityKind;
   editing?: Entity;
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
   /** Fires on every successful autosave (tab-switch saves). Distinct from onSaved which fires only on explicit user submit. */
   onAutoSaved?: (entity: Entity, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
-  /** Required for trust dialogs — caller supplies household/member data */
   household: { client: { firstName: string }; spouse: { firstName: string } | null };
   members: FamilyMember[];
   externals: ExternalBeneficiary[];
@@ -38,7 +32,7 @@ export interface EntityDialogProps {
   liabilities?: AssetsTabLiability[];
   incomes?: AssetsTabIncome[];
   expenses?: AssetsTabExpense[];
-  /** Business entities available for assignment to a trust via the Assets tab picker. */
+  /** Business accounts available for assignment to a trust via the Assets tab picker. */
   businesses?: AssetsTabBusiness[];
   assetFamilyMembers?: AssetsTabFamilyMember[];
   /** Schedule modal context — derived from client plan settings + primary client DOB */
@@ -53,7 +47,6 @@ type TrustTab =
   | "transfers"
   | "notes"
   | "notes-sales";
-type BusinessTab = "details" | "flows" | "assets" | "notes";
 
 /**
  * Mirrors `showNotesAndSales` in add-trust-form.tsx — kept duplicated rather
@@ -93,7 +86,6 @@ export default function EntityDialog({
   clientId,
   open,
   onOpenChange,
-  createKind,
   editing,
   onSaved,
   onAutoSaved,
@@ -119,7 +111,6 @@ export default function EntityDialog({
     loading: false,
   });
   const [trustTab, setTrustTab] = useState<TrustTab>("details");
-  const [businessTab, setBusinessTab] = useState<BusinessTab>("details");
 
   const [initialFlowOverrides, setInitialFlowOverrides] = useState<Array<{
     year: number;
@@ -148,28 +139,10 @@ export default function EntityDialog({
     return handle.saveAsync();
   }, []);
 
-  const trustAutoSave = useTabAutoSave({
+  const autoSave = useTabAutoSave({
     isDirty: trustAutoSaveState.isDirty,
     canSave: trustAutoSaveState.canSave,
     saveAsync: trustSaveAsync,
-  });
-
-  const businessFormRef = useRef<BusinessFormAutoSaveHandle | null>(null);
-  const [businessAutoSaveState, setBusinessAutoSaveState] = useState<{ isDirty: boolean; canSave: boolean }>({
-    isDirty: false,
-    canSave: true,
-  });
-
-  const businessSaveAsync = useCallback(async () => {
-    const handle = businessFormRef.current;
-    if (!handle) return { ok: true as const };
-    return handle.saveAsync();
-  }, []);
-
-  const businessAutoSave = useTabAutoSave({
-    isDirty: businessAutoSaveState.isDirty,
-    canSave: businessAutoSaveState.canSave,
-    saveAsync: businessSaveAsync,
   });
 
   const scenarioId = searchParams.get("scenario");
@@ -190,61 +163,38 @@ export default function EntityDialog({
 
   if (!open) return null;
 
-  const kind: EntityKind = editing ? getEntityKind(editing.entityType) : (createKind ?? "trust");
   const isEdit = Boolean(editing);
-  const title = isEdit
-    ? kind === "trust" ? "Edit Trust" : "Edit Business"
-    : kind === "trust" ? "Add Trust" : "Add Business";
+  const title = isEdit ? "Edit Trust" : "Add Trust";
 
-  const trustShowsNotesAndSales =
-    kind === "trust" &&
-    showNotesAndSalesTab({
-      trustSubType: liveTrustState.trustSubType || null,
-      isIrrevocable: liveTrustState.isIrrevocable,
-      isGrantor: liveTrustState.isGrantor,
-    });
+  const trustShowsNotesAndSales = showNotesAndSalesTab({
+    trustSubType: liveTrustState.trustSubType || null,
+    isIrrevocable: liveTrustState.isIrrevocable,
+    isGrantor: liveTrustState.isGrantor,
+  });
 
-  const tabs =
-    kind === "trust"
-      ? [
-          { id: "details", label: "Details" },
-          { id: "flows", label: "Flows" },
-          { id: "assets", label: "Assets" },
-          { id: "transfers", label: "Transfers" },
-          { id: "notes", label: "Notes" },
-          ...(trustShowsNotesAndSales
-            ? [{ id: "notes-sales", label: "Notes & sales" }]
-            : []),
-        ]
-      : [
-          { id: "details", label: "Details" },
-          { id: "flows", label: "Flows" },
-          { id: "assets", label: "Assets" },
-          { id: "notes", label: "Notes" },
-        ];
+  const tabs = [
+    { id: "details", label: "Details" },
+    { id: "flows", label: "Flows" },
+    { id: "assets", label: "Assets" },
+    { id: "transfers", label: "Transfers" },
+    { id: "notes", label: "Notes" },
+    ...(trustShowsNotesAndSales
+      ? [{ id: "notes-sales", label: "Notes & sales" }]
+      : []),
+  ];
 
-  const activeTab = kind === "trust" ? trustTab : businessTab;
-  const autoSave = kind === "trust" ? trustAutoSave : businessAutoSave;
   const onTabChange = (tab: string) => {
-    if (kind === "trust") {
-      void autoSave.interceptTabChange(tab, (next) => setTrustTab(next as TrustTab));
-    } else {
-      void autoSave.interceptTabChange(tab, (next) => setBusinessTab(next as BusinessTab));
-    }
+    void autoSave.interceptTabChange(tab, (next) => setTrustTab(next as TrustTab));
   };
 
   // Tabs that don't own a primary form action (Assets / Transfers manage their own data inline).
   // Flows is special: when in custom-schedule mode the grid registers a save binding,
   // which we surface as the primary action below. Annual mode has no primary action.
-  const onFlowsTab =
-    (kind === "trust" && trustTab === "flows") ||
-    (kind === "business" && businessTab === "flows");
+  const onFlowsTab = trustTab === "flows";
   const noPrimaryAction =
-    (kind === "trust" &&
-      (trustTab === "assets" ||
-        trustTab === "transfers" ||
-        trustTab === "notes-sales")) ||
-    (kind === "business" && businessTab === "assets") ||
+    trustTab === "assets" ||
+    trustTab === "transfers" ||
+    trustTab === "notes-sales" ||
     (onFlowsTab && !scheduleSaveBinding);
 
   // Find the entity-owned income + expense for THIS entity to feed the FlowsTab.
@@ -262,9 +212,9 @@ export default function EntityDialog({
       title={title}
       // Trusts pack two side-by-side beneficiary lists (income + remainder), plus
       // CLT details with a 2-col grid — md is too tight and forces clipping.
-      size={kind === "trust" ? "lg" : "md"}
+      size="lg"
       tabs={tabs}
-      activeTab={activeTab}
+      activeTab={trustTab}
       onTabChange={onTabChange}
       tabBarRight={
         <TabAutoSaveIndicator
@@ -285,8 +235,8 @@ export default function EntityDialog({
               loading: scheduleSaveBinding.saving,
             }
           : {
-              label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
-              form: kind === "trust" ? "add-trust-form" : "entity-business-form",
+              label: isEdit ? "Save Changes" : "Add Trust",
+              form: "add-trust-form",
               disabled: !submitState.canSubmit,
               loading: submitState.loading,
             }
@@ -297,61 +247,35 @@ export default function EntityDialog({
           : undefined
       }
     >
-      {kind === "trust" ? (
-        <AddTrustForm
-          ref={trustFormRef}
-          clientId={clientId}
-          editing={editing}
-          household={household}
-          members={members}
-          externals={externals}
-          entities={otherEntities}
-          initialDesignations={initialDesignations}
-          activeTab={trustTab}
-          accounts={accounts}
-          liabilities={liabilities}
-          incomes={incomes}
-          expenses={expenses}
-          businesses={businesses}
-          entityIncome={entityIncome}
-          entityExpense={entityExpense}
-          assetFamilyMembers={assetFamilyMembers}
-          planEndYear={planEndYear}
-          primaryClientBirthYear={primaryClientBirthYear}
-          initialFlowOverrides={initialFlowOverrides}
-          onSaved={onSaved}
-          onClose={() => onOpenChange(false)}
-          onSubmitStateChange={setSubmitState}
-          onScheduleSaveBindingChange={setScheduleSaveBinding}
-          onAutoSaveStateChange={setTrustAutoSaveState}
-          onAutoSaved={(e, mode) => onAutoSaved?.(e, mode)}
-          onLiveStateChange={setLiveTrustState}
-        />
-      ) : (
-        <BusinessForm
-          ref={businessFormRef}
-          clientId={clientId}
-          editing={editing}
-          activeTab={businessTab}
-          accounts={accounts}
-          liabilities={liabilities}
-          incomes={incomes}
-          expenses={expenses}
-          entityIncome={entityIncome}
-          entityExpense={entityExpense}
-          assetFamilyMembers={assetFamilyMembers}
-          otherEntities={otherEntities}
-          planEndYear={planEndYear}
-          primaryClientBirthYear={primaryClientBirthYear}
-          initialFlowOverrides={initialFlowOverrides}
-          onSaved={onSaved}
-          onClose={() => onOpenChange(false)}
-          onSubmitStateChange={setSubmitState}
-          onScheduleSaveBindingChange={setScheduleSaveBinding}
-          onAutoSaveStateChange={setBusinessAutoSaveState}
-          onAutoSaved={(e, mode) => onAutoSaved?.(e, mode)}
-        />
-      )}
+      <AddTrustForm
+        ref={trustFormRef}
+        clientId={clientId}
+        editing={editing}
+        household={household}
+        members={members}
+        externals={externals}
+        entities={otherEntities}
+        initialDesignations={initialDesignations}
+        activeTab={trustTab}
+        accounts={accounts}
+        liabilities={liabilities}
+        incomes={incomes}
+        expenses={expenses}
+        businesses={businesses}
+        entityIncome={entityIncome}
+        entityExpense={entityExpense}
+        assetFamilyMembers={assetFamilyMembers}
+        planEndYear={planEndYear}
+        primaryClientBirthYear={primaryClientBirthYear}
+        initialFlowOverrides={initialFlowOverrides}
+        onSaved={onSaved}
+        onClose={() => onOpenChange(false)}
+        onSubmitStateChange={setSubmitState}
+        onScheduleSaveBindingChange={setScheduleSaveBinding}
+        onAutoSaveStateChange={setTrustAutoSaveState}
+        onAutoSaved={(e, mode) => onAutoSaved?.(e, mode)}
+        onLiveStateChange={setLiveTrustState}
+      />
     </DialogShell>
   );
 }

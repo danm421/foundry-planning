@@ -1,6 +1,6 @@
 // src/lib/audit/snapshots/asset-transaction.ts
 import { db } from "@/db";
-import { accounts, assetTransactions, entities, modelPortfolios } from "@/db/schema";
+import { accounts, assetTransactions, modelPortfolios } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
 
@@ -30,7 +30,7 @@ export const ASSET_TRANSACTION_FIELD_LABELS: FieldLabels = {
   mortgageAmount: { label: "Mortgage amount", format: "currency" },
   mortgageRate: { label: "Mortgage rate", format: "percent" },
   mortgageTermMonths: { label: "Mortgage term (months)", format: "text" },
-  entity: { label: "Entity sold", format: "reference" },
+  businessAccount: { label: "Business sold", format: "reference" },
 };
 
 type AssetTransactionRow = typeof assetTransactions.$inferSelect;
@@ -67,13 +67,13 @@ export async function toAssetTransactionSnapshot(
         }))
     : null;
 
-  const entity = row.entityId
+  const businessAccount = row.businessAccountId
     ? await db
-        .select({ id: entities.id, name: entities.name })
-        .from(entities)
-        .where(inArray(entities.id, [row.entityId]))
+        .select({ id: accounts.id, name: accounts.name })
+        .from(accounts)
+        .where(inArray(accounts.id, [row.businessAccountId]))
         .then((rows) => ({
-          id: row.entityId!,
+          id: row.businessAccountId!,
           display: rows[0]?.name ?? "(deleted)",
         }))
     : null;
@@ -106,6 +106,6 @@ export async function toAssetTransactionSnapshot(
       row.mortgageAmount === null ? null : Number(row.mortgageAmount),
     mortgageRate: row.mortgageRate === null ? null : Number(row.mortgageRate),
     mortgageTermMonths: row.mortgageTermMonths,
-    entity,
+    businessAccount,
   };
 }
