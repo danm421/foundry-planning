@@ -32,6 +32,16 @@ export interface OwnershipEditorProps {
   locked?: boolean;
   /** Helper copy shown beneath the read-only summary when `locked` is true. */
   lockedReason?: string;
+  /** Optional businesses that can be picked as the account's sole "owner"
+   *  (sub-asset relationship — ownership is inherited from the business and
+   *  `value`/`onChange` is cleared). Mutually exclusive with `value` per the API. */
+  businesses?: { id: string; name: string }[];
+  /** Currently-selected business parent (null = individual owners). */
+  parentBusinessId?: string | null;
+  /** Setter for the business parent. Required when `businesses` is non-empty. */
+  onParentBusinessIdChange?: (next: string | null) => void;
+  /** Noun used in the sub-asset helper text ("sub-asset of X", "sub-liability of X"). */
+  childNoun?: string;
 }
 
 type OwnershipMode = "client" | "spouse" | "joint" | "community_property" | "custom";
@@ -139,14 +149,16 @@ interface OwnerSelectProps {
   rowKey: string;
   familyMembers: OwnershipEditorProps["familyMembers"];
   entities: OwnershipEditorProps["entities"];
+  businesses: NonNullable<OwnershipEditorProps["businesses"]>;
   onChange: (idx: number, owner: AccountOwner) => void;
   onRemove: (idx: number) => void;
   onBalance: (idx: number) => void;
+  onBusinessSelect: (businessId: string) => void;
   showBalance: boolean;
 }
 
 function OwnerRow({
-  value, idx, familyMembers, entities, onChange, onRemove, onBalance, showBalance,
+  value, idx, familyMembers, entities, businesses, onChange, onRemove, onBalance, onBusinessSelect, showBalance,
 }: OwnerSelectProps) {
   const selectVal = ownerToSelectValue(value);
   const pctDisplay = Math.round(value.percent * 10000) / 100; // 0-100 for display
@@ -156,8 +168,13 @@ function OwnerRow({
       <select
         value={selectVal}
         onChange={(e) => {
-          if (!e.target.value) { onRemove(idx); return; }
-          onChange(idx, selectValueToOwner(e.target.value, value.percent));
+          const v = e.target.value;
+          if (!v) { onRemove(idx); return; }
+          if (v.startsWith("bus:")) {
+            onBusinessSelect(v.slice(4));
+            return;
+          }
+          onChange(idx, selectValueToOwner(v, value.percent));
         }}
         className={rowSelectCls + " flex-1 min-w-0"}
         aria-label={`Owner ${idx + 1}`}
@@ -175,6 +192,13 @@ function OwnerRow({
           <optgroup label="Entity">
             {entities.map((e) => (
               <option key={e.id} value={`ent:${e.id}`}>{e.name}</option>
+            ))}
+          </optgroup>
+        )}
+        {businesses.length > 0 && (
+          <optgroup label="Business">
+            {businesses.map((b) => (
+              <option key={b.id} value={`bus:${b.id}`}>{b.name}</option>
             ))}
           </optgroup>
         )}
@@ -321,9 +345,17 @@ export function OwnershipEditor({
   label = "Owner(s)",
   locked = false,
   lockedReason,
+  businesses,
+  parentBusinessId = null,
+  onParentBusinessIdChange,
+  childNoun = "sub-asset",
 }: OwnershipEditorProps) {
   const clientFm = familyMembers.find((fm) => fm.role === "client");
   const spouseFm = familyMembers.find((fm) => fm.role === "spouse");
+  const businessList = businesses ?? [];
+  const businessParent = parentBusinessId
+    ? businessList.find((b) => b.id === parentBusinessId) ?? null
+    : null;
 
   const derivedMode = useMemo(
     () => deriveMode(value, clientFm?.id, spouseFm?.id, titlingType),
@@ -353,28 +385,44 @@ export function OwnershipEditor({
     );
   }
 
-  const effectiveMode: OwnershipMode = forceCustom ? "custom" : derivedMode;
+  // Business parent overrides individual mode: there are no preset/joint
+  // semantics — the account is a sub-asset of the business and owners are
+  // inherited.
+  const effectiveMode: OwnershipMode = businessParent
+    ? "custom"
+    : forceCustom
+      ? "custom"
+      : derivedMode;
 
   const sum = value.reduce((s, r) => s + r.percent, 0);
   const sumOk = value.length > 0 && Math.abs(sum - 1) < EPSILON;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
+  function clearBusinessParent() {
+    if (parentBusinessId && onParentBusinessIdChange) {
+      onParentBusinessIdChange(null);
+    }
+  }
+
   function handlePresetClient() {
     if (!clientFm) return;
     setForceCustom(false);
+    clearBusinessParent();
     onChange([{ kind: "family_member", familyMemberId: clientFm.id, percent: 1 }]);
   }
 
   function handlePresetSpouse() {
     if (!spouseFm) return;
     setForceCustom(false);
+    clearBusinessParent();
     onChange([{ kind: "family_member", familyMemberId: spouseFm.id, percent: 1 }]);
   }
 
   function handlePresetJoint() {
     if (!clientFm || !spouseFm) return;
     setForceCustom(false);
+    clearBusinessParent();
     onTitlingTypeChange("jtwros");
     onChange([
       { kind: "family_member", familyMemberId: clientFm.id, percent: 0.5 },
@@ -385,6 +433,7 @@ export function OwnershipEditor({
   function handlePresetCommunityProperty() {
     if (!clientFm || !spouseFm) return;
     setForceCustom(false);
+    clearBusinessParent();
     onTitlingTypeChange("community_property");
     onChange([
       { kind: "family_member", familyMemberId: clientFm.id, percent: 0.5 },
@@ -414,6 +463,31 @@ export function OwnershipEditor({
     };
     setRowKeys((prev) => [...prev, Math.random().toString(36).slice(2)]);
     onChange([...value, newRow]);
+  }
+
+  function handleBusinessSelect(businessId: string) {
+    if (!onParentBusinessIdChange) return;
+    setForceCustom(false);
+    onParentBusinessIdChange(businessId);
+    setRowKeys([]);
+    onChange([]);
+  }
+
+  // Business sub-asset row: switching to a non-business owner clears the
+  // business parent and seeds owners with a single 100% row.
+  function handleBusinessRowChange(v: string) {
+    if (!v) {
+      clearBusinessParent();
+      return;
+    }
+    if (v.startsWith("bus:")) {
+      onParentBusinessIdChange?.(v.slice(4));
+      return;
+    }
+    clearBusinessParent();
+    const owner = selectValueToOwner(v, 1);
+    setRowKeys([Math.random().toString(36).slice(2)]);
+    onChange([owner]);
   }
 
   // ── Render: retirement mode ────────────────────────────────────────────────
@@ -479,7 +553,7 @@ export function OwnershipEditor({
       </div>
 
       {/* Custom rows — shown when effective mode is custom */}
-      {effectiveMode === "custom" && (
+      {effectiveMode === "custom" && !businessParent && (
         <div>
           <ul className="space-y-2">
             {value.map((owner, idx) => (
@@ -490,9 +564,11 @@ export function OwnershipEditor({
                 idx={idx}
                 familyMembers={familyMembers}
                 entities={entities}
+                businesses={businessList}
                 onChange={handleRowChange}
                 onRemove={handleRowRemove}
                 onBalance={handleRowBalance}
+                onBusinessSelect={handleBusinessSelect}
                 showBalance={value.length > 1}
               />
             ))}
@@ -509,8 +585,51 @@ export function OwnershipEditor({
         </div>
       )}
 
-      {/* Total indicator */}
-      {value.length > 0 && (
+      {/* Business sub-asset — one row, no percent (owners inherited). */}
+      {businessParent && (
+        <div>
+          <ul className="space-y-2">
+            <li className="flex items-center gap-2">
+              <select
+                value={`bus:${businessParent.id}`}
+                onChange={(e) => handleBusinessRowChange(e.target.value)}
+                className={rowSelectCls + " flex-1 min-w-0"}
+                aria-label="Owner"
+              >
+                {familyMembers.length > 0 && (
+                  <optgroup label="Household">
+                    {familyMembers.map((fm) => (
+                      <option key={fm.id} value={`fm:${fm.id}`}>
+                        {fm.firstName} ({fm.role})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {entities.length > 0 && (
+                  <optgroup label="Entity">
+                    {entities.map((e) => (
+                      <option key={e.id} value={`ent:${e.id}`}>{e.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Business">
+                  {businessList.map((b) => (
+                    <option key={b.id} value={`bus:${b.id}`}>{b.name}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </li>
+          </ul>
+          <p className="mt-2 text-[12px] text-ink-3">
+            This account will be a {childNoun} of{" "}
+            <strong className="text-ink">{businessParent.name}</strong>
+            . Owners are inherited from the business and cannot be set here.
+          </p>
+        </div>
+      )}
+
+      {/* Total indicator — hidden when business parent is active (no percents). */}
+      {value.length > 0 && !businessParent && (
         <div className="mt-2 text-xs">
           {sumOk ? (
             <span className="text-ink-3">

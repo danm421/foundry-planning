@@ -1172,66 +1172,33 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </div>
             )}
 
-            {businesses && businesses.length > 0 && !isSystemManagedCash && (
-              <div className="col-span-2">
-                <label htmlFor="parentBusinessId" className={fieldLabelClassName}>
-                  Owner
-                </label>
-                <select
-                  id="parentBusinessId"
-                  value={parentBusinessId ?? ""}
-                  onChange={(e) => {
-                    const next = e.target.value || null;
-                    setParentBusinessId(next);
-                    if (next) {
-                      // Clear individual owners when parented to a business —
-                      // API rejects mutual presence.
-                      setOwners([]);
-                    } else if (owners.length === 0 && clientFm) {
-                      // Restore a sensible default when reverting to individual ownership.
-                      setOwners([
-                        { kind: "family_member", familyMemberId: clientFm.id, percent: 1 },
-                      ]);
-                    }
-                  }}
-                  className={selectClassName}
-                >
-                  <option value="">Individual / joint owners (use picker below)</option>
-                  <optgroup label="Businesses">
-                    {businesses.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
-            )}
-
             <div className="col-span-2">
-              {parentBusinessId ? (
-                <p className="text-[12px] text-ink-3 py-2">
-                  This account will be a sub-asset of{" "}
-                  <strong className="text-ink">
-                    {businesses?.find((b) => b.id === parentBusinessId)?.name ?? "the selected business"}
-                  </strong>
-                  . Owners are inherited from the business and cannot be set here.
-                </p>
-              ) : (
-                <OwnershipEditor
-                  familyMembers={familyMembers}
-                  entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
-                  value={owners}
-                  onChange={setOwners}
-                  titlingType={titlingType}
-                  onTitlingTypeChange={setTitlingType}
-                  retirementMode={isRetirementSubType(subType)}
-                  locked={isSystemManagedCash}
-                  lockedReason={
-                    isSystemManagedCash
-                      ? "This is a system-managed cash account — its ownership is fixed and can't be changed."
-                      : undefined
+              <OwnershipEditor
+                familyMembers={familyMembers}
+                entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
+                value={owners}
+                onChange={setOwners}
+                titlingType={titlingType}
+                onTitlingTypeChange={setTitlingType}
+                retirementMode={isRetirementSubType(subType)}
+                locked={isSystemManagedCash}
+                lockedReason={
+                  isSystemManagedCash
+                    ? "This is a system-managed cash account — its ownership is fixed and can't be changed."
+                    : undefined
+                }
+                businesses={isSystemManagedCash ? undefined : businesses}
+                parentBusinessId={parentBusinessId}
+                onParentBusinessIdChange={(next) => {
+                  setParentBusinessId(next);
+                  if (!next && owners.length === 0 && clientFm) {
+                    setOwners([
+                      { kind: "family_member", familyMemberId: clientFm.id, percent: 1 },
+                    ]);
                   }
-                />
-              )}
+                }}
+                childNoun="sub-asset"
+              />
             </div>
 
             <div>
