@@ -10,6 +10,7 @@ import BusinessDetailsForm from "./details-form";
 import BusinessNotesTab from "./notes-tab";
 import BusinessAssetsTab from "./business-assets-tab";
 import type { BusinessAssetsTabProps } from "./business-assets-tab";
+import BusinessFlowsTab from "./business-flows-tab";
 import type {
   BusinessAccount,
   BusinessDialogMode,
@@ -37,6 +38,12 @@ export interface BusinessDialogProps {
   onDataChanged?: () => void;
   onOpenAddAccount?: () => void;
   onOpenAddLiability?: () => void;
+  incomes?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
+  expenses?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
+  onOpenAddIncome?: () => void;
+  onOpenAddExpense?: () => void;
+  onEditIncome?: (id: string) => void;
+  onEditExpense?: (id: string) => void;
 }
 
 const TABS: { id: BusinessTab; label: string }[] = [
@@ -62,6 +69,12 @@ export default function BusinessDialog({
   onDataChanged,
   onOpenAddAccount,
   onOpenAddLiability,
+  incomes,
+  expenses,
+  onOpenAddIncome,
+  onOpenAddExpense,
+  onEditIncome,
+  onEditExpense,
 }: BusinessDialogProps) {
   const [tab, setTab] = useState<BusinessTab>("details");
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
@@ -184,6 +197,27 @@ export default function BusinessDialog({
       {!currentBusiness && tab === "assets" && (
         <p className="text-[13px] text-ink-3 text-center py-6">
           Assets are available after the business is saved.
+        </p>
+      )}
+      {currentBusiness && (
+        <BusinessFlowsTab
+          businessId={currentBusiness.id}
+          incomes={incomes ?? []}
+          expenses={expenses ?? []}
+          hidden={tab !== "flows"}
+          onOpenAddIncome={
+            onOpenAddIncome ??
+            // TODO Task 11+: wire to existing income/expense dialogs in income-expenses-view
+            NOOP
+          }
+          onOpenAddExpense={onOpenAddExpense ?? NOOP}
+          onEditIncome={onEditIncome ?? (() => {})}
+          onEditExpense={onEditExpense ?? (() => {})}
+        />
+      )}
+      {!currentBusiness && tab === "flows" && (
+        <p className="text-[13px] text-ink-3 text-center py-6">
+          Flows are available after the business is saved.
         </p>
       )}
     </DialogShell>

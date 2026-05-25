@@ -87,7 +87,9 @@ interface BalanceSheetViewProps {
   /** Incomes attached to business accounts, used to render the "Incomes"
    *  pill inside an expanded business row. Only rows with ownerAccountId
    *  pointing at a business shown here are surfaced. */
-  incomes?: { id: string; name: string; ownerAccountId?: string | null }[];
+  incomes?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
+  /** Expenses attached to business accounts, shown in the BusinessFlowsTab. */
+  expenses?: { id: string; name: string; annualAmount: number | string; ownerAccountId?: string | null }[];
   entities: EntityOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults: CategoryDefaults;
@@ -360,6 +362,7 @@ export default function BalanceSheetView({
   liabilities,
   notesReceivable = [],
   incomes = [],
+  expenses = [],
   entities,
   familyMembers,
   categoryDefaults,
@@ -935,6 +938,12 @@ export default function BalanceSheetView({
         }
         onOpenAddAccount={() => setAddCategory("cash")}
         onOpenAddLiability={() => setAddLiabilityOpen(true)}
+        incomes={incomes}
+        expenses={expenses}
+        // TODO Task 11+: wire onOpenAddIncome/onOpenAddExpense/onEditIncome/onEditExpense
+        // to the existing IncomeDialog/ExpenseDialog in income-expenses-view.tsx.
+        // Those dialogs are mounted in a sibling view so cross-component wiring is
+        // non-trivial. For v1 the Flows tab is read-only; add/edit uses existing entry points.
       />
       <AddAccountDialog
         clientId={clientId}

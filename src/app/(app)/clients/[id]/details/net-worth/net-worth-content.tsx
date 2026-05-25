@@ -347,7 +347,14 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       incomes={effectiveTree.incomes.map((i) => ({
         id: i.id,
         name: i.name,
+        annualAmount: i.annualAmount,
         ownerAccountId: i.ownerAccountId ?? null,
+      }))}
+      expenses={effectiveTree.expenses.map((e) => ({
+        id: e.id,
+        name: e.name,
+        annualAmount: e.annualAmount,
+        ownerAccountId: e.ownerAccountId ?? null,
       }))}
       entities={entityOptions}
       familyMembers={familyMemberRows}
