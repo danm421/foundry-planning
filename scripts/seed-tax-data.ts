@@ -50,9 +50,10 @@ async function main() {
     console.log(`Upserted ${y.year}`);
   }
 
+  const updatedYears: number[] = [];
   for (const [yearStr, data] of Object.entries(medicareData)) {
     const year = Number(yearStr);
-    await db
+    const result = await db
       .update(taxYearParameters)
       .set({
         standardPartBPremium: data.standardPartBPremium.toString(),
@@ -60,9 +61,14 @@ async function main() {
         irmaaBracketsMfj: data.irmaaBracketsMfj,
         irmaaBracketsSingle: data.irmaaBracketsSingle,
       })
-      .where(eq(taxYearParameters.year, year));
+      .where(eq(taxYearParameters.year, year))
+      .returning({ year: taxYearParameters.year });
+    if (result.length === 0) {
+      throw new Error(`Medicare/IRMAA update found no row for year ${year} in tax_year_parameters — seed IRS data for that year first.`);
+    }
+    updatedYears.push(year);
   }
-  console.log(`Updated Medicare/IRMAA data for years ${Object.keys(medicareData).join(", ")}`);
+  console.log(`Updated Medicare/IRMAA data for years ${updatedYears.join(", ")}`);
 
   console.log("Done.");
   process.exit(0);
