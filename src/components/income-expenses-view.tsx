@@ -1384,11 +1384,15 @@ export default function IncomeExpensesView({
   const kpiYear = new Date().getFullYear();
   const isActiveThisYear = (row: { startYear: number; endYear: number }) =>
     row.startYear <= kpiYear && row.endYear >= kpiYear;
+  // Mirror the engine's household-totals filter: business-owned rows
+  // (ownerAccountId) reach household cash only via the business's
+  // distribution sweep, so including the raw amounts here double-counts
+  // against KPIs the engine reports — see src/engine/projection.ts:758-788.
   const householdIncome = incomeList
-    .filter((i) => !i.ownerEntityId && isActiveThisYear(i))
+    .filter((i) => !i.ownerEntityId && !i.ownerAccountId && isActiveThisYear(i))
     .reduce((s, i) => s + Number(i.annualAmount), 0);
   const householdExpense = expenseList
-    .filter((e) => !e.ownerEntityId && isActiveThisYear(e))
+    .filter((e) => !e.ownerEntityId && !e.ownerAccountId && isActiveThisYear(e))
     .reduce((s, e) => s + Number(e.annualAmount), 0);
   const netCashFlow = householdIncome - householdExpense;
 
