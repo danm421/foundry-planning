@@ -1,0 +1,56 @@
+{
+  "2024": {
+    "standardPartBPremium": 2098.80,
+    "partDNationalBase": 408.20,
+    "irmaaBracketsMfj": [
+      { "tier": 1, "magiLowerBound": 206000, "magiUpperBound": 258000, "partBSurcharge": 838.80,  "partDSurcharge": 150.60 },
+      { "tier": 2, "magiLowerBound": 258000, "magiUpperBound": 322000, "partBSurcharge": 2096.40, "partDSurcharge": 389.40 },
+      { "tier": 3, "magiLowerBound": 322000, "magiUpperBound": 386000, "partBSurcharge": 3354.00, "partDSurcharge": 628.20 },
+      { "tier": 4, "magiLowerBound": 386000, "magiUpperBound": 750000, "partBSurcharge": 4612.80, "partDSurcharge": 867.00 },
+      { "tier": 5, "magiLowerBound": 750000, "magiUpperBound": null,   "partBSurcharge": 5031.00, "partDSurcharge": 946.80 }
+    ],
+    "irmaaBracketsSingle": [
+      { "tier": 1, "magiLowerBound": 103000, "magiUpperBound": 129000, "partBSurcharge": 838.80,  "partDSurcharge": 150.60 },
+      { "tier": 2, "magiLowerBound": 129000, "magiUpperBound": 161000, "partBSurcharge": 2096.40, "partDSurcharge": 389.40 },
+      { "tier": 3, "magiLowerBound": 161000, "magiUpperBound": 193000, "partBSurcharge": 3354.00, "partDSurcharge": 628.20 },
+      { "tier": 4, "magiLowerBound": 193000, "magiUpperBound": 500000, "partBSurcharge": 4612.80, "partDSurcharge": 867.00 },
+      { "tier": 5, "magiLowerBound": 500000, "magiUpperBound": null,   "partBSurcharge": 5031.00, "partDSurcharge": 946.80 }
+    ]
+  },
+  "2025": {
+    "standardPartBPremium": 2220.00,
+    "partDNationalBase": 441.36,
+    "irmaaBracketsMfj": [
+      { "tier": 1, "magiLowerBound": 212000, "magiUpperBound": 266000, "partBSurcharge": 888.00,  "partDSurcharge": 164.40 },
+      { "tier": 2, "magiLowerBound": 266000, "magiUpperBound": 334000, "partBSurcharge": 2220.00, "partDSurcharge": 425.40 },
+      { "tier": 3, "magiLowerBound": 334000, "magiUpperBound": 400000, "partBSurcharge": 3552.00, "partDSurcharge": 686.40 },
+      { "tier": 4, "magiLowerBound": 400000, "magiUpperBound": 750000, "partBSurcharge": 4884.00, "partDSurcharge": 947.40 },
+      { "tier": 5, "magiLowerBound": 750000, "magiUpperBound": null,   "partBSurcharge": 5326.80, "partDSurcharge": 1034.40 }
+    ],
+    "irmaaBracketsSingle": [
+      { "tier": 1, "magiLowerBound": 106000, "magiUpperBound": 133000, "partBSurcharge": 888.00,  "partDSurcharge": 164.40 },
+      { "tier": 2, "magiLowerBound": 133000, "magiUpperBound": 167000, "partBSurcharge": 2220.00, "partDSurcharge": 425.40 },
+      { "tier": 3, "magiLowerBound": 167000, "magiUpperBound": 200000, "partBSurcharge": 3552.00, "partDSurcharge": 686.40 },
+      { "tier": 4, "magiLowerBound": 200000, "magiUpperBound": 500000, "partBSurcharge": 4884.00, "partDSurcharge": 947.40 },
+      { "tier": 5, "magiLowerBound": 500000, "magiUpperBound": null,   "partBSurcharge": 5326.80, "partDSurcharge": 1034.40 }
+    ]
+  },
+  "2026": {
+    "standardPartBPremium": 2350.00,
+    "partDNationalBase": 467.00,
+    "irmaaBracketsMfj": [
+      { "tier": 1, "magiLowerBound": 218000, "magiUpperBound": 274000, "partBSurcharge": 940.00,  "partDSurcharge": 174.00 },
+      { "tier": 2, "magiLowerBound": 274000, "magiUpperBound": 344000, "partBSurcharge": 2350.00, "partDSurcharge": 450.00 },
+      { "tier": 3, "magiLowerBound": 344000, "magiUpperBound": 412000, "partBSurcharge": 3760.00, "partDSurcharge": 726.00 },
+      { "tier": 4, "magiLowerBound": 412000, "magiUpperBound": 750000, "partBSurcharge": 5170.00, "partDSurcharge": 1002.00 },
+      { "tier": 5, "magiLowerBound": 750000, "magiUpperBound": null,   "partBSurcharge": 5640.00, "partDSurcharge": 1094.00 }
+    ],
+    "irmaaBracketsSingle": [
+      { "tier": 1, "magiLowerBound": 109000, "magiUpperBound": 137000, "partBSurcharge": 940.00,  "partDSurcharge": 174.00 },
+      { "tier": 2, "magiLowerBound": 137000, "magiUpperBound": 172000, "partBSurcharge": 2350.00, "partDSurcharge": 450.00 },
+      { "tier": 3, "magiLowerBound": 172000, "magiUpperBound": 206000, "partBSurcharge": 3760.00, "partDSurcharge": 726.00 },
+      { "tier": 4, "magiLowerBound": 206000, "magiUpperBound": 500000, "partBSurcharge": 5170.00, "partDSurcharge": 1002.00 },
+      { "tier": 5, "magiLowerBound": 500000, "magiUpperBound": null,   "partBSurcharge": 5640.00, "partDSurcharge": 1094.00 }
+    ]
+  }
+}

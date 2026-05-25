@@ -7,7 +7,8 @@
 //   npm run seed:tax-data -- --write-snapshot
 
 import { taxYearParameters } from "../src/db/schema";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import medicareData from "../data/medicare-irmaa-2024-2026.json";
 import { parseIrsUpdatesSheet } from "./parsers/irs-updates-sheet";
 import type { TaxYearParameters } from "../src/lib/tax/types";
 import { writeFileSync } from "node:fs";
@@ -48,6 +49,20 @@ async function main() {
     await upsertYear(y, db);
     console.log(`Upserted ${y.year}`);
   }
+
+  for (const [yearStr, data] of Object.entries(medicareData)) {
+    const year = Number(yearStr);
+    await db
+      .update(taxYearParameters)
+      .set({
+        standardPartBPremium: data.standardPartBPremium.toString(),
+        partDNationalBase: data.partDNationalBase.toString(),
+        irmaaBracketsMfj: data.irmaaBracketsMfj,
+        irmaaBracketsSingle: data.irmaaBracketsSingle,
+      })
+      .where(eq(taxYearParameters.year, year));
+  }
+  console.log(`Updated Medicare/IRMAA data for years ${Object.keys(medicareData).join(", ")}`);
 
   console.log("Done.");
   process.exit(0);
