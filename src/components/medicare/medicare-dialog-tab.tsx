@@ -35,7 +35,12 @@ export function MedicareDialogTab({ clientId, owner, existing, onSaved }: Props)
       body: JSON.stringify(payload),
     });
     setSaving(false);
-    if (res.ok) onSaved(payload);
+    if (!res.ok) {
+      const text = await res.text();
+      alert(`Save failed: ${text}`);
+      return;
+    }
+    onSaved(payload);
   }
 
   return (

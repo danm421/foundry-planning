@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MedicareDialogTab } from "../medicare-dialog-tab";
 
 describe("MedicareDialogTab", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("renders default values when no existing coverage", () => {
     render(<MedicareDialogTab clientId="c1" owner="client" existing={null} onSaved={() => {}} />);
     expect(screen.getByLabelText(/enrollment year/i)).toHaveValue(null);
