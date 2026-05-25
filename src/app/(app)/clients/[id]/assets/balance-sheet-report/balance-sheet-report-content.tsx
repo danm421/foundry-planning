@@ -227,6 +227,7 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
       titlingType: a.titlingType,
+      parentAccountId: a.parentAccountId ?? null,
     };
   });
 
@@ -248,6 +249,7 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
       ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
       owners: l.owners,
+      parentAccountId: l.parentAccountId ?? null,
     };
   });
 
