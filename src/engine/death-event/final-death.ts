@@ -24,7 +24,11 @@ import {
   computeGrossEstate,
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
-import { applyBusinessSuccession } from "./business-succession";
+import {
+  applyBusinessBasisUpdates,
+  applyBusinessOwnerSuccession,
+  applyBusinessSuccession,
+} from "./business-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { computeSection2035Lookback } from "./section-2035-lookback";
@@ -106,6 +110,17 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   const deceasedWill: Will | null = will && will.grantor === deceased ? will : null;
 
   for (const acct of accounts) {
+    // Top-level business accounts: see first-death.ts for the same carve-
+    // out — applyBusinessSuccession owns the consolidated transfer.
+    if (
+      acct.category === "business" &&
+      acct.parentAccountId == null &&
+      deceasedFmId != null
+    ) {
+      nextAccounts.push(acct);
+      continue;
+    }
+
     const cfm = controllingFamilyMember(acct);
     // Mixed family+entity account: controllingFamilyMember returns null whenever
     // any entity owner is present (by design — no sole controlling FM). Guard
@@ -639,6 +654,17 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   workingLiabs = chainResult.liabilities;
   warnings.push(...chainResult.warnings);
 
+  // The 4c chain skips top-level business accounts (handled exclusively by
+  // applyBusinessSuccession). Apply the recorded ownerUpdates / basisUpdates
+  // so the post-event accounts state reflects the deceased's share moving
+  // to its resolved successor FM(s) plus the §1014 step-up.
+  const accountsAfterBiz = applyBusinessOwnerSuccession(
+    chainResult.accounts, businessSuccession.ownerUpdates,
+  );
+  const basisMapAfterBiz = applyBusinessBasisUpdates(
+    chainResult.basisMap, businessSuccession.basisUpdates,
+  );
+
   // Phase 8c — residual unlinked-debt distribution. Fires only if the
   // creditor-payoff drain couldn't cover everything (e.g., illiquid estate).
   // Routes via default order (children → other heirs); no surviving spouse at
@@ -725,9 +751,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased, ledger, workingLiabs, prepared.liabilities);
 
   return {
-    accounts: chainResult.accounts,
+    accounts: accountsAfterBiz,
     accountBalances: chainResult.accountBalances,
-    basisMap: chainResult.basisMap,
+    basisMap: basisMapAfterBiz,
     incomes: chainResult.incomes,
     liabilities: workingLiabs,
     transfers: ledger,

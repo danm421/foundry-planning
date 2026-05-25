@@ -216,3 +216,47 @@ export function applyBusinessSuccession(input: {
 
   return { transfers, ownerUpdates, basisUpdates, warnings };
 }
+
+/** Apply a list of BusinessOwnerSuccession updates to a set of accounts.
+ *  Each update strips the deceased's family-member owner row from the named
+ *  business account and adds the successor rows (merging into any existing
+ *  rows for the same successor FM). Returns a new array; non-touched
+ *  accounts are returned by reference. */
+export function applyBusinessOwnerSuccession(
+  accounts: Account[],
+  updates: BusinessOwnerSuccession[],
+): Account[] {
+  if (updates.length === 0) return accounts;
+  const byId = new Map(updates.map((u) => [u.accountId, u]));
+  return accounts.map((a) => {
+    const upd = byId.get(a.id);
+    if (!upd) return a;
+    const remaining = a.owners.filter(
+      (o) => !(o.kind === "family_member" && o.familyMemberId === upd.removeFamilyMemberId),
+    );
+    const merged: Account["owners"] = [...remaining];
+    for (const succ of upd.successors) {
+      const i = merged.findIndex(
+        (o) => o.kind === "family_member" && o.familyMemberId === succ.familyMemberId,
+      );
+      if (i >= 0) {
+        const existing = merged[i];
+        merged[i] = { ...existing, percent: existing.percent + succ.percent };
+      } else {
+        merged.push({ kind: "family_member", familyMemberId: succ.familyMemberId, percent: succ.percent });
+      }
+    }
+    return { ...a, owners: merged };
+  });
+}
+
+/** Apply business-succession §1014 step-up updates to a basisMap. */
+export function applyBusinessBasisUpdates(
+  basisMap: Record<string, number>,
+  updates: Array<{ accountId: string; newBasis: number }>,
+): Record<string, number> {
+  if (updates.length === 0) return basisMap;
+  const next = { ...basisMap };
+  for (const u of updates) next[u.accountId] = u.newBasis;
+  return next;
+}

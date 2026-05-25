@@ -24,7 +24,11 @@ import {
   computeGrossEstate,
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
-import { applyBusinessSuccession } from "./business-succession";
+import {
+  applyBusinessBasisUpdates,
+  applyBusinessOwnerSuccession,
+  applyBusinessSuccession,
+} from "./business-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { computeSection2035Lookback } from "./section-2035-lookback";
@@ -73,6 +77,22 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
   const deceasedWill: Will | null = will && will.grantor === deceased ? will : null;
 
   for (const acct of accounts) {
+    // Top-level business accounts: applyBusinessSuccession owns the
+    // consolidated transfer; running them through the chain too would
+    // double-count. Mirror the carve-out in computeGrossEstate /
+    // computeInEstateAtYear. The deceasedFmId guard preserves legacy
+    // engine-fixture behavior where familyMembers is empty and business-
+    // succession is a no-op — there the chain must still title the
+    // business through.
+    if (
+      acct.category === "business" &&
+      acct.parentAccountId == null &&
+      deceasedFmId != null
+    ) {
+      nextAccounts.push(acct);
+      continue;
+    }
+
     // Accounts not touched by the deceased pass through unchanged.
     // Entity-owned accounts and accounts already distributed to a non-principal
     // FM (ownerFamilyMemberId semantics) are also skipped.
@@ -377,6 +397,18 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     year: input.year,
   });
 
+  // The precedence chain skips top-level business accounts (handled here
+  // canonically) so the deceased's owner row on the business account
+  // survives the chain. Strip it now by applying the business-succession
+  // ownerUpdates — moves the deceased's share to the resolved successor
+  // FM(s) and §1014-steps up basis on the deceased's flat-value slice.
+  const accountsAfterBiz = applyBusinessOwnerSuccession(
+    chainResult.accounts, businessSuccession.ownerUpdates,
+  );
+  const basisMapAfterBiz = applyBusinessBasisUpdates(
+    chainResult.basisMap, businessSuccession.basisUpdates,
+  );
+
   // Phase 4 — deductions (marital + charitable + admin). Pass the post-chain
   // liabilities so encumbrances that follow assets to the surviving spouse
   // reduce the marital deduction (§2056(b)(4)(B)).
@@ -464,7 +496,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   const accountBalances = { ...chainResult.accountBalances };
   const estateTaxDrain = drainLiquidAssets({
     amountNeeded: preview.totalTaxesAndExpenses,
-    accounts: chainResult.accounts,
+    accounts: accountsAfterBiz,
     accountBalances,
     eligibilityFilter: (a) => {
       if (maritalAccountIds.has(a.id)) return false;
@@ -487,7 +519,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   for (const debit of estateTaxDrain.debits) {
     accountBalances[debit.accountId] =
       (accountBalances[debit.accountId] ?? 0) - debit.amount;
-    const a = chainResult.accounts.find((x) => x.id === debit.accountId);
+    const a = accountsAfterBiz.find((x) => x.id === debit.accountId);
     if (a && a.category === "retirement") {
       warnings.push(`retirement_estate_drain: ${a.id}`);
     }
@@ -496,10 +528,10 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
   }
 
-  // Phase 9 — apply grantor-succession updates. businessSuccession.ownerUpdates
-  // / basisUpdates are account-keyed under the account-based business model;
-  // wiring them through to accounts is deferred future work — the entity-keyed
-  // application that used to live here was inert (find never matched).
+  // Phase 9 — apply grantor-succession entity updates. (businessSuccession's
+  // account-keyed ownerUpdates / basisUpdates were already applied above —
+  // they are what makes the post-event business account reflect the new
+  // owner / stepped-up basis.)
   const mutatedEntities = input.entities.map((e) => {
     const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
     if (!upd) return e;
@@ -520,9 +552,9 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
       queue: succession.pourOutQueue,
       deceased: input.deceased,
       deathOrder: 1,
-      accounts: chainResult.accounts,
+      accounts: accountsAfterBiz,
       accountBalances,
-      basisMap: chainResult.basisMap,
+      basisMap: basisMapAfterBiz,
       liabilities: pouredLiabs,
       familyMembers: input.familyMembers,
       externalBeneficiaries: input.externalBeneficiaries,
@@ -627,14 +659,14 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   assertFirstDeathInvariants(estateTax, mutatedEntities, input.deceased, input.year);
   assertPrecedenceChainInvariants({
     transfers: chainResult.transfers,
-    accounts: chainResult.accounts,
+    accounts: accountsAfterBiz,
     incomes: chainResult.incomes,
   }, prepared);
 
   return {
-    accounts: chainResult.accounts,
+    accounts: accountsAfterBiz,
     accountBalances,
-    basisMap: chainResult.basisMap,
+    basisMap: basisMapAfterBiz,
     incomes: chainResult.incomes,
     liabilities: pouredLiabs,
     transfers: ledger,
