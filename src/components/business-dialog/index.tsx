@@ -211,8 +211,8 @@ export default function BusinessDialog({
             NOOP
           }
           onOpenAddExpense={onOpenAddExpense ?? NOOP}
-          onEditIncome={onEditIncome ?? (() => {})}
-          onEditExpense={onEditExpense ?? (() => {})}
+          onEditIncome={onEditIncome ?? NOOP}
+          onEditExpense={onEditExpense ?? NOOP}
         />
       )}
       {!currentBusiness && tab === "flows" && (
