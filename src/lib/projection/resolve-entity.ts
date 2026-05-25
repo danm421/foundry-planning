@@ -305,6 +305,7 @@ type RawExpense = {
   endYearRef?: string | null;
   scheduleOverrides?: Record<number, number>;
   isDefault?: boolean | null;
+  endsAtMedicareEligibilityOwner?: "client" | "spouse" | "joint" | null;
 };
 
 export function resolveExpenseFromRaw(
@@ -331,6 +332,10 @@ export function resolveExpenseFromRaw(
     endYearRef: raw.endYearRef ?? null,
     growthSource: raw.growthSource ?? null,
     isDefault: raw.isDefault ?? false,
+    endsAtMedicareEligibilityOwner:
+      raw.endsAtMedicareEligibilityOwner === "client" || raw.endsAtMedicareEligibilityOwner === "spouse"
+        ? raw.endsAtMedicareEligibilityOwner
+        : undefined,
   };
 }
 

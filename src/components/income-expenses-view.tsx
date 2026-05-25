@@ -85,6 +85,7 @@ interface Expense {
   startYearRef?: string | null;
   endYearRef?: string | null;
   deductionType?: string | null;
+  endsAtMedicareEligibilityOwner?: "client" | "spouse" | null;
   isDefault?: boolean;
 }
 
@@ -952,6 +953,10 @@ function ExpenseDialog({
   const [error, setError] = useState<string | null>(null);
   const [deductionType, setDeductionType] = useState<string>(editing?.deductionType ?? "");
   const [ownerAccountId, setOwnerAccountId] = useState<string | null>(editing?.ownerAccountId ?? null);
+  const [endsAtMedicareEligibilityOwner, setEndsAtMedicareEligibilityOwner] = useState<"client" | "spouse" | null>(
+    editing?.endsAtMedicareEligibilityOwner ?? null
+  );
+  const hasSpouse = Boolean(clientInfo?.spouseDob);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing
@@ -1003,6 +1008,7 @@ function ExpenseDialog({
       startYearRef,
       endYearRef,
       deductionType: deductionType || null,
+      endsAtMedicareEligibilityOwner,
     };
 
     try {
@@ -1242,6 +1248,31 @@ function ExpenseDialog({
               <option value="below_line">Below Line Deduction</option>
               <option value="property_tax">Property Tax</option>
             </select>
+          </div>
+
+          <div className="flex flex-col gap-2 border-t border-gray-700 pt-3">
+            <label className="flex items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                checked={endsAtMedicareEligibilityOwner !== null}
+                onChange={e =>
+                  setEndsAtMedicareEligibilityOwner(e.target.checked ? "client" : null)
+                }
+              />
+              <span>This expense ends at Medicare eligibility</span>
+            </label>
+            {endsAtMedicareEligibilityOwner !== null && (
+              <select
+                value={endsAtMedicareEligibilityOwner}
+                onChange={e =>
+                  setEndsAtMedicareEligibilityOwner(e.target.value as "client" | "spouse")
+                }
+                className="ml-6 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 w-48"
+              >
+                <option value="client">Client</option>
+                {hasSpouse && <option value="spouse">Spouse</option>}
+              </select>
+            )}
           </div>
 
           <BusinessOwnerSelect

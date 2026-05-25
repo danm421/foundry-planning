@@ -47,7 +47,20 @@ export async function PUT(
       ownerAccountId,
       cashAccountId,
       inflationStartYear,
+      endsAtMedicareEligibilityOwner,
     } = body;
+
+    if (
+      endsAtMedicareEligibilityOwner !== undefined &&
+      endsAtMedicareEligibilityOwner != null &&
+      endsAtMedicareEligibilityOwner !== "client" &&
+      endsAtMedicareEligibilityOwner !== "spouse"
+    ) {
+      return NextResponse.json(
+        { error: "endsAtMedicareEligibilityOwner must be 'client', 'spouse', or null" },
+        { status: 400 },
+      );
+    }
 
     if (
       ownerEntityId !== undefined &&
@@ -96,6 +109,9 @@ export async function PUT(
         ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
         ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
         ...(body.deductionType !== undefined && { deductionType: body.deductionType }),
+        ...(endsAtMedicareEligibilityOwner !== undefined && {
+          endsAtMedicareEligibilityOwner: endsAtMedicareEligibilityOwner ?? null,
+        }),
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)))

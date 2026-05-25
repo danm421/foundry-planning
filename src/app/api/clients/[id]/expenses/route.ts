@@ -85,12 +85,24 @@ export async function POST(
       cashAccountId,
       inflationStartYear,
       deductionType,
+      endsAtMedicareEligibilityOwner,
     } = body;
     const startYearRef = body.startYearRef ?? null;
     const endYearRef = body.endYearRef ?? null;
 
     if (!type || !name || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    if (
+      endsAtMedicareEligibilityOwner != null &&
+      endsAtMedicareEligibilityOwner !== "client" &&
+      endsAtMedicareEligibilityOwner !== "spouse"
+    ) {
+      return NextResponse.json(
+        { error: "endsAtMedicareEligibilityOwner must be 'client', 'spouse', or null" },
+        { status: 400 },
+      );
     }
 
     // Schema enforces this with a CHECK, but report a clean 400 instead of a
@@ -136,6 +148,7 @@ export async function POST(
         startYearRef,
         endYearRef,
         deductionType: deductionType ?? null,
+        endsAtMedicareEligibilityOwner: endsAtMedicareEligibilityOwner ?? null,
       })
       .returning();
 
