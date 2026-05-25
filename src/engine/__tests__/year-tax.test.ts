@@ -20,6 +20,7 @@ describe("computeTaxForYear", () => {
         stCapitalGains: 0,
         qbi: 0,
         taxExempt: 0,
+        taxExemptInterest: 0,
         bySource: {},
       },
       socialSecurityGross: 0,

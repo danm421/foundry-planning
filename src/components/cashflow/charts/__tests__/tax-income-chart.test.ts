@@ -34,6 +34,7 @@ describe("buildTaxIncomeDatasets", () => {
         stCapitalGains: 1_000,
         qbi: 2_000,
         taxExempt: 500,
+        taxExemptInterest: 500,
         bySource: {},
       },
     });

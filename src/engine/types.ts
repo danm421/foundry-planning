@@ -1059,6 +1059,14 @@ export interface ProjectionYear {
     stCapitalGains: number;
     qbi: number;
     taxExempt: number;
+    /** Municipal-bond / tax-exempt interest — broken out from the generic
+     *  taxExempt total because it is needed as a MAGI input for IRMAA.
+     *  Counts the muni-interest subset only: income rows classified as
+     *  `taxType: "tax_exempt"` and trust pass-through tax-exempt deltas
+     *  (which originate from `realization.pctTaxExempt`). Does NOT include
+     *  generic non-taxable business pass-through (e.g. Roth-equivalent
+     *  distributions, return-of-capital) — those land in `taxExempt` only. */
+    taxExemptInterest: number;
     bySource: Record<string, { type: string; amount: number }>;
   };
 

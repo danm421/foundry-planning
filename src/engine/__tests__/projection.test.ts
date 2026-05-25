@@ -462,6 +462,53 @@ describe("runProjection", () => {
     expect(result[0].taxDetail!.dividends).toBeCloseTo(1500, 0);
     expect(result[0].taxDetail!.stCapitalGains).toBeCloseTo(700, 0);
   });
+
+  it("surfaces tax-exempt interest separately from generic taxExempt", () => {
+    // Municipal-bond interest is modeled as an Income row with type "other"
+    // and `taxType: "tax_exempt"`. The pension is a non-tax-exempt baseline
+    // so the test pins both AGI-relevant ordinary income AND the new
+    // taxExemptInterest field.
+    const data = buildClientData({
+      accounts: sampleAccounts.filter((a) => a.id === "acct-checking"),
+      incomes: [
+        {
+          id: "inc-muni",
+          type: "other",
+          name: "Muni Bond Interest",
+          annualAmount: 12_000,
+          startYear: 2026,
+          endYear: 2026,
+          growthRate: 0,
+          owner: "client",
+          taxType: "tax_exempt" as const,
+        },
+        {
+          id: "inc-pension",
+          type: "other",
+          name: "Pension",
+          annualAmount: 30_000,
+          startYear: 2026,
+          endYear: 2026,
+          growthRate: 0,
+          owner: "client",
+          taxType: "ordinary_income" as const,
+        },
+      ],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    expect(result[0].taxDetail).toBeDefined();
+    // New field: muni-bond interest broken out for IRMAA MAGI use.
+    expect(result[0].taxDetail!.taxExemptInterest).toBe(12_000);
+    // Existing field is unchanged — muni still appears in taxExempt too.
+    expect(result[0].taxDetail!.taxExempt).toBe(12_000);
+    // Pension lands in ordinaryIncome, not taxExempt(Interest).
+    expect(result[0].taxDetail!.ordinaryIncome).toBe(30_000);
+  });
 });
 
 // ============================================================================

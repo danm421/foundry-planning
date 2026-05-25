@@ -1439,6 +1439,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       stCapitalGains: realizationSTCG,
       qbi: 0,
       taxExempt: 0,
+      // Subset of taxExempt — muni-bond interest only (needed for IRMAA MAGI).
+      // Excludes business non_taxable pass-through (Roth-equivalent / RoC).
+      taxExemptInterest: 0,
       bySource: { ...realizationBySource, ...rmdBySource },
     };
     // Map income entries to tax categories. Social Security is intentionally
@@ -1473,7 +1476,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         case "capital_gains": taxDetail.capitalGains += amount; break;
         case "stcg": taxDetail.stCapitalGains += amount; break;
         case "qbi": taxDetail.qbi += amount; break;
-        case "tax_exempt": taxDetail.taxExempt += amount; break;
+        case "tax_exempt":
+          taxDetail.taxExempt += amount;
+          taxDetail.taxExemptInterest += amount;
+          break;
       }
       taxDetail.bySource[inc.id] = { type: tt, amount };
     }
@@ -1907,6 +1913,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail.ordinaryIncome += trustPassResult.householdIncomeDelta.ordinary;
       taxDetail.dividends += trustPassResult.householdIncomeDelta.dividends;
       taxDetail.taxExempt += trustPassResult.householdIncomeDelta.taxExempt;
+      // Trust-side tax-exempt is muni interest (originates from
+      // realization.pctTaxExempt on trust-held bond accounts), so it also
+      // counts toward IRMAA MAGI.
+      taxDetail.taxExemptInterest += trustPassResult.householdIncomeDelta.taxExempt;
 
       // Apply trust cash debits (distributions drawn from cash + trust tax paid).
       // We deliberately allow checking to go negative here — step 12c (entity

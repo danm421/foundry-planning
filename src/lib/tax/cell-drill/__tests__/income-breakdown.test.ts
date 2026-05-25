@@ -53,6 +53,7 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
       stCapitalGains: 1_000,
       qbi: 0,
       taxExempt: 1_500,
+      taxExemptInterest: 1_500,
       bySource: {
         inc_w: { type: "earned_income", amount: 100_000 },
         "acc_1:oi": { type: "ordinary_income", amount: 8_000 },
@@ -106,7 +107,7 @@ describe("buildIncomeCellDrill — direct columns", () => {
     const year = makeYear({
       taxDetail: {
         earnedIncome: 100_000, ordinaryIncome: 0, dividends: 0,
-        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0,
+        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0, taxExemptInterest: 0,
         bySource: {
           inc_a: { type: "earned_income", amount: 30_000 },
           inc_b: { type: "earned_income", amount: 70_000 },
@@ -121,7 +122,7 @@ describe("buildIncomeCellDrill — direct columns", () => {
     const year = makeYear({
       taxDetail: {
         earnedIncome: 0, ordinaryIncome: 0, dividends: 0,
-        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0,
+        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0, taxExemptInterest: 0,
         bySource: {},
       } as never,
     });
@@ -219,7 +220,7 @@ describe("buildIncomeCellDrill — Non-Taxable Income", () => {
       } as never,
       taxDetail: {
         earnedIncome: 100_000, ordinaryIncome: 0, dividends: 0,
-        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0,
+        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0, taxExemptInterest: 0,
         bySource: { inc_w: { type: "earned_income", amount: 100_000 } },
       } as never,
     });
@@ -263,7 +264,7 @@ describe("buildIncomeCellDrill — Total Income", () => {
       } as never,
       taxDetail: {
         earnedIncome: 100_000, ordinaryIncome: 0, dividends: 0,
-        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0,
+        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0, taxExemptInterest: 0,
         bySource: { inc_w: { type: "earned_income", amount: 100_000 } },
       } as never,
     });

@@ -32,7 +32,7 @@ function makeYear(args: {
     taxResult,
     taxDetail: {
       earnedIncome: 0, ordinaryIncome: 0, dividends: 0, capitalGains: 0,
-      stCapitalGains: 0, qbi: 0, taxExempt: 0,
+      stCapitalGains: 0, qbi: 0, taxExempt: 0, taxExemptInterest: 0,
       bySource: args.bySource,
     },
   } as unknown as ProjectionYear;
