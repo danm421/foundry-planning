@@ -2,6 +2,16 @@
 
 export type FilingStatus = "married_joint" | "single" | "head_of_household" | "married_separate";
 
+/** CMS IRMAA bracket tier. Mirrored from `src/engine/types.ts` so this file
+ *  stays the leaf type module (engine/types.ts already imports from here). */
+export interface IrmaaTier {
+  tier: number;
+  magiLowerBound: number;
+  magiUpperBound: number | null;
+  partBSurcharge: number;
+  partDSurcharge: number;
+}
+
 export interface BracketTier {
   from: number;       // inclusive lower bound
   to: number | null;  // exclusive upper bound; null for top bracket
@@ -64,6 +74,16 @@ export interface TaxYearParameters {
     hsaLimitFamily: number;
     hsaCatchup55: number;
   };
+
+  // ── Medicare (CMS-published; null until seeded for that year) ──────────────
+  /** Annual standard Part B premium. Null = not seeded for this year. */
+  standardPartBPremium?: number | null;
+  /** Annual Part D national base beneficiary premium. Null = not seeded. */
+  partDNationalBase?: number | null;
+  /** IRMAA bracket tiers for married-filing-jointly filers. Null = not seeded. */
+  irmaaBracketsMfj?: IrmaaTier[] | null;
+  /** IRMAA bracket tiers for all other filers (statutorily "single" tier). Null = not seeded. */
+  irmaaBracketsSingle?: IrmaaTier[] | null;
 }
 
 // Already-resolved engine input for one projection year.

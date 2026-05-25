@@ -68,5 +68,9 @@ export function dbRowToTaxYearParameters(row: Row): TaxYearParameters {
       hsaLimitFamily: parseFloat(row.hsaLimitFamily),
       hsaCatchup55: parseFloat(row.hsaCatchup55),
     },
+    standardPartBPremium: row.standardPartBPremium != null ? parseFloat(row.standardPartBPremium) : null,
+    partDNationalBase: row.partDNationalBase != null ? parseFloat(row.partDNationalBase) : null,
+    irmaaBracketsMfj: (row.irmaaBracketsMfj ?? null) as TaxYearParameters["irmaaBracketsMfj"],
+    irmaaBracketsSingle: (row.irmaaBracketsSingle ?? null) as TaxYearParameters["irmaaBracketsSingle"],
   };
 }

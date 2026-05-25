@@ -169,6 +169,8 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "termMonths": 360,
     },
   ],
+  "medicareCoverage": [],
+  "medicarePremiumInflationRate": 0.05,
   "notesReceivable": [],
   "planSettings": {
     "estateAdminExpenses": 0,
@@ -293,6 +295,8 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
           "upTo": null,
         },
       ],
+      "irmaaBracketsMfj": null,
+      "irmaaBracketsSingle": null,
       "medicareTaxRate": 0.0145,
       "niitRate": 0.038,
       "niitThreshold": {
@@ -300,6 +304,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
         "mfs": 125000,
         "single": 200000,
       },
+      "partDNationalBase": null,
       "qbi": {
         "phaseInRangeMfj": 100000,
         "phaseInRangeOther": 50000,
@@ -308,6 +313,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       },
       "ssTaxRate": 0.062,
       "ssWageBase": 168600,
+      "standardPartBPremium": null,
       "stdDeduction": {
         "head_of_household": 21900,
         "married_joint": 29200,

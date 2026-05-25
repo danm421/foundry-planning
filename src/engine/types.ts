@@ -1,4 +1,4 @@
-import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
+import type { TaxResult, TaxYearParameters, IrmaaTier as TaxIrmaaTier } from "../lib/tax/types";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
@@ -8,13 +8,9 @@ import type { NoteReceivable } from "./notes-receivable/types";
 
 // ── Shared Tax / Medicare Types ──────────────────────────────────────────────
 
-export interface IrmaaTier {
-  tier: number;                  // 1..5; tier 0 is implicit (below tier 1 = no surcharge)
-  magiLowerBound: number;        // inclusive
-  magiUpperBound: number | null; // exclusive; null = top tier, no upper bound
-  partBSurcharge: number;        // annual dollars added on top of standard
-  partDSurcharge: number;        // annual dollars added on top of plan base
-}
+/** Re-export from lib/tax/types where the canonical definition lives. Engine
+ *  consumers (medicare.ts, projection.ts) keep importing IrmaaTier from here. */
+export type IrmaaTier = TaxIrmaaTier;
 
 /** Per-person Medicare coverage configuration captured from the household.
  *  Null fields signal "use the engine default" so that households without
@@ -805,6 +801,11 @@ export interface Expense {
   sourcePolicyAccountId?: string;
   /** Marks the auto-seeded current/retirement living expenses; protected from deletion. */
   isDefault?: boolean;
+  /** When set, the engine zeros this expense from the named owner's Medicare
+   *  enrollment year onward. Used to flag pre-Medicare health-insurance
+   *  expenses so they auto-end when projected Medicare premiums kick in,
+   *  preventing double-counting alongside the modeled Medicare cost. */
+  endsAtMedicareEligibilityOwner?: "client" | "spouse";
   // ── View-only metadata ─────────────────────────────────────────────
   // Carried through from the DB row so page-level adapters can render
   // milestone-relative editing UI. Engine math ignores these fields.

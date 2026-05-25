@@ -153,5 +153,14 @@ function inflateParams(base: TaxYearParameters, generalFactor: number, ssFactor:
       hsaLimitFamily: inf(base.contribLimits.hsaLimitFamily, "contribLimits.hsaLimitFamily"),
       hsaCatchup55: inf(base.contribLimits.hsaCatchup55, "contribLimits.hsaCatchup55"),
     },
+    // Medicare premiums and IRMAA brackets pass through unchanged. CMS publishes
+    // them annually; for years beyond the seeded table the engine uses the latest
+    // values literally (the medigap/Part-D inflation happens inside
+    // computeMedicareYear via medicarePremiumInflationRate; the Part B portion is
+    // not auto-inflated here — future work if needed).
+    standardPartBPremium: base.standardPartBPremium ?? null,
+    partDNationalBase: base.partDNationalBase ?? null,
+    irmaaBracketsMfj: base.irmaaBracketsMfj ?? null,
+    irmaaBracketsSingle: base.irmaaBracketsSingle ?? null,
   };
 }

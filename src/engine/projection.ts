@@ -14,7 +14,11 @@ import type {
   EstateTaxResult,
   HypotheticalEstateTax,
   LifeInsurancePayout,
+  MedicareCoverage,
+  MedicareYearDetail,
+  IrmaaTier,
 } from "./types";
+import { computeMedicareYear } from "./medicare";
 import { computeEntityCashFlow, type EntityMetadata } from "./entity-cashflow";
 import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
@@ -306,6 +310,12 @@ function foldLifeInsurancePayoutsIntoIncome(
 export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
   const { client, planSettings } = data;
   const years: ProjectionYear[] = [];
+
+  // Year-keyed MAGI history for IRMAA's 2-year lookback. Populated each year
+  // after the converged tax calc. The medicare block reads `year - 2` from
+  // this map; for the first two projection years (or when an explicit override
+  // exists) it cold-starts from `coverage.priorYearMagi`.
+  const magiHistory = new Map<number, number>();
 
   // Normalize ownership: any account/liability whose `owners[]` is empty (legacy
   // engine-test fixtures predating Phase 2 fractional ownership) gets a single
@@ -3521,6 +3531,147 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       finalTaxDetail.bySource[`withdrawal:${draw.accountId}`] = { type, amount: recognized };
     }
 
+    // === Medicare / IRMAA computation ========================================
+    // Runs after the converged tax calc so MAGI reflects the FINAL post-
+    // supplemental AGI (supplemental withdrawals can flip a tier mid-year).
+    // Only fires when (a) at least one household member has a MedicareCoverage
+    // row AND (b) the tax resolver has Medicare params seeded for this year —
+    // otherwise the household has no Medicare model in scope and we skip.
+
+    // MAGI = AGI + tax-exempt interest (IRC §6334(d)(3)(C); IRMAA's MAGI def).
+    const magiThisYear =
+      (finalTaxResult?.flow.adjustedGrossIncome ?? 0) +
+      (finalTaxDetail?.taxExemptInterest ?? 0);
+    magiHistory.set(year, magiThisYear);
+
+    const medicareCoverageByOwner: Record<"client" | "spouse", MedicareCoverage | undefined> = {
+      client: data.medicareCoverage?.find((c) => c.owner === "client"),
+      spouse: data.medicareCoverage?.find((c) => c.owner === "spouse"),
+    };
+    const hasAnyCoverage = !!(medicareCoverageByOwner.client || medicareCoverageByOwner.spouse);
+    const taxYearParams = resolved?.params;
+    const medicareParamsReady =
+      taxYearParams != null &&
+      taxYearParams.standardPartBPremium != null &&
+      taxYearParams.irmaaBracketsMfj != null &&
+      taxYearParams.irmaaBracketsSingle != null;
+
+    let medicareClient: MedicareYearDetail | undefined;
+    let medicareSpouse: MedicareYearDetail | undefined;
+    const medicarePreemptedExpenseIds = new Set<string>();
+
+    if (hasAnyCoverage && medicareParamsReady) {
+      const standardPartBPremium = Number(taxYearParams.standardPartBPremium ?? 0);
+      const partDNationalBase = Number(taxYearParams.partDNationalBase ?? 0);
+      const irmaaTiersMfj = (taxYearParams.irmaaBracketsMfj ?? []) as IrmaaTier[];
+      const irmaaTiersSingle = (taxYearParams.irmaaBracketsSingle ?? []) as IrmaaTier[];
+      const irmaaFilingStatus: "mfj" | "single" =
+        filingStatus === "married_joint" ? "mfj" : "single";
+
+      // 2-year-lookback MAGI resolver. Real history (year - 2) takes precedence;
+      // otherwise fall back to the per-person priorYearMagi override; otherwise
+      // cold-start from this year's MAGI as the least-bad estimate.
+      const resolveSourceMagi = (
+        owner: "client" | "spouse",
+      ): { magi: number; sourceYear: number; isColdStart: boolean } => {
+        const lookbackYear = year - 2;
+        const fromHistory = magiHistory.get(lookbackYear);
+        if (fromHistory != null) {
+          return { magi: fromHistory, sourceYear: lookbackYear, isColdStart: false };
+        }
+        const override = medicareCoverageByOwner[owner]?.priorYearMagi;
+        if (override != null) {
+          return { magi: override, sourceYear: year, isColdStart: true };
+        }
+        return { magi: magiThisYear, sourceYear: year, isColdStart: true };
+      };
+
+      // Engine purity rule prevents importing from src/lib — these mirror
+      // DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE, DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR,
+      // and DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR in src/lib/medicare/constants.ts.
+      const inflationRate = data.medicarePremiumInflationRate ?? 0.05;
+      const medicareBaseYear = 2025;
+      const defaultMedigapMonthly = 170;
+      const defaultPartDPlanMonthly = 46;
+
+      if (medicareCoverageByOwner.client) {
+        const mc = resolveSourceMagi("client");
+        medicareClient = computeMedicareYear({
+          year,
+          owner: "client",
+          age: ages.client,
+          coverage: medicareCoverageByOwner.client,
+          standardPartBPremium,
+          partDNationalBase,
+          irmaaTiers: { mfj: irmaaTiersMfj, single: irmaaTiersSingle },
+          filingStatus: irmaaFilingStatus,
+          sourceMagi: mc.magi,
+          sourceYearForIrmaa: mc.sourceYear,
+          isColdStart: mc.isColdStart,
+          medicareBaseYear,
+          medicarePremiumInflationRate: inflationRate,
+          defaultMedigapMonthly,
+          defaultPartDPlanMonthly,
+        });
+      }
+
+      if (ages.spouse !== undefined && medicareCoverageByOwner.spouse) {
+        const mc = resolveSourceMagi("spouse");
+        medicareSpouse = computeMedicareYear({
+          year,
+          owner: "spouse",
+          age: ages.spouse,
+          coverage: medicareCoverageByOwner.spouse,
+          standardPartBPremium,
+          partDNationalBase,
+          irmaaTiers: { mfj: irmaaTiersMfj, single: irmaaTiersSingle },
+          filingStatus: irmaaFilingStatus,
+          sourceMagi: mc.magi,
+          sourceYearForIrmaa: mc.sourceYear,
+          isColdStart: mc.isColdStart,
+          medicareBaseYear,
+          medicarePremiumInflationRate: inflationRate,
+          defaultMedigapMonthly,
+          defaultPartDPlanMonthly,
+        });
+      }
+
+      // Identify pre-Medicare expenses that need zeroing this year. The
+      // `endsAtMedicareEligibilityOwner` flag marks expenses (typically
+      // ACA/COBRA premiums) that should auto-end when the named owner enrolls.
+      // We reuse computeMedicareYear's `enrolled` flag so the two notions of
+      // "enrolled this year" stay in lockstep.
+      const enrolledByOwner = {
+        client: medicareClient?.enrolled ?? false,
+        spouse: medicareSpouse?.enrolled ?? false,
+      };
+      for (const e of data.expenses) {
+        const ownerKey = e.endsAtMedicareEligibilityOwner;
+        if (!ownerKey) continue;
+        if (!enrolledByOwner[ownerKey]) continue;
+        medicarePreemptedExpenseIds.add(e.id);
+      }
+    }
+
+    const medicareTotalAnnualCost =
+      (medicareClient?.totalAnnualCost ?? 0) + (medicareSpouse?.totalAnnualCost ?? 0);
+    const medicareTotalIrmaaSurcharge =
+      (medicareClient?.partBIrmaaSurcharge ?? 0) +
+      (medicareClient?.partDIrmaaSurcharge ?? 0) +
+      (medicareSpouse?.partBIrmaaSurcharge ?? 0) +
+      (medicareSpouse?.partDIrmaaSurcharge ?? 0);
+
+    const medicareYearData =
+      medicareClient || medicareSpouse
+        ? {
+            client: medicareClient,
+            spouse: medicareSpouse,
+            totalAnnualCost: medicareTotalAnnualCost,
+            totalIrmaaSurcharge: medicareTotalIrmaaSurcharge,
+          }
+        : undefined;
+    // === End Medicare / IRMAA ===============================================
+
     // Apply converged supplemental + taxes to balances and ledgers.
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
@@ -3933,6 +4084,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       interestByLiability: liabResult.interestByLiability,
     };
 
+    // Medicare post-processing on the expenses literal.
+    //   (a) Zero out any pre-Medicare expense flagged endsAtMedicareEligibilityOwner
+    //       whose owner is enrolled this year. Subtract from total + per-category.
+    //   (b) Inject the household's modeled Medicare total as a single bySource row
+    //       and add it to insurance + total.
+    if (medicarePreemptedExpenseIds.size > 0) {
+      for (const id of medicarePreemptedExpenseIds) {
+        const amt = expenses.bySource[id];
+        if (!amt) continue;
+        delete expenses.bySource[id];
+        expenses.total -= amt;
+        const src = data.expenses.find((x) => x.id === id);
+        if (src) {
+          if (src.type === "insurance") expenses.insurance -= amt;
+          else if (src.type === "living") expenses.living -= amt;
+          else expenses.other -= amt;
+        }
+      }
+    }
+    if (medicareTotalAnnualCost > 0) {
+      expenses.bySource["medicarePremiums"] = medicareTotalAnnualCost;
+      expenses.total += medicareTotalAnnualCost;
+      expenses.insurance += medicareTotalAnnualCost;
+    }
+
     // Cash Flow > Income, Business column: show actual cash received by the
     // household from entity distributions, not gross entity income. Sum every
     // positive (= credit) entity_distribution ledger entry — only destination
@@ -4073,6 +4249,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail: finalTaxDetail,
       taxResult: finalTaxResult,
+      ...(medicareYearData ? { medicare: medicareYearData } : {}),
       charityCarryforward,
       charitableOutflows: cltCharitableOutflowsTotal,
       ...(cltCharitableOutflowDetail.length > 0
