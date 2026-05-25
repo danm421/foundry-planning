@@ -1474,7 +1474,14 @@ export default function IncomeExpensesView({
           ) : (
             <>
               {INCOME_GROUPS.map((group) => {
-                const items = incomeList.filter((i) => group.types.includes(i.type));
+                // Exclude entity- and business-account-owned rows; they render
+                // in their own rollups ("Linked Entities" / "Linked to
+                // Businesses") below and would otherwise duplicate here and
+                // double-count the per-group subtotal.
+                const items = incomeList.filter(
+                  (i) =>
+                    group.types.includes(i.type) && !i.ownerEntityId && !i.ownerAccountId,
+                );
                 if (items.length === 0) return null;
                 const subtotal = items.reduce((s, i) => s + Number(i.annualAmount), 0);
                 return (
@@ -1488,6 +1495,9 @@ export default function IncomeExpensesView({
                       const entityName = income.ownerEntityId
                         ? entityMap[income.ownerEntityId]?.name
                         : undefined;
+                      const businessName = income.ownerAccountId
+                        ? businessAccountMap[income.ownerAccountId]?.name
+                        : undefined;
                       return (
                         <Row
                           key={income.id}
@@ -1496,7 +1506,9 @@ export default function IncomeExpensesView({
                           onDelete={() => setDeletingIncome(income)}
                           label={income.name}
                           meta={[
-                            entityName ?? individualOwnerLabel(income.owner, ownerNames),
+                            entityName ??
+                              businessName ??
+                              individualOwnerLabel(income.owner, ownerNames),
                             income.claimingAge ? `Claim @ ${income.claimingAge}` : null,
                           ]}
                           starts={yearsDescriptor(income.startYear, income.endYear, planStart, planEnd)}
@@ -1671,7 +1683,14 @@ export default function IncomeExpensesView({
             <EmptyRow message="No expense entries yet." />
           ) : (
             EXPENSE_GROUPS.map((group) => {
-              const items = expenseList.filter((e) => group.types.includes(e.type));
+              // Exclude entity- and business-account-owned rows; they render
+              // in their own rollups ("Linked Entities" / "Linked to
+              // Businesses") below and would otherwise duplicate here and
+              // double-count the per-group subtotal.
+              const items = expenseList.filter(
+                (e) =>
+                  group.types.includes(e.type) && !e.ownerEntityId && !e.ownerAccountId,
+              );
               if (items.length === 0) return null;
               const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
               return (
@@ -1683,6 +1702,9 @@ export default function IncomeExpensesView({
                 >
                   {items.map((expense) => {
                     const entityName = expense.ownerEntityId ? entityMap[expense.ownerEntityId]?.name : undefined;
+                    const businessName = expense.ownerAccountId
+                      ? businessAccountMap[expense.ownerAccountId]?.name
+                      : undefined;
                     return (
                       <Row
                         key={expense.id}
@@ -1690,7 +1712,7 @@ export default function IncomeExpensesView({
                         editMode={expenseEdit}
                         onDelete={expense.isDefault ? undefined : () => setDeletingExpense(expense)}
                         label={expense.name}
-                        meta={[entityName ?? null]}
+                        meta={[entityName ?? businessName ?? null]}
                         starts={yearsDescriptor(expense.startYear, expense.endYear, planStart, planEnd)}
                         value={fmt(expense.annualAmount)}
                         outOfEstate={Boolean(expense.ownerEntityId)}
