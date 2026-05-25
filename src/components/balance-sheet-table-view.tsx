@@ -175,6 +175,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     isDefaultChecking: a.isDefaultChecking ?? false,
     owners: a.owners,
     titlingType: a.titlingType,
+    parentAccountId: a.parentAccountId ?? null,
   };
 }
 
@@ -444,6 +445,9 @@ export default function BalanceSheetTableView({
 
   const realEstateAccounts = accounts
     .filter((a) => a.category === "real_estate")
+    .map((a) => ({ id: a.id, name: a.name }));
+  const businessOptions = accounts
+    .filter((a) => a.category === "business" && a.parentAccountId == null)
     .map((a) => ({ id: a.id, name: a.name }));
 
   async function performAccountDelete(id: string) {
@@ -1286,6 +1290,7 @@ export default function BalanceSheetTableView({
         category={addCategory ?? undefined}
         label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
         entities={entities}
+        businesses={businessOptions}
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
@@ -1305,6 +1310,7 @@ export default function BalanceSheetTableView({
       <AddAccountDialog
         clientId={clientId}
         entities={entities}
+        businesses={businessOptions}
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}

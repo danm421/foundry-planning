@@ -210,6 +210,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     isDefaultChecking: a.isDefaultChecking ?? false,
     owners: a.owners,
     titlingType: a.titlingType,
+    parentAccountId: a.parentAccountId ?? null,
   };
 }
 
@@ -557,6 +558,12 @@ export default function BalanceSheetView({
   const netWorth = totalInEstate - totalLiabilities;
   const realEstateAccounts = accounts
     .filter((a) => a.category === "real_estate")
+    .map((a) => ({ id: a.id, name: a.name }));
+  // Top-level business accounts that can serve as parents on add/edit
+  // account/liability forms. Excludes nested businesses (defensive — Phase 4
+  // doesn't currently support business-under-business).
+  const businessOptions = accounts
+    .filter((a) => a.category === "business" && a.parentAccountId == null)
     .map((a) => ({ id: a.id, name: a.name }));
 
   async function performAccountDelete(id: string) {
@@ -950,6 +957,7 @@ export default function BalanceSheetView({
         category={addCategory ?? undefined}
         label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
         entities={entities}
+        businesses={businessOptions}
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
@@ -970,6 +978,7 @@ export default function BalanceSheetView({
       <AddAccountDialog
         clientId={clientId}
         entities={entities}
+        businesses={businessOptions}
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}

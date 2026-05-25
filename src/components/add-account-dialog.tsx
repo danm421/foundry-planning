@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "./dialog-shell";
-import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
+import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption, BusinessOption } from "./forms/add-account-form";
 import AddNoteReceivableForm, { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -23,6 +23,8 @@ interface AddAccountDialogProps {
   editingNote?: NoteReceivableFormInitial;
   onRequestDelete?: () => void;
   entities?: EntityOption[];
+  /** Top-level business accounts available as parents for the new account. */
+  businesses?: BusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
@@ -55,6 +57,7 @@ export default function AddAccountDialog({
   editingNote,
   onRequestDelete,
   entities,
+  businesses,
   familyMembers,
   categoryDefaults,
   modelPortfolios,
@@ -158,6 +161,7 @@ export default function AddAccountDialog({
               mode={isEdit ? "edit" : "create"}
               initial={editing}
               entities={entities}
+              businesses={businesses}
               familyMembers={familyMembers}
               categoryDefaults={categoryDefaults}
               modelPortfolios={modelPortfolios}

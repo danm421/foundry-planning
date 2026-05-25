@@ -77,6 +77,13 @@ export interface AccountFormInitial {
    * and cannot be deleted (the projection engine uses it as the default
    * deposit/expense target). */
   isDefaultChecking?: boolean;
+  /** Parent business account when this account is a sub-asset of a business. */
+  parentAccountId?: string | null;
+}
+
+export interface BusinessOption {
+  id: string;
+  name: string;
 }
 
 export interface ModelPortfolioOption {
@@ -118,6 +125,9 @@ interface AddAccountFormProps {
   mode?: "create" | "edit";
   initial?: AccountFormInitial;
   entities?: EntityOption[];
+  /** Top-level business accounts that may own this account. Source:
+   *  accounts.filter(a => a.category === "business" && a.parentAccountId == null). */
+  businesses?: BusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
   /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
@@ -229,6 +239,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   mode = "create",
   initial,
   entities,
+  businesses,
   familyMembers = [],
   categoryDefaults,
   ownerNames,
@@ -373,6 +384,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [titlingType, setTitlingType] = useState<"jtwros" | "community_property">(
     initial?.titlingType ?? "jtwros",
   );
+  // Phase 4: when set, this account is a sub-asset of the chosen business.
+  // OwnershipEditor hides and owners[] is sent as []. Mutually exclusive
+  // with individual owners.
+  const [parentBusinessId, setParentBusinessId] = useState<string | null>(
+    initial?.parentAccountId ?? null,
+  );
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
@@ -427,6 +444,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     subType,
     owners,
     titlingType,
+    parentBusinessId,
     accountValue,
     accountBasis,
     accountRothValue,
@@ -447,7 +465,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     turnoverPct,
     customAllocations,
   }), [
-    name, category, subType, owners, titlingType, accountValue, accountBasis,
+    name, category, subType, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
     realEstateGrowthRatePct, modelPortfolioId, rmdEnabled, priorYearEndValue,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
@@ -609,12 +627,16 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     const isMixedDeferral =
       category === "retirement" && (subType === "401k" || subType === "403b");
 
+    // When the account is parented to a business, omit owners[] from the
+    // payload entirely — the API rejects owners[] when parentAccountId is
+    // set, and inheritance happens through the parent.
     const accountBody = {
       name,
       category,
       subType,
-      owners,
+      ...(parentBusinessId ? {} : { owners }),
       titlingType,
+      parentAccountId: parentBusinessId,
       value: accountValue,
       basis: isMixedDeferral ? "0" : accountBasis,
       rothValue: isMixedDeferral ? (accountRothValue || "0") : "0",
@@ -720,7 +742,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     }
   }, [
     canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
-    isInvestable, name, owners, titlingType, accountValue, accountBasis, accountRothValue,
+    isInvestable, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
@@ -766,8 +788,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       name: data.get("name") as string,
       category: data.get("category") as string,
       subType: data.get("subType") as string,
-      owners,
+      ...(parentBusinessId ? {} : { owners }),
       titlingType,
+      parentAccountId: parentBusinessId,
       value: currentValue,
       // Cost basis is meaningless for 401k/403b; force 0 so any leftover
       // pre-migration value can't influence engine math.
@@ -1140,16 +1163,60 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </select>
             </div>
 
+            {businesses && businesses.length > 0 && (
+              <div className="col-span-2">
+                <label htmlFor="parentBusinessId" className={fieldLabelClassName}>
+                  Owner
+                </label>
+                <select
+                  id="parentBusinessId"
+                  value={parentBusinessId ?? ""}
+                  onChange={(e) => {
+                    const next = e.target.value || null;
+                    setParentBusinessId(next);
+                    if (next) {
+                      // Clear individual owners when parented to a business —
+                      // API rejects mutual presence.
+                      setOwners([]);
+                    } else if (owners.length === 0 && clientFm) {
+                      // Restore a sensible default when reverting to individual ownership.
+                      setOwners([
+                        { kind: "family_member", familyMemberId: clientFm.id, percent: 1 },
+                      ]);
+                    }
+                  }}
+                  className={selectClassName}
+                >
+                  <option value="">Individual / joint owners (use picker below)</option>
+                  <optgroup label="Businesses">
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+            )}
+
             <div className="col-span-2">
-              <OwnershipEditor
-                familyMembers={familyMembers}
-                entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
-                value={owners}
-                onChange={setOwners}
-                titlingType={titlingType}
-                onTitlingTypeChange={setTitlingType}
-                retirementMode={isRetirementSubType(subType)}
-              />
+              {parentBusinessId ? (
+                <p className="text-[12px] text-ink-3 py-2">
+                  This account will be a sub-asset of{" "}
+                  <strong className="text-ink">
+                    {businesses?.find((b) => b.id === parentBusinessId)?.name ?? "the selected business"}
+                  </strong>
+                  . Owners are inherited from the business and cannot be set here.
+                </p>
+              ) : (
+                <OwnershipEditor
+                  familyMembers={familyMembers}
+                  entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
+                  value={owners}
+                  onChange={setOwners}
+                  titlingType={titlingType}
+                  onTitlingTypeChange={setTitlingType}
+                  retirementMode={isRetirementSubType(subType)}
+                />
+              )}
             </div>
 
             <div>
