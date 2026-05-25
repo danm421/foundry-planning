@@ -277,7 +277,7 @@ export default function InsurancePolicyDetailsTab({
                   </optgroup>
                 )}
                 {entities.length > 0 && (
-                  <optgroup label="Entities">
+                  <optgroup label="Trusts">
                     {entities.map((en) => (
                       <option
                         key={en.id}

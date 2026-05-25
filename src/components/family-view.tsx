@@ -5,7 +5,6 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
-import AddEntityMenu from "./add-entity-menu";
 import BeneficiarySummary from "./beneficiary-summary";
 import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
@@ -524,14 +523,14 @@ export default function FamilyView({
       </section>
       )}
 
-      {/* Entities */}
+      {/* Trusts */}
       {(embed !== "wizard" || section === "entities") && (
       <section>
         <header className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-100">Entities</h2>
+            <h2 className="text-xl font-bold text-gray-100">Trusts</h2>
             <p className="text-xs text-gray-400">
-              Trusts, LLCs, and other entities that can own accounts, incomes, or expenses.
+              Trusts that can own accounts, incomes, or expenses.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -547,18 +546,21 @@ export default function FamilyView({
                 {entitiesEdit ? "Done" : "Edit"}
               </button>
             )}
-            <AddEntityMenu
-              onPick={(kind) => {
+            <button
+              onClick={() => {
                 setEditingEntity(undefined);
-                setEntityCreateKind(kind);
+                setEntityCreateKind("trust");
                 setEntityDialogOpen(true);
               }}
-            />
+              className="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+            >
+              + Add Trust
+            </button>
           </div>
         </header>
 
         {entities.length === 0 ? (
-          <EmptyState label="No entities yet. Add a trust, LLC, or foundation to own assets separately." />
+          <EmptyState label="No trusts yet. Add a trust to own assets separately." />
         ) : (
           <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
             <table className="min-w-full divide-y divide-gray-800">
@@ -758,10 +760,10 @@ export default function FamilyView({
 
       <ConfirmDeleteDialog
         open={!!deletingEntity}
-        title="Delete Entity"
+        title="Delete Trust"
         message={
           deletingEntity
-            ? `Delete ${deletingEntity.name}? Any accounts owned by this entity will revert to the primary owner.`
+            ? `Delete ${deletingEntity.name}? Any accounts owned by this trust will revert to the primary owner.`
             : ""
         }
         onCancel={() => setDeletingEntity(null)}

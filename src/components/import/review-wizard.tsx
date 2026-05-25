@@ -90,7 +90,7 @@ const TAB_LABEL: Record<WizardTabId, string> = {
   liabilities: "Liabilities",
   insurance: "Insurance",
   wills: "Wills",
-  entities: "Entities",
+  entities: "Trusts",
   summary: "Summary",
 };
 

@@ -43,7 +43,7 @@ export const STEP_COMMIT_TABS: Record<ImportEligibleStep, CommitTab[]> = {
 
 export const STEP_IMPORT_LABEL: Record<ImportEligibleStep, string> = {
   family: "Family",
-  entities: "Entities",
+  entities: "Trusts",
   accounts: "Accounts",
   liabilities: "Liabilities",
   "cash-flow": "Income & Expenses",
