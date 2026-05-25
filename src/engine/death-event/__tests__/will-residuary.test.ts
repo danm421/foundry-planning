@@ -143,6 +143,38 @@ describe("applyWillResiduary — final death", () => {
     expect(t!.recipientId).toBe(CHILD_B);
   });
 
+  it("lapses a spouse recipient when the spouse predeceased, falling through to the contingent tier", () => {
+    // Susan-dies-second scenario: her will's primary tier names the spouse,
+    // but Cooper is already dead at her final death. Without the lapse rule,
+    // the spouse share was claimed with no ownerMutation, parking the account
+    // on the deceased grantor and getting displayed as "Susan -> Susan".
+    const acct = soleAccount(LEGACY_FM_SPOUSE, "acc-1", 1_050_000);
+    const will = willWithResiduary("spouse", [
+      { recipientKind: "spouse", recipientId: null, tier: "primary", percentage: 100, sortOrder: 0 },
+      { recipientKind: "family_member", recipientId: CHILD_A, tier: "contingent", percentage: 50, sortOrder: 1 },
+      { recipientKind: "family_member", recipientId: CHILD_B, tier: "contingent", percentage: 50, sortOrder: 2 },
+    ]);
+
+    const result = applyFinalDeath(
+      mkInput({ deceased: "spouse", survivor: "client", will, accounts: [acct], familyMembers: FMS }),
+    );
+
+    const residuaryTransfers = result.transfers.filter(
+      (x) => x.via === "will_residuary" && x.sourceAccountId === "acc-1",
+    );
+    expect(residuaryTransfers).toHaveLength(2);
+    expect(residuaryTransfers.map((t) => t.recipientId).sort()).toEqual(
+      [CHILD_A, CHILD_B].sort(),
+    );
+    // None of the transfers should still be tagged as a spouse with a null id —
+    // that's the symptom of the lapse bug (display falls back to role==spouse).
+    expect(
+      result.transfers.some(
+        (x) => x.recipientKind === "spouse" && x.recipientId == null,
+      ),
+    ).toBe(false);
+  });
+
   it("single filer uses the primary tier", () => {
     const acct = soleAccount(LEGACY_FM_CLIENT, "acc-1", 400_000);
     const will = willWithResiduary("client", [

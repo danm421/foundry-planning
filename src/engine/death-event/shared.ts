@@ -723,6 +723,17 @@ export function firesAtDeath(b: WillBequest, deathOrder: 1 | 2): boolean {
   return false;
 }
 
+/** A bequest/residuary recipient lapses when it names the grantor's spouse
+ *  but no spouse survives the grantor — at final death there's no household
+ *  "other principal" left to receive. Lapsed shares aren't claimed, so the
+ *  unclaimed fraction falls through to the next step (residuary → fallback). */
+function recipientHasLapsed(
+  r: { recipientKind: WillBequest["recipients"][number]["recipientKind"] },
+  survivorFmId: string | null,
+): boolean {
+  return r.recipientKind === "spouse" && survivorFmId == null;
+}
+
 function resolveRecipientLabelAndMutation(
   r: WillBequest["recipients"][number],
   _survivor: "client" | "spouse" | null,
@@ -834,11 +845,13 @@ export function applyWillSpecificBequests(
   }
   const scaledBequestFractions = bequestFractions.map((f) => f * scale);
 
-  // Flatten into per-recipient shares
+  // Flatten into per-recipient shares. Lapsed recipients (spouse-named with no
+  // surviving spouse) are skipped so their share falls through to the next step.
   const shares: SplitShare[] = [];
   specifics.forEach((b, i) => {
     const bFrac = scaledBequestFractions[i];
     b.recipients.forEach((r) => {
+      if (recipientHasLapsed(r, survivorFmId)) return;
       const rFrac = bFrac * (r.percentage / 100);
       const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
         resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
@@ -923,6 +936,7 @@ export function applyWillAllAssetsResidual(
   allAssets.forEach((b, i) => {
     const clauseFraction = undisposedFraction * (weights[i] / weightSum);
     b.recipients.forEach((r) => {
+      if (recipientHasLapsed(r, survivorFmId)) return;
       const rFrac = clauseFraction * (r.percentage / 100);
       const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
         resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
@@ -936,6 +950,11 @@ export function applyWillAllAssetsResidual(
   });
 
   const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
+  // Every all_assets recipient lapsed — the residual falls through to step 3c
+  // / step 4 rather than disappearing into a divide-by-zero normalization.
+  if (totalClaimed < 1e-9) {
+    return empty();
+  }
   const scaledSource: Account = {
     ...source,
     value: source.value * totalClaimed,
@@ -952,7 +971,7 @@ export function applyWillAllAssetsResidual(
   const split = splitAccount(scaledSource, normalized, scaledLiability);
 
   return {
-    consumed: true,
+    consumed: Math.abs(totalClaimed - undisposedFraction) < 1e-9,
     resultingAccounts: split.resultingAccounts,
     resultingLiabilities: split.resultingLiabilities,
     ledgerEntries: split.ledgerEntries,
@@ -991,9 +1010,9 @@ export function applyWillResiduary(
   entities: EntitySummary[],
   linkedLiability: Liability | undefined,
 ): StepResult {
-  const recipients = (will.residuaryRecipients ?? []).filter(
-    (r) => (r.tier ?? "primary") === tier,
-  );
+  const recipients = (will.residuaryRecipients ?? [])
+    .filter((r) => (r.tier ?? "primary") === tier)
+    .filter((r) => !recipientHasLapsed(r, survivorFmId));
   if (recipients.length === 0) {
     return empty();
   }
