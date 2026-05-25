@@ -4,12 +4,16 @@ import type { MedicareCoverage } from "@/engine/types";
 type Row = typeof medicareCoverage.$inferSelect;
 type Insert = typeof medicareCoverage.$inferInsert;
 
-const parseDecimal = (v: string | null | undefined): number | null =>
-  v === null || v === undefined ? null : Number(v);
+const parseDecimal = (v: string | null): number | null =>
+  v === null ? null : Number(v);
 
 export function rowToMedicareCoverage(row: Row): MedicareCoverage {
+  // ownerEnum is shared across tables and allows "joint"; medicare_coverage is per-person only.
+  if (row.owner !== "client" && row.owner !== "spouse") {
+    throw new Error(`medicare_coverage row has unexpected owner "${row.owner}" — expected "client" or "spouse"`);
+  }
   return {
-    owner: row.owner as "client" | "spouse",
+    owner: row.owner,
     enrollmentYear: row.enrollmentYear,
     coverageType: row.coverageType,
     medigapMonthlyAt65: parseDecimal(row.medigapMonthlyAt65),
