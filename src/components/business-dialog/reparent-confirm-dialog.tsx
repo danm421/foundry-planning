@@ -1,5 +1,7 @@
 "use client";
 
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+
 export interface ReparentConfirmDialogProps {
   open: boolean;
   targetName: string;
@@ -24,15 +26,14 @@ export default function ReparentConfirmDialog({
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-paper/70 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative z-10 w-full max-w-[480px] rounded-[var(--radius)] border-2 border-ink-3 ring-1 ring-black/60 bg-card p-6 shadow-2xl">
-        <p className="text-[14px] text-ink">
-          Reassign <strong>{targetName}</strong> to <strong>{businessName}</strong>?
-        </p>
-        <p className="mt-2 text-[12px] text-ink-3">
-          Current owner: <strong className="text-ink-2">{currentOwnersLabel}</strong>
-        </p>
-        <p className="mt-2 text-[12px] text-ink-4">
-          This will overwrite the current ownership. The business will own this 100% via
-          its existing owner structure.
+        <div className="flex items-center gap-1.5 text-[14px] text-ink">
+          <span>
+            Reassign <strong>{targetName}</strong> to <strong>{businessName}</strong>?
+          </span>
+          <FieldTooltip text="This will overwrite the current ownership. The business will own this 100% via its existing owner structure." />
+        </div>
+        <p className="mt-2 text-[12px] text-ink-2">
+          Current owner: <strong className="text-ink">{currentOwnersLabel}</strong>
         </p>
         <div className="mt-4 flex items-center justify-end gap-2">
           <button

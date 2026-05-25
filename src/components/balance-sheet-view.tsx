@@ -579,6 +579,8 @@ export default function BalanceSheetView({
     }
     setDeletingAccount(null);
     setEditingAccount(null);
+    setEditingBusiness(null);
+    setBusinessDialogOpen(false);
     router.refresh();
   }
 
@@ -920,40 +922,45 @@ export default function BalanceSheetView({
       )}
 
       {/* Business dialog — handles both add (from the menu) and edit (row click).
-       *  Every other category routes to the shared AddAccountDialog. */}
-      <BusinessDialog
-        clientId={clientId}
-        mode={editingBusiness ? "edit" : "add"}
-        business={editingBusiness ?? undefined}
-        open={businessDialogOpen}
-        onOpenChange={(o) => {
-          if (!o) {
-            setBusinessDialogOpen(false);
-            setEditingBusiness(null);
+       *  Every other category routes to the shared AddAccountDialog.
+       *  Conditionally mounted so every open is a fresh session — BusinessDialog
+       *  seeds `mode`/`currentBusiness` from props via useState (initial-value only),
+       *  so a persistently-mounted instance would keep stale state across opens. */}
+      {businessDialogOpen && (
+        <BusinessDialog
+          clientId={clientId}
+          mode={editingBusiness ? "edit" : "add"}
+          business={editingBusiness ?? undefined}
+          open
+          onOpenChange={(o) => {
+            if (!o) {
+              setBusinessDialogOpen(false);
+              setEditingBusiness(null);
+            }
+          }}
+          familyMembers={familyMembers}
+          entities={entities}
+          allAccounts={accounts}
+          allLiabilities={liabilities}
+          onDataChanged={() => router.refresh()}
+          onSaved={() => {/* router.refresh handled inside the form */}}
+          onRequestDelete={
+            editingBusiness
+              ? () => setDeletingAccount(
+                  accounts.find((a) => a.id === editingBusiness.id) ?? null,
+                )
+              : undefined
           }
-        }}
-        familyMembers={familyMembers}
-        entities={entities}
-        allAccounts={accounts}
-        allLiabilities={liabilities}
-        onDataChanged={() => router.refresh()}
-        onSaved={() => {/* router.refresh handled inside the form */}}
-        onRequestDelete={
-          editingBusiness
-            ? () => setDeletingAccount(
-                accounts.find((a) => a.id === editingBusiness.id) ?? null,
-              )
-            : undefined
-        }
-        onOpenAddAccount={() => setAddCategory("cash")}
-        onOpenAddLiability={() => setAddLiabilityOpen(true)}
-        incomes={incomes}
-        expenses={expenses}
-        // TODO Task 11+: wire onOpenAddIncome/onOpenAddExpense/onEditIncome/onEditExpense
-        // to the existing IncomeDialog/ExpenseDialog in income-expenses-view.tsx.
-        // Those dialogs are mounted in a sibling view so cross-component wiring is
-        // non-trivial. For v1 the Flows tab is read-only; add/edit uses existing entry points.
-      />
+          onOpenAddAccount={() => setAddCategory("cash")}
+          onOpenAddLiability={() => setAddLiabilityOpen(true)}
+          incomes={incomes}
+          expenses={expenses}
+          // TODO Task 11+: wire onOpenAddIncome/onOpenAddExpense/onEditIncome/onEditExpense
+          // to the existing IncomeDialog/ExpenseDialog in income-expenses-view.tsx.
+          // Those dialogs are mounted in a sibling view so cross-component wiring is
+          // non-trivial. For v1 the Flows tab is read-only; add/edit uses existing entry points.
+        />
+      )}
       <AddAccountDialog
         clientId={clientId}
         category={addCategory ?? undefined}

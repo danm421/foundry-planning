@@ -123,7 +123,7 @@ export default function BusinessAssetsTab({
   }
 
   async function confirmReparent() {
-    if (!pendingReparent) return;
+    if (!pendingReparent || reparentLoading) return;
     setReparentLoading(true);
     setError(null);
     const url =
@@ -141,8 +141,10 @@ export default function BusinessAssetsTab({
         setError(json.error ?? "Failed to reassign");
         return;
       }
-      onChanged();
       setPendingReparent(null);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reassign");
     } finally {
       setReparentLoading(false);
     }

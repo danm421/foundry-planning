@@ -1332,26 +1332,24 @@ export default function BalanceSheetTableView({
         }}
       />
 
-      <BusinessDialog
-        clientId={clientId}
-        mode="edit"
-        business={editingBusiness ?? undefined}
-        open={!!editingBusiness}
-        onOpenChange={(o) => !o && setEditingBusiness(null)}
-        familyMembers={familyMembers}
-        entities={entities}
-        allAccounts={accounts}
-        allLiabilities={liabilities}
-        onDataChanged={() => router.refresh()}
-        onSaved={() => {/* router.refresh handled inside the form */}}
-        onRequestDelete={
-          editingBusiness
-            ? () => setDeletingAccount(
-                accounts.find((a) => a.id === editingBusiness.id) ?? null,
-              )
-            : undefined
-        }
-      />
+      {editingBusiness && (
+        <BusinessDialog
+          clientId={clientId}
+          mode="edit"
+          business={editingBusiness}
+          open
+          onOpenChange={(o) => !o && setEditingBusiness(null)}
+          familyMembers={familyMembers}
+          entities={entities}
+          allAccounts={accounts}
+          allLiabilities={liabilities}
+          onDataChanged={() => router.refresh()}
+          onSaved={() => {/* router.refresh handled inside the form */}}
+          onRequestDelete={() => setDeletingAccount(
+            accounts.find((a) => a.id === editingBusiness.id) ?? null,
+          )}
+        />
+      )}
 
       <AddLiabilityDialog
         clientId={clientId}
