@@ -3565,6 +3565,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const partDNationalBase = Number(taxYearParams.partDNationalBase ?? 0);
       const irmaaTiersMfj = (taxYearParams.irmaaBracketsMfj ?? []) as IrmaaTier[];
       const irmaaTiersSingle = (taxYearParams.irmaaBracketsSingle ?? []) as IrmaaTier[];
+      // TODO(medicare-mfs): married_separate filers who lived with their spouse use a separate,
+      // punitive IRMAA cliff structure under CMS rules. We currently bucket them as `single`,
+      // which understates surcharges. Not fixed in this iteration — see future-work/engine.md.
       const irmaaFilingStatus: "mfj" | "single" =
         filingStatus === "married_joint" ? "mfj" : "single";
 
@@ -3588,7 +3591,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       // Engine purity rule prevents importing from src/lib — these mirror
       // DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE, DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR,
-      // and DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR in src/lib/medicare/constants.ts.
+      // DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR, and DEFAULT_MEDICARE_BASE_YEAR
+      // in src/lib/medicare/constants.ts.
       const inflationRate = data.medicarePremiumInflationRate ?? 0.05;
       const medicareBaseYear = 2025;
       const defaultMedigapMonthly = 170;
