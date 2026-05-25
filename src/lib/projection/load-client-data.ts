@@ -45,6 +45,7 @@ import {
   willResiduaryRecipients,
   wills,
   withdrawalStrategies,
+  medicareCoverage,
 } from "@/db/schema";
 import type {
   BeneficiaryRef,
@@ -64,6 +65,7 @@ import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/mil
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
+import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
 import {
   resolveAccountFromRaw,
@@ -171,6 +173,7 @@ export const loadClientDataWithContext = cache(
       familyMemberRows,
       externalBeneficiaryRows,
       giftSeriesRows,
+      medicareCoverageRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -202,6 +205,7 @@ export const loadClientDataWithContext = cache(
         .select()
         .from(giftSeries)
         .where(and(eq(giftSeries.clientId, id), eq(giftSeries.scenarioId, scenario.id))),
+      db.select().from(medicareCoverage).where(eq(medicareCoverage.clientId, id)),
     ]);
 
     // Load schedule overrides for all incomes, expenses, and savings rules
@@ -1295,6 +1299,10 @@ export const loadClientDataWithContext = cache(
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
       notesReceivable: await loadNotesReceivable(id, scenario.id),
+      medicareCoverage: medicareCoverageRows.map(rowToMedicareCoverage),
+      medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null
+        ? parseFloat(settings.medicarePremiumInflationRate)
+        : 0.05,
     };
 
     return { clientData, resolutionContext: resolutionCtx };

@@ -434,6 +434,10 @@ export interface ClientData {
    *  installment-sale principal (basis recovery + §1(h) LTCG) per IRC §453.
    *  Engine consumption arrives in spec 2025-04-notes-receivable-installment. */
   notesReceivable?: NoteReceivable[];
+  /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */
+  medicareCoverage?: MedicareCoverage[];
+  /** Annual rate at which Medicare premiums inflate forward from their base year. Defaults to 0.05. */
+  medicarePremiumInflationRate?: number;
 }
 
 /** 'annual' uses base+growth math; 'schedule' uses entity_flow_overrides
