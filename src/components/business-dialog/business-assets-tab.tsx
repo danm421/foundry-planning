@@ -183,7 +183,7 @@ export default function BusinessAssetsTab({
 
       {isEmpty && (
         <p className="text-[12px] text-ink-4 text-center py-4">
-          No assets or liabilities assigned to this business. Use the buttons below to add or
+          No assets or liabilities assigned to this business. Use the buttons above to add or
           reassign assets.
         </p>
       )}

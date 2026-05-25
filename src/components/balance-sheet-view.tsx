@@ -996,7 +996,9 @@ export default function BalanceSheetView({
         }}
       />
 
-      {/* State-controlled "add liability" dialog — triggered from BusinessAssetsTab */}
+      {/* Second AddLiabilityDialog instance — opens from BusinessAssetsTab's
+          "+ Add sub-liability" button. Distinct from the legacy menu-triggered
+          instance above; consolidate when the legacy add menu is reworked. */}
       <AddLiabilityDialog
         clientId={clientId}
         realEstateAccounts={realEstateAccounts}

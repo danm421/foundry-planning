@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+
+const NOOP = () => {};
 import DialogShell from "../dialog-shell";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
@@ -175,9 +177,9 @@ export default function BusinessDialog({
           liabilities={liabilities ?? []}
           hidden={tab !== "assets"}
           onChanged={() => onDataChanged?.()}
-          onOpenAddAccount={onOpenAddAccount ?? (() => {})}
-          onOpenAddLiability={onOpenAddLiability ?? (() => {})}
-          onOpenReparentPicker={onOpenReparentPicker ?? (() => {})}
+          onOpenAddAccount={onOpenAddAccount ?? NOOP}
+          onOpenAddLiability={onOpenAddLiability ?? NOOP}
+          onOpenReparentPicker={onOpenReparentPicker ?? NOOP}
         />
       )}
       {!currentBusiness && tab === "assets" && (
