@@ -86,6 +86,7 @@ export async function PUT(
       taxEngineMode,
       taxInflationRate,
       ssWageGrowthRate,
+      medicarePremiumInflationRate,
       planStartYear,
       planEndYear,
       defaultGrowthTaxable,
@@ -196,6 +197,14 @@ export async function PUT(
       );
     }
 
+    if (typeof medicarePremiumInflationRate === "number" &&
+        (medicarePremiumInflationRate < 0 || medicarePremiumInflationRate > 1)) {
+      return NextResponse.json(
+        { error: "medicarePremiumInflationRate must be between 0 and 1" },
+        { status: 400 },
+      );
+    }
+
     const [updated] = await db
       .update(planSettings)
       .set({
@@ -216,6 +225,7 @@ export async function PUT(
         ssWageGrowthRate: "ssWageGrowthRate" in body
           ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
           : undefined,
+        medicarePremiumInflationRate: medicarePremiumInflationRate != null ? String(medicarePremiumInflationRate) : undefined,
         planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
         planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
         defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,

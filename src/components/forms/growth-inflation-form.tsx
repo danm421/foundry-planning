@@ -37,6 +37,7 @@ interface GrowthInflationFormProps {
   // Optional advanced inflation overrides
   taxInflationRate?: string;
   ssWageGrowthRate?: string;
+  medicarePremiumInflationRate?: string;
   // Surplus cash flow allocation
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
@@ -77,7 +78,7 @@ function SectionTitle({ title, help }: { title: string; help?: string }) {
   );
 }
 
-export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, surplusSpendPct, surplusSaveAccountId, householdAccounts, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, surplusSpendPct, surplusSaveAccountId, householdAccounts, ...rates }: GrowthInflationFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +86,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(
-    Boolean(taxInflationRate || ssWageGrowthRate)
+    Boolean(taxInflationRate || ssWageGrowthRate || medicarePremiumInflationRate)
   );
   const [inflationRateSource, setInflationRateSource] = useState<"asset_class" | "custom">(
     initialInflationRateSource
@@ -180,8 +181,10 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
     // Advanced optional inflation overrides — send null if blank
     const taxInflRaw = (data.get("taxInflationRate") as string) || "";
     const ssWageGrowthRaw = (data.get("ssWageGrowthRate") as string) || "";
+    const medicareInflRaw = (data.get("medicarePremiumInflationRate") as string) || "";
     body.taxInflationRate = taxInflRaw ? Number(taxInflRaw) / 100 : null;
     body.ssWageGrowthRate = ssWageGrowthRaw ? Number(ssWageGrowthRaw) / 100 : null;
+    if (medicareInflRaw) body.medicarePremiumInflationRate = Number(medicareInflRaw) / 100;
 
     // Surplus cash flow allocation
     body.surplusSpendPct = toDec("surplusSpendPct");
@@ -439,6 +442,19 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
               name="ssWageGrowthRate"
               defaultValue={ssWageGrowthRate ? pct(ssWageGrowthRate) : ""}
               placeholder={`Defaults to ${pct(rates.inflationRate)} + 0.5%`}
+              className={`${INPUT_CLS} max-w-[14rem]`}
+            />
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3 px-3 py-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
+              <span>Medicare premium inflation</span>
+              <HelpTip text="Annual inflation applied to Medicare Part B/D premiums and Medigap. Historical average ~5%." />
+            </div>
+            <PercentInput
+              id="medicarePremiumInflationRate"
+              name="medicarePremiumInflationRate"
+              defaultValue={medicarePremiumInflationRate ? pct(medicarePremiumInflationRate) : ""}
+              placeholder="Defaults to 5.00%"
               className={`${INPUT_CLS} max-w-[14rem]`}
             />
           </div>

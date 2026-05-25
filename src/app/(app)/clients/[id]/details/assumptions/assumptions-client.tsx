@@ -65,6 +65,7 @@ export interface AssumptionsSettings {
   taxEngineMode: "flat" | "bracket";
   taxInflationRate: string;
   ssWageGrowthRate: string;
+  medicarePremiumInflationRate: string;
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
@@ -166,6 +167,7 @@ export default function AssumptionsClient({
             modelPortfolios={modelPortfolios}
             taxInflationRate={settings.taxInflationRate}
             ssWageGrowthRate={settings.ssWageGrowthRate}
+            medicarePremiumInflationRate={settings.medicarePremiumInflationRate}
             surplusSpendPct={settings.surplusSpendPct}
             surplusSaveAccountId={settings.surplusSaveAccountId}
             householdAccounts={accounts
