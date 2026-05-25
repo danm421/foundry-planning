@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import {
   inputClassName,
@@ -10,11 +11,13 @@ import {
 } from "@/components/forms/input-styles";
 import { ArrowRightIcon, AlertCircleIcon, CheckCircleIcon } from "@/components/icons";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
+import { buildHouseholdName } from "@/lib/crm/household-name";
 
 /**
  * Two-step new-client flow:
- *   1. Pick (or create) a CRM household. Identity (name/DOB/email/address)
- *      lives in the CRM now — planning never re-collects it.
+ *   1. Either pick an existing CRM household OR check "Create a new household"
+ *      and fill in identity (name/DOB, optional spouse) inline. Mirrors the
+ *      dual-mode Add Client modal so advisors get the same selector either way.
  *   2. Fill in planning-only fields (retirement, life expectancy, filing
  *      status, spouse retirement params).
  *
@@ -65,6 +68,7 @@ interface PreviewHousehold {
 
 export default function QuickCreateForm() {
   const router = useRouter();
+  const { user } = useUser();
   const searchParams = useSearchParams();
   const queryHouseholdId = searchParams.get("crmHouseholdId");
   const [householdId, setHouseholdId] = useState<string | null>(queryHouseholdId);
@@ -73,6 +77,12 @@ export default function QuickCreateForm() {
   const [showSpouse, setShowSpouse] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Step 1 dual-mode: pick existing household, or create a new one inline.
+  const [createNewHousehold, setCreateNewHousehold] = useState(false);
+  const [createSpouse, setCreateSpouse] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Keep state in sync with the URL (so a returnTo bounce from /crm/new
   // pre-selects the freshly created household).
@@ -112,6 +122,77 @@ export default function QuickCreateForm() {
       cancelled = true;
     };
   }, [householdId]);
+
+  // Create a CRM household + primary (and optional spouse) contact from the
+  // step 1 identity fields and return the new household id. Mirrors the Add
+  // Client modal's inline-create path, but only collects identity here —
+  // contact info gets gathered later in the onboarding wizard.
+  async function createHouseholdAndContacts(formEl: HTMLFormElement): Promise<string> {
+    if (!user?.id) throw new Error("Not signed in.");
+    const data = new FormData(formEl);
+    const firstName = String(data.get("firstName") ?? "").trim();
+    const lastName = String(data.get("lastName") ?? "").trim();
+    const dateOfBirth = String(data.get("dateOfBirth") ?? "");
+    const spouseFirstName = createSpouse ? String(data.get("spouseFirstName") ?? "").trim() : "";
+    const spouseLastName = createSpouse ? String(data.get("spouseLastName") ?? "").trim() : "";
+    const spouseDob = createSpouse ? String(data.get("spouseDob") ?? "") : "";
+
+    const householdName = buildHouseholdName({ firstName, lastName, spouseFirstName, spouseLastName });
+
+    const hRes = await fetch("/api/crm/households", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: householdName, status: "prospect", advisorId: user.id }),
+    });
+    if (!hRes.ok) {
+      const j = (await hRes.json().catch(() => ({}))) as { error?: string };
+      throw new Error(j.error ?? `Failed to create household (${hRes.status})`);
+    }
+    const { household } = (await hRes.json()) as { household: { id: string } };
+
+    const pRes = await fetch(`/api/crm/households/${household.id}/contacts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: "primary", firstName, lastName, dateOfBirth }),
+    });
+    if (!pRes.ok) {
+      const j = (await pRes.json().catch(() => ({}))) as { error?: string };
+      throw new Error(j.error ?? `Failed to create primary contact (${pRes.status})`);
+    }
+
+    if (createSpouse && spouseFirstName) {
+      const spouseBody: Record<string, unknown> = {
+        role: "spouse",
+        firstName: spouseFirstName,
+        lastName: spouseLastName || lastName,
+      };
+      if (spouseDob) spouseBody.dateOfBirth = spouseDob;
+      const sRes = await fetch(`/api/crm/households/${household.id}/contacts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(spouseBody),
+      });
+      if (!sRes.ok) {
+        const j = (await sRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `Failed to create spouse contact (${sRes.status})`);
+      }
+    }
+
+    return household.id;
+  }
+
+  async function onCreateSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const id = await createHouseholdAndContacts(e.currentTarget);
+      setHouseholdId(id);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Create failed");
+      setCreating(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -157,19 +238,160 @@ export default function QuickCreateForm() {
     }
   }
 
-  // Step 1: pick a household.
+  // Step 1: link to an existing household OR create a new one inline.
   if (!householdId) {
     return (
       <div className="space-y-5">
-        <CrmHouseholdPicker
-          onSelect={setHouseholdId}
-          returnTo="/clients/new"
-        />
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <Link href="/clients" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
-            Cancel
-          </Link>
+        {!createNewHousehold && (
+          <CrmHouseholdPicker onSelect={setHouseholdId} hideCreateLink />
+        )}
+
+        <div className={createNewHousehold ? "" : "border-t border-hair pt-4"}>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={createNewHousehold}
+              onChange={(e) => {
+                setCreateNewHousehold(e.target.checked);
+                setCreateError(null);
+              }}
+              className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+            />
+            <span className="text-[13px] font-medium text-ink-2">Create a new household</span>
+          </label>
+          {createNewHousehold && (
+            <p className="mt-1.5 text-[12px] text-ink-4">
+              A new CRM household will be created from the details below.
+            </p>
+          )}
         </div>
+
+        {createNewHousehold && (
+          <form onSubmit={onCreateSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={fieldLabelClassName} htmlFor="firstName">
+                  First name
+                </label>
+                <input
+                  id="firstName"
+                  name="firstName"
+                  type="text"
+                  required
+                  className={inputClassName}
+                />
+              </div>
+              <div>
+                <label className={fieldLabelClassName} htmlFor="lastName">
+                  Last name
+                </label>
+                <input
+                  id="lastName"
+                  name="lastName"
+                  type="text"
+                  required
+                  className={inputClassName}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={fieldLabelClassName} htmlFor="dateOfBirth">
+                  Date of birth
+                </label>
+                <input
+                  id="dateOfBirth"
+                  name="dateOfBirth"
+                  type="date"
+                  required
+                  min="1910-01-01"
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-hair pt-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={createSpouse}
+                  onChange={(e) => setCreateSpouse(e.target.checked)}
+                  className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+                />
+                <span className="text-[13px] font-medium text-ink-2">Add spouse</span>
+              </label>
+              {createSpouse && (
+                <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="spouseFirstName">
+                      Spouse first name
+                    </label>
+                    <input
+                      id="spouseFirstName"
+                      name="spouseFirstName"
+                      type="text"
+                      className={inputClassName}
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="spouseLastName">
+                      Spouse last name
+                    </label>
+                    <input
+                      id="spouseLastName"
+                      name="spouseLastName"
+                      type="text"
+                      placeholder="Leave blank to inherit client's"
+                      className={inputClassName}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={fieldLabelClassName} htmlFor="spouseDob">
+                      Spouse date of birth
+                    </label>
+                    <input
+                      id="spouseDob"
+                      name="spouseDob"
+                      type="date"
+                      min="1910-01-01"
+                      className={inputClassName}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {createError && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-crit/30 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+              >
+                <AlertCircleIcon width={16} height={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>{createError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <Link href="/clients" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
+                Cancel
+              </Link>
+              <button
+                type="submit"
+                disabled={creating}
+                className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
+              >
+                {creating ? "Creating…" : "Continue"}
+                <ArrowRightIcon width={14} height={14} aria-hidden="true" />
+              </button>
+            </div>
+          </form>
+        )}
+
+        {!createNewHousehold && (
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <Link href="/clients" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
+              Cancel
+            </Link>
+          </div>
+        )}
       </div>
     );
   }
@@ -197,6 +419,9 @@ export default function QuickCreateForm() {
           onClick={() => {
             setHouseholdId(null);
             setPreview(null);
+            setCreateNewHousehold(false);
+            setCreateSpouse(false);
+            setCreateError(null);
           }}
           className="shrink-0 text-[12px] text-ink-3 transition-colors hover:text-ink-2"
         >
