@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProjectionYear } from "@/engine";
+import type { ProjectionYear, ClientData } from "@/engine";
 import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
 import { TaxDetailStateTable } from "./tax-detail-state-table";
@@ -35,6 +35,7 @@ interface TaxDetailViewProps {
   clientRetirementYear: number | null;
   clientLifeExpectancy?: number;
   spouseLifeExpectancy?: number | null;
+  clientData?: ClientData | null;
 }
 
 export function TaxDetailView({
@@ -50,6 +51,7 @@ export function TaxDetailView({
   clientRetirementYear,
   clientLifeExpectancy,
   spouseLifeExpectancy,
+  clientData,
 }: TaxDetailViewProps) {
   return (
     <>
@@ -99,6 +101,7 @@ export function TaxDetailView({
         <MedicareTab
           years={years}
           yearRange={yearRange}
+          clientData={clientData}
           clientLifeExpectancy={clientLifeExpectancy}
           spouseLifeExpectancy={spouseLifeExpectancy}
         />

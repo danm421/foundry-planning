@@ -228,6 +228,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
             clientRetirementYear={clientRetirementYear}
             clientLifeExpectancy={clientData?.client.lifeExpectancy}
             spouseLifeExpectancy={clientData?.client.spouseLifeExpectancy}
+            clientData={clientData}
           />
         </div>
       </div>
