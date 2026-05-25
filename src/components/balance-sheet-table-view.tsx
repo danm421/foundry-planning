@@ -7,6 +7,8 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import AddAccountDialog from "./add-account-dialog";
 import AddLiabilityDialog from "./add-liability-dialog";
+import BusinessDialog from "./business-dialog";
+import type { BusinessAccount } from "./business-dialog/types";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import {
   AccountFormInitial,
@@ -393,6 +395,27 @@ export default function BalanceSheetTableView({
   const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
   const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
 
+  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
+
+  function openEditBusiness(a: AccountRow) {
+    setEditingBusiness({
+      id: a.id,
+      name: a.name,
+      category: "business",
+      subType: a.subType,
+      value: Number(a.value),
+      basis: Number(a.basis),
+      growthRate: a.growthRate !== null ? Number(a.growthRate) : 0,
+      rmdEnabled: a.rmdEnabled ?? false,
+      priorYearEndValue: a.priorYearEndValue !== null && a.priorYearEndValue !== undefined
+        ? Number(a.priorYearEndValue)
+        : undefined,
+      owners: a.owners ?? [],
+      titlingType: a.titlingType ?? "jtwros",
+      parentAccountId: a.parentAccountId ?? null,
+    } as BusinessAccount);
+  }
+
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"standard" | "by-owner">("standard");
@@ -558,6 +581,10 @@ export default function BalanceSheetTableView({
         if (edit) return;
         if (a.category === "life_insurance") {
           router.push(withScenario(`/clients/${clientId}/details/insurance?policy=${a.id}`));
+          return;
+        }
+        if (a.category === "business") {
+          openEditBusiness(a);
           return;
         }
         setEditingAccount(a);
@@ -1295,6 +1322,24 @@ export default function BalanceSheetTableView({
         onRequestDelete={() => {
           if (editingAccount) setDeletingAccount(editingAccount);
         }}
+      />
+
+      <BusinessDialog
+        clientId={clientId}
+        mode="edit"
+        business={editingBusiness ?? undefined}
+        open={!!editingBusiness}
+        onOpenChange={(o) => !o && setEditingBusiness(null)}
+        familyMembers={familyMembers}
+        entities={entities}
+        onSaved={() => {/* router.refresh handled inside the form */}}
+        onRequestDelete={
+          editingBusiness
+            ? () => setDeletingAccount(
+                accounts.find((a) => a.id === editingBusiness.id) ?? null,
+              )
+            : undefined
+        }
       />
 
       <AddLiabilityDialog

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import AddAccountDialog from "./add-account-dialog";
-import AddBusinessDialog from "./add-business-dialog";
+import BusinessDialog from "./business-dialog";
+import type { BusinessAccount } from "./business-dialog/types";
 import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
@@ -269,6 +270,26 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
   };
 }
 
+/** Map an AccountRow (string-valued) to the BusinessAccount shape BusinessDialog expects. */
+function accountRowToBusinessAccount(a: AccountRow): BusinessAccount {
+  return {
+    id: a.id,
+    name: a.name,
+    category: "business",
+    subType: a.subType,
+    value: Number(a.value),
+    basis: Number(a.basis),
+    growthRate: a.growthRate !== null ? Number(a.growthRate) : 0,
+    rmdEnabled: a.rmdEnabled ?? false,
+    priorYearEndValue: a.priorYearEndValue !== null && a.priorYearEndValue !== undefined
+      ? Number(a.priorYearEndValue)
+      : undefined,
+    owners: a.owners ?? [],
+    titlingType: a.titlingType ?? "jtwros",
+    parentAccountId: a.parentAccountId ?? null,
+  } as BusinessAccount;
+}
+
 /** Compute the liability balance at the start of the current calendar year. */
 function currentYearBalance(l: LiabilityRow): number {
   const bal = parseFloat(l.balance);
@@ -373,6 +394,19 @@ export default function BalanceSheetView({
 
   const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
   const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
+
+  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
+  const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
+
+  function openAddBusiness() {
+    setEditingBusiness(null);
+    setBusinessDialogOpen(true);
+  }
+
+  function openEditBusiness(business: AccountRow) {
+    setEditingBusiness(accountRowToBusinessAccount(business));
+    setBusinessDialogOpen(true);
+  }
 
   // Expand/collapse state for business rows — keyed by top-level business account id.
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
@@ -639,7 +673,7 @@ export default function BalanceSheetView({
               {(nonNoteAccounts.length > 0 || noteRows.length > 0) && (
                 <EditToggle on={assetsEdit} onToggle={() => setAssetsEdit((v) => !v)} />
               )}
-              <AddAssetMenu onPick={(cat) => setAddCategory(cat)} />
+              <AddAssetMenu onPick={(cat) => cat === "business" ? openAddBusiness() : setAddCategory(cat)} />
             </div>
           }
         >
@@ -686,7 +720,7 @@ export default function BalanceSheetView({
                           setIncomesPopoverFor((cur) => (cur === a.id ? null : a.id))
                         }
                         consolidatedValue={consolidatedBusinessValue(a)}
-                        onClickRow={() => handleAccountClick(a)}
+                        onClickRow={() => !assetsEdit && openEditBusiness(a)}
                         onDeleteRow={() => setDeletingAccount(a)}
                         onClickChild={(child) => handleAccountClick(child)}
                         onDeleteChild={(child) => setDeletingAccount(child)}
@@ -872,20 +906,32 @@ export default function BalanceSheetView({
         </div>
       )}
 
-      {/* Add dialog (controlled by AddAssetMenu).
-       *  Business gets its own dialog — distinct field set (owners[],
-       *  distribution policy, tax treatment) that doesn't fit the generic
-       *  AddAccountForm's tab structure. Every other category routes to
-       *  the shared AddAccountDialog. */}
-      {addCategory === "business" ? (
-        <AddBusinessDialog
-          clientId={clientId}
-          entities={entities}
-          familyMembers={familyMembers}
-          open={true}
-          onOpenChange={(o) => !o && setAddCategory(null)}
-        />
-      ) : (
+      {/* Business dialog — handles both add (from the menu) and edit (row click).
+       *  Every other category routes to the shared AddAccountDialog. */}
+      <BusinessDialog
+        clientId={clientId}
+        mode={editingBusiness ? "edit" : "add"}
+        business={editingBusiness ?? undefined}
+        open={businessDialogOpen || addCategory === "business"}
+        onOpenChange={(o) => {
+          if (!o) {
+            setBusinessDialogOpen(false);
+            setEditingBusiness(null);
+            if (addCategory === "business") setAddCategory(null);
+          }
+        }}
+        familyMembers={familyMembers}
+        entities={entities}
+        onSaved={() => {/* router.refresh handled inside the form */}}
+        onRequestDelete={
+          editingBusiness
+            ? () => setDeletingAccount(
+                accounts.find((a) => a.id === editingBusiness.id) ?? null,
+              )
+            : undefined
+        }
+      />
+      {addCategory !== "business" && (
         <AddAccountDialog
           clientId={clientId}
           category={addCategory ?? undefined}
