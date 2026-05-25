@@ -232,6 +232,7 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
     ownerEntityId: l.ownerEntityId ?? null,
     isInterestDeductible: l.isInterestDeductible,
     owners: l.owners,
+    parentAccountId: l.parentAccountId ?? null,
   };
 }
 
@@ -1066,6 +1067,7 @@ export default function BalanceSheetTableView({
             clientId={clientId}
             realEstateAccounts={realEstateAccounts}
             entities={entities}
+            businesses={businessOptions}
             familyMembers={familyMembers}
             clientFirstName={cooperLabel}
             spouseFirstName={sarahLabel ?? undefined}
@@ -1355,6 +1357,7 @@ export default function BalanceSheetTableView({
         clientId={clientId}
         realEstateAccounts={realEstateAccounts}
         entities={entities}
+        businesses={businessOptions}
         familyMembers={familyMembers}
         clientFirstName={cooperLabel}
         spouseFirstName={sarahLabel ?? undefined}

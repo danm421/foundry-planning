@@ -270,6 +270,7 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
     ownerEntityId: l.ownerEntityId ?? null,
     isInterestDeductible: l.isInterestDeductible,
     owners: l.owners,
+    parentAccountId: l.parentAccountId ?? null,
   };
 }
 
@@ -809,6 +810,7 @@ export default function BalanceSheetView({
                 clientId={clientId}
                 realEstateAccounts={realEstateAccounts}
                 entities={entities}
+                businesses={businessOptions}
                 familyMembers={familyMembers}
                 clientFirstName={ownerNames.clientName.split(" ")[0]}
                 spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
@@ -1002,6 +1004,7 @@ export default function BalanceSheetView({
         clientId={clientId}
         realEstateAccounts={realEstateAccounts}
         entities={entities}
+        businesses={businessOptions}
         familyMembers={familyMembers}
         clientFirstName={ownerNames.clientName.split(" ")[0]}
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
@@ -1020,6 +1023,7 @@ export default function BalanceSheetView({
         clientId={clientId}
         realEstateAccounts={realEstateAccounts}
         entities={entities}
+        businesses={businessOptions}
         familyMembers={familyMembers}
         clientFirstName={ownerNames.clientName.split(" ")[0]}
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}

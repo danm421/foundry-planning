@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, liabilities, liabilityOwners } from "@/db/schema";
+import { clients, scenarios, liabilities, liabilityOwners, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
@@ -88,6 +88,7 @@ export async function POST(
       balanceAsOfYear,
       linkedPropertyId,
       ownerEntityId,
+      parentAccountId,
     } = body;
     const startYearRef = body.startYearRef ?? null;
 
@@ -106,10 +107,48 @@ export async function POST(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
+    // parentAccountId (when set) must scope to this client AND point at a
+    // business account. Mirror of accounts/route.ts validation — without this
+    // a crafted POST could attach to a non-business or cross-firm parent.
+    if (parentAccountId != null) {
+      const parentCheck = await assertAccountsInClient(id, [parentAccountId]);
+      if (!parentCheck.ok) {
+        return NextResponse.json({ error: parentCheck.reason }, { status: 400 });
+      }
+      const [parentRow] = await db
+        .select({ category: accounts.category })
+        .from(accounts)
+        .where(eq(accounts.id, parentAccountId));
+      if (!parentRow || parentRow.category !== "business") {
+        return NextResponse.json(
+          { error: "parentAccountId must reference a business account" },
+          { status: 400 },
+        );
+      }
+    }
+
     // ── owners[] validation ────────────────────────────────────────────────
     let resolvedOwners: ValidatedOwner[] | undefined;
 
-    if ("owners" in body && body.owners !== undefined) {
+    if (parentAccountId != null) {
+      // Children of a business inherit ownership via parentAccountId — skip
+      // both the owners[] write and the legacy synthesis path.
+      if (
+        "owners" in body &&
+        body.owners !== undefined &&
+        Array.isArray(body.owners) &&
+        body.owners.length > 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "A liability cannot have both a parent business and explicit owners",
+          },
+          { status: 400 },
+        );
+      }
+      resolvedOwners = undefined;
+    } else if ("owners" in body && body.owners !== undefined) {
       // New owners[] path
       const shapeResult = validateOwnersShape(body.owners);
       if ("error" in shapeResult) {
@@ -149,6 +188,7 @@ export async function POST(
           linkedPropertyId: linkedPropertyId ?? null,
           startYearRef,
           isInterestDeductible: body.isInterestDeductible ?? false,
+          parentAccountId: parentAccountId ?? null,
         })
         .returning();
       liability = inserted;
