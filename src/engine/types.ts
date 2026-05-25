@@ -6,6 +6,16 @@ import type { AccountOwner } from "./ownership";
 import type { EntityCashFlowRow } from "./entity-cashflow";
 import type { NoteReceivable } from "./notes-receivable/types";
 
+// ── Shared Tax / Medicare Types ──────────────────────────────────────────────
+
+export interface IrmaaTier {
+  tier: number;                  // 1..5; tier 0 is implicit (below tier 1 = no surcharge)
+  magiLowerBound: number;        // inclusive
+  magiUpperBound: number | null; // exclusive; null = top tier, no upper bound
+  partBSurcharge: number;        // annual dollars added on top of standard
+  partDSurcharge: number;        // annual dollars added on top of plan base
+}
+
 // ── Input Types ──────────────────────────────────────────────────────────────
 
 export interface Gift {

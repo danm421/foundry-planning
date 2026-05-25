@@ -23,6 +23,7 @@ import {
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
+import type { IrmaaTier } from "@/engine/types";
 import type { ComparisonLayout, ComparisonLayoutV4, ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 
 const inet = customType<{ data: string; driverData: string }>({
@@ -637,6 +638,9 @@ export const planSettings = pgTable("plan_settings", {
   inflationRate: decimal("inflation_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  medicarePremiumInflationRate: decimal("medicare_premium_inflation_rate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.05"),
   planStartYear: integer("plan_start_year").notNull(),
   planEndYear: integer("plan_end_year").notNull(),
   // Default growth rates per account category (used when an account's growth_rate is null)
@@ -1357,6 +1361,28 @@ export const incomes = pgTable("incomes", {
   ),
 }));
 
+export const medicareCoverageTypeEnum = pgEnum("medicare_coverage_type", [
+  "original",
+  "advantage",
+]);
+
+export const medicareCoverage = pgTable("medicare_coverage", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  owner: ownerEnum("owner").notNull(),                       // "client" | "spouse"
+  enrollmentYear: integer("enrollment_year"),                // null = use year person turns 65
+  coverageType: medicareCoverageTypeEnum("coverage_type").notNull().default("original"),
+  medigapMonthlyAt65: decimal("medigap_monthly_at65", { precision: 10, scale: 2 }),
+  partDPlanMonthlyAt65: decimal("part_d_plan_monthly_at65", { precision: 10, scale: 2 }),
+  priorYearMagi: decimal("prior_year_magi", { precision: 15, scale: 2 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  uniqueOwnerPerClient: unique("medicare_coverage_unique_owner").on(t.clientId, t.owner),
+}));
+
 export const expenses = pgTable("expenses", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1402,6 +1428,10 @@ export const expenses = pgTable("expenses", {
   ownerAccountId: uuid("owner_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  // When set, engine zeros this expense from the named owner's Medicare enrollment
+  // year onward. Used to mark pre-Medicare health-insurance expenses so they auto-end
+  // when projected Medicare premiums kick in.
+  endsAtMedicareEligibilityOwner: ownerEnum("ends_at_medicare_eligibility_owner"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
@@ -2412,6 +2442,13 @@ export const taxYearParameters = pgTable("tax_year_parameters", {
   giftAnnualExclusion: decimal("gift_annual_exclusion", { precision: 10, scale: 2 })
     .notNull()
     .default("0"),
+
+  // Medicare standard premiums (CMS-published, annual dollars). Null if year not yet seeded.
+  standardPartBPremium: decimal("standard_part_b_premium", { precision: 10, scale: 2 }),
+  partDNationalBase: decimal("part_d_national_base", { precision: 10, scale: 2 }),
+  // IRMAA brackets (CMS-published). 5-tier surcharge schedule per filing status.
+  irmaaBracketsMfj: jsonb("irmaa_brackets_mfj").$type<IrmaaTier[]>(),
+  irmaaBracketsSingle: jsonb("irmaa_brackets_single").$type<IrmaaTier[]>(),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
