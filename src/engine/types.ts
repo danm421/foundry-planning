@@ -16,6 +16,37 @@ export interface IrmaaTier {
   partDSurcharge: number;        // annual dollars added on top of plan base
 }
 
+/** Per-person Medicare coverage configuration captured from the household.
+ *  Null fields signal "use the engine default" so that households without
+ *  custom overrides get sane national-average projections. */
+export interface MedicareCoverage {
+  owner: "client" | "spouse";
+  enrollmentYear: number | null;            // null → engine uses year person turns 65
+  coverageType: "original" | "advantage";
+  medigapMonthlyAt65: number | null;        // null → engine uses DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR
+  partDPlanMonthlyAt65: number | null;      // null → engine uses DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR
+  priorYearMagi: number | null;             // null → engine uses projected year-0 MAGI for cold-start
+}
+
+/** Resolved per-person Medicare detail for a single projection year. */
+export interface MedicareYearDetail {
+  enrolled: boolean;
+  age: number;
+  partBPremium: number;              // post-IRMAA total
+  partBStandardPremium: number;      // pre-IRMAA
+  partBIrmaaSurcharge: number;
+  partDPremium: number;              // plan + IRMAA
+  partDIrmaaSurcharge: number;
+  medigapPremium: number;
+  totalAnnualCost: number;           // sum of all four above
+  sourceYearForIrmaa: number;        // year - 2 (or year if cold-start)
+  sourceMagi: number;
+  irmaaTier: number;                 // 0..5; 0 = below tier 1
+  irmaaFilingStatus: "mfj" | "single";
+  headroomToNextTier: number;        // Infinity at top tier
+  isColdStart: boolean;              // true if sourceMagi came from priorYearMagi or year-0 fallback
+}
+
 // ── Input Types ──────────────────────────────────────────────────────────────
 
 export interface Gift {
@@ -1068,6 +1099,16 @@ export interface ProjectionYear {
      *  distributions, return-of-capital) — those land in `taxExempt` only. */
     taxExemptInterest: number;
     bySource: Record<string, { type: string; amount: number }>;
+  };
+
+  /** Per-person Medicare + IRMAA detail. Populated only for years where at
+   *  least one household member is enrolled (age ≥ 65 and past the optional
+   *  deferred enrollmentYear). */
+  medicare?: {
+    client?: MedicareYearDetail;
+    spouse?: MedicareYearDetail;
+    totalAnnualCost: number;
+    totalIrmaaSurcharge: number;
   };
 
   taxResult?: TaxResult;
