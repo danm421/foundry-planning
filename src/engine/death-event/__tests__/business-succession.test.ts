@@ -188,3 +188,60 @@ describe("applyBusinessSuccession", () => {
     expect(r.ownerUpdates[0].successors).toEqual([{ familyMemberId: "fmChild", percent: 1 }]);
   });
 });
+
+describe("applyBusinessSuccession — child accounts cascade via parentAccountId", () => {
+  // Phase 4 Decision 3: child accounts hanging off a business via
+  // parentAccountId are not touched directly by succession — they
+  // continue to inherit ownership from the parent's flipped owners[].
+  // This regression locks in that behavior so a future change can't
+  // silently start mutating children.
+  it("child cash account is NOT touched by succession; inherits via the parent's new owners", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
+    const childCash: Account = {
+      id: "biz-1-cash",
+      name: "LLC Operating Cash",
+      category: "cash",
+      subType: "checking",
+      value: 5_000,
+      basis: 5_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      parentAccountId: "biz-1",
+      owners: [],
+    };
+
+    const r = applyBusinessSuccession({
+      deceased: "client",
+      deceasedFmId: "fmCooper",
+      survivorFmId: "fmSpouse",
+      deathOrder: 1,
+      accounts: [biz, childCash],
+      // Consolidated value picks up the child: biz $10k + child $5k = $15k.
+      accountBalances: { "biz-1": 10_000, "biz-1-cash": 5_000 },
+      will: null,
+      familyMembers: [cooper, spouse],
+      externalBeneficiaries: [],
+      year: 2030,
+    });
+
+    // Only the parent business should appear in ownerUpdates — child accounts
+    // are owned through the parent and aren't given their own account_owners.
+    expect(r.ownerUpdates).toHaveLength(1);
+    expect(r.ownerUpdates[0].accountId).toBe("biz-1");
+    expect(r.ownerUpdates[0].successors).toEqual([
+      { familyMemberId: "fmSpouse", percent: 1 },
+    ]);
+
+    // The child account's parentAccountId is unchanged — the cascade
+    // happens by virtue of the parent's owners[] flip alone.
+    expect(childCash.parentAccountId).toBe("biz-1");
+    expect(childCash.owners).toEqual([]);
+
+    // Transfer amount reflects the consolidated business value, not just the
+    // parent's flat value — the child's balance flows with the business.
+    expect(r.transfers).toHaveLength(1);
+    expect(r.transfers[0].sourceAccountId).toBe("biz-1");
+    expect(r.transfers[0].amount).toBe(15_000);
+  });
+});
