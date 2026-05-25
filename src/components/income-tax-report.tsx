@@ -56,6 +56,21 @@ export default function IncomeTaxReport({ clientId }: Props) {
   } | null>(null);
   const [cellDrill, setCellDrill] = useState<CellDrill | null>(null);
 
+  const [showMigrationBanner, setShowMigrationBanner] = useState(false);
+
+  useEffect(() => {
+    const key = `medicare-migration-banner-dismissed:${clientId}`;
+    if (typeof window !== "undefined" && !localStorage.getItem(key)) {
+      setShowMigrationBanner(true);
+    }
+  }, [clientId]);
+
+  function dismissBanner() {
+    const key = `medicare-migration-banner-dismissed:${clientId}`;
+    localStorage.setItem(key, String(Date.now()));
+    setShowMigrationBanner(false);
+  }
+
   const ctx: CellDrillContext = useMemo(
     () => ({
       accountNames,
@@ -189,6 +204,20 @@ export default function IncomeTaxReport({ clientId }: Props) {
           Year-by-year tax breakdown across the projection.
         </p>
       </header>
+
+      {showMigrationBanner && (
+        <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 flex items-start gap-3">
+          <div className="flex-1">
+            <div className="font-medium">Medicare premiums are now auto-projected.</div>
+            <div className="text-[12px] mt-1">
+              The Medicare &amp; IRMAA tab projects per-person Part B + IRMAA + Medigap costs and adds them to cash-flow expenses. Review any existing health-insurance expense lines for double-counting.
+            </div>
+          </div>
+          <button onClick={dismissBanner} className="text-blue-700 hover:underline text-[12px]">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="rounded-[var(--radius)] border border-hair bg-card">
         <DialogTabs
