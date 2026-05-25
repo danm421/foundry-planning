@@ -28,6 +28,9 @@ export interface BusinessAssetsTabProps {
   liabilities: ChildLiability[];
   hidden: boolean;
   onChanged: () => void;
+  onOpenAddAccount: () => void;
+  onOpenAddLiability: () => void;
+  onOpenReparentPicker: () => void;
 }
 
 function toNum(v: number | string): number {
@@ -44,6 +47,9 @@ export default function BusinessAssetsTab({
   liabilities,
   hidden,
   onChanged,
+  onOpenAddAccount,
+  onOpenAddLiability,
+  onOpenReparentPicker,
 }: BusinessAssetsTabProps) {
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +98,30 @@ export default function BusinessAssetsTab({
           Net business asset value
         </span>
         <MoneyText value={total} className="text-[15px] font-semibold text-ink" />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenAddAccount}
+          className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 h-8 text-[12px] font-medium text-ink-2 hover:bg-card-hover"
+        >
+          + Add sub-account
+        </button>
+        <button
+          type="button"
+          onClick={onOpenAddLiability}
+          className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 h-8 text-[12px] font-medium text-ink-2 hover:bg-card-hover"
+        >
+          + Add sub-liability
+        </button>
+        <button
+          type="button"
+          onClick={onOpenReparentPicker}
+          className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 h-8 text-[12px] font-medium text-ink-2 hover:bg-card-hover"
+        >
+          + Reassign existing asset
+        </button>
       </div>
 
       <div>

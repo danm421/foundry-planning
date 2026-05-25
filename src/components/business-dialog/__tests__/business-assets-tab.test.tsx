@@ -37,6 +37,9 @@ describe("BusinessAssetsTab — list view", () => {
         liabilities={[]}
         hidden={false}
         onChanged={() => {}}
+        onOpenAddAccount={() => {}}
+        onOpenAddLiability={() => {}}
+        onOpenReparentPicker={() => {}}
       />,
     );
     expect(screen.getByText("Op Checking")).toBeInTheDocument();
@@ -53,6 +56,9 @@ describe("BusinessAssetsTab — list view", () => {
         liabilities={[]}
         hidden={false}
         onChanged={() => {}}
+        onOpenAddAccount={() => {}}
+        onOpenAddLiability={() => {}}
+        onOpenReparentPicker={() => {}}
       />,
     );
     expect(screen.getByText(/No assets or liabilities/i)).toBeInTheDocument();
@@ -72,6 +78,9 @@ describe("BusinessAssetsTab — list view", () => {
         liabilities={[]}
         hidden={false}
         onChanged={onChanged}
+        onOpenAddAccount={() => {}}
+        onOpenAddLiability={() => {}}
+        onOpenReparentPicker={() => {}}
       />,
     );
 

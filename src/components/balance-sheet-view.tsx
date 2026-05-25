@@ -397,6 +397,7 @@ export default function BalanceSheetView({
 
   const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
   const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
+  const [addLiabilityOpen, setAddLiabilityOpen] = useState(false);
 
   function openAddBusiness() {
     setEditingBusiness(null);
@@ -932,6 +933,9 @@ export default function BalanceSheetView({
               )
             : undefined
         }
+        onOpenAddAccount={() => setAddCategory("cash")}
+        onOpenAddLiability={() => setAddLiabilityOpen(true)}
+        onOpenReparentPicker={() => {}}
       />
       <AddAccountDialog
         clientId={clientId}
@@ -990,6 +994,18 @@ export default function BalanceSheetView({
         onRequestDelete={() => {
           if (editingLiability) setDeletingLiability(editingLiability);
         }}
+      />
+
+      {/* State-controlled "add liability" dialog — triggered from BusinessAssetsTab */}
+      <AddLiabilityDialog
+        clientId={clientId}
+        realEstateAccounts={realEstateAccounts}
+        entities={entities}
+        familyMembers={familyMembers}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        open={addLiabilityOpen}
+        onOpenChange={(o) => !o && setAddLiabilityOpen(false)}
       />
 
       <AddAccountDialog

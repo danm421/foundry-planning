@@ -32,6 +32,9 @@ export interface BusinessDialogProps {
   accounts?: ChildAccount[];
   liabilities?: ChildLiability[];
   onDataChanged?: () => void;
+  onOpenAddAccount?: () => void;
+  onOpenAddLiability?: () => void;
+  onOpenReparentPicker?: () => void;
 }
 
 const TABS: { id: BusinessTab; label: string }[] = [
@@ -55,6 +58,9 @@ export default function BusinessDialog({
   accounts,
   liabilities,
   onDataChanged,
+  onOpenAddAccount,
+  onOpenAddLiability,
+  onOpenReparentPicker,
 }: BusinessDialogProps) {
   const [tab, setTab] = useState<BusinessTab>("details");
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
@@ -169,6 +175,9 @@ export default function BusinessDialog({
           liabilities={liabilities ?? []}
           hidden={tab !== "assets"}
           onChanged={() => onDataChanged?.()}
+          onOpenAddAccount={onOpenAddAccount ?? (() => {})}
+          onOpenAddLiability={onOpenAddLiability ?? (() => {})}
+          onOpenReparentPicker={onOpenReparentPicker ?? (() => {})}
         />
       )}
       {!currentBusiness && tab === "assets" && (
