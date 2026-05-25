@@ -5,6 +5,7 @@ import DialogShell from "../dialog-shell";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
 import BusinessDetailsForm from "./details-form";
+import BusinessNotesTab from "./notes-tab";
 import type {
   BusinessAccount,
   BusinessDialogMode,
@@ -140,6 +141,18 @@ export default function BusinessDialog({
         onSubmitStateChange={setSubmitState}
         onAutoSaveStateChange={setAutoSaveState}
       />
+      {currentBusiness && (
+        <BusinessNotesTab
+          clientId={clientId}
+          business={currentBusiness}
+          hidden={tab !== "notes"}
+        />
+      )}
+      {!currentBusiness && tab === "notes" && (
+        <p className="text-[13px] text-ink-3 text-center py-6">
+          Notes are available after the business is saved.
+        </p>
+      )}
     </DialogShell>
   );
 }

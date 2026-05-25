@@ -15,6 +15,8 @@ export type BusinessDialogMode = "add" | "edit";
 export interface BusinessAccount extends Account {
   /** Always "business" — narrowed for type-safety inside the dialog. */
   category: "business";
+  /** Free-text notes from the DB — not present on the engine Account type. */
+  notes?: string | null;
 }
 
 /** Owner type-narrowed for the business form — kind is family_member or entity. */
