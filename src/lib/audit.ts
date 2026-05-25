@@ -205,7 +205,9 @@ export type AuditAction =
   | "crm.task.comment"
   | "crm.task.file_uploaded"
   | "crm.task.file_deleted"
-  | "crm.tag.create";
+  | "crm.tag.create"
+  // Medicare coverage (per-person, client-scoped overrides)
+  | "medicare_coverage.upsert";
 
 type Args = {
   action: AuditAction;

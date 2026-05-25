@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { Income, ClientInfo, PlanSettings } from "@/engine/types";
+import { useEffect, useMemo, useState } from "react";
+import type { Income, ClientInfo, PlanSettings, MedicareCoverage } from "@/engine/types";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import DialogShell from "./dialog-shell";
 import { inputClassName, inputBaseClassName, selectClassName, fieldLabelClassName } from "./forms/input-styles";
+import { MedicareDialogTab } from "./medicare/medicare-dialog-tab";
 
 type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
 type ClaimAgeMode = "fra" | "at_retirement" | "years";
@@ -67,6 +68,17 @@ export function SocialSecurityDialog({
     if (existingRow?.growthRate != null) return String(existingRow.growthRate * 100);
     return "2";
   });
+
+  const [activeTab, setActiveTab] = useState<"ss" | "medicare">("ss");
+  const [existingMedicare, setExistingMedicare] = useState<MedicareCoverage | null>(null);
+  useEffect(() => {
+    fetch(`/api/clients/${clientId}/medicare-coverage`)
+      .then(r => r.ok ? r.json() : [])
+      .then((all: MedicareCoverage[]) => {
+        setExistingMedicare(all.find(c => c.owner === owner) ?? null);
+      })
+      .catch(() => {});
+  }, [clientId, owner]);
 
   // ── Derived display ──────────────────────────────────────
   const fraDisplay = useMemo(() => {
@@ -168,138 +180,157 @@ export function SocialSecurityDialog({
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={`Edit ${firstName}'s Social Security`}
       size="md"
-      primaryAction={{ label: "Save", onClick: handleSave }}
+      tabs={[
+        { id: "ss", label: "Social Security" },
+        { id: "medicare", label: "Medicare" },
+      ]}
+      activeTab={activeTab}
+      onTabChange={(id) => setActiveTab(id as "ss" | "medicare")}
+      primaryAction={activeTab === "ss" ? { label: "Save", onClick: handleSave } : undefined}
     >
-        {fraDisplay && (
-          <p className="text-[12px] text-ink-3 mb-4">{fraDisplay}</p>
-        )}
+      {activeTab === "ss" && (
+        <div>
+          {fraDisplay && (
+            <p className="text-[12px] text-ink-3 mb-4">{fraDisplay}</p>
+          )}
 
-        {/* Benefit mode */}
-        <fieldset className="mb-4">
-          <legend className="text-[12px] font-medium text-ink-2 mb-2">Benefit mode</legend>
-          <label className="block text-[14px] text-ink-2 mb-1">
-            <input type="radio" checked={ssBenefitMode === "pia_at_fra"} onChange={() => setSsBenefitMode("pia_at_fra")} className="mr-2" />
-            Primary Insurance Amount (PIA)
-          </label>
-          <label className="block text-[14px] text-ink-2 mb-1">
-            <input type="radio" checked={ssBenefitMode === "manual_amount"} onChange={() => setSsBenefitMode("manual_amount")} className="mr-2" />
-            Annual benefit amount
-          </label>
-          <label className="block text-[14px] text-ink-2 mb-1">
-            <input type="radio" checked={ssBenefitMode === "no_benefit"} onChange={() => setSsBenefitMode("no_benefit")} className="mr-2" />
-            No Benefit
-          </label>
-        </fieldset>
-
-        {/* Conditional amount input */}
-        {ssBenefitMode === "pia_at_fra" && (
-          <div className="mb-4">
-            <label className={fieldLabelClassName}>Monthly PIA</label>
-            <input
-              type="number"
-              value={piaMonthly}
-              onChange={(e) => setPiaMonthly(e.target.value)}
-              placeholder="e.g. 2800"
-              className={inputClassName}
-            />
-            <p className="text-[12px] text-ink-3 mt-1">From your SSA statement — monthly benefit at FRA.</p>
-          </div>
-        )}
-        {ssBenefitMode === "manual_amount" && (
-          <div className="mb-4">
-            <label className={fieldLabelClassName}>Annual benefit amount</label>
-            <input
-              type="number"
-              value={annualAmount}
-              onChange={(e) => setAnnualAmount(e.target.value)}
-              className={inputClassName}
-            />
-          </div>
-        )}
-        {ssBenefitMode === "no_benefit" && (
-          <p className="text-[14px] text-ink-3 italic mb-4">
-            This person will receive no Social Security benefit in the projection.
-          </p>
-        )}
-
-        {/* Claim age mode */}
-        {ssBenefitMode !== "no_benefit" && (
+          {/* Benefit mode */}
           <fieldset className="mb-4">
-            <legend className="text-[12px] font-medium text-ink-2 mb-2">Claim age</legend>
-            <label className="block text-[14px] text-ink-2 mb-1" title={fraDisabled ? "Set date of birth to use FRA" : undefined}>
-              <input
-                type="radio"
-                disabled={fraDisabled}
-                checked={claimingAgeMode === "fra"}
-                onChange={() => setClaimingAgeMode("fra")}
-                className="mr-2"
-              />
-              Full Retirement Age
-            </label>
-            <label className="block text-[14px] text-ink-2 mb-1" title={retirementDisabled ? "Set retirement age to use this option" : undefined}>
-              <input
-                type="radio"
-                disabled={retirementDisabled}
-                checked={claimingAgeMode === "at_retirement"}
-                onChange={() => setClaimingAgeMode("at_retirement")}
-                className="mr-2"
-              />
-              At Retirement{ownerRetirementAge != null ? ` (${ownerRetirementAge})` : ""}
+            <legend className="text-[12px] font-medium text-ink-2 mb-2">Benefit mode</legend>
+            <label className="block text-[14px] text-ink-2 mb-1">
+              <input type="radio" checked={ssBenefitMode === "pia_at_fra"} onChange={() => setSsBenefitMode("pia_at_fra")} className="mr-2" />
+              Primary Insurance Amount (PIA)
             </label>
             <label className="block text-[14px] text-ink-2 mb-1">
-              <input
-                type="radio"
-                checked={claimingAgeMode === "years"}
-                onChange={() => setClaimingAgeMode("years")}
-                className="mr-2"
-              />
-              Specific Age
+              <input type="radio" checked={ssBenefitMode === "manual_amount"} onChange={() => setSsBenefitMode("manual_amount")} className="mr-2" />
+              Annual benefit amount
             </label>
-            {claimingAgeMode === "years" && (
-              <div className="flex gap-2 mt-2 ml-6">
-                <select
-                  value={claimingAge}
-                  onChange={(e) => setClaimingAge(parseInt(e.target.value, 10))}
-                  className={selectClassName}
-                >
-                  {[62, 63, 64, 65, 66, 67, 68, 69, 70].map((y) => (
-                    <option key={y} value={y}>{y} years</option>
-                  ))}
-                </select>
-                <select
-                  value={claimingAgeMonths}
-                  onChange={(e) => setClaimingAgeMonths(parseInt(e.target.value, 10))}
-                  className={selectClassName}
-                >
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <option key={i} value={i}>{i} months</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <label className="block text-[14px] text-ink-2 mb-1">
+              <input type="radio" checked={ssBenefitMode === "no_benefit"} onChange={() => setSsBenefitMode("no_benefit")} className="mr-2" />
+              No Benefit
+            </label>
           </fieldset>
-        )}
 
-        {/* COLA */}
-        {ssBenefitMode !== "no_benefit" && (
-          <div className="mb-4">
-            <label className={fieldLabelClassName}>Annual COLA %</label>
-            <input
-              type="number"
-              step="0.5"
-              value={growthRate}
-              onChange={(e) => setGrowthRate(e.target.value)}
-              className={inputBaseClassName + " w-32"}
-            />
-          </div>
-        )}
+          {/* Conditional amount input */}
+          {ssBenefitMode === "pia_at_fra" && (
+            <div className="mb-4">
+              <label className={fieldLabelClassName}>Monthly PIA</label>
+              <input
+                type="number"
+                value={piaMonthly}
+                onChange={(e) => setPiaMonthly(e.target.value)}
+                placeholder="e.g. 2800"
+                className={inputClassName}
+              />
+              <p className="text-[12px] text-ink-3 mt-1">From your SSA statement — monthly benefit at FRA.</p>
+            </div>
+          )}
+          {ssBenefitMode === "manual_amount" && (
+            <div className="mb-4">
+              <label className={fieldLabelClassName}>Annual benefit amount</label>
+              <input
+                type="number"
+                value={annualAmount}
+                onChange={(e) => setAnnualAmount(e.target.value)}
+                className={inputClassName}
+              />
+            </div>
+          )}
+          {ssBenefitMode === "no_benefit" && (
+            <p className="text-[14px] text-ink-3 italic mb-4">
+              This person will receive no Social Security benefit in the projection.
+            </p>
+          )}
 
-        {/* Preview */}
-        {preview != null && (
-          <p className="text-[14px] text-ink-2 mb-4">
-            Estimated first-year benefit: ${preview.toLocaleString()}
-          </p>
-        )}
+          {/* Claim age mode */}
+          {ssBenefitMode !== "no_benefit" && (
+            <fieldset className="mb-4">
+              <legend className="text-[12px] font-medium text-ink-2 mb-2">Claim age</legend>
+              <label className="block text-[14px] text-ink-2 mb-1" title={fraDisabled ? "Set date of birth to use FRA" : undefined}>
+                <input
+                  type="radio"
+                  disabled={fraDisabled}
+                  checked={claimingAgeMode === "fra"}
+                  onChange={() => setClaimingAgeMode("fra")}
+                  className="mr-2"
+                />
+                Full Retirement Age
+              </label>
+              <label className="block text-[14px] text-ink-2 mb-1" title={retirementDisabled ? "Set retirement age to use this option" : undefined}>
+                <input
+                  type="radio"
+                  disabled={retirementDisabled}
+                  checked={claimingAgeMode === "at_retirement"}
+                  onChange={() => setClaimingAgeMode("at_retirement")}
+                  className="mr-2"
+                />
+                At Retirement{ownerRetirementAge != null ? ` (${ownerRetirementAge})` : ""}
+              </label>
+              <label className="block text-[14px] text-ink-2 mb-1">
+                <input
+                  type="radio"
+                  checked={claimingAgeMode === "years"}
+                  onChange={() => setClaimingAgeMode("years")}
+                  className="mr-2"
+                />
+                Specific Age
+              </label>
+              {claimingAgeMode === "years" && (
+                <div className="flex gap-2 mt-2 ml-6">
+                  <select
+                    value={claimingAge}
+                    onChange={(e) => setClaimingAge(parseInt(e.target.value, 10))}
+                    className={selectClassName}
+                  >
+                    {[62, 63, 64, 65, 66, 67, 68, 69, 70].map((y) => (
+                      <option key={y} value={y}>{y} years</option>
+                    ))}
+                  </select>
+                  <select
+                    value={claimingAgeMonths}
+                    onChange={(e) => setClaimingAgeMonths(parseInt(e.target.value, 10))}
+                    className={selectClassName}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i} value={i}>{i} months</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </fieldset>
+          )}
+
+          {/* COLA */}
+          {ssBenefitMode !== "no_benefit" && (
+            <div className="mb-4">
+              <label className={fieldLabelClassName}>Annual COLA %</label>
+              <input
+                type="number"
+                step="0.5"
+                value={growthRate}
+                onChange={(e) => setGrowthRate(e.target.value)}
+                className={inputBaseClassName + " w-32"}
+              />
+            </div>
+          )}
+
+          {/* Preview */}
+          {preview != null && (
+            <p className="text-[14px] text-ink-2 mb-4">
+              Estimated first-year benefit: ${preview.toLocaleString()}
+            </p>
+          )}
+        </div>
+      )}
+
+      {activeTab === "medicare" && (
+        <MedicareDialogTab
+          clientId={clientId}
+          owner={owner}
+          existing={existingMedicare}
+          onSaved={() => { /* keep dialog open; parent doesn't need to know about Medicare yet */ }}
+        />
+      )}
     </DialogShell>
   );
 }
