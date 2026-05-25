@@ -3,19 +3,39 @@
 import { useState } from "react";
 import type { MedicareCoverage } from "@/engine/types";
 import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
+import {
+  DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR,
+  DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR,
+  DEFAULT_MEDICARE_ENROLLMENT_AGE,
+} from "@/lib/medicare/constants";
 
 interface Props {
   clientId: string;
   owner: "client" | "spouse";
   existing: MedicareCoverage | null;
+  /** YYYY-MM-DD; used to default enrollment year to the year the person turns 65. */
+  ownerDob?: string | null;
   onSaved: (coverage: MedicareCoverage) => void;
 }
 
-export function MedicareDialogTab({ clientId, owner, existing, onSaved }: Props) {
-  const [enrollmentYear, setEnrollmentYear] = useState<number | null>(existing?.enrollmentYear ?? null);
+function defaultEnrollmentYear(dob?: string | null): number | null {
+  if (!dob) return null;
+  const birthYear = Number(dob.slice(0, 4));
+  if (!Number.isFinite(birthYear)) return null;
+  return birthYear + DEFAULT_MEDICARE_ENROLLMENT_AGE;
+}
+
+export function MedicareDialogTab({ clientId, owner, existing, ownerDob, onSaved }: Props) {
+  const [enrollmentYear, setEnrollmentYear] = useState<number | null>(
+    existing?.enrollmentYear ?? defaultEnrollmentYear(ownerDob),
+  );
   const [coverageType, setCoverageType] = useState<"original" | "advantage">(existing?.coverageType ?? "original");
-  const [medigap, setMedigap] = useState<number | null>(existing?.medigapMonthlyAt65 ?? null);
-  const [partD, setPartD] = useState<number | null>(existing?.partDPlanMonthlyAt65 ?? null);
+  const [medigap, setMedigap] = useState<number | null>(
+    existing?.medigapMonthlyAt65 ?? DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR,
+  );
+  const [partD, setPartD] = useState<number | null>(
+    existing?.partDPlanMonthlyAt65 ?? DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR,
+  );
   const [priorMagi, setPriorMagi] = useState<number | null>(existing?.priorYearMagi ?? null);
   const [saving, setSaving] = useState(false);
 

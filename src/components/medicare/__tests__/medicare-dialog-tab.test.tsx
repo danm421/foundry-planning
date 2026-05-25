@@ -10,6 +10,21 @@ describe("MedicareDialogTab", () => {
     render(<MedicareDialogTab clientId="c1" owner="client" existing={null} onSaved={() => {}} />);
     expect(screen.getByLabelText(/enrollment year/i)).toHaveValue(null);
     expect(screen.getByLabelText(/coverage type/i)).toHaveValue("original");
+    expect(screen.getByLabelText(/medigap monthly/i)).toHaveValue(170);
+    expect(screen.getByLabelText(/part d monthly/i)).toHaveValue(46);
+  });
+
+  it("pre-fills enrollment year as DOB + 65 when ownerDob is provided", () => {
+    render(
+      <MedicareDialogTab
+        clientId="c1"
+        owner="client"
+        existing={null}
+        ownerDob="1960-04-12"
+        onSaved={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText(/enrollment year/i)).toHaveValue(2025);
   });
 
   it("calls fetch on Save with the entered values", async () => {
