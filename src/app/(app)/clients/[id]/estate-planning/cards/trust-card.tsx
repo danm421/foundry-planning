@@ -221,7 +221,7 @@ function HeldAssetRow({
         </span>
       )}
       <MoneyText value={row.sliceValue} className="ml-auto tabular-nums text-[var(--color-ink)]" />
-      {onRemoveSlice && (
+      {onRemoveSlice && !row.isDefaultChecking && (
         <button
           type="button"
           aria-label={`Remove slice of ${row.accountName}`}

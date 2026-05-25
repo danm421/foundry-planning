@@ -72,6 +72,37 @@ export async function PUT(
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
+    // Default-checking accounts (the household's Household Cash and each
+    // entity's internal cash) are system-managed. Reject mutations to
+    // category / sub-type / parent (sub-account) / ownership — the engine
+    // depends on the shape and these can't be changed via the dialog.
+    if (before.isDefaultChecking) {
+      if ("category" in safeUpdate && safeUpdate.category !== before.category) {
+        return NextResponse.json(
+          { error: "This is a system-managed cash account — its category can't be changed." },
+          { status: 400 },
+        );
+      }
+      if ("subType" in safeUpdate && safeUpdate.subType !== before.subType) {
+        return NextResponse.json(
+          { error: "This is a system-managed cash account — its account type can't be changed." },
+          { status: 400 },
+        );
+      }
+      if (body.parentAccountId != null) {
+        return NextResponse.json(
+          { error: "A system-managed cash account can't be made a sub-asset of a business." },
+          { status: 400 },
+        );
+      }
+      if (Array.isArray(body.owners)) {
+        return NextResponse.json(
+          { error: "This is a system-managed cash account — its ownership can't be changed." },
+          { status: 400 },
+        );
+      }
+    }
+
     // ── owners[] validation (PUT) ──────────────────────────────────────────
     // When parentAccountId is being set non-null, the account becomes a child
     // of a business account. Children have no per-row owners — skip validation
@@ -288,7 +319,7 @@ export async function DELETE(
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
     if (target?.isDefaultChecking) {
       return NextResponse.json(
-        { error: "The default household cash account cannot be deleted." },
+        { error: "This is a system-managed cash account and can't be deleted." },
         { status: 400 }
       );
     }

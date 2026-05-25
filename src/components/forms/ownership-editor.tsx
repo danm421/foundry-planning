@@ -27,6 +27,11 @@ export interface OwnershipEditorProps {
   onTitlingTypeChange: (next: "jtwros" | "community_property") => void;
   retirementMode?: boolean;
   label?: string;
+  /** When true, ownership is read-only — used for system-managed rows like the
+   *  default Household Cash account. */
+  locked?: boolean;
+  /** Helper copy shown beneath the read-only summary when `locked` is true. */
+  lockedReason?: string;
 }
 
 type OwnershipMode = "client" | "spouse" | "joint" | "community_property" | "custom";
@@ -257,6 +262,54 @@ function SingleOwnerPicker({ value, familyMembers, entities, onChange }: SingleO
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 
+function LockedOwnershipDisplay({
+  familyMembers,
+  entities,
+  value,
+  label,
+  lockedReason,
+}: {
+  familyMembers: OwnershipEditorProps["familyMembers"];
+  entities: OwnershipEditorProps["entities"];
+  value: AccountOwner[];
+  label: string;
+  lockedReason?: string;
+}) {
+  const summary = value.length === 0
+    ? "—"
+    : value
+        .map((o) => {
+          const pct = Math.round(o.percent * 1000) / 10;
+          let name: string;
+          if (o.kind === "family_member") {
+            name = familyMembers.find((fm) => fm.id === o.familyMemberId)?.firstName ?? "Family member";
+          } else if (o.kind === "entity") {
+            name = entities.find((e) => e.id === o.entityId)?.name ?? "Entity";
+          } else {
+            name = "External beneficiary";
+          }
+          return value.length === 1 && Math.abs(o.percent - 1) < EPSILON
+            ? name
+            : `${name} ${pct}%`;
+        })
+        .join(" · ");
+
+  return (
+    <div>
+      <label className={fieldLabelClassName}>{label}</label>
+      <div
+        aria-readonly="true"
+        className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink"
+      >
+        {summary}
+      </div>
+      {lockedReason && (
+        <p className="mt-1.5 text-[11px] text-ink-3">{lockedReason}</p>
+      )}
+    </div>
+  );
+}
+
 export function OwnershipEditor({
   familyMembers,
   entities,
@@ -266,6 +319,8 @@ export function OwnershipEditor({
   onTitlingTypeChange,
   retirementMode = false,
   label = "Owner(s)",
+  locked = false,
+  lockedReason,
 }: OwnershipEditorProps) {
   const clientFm = familyMembers.find((fm) => fm.role === "client");
   const spouseFm = familyMembers.find((fm) => fm.role === "spouse");
@@ -285,6 +340,18 @@ export function OwnershipEditor({
   const [rowKeys, setRowKeys] = useState<string[]>(() =>
     Array.from({ length: value.length }, () => Math.random().toString(36).slice(2)),
   );
+
+  if (locked) {
+    return (
+      <LockedOwnershipDisplay
+        familyMembers={familyMembers}
+        entities={entities}
+        value={value}
+        label={label}
+        lockedReason={lockedReason}
+      />
+    );
+  }
 
   const effectiveMode: OwnershipMode = forceCustom ? "custom" : derivedMode;
 

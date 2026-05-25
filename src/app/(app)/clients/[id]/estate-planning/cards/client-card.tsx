@@ -124,17 +124,24 @@ function DraggableRow({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `asset:${row.accountId}`,
     data: payload,
+    disabled: row.isDefaultChecking,
   });
+
+  // Household Cash is the projection engine's default deposit/expense target —
+  // gifting or transferring it would break cash flow. Render the row but skip
+  // drag wiring.
+  const lockedFromGifts = row.isDefaultChecking;
 
   return (
     <li
       ref={setNodeRef}
       data-row
-      {...attributes}
-      {...listeners}
-      className={`flex items-center gap-2 py-1.5 text-[12px] cursor-grab select-none hover:text-[var(--color-ink)] ${
-        isDragging ? "opacity-40" : ""
-      }`}
+      {...(lockedFromGifts ? {} : attributes)}
+      {...(lockedFromGifts ? {} : listeners)}
+      title={lockedFromGifts ? "Household Cash cannot be gifted or transferred." : undefined}
+      className={`flex items-center gap-2 py-1.5 text-[12px] select-none hover:text-[var(--color-ink)] ${
+        lockedFromGifts ? "cursor-default" : "cursor-grab"
+      } ${isDragging ? "opacity-40" : ""}`}
     >
       <span className="h-1.5 w-1.5 shrink-0 bg-[var(--color-cat-portfolio)]" aria-hidden />
       <div className="flex-1 min-w-0">

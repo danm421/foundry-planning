@@ -391,6 +391,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     initial?.parentAccountId ?? null,
   );
 
+  // The auto-provisioned household cash account is system-managed: category,
+  // sub-type, parent (sub-account), and ownership are all locked. Deletion is
+  // already blocked by the DELETE route + balance sheet UI.
+  const isSystemManagedCash = initial?.isDefaultChecking === true;
+
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
   const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom" | "asset_mix" | "inflation">(
@@ -1096,74 +1101,78 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={fieldLabelClassName} htmlFor="category">
-                Category <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="category"
-                name="category"
-                required
-                value={category}
-                onChange={(e) => {
-                  const newCat = e.target.value as AccountCategory;
-                  setCategory(newCat);
-                  const firstSub = SUB_TYPE_BY_CATEGORY[newCat][0];
-                  setSubType(firstSub);
-                  setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(firstSub));
-                  if (!userEditedName) {
-                    setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
-                  }
-                  // Savings tab is not available for real-estate, business, life_insurance, or
-                  // notes_receivable categories — snap back to Details if it was active.
-                  if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance" || newCat === "notes_receivable") && (activeTab === "savings" || activeTab === "realization")) {
-                    setActiveTab("details");
-                  }
-                }}
-                className={selectClassName}
-              >
-                {(Object.keys(CATEGORY_LABELS) as AccountCategory[])
-                  .filter((cat) => cat !== "business" && cat !== "life_insurance" && cat !== "notes_receivable")
-                  .map((cat) => (
-                    <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={fieldLabelClassName} htmlFor="subType">
-                Account Type
-              </label>
-              <select
-                id="subType"
-                name="subType"
-                value={subType}
-                onChange={(e) => {
-                  const newSub = e.target.value;
-                  setSubType(newSub);
-                  setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(newSub));
-                  // Trad IRA default basis is 0 unless the advisor has
-                  // already typed a value — flips back to mirroring on
-                  // other subtypes.
-                  if (!userEditedBasis) {
-                    if (newSub === "traditional_ira") {
-                      setAccountBasis("0");
-                    } else {
-                      setAccountBasis(accountValue);
+            {!isSystemManagedCash && (
+              <div>
+                <label className={fieldLabelClassName} htmlFor="category">
+                  Category <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="category"
+                  name="category"
+                  required
+                  value={category}
+                  onChange={(e) => {
+                    const newCat = e.target.value as AccountCategory;
+                    setCategory(newCat);
+                    const firstSub = SUB_TYPE_BY_CATEGORY[newCat][0];
+                    setSubType(firstSub);
+                    setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(firstSub));
+                    if (!userEditedName) {
+                      setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
                     }
-                  }
-                }}
-                className={selectClassName}
-              >
-                {subTypes.map((t) => (
-                  <option key={t} value={t}>
-                    {SUB_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            </div>
+                    // Savings tab is not available for real-estate, business, life_insurance, or
+                    // notes_receivable categories — snap back to Details if it was active.
+                    if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance" || newCat === "notes_receivable") && (activeTab === "savings" || activeTab === "realization")) {
+                      setActiveTab("details");
+                    }
+                  }}
+                  className={selectClassName}
+                >
+                  {(Object.keys(CATEGORY_LABELS) as AccountCategory[])
+                    .filter((cat) => cat !== "business" && cat !== "life_insurance" && cat !== "notes_receivable")
+                    .map((cat) => (
+                      <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
+                    ))}
+                </select>
+              </div>
+            )}
 
-            {businesses && businesses.length > 0 && (
+            {!isSystemManagedCash && (
+              <div>
+                <label className={fieldLabelClassName} htmlFor="subType">
+                  Account Type
+                </label>
+                <select
+                  id="subType"
+                  name="subType"
+                  value={subType}
+                  onChange={(e) => {
+                    const newSub = e.target.value;
+                    setSubType(newSub);
+                    setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(newSub));
+                    // Trad IRA default basis is 0 unless the advisor has
+                    // already typed a value — flips back to mirroring on
+                    // other subtypes.
+                    if (!userEditedBasis) {
+                      if (newSub === "traditional_ira") {
+                        setAccountBasis("0");
+                      } else {
+                        setAccountBasis(accountValue);
+                      }
+                    }
+                  }}
+                  className={selectClassName}
+                >
+                  {subTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {SUB_TYPE_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {businesses && businesses.length > 0 && !isSystemManagedCash && (
               <div className="col-span-2">
                 <label htmlFor="parentBusinessId" className={fieldLabelClassName}>
                   Owner
@@ -1215,6 +1224,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   titlingType={titlingType}
                   onTitlingTypeChange={setTitlingType}
                   retirementMode={isRetirementSubType(subType)}
+                  locked={isSystemManagedCash}
+                  lockedReason={
+                    isSystemManagedCash
+                      ? "This is a system-managed cash account — its ownership is fixed and can't be changed."
+                      : undefined
+                  }
                 />
               )}
             </div>

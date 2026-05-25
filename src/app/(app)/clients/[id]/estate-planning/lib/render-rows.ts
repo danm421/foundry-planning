@@ -36,6 +36,9 @@ export interface RenderRow {
   netSliceValue: number;
   hasMultipleOwners: boolean;
   coOwners: { label: string; percent: number }[]; // empty when sole owner
+  /** System-managed default Household Cash account. Locked from gifts and
+   *  entity transfers — the engine relies on it as the deposit/expense target. */
+  isDefaultChecking?: boolean;
 }
 
 export interface UnlinkedLiabilityRow {
@@ -102,6 +105,7 @@ function buildRow(
     netSliceValue: sliceValue - linkedLiabilityBalance,
     hasMultipleOwners: coOwners.length > 0,
     coOwners,
+    isDefaultChecking: account.isDefaultChecking === true,
   };
 }
 

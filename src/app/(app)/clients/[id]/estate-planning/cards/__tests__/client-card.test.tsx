@@ -33,6 +33,7 @@ const data: ClientCardData = {
       netSliceValue: 1_200_000,
       hasMultipleOwners: true,
       coOwners: [{ label: "Linda", percent: 0.3 }, { label: "SLAT", percent: 0.1 }],
+      isDefaultChecking: false,
     },
     {
       accountId: "a2",
@@ -45,6 +46,7 @@ const data: ClientCardData = {
       netSliceValue: 500_000,
       hasMultipleOwners: false,
       coOwners: [],
+      isDefaultChecking: false,
     },
   ],
   unlinkedLiabilities: [],
@@ -115,6 +117,7 @@ describe("ClientCard", () => {
           netSliceValue: 400_000,
           hasMultipleOwners: false,
           coOwners: [],
+          isDefaultChecking: false,
         },
       ],
       total: 400_000,
