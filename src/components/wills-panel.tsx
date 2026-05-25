@@ -152,9 +152,11 @@ function recipientLabel(
   exts: WillsPanelExternal[],
   ents: WillsPanelEntity[],
   p: WillsPanelPrimary,
+  grantor: WillGrantor,
 ): string {
   if (r.recipientKind === "spouse") {
-    return `${p.spouseName ?? "Spouse"} (spouse)`;
+    const otherName = grantor === "client" ? p.spouseName : p.firstName;
+    return `${otherName || "Spouse"} (spouse)`;
   }
   if (r.recipientKind === "family_member") {
     const f = fams.find((x) => x.id === r.recipientId);
@@ -580,7 +582,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                       const recipientsText = b.recipients
                         .map(
                           (r) =>
-                            `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary)} (${r.percentage}%)`,
+                            `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary, g)} (${r.percentage}%)`,
                         )
                         .join(", ");
 
@@ -693,6 +695,7 @@ export default function WillsPanel(props: WillsPanelProps) {
               onChange={async (next) => {
                 await saveWillFull(g, will?.bequests ?? [], next);
               }}
+              grantor={g}
               primary={primary}
               familyMembers={familyMembers}
               externalBeneficiaries={externalBeneficiaries}
@@ -711,6 +714,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                     setEditingIndex(null);
                   }
                 }}
+                grantor={g}
                 primary={primary}
                 accounts={accounts}
                 liabilities={liabilities}

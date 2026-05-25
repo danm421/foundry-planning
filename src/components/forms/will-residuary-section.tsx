@@ -4,6 +4,7 @@ import BequestRecipientList, {
   type BequestRecipient,
 } from "@/components/forms/bequest-recipient-list";
 import type {
+  WillGrantor,
   WillsPanelEntity,
   WillsPanelExternal,
   WillsPanelFamilyMember,
@@ -14,6 +15,7 @@ import type {
 export interface WillResiduarySectionProps {
   rows: WillsPanelRecipient[];
   onChange: (rows: WillsPanelRecipient[]) => void;
+  grantor: WillGrantor;
   primary: WillsPanelPrimary;
   familyMembers: WillsPanelFamilyMember[];
   externalBeneficiaries: WillsPanelExternal[];
@@ -53,6 +55,7 @@ function HelpIcon({ label }: { label: string }) {
 export default function WillResiduarySection({
   rows,
   onChange,
+  grantor,
   primary,
   familyMembers,
   externalBeneficiaries,
@@ -62,6 +65,10 @@ export default function WillResiduarySection({
   const primaryRows = tierRows(rows, "primary");
   const contingentRows = tierRows(rows, "contingent");
   const isEmpty = rows.length === 0;
+  // The grantor's spouse-survival branch only exists when there is a spouse
+  // on file at all. `WillsPanel` never renders the spouse's will when
+  // `primary.spouseName` is null, so checking `spouseName` is sufficient
+  // regardless of which grantor we're rendering.
   const hasSpouse = primary.spouseName != null;
 
   function emit(
@@ -123,6 +130,7 @@ export default function WillResiduarySection({
               "Used if the spouse survives the grantor.",
               <BequestRecipientList
                 mode="residuary"
+                grantor={grantor}
                 rows={primaryRows}
                 onChange={(next) => emit(next, contingentRows)}
                 primary={primary}
@@ -136,6 +144,7 @@ export default function WillResiduarySection({
               "Used if the spouse predeceases the grantor.",
               <BequestRecipientList
                 mode="residuary"
+                grantor={grantor}
                 rows={contingentRows}
                 onChange={(next) => emit(primaryRows, next)}
                 primary={primary}
@@ -148,6 +157,7 @@ export default function WillResiduarySection({
         ) : (
           <BequestRecipientList
             mode="residuary"
+            grantor={grantor}
             rows={primaryRows}
             onChange={(next) => emit(next, contingentRows)}
             primary={primary}

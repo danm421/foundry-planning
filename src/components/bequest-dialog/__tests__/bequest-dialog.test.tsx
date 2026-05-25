@@ -42,6 +42,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -58,6 +59,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -87,6 +89,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -118,6 +121,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -159,6 +163,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -196,6 +201,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -227,6 +233,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -252,6 +259,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={noSpouse}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -270,6 +278,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -303,6 +312,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -332,6 +342,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         liabilities={[liab]}
@@ -365,6 +376,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         familyMembers={[fm]}
@@ -391,6 +403,7 @@ describe("BequestDialog", () => {
       <BequestDialog
         open
         onOpenChange={() => {}}
+        grantor="client"
         primary={primary}
         accounts={[acct]}
         liabilities={[liab]}

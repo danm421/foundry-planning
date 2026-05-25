@@ -4,6 +4,7 @@ import { useState } from "react";
 import { fieldLabelClassName } from "./input-styles";
 import { redistribute, splitEvenly } from "./auto-split-percentages";
 import type {
+  WillGrantor,
   WillsPanelEntity,
   WillsPanelExternal,
   WillsPanelFamilyMember,
@@ -22,6 +23,10 @@ interface BequestRecipientListProps {
   /** "asset" / "residuary" → all four kinds. "debt" → family + entity only
    *  (engine drops the others as warnings). */
   mode: "asset" | "debt" | "residuary";
+  /** Whose will this list belongs to. Controls which household principal
+   *  appears under the "Household" optgroup — the grantor never lists
+   *  themselves as a recipient of their own will. */
+  grantor: WillGrantor;
   rows: BequestRecipient[];
   onChange: (rows: BequestRecipient[]) => void;
   primary: WillsPanelPrimary;
@@ -63,8 +68,19 @@ function familyLabel(f: WillsPanelFamilyMember): string {
   return `${f.firstName}${f.lastName ? " " + f.lastName : ""}`;
 }
 
-function spouseLabel(p: WillsPanelPrimary): string {
-  return p.spouseName ? `${p.spouseName} (spouse)` : "Spouse";
+/** Household principal who isn't the grantor — the "spouse" recipient kind
+ *  always refers to the grantor's spouse, but whose name to render depends on
+ *  whose will is being edited. */
+function householdOtherName(
+  grantor: WillGrantor,
+  p: WillsPanelPrimary,
+): string | null {
+  return grantor === "client" ? p.spouseName : p.firstName || null;
+}
+
+function spouseLabel(grantor: WillGrantor, p: WillsPanelPrimary): string {
+  const name = householdOtherName(grantor, p);
+  return name ? `${name} (spouse)` : "Spouse";
 }
 
 const setRowPercentage = (r: BequestRecipient, percentage: number): BequestRecipient => ({ ...r, percentage });
@@ -72,6 +88,7 @@ const newKey = () => `tmp-${Math.random().toString(36).slice(2)}`;
 
 export default function BequestRecipientList({
   mode,
+  grantor,
   rows,
   onChange,
   primary,
@@ -145,7 +162,8 @@ export default function BequestRecipientList({
   }
 
   const showSpouse =
-    (mode === "asset" || mode === "residuary") && primary.spouseName != null;
+    (mode === "asset" || mode === "residuary") &&
+    householdOtherName(grantor, primary) != null;
   const showExternal = mode === "asset" || mode === "residuary";
 
   return (
@@ -171,7 +189,7 @@ export default function BequestRecipientList({
               <option value="">— select recipient —</option>
               {showSpouse && (
                 <optgroup label="Household">
-                  <option value={SPOUSE_VALUE}>{spouseLabel(primary)}</option>
+                  <option value={SPOUSE_VALUE}>{spouseLabel(grantor, primary)}</option>
                 </optgroup>
               )}
               {selectableFamilyMembers.length > 0 && (

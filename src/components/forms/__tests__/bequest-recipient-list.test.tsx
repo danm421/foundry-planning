@@ -36,6 +36,7 @@ describe("BequestRecipientList — asset mode", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={rows}
         onChange={() => {}}
         primary={primary}
@@ -60,10 +61,32 @@ describe("BequestRecipientList — asset mode", () => {
     expect(optionLabels.some((l) => l.includes("Family Trust"))).toBe(true);
   });
 
+  it("shows the client (not the grantor) under Household in the spouse's will", () => {
+    render(
+      <BequestRecipientList
+        mode="asset"
+        grantor="spouse"
+        rows={[{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }]}
+        onChange={() => {}}
+        primary={primary}
+        familyMembers={familyMembers}
+        externalBeneficiaries={externals}
+        entities={entities}
+      />,
+    );
+    const select = screen.getByRole("combobox", { name: /Recipient 1/i });
+    const householdOptions = Array.from(
+      select.querySelectorAll('optgroup[label="Household"] option'),
+    ).map((o) => (o as HTMLOptionElement).textContent ?? "");
+    expect(householdOptions).toEqual(["Cooper (spouse)"]);
+    expect(householdOptions.some((l) => l.includes("Sarah"))).toBe(false);
+  });
+
   it("hides the Household optgroup when no spouse is on file (asset mode)", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={[{ recipientKind: "family_member", recipientId: "f1", percentage: 100, sortOrder: 0 }]}
         onChange={() => {}}
         primary={noSpouse}
@@ -88,6 +111,7 @@ describe("BequestRecipientList — debt mode", () => {
     render(
       <BequestRecipientList
         mode="debt"
+        grantor="client"
         rows={rows}
         onChange={() => {}}
         primary={primary}
@@ -113,6 +137,7 @@ describe("BequestRecipientList — onChange", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={rows}
         onChange={onChange}
         primary={primary}
@@ -136,6 +161,7 @@ describe("BequestRecipientList — onChange", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={rows}
         onChange={onChange}
         primary={primary}
@@ -156,6 +182,7 @@ describe("BequestRecipientList — onChange", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={[]}
         onChange={onChange}
         primary={primary}
@@ -178,6 +205,7 @@ describe("BequestRecipientList — onChange", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={rows}
         onChange={onChange}
         primary={primary}
@@ -199,6 +227,7 @@ describe("BequestRecipientList — onChange", () => {
     render(
       <BequestRecipientList
         mode="debt"
+        grantor="client"
         rows={[]}
         onChange={onChange}
         primary={primary}
@@ -222,6 +251,7 @@ describe("BequestRecipientList — onChange", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={rows}
         onChange={onChange}
         primary={primary}
@@ -242,6 +272,7 @@ describe("BequestRecipientList — sum indicator", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={[{ recipientKind: "family_member", recipientId: "f1", percentage: 60, sortOrder: 0 }]}
         onChange={() => {}}
         primary={primary}
@@ -258,6 +289,7 @@ describe("BequestRecipientList — sum indicator", () => {
     render(
       <BequestRecipientList
         mode="asset"
+        grantor="client"
         rows={[{ recipientKind: "family_member", recipientId: "f1", percentage: 100, sortOrder: 0 }]}
         onChange={() => {}}
         primary={primary}

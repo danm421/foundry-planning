@@ -10,6 +10,7 @@ import {
 import BequestRecipientList from "@/components/forms/bequest-recipient-list";
 import type {
   WillCondition,
+  WillGrantor,
   WillsPanelAccount,
   WillsPanelEntity,
   WillsPanelExternal,
@@ -53,6 +54,7 @@ export type BequestDraft = AssetBequestDraft | LiabilityBequestDraft;
 interface BequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  grantor: WillGrantor;
   primary: WillsPanelPrimary;
   accounts: WillsPanelAccount[];
   liabilities?: WillsPanelLiability[];
@@ -139,6 +141,7 @@ function deriveBequestName(
 export default function BequestDialog({
   open,
   onOpenChange,
+  grantor,
   primary,
   accounts,
   liabilities = [],
@@ -426,6 +429,7 @@ export default function BequestDialog({
 
         <BequestRecipientList
           mode={draft.kind === "liability" ? "debt" : "asset"}
+          grantor={grantor}
           rows={draft.recipients}
           onChange={(recipients) => setDraft({ ...draft, recipients })}
           primary={primary}
