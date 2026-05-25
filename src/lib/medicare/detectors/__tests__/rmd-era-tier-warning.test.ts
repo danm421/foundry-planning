@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { rmdEraTierWarning } from "../rmd-era-tier-warning";
 import type { MedicareDetectorContext } from "../types";
+import type { ProjectionYear } from "@/engine";
 
 function makeYear(year: number, age: number, tier: number, surcharge: number) {
   return {
@@ -19,7 +20,7 @@ function makeYear(year: number, age: number, tier: number, surcharge: number) {
       totalAnnualCost: 4857 + surcharge,
       totalIrmaaSurcharge: surcharge,
     },
-  } as any;
+  } as unknown as ProjectionYear;
 }
 
 const baseCtx: Omit<MedicareDetectorContext, "years"> = {

@@ -88,6 +88,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "deductionType": undefined,
       "endYear": 2063,
       "endYearRef": null,
+      "endsAtMedicareEligibilityOwner": undefined,
       "growthRate": 0.03,
       "growthSource": "custom",
       "id": "00000000-0000-0000-0000-000000000050",

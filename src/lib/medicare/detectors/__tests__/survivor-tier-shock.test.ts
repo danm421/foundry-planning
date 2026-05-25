@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { survivorTierShock } from "../survivor-tier-shock";
+import type { ProjectionYear } from "@/engine";
 
 function yr(year: number, opts: {
   clientAlive?: boolean; spouseAlive?: boolean;
@@ -20,7 +21,7 @@ function yr(year: number, opts: {
       spouse: make(opts.spouseAlive ?? true, opts.spouseTier ?? 0, opts.spouseFiling ?? "mfj"),
       totalAnnualCost: 0, totalIrmaaSurcharge: 0,
     },
-  } as any;
+  } as unknown as ProjectionYear;
 }
 
 describe("survivor-tier-shock", () => {
