@@ -221,6 +221,77 @@ describe("resolveAccountFromRaw", () => {
     );
     expect(acct.titlingType).toBe("jtwros");
   });
+
+  it("propagates business-as-asset fields onto top-level business accounts", () => {
+    const acct = resolveAccountFromRaw(
+      {
+        ...baseRawAccount,
+        id: "a9",
+        name: "Acme LLC",
+        category: "business",
+        subType: "operating_business",
+        value: "500000",
+        basis: "100000",
+        growthSource: "custom",
+        growthRate: "0.04",
+        businessType: "llc",
+        distributionPolicyPercent: "0.6",
+        flowMode: "annual",
+        businessTaxTreatment: "qbi",
+        parentAccountId: null,
+      },
+      makeCtx(),
+    );
+    expect(acct.businessType).toBe("llc");
+    expect(acct.distributionPolicyPercent).toBeCloseTo(0.6);
+    expect(acct.flowMode).toBe("annual");
+    expect(acct.businessTaxTreatment).toBe("qbi");
+    expect(acct.parentAccountId).toBeNull();
+  });
+
+  it("propagates parentAccountId on a business-owned child account", () => {
+    const acct = resolveAccountFromRaw(
+      {
+        ...baseRawAccount,
+        id: "a10",
+        name: "Acme Operating Checking",
+        category: "cash",
+        subType: "checking",
+        value: "25000",
+        basis: "25000",
+        growthSource: "default",
+        growthRate: null,
+        parentAccountId: "a9",
+      },
+      makeCtx(),
+    );
+    expect(acct.parentAccountId).toBe("a9");
+    // Non-business child: no business-specific fields populated.
+    expect(acct.businessType).toBeNull();
+    expect(acct.distributionPolicyPercent).toBeNull();
+    expect(acct.businessTaxTreatment).toBeNull();
+  });
+
+  it("leaves business-as-asset fields null on a non-business account", () => {
+    const acct = resolveAccountFromRaw(
+      {
+        ...baseRawAccount,
+        id: "a11",
+        name: "Brokerage",
+        category: "taxable",
+        subType: "individual",
+        value: "100000",
+        basis: "100000",
+        growthSource: "default",
+        growthRate: null,
+      },
+      makeCtx(),
+    );
+    expect(acct.businessType).toBeNull();
+    expect(acct.distributionPolicyPercent).toBeNull();
+    expect(acct.businessTaxTreatment).toBeNull();
+    expect(acct.parentAccountId).toBeNull();
+  });
 });
 
 describe("resolveIncomeFromRaw", () => {
@@ -259,6 +330,44 @@ describe("resolveIncomeFromRaw", () => {
     );
     expect(inc.growthRate).toBeCloseTo(0.04);
   });
+
+  it("propagates ownerAccountId onto the resolved Income (business-as-asset)", () => {
+    const inc = resolveIncomeFromRaw(
+      {
+        id: "i3",
+        type: "business",
+        name: "Acme draw",
+        annualAmount: "80000",
+        startYear: 2025,
+        endYear: 2050,
+        growthSource: "custom",
+        growthRate: "0.03",
+        owner: "client",
+        ownerAccountId: "acct-acme",
+      },
+      makeCtx(),
+    );
+    expect(inc.ownerAccountId).toBe("acct-acme");
+    expect(inc.ownerEntityId).toBeUndefined();
+  });
+
+  it("leaves ownerAccountId undefined when raw row omits it", () => {
+    const inc = resolveIncomeFromRaw(
+      {
+        id: "i4",
+        type: "salary",
+        name: "Job",
+        annualAmount: "60000",
+        startYear: 2025,
+        endYear: 2050,
+        growthSource: "custom",
+        growthRate: "0.02",
+        owner: "client",
+      },
+      makeCtx(),
+    );
+    expect(inc.ownerAccountId).toBeUndefined();
+  });
 });
 
 describe("resolveExpenseFromRaw", () => {
@@ -294,6 +403,42 @@ describe("resolveExpenseFromRaw", () => {
       makeCtx({ inflationRate: 0.03 }),
     );
     expect(exp.growthRate).toBeCloseTo(0.02);
+  });
+
+  it("propagates ownerAccountId onto the resolved Expense (business-as-asset)", () => {
+    const exp = resolveExpenseFromRaw(
+      {
+        id: "e3",
+        type: "other",
+        name: "Acme rent",
+        annualAmount: "24000",
+        startYear: 2025,
+        endYear: 2060,
+        growthSource: "custom",
+        growthRate: "0.02",
+        ownerAccountId: "acct-acme",
+      },
+      makeCtx(),
+    );
+    expect(exp.ownerAccountId).toBe("acct-acme");
+    expect(exp.ownerEntityId).toBeUndefined();
+  });
+
+  it("leaves ownerAccountId undefined when raw row omits it", () => {
+    const exp = resolveExpenseFromRaw(
+      {
+        id: "e4",
+        type: "living",
+        name: "Groceries",
+        annualAmount: "8000",
+        startYear: 2025,
+        endYear: 2060,
+        growthSource: "custom",
+        growthRate: "0.02",
+      },
+      makeCtx(),
+    );
+    expect(exp.ownerAccountId).toBeUndefined();
   });
 });
 

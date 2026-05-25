@@ -68,6 +68,15 @@ type RawAccount = {
   owners?: AccountOwner[];
   beneficiaries?: BeneficiaryRef[];
   lifeInsurance?: Account["lifeInsurance"];
+  /** Business-as-asset fields. Present only on top-level business accounts;
+   *  null/undefined for everything else. The engine reads them when applying
+   *  distribution sweep + pass-through tax incidence. */
+  businessType?: Account["businessType"];
+  distributionPolicyPercent?: string | number | null;
+  flowMode?: Account["flowMode"] | null;
+  businessTaxTreatment?: Account["businessTaxTreatment"];
+  /** For business-owned child accounts: id of the parent business account. */
+  parentAccountId?: string | null;
 };
 
 export function resolveAccountFromRaw(
@@ -182,6 +191,12 @@ export function resolveAccountFromRaw(
     ),
     titlingType: raw.titlingType,
     owners: raw.owners ?? ctx.ownersByAccountId?.get(raw.id) ?? [],
+    businessType: raw.businessType ?? null,
+    distributionPolicyPercent:
+      raw.distributionPolicyPercent != null ? n(raw.distributionPolicyPercent) : null,
+    flowMode: raw.flowMode ?? undefined,
+    businessTaxTreatment: raw.businessTaxTreatment ?? null,
+    parentAccountId: raw.parentAccountId ?? null,
   };
 }
 
@@ -221,6 +236,10 @@ type RawIncome = {
   owner: string;
   claimingAge?: number | null;
   ownerEntityId?: string | null;
+  /** Business-account owner (business-as-asset model). Mutually exclusive
+   *  with `ownerEntityId`. When set, the income flows through the business
+   *  account's distribution policy / tax treatment. */
+  ownerAccountId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   taxType?: string | null;
@@ -250,6 +269,7 @@ export function resolveIncomeFromRaw(
     owner: raw.owner as Income["owner"],
     claimingAge: raw.claimingAge ?? undefined,
     ownerEntityId: raw.ownerEntityId ?? undefined,
+    ownerAccountId: raw.ownerAccountId ?? undefined,
     cashAccountId: raw.cashAccountId ?? undefined,
     inflationStartYear: raw.inflationStartYear ?? undefined,
     taxType: (raw.taxType as Income["taxType"]) ?? undefined,
@@ -274,6 +294,10 @@ type RawExpense = {
   growthSource: string | null;
   growthRate: string | number | null;
   ownerEntityId?: string | null;
+  /** Business-account owner (business-as-asset model). Mutually exclusive
+   *  with `ownerEntityId`. When set, the expense reduces the named business
+   *  account's net income before distribution sweep. */
+  ownerAccountId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   deductionType?: string | null;
@@ -298,6 +322,7 @@ export function resolveExpenseFromRaw(
     endYear: raw.endYear,
     growthRate,
     ownerEntityId: raw.ownerEntityId ?? undefined,
+    ownerAccountId: raw.ownerAccountId ?? undefined,
     cashAccountId: raw.cashAccountId ?? undefined,
     inflationStartYear: raw.inflationStartYear ?? undefined,
     deductionType: (raw.deductionType as Expense["deductionType"]) ?? undefined,

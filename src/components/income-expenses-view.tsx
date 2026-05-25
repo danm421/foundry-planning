@@ -35,6 +35,7 @@ interface Income {
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;
+  ownerAccountId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   startYearRef?: string | null;
@@ -78,6 +79,7 @@ interface Expense {
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;
+  ownerAccountId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   startYearRef?: string | null;
@@ -378,6 +380,47 @@ function CashAccountPicker({
   );
 }
 
+// ── Business Owner Picker ─────────────────────────────────────────────────────
+
+interface BusinessOwnerSelectProps {
+  id: string;
+  accounts: Account[];
+  value: string | null;
+  onChange: (v: string | null) => void;
+}
+
+/**
+ * Optional "Owned by business" selector. When set, the income/expense is
+ * routed to the chosen business asset's books (Phase 2). Mutually exclusive
+ * with `ownerEntityId` (trust ownership) — but that path is not currently
+ * editable from this dialog, so we only need to show businesses here.
+ */
+function BusinessOwnerSelect({ id, accounts, value, onChange }: BusinessOwnerSelectProps) {
+  const businessAccounts = accounts.filter((a) => a.category === "business");
+  if (businessAccounts.length === 0) return null;
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-300" htmlFor={id}>
+        Owned by business (optional)
+      </label>
+      <select
+        id={id}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+      >
+        <option value="">— None —</option>
+        {businessAccounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // ── Income Dialog ─────────────────────────────────────────────────────────────
 
 interface IncomeDialogProps {
@@ -420,6 +463,7 @@ function IncomeDialog({
   const [type, setType] = useState<IncomeType>(editing?.type ?? defaultType);
   const [owner, setOwner] = useState<Owner>(editing?.owner ?? "client");
   const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
+  const [ownerAccountId, setOwnerAccountId] = useState<string | null>(editing?.ownerAccountId ?? null);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing
@@ -508,6 +552,7 @@ function IncomeDialog({
       growthSource,
       owner: data.get("owner") as string,
       cashAccountId: cashAccountId || null,
+      ownerAccountId: ownerAccountId ?? null,
       // "Today's dollars" mode inflates the amount from plan start through the
       // entry's startYear so retirement-era amounts can be entered in current
       // purchasing power. Null means inflate only from startYear onward.
@@ -807,6 +852,13 @@ function IncomeDialog({
             onChange={setCashAccountId}
           />
 
+          <BusinessOwnerSelect
+            id="inc-owner-account"
+            accounts={accounts}
+            value={ownerAccountId}
+            onChange={setOwnerAccountId}
+          />
+
           <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
             {isEdit && onRequestDelete ? (
               <button
@@ -864,6 +916,7 @@ function IncomeDialog({
 interface ExpenseDialogProps {
   clientId: string;
   defaultType?: ExpenseType;
+  accounts: Account[];
   entities?: Entity[];
   clientInfo?: ClientInfo;
   ownerNames: OwnerNames;
@@ -879,6 +932,7 @@ interface ExpenseDialogProps {
 function ExpenseDialog({
   clientId,
   defaultType = "living",
+  accounts,
   clientInfo,
   ownerNames,
   open,
@@ -897,6 +951,7 @@ function ExpenseDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deductionType, setDeductionType] = useState<string>(editing?.deductionType ?? "");
+  const [ownerAccountId, setOwnerAccountId] = useState<string | null>(editing?.ownerAccountId ?? null);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing
@@ -943,6 +998,7 @@ function ExpenseDialog({
       growthRate: String(Number(growthRateDisplay) / 100),
       growthSource,
       cashAccountId: null,
+      ownerAccountId: ownerAccountId ?? null,
       inflationStartYear: todaysDollars ? planStartYear : null,
       startYearRef,
       endYearRef,
@@ -1188,6 +1244,13 @@ function ExpenseDialog({
             </select>
           </div>
 
+          <BusinessOwnerSelect
+            id="exp-owner-account"
+            accounts={accounts}
+            value={ownerAccountId}
+            onChange={setOwnerAccountId}
+          />
+
           <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
             {isEdit && onRequestDelete ? (
               <button
@@ -1292,6 +1355,10 @@ export default function IncomeExpensesView({
 
   const accountMap = Object.fromEntries(accounts.map((a) => [a.id, a]));
   const entityMap = Object.fromEntries((entities ?? []).map((e) => [e.id, e]));
+  // Business-asset lookup for "Linked to Businesses" rollup — keyed by account id.
+  const businessAccountMap = Object.fromEntries(
+    accounts.filter((a) => a.category === "business").map((a) => [a.id, a]),
+  );
 
   async function refreshIncomes() {
     try {
@@ -1317,11 +1384,15 @@ export default function IncomeExpensesView({
   const kpiYear = new Date().getFullYear();
   const isActiveThisYear = (row: { startYear: number; endYear: number }) =>
     row.startYear <= kpiYear && row.endYear >= kpiYear;
+  // Mirror the engine's household-totals filter: business-owned rows
+  // (ownerAccountId) reach household cash only via the business's
+  // distribution sweep, so including the raw amounts here double-counts
+  // against KPIs the engine reports — see src/engine/projection.ts:758-788.
   const householdIncome = incomeList
-    .filter((i) => !i.ownerEntityId && isActiveThisYear(i))
+    .filter((i) => !i.ownerEntityId && !i.ownerAccountId && isActiveThisYear(i))
     .reduce((s, i) => s + Number(i.annualAmount), 0);
   const householdExpense = expenseList
-    .filter((e) => !e.ownerEntityId && isActiveThisYear(e))
+    .filter((e) => !e.ownerEntityId && !e.ownerAccountId && isActiveThisYear(e))
     .reduce((s, e) => s + Number(e.annualAmount), 0);
   const netCashFlow = householdIncome - householdExpense;
 
@@ -1403,7 +1474,14 @@ export default function IncomeExpensesView({
           ) : (
             <>
               {INCOME_GROUPS.map((group) => {
-                const items = incomeList.filter((i) => group.types.includes(i.type));
+                // Exclude entity- and business-account-owned rows; they render
+                // in their own rollups ("Linked Entities" / "Linked to
+                // Businesses") below and would otherwise duplicate here and
+                // double-count the per-group subtotal.
+                const items = incomeList.filter(
+                  (i) =>
+                    group.types.includes(i.type) && !i.ownerEntityId && !i.ownerAccountId,
+                );
                 if (items.length === 0) return null;
                 const subtotal = items.reduce((s, i) => s + Number(i.annualAmount), 0);
                 return (
@@ -1417,6 +1495,9 @@ export default function IncomeExpensesView({
                       const entityName = income.ownerEntityId
                         ? entityMap[income.ownerEntityId]?.name
                         : undefined;
+                      const businessName = income.ownerAccountId
+                        ? businessAccountMap[income.ownerAccountId]?.name
+                        : undefined;
                       return (
                         <Row
                           key={income.id}
@@ -1425,7 +1506,9 @@ export default function IncomeExpensesView({
                           onDelete={() => setDeletingIncome(income)}
                           label={income.name}
                           meta={[
-                            entityName ?? individualOwnerLabel(income.owner, ownerNames),
+                            entityName ??
+                              businessName ??
+                              individualOwnerLabel(income.owner, ownerNames),
                             income.claimingAge ? `Claim @ ${income.claimingAge}` : null,
                           ]}
                           starts={yearsDescriptor(income.startYear, income.endYear, planStart, planEnd)}
@@ -1500,6 +1583,68 @@ export default function IncomeExpensesView({
                   </Group>
                 );
               })()}
+
+              {(() => {
+                // "Linked to Businesses" — read-only rollup of incomes/expenses
+                // pointed at a business account (Phase 2). Mirrors the Linked
+                // Entities section above. Filter to ids present in
+                // businessAccountMap so orphaned data doesn't render.
+                const linkedIncomes = incomeList.filter(
+                  (i) => i.ownerAccountId && businessAccountMap[i.ownerAccountId],
+                );
+                const linkedExpenses = expenseList.filter(
+                  (e) => e.ownerAccountId && businessAccountMap[e.ownerAccountId],
+                );
+                if (linkedIncomes.length === 0 && linkedExpenses.length === 0) return null;
+                const byAccount = new Map<
+                  string,
+                  { incomes: typeof linkedIncomes; expenses: typeof linkedExpenses; name: string }
+                >();
+                for (const i of linkedIncomes) {
+                  const id = i.ownerAccountId!;
+                  const bucket =
+                    byAccount.get(id) ?? { incomes: [], expenses: [], name: businessAccountMap[id].name };
+                  bucket.incomes.push(i);
+                  byAccount.set(id, bucket);
+                }
+                for (const e of linkedExpenses) {
+                  const id = e.ownerAccountId!;
+                  const bucket =
+                    byAccount.get(id) ?? { incomes: [], expenses: [], name: businessAccountMap[id].name };
+                  bucket.expenses.push(e);
+                  byAccount.set(id, bucket);
+                }
+                return (
+                  <Group label="Linked to Businesses" total="">
+                    {[...byAccount.entries()].map(([accId, b]) => {
+                      const incomeTotal = b.incomes.reduce(
+                        (s, i) => s + Number(i.annualAmount),
+                        0,
+                      );
+                      const expenseTotal = b.expenses.reduce(
+                        (s, e) => s + Number(e.annualAmount),
+                        0,
+                      );
+                      return (
+                        <Row
+                          key={accId}
+                          editMode={false}
+                          label={b.name}
+                          meta={[
+                            b.incomes.length > 0
+                              ? `${b.incomes.length} income${b.incomes.length === 1 ? "" : "s"}`
+                              : null,
+                            b.expenses.length > 0
+                              ? `${b.expenses.length} expense${b.expenses.length === 1 ? "" : "s"}`
+                              : null,
+                          ]}
+                          value={fmt(incomeTotal - expenseTotal)}
+                        />
+                      );
+                    })}
+                  </Group>
+                );
+              })()}
             </>
           )}
 
@@ -1538,7 +1683,14 @@ export default function IncomeExpensesView({
             <EmptyRow message="No expense entries yet." />
           ) : (
             EXPENSE_GROUPS.map((group) => {
-              const items = expenseList.filter((e) => group.types.includes(e.type));
+              // Exclude entity- and business-account-owned rows; they render
+              // in their own rollups ("Linked Entities" / "Linked to
+              // Businesses") below and would otherwise duplicate here and
+              // double-count the per-group subtotal.
+              const items = expenseList.filter(
+                (e) =>
+                  group.types.includes(e.type) && !e.ownerEntityId && !e.ownerAccountId,
+              );
               if (items.length === 0) return null;
               const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
               return (
@@ -1550,6 +1702,9 @@ export default function IncomeExpensesView({
                 >
                   {items.map((expense) => {
                     const entityName = expense.ownerEntityId ? entityMap[expense.ownerEntityId]?.name : undefined;
+                    const businessName = expense.ownerAccountId
+                      ? businessAccountMap[expense.ownerAccountId]?.name
+                      : undefined;
                     return (
                       <Row
                         key={expense.id}
@@ -1557,7 +1712,7 @@ export default function IncomeExpensesView({
                         editMode={expenseEdit}
                         onDelete={expense.isDefault ? undefined : () => setDeletingExpense(expense)}
                         label={expense.name}
-                        meta={[entityName ?? null]}
+                        meta={[entityName ?? businessName ?? null]}
                         starts={yearsDescriptor(expense.startYear, expense.endYear, planStart, planEnd)}
                         value={fmt(expense.annualAmount)}
                         outOfEstate={Boolean(expense.ownerEntityId)}
@@ -1619,6 +1774,7 @@ export default function IncomeExpensesView({
         <ExpenseDialog
           key={expenseDialog.editing?.id ?? "new"}
           clientId={clientId}
+          accounts={accounts}
           entities={entities}
           clientInfo={clientInfo}
           ownerNames={ownerNames}

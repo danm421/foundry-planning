@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import AddAccountDialog from "./add-account-dialog";
+import AddBusinessDialog from "./add-business-dialog";
 import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
@@ -113,13 +114,14 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "notes_receivable",
 ];
 
-// Categories the Add Asset menu offers. Business entities and life-insurance
-// policies are created from their own sections (Entities / Insurance), not here.
+// Categories the Add Asset menu offers. Life-insurance policies are created
+// from the Insurance section, not here.
 const ADDABLE_CATEGORIES: AccountCategory[] = [
   "taxable",
   "cash",
   "retirement",
   "real_estate",
+  "business",
   "notes_receivable",
 ];
 
@@ -771,27 +773,41 @@ export default function BalanceSheetView({
         </div>
       )}
 
-      {/* Add dialog (controlled by AddAssetMenu) */}
-      <AddAccountDialog
-        clientId={clientId}
-        category={addCategory ?? undefined}
-        label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
-        entities={entities}
-        familyMembers={familyMembers}
-        categoryDefaults={categoryDefaults}
-        modelPortfolios={modelPortfolios}
-        ownerNames={ownerNames}
-        assetClasses={assetClasses}
-        portfolioAllocationsMap={portfolioAllocationsMap}
-        categoryDefaultSources={categoryDefaultSources}
-        milestones={milestones}
-        clientFirstName={ownerNames.clientName.split(" ")[0]}
-        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-        existingAccountNames={accounts.map((a) => a.name)}
-        resolvedInflationRate={resolvedInflationRate}
-        open={addCategory !== null}
-        onOpenChange={(o) => !o && setAddCategory(null)}
-      />
+      {/* Add dialog (controlled by AddAssetMenu).
+       *  Business gets its own dialog — distinct field set (owners[],
+       *  distribution policy, tax treatment) that doesn't fit the generic
+       *  AddAccountForm's tab structure. Every other category routes to
+       *  the shared AddAccountDialog. */}
+      {addCategory === "business" ? (
+        <AddBusinessDialog
+          clientId={clientId}
+          entities={entities}
+          familyMembers={familyMembers}
+          open={true}
+          onOpenChange={(o) => !o && setAddCategory(null)}
+        />
+      ) : (
+        <AddAccountDialog
+          clientId={clientId}
+          category={addCategory ?? undefined}
+          label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
+          entities={entities}
+          familyMembers={familyMembers}
+          categoryDefaults={categoryDefaults}
+          modelPortfolios={modelPortfolios}
+          ownerNames={ownerNames}
+          assetClasses={assetClasses}
+          portfolioAllocationsMap={portfolioAllocationsMap}
+          categoryDefaultSources={categoryDefaultSources}
+          milestones={milestones}
+          clientFirstName={ownerNames.clientName.split(" ")[0]}
+          spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+          existingAccountNames={accounts.map((a) => a.name)}
+          resolvedInflationRate={resolvedInflationRate}
+          open={addCategory !== null}
+          onOpenChange={(o) => !o && setAddCategory(null)}
+        />
+      )}
 
       {/* Edit dialogs */}
       <AddAccountDialog

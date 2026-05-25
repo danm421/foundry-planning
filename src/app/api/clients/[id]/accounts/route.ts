@@ -4,6 +4,7 @@ import { clients, scenarios, accounts, accountOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
+  assertAccountsInClient,
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
@@ -16,8 +17,31 @@ import {
   validateAccountOwnershipRules,
   synthesizeLegacyAccountOwners,
 } from "@/lib/ownership";
+import { AddBusinessInputSchema } from "@/lib/schemas/accounts-business";
 
 export const dynamic = "force-dynamic";
+
+/** Map the business-type enum to the analogous `account_sub_type` value so
+ *  accounts.sub_type stays consistent with category-specific UIs that filter
+ *  on it. `other` business types fall through to the generic `other` sub-type. */
+function mapBusinessTypeToSubType(
+  bt: "sole_prop" | "partnership" | "s_corp" | "c_corp" | "llc" | "other",
+): "sole_proprietorship" | "partnership" | "s_corp" | "c_corp" | "llc" | "other" {
+  switch (bt) {
+    case "sole_prop":
+      return "sole_proprietorship";
+    case "partnership":
+      return "partnership";
+    case "s_corp":
+      return "s_corp";
+    case "c_corp":
+      return "c_corp";
+    case "llc":
+      return "llc";
+    default:
+      return "other";
+  }
+}
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
   const [client] = await db
@@ -78,7 +102,36 @@ export async function POST(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const body = await request.json();
+    const rawBody = await request.json();
+
+    // ── Business category: validate with the dedicated schema, then normalize
+    //    its `{ familyMemberId | entityId }` owner rows into the canonical
+    //    `{ kind, ... }` shape that validateOwnersShape expects below.
+    let body = rawBody;
+    if (rawBody?.category === "business") {
+      const parsed = AddBusinessInputSchema.safeParse(rawBody);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message ?? "Invalid business input" },
+          { status: 400 },
+        );
+      }
+      const b = parsed.data;
+      body = {
+        ...rawBody,
+        ...b,
+        // Always derive sub_type from businessType — never honor a client-supplied
+        // subType for business accounts (would let callers store nonsensical
+        // sub_types like "checking" on a business row).
+        subType: mapBusinessTypeToSubType(b.businessType),
+        owners: b.owners.map((o) =>
+          o.familyMemberId !== null
+            ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }
+            : { kind: "entity", entityId: o.entityId, percent: o.percent },
+        ),
+      };
+    }
+
     const {
       name,
       category,
@@ -99,6 +152,12 @@ export async function POST(
       overridePctQdiv,
       overridePctTaxExempt,
       titlingType,
+      // Business-only fields. Undefined for every other category.
+      businessType,
+      distributionPolicyPercent,
+      flowMode,
+      businessTaxTreatment,
+      parentAccountId,
     } = body;
 
     if (!name || !category) {
@@ -112,6 +171,15 @@ export async function POST(
     const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+    // parentAccountId (business-only) must scope to the same client. The DB FK
+    // only checks existence — without this, a crafted POST could attach a
+    // business row to an account in another firm.
+    if (category === "business" && parentAccountId != null) {
+      const parentCheck = await assertAccountsInClient(id, [parentAccountId]);
+      if (!parentCheck.ok) {
+        return NextResponse.json({ error: parentCheck.reason }, { status: 400 });
+      }
     }
 
     // ── owners[] validation ────────────────────────────────────────────────
@@ -178,6 +246,17 @@ export async function POST(
           propertyTaxGrowthRate: body.propertyTaxGrowthRate ?? "0.03",
           propertyTaxGrowthSource: body.propertyTaxGrowthSource ?? "custom",
           titlingType: titlingType ?? "jtwros",
+          // Business-only columns (null for non-business categories).
+          businessType: category === "business" ? (businessType ?? null) : null,
+          distributionPolicyPercent:
+            category === "business" && distributionPolicyPercent != null
+              ? distributionPolicyPercent.toString()
+              : null,
+          // flowMode has a NOT NULL default of 'annual' at the DB layer.
+          flowMode: category === "business" ? (flowMode ?? "annual") : "annual",
+          businessTaxTreatment:
+            category === "business" ? (businessTaxTreatment ?? "qbi") : null,
+          parentAccountId: category === "business" ? (parentAccountId ?? null) : null,
         })
         .returning();
       account = inserted;

@@ -3,7 +3,11 @@ import { db } from "@/db";
 import { clients, scenarios, expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import {
+  assertAccountsInClient,
+  assertBusinessAccountsInClient,
+  assertEntitiesInClient,
+} from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +81,7 @@ export async function POST(
       growthRate,
       growthSource,
       ownerEntityId,
+      ownerAccountId,
       cashAccountId,
       inflationStartYear,
       deductionType,
@@ -88,13 +93,28 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    // Schema enforces this with a CHECK, but report a clean 400 instead of a
+    // raw DB error so the dialog can surface it.
+    if (ownerEntityId != null && ownerAccountId != null) {
+      return NextResponse.json(
+        { error: "Cannot set both ownerEntityId and ownerAccountId" },
+        { status: 400 },
+      );
+    }
+
     const entCheck = await assertEntitiesInClient(id, [ownerEntityId]);
     if (!entCheck.ok) {
       return NextResponse.json({ error: entCheck.reason }, { status: 400 });
     }
-    const acctCheck = await assertAccountsInClient(id, [cashAccountId]);
+    const acctCheck = await assertAccountsInClient(id, [cashAccountId, ownerAccountId]);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+    if (ownerAccountId != null) {
+      const bizCheck = await assertBusinessAccountsInClient(id, [ownerAccountId]);
+      if (!bizCheck.ok) {
+        return NextResponse.json({ error: bizCheck.reason }, { status: 400 });
+      }
     }
 
     const [expense] = await db
@@ -110,6 +130,7 @@ export async function POST(
         growthRate: growthRate ?? "0.03",
         growthSource: growthSource === "inflation" ? "inflation" : "custom",
         ownerEntityId: ownerEntityId ?? null,
+        ownerAccountId: ownerAccountId ?? null,
         cashAccountId: cashAccountId ?? null,
         inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
         startYearRef,

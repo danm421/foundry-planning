@@ -3,7 +3,11 @@ import { db } from "@/db";
 import { clients, incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import {
+  assertAccountsInClient,
+  assertBusinessAccountsInClient,
+  assertEntitiesInClient,
+} from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -42,17 +46,40 @@ export async function PUT(
       owner,
       claimingAge,
       ownerEntityId,
+      ownerAccountId,
       cashAccountId,
       inflationStartYear,
     } = body;
+
+    // Reject updates that would leave both ownership fields set. We only fail
+    // when both keys appear non-null in the same body — if the client is
+    // clearing one and setting the other in the same PUT, that's allowed.
+    if (
+      ownerEntityId !== undefined &&
+      ownerAccountId !== undefined &&
+      ownerEntityId != null &&
+      ownerAccountId != null
+    ) {
+      return NextResponse.json(
+        { error: "Cannot set both ownerEntityId and ownerAccountId" },
+        { status: 400 },
+      );
+    }
 
     if (ownerEntityId !== undefined) {
       const c = await assertEntitiesInClient(id, [ownerEntityId]);
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
-    if (cashAccountId !== undefined) {
-      const c = await assertAccountsInClient(id, [cashAccountId]);
+    if (cashAccountId !== undefined || ownerAccountId !== undefined) {
+      const c = await assertAccountsInClient(id, [
+        cashAccountId !== undefined ? cashAccountId : null,
+        ownerAccountId !== undefined ? ownerAccountId : null,
+      ]);
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
+    if (ownerAccountId !== undefined && ownerAccountId != null) {
+      const b = await assertBusinessAccountsInClient(id, [ownerAccountId]);
+      if (!b.ok) return NextResponse.json({ error: b.reason }, { status: 400 });
     }
 
     const [updated] = await db
@@ -68,6 +95,7 @@ export async function PUT(
         ...(owner !== undefined && { owner }),
         ...(claimingAge !== undefined && { claimingAge: claimingAge ? Number(claimingAge) : null }),
         ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
+        ...(ownerAccountId !== undefined && { ownerAccountId: ownerAccountId ?? null }),
         ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
         ...(inflationStartYear !== undefined && {
           inflationStartYear: inflationStartYear == null ? null : Number(inflationStartYear),
