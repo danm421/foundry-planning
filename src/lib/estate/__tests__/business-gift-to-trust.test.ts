@@ -8,10 +8,10 @@
  * from the parent business.
  *
  * This file exercises that inheritance in the estate-flow ownership column.
- * Without the parentAccountId walk in `buildOwnershipColumn`, the child
- * cash account would silently drop out of the trust group (it has empty
- * owners, no controllingFamilyMember, no controllingEntity), under-counting
- * the trust's holdings.
+ * Under the business-as-asset rollup model, child accounts are subsumed
+ * into the parent business's consolidated row — the trust group's subtotal
+ * still reflects the child's value, but as part of the business row rather
+ * than a standalone row.
  */
 
 import { describe, it, expect } from "vitest";
@@ -85,7 +85,7 @@ const baseData = {
 } as unknown as ClientData;
 
 describe("Phase 4 — gift-to-trust ownership cascade via parentAccountId", () => {
-  it("child accounts of a trust-owned business resolve under the trust group", () => {
+  it("trust-owned business rolls child accounts into its consolidated value", () => {
     const out = buildOwnershipColumn(baseData);
 
     const trustGroup = out.groups.find((g) => g.key === "entity:trust-1");
@@ -94,23 +94,27 @@ describe("Phase 4 — gift-to-trust ownership cascade via parentAccountId", () =
 
     const businessRow = trustGroup!.assets.find((a) => a.accountId === "biz-1");
     expect(businessRow, "business row under trust group").toBeDefined();
+    // Consolidated: $500k own + $50k child cash.
+    expect(businessRow!.value).toBe(550_000);
 
+    // Child accounts are subsumed by the parent business row — no
+    // standalone row under any group.
     const childCashRow = trustGroup!.assets.find(
       (a) => a.accountId === "biz-1-cash",
     );
-    expect(
-      childCashRow,
-      "child cash row should appear under the trust group via parentAccountId",
-    ).toBeDefined();
-    expect(childCashRow!.value).toBe(50_000);
+    expect(childCashRow).toBeUndefined();
+
+    // Trust subtotal still includes the child's value via the consolidated
+    // business row.
+    expect(trustGroup!.subtotal).toBe(550_000);
   });
 
   it("does not duplicate the child account into the client family-member group", () => {
     const out = buildOwnershipColumn(baseData);
     const clientGroup = out.groups.find((g) => g.kind === "client");
-    // The client family member has no direct accounts in this fixture.
     // If the resolver erroneously fell back to the client (the only family
-    // member), we'd see the child cash here.
+    // member) instead of rolling into the parent business, we'd see the
+    // child cash here.
     expect(
       clientGroup?.assets.find((a) => a.accountId === "biz-1-cash"),
     ).toBeUndefined();

@@ -7,6 +7,7 @@ import {
   ownedByFamilyMember,
   ownedByEntity,
 } from "@/engine/ownership";
+import { consolidatedBusinessValue } from "@/engine/business/business-tree";
 import type { EstateFlowGift } from "./estate-flow-gifts";
 import { resolveOwnerSlices } from "./account-owner-slices";
 import {
@@ -285,15 +286,40 @@ export function buildOwnershipColumn(
     return effectiveOwners(parent);
   }
 
+  // Pre-resolve year-N balances for every account into a Record so
+  // `consolidatedBusinessValue` (which expects Record<string, number>) can
+  // sum a top-level business's own value with each descendant's balance.
+  // Mirrors the convention in computeInEstateAtYear / applyBusinessSuccession.
+  const balancesRecord: Record<string, number> = {};
+  for (const a of data.accounts) {
+    balancesRecord[a.id] = resolveValue(a.id, a.value);
+  }
+
   for (const account of data.accounts) {
+    // Business child accounts roll into their parent — skip them so their
+    // value isn't counted twice (once via the parent's consolidated tree
+    // and once on its own row). Mirrors `computeInEstateAtYear`.
+    if (account.parentAccountId != null) continue;
+
     const accountId = account.id;
     const hasBeneficiaries = (account.beneficiaries ?? []).length > 0;
     const willProvision = hasWillProvision(accountId, wills);
     const hasConflict = !hasBeneficiaries && !willProvision;
 
+    // Top-level business accounts display their CONSOLIDATED value: own
+    // value plus every descendant account's balance. Non-business accounts
+    // (and any business missing children) fall through to displayValueFor's
+    // standard insurance-aware resolution.
+    const isTopLevelBusiness = account.category === "business";
+    const resolvedBaseValue = isTopLevelBusiness
+      ? consolidatedBusinessValue(account.id, data.accounts, balancesRecord)
+      : displayValueFor(account, resolveValue(accountId, account.value));
+
     // Substitute inherited owners for cascade resolution. Defers to the
     // account's own owners when present; falls back to walking parent only
     // when the account is a parented child with no direct owners.
+    // (Top-level business accounts have their own owners, so this no-ops
+    // for them.)
     const ownersForResolution = effectiveOwners(account);
     const accountForResolution: Account = ownersForResolution === account.owners
       ? account
@@ -320,7 +346,7 @@ export function buildOwnershipColumn(
       }
       const linkedLiabilities = buildLinkedLiabilities(data, accountId, "entity", soloEntityId);
       const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-      const resolvedValue = displayValueFor(account, resolveValue(accountId, account.value));
+      const resolvedValue = resolvedBaseValue;
       const netValue = resolvedValue - liabilityTotal;
       const futureGifts = futureGiftsFor(accountId);
       group.assets.push({
@@ -350,7 +376,7 @@ export function buildOwnershipColumn(
         const ownerKind = "family_member" as const;
         const linkedLiabilities = buildLinkedLiabilities(data, accountId, ownerKind, soloFmId);
         const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-        const resolvedValue = displayValueFor(account, resolveValue(accountId, account.value));
+        const resolvedValue = resolvedBaseValue;
         const netValue = resolvedValue - liabilityTotal;
         const futureGifts = futureGiftsFor(accountId);
         targetGroup.assets.push({
@@ -381,10 +407,7 @@ export function buildOwnershipColumn(
     // the as-of-today view (no projected year state) this reduces to the
     // authored percent × value. Mirrors the gross-estate and balance-sheet
     // reports — see resolveOwnerSlices.
-    const accountValueForSlicing = displayValueFor(
-      account,
-      resolveValue(accountId, account.value),
-    );
+    const accountValueForSlicing = resolvedBaseValue;
     const slices = resolveOwnerSlices(
       accountId,
       ownersForResolution,
