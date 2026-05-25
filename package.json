@@ -31,6 +31,7 @@
     "@vercel/blob": "^2.3.3",
     "@vercel/config": "^0.2.1",
     "chart.js": "^4.5.1",
+    "chartjs-plugin-annotation": "^3.1.0",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "fuzzball": "^2.2.6",

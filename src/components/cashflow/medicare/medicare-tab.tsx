@@ -1,5 +1,6 @@
 "use client";
 import type { ProjectionYear } from "@/engine";
+import { MedicareMagiTierChart } from "./medicare-magi-tier-chart";
 
 interface Props {
   years: ProjectionYear[];
@@ -8,13 +9,11 @@ interface Props {
   spouseLifeExpectancy?: number | null;
 }
 
-export function MedicareTab({ years }: Props) {
+export function MedicareTab({ years, yearRange }: Props) {
   return (
-    <div className="text-sm text-ink-2">
-      Medicare & IRMAA report — populated in tasks 13–15.
-      <div className="text-[11px] text-ink-3 mt-2">
-        {years.length} projection years loaded.
-      </div>
+    <div className="flex flex-col gap-4">
+      <MedicareMagiTierChart years={years} yearRange={yearRange} />
+      <div className="text-sm text-ink-3">Year-by-year table populated in task 14.</div>
     </div>
   );
 }
