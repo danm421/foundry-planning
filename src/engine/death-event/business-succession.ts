@@ -6,6 +6,7 @@ import {
   deceasedBusinessAccountShare,
   type ExternalBeneficiarySummary,
   firesAtDeath,
+  selectResiduaryTier,
 } from "./shared";
 
 /** Account-owner succession: the deceased's rows for one business account move
@@ -90,11 +91,19 @@ function resolveBusinessRecipient(input: {
     }
   }
 
-  // 2. Will residuary clause. Primary tier only — contingent-tier residuary
-  //    for final death is a deferred refinement (see future-work).
+  // 2. Will residuary clause. At first death the primary tier governs; at
+  //    married-household final death the contingent tier does (mirrors the
+  //    selectResiduaryTier rule used by the non-business will chain). A spouse
+  //    recipient with no surviving spouse is a lapsed bequest and drops out —
+  //    if the whole governing tier lapses, fall through to the fallback below.
   if (deceasedWill && (deceasedWill.residuaryRecipients?.length ?? 0) > 0) {
-    const recs = deceasedWill.residuaryRecipients!.filter(
-      (r) => (r.tier ?? "primary") === "primary");
+    const householdWasMarried =
+      familyMembers.some((f) => f.role === "client") &&
+      familyMembers.some((f) => f.role === "spouse");
+    const tier = selectResiduaryTier(deathOrder, householdWasMarried);
+    const recs = deceasedWill.residuaryRecipients!
+      .filter((r) => (r.tier ?? "primary") === tier)
+      .filter((r) => !(r.recipientKind === "spouse" && survivorFmId == null));
     if (recs.length > 0) {
       const totalPct = recs.reduce((s, r) => s + r.percentage, 0) || 100;
       return recs.map((r) =>

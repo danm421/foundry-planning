@@ -149,6 +149,55 @@ describe("applyBusinessSuccession", () => {
     expect(r.ownerUpdates[0].successors).toHaveLength(0);
   });
 
+  it("married final death uses the residuary contingent tier (not primary)", () => {
+    // Susan-dies-second scenario: Susan's will has primary=spouse, contingent=child.
+    // Without the contingent-tier fix the engine incorrectly used primary (spouse,
+    // who is dead), recorded the transfer with recipientId=null, and the display
+    // layer fell back to role==spouse → labeling the recipient as Susan herself.
+    const biz = llcAccount([{ familyMemberId: "fmSpouse", percent: 1 }]);
+    const will: Will = {
+      id: "w-susan", grantor: "spouse", bequests: [],
+      residuaryRecipients: [
+        { recipientKind: "spouse", recipientId: null, tier: "primary", percentage: 100, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: "fmChild", tier: "contingent", percentage: 100, sortOrder: 1 },
+      ],
+    } as Will;
+    const r = applyBusinessSuccession({
+      deceased: "spouse", deceasedFmId: "fmSpouse", survivorFmId: null,
+      deathOrder: 2, accounts: [biz], accountBalances: balances,
+      will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2045,
+    });
+    expect(r.transfers).toHaveLength(1);
+    expect(r.transfers[0].recipientKind).toBe("family_member");
+    expect(r.transfers[0].recipientId).toBe("fmChild");
+    expect(r.transfers[0].via).toBe("will_residuary");
+    expect(r.ownerUpdates[0].successors).toEqual([{ familyMemberId: "fmChild", percent: 1 }]);
+  });
+
+  it("married final death with only a primary-spouse residuary → lapses, falls through to children", () => {
+    // Same scenario but the contingent tier was never filled in. The primary
+    // tier's lone spouse recipient lapses (no survivor), so the residuary as a
+    // whole is empty for this death and we fall through to the children fallback.
+    const biz = llcAccount([{ familyMemberId: "fmSpouse", percent: 1 }]);
+    const will: Will = {
+      id: "w-susan", grantor: "spouse", bequests: [],
+      residuaryRecipients: [
+        { recipientKind: "spouse", recipientId: null, tier: "primary", percentage: 100, sortOrder: 0 },
+      ],
+    } as Will;
+    const r = applyBusinessSuccession({
+      deceased: "spouse", deceasedFmId: "fmSpouse", survivorFmId: null,
+      deathOrder: 2, accounts: [biz], accountBalances: balances,
+      will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2045,
+    });
+    expect(r.transfers).toHaveLength(1);
+    expect(r.transfers[0].via).toBe("fallback_children");
+    expect(r.transfers[0].recipientId).toBe("fmChild");
+    expect(
+      r.transfers.some((t) => t.recipientKind === "spouse" && t.recipientId == null),
+    ).toBe(false);
+  });
+
   it("condition-gated bequest: if_spouse_predeceased at first death (spouse alive) → ignored, routes to spouse fallback", () => {
     const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const will: Will = {
