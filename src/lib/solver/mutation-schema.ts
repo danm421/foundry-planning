@@ -57,20 +57,20 @@ const ASSET_TRANSACTION_VALUE = z
     year: YEAR,
     accountId: z.string().min(1).optional(),
     purchaseTransactionId: z.string().min(1).nullable().optional(),
-    entityId: z.string().min(1).optional(),
+    businessAccountId: z.string().min(1).optional(),
   })
   .passthrough()
   .refine(
     (t) => {
       if (t.type !== "sell") return true;
-      const sources = [t.accountId, t.purchaseTransactionId, t.entityId].filter(
+      const sources = [t.accountId, t.purchaseTransactionId, t.businessAccountId].filter(
         (v) => v != null && v !== "",
       );
       return sources.length <= 1;
     },
     {
       message:
-        "Sell transactions may set at most one of accountId / purchaseTransactionId / entityId",
+        "Sell transactions may set at most one of accountId / purchaseTransactionId / businessAccountId",
     },
   );
 

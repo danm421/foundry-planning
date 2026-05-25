@@ -943,10 +943,10 @@ export interface AssetTransaction {
   year: number;
   // Sale fields
   accountId?: string;
-  /** Sell-only. References an existing business entity. Mutually exclusive
-   *  with accountId and purchaseTransactionId. Trusts may not be referenced —
-   *  validated at the API + engine layers. */
-  entityId?: string;
+  /** Sell-only. References an existing business account (accounts.category =
+   *  'business'). Mutually exclusive with accountId and purchaseTransactionId.
+   *  Validated at the API + engine layers. */
+  businessAccountId?: string;
   overrideSaleValue?: number;
   overrideBasis?: number;
   transactionCostPct?: number;
