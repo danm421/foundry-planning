@@ -66,6 +66,24 @@ describe("view-adapters", () => {
       expect(view.growthSource).toBeNull();
       expect(view.piaMonthly).toBeNull();
       expect(view.claimingAge).toBeNull();
+      expect(view.ownerAccountId).toBeNull();
+    });
+
+    it("preserves ownerAccountId for business-as-asset incomes", () => {
+      const income: EngineIncome = {
+        id: "i3",
+        type: "business",
+        name: "Acme draw",
+        annualAmount: 80_000,
+        startYear: 2025,
+        endYear: 2040,
+        growthRate: 0.02,
+        owner: "client",
+        ownerAccountId: "acct-acme",
+      };
+      const view = incomeEngineToView(income);
+      expect(view.ownerAccountId).toBe("acct-acme");
+      expect(view.ownerEntityId).toBeNull();
     });
   });
 
@@ -91,6 +109,23 @@ describe("view-adapters", () => {
       expect(view.endYearRef).toBe("plan_end");
       expect(view.growthSource).toBe("inflation");
       expect(view.deductionType).toBe("property_tax");
+      expect(view.ownerAccountId).toBeNull();
+    });
+
+    it("preserves ownerAccountId for business-as-asset expenses", () => {
+      const expense: EngineExpense = {
+        id: "e2",
+        type: "other",
+        name: "Acme rent",
+        annualAmount: 24_000,
+        startYear: 2025,
+        endYear: 2055,
+        growthRate: 0.02,
+        ownerAccountId: "acct-acme",
+      };
+      const view = expenseEngineToView(expense);
+      expect(view.ownerAccountId).toBe("acct-acme");
+      expect(view.ownerEntityId).toBeNull();
     });
   });
 

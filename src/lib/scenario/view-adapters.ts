@@ -43,6 +43,9 @@ export interface IncomeView {
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;
+  /** Business-account owner (business-as-asset model). Forms read this back
+   *  on edit — without it, saving silently nulls the previous value. */
+  ownerAccountId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   startYearRef?: string | null;
@@ -66,6 +69,7 @@ export function incomeEngineToView(income: EngineIncome): IncomeView {
     growthRate: String(income.growthRate),
     growthSource: income.growthSource ?? null,
     ownerEntityId: income.ownerEntityId ?? null,
+    ownerAccountId: income.ownerAccountId ?? null,
     cashAccountId: income.cashAccountId ?? null,
     inflationStartYear: income.inflationStartYear ?? null,
     startYearRef: income.startYearRef ?? null,
@@ -88,6 +92,9 @@ export interface ExpenseView {
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;
+  /** Business-account owner (business-as-asset model). Forms read this back
+   *  on edit — without it, saving silently nulls the previous value. */
+  ownerAccountId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   startYearRef?: string | null;
@@ -107,6 +114,7 @@ export function expenseEngineToView(expense: EngineExpense): ExpenseView {
     growthRate: String(expense.growthRate),
     growthSource: expense.growthSource ?? null,
     ownerEntityId: expense.ownerEntityId ?? null,
+    ownerAccountId: expense.ownerAccountId ?? null,
     cashAccountId: expense.cashAccountId ?? null,
     inflationStartYear: expense.inflationStartYear ?? null,
     startYearRef: expense.startYearRef ?? null,
