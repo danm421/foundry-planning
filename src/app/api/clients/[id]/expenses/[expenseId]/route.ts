@@ -40,16 +40,32 @@ export async function PUT(
       growthRate,
       growthSource,
       ownerEntityId,
+      ownerAccountId,
       cashAccountId,
       inflationStartYear,
     } = body;
+
+    if (
+      ownerEntityId !== undefined &&
+      ownerAccountId !== undefined &&
+      ownerEntityId != null &&
+      ownerAccountId != null
+    ) {
+      return NextResponse.json(
+        { error: "Cannot set both ownerEntityId and ownerAccountId" },
+        { status: 400 },
+      );
+    }
 
     if (ownerEntityId !== undefined) {
       const c = await assertEntitiesInClient(id, [ownerEntityId]);
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
-    if (cashAccountId !== undefined) {
-      const c = await assertAccountsInClient(id, [cashAccountId]);
+    if (cashAccountId !== undefined || ownerAccountId !== undefined) {
+      const c = await assertAccountsInClient(id, [
+        cashAccountId !== undefined ? cashAccountId : null,
+        ownerAccountId !== undefined ? ownerAccountId : null,
+      ]);
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
 
@@ -64,6 +80,7 @@ export async function PUT(
         ...(growthRate !== undefined && { growthRate }),
         ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
         ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
+        ...(ownerAccountId !== undefined && { ownerAccountId: ownerAccountId ?? null }),
         ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
         ...(inflationStartYear !== undefined && {
           inflationStartYear: inflationStartYear == null ? null : Number(inflationStartYear),

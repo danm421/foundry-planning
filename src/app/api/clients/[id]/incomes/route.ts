@@ -79,6 +79,7 @@ export async function POST(
       owner,
       claimingAge,
       ownerEntityId,
+      ownerAccountId,
       cashAccountId,
       inflationStartYear,
     } = body;
@@ -94,11 +95,20 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    // Schema enforces this with a CHECK, but report a clean 400 instead of a
+    // raw DB error so the dialog can surface it.
+    if (ownerEntityId != null && ownerAccountId != null) {
+      return NextResponse.json(
+        { error: "Cannot set both ownerEntityId and ownerAccountId" },
+        { status: 400 },
+      );
+    }
+
     const entCheck = await assertEntitiesInClient(id, [ownerEntityId]);
     if (!entCheck.ok) {
       return NextResponse.json({ error: entCheck.reason }, { status: 400 });
     }
-    const acctCheck = await assertAccountsInClient(id, [cashAccountId]);
+    const acctCheck = await assertAccountsInClient(id, [cashAccountId, ownerAccountId]);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
@@ -118,6 +128,7 @@ export async function POST(
         owner: owner ?? "client",
         claimingAge: claimingAge ? Number(claimingAge) : null,
         ownerEntityId: ownerEntityId ?? null,
+        ownerAccountId: ownerAccountId ?? null,
         cashAccountId: cashAccountId ?? null,
         inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
         startYearRef,
