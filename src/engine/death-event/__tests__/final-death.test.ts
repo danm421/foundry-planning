@@ -405,15 +405,70 @@ describe("applyFinalDeath — business-interest succession integration", () => {
     });
     const result = applyFinalDeath(input);
 
-    // The business-succession transfer routes to kid-a via fallback_children
-    // (no surviving spouse at final death). The chain may also route the
-    // account through normal account succession — we check the business one.
-    const bizSuccessionTransfer = result.transfers.find(
-      (t) => t.sourceAccountId === "biz-1" && t.via === "fallback_children",
+    // Exactly ONE transfer for the business — the consolidated one emitted
+    // by applyBusinessSuccession (via fallback_children: no surviving spouse
+    // at final death). The precedence chain skips top-level business
+    // accounts so there is no parallel routing transfer.
+    const bizTransfers = result.transfers.filter(
+      (t) => t.sourceAccountId === "biz-1",
     );
-    expect(bizSuccessionTransfer).toBeDefined();
-    expect(bizSuccessionTransfer!.recipientKind).toBe("family_member");
-    expect(bizSuccessionTransfer!.recipientId).toBe("kid-a");
-    expect(bizSuccessionTransfer!.amount).toBeCloseTo(10_000, 0);
+    expect(bizTransfers).toHaveLength(1);
+    const bizSuccessionTransfer = bizTransfers[0];
+    expect(bizSuccessionTransfer.via).toBe("fallback_children");
+    expect(bizSuccessionTransfer.recipientKind).toBe("family_member");
+    expect(bizSuccessionTransfer.recipientId).toBe("kid-a");
+    expect(bizSuccessionTransfer.amount).toBeCloseTo(10_000, 0);
+  });
+
+  it("emits a single consolidated transfer (not flat + chain) when the business has a child account", () => {
+    // Mirror of the first-death case: top-level business with a real-estate
+    // child. Pre-fix the chain emitted a separate flat transfer for the
+    // business AND business-succession emitted a consolidated one — double-
+    // count. Post-fix the chain skips top-level business accounts.
+    const testBus: Account = {
+      id: "test-bus",
+      name: "Test Bus",
+      category: "business",
+      subType: "llc",
+      value: 1_000_000,
+      basis: 400_000,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const rental: Account = {
+      id: "rental",
+      name: "Rental",
+      category: "real_estate",
+      subType: "rental",
+      value: 50_000,
+      basis: 50_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "sole",
+      parentAccountId: "test-bus",
+      owners: [{ kind: "entity", entityId: "test-bus-entity", percent: 1 }],
+    };
+    const input = mkInput({
+      familyMembers: [kidA],
+      accounts: [testBus, rental],
+      accountBalances: { "test-bus": 1_000_000, "rental": 50_000 },
+    });
+    const result = applyFinalDeath(input);
+
+    const bizTransfers = result.transfers.filter(
+      (t) => t.sourceAccountId === "test-bus" && t.amount > 0,
+    );
+    expect(bizTransfers).toHaveLength(1);
+    expect(bizTransfers[0].via).toBe("fallback_children");
+    expect(bizTransfers[0].amount).toBeCloseTo(1_050_000, 0);
+
+    const rentalTransfers = result.transfers.filter(
+      (t) => t.sourceAccountId === "rental" && t.amount > 0,
+    );
+    expect(rentalTransfers).toHaveLength(0);
   });
 });

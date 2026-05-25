@@ -234,19 +234,76 @@ describe("applyFirstDeath — business-interest succession integration", () => {
     });
     const result = applyFirstDeath(input);
 
-    // Transfer: business interest passes to surviving spouse via fallback.
-    // (The chain may also produce a parallel routing transfer for the account
-    // itself; we just check the business-succession one is present.)
-    const bizSuccessionTransfer = result.transfers.find(
-      (t) => t.sourceAccountId === "biz-1" && t.via === "fallback_spouse",
+    // Exactly ONE transfer for the business account — the consolidated one
+    // emitted by applyBusinessSuccession. The precedence chain skips
+    // top-level business accounts (business-succession is canonical) so it
+    // does NOT produce a parallel routing transfer.
+    const bizTransfers = result.transfers.filter(
+      (t) => t.sourceAccountId === "biz-1",
     );
-    expect(bizSuccessionTransfer).toBeDefined();
-    expect(bizSuccessionTransfer!.recipientKind).toBe("spouse");
-    expect(bizSuccessionTransfer!.amount).toBeCloseTo(10_000, 0);
+    expect(bizTransfers).toHaveLength(1);
+    const bizSuccessionTransfer = bizTransfers[0];
+    expect(bizSuccessionTransfer.via).toBe("fallback_spouse");
+    expect(bizSuccessionTransfer.recipientKind).toBe("spouse");
+    expect(bizSuccessionTransfer.amount).toBeCloseTo(10_000, 0);
 
     // Marital deduction covers the $10k business value — no estate tax.
     expect(result.estateTax.maritalDeduction).toBeGreaterThanOrEqual(10_000 - 1);
     expect(result.estateTax.federalEstateTax).toBeCloseTo(0, 0);
+  });
+
+  it("emits a single consolidated transfer (not flat + chain) when the business has a child account", () => {
+    // Reproduces the Cooper Sample bug: top-level business (Test Bus, $1M
+    // own value) with a real-estate child (Rental, $50k). Pre-fix the
+    // chain emitted a separate $50k flat transfer AND business-succession
+    // emitted a $1.05M consolidated transfer — double-count. Post-fix the
+    // chain skips top-level business accounts; only the $1.05M consolidated
+    // transfer remains.
+    const testBus: Account = {
+      id: "test-bus",
+      name: "Test Bus",
+      category: "business",
+      subType: "llc",
+      value: 1_000_000,
+      basis: 400_000,
+      businessType: "llc",
+      parentAccountId: null,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const rental: Account = {
+      id: "rental",
+      name: "Rental",
+      category: "real_estate",
+      subType: "rental",
+      value: 50_000,
+      basis: 50_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "sole",
+      parentAccountId: "test-bus",
+      owners: [{ kind: "entity", entityId: "test-bus-entity", percent: 1 }],
+    };
+    const input = mkInput({
+      accounts: [testBus, rental],
+      accountBalances: { "test-bus": 1_000_000, "rental": 50_000 },
+    });
+    const result = applyFirstDeath(input);
+
+    const bizTransfers = result.transfers.filter(
+      (t) => t.sourceAccountId === "test-bus" && t.amount > 0,
+    );
+    expect(bizTransfers).toHaveLength(1);
+    expect(bizTransfers[0].via).toBe("fallback_spouse");
+    expect(bizTransfers[0].amount).toBeCloseTo(1_050_000, 0);
+
+    // No standalone transfer for the parented child either.
+    const rentalTransfers = result.transfers.filter(
+      (t) => t.sourceAccountId === "rental" && t.amount > 0,
+    );
+    expect(rentalTransfers).toHaveLength(0);
   });
 });
 
