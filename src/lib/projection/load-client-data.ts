@@ -66,6 +66,7 @@ import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies
 import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
+import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constants";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
 import {
   resolveAccountFromRaw,
@@ -205,6 +206,7 @@ export const loadClientDataWithContext = cache(
         .select()
         .from(giftSeries)
         .where(and(eq(giftSeries.clientId, id), eq(giftSeries.scenarioId, scenario.id))),
+      // medicare_coverage is client-scoped (shared across scenarios), not scenario-scoped.
       db.select().from(medicareCoverage).where(eq(medicareCoverage.clientId, id)),
     ]);
 
@@ -1302,7 +1304,7 @@ export const loadClientDataWithContext = cache(
       medicareCoverage: medicareCoverageRows.map(rowToMedicareCoverage),
       medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null
         ? parseFloat(settings.medicarePremiumInflationRate)
-        : 0.05,
+        : DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE,
     };
 
     return { clientData, resolutionContext: resolutionCtx };

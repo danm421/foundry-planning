@@ -10,3 +10,7 @@ export const DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR = 46;  // dollars/mo, nati
 
 /** Year the defaults above are expressed in — used to inflate forward. */
 export const DEFAULT_MEDICARE_BASE_YEAR = 2025;
+
+/** Annual rate at which Medicare premiums inflate forward from their base year.
+ *  Historical average; deliberately conservative-high relative to general CPI. */
+export const DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE = 0.05;

@@ -436,7 +436,8 @@ export interface ClientData {
   notesReceivable?: NoteReceivable[];
   /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */
   medicareCoverage?: MedicareCoverage[];
-  /** Annual rate at which Medicare premiums inflate forward from their base year. Defaults to 0.05. */
+  /** Annual rate at which Medicare premiums inflate forward from their base year.
+   *  null = use DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE (5% per year). */
   medicarePremiumInflationRate?: number;
 }
 
