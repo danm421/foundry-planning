@@ -106,6 +106,29 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/* Brand utilities (canonical kit v2.1 — partial port)                 */
+/* Add classes here only as consuming surfaces need them.              */
+/* ------------------------------------------------------------------ */
+
+/* Amber period at the tail of a display headline.                     */
+/* Max one per visible section.                                        */
+.dot {
+  color: var(--color-accent);
+}
+
+/* Soft fade-and-rise on mount, used on auth + landing surfaces.       */
+@keyframes softRise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise-in {
+  animation: softRise 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise-in { animation: none !important; }
+}
+
+/* ------------------------------------------------------------------ */
 /* Thin scrollbar — matches the dark surface hairlines                 */
 /* ------------------------------------------------------------------ */
 
@@ -161,21 +184,6 @@ body {
 .scenario-editable {
   border-left-width: 2px;
   border-left-color: #7a5b29;
-}
-
-/* Clerk sign-in / sign-up logo size — emotion's generated rules use      */
-/* single-class specificity, so the .cl-rootBox prefix (2 classes) wins.  */
-.cl-rootBox .cl-logoBox {
-  height: 18rem !important;
-  max-height: 18rem !important;
-}
-.cl-rootBox .cl-logoBox img,
-.cl-rootBox .cl-logoBox a {
-  height: 18rem !important;
-  max-height: 18rem !important;
-  width: auto !important;
-  max-width: none !important;
-  display: block !important;
 }
 
 /* High-contrast white outline on OTP / verification-code boxes. */

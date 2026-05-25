@@ -3,17 +3,61 @@ import { dark } from "@clerk/themes";
 
 export default function SignInPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <SignIn
-        forceRedirectUrl="/clients"
-        appearance={{
-          baseTheme: dark,
-          variables: { colorPrimaryForeground: "#000000" },
-          elements: {
-            formButtonPrimary: "text-black",
-          },
-        }}
-      />
-    </div>
+    <section className="rise-in relative rounded-2xl border border-[var(--color-hair)] bg-[var(--color-card)]/40 p-7 sm:p-9">
+      <div className="mb-5 flex items-center gap-3">
+        <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-[var(--color-ink-3)]">
+          Welcome back
+        </span>
+        <span className="h-px w-12 bg-[var(--color-hair-2)]" />
+      </div>
+
+      <h1 className="text-balance text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-4xl">
+        Sign in to Foundry<span className="dot">.</span>
+      </h1>
+      <p className="mt-2 text-sm text-[var(--color-ink-3)]">
+        Cash-flow planning, calibrated for advisors
+      </p>
+
+      <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
+        <SignIn
+          forceRedirectUrl="/clients"
+          appearance={{
+            baseTheme: dark,
+            variables: {
+              colorPrimary: "#f59e0b",
+              colorPrimaryForeground: "#1a1205",
+              colorBackground: "transparent",
+              colorForeground: "#f4f5f7",
+              colorMutedForeground: "#b6bac3",
+              colorInput: "#15171f",
+              colorInputForeground: "#f4f5f7",
+              colorNeutral: "#f4f5f7",
+              borderRadius: "6px",
+              fontFamily: "var(--font-inter)",
+            },
+            elements: {
+              header: "!hidden",
+              logoBox: "!hidden",
+              formButtonPrimary:
+                "bg-[var(--color-accent)] hover:bg-[var(--color-accent-ink)] text-[var(--color-accent-on)] font-semibold transition-colors",
+              socialButtonsBlockButton:
+                "border-[var(--color-hair-2)] hover:border-[var(--color-accent)] transition-colors",
+              formFieldInput:
+                "border-[var(--color-hair-2)] bg-[var(--color-card)] focus-within:border-[var(--color-accent)]",
+              dividerLine: "bg-[var(--color-hair)]",
+              dividerText:
+                "text-[var(--color-ink-3)] font-mono uppercase tracking-[0.12em] text-[0.65rem]",
+              footerAction: "text-[var(--color-ink-3)]",
+              footerActionLink:
+                "text-[var(--color-accent)] hover:text-[var(--color-accent-ink)] font-semibold",
+              formFieldLabel: "text-[var(--color-ink-2)]",
+              identityPreviewText: "text-[var(--color-ink-2)]",
+              identityPreviewEditButton:
+                "text-[var(--color-accent)] hover:text-[var(--color-accent-ink)]",
+            },
+          }}
+        />
+      </div>
+    </section>
   );
 }
