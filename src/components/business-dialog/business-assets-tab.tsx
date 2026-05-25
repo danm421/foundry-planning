@@ -96,7 +96,7 @@ export default function BusinessAssetsTab({
 
       <div>
         <label className={fieldLabelClassName}>Accounts</label>
-        {ownedAccounts.length === 0 ? (
+        {ownedAccounts.length === 0 && !isEmpty ? (
           <p className="text-[12px] text-ink-4 py-2">No accounts owned by this business.</p>
         ) : (
           <ul className="space-y-1.5">
@@ -107,7 +107,7 @@ export default function BusinessAssetsTab({
               >
                 <span className="flex-1 min-w-0 text-[13px] text-ink truncate">{a.name}</span>
                 <span className="text-[11px] uppercase tracking-wider text-ink-4">{a.category}</span>
-                <span className="text-[12px] tabular text-ink-2"><MoneyText value={toNum(a.value)} /></span>
+                <span className="text-[12px] tabular-nums text-ink-2"><MoneyText value={toNum(a.value)} /></span>
                 <button
                   type="button"
                   onClick={() => setRemoving({ kind: "account", id: a.id, name: a.name })}
@@ -124,7 +124,7 @@ export default function BusinessAssetsTab({
 
       <div>
         <label className={fieldLabelClassName}>Liabilities</label>
-        {ownedLiabilities.length === 0 ? (
+        {ownedLiabilities.length === 0 && !isEmpty ? (
           <p className="text-[12px] text-ink-4 py-2">No liabilities owned by this business.</p>
         ) : (
           <ul className="space-y-1.5">
@@ -134,7 +134,7 @@ export default function BusinessAssetsTab({
                 className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2"
               >
                 <span className="flex-1 min-w-0 text-[13px] text-ink truncate">{l.name}</span>
-                <span className="text-[12px] tabular text-crit">
+                <span className="text-[12px] tabular-nums text-crit">
                   (<MoneyText value={toNum(l.balance)} />)
                 </span>
                 <button
