@@ -110,7 +110,7 @@ describe("computeMedicareYear", () => {
     expect(result.medigapPremium).toBeCloseTo(250 * 12 * 1.05, 2);
   });
 
-  it("inflates standardPartBPremium when year > seeded year", () => {
+  it("passes through caller-supplied standardPartBPremium unchanged", () => {
     const result = computeMedicareYear(baseInput({ year: 2030, standardPartBPremium: 3000 }));
     expect(result.partBStandardPremium).toBe(3000);
   });

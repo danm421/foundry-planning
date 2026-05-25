@@ -39,6 +39,8 @@ export interface MedicareYearInput {
   defaultPartDPlanMonthly: number;
 }
 
+// Engine purity rule prevents importing from src/lib — this mirrors
+// DEFAULT_MEDICARE_ENROLLMENT_AGE in src/lib/medicare/constants.ts.
 const DEFAULT_ENROLLMENT_AGE = 65;
 
 function inflatePremium(
@@ -102,7 +104,7 @@ export function computeMedicareYear(input: MedicareYearInput): MedicareYearDetai
       sourceMagi,
       irmaaTier: 0,
       irmaaFilingStatus: filingStatus,
-      headroomToNextTier: 0,
+      headroomToNextTier: Infinity,
       isColdStart,
     };
   }
