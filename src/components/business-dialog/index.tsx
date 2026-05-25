@@ -6,6 +6,7 @@ import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
 import BusinessDetailsForm from "./details-form";
 import BusinessNotesTab from "./notes-tab";
+import BusinessAssetsTab, { type ChildAccount, type ChildLiability } from "./business-assets-tab";
 import type {
   BusinessAccount,
   BusinessDialogMode,
@@ -28,6 +29,9 @@ export interface BusinessDialogProps {
   onRequestDelete?: () => void;
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   entities?: { id: string; name: string }[];
+  accounts?: ChildAccount[];
+  liabilities?: ChildLiability[];
+  onDataChanged?: () => void;
 }
 
 const TABS: { id: BusinessTab; label: string }[] = [
@@ -48,6 +52,9 @@ export default function BusinessDialog({
   onRequestDelete,
   familyMembers,
   entities,
+  accounts,
+  liabilities,
+  onDataChanged,
 }: BusinessDialogProps) {
   const [tab, setTab] = useState<BusinessTab>("details");
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
@@ -151,6 +158,22 @@ export default function BusinessDialog({
       {!currentBusiness && tab === "notes" && (
         <p className="text-[13px] text-ink-3 text-center py-6">
           Notes are available after the business is saved.
+        </p>
+      )}
+      {currentBusiness && (
+        <BusinessAssetsTab
+          clientId={clientId}
+          businessId={currentBusiness.id}
+          businessName={currentBusiness.name}
+          accounts={accounts ?? []}
+          liabilities={liabilities ?? []}
+          hidden={tab !== "assets"}
+          onChanged={() => onDataChanged?.()}
+        />
+      )}
+      {!currentBusiness && tab === "assets" && (
+        <p className="text-[13px] text-ink-3 text-center py-6">
+          Assets are available after the business is saved.
         </p>
       )}
     </DialogShell>

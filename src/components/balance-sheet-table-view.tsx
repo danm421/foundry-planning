@@ -1332,6 +1332,9 @@ export default function BalanceSheetTableView({
         onOpenChange={(o) => !o && setEditingBusiness(null)}
         familyMembers={familyMembers}
         entities={entities}
+        accounts={accounts}
+        liabilities={liabilities}
+        onDataChanged={() => router.refresh()}
         onSaved={() => {/* router.refresh handled inside the form */}}
         onRequestDelete={
           editingBusiness

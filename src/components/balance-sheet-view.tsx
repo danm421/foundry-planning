@@ -921,6 +921,9 @@ export default function BalanceSheetView({
         }}
         familyMembers={familyMembers}
         entities={entities}
+        accounts={accounts}
+        liabilities={liabilities}
+        onDataChanged={() => router.refresh()}
         onSaved={() => {/* router.refresh handled inside the form */}}
         onRequestDelete={
           editingBusiness
