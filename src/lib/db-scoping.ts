@@ -40,6 +40,29 @@ export async function assertAccountsInClient(
     : { ok: true };
 }
 
+/**
+ * Verify every account id belongs to `clientId` AND has category = 'business'.
+ * Used by income/expense routes to enforce that `ownerAccountId` references a
+ * business account — the schema FK is only "any account", so without this a
+ * non-UI client could attach to a cash/retirement/etc. account.
+ */
+export async function assertBusinessAccountsInClient(
+  clientId: string,
+  accountIds: (string | null | undefined)[]
+): Promise<FkCheck> {
+  const ids = accountIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length === 0) return { ok: true };
+  const rows = await db
+    .select({ id: accounts.id, category: accounts.category })
+    .from(accounts)
+    .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, ids)));
+  const business = new Set(rows.filter((r) => r.category === "business").map((r) => r.id));
+  const missing = ids.find((v) => !business.has(v));
+  return missing
+    ? { ok: false, reason: `Account ${missing} is not a business account` }
+    : { ok: true };
+}
+
 /** Verify every entity id belongs to `clientId`. */
 export async function assertEntitiesInClient(
   clientId: string,

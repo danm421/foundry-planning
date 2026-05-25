@@ -3,7 +3,11 @@ import { db } from "@/db";
 import { clients, incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import {
+  assertAccountsInClient,
+  assertBusinessAccountsInClient,
+  assertEntitiesInClient,
+} from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +76,10 @@ export async function PUT(
         ownerAccountId !== undefined ? ownerAccountId : null,
       ]);
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
+    if (ownerAccountId !== undefined && ownerAccountId != null) {
+      const b = await assertBusinessAccountsInClient(id, [ownerAccountId]);
+      if (!b.ok) return NextResponse.json({ error: b.reason }, { status: 400 });
     }
 
     const [updated] = await db

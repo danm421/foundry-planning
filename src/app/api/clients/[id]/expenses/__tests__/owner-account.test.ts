@@ -11,6 +11,7 @@ vi.mock("@/lib/db-helpers", () => ({
 vi.mock("@/lib/db-scoping", () => ({
   assertEntitiesInClient: vi.fn().mockResolvedValue({ ok: true }),
   assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
+  assertBusinessAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("@/lib/audit", async () => {
@@ -50,7 +51,7 @@ vi.mock("@/db", () => {
 });
 
 import { POST } from "../route";
-import { assertAccountsInClient } from "@/lib/db-scoping";
+import { assertAccountsInClient, assertBusinessAccountsInClient } from "@/lib/db-scoping";
 
 const ACC_BIZ = "11111111-1111-4111-8111-111111111111";
 const ACC_OTHER = "22222222-2222-4222-8222-222222222222";
@@ -67,6 +68,7 @@ beforeEach(() => {
   insertedValues.length = 0;
   dbState.selectCallCount = 0;
   vi.mocked(assertAccountsInClient).mockResolvedValue({ ok: true });
+  vi.mocked(assertBusinessAccountsInClient).mockResolvedValue({ ok: true });
 });
 
 describe("POST /api/clients/[id]/expenses — ownerAccountId", () => {
@@ -133,6 +135,32 @@ describe("POST /api/clients/[id]/expenses — ownerAccountId", () => {
 
     expect(res.status).toBe(400);
     expect(vi.mocked(assertAccountsInClient)).toHaveBeenCalledWith("cli_test", [undefined, ACC_OTHER]);
+    expect(insertedValues.length).toBe(0);
+  });
+
+  it("returns 400 when ownerAccountId points at a non-business account", async () => {
+    vi.mocked(assertBusinessAccountsInClient).mockResolvedValueOnce({
+      ok: false,
+      reason: `Account ${ACC_OTHER} is not a business account`,
+    });
+
+    const res = await POST(
+      buildReq({
+        type: "other",
+        name: "Wrong category",
+        annualAmount: "1000",
+        startYear: "2026",
+        endYear: "2030",
+        growthRate: "0.03",
+        ownerAccountId: ACC_OTHER,
+      }) as never,
+      { params: Promise.resolve({ id: "cli_test" }) },
+    );
+
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toMatch(/not a business account/i);
+    expect(vi.mocked(assertBusinessAccountsInClient)).toHaveBeenCalledWith("cli_test", [ACC_OTHER]);
     expect(insertedValues.length).toBe(0);
   });
 

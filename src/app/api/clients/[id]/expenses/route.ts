@@ -3,7 +3,11 @@ import { db } from "@/db";
 import { clients, scenarios, expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import {
+  assertAccountsInClient,
+  assertBusinessAccountsInClient,
+  assertEntitiesInClient,
+} from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -105,6 +109,12 @@ export async function POST(
     const acctCheck = await assertAccountsInClient(id, [cashAccountId, ownerAccountId]);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+    if (ownerAccountId != null) {
+      const bizCheck = await assertBusinessAccountsInClient(id, [ownerAccountId]);
+      if (!bizCheck.ok) {
+        return NextResponse.json({ error: bizCheck.reason }, { status: 400 });
+      }
     }
 
     const [expense] = await db
