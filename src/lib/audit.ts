@@ -28,6 +28,7 @@ export type AuditAction =
   | "account.delete"
   | "account.allocation.update"
   | "account.reset_growth"
+  | "account_flow_overrides.replace"
   // Liabilities
   | "liability.create"
   | "liability.update"
