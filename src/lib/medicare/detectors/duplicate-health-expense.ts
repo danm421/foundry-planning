@@ -1,6 +1,7 @@
 import type { MedicareDetector } from "./types";
 
-const HEALTH_NAME_PATTERN = /health|medical|insurance|medicare|medigap|supplement/i;
+// "insurance" deliberately excluded — too many false positives (life, auto, umbrella).
+const HEALTH_NAME_PATTERN = /health|medical|medicare|medigap|supplement/i;
 
 export const duplicateHealthExpense: MedicareDetector = ({ expenses, medicareCoverage }) => {
   const enrollmentYears = medicareCoverage
@@ -23,7 +24,7 @@ export const duplicateHealthExpense: MedicareDetector = ({ expenses, medicareCov
     id: "duplicate-expense",
     severity: "warning",
     title: "Possible duplicate health expense",
-    body: `"${worst.name}" expense ($${worst.annualAmount.toLocaleString()}/yr) continues past ${earliestEnrollment} (Medicare enrollment). Medicare premiums are now auto-projected — mark this expense as pre-Medicare or remove it to avoid double-counting.`,
+    body: `"${worst.name}" expense ($${Math.round(worst.annualAmount).toLocaleString()}/yr) continues past ${earliestEnrollment} (Medicare enrollment). Medicare premiums are now auto-projected — mark this expense as pre-Medicare or remove it to avoid double-counting.`,
     impactedYears: [earliestEnrollment],
     action: { label: "Mark as pre-Medicare", href: `#expense-${worst.id}` },
   };
