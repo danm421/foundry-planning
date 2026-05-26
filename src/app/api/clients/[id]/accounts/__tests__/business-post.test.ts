@@ -105,8 +105,8 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
         flowMode: "annual",
         businessTaxTreatment: "qbi",
         owners: [
-          { familyMemberId: FM_CLIENT, entityId: null, percent: 0.6 },
-          { familyMemberId: null, entityId: ENT_TRUST, percent: 0.4 },
+          { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.6 },
+          { kind: "entity", entityId: ENT_TRUST, percent: 0.4 },
         ],
       }) as never,
       { params: Promise.resolve({ id: "cli_test" }) },
@@ -148,8 +148,8 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
         value: 100_000,
         basis: 100_000,
         owners: [
-          { familyMemberId: FM_CLIENT, entityId: null, percent: 0.5 },
-          { familyMemberId: FM_SPOUSE, entityId: null, percent: 0.4 },
+          { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.5 },
+          { kind: "family_member", familyMemberId: FM_SPOUSE, percent: 0.4 },
         ],
       }) as never,
       { params: Promise.resolve({ id: "cli_test" }) },
@@ -168,7 +168,7 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
         businessType: "co_op",
         value: 0,
         basis: 0,
-        owners: [{ familyMemberId: FM_CLIENT, entityId: null, percent: 1 }],
+        owners: [{ kind: "family_member", familyMemberId: FM_CLIENT, percent: 1 }],
       }) as never,
       { params: Promise.resolve({ id: "cli_test" }) },
     );
@@ -187,7 +187,7 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
         subType: "checking", // attacker-supplied; should be ignored
         value: 100_000,
         basis: 100_000,
-        owners: [{ familyMemberId: FM_CLIENT, entityId: null, percent: 1 }],
+        owners: [{ kind: "family_member", familyMemberId: FM_CLIENT, percent: 1 }],
       }) as never,
       { params: Promise.resolve({ id: "cli_test" }) },
     );
@@ -212,7 +212,7 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
         value: 100_000,
         basis: 100_000,
         parentAccountId: ACC_OTHER,
-        owners: [{ familyMemberId: FM_CLIENT, entityId: null, percent: 1 }],
+        owners: [{ kind: "family_member", familyMemberId: FM_CLIENT, percent: 1 }],
       }) as never,
       { params: Promise.resolve({ id: "cli_test" }) },
     );
@@ -261,7 +261,7 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
         businessType: "llc",
         value: 1_000_000,
         basis: 250_000,
-        owners: [{ familyMemberId: FM_CLIENT, entityId: null, percent: 1 }],
+        owners: [{ kind: "family_member", familyMemberId: FM_CLIENT, percent: 1 }],
       }) as never,
       { params: Promise.resolve({ id: "cli_test" }) },
     );

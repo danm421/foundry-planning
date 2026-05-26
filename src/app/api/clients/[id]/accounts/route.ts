@@ -124,11 +124,6 @@ export async function POST(
         // subType for business accounts (would let callers store nonsensical
         // sub_types like "checking" on a business row).
         subType: mapBusinessTypeToSubType(b.businessType),
-        owners: b.owners.map((o) =>
-          o.familyMemberId !== null
-            ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }
-            : { kind: "entity", entityId: o.entityId, percent: o.percent },
-        ),
       };
     }
 

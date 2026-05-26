@@ -14,7 +14,7 @@ const validBase = {
   businessType: "llc" as const,
   value: 1_000_000,
   basis: 250_000,
-  owners: [{ familyMemberId: FM_ID, entityId: null, percent: 1 }],
+  owners: [{ kind: "family_member", familyMemberId: FM_ID, percent: 1 }],
 };
 
 describe("AddBusinessInputSchema", () => {
@@ -36,8 +36,8 @@ describe("AddBusinessInputSchema", () => {
       businessTaxTreatment: "ordinary",
       parentAccountId: ENT_ID,
       owners: [
-        { familyMemberId: FM_ID, entityId: null, percent: 0.6 },
-        { familyMemberId: null, entityId: ENT_ID, percent: 0.4 },
+        { kind: "family_member", familyMemberId: FM_ID, percent: 0.6 },
+        { kind: "entity", entityId: ENT_ID, percent: 0.4 },
       ],
     });
     expect(r.success).toBe(true);
@@ -48,7 +48,7 @@ describe("AddBusinessInputSchema", () => {
       ...validBase,
       value: "1000000",
       basis: "250000",
-      owners: [{ familyMemberId: FM_ID, entityId: null, percent: "1" }],
+      owners: [{ kind: "family_member", familyMemberId: FM_ID, percent: "1" }],
     });
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.value).toBe(1_000_000);
@@ -58,8 +58,8 @@ describe("AddBusinessInputSchema", () => {
     const r = AddBusinessInputSchema.safeParse({
       ...validBase,
       owners: [
-        { familyMemberId: FM_ID, entityId: null, percent: 0.5 },
-        { familyMemberId: FM_ID_2, entityId: null, percent: 0.4 },
+        { kind: "family_member", familyMemberId: FM_ID, percent: 0.5 },
+        { kind: "family_member", familyMemberId: FM_ID_2, percent: 0.4 },
       ],
     });
     expect(r.success).toBe(false);
@@ -139,8 +139,8 @@ describe("AddBusinessInputSchema", () => {
 describe("BusinessOwnerRowSchema", () => {
   it("accepts a family-member row", () => {
     const r = BusinessOwnerRowSchema.safeParse({
+      kind: "family_member",
       familyMemberId: FM_ID,
-      entityId: null,
       percent: 1,
     });
     expect(r.success).toBe(true);
@@ -148,26 +148,24 @@ describe("BusinessOwnerRowSchema", () => {
 
   it("accepts an entity row", () => {
     const r = BusinessOwnerRowSchema.safeParse({
-      familyMemberId: null,
+      kind: "entity",
       entityId: ENT_ID,
       percent: 1,
     });
     expect(r.success).toBe(true);
   });
 
-  it("rejects a row with both populated", () => {
+  it("rejects a family-member row missing familyMemberId", () => {
     const r = BusinessOwnerRowSchema.safeParse({
-      familyMemberId: FM_ID,
-      entityId: ENT_ID,
+      kind: "family_member",
       percent: 1,
     });
     expect(r.success).toBe(false);
   });
 
-  it("rejects a row with neither populated", () => {
+  it("rejects an unknown kind", () => {
     const r = BusinessOwnerRowSchema.safeParse({
-      familyMemberId: null,
-      entityId: null,
+      kind: "external_beneficiary",
       percent: 1,
     });
     expect(r.success).toBe(false);
