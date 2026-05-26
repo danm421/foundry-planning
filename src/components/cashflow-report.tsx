@@ -1145,9 +1145,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const level = drillPath[0];
     const subLevel = drillPath[1];
 
-    // Notes-receivable per-year cash inflow. Not present in r.income.total —
-    // notes are credited directly to checking and surfaced as a separate
-    // sub-column under Other Inflows.
+    // Notes-receivable per-year cash inflow. Not present in r.income.total
+    // (notes credit directly to checking), but the engine folds the
+    // family-member share into r.totalIncome / r.netCashFlow. Surfaced here
+    // as a sub-column under Other Inflows.
     function noteTotal(y: ProjectionYear) {
       const t = y.notesReceivableTotals;
       if (!t) return 0;
@@ -1222,10 +1223,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol(
           "totalIncome",
           "Total Income",
-          // Engine's r.totalIncome doesn't include note cash (credited
-          // directly to checking). Surface it here so the row footer matches
-          // Income + RMDs + Other Inflows.
-          (r) => r.totalIncome + noteTotal(r),
+          (r) => r.totalIncome,
           true,
         ),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),

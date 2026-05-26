@@ -1566,6 +1566,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       totalCashIn: number;
       endingBalance: number;
     }> = {};
+    // Household-side note cash for the year (family-member owner shares only —
+    // entity-owner shares route to entity checking and don't belong in the
+    // household netCashFlow). Folded into totalIncome / netCashFlow below so
+    // the cashflow report's Net Cash Flow row reconciles with Total Income.
+    let householdNoteCashIn = 0;
 
     for (const note of notesReceivable) {
       const yr = notesYearResult.byNote.get(note.id);
@@ -1623,6 +1628,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               label: `Note payment from ${note.name}`,
               sourceId: note.id,
             });
+            householdNoteCashIn += cashShare;
           }
         } else if (owner.kind === "entity") {
           // Route to entity checking. Entity-level tax is not modeled here
@@ -4210,7 +4216,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (!effectiveIsGrantor(inc.ownerEntityId, year)) continue; // non-grantor: never in bySource here
       delete displayIncome.bySource[inc.id];
     }
-    const totalIncome = displayIncome.total + householdRmdIncome;
+    // householdNoteCashIn folded in so notes-receivable principal+interest
+    // (credited directly to checking, not through income.bySource) shows up in
+    // both Total Income and Net Cash Flow on the cashflow report.
+    const totalIncome = displayIncome.total + householdRmdIncome + householdNoteCashIn;
     const totalExpenses = expenses.total + savings.total;
     const netCashFlow = totalIncome - totalExpenses;
 
