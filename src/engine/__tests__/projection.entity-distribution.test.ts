@@ -383,6 +383,63 @@ describe("Display: Business column reflects business-account distributions", () 
   });
 });
 
+describe("Phase 3: business with no child cash account", () => {
+  // A business asset created without a child default-checking cash account is
+  // the default state in the UI (creation doesn't auto-provision one). Pre-fix,
+  // the Phase-3 distribution loop short-circuited when no businessCash was
+  // found, silently dropping the business's net income — household routing had
+  // already excluded the business-tagged income/expense rows, so nothing
+  // reached the owner's cash flow.
+  function mkDataNoBizCash(over: Partial<Account> = {}): ClientData {
+    return {
+      client,
+      accounts: [hhChecking, bizAccount(over)], // ← no bizChecking
+      incomes: [llcIncome],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [],
+      giftEvents: [],
+    };
+  }
+
+  it("100% distribution: net income still reaches owner's checking", () => {
+    const years = runProjection(mkDataNoBizCash());
+    const y0 = years[0];
+
+    const distEntry = y0.accountLedgers["hh-checking"].entries.find(
+      (e) => e.category === "entity_distribution",
+    );
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(100_000, 0);
+  });
+
+  it("y.income.business and y.netCashFlow reflect the distributed cash", () => {
+    const years = runProjection(mkDataNoBizCash());
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+    // Cash flowing in: $100k distribution. Cash flowing out: taxes on the
+    // pass-through income (~$29k at the test flat rates). Net should be
+    // positive — pre-fix it was negative (taxes with no offsetting income).
+    expect(y0.netCashFlow).toBeGreaterThan(50_000);
+  });
+
+  it("partial distribution (50%): half flows to owner; retained share stays $0 with no cash bucket", () => {
+    const years = runProjection(mkDataNoBizCash({ distributionPolicyPercent: 0.5 }));
+    const y0 = years[0];
+
+    const distEntry = y0.accountLedgers["hh-checking"].entries.find(
+      (e) => e.category === "entity_distribution",
+    );
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(50_000, 0);
+  });
+});
+
 describe("Phase 3: distribution routes to owner's default cash account", () => {
   it("routes to the primary owner's account when multiple household checkings exist", () => {
     // Two non-entity isDefaultChecking accounts. A 100%-client business's

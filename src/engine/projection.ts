@@ -3089,15 +3089,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (netIncome <= 0) continue;
       const distAmount = netIncome * flow.distPercent;
       if (distAmount === 0) continue;
-      // Source: the business's own child cash account if one exists; otherwise
-      // skip (we have nothing to drain).
+      // Source: the business's own child cash account if one exists. When the
+      // business has no child cash bucket (default state — creation doesn't
+      // auto-provision one), the debit side is skipped and net income flows
+      // directly from the business to the owner. The (1 - distPercent)
+      // retained share has nowhere to land in that mode and is dropped — the
+      // user must add a child cash account to model retained earnings.
       const businessCash = data.accounts.find(
         (a) =>
           a.parentAccountId === business.id &&
           a.category === "cash" &&
           a.isDefaultChecking === true,
       );
-      if (!businessCash) continue;
       // Destination: primary family-member owner's default cash account.
       // Falls back to household defaultChecking when the business has no
       // family owners or the owner has no associated cash account.
@@ -3109,12 +3112,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         (primaryOwner
           ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId)
           : undefined) ?? defaultChecking?.id;
-      // Debit business cash
-      creditCash(businessCash.id, -distAmount, {
-        category: "entity_distribution",
-        label: `Distribution from ${business.name}`,
-        sourceId: business.id,
-      });
+      // Debit business cash (only if it exists)
+      if (businessCash) {
+        creditCash(businessCash.id, -distAmount, {
+          category: "entity_distribution",
+          label: `Distribution from ${business.name}`,
+          sourceId: business.id,
+        });
+      }
       // Credit owner's default cash account
       creditCash(destinationId, distAmount, {
         category: "entity_distribution",

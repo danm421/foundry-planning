@@ -168,6 +168,10 @@ export async function POST(
     }
     // ── end owners[] validation ────────────────────────────────────────────
 
+    // Decimal columns reject empty strings; coerce blanks to "0".
+    const decOrZero = (v: unknown): string =>
+      typeof v === "string" && v.trim() !== "" ? v : typeof v === "number" ? String(v) : "0";
+
     let liability: typeof liabilities.$inferSelect;
     await db.transaction(async (tx) => {
       const [inserted] = await tx
@@ -176,9 +180,9 @@ export async function POST(
           clientId: id,
           scenarioId,
           name,
-          balance: balance ?? "0",
-          interestRate: interestRate ?? "0",
-          monthlyPayment: monthlyPayment ?? "0",
+          balance: decOrZero(balance),
+          interestRate: decOrZero(interestRate),
+          monthlyPayment: decOrZero(monthlyPayment),
           startYear: Number(startYear),
           startMonth: startMonth != null ? Number(startMonth) : 1,
           termMonths: Number(termMonths),

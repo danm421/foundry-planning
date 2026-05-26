@@ -31,6 +31,8 @@ interface AddLiabilityDialogProps {
   onOpenChange?: (open: boolean) => void;
   editing?: LiabilityFormInitial;
   onRequestDelete?: () => void;
+  /** Seeds parent-business on create (sub-liability under a business). */
+  initialParentAccountId?: string | null;
 }
 
 export default function AddLiabilityDialog({
@@ -46,6 +48,7 @@ export default function AddLiabilityDialog({
   onOpenChange,
   editing,
   onRequestDelete,
+  initialParentAccountId,
 }: AddLiabilityDialogProps) {
   const router = useRouter();
   const isControlled = open !== undefined;
@@ -158,6 +161,7 @@ export default function AddLiabilityDialog({
             spouseFirstName={spouseFirstName}
             mode={isEdit ? "edit" : "create"}
             initial={editing}
+            initialParentAccountId={initialParentAccountId}
             onSuccess={close}
             onValuesChange={handleValuesChange}
             onSubmitStateChange={setSubmitState}

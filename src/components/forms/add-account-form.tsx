@@ -157,6 +157,10 @@ interface AddAccountFormProps {
   onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
   /** Called after the first successful auto-save, with the persisted account id. */
   onAutoSaved?: (accountId: string) => void;
+  /** Seeds the parent-business selection on create when there's no `initial`.
+   *  Used by the "+ Add sub-account" button inside the Business dialog so the
+   *  new account is owned by the business by default. */
+  initialParentAccountId?: string | null;
 }
 
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
@@ -258,6 +262,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   onSubmitStateChange,
   onAutoSaveStateChange,
   onAutoSaved,
+  initialParentAccountId,
 }, ref) {
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
@@ -332,10 +337,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // Controlled value + basis so basis can mirror value until the user edits it
   // manually (defaulting tax basis to the full current value on create).
   const [accountValue, setAccountValue] = useState<string>(
-    initial?.value != null ? String(initial.value) : "",
+    initial?.value != null ? String(initial.value) : "0",
   );
   const [accountBasis, setAccountBasis] = useState<string>(
-    initial?.basis != null ? String(initial.basis) : "",
+    initial?.basis != null ? String(initial.basis) : "0",
   );
   const [userEditedBasis, setUserEditedBasis] = useState<boolean>(mode === "edit");
   // 401k/403b only — Roth-designated portion of value. Defaults to 0
@@ -388,7 +393,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // OwnershipEditor hides and owners[] is sent as []. Mutually exclusive
   // with individual owners.
   const [parentBusinessId, setParentBusinessId] = useState<string | null>(
-    initial?.parentAccountId ?? null,
+    initial?.parentAccountId ?? initialParentAccountId ?? null,
   );
 
   // The auto-provisioned household cash account is system-managed: category,

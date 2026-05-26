@@ -78,6 +78,9 @@ interface AddLiabilityFormProps {
   /** Reports the persisted record id after a successful auto-save in create
    *  mode, so the dialog can flip into edit semantics and refresh on close. */
   onAutoSaved?: (recordId: string) => void;
+  /** Seeds the parent-business selection on create when there's no `initial`.
+   *  Used by the "+ Add sub-liability" button inside the Business dialog. */
+  initialParentAccountId?: string | null;
 }
 
 /** Imperative handle the dialog uses to trigger a save on tab switch. */
@@ -101,6 +104,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
   onSubmitStateChange,
   onAutoSaveStateChange,
   onAutoSaved,
+  initialParentAccountId,
 }, ref) {
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
@@ -120,7 +124,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
   // business. OwnershipEditor hides and owners[] is sent as undefined.
   // Mutually exclusive with individual owners.
   const [parentBusinessId, setParentBusinessId] = useState<string | null>(
-    initial?.parentAccountId ?? null,
+    initial?.parentAccountId ?? initialParentAccountId ?? null,
   );
   const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
   // Controlled state for previously-uncontrolled fields. The auto-save hook

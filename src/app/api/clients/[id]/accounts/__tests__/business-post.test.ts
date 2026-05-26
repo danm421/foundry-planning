@@ -126,8 +126,12 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
     // sub_type was derived from businessType.
     expect(accountRow.subType).toBe("llc");
 
-    // Owners rows: two inserts after the account.
-    const ownerRows = insertedValues.slice(1) as Record<string, unknown>[];
+    // Owners rows: exactly two account_owners inserts (the auto-cash account
+    // insert also lands in `insertedValues` after the business + owners,
+    // so we filter by the owner-row shape rather than slicing positionally).
+    const ownerRows = insertedValues.filter(
+      (v) => "percent" in (v as Record<string, unknown>),
+    ) as Record<string, unknown>[];
     expect(ownerRows.length).toBe(2);
     expect(ownerRows[0].familyMemberId).toBe(FM_CLIENT);
     expect(ownerRows[0].entityId).toBeNull();
@@ -241,4 +245,42 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
     // flowMode is NOT NULL at the DB layer; defaults to 'annual'.
     expect(accountRow.flowMode).toBe("annual");
   });
+
+  it("auto-provisions a child default-checking cash account on the new business", async () => {
+    // A business asset is meaningless without somewhere for its income /
+    // expenses / retained earnings to land. The Phase-3 distribution loop
+    // looks for a child default-checking cash account; without one, retained
+    // earnings have nowhere to live. Auto-create the cash bucket so users
+    // don't have to. The auto-created row is system-managed
+    // (isDefaultChecking=true) — existing PUT/DELETE guards lock ownership,
+    // parenting, category, and deletion.
+    const res = await POST(
+      buildReq({
+        category: "business",
+        name: "Acme LLC",
+        businessType: "llc",
+        value: 1_000_000,
+        basis: 250_000,
+        owners: [{ familyMemberId: FM_CLIENT, entityId: null, percent: 1 }],
+      }) as never,
+      { params: Promise.resolve({ id: "cli_test" }) },
+    );
+    expect(res.status).toBe(201);
+
+    // First insert = business row. Then one owner row. Then the auto-created
+    // cash account (the test mocks the insert returning to always come back as
+    // acc_test, but we only care about the captured `values` payload here).
+    const bizRow = insertedValues[0] as Record<string, unknown>;
+    expect(bizRow.category).toBe("business");
+
+    const cashRow = insertedValues.find(
+      (v) => (v as Record<string, unknown>).category === "cash",
+    ) as Record<string, unknown> | undefined;
+    expect(cashRow).toBeDefined();
+    expect(cashRow!.subType).toBe("checking");
+    expect(cashRow!.isDefaultChecking).toBe(true);
+    expect(cashRow!.parentAccountId).toBe("acc_test"); // mock returns this id
+    expect(cashRow!.name).toMatch(/Acme LLC/);
+  });
+
 });

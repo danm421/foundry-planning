@@ -17,6 +17,7 @@ export interface BusinessAssetsTabProps {
     category: string;
     subType?: string | null;
     parentAccountId?: string | null;
+    isDefaultChecking?: boolean;
     owners?: Array<
       | { kind: "family_member"; familyMemberId: string; percent: number }
       | { kind: "entity"; entityId: string; percent: number }
@@ -37,8 +38,8 @@ export interface BusinessAssetsTabProps {
   familyMembers: Array<{ id: string; firstName: string }>;
   hidden: boolean;
   onChanged: () => void;
-  onOpenAddAccount: () => void;
-  onOpenAddLiability: () => void;
+  onOpenAddAccount: (businessId: string) => void;
+  onOpenAddLiability: (businessId: string) => void;
 }
 
 function toNum(v: number | string): number {
@@ -166,14 +167,14 @@ export default function BusinessAssetsTab({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={onOpenAddAccount}
+          onClick={() => onOpenAddAccount(businessId)}
           className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 h-8 text-[12px] font-medium text-ink-2 hover:bg-card-hover"
         >
           + Add sub-account
         </button>
         <button
           type="button"
-          onClick={onOpenAddLiability}
+          onClick={() => onOpenAddLiability(businessId)}
           className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 h-8 text-[12px] font-medium text-ink-2 hover:bg-card-hover"
         >
           + Add sub-liability
@@ -201,14 +202,23 @@ export default function BusinessAssetsTab({
                 <span className="flex-1 min-w-0 text-[13px] text-ink truncate">{a.name}</span>
                 <span className="text-[11px] uppercase tracking-wider text-ink-4">{a.category}</span>
                 <span className="text-[12px] tabular-nums text-ink-2"><MoneyText value={toNum(a.value)} /></span>
-                <button
-                  type="button"
-                  onClick={() => setRemoving({ kind: "account", id: a.id, name: a.name })}
-                  className="text-white hover:text-white text-[13px] ml-1"
-                  aria-label={`Remove ${a.name} from business`}
-                >
-                  ✕
-                </button>
+                {a.isDefaultChecking ? (
+                  <span
+                    title="System-managed cash account — locked"
+                    className="text-[11px] uppercase tracking-wider text-ink-4 ml-1"
+                  >
+                    locked
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRemoving({ kind: "account", id: a.id, name: a.name })}
+                    className="text-white hover:text-white text-[13px] ml-1"
+                    aria-label={`Remove ${a.name} from business`}
+                  >
+                    ✕
+                  </button>
+                )}
               </li>
             ))}
           </ul>

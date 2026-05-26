@@ -430,6 +430,11 @@ export default function BalanceSheetView({
   const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
   const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
   const [addLiabilityOpen, setAddLiabilityOpen] = useState(false);
+  // When "+ Add sub-account" / "+ Add sub-liability" fires from inside the
+  // Business dialog's Assets tab, capture the business id so the freshly-opened
+  // add dialog seeds parent-business → that business (ownership defaults to it).
+  const [addAccountParentBusinessId, setAddAccountParentBusinessId] = useState<string | null>(null);
+  const [addLiabilityParentBusinessId, setAddLiabilityParentBusinessId] = useState<string | null>(null);
 
   function openAddBusiness() {
     setEditingBusiness(null);
@@ -978,8 +983,14 @@ export default function BalanceSheetView({
                 )
               : undefined
           }
-          onOpenAddAccount={() => setAddCategory("cash")}
-          onOpenAddLiability={() => setAddLiabilityOpen(true)}
+          onOpenAddAccount={(bizId) => {
+            setAddAccountParentBusinessId(bizId);
+            setAddCategory("cash");
+          }}
+          onOpenAddLiability={(bizId) => {
+            setAddLiabilityParentBusinessId(bizId);
+            setAddLiabilityOpen(true);
+          }}
           incomes={incomes}
           expenses={expenses}
           planStartYear={planStartYear}
@@ -1009,8 +1020,14 @@ export default function BalanceSheetView({
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
         existingAccountNames={accounts.map((a) => a.name)}
         resolvedInflationRate={resolvedInflationRate}
+        initialParentAccountId={addAccountParentBusinessId}
         open={addCategory !== null}
-        onOpenChange={(o) => !o && setAddCategory(null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAddCategory(null);
+            setAddAccountParentBusinessId(null);
+          }
+        }}
       />
 
       {/* Edit dialogs */}
@@ -1064,8 +1081,14 @@ export default function BalanceSheetView({
         familyMembers={familyMembers}
         clientFirstName={ownerNames.clientName.split(" ")[0]}
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        initialParentAccountId={addLiabilityParentBusinessId}
         open={addLiabilityOpen}
-        onOpenChange={(o) => !o && setAddLiabilityOpen(false)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAddLiabilityOpen(false);
+            setAddLiabilityParentBusinessId(null);
+          }
+        }}
       />
 
       <AddAccountDialog

@@ -89,9 +89,17 @@ export async function PUT(
           { status: 400 },
         );
       }
-      if (body.parentAccountId != null) {
+      // Reject any change to parentAccountId in either direction — including
+      // "detach from business" (parentAccountId: null on an auto-provisioned
+      // business cash) and "attach to business" (parentAccountId: <biz> on
+      // household checking). The "parentAccountId" key has to be in the body
+      // explicitly; PATCH-style omits leave the existing value alone.
+      if (
+        "parentAccountId" in body &&
+        body.parentAccountId !== before.parentAccountId
+      ) {
         return NextResponse.json(
-          { error: "A system-managed cash account can't be made a sub-asset of a business." },
+          { error: "A system-managed cash account's parent can't be changed." },
           { status: 400 },
         );
       }

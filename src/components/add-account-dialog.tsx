@@ -37,6 +37,9 @@ interface AddAccountDialogProps {
   spouseFirstName?: string;
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
+  /** Seeds parent-business on create so the dialog defaults the new account to
+   *  being owned by that business (used by "+ Add sub-account"). */
+  initialParentAccountId?: string | null;
   initialTab?: "details" | "savings" | "realization" | "asset_mix" | "beneficiaries";
   /**
    * When true, restrict the dialog to the Beneficiaries tab: hide all other tab
@@ -70,6 +73,7 @@ export default function AddAccountDialog({
   spouseFirstName,
   existingAccountNames,
   resolvedInflationRate,
+  initialParentAccountId,
   initialTab,
   lockTab,
 }: AddAccountDialogProps) {
@@ -174,6 +178,7 @@ export default function AddAccountDialog({
               spouseFirstName={spouseFirstName}
               existingAccountNames={existingAccountNames}
               resolvedInflationRate={resolvedInflationRate}
+              initialParentAccountId={initialParentAccountId}
               initialTab={initialTab}
               lockTab={lockTab}
               onSuccess={close}

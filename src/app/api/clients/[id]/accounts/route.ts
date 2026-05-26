@@ -248,6 +248,12 @@ export async function POST(
     }
     // ── end owners[] validation ────────────────────────────────────────────
 
+    // Decimal columns reject empty strings — coerce blank inputs (user left
+     // the CurrencyInput empty) to "0" so the insert succeeds with the schema
+     // default semantics rather than 500ing on a malformed numeric.
+     const decOrZero = (v: unknown): string =>
+       typeof v === "string" && v.trim() !== "" ? v : typeof v === "number" ? String(v) : "0";
+
     let account: typeof accounts.$inferSelect;
     await db.transaction(async (tx) => {
       const [inserted] = await tx
@@ -258,9 +264,9 @@ export async function POST(
           name,
           category,
           subType: subType ?? "other",
-          value: value ?? "0",
-          basis: basis ?? "0",
-          rothValue: rothValue ?? "0",
+          value: decOrZero(value),
+          basis: decOrZero(basis),
+          rothValue: decOrZero(rothValue),
           // null = inherit the default growth rate for this category from plan_settings
           growthRate: growthRate ?? null,
           rmdEnabled: rmdEnabled ?? false,
@@ -301,6 +307,40 @@ export async function POST(
             percent: o.percent.toString(),
           });
         }
+      }
+
+      // Auto-provision a child default-checking cash account on every new
+      // top-level business. The Phase-3 engine looks for this exact row to
+      // route business income/expense and retained earnings; auto-creating
+      // it removes the silent-drop failure mode that hit when users created
+      // a business without manually adding a cash bucket underneath.
+      //
+      // Children of a business inherit ownership via parentAccountId — no
+      // account_owners rows. isDefaultChecking=true brings the existing
+      // PUT/DELETE guards along (category / sub-type / parent / ownership /
+      // deletion are all locked).
+      if (category === "business" && parentAccountId == null) {
+        await tx.insert(accounts).values({
+          clientId: id,
+          scenarioId,
+          name: `${name} — Cash`,
+          category: "cash",
+          subType: "checking",
+          value: "0",
+          basis: "0",
+          rothValue: "0",
+          growthRate: null,
+          rmdEnabled: false,
+          growthSource: "default",
+          turnoverPct: "0",
+          annualPropertyTax: "0",
+          propertyTaxGrowthRate: "0.03",
+          propertyTaxGrowthSource: "custom",
+          titlingType: "jtwros",
+          flowMode: "annual",
+          parentAccountId: account.id,
+          isDefaultChecking: true,
+        });
       }
     });
 
