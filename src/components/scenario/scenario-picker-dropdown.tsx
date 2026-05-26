@@ -35,7 +35,12 @@ export function ScenarioPickerDropdown({
   ariaLabel?: string;
   includeDoNothing?: boolean;
 }) {
-  const liveScenarios = scenarios.filter((s) => !s.isBaseCase);
+  // Orphan integration-test scenarios (changes-writer.test.ts mints
+  // `writer-test-<uuid>` rows and deletes them in afterEach; crashes leak them)
+  // pile up in the picker. Hide them in the UI; leave DB rows alone.
+  const liveScenarios = scenarios.filter(
+    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-"),
+  );
   const manualSnaps = snapshots.filter((s) => s.sourceKind === "manual");
   const pdfSnaps = snapshots.filter((s) => s.sourceKind === "pdf_export");
   return (
