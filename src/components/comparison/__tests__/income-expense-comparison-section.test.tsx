@@ -4,9 +4,10 @@ import { render, screen } from "@testing-library/react";
 import { IncomeExpenseComparisonSection } from "../income-expense-comparison-section";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
-// Chart.js needs canvas APIs that jsdom lacks; stub <Bar> so we just see structure.
-vi.mock("react-chartjs-2", () => ({
-  Bar: () => <div data-testid="chart" />,
+// Chart.js needs canvas APIs that jsdom lacks; stub the wrapped chart so we
+// just see structure.
+vi.mock("@/components/charts/solver-cash-flow-chart", () => ({
+  SolverCashFlowChart: () => <div data-testid="chart" />,
 }));
 
 function mkPlan(label: string, years: number[]): ComparisonPlan {
@@ -39,6 +40,7 @@ function mkPlan(label: string, years: number[]): ComparisonPlan {
           realEstate: 0,
           taxes: 0,
           cashGifts: 0,
+          discretionary: 0,
           total: 0,
           bySource: {},
           byLiability: {},

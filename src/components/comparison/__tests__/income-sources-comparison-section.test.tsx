@@ -70,14 +70,12 @@ describe("IncomeSourcesComparisonSection", () => {
     const salaryRow = screen.getByText("Cooper's Salary").closest("tr")!;
     const salaryCells = within(salaryRow).getAllByRole("cell");
     expect(salaryCells[2].textContent).toBe("$200,000");
-    expect(salaryCells[3].textContent).toBe("2025");
-    expect(salaryCells[4].textContent).toBe("2027");
+    expect(salaryCells[3].textContent).toBe("20252027");
 
     const ssRow = screen.getByText("Cooper's Social Security").closest("tr")!;
     const ssCells = within(ssRow).getAllByRole("cell");
     expect(ssCells[2].textContent).toBe("$30,000");
-    expect(ssCells[3].textContent).toBe("2042");
-    expect(ssCells[4].textContent).toBe("2075");
+    expect(ssCells[3].textContent).toBe("20422075");
   });
 
   it("falls back to the income definition when projection has no positive amounts for that row", () => {
@@ -99,8 +97,7 @@ describe("IncomeSourcesComparisonSection", () => {
     const row = screen.getByText("Cooper's Salary").closest("tr")!;
     const cells = within(row).getAllByRole("cell");
     expect(cells[2].textContent).toBe("$115,927");
-    expect(cells[3].textContent).toBe("2030");
-    expect(cells[4].textContent).toBe("2040");
+    expect(cells[3].textContent).toBe("20302040");
   });
 
   it("shows 'Schedule' for incomes with scheduleOverrides instead of a single first-year amount", () => {
@@ -129,8 +126,7 @@ describe("IncomeSourcesComparisonSection", () => {
     const cells = within(row).getAllByRole("cell");
     expect(cells[2].textContent).toBe("Schedule");
     // Start/End still scan the projection for the actual paying range.
-    expect(cells[3].textContent).toBe("2031");
-    expect(cells[4].textContent).toBe("2032");
+    expect(cells[3].textContent).toBe("20312032");
   });
 
   it("shows 'Schedule' for entity-owned business incomes when the entity uses flowMode='schedule'", () => {

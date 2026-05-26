@@ -117,11 +117,10 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
         <table className="w-full text-xs">
           <thead className="text-slate-400">
             <tr>
-              <th className="text-left font-normal">Source</th>
-              <th className="text-left font-normal">Type</th>
-              <th className="text-right font-normal">First-Year</th>
-              <th className="text-right font-normal">Start</th>
-              <th className="text-right font-normal">End</th>
+              <th className="pb-1 pr-2 text-left font-normal">Source</th>
+              <th className="px-2 pb-1 text-left font-normal">Type</th>
+              <th className="px-2 pb-1 text-right font-normal">First-Year</th>
+              <th className="pb-1 pl-2 text-right font-normal">Years</th>
             </tr>
           </thead>
           <tbody>
@@ -129,18 +128,20 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
               const r = resolveRange(i, years);
               const scheduled = usesSchedule(i, entitiesById);
               return (
-                <tr key={i.id} className="text-slate-200">
-                  <td className="py-0.5">{i.name}</td>
-                  <td>{typeLabel(i.type)}</td>
-                  <td className="text-right tabular-nums">
+                <tr key={i.id} className="align-top text-slate-200">
+                  <td className="py-1 pr-2">{i.name}</td>
+                  <td className="px-2 py-1">{typeLabel(i.type)}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                     {scheduled ? (
                       <span className="text-slate-400">Schedule</span>
                     ) : (
                       fmt(r.firstYearAmount)
                     )}
                   </td>
-                  <td className="text-right tabular-nums">{r.startYear}</td>
-                  <td className="text-right tabular-nums">{r.endYear}</td>
+                  <td className="whitespace-nowrap py-1 pl-2 text-right leading-tight tabular-nums">
+                    <div>{r.startYear}</div>
+                    <div className="text-slate-400">{r.endYear}</div>
+                  </td>
                 </tr>
               );
             })}

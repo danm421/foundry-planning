@@ -17,11 +17,11 @@ export function MedicareDrillDownModal({ year, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={onClose}
     >
       <div
-        className="bg-surface-1 rounded-lg shadow-xl p-6 max-w-2xl w-full"
+        className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-start mb-4">
