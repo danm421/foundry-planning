@@ -1,7 +1,7 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import type { ReactElement, ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useTransition, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import SidebarNavItem from "./sidebar-nav-item";
 import {
   HomeIcon,
@@ -63,6 +63,23 @@ export default function SidebarNav({
   collapsed = false,
 }: SidebarNavProps): ReactElement {
   const pathname = usePathname();
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+
+  // When the user picks a nav item while the sidebar is expanded, collapse
+  // it so the destination page gets the wider canvas. No-op when already
+  // collapsed, or when the user is opening the link in a new tab/window
+  // (cmd/ctrl/shift/middle-click) — in that case the current view isn't
+  // navigating, so collapsing would be a surprise. We set the same cookie
+  // BrandMarkToggle owns + refresh so the server layout re-reads it.
+  function handleNavigate(e: MouseEvent<HTMLAnchorElement>) {
+    if (collapsed) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    document.cookie = `sidebar-collapsed=1; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+    startTransition(() => {
+      router.refresh();
+    });
+  }
 
   return (
     <nav className="flex flex-col gap-4 py-4">
@@ -90,6 +107,7 @@ export default function SidebarNav({
                     active={active}
                     count={item.href === "/clients" ? clientsCount : undefined}
                     collapsed={collapsed}
+                    onNavigate={handleNavigate}
                   />
                 </li>
               );

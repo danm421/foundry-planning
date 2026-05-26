@@ -4,6 +4,7 @@ import { render } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   usePathname: vi.fn(),
+  useRouter: () => ({ refresh: vi.fn() }),
 }));
 
 import { usePathname } from "next/navigation";

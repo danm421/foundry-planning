@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactElement, ReactNode } from "react";
+import type { MouseEvent, ReactElement, ReactNode } from "react";
 
 interface SidebarNavItemProps {
   icon: ReactNode;
@@ -9,6 +9,9 @@ interface SidebarNavItemProps {
   placeholder?: boolean;
   active: boolean;
   collapsed?: boolean;
+  /** Fired on link click. Used by the parent nav to auto-collapse the
+   *  sidebar when the user picks an item while it's expanded. */
+  onNavigate?: (e: MouseEvent<HTMLAnchorElement>) => void;
 }
 
 export default function SidebarNavItem({
@@ -19,6 +22,7 @@ export default function SidebarNavItem({
   placeholder = false,
   active,
   collapsed = false,
+  onNavigate,
 }: SidebarNavItemProps): ReactElement {
   const rowBase = "relative flex items-center py-2 text-[13px] transition-colors";
   const rowSpacing = collapsed
@@ -52,6 +56,7 @@ export default function SidebarNavItem({
   return (
     <Link
       href={href ?? "#"}
+      onClick={onNavigate}
       className={`${rowBase} ${rowSpacing} ${stateClass}`}
       aria-current={active ? "page" : undefined}
       title={collapsed ? label : undefined}
