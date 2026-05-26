@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
-import type { ProjectionYear, Income, Expense, EntityFlowOverride, ClientInfo } from "@/engine/types";
+import type {
+  Account,
+  AccountFlowOverride,
+  ClientInfo,
+  EntityFlowOverride,
+  Expense,
+  Income,
+  ProjectionYear,
+} from "@/engine/types";
 import HeaderControls, { type EntityOption } from "./entities-cashflow-report/header-controls";
 import TrustTable from "./entities-cashflow-report/trust-table";
 import BusinessTable from "./entities-cashflow-report/business-table";
@@ -14,7 +22,10 @@ import {
   type EntityLedger,
   type LedgerSection,
 } from "@/lib/entity-ledger";
-import type { EntityMetadata } from "@/engine/entity-cashflow";
+import type {
+  BusinessAccountMetadata,
+  EntityMetadata,
+} from "@/engine/entity-cashflow";
 
 interface Props {
   clientId: string;
@@ -22,14 +33,7 @@ interface Props {
 }
 
 interface ApiData {
-  accounts: {
-    id: string;
-    name: string;
-    owners?: Array<
-      | { kind: "family_member"; familyMemberId: string; percent: number }
-      | { kind: "entity"; entityId: string; percent: number }
-    >;
-  }[];
+  accounts: Account[];
   entities: {
     id: string;
     name: string;
@@ -44,6 +48,7 @@ interface ApiData {
   incomes: Income[];
   expenses: Expense[];
   entityFlowOverrides?: EntityFlowOverride[];
+  accountFlowOverrides?: AccountFlowOverride[];
   client?: ClientInfo;
 }
 
@@ -138,7 +143,22 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
         }
       }
     }
-    return { entitiesById, accountNamesById, accountEntityOwners };
+    // Top-level business accounts feed the report alongside trusts/entities.
+    // The ledger modal reads from this map when the selected dropdown id is
+    // an account id rather than an entity id.
+    const businessAccountsById = new Map<string, BusinessAccountMetadata>();
+    for (const a of apiData.accounts) {
+      if (a.category !== "business") continue;
+      if (a.parentAccountId != null) continue;
+      businessAccountsById.set(a.id, {
+        id: a.id,
+        name: a.name,
+        businessType: a.businessType,
+        flowMode: a.flowMode,
+        distributionPolicyPercent: a.distributionPolicyPercent,
+      });
+    }
+    return { entitiesById, accountNamesById, accountEntityOwners, businessAccountsById };
   }, [apiData]);
 
   const ledger = useMemo<EntityLedger | null>(() => {
@@ -151,9 +171,12 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
       entitiesById: ledgerLookups.entitiesById,
       accountNamesById: ledgerLookups.accountNamesById,
       accountEntityOwners: ledgerLookups.accountEntityOwners,
+      businessAccountsById: ledgerLookups.businessAccountsById,
+      accounts: apiData.accounts,
       incomes: apiData.incomes,
       expenses: apiData.expenses,
       entityFlowOverrides: apiData.entityFlowOverrides ?? [],
+      accountFlowOverrides: apiData.accountFlowOverrides ?? [],
       client: apiData.client,
     });
   }, [openLedger, apiData, ledgerLookups, years]);

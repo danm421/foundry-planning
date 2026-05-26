@@ -1,6 +1,11 @@
 // src/engine/__tests__/entity-cashflow.test.ts
 import { describe, it, expect } from "vitest";
-import { computeEntityCashFlow, type EntityMetadata } from "../entity-cashflow";
+import {
+  computeBusinessAccountCashFlow,
+  computeEntityCashFlow,
+  type BusinessAccountMetadata,
+  type EntityMetadata,
+} from "../entity-cashflow";
 import { runProjection } from "../projection";
 import type {
   ProjectionYear,
@@ -950,5 +955,275 @@ describe("computeEntityCashFlow integration via runProjection", () => {
       // No entities → empty map, but the field must still exist.
       expect(y.entityCashFlow.size).toBe(0);
     }
+  });
+});
+
+describe("computeBusinessAccountCashFlow", () => {
+  function makeBizAccount(overrides: Partial<Account> = {}): Account {
+    return {
+      id: "biz-acct",
+      name: "Acme LLC",
+      category: "business",
+      subType: "other",
+      value: 1_000_000,
+      basis: 200_000,
+      rothValue: 0,
+      growthSource: "default",
+      growthRate: 0.05,
+      turnoverPct: 0,
+      annualPropertyTax: 0,
+      propertyTaxGrowthRate: 0,
+      propertyTaxGrowthSource: "default",
+      rmdEnabled: false,
+      isDefaultChecking: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      parentAccountId: null,
+      businessType: "llc",
+      distributionPolicyPercent: 0.6,
+      flowMode: "annual",
+      businessTaxTreatment: "qbi",
+      ...overrides,
+    } as Account;
+  }
+
+  it("emits a business row keyed by accountId, sourced from ledgers + computeBusinessYearFlow", () => {
+    const biz = makeBizAccount();
+    const y = makeYear(2026);
+    // Business account's own ledger holds the equity valuation walk.
+    y.accountLedgers = {
+      "biz-acct": {
+        beginningValue: 1_000_000,
+        endingValue: 1_050_000,
+        growth: 50_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      } as never,
+    };
+    y.accountBasisBoY = { "biz-acct": 200_000 };
+
+    // Income/expense rows tagged with ownerAccountId — same shape the engine
+    // consumes in computeBusinessYearFlow.
+    const incomes: Income[] = [
+      {
+        id: "biz-rev",
+        type: "business",
+        name: "Operating revenue",
+        annualAmount: 400_000,
+        startYear: 2026,
+        endYear: 2055,
+        growthRate: 0,
+        owner: "client",
+        ownerAccountId: "biz-acct",
+      } as never,
+    ];
+    const expenses: Expense[] = [
+      {
+        id: "biz-exp",
+        type: "other",
+        name: "Operating cost",
+        annualAmount: 100_000,
+        startYear: 2026,
+        endYear: 2055,
+        growthRate: 0,
+        ownerAccountId: "biz-acct",
+      } as never,
+    ];
+
+    const businessAccountsById = new Map<string, BusinessAccountMetadata>([
+      ["biz-acct", { id: biz.id, name: biz.name, businessType: "llc", flowMode: "annual", distributionPolicyPercent: 0.6 }],
+    ]);
+    computeBusinessAccountCashFlow({
+      years: [y],
+      businessAccountsById,
+      accounts: [biz],
+      incomes,
+      expenses,
+      accountFlowOverrides: [],
+    });
+
+    const row = y.entityCashFlow.get("biz-acct");
+    expect(row?.kind).toBe("business");
+    if (row?.kind !== "business") return;
+    expect(row.entityType).toBe("llc");
+    expect(row.beginningTotalValue).toBe(1_000_000);
+    expect(row.endingTotalValue).toBe(1_050_000);
+    expect(row.growth).toBe(50_000);
+    expect(row.income).toBe(400_000);
+    expect(row.expenses).toBe(100_000);
+    // netIncome = 300k, distPercent = 0.6 → distribution = 180k.
+    expect(row.annualDistribution).toBe(180_000);
+    // retainedEarnings = 300k − 180k = 120k.
+    expect(row.retainedEarnings).toBe(120_000);
+    // LLC is pass-through → basis grows by retained earnings.
+    expect(row.beginningBasis).toBe(200_000);
+    expect(row.endingBasis).toBe(320_000);
+  });
+
+  it("rolls up child accounts in the business tree into consolidated value/growth/basis", () => {
+    const biz = makeBizAccount({ id: "biz-1", name: "Holdco" });
+    const childCash: Account = {
+      ...makeBizAccount(),
+      id: "biz-1-cash",
+      name: "Holdco Cash",
+      category: "cash",
+      subType: "checking",
+      businessType: null,
+      parentAccountId: "biz-1",
+      isDefaultChecking: true,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "biz-1": {
+        beginningValue: 500_000,
+        endingValue: 525_000,
+        growth: 25_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      } as never,
+      "biz-1-cash": {
+        beginningValue: 75_000,
+        endingValue: 80_000,
+        growth: 5_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      } as never,
+    };
+    y.accountBasisBoY = { "biz-1": 150_000, "biz-1-cash": 75_000 };
+
+    const businessAccountsById = new Map<string, BusinessAccountMetadata>([
+      ["biz-1", { id: biz.id, name: biz.name, businessType: "llc", flowMode: "annual", distributionPolicyPercent: 1.0 }],
+    ]);
+    computeBusinessAccountCashFlow({
+      years: [y],
+      businessAccountsById,
+      accounts: [biz, childCash],
+      incomes: [],
+      expenses: [],
+      accountFlowOverrides: [],
+    });
+
+    const row = y.entityCashFlow.get("biz-1");
+    if (row?.kind !== "business") throw new Error("expected business row");
+    // Parent (500k) + child cash (75k) = 575k BoY.
+    expect(row.beginningTotalValue).toBe(575_000);
+    // Parent (525k) + child cash (80k) = 605k EoY.
+    expect(row.endingTotalValue).toBe(605_000);
+    // 25k + 5k = 30k consolidated growth.
+    expect(row.growth).toBe(30_000);
+    // 150k + 75k = 225k consolidated BoY basis.
+    expect(row.beginningBasis).toBe(225_000);
+  });
+
+  it("schedule mode reads income/expense/distPercent from accountFlowOverrides", () => {
+    const biz = makeBizAccount({ flowMode: "schedule", distributionPolicyPercent: null });
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "biz-acct": {
+        beginningValue: 1_000_000,
+        endingValue: 1_000_000,
+        growth: 0,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      } as never,
+    };
+    const businessAccountsById = new Map<string, BusinessAccountMetadata>([
+      ["biz-acct", { id: biz.id, name: biz.name, businessType: "llc", flowMode: "schedule", distributionPolicyPercent: null }],
+    ]);
+    computeBusinessAccountCashFlow({
+      years: [y],
+      businessAccountsById,
+      accounts: [biz],
+      // Base income/expense rows are NOT consulted in schedule mode — the
+      // grid cell is the source of truth.
+      incomes: [
+        { id: "ignored", type: "business", name: "Ignored", annualAmount: 999_999, startYear: 2026, endYear: 2055, growthRate: 0, owner: "client", ownerAccountId: "biz-acct" } as never,
+      ],
+      expenses: [],
+      accountFlowOverrides: [
+        { accountId: "biz-acct", year: 2026, incomeAmount: 600_000, expenseAmount: 150_000, distributionPercent: 0.5 } as never,
+      ],
+    });
+
+    const row = y.entityCashFlow.get("biz-acct");
+    if (row?.kind !== "business") throw new Error("expected business row");
+    expect(row.income).toBe(600_000);
+    expect(row.expenses).toBe(150_000);
+    // netIncome = 450k, distPercent = 0.5 → distribution = 225k.
+    expect(row.annualDistribution).toBe(225_000);
+  });
+
+  it("c_corp does NOT pass retained earnings into ending basis", () => {
+    const biz = makeBizAccount({ businessType: "c_corp", distributionPolicyPercent: 0 });
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "biz-acct": {
+        beginningValue: 1_000_000,
+        endingValue: 1_000_000,
+        growth: 0,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      } as never,
+    };
+    y.accountBasisBoY = { "biz-acct": 100_000 };
+    const incomes: Income[] = [
+      { id: "rev", type: "business", name: "Rev", annualAmount: 50_000, startYear: 2026, endYear: 2055, growthRate: 0, owner: "client", ownerAccountId: "biz-acct" } as never,
+    ];
+    const businessAccountsById = new Map<string, BusinessAccountMetadata>([
+      ["biz-acct", { id: biz.id, name: biz.name, businessType: "c_corp", flowMode: "annual", distributionPolicyPercent: 0 }],
+    ]);
+    computeBusinessAccountCashFlow({
+      years: [y],
+      businessAccountsById,
+      accounts: [biz],
+      incomes,
+      expenses: [],
+      accountFlowOverrides: [],
+    });
+
+    const row = y.entityCashFlow.get("biz-acct");
+    if (row?.kind !== "business") throw new Error("expected business row");
+    expect(row.entityType).toBe("c_corp");
+    expect(row.retainedEarnings).toBe(50_000);
+    // c_corp: basis flat regardless of retained earnings.
+    expect(row.endingBasis).toBe(100_000);
+  });
+
+  it("emits zero rows when there are no top-level business accounts", () => {
+    const y = makeYear(2026);
+    computeBusinessAccountCashFlow({
+      years: [y],
+      businessAccountsById: new Map(),
+      accounts: [],
+      incomes: [],
+      expenses: [],
+      accountFlowOverrides: [],
+    });
+    expect(y.entityCashFlow.size).toBe(0);
   });
 });

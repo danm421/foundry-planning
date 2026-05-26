@@ -1,10 +1,56 @@
 // src/engine/entity-cashflow.ts
-import type { ProjectionYear, Income, Expense, EntityFlowMode, EntityFlowOverride, ClientInfo } from "./types";
+import type {
+  Account,
+  AccountFlowOverride,
+  ClientInfo,
+  EntityFlowMode,
+  EntityFlowOverride,
+  Expense,
+  Income,
+  ProjectionYear,
+} from "./types";
 import { resolveEntityFlows } from "./entity-flows";
 import { accrueLockedEntityShare } from "./locked-shares";
+import { collectBusinessTree } from "./business/business-tree";
+import { computeBusinessYearFlow } from "./business/year-flow";
 import type { trustSubTypeEnum } from "@/db/schema";
 
 type TrustSubType = (typeof trustSubTypeEnum.enumValues)[number];
+
+/** Business types accepted by the account-as-asset model. `sole_prop` is
+ *  account-only — the legacy entity union has no equivalent and gets mapped to
+ *  `"other"` when surfacing through the business-cashflow report. */
+type AccountBusinessType =
+  | "sole_prop"
+  | "partnership"
+  | "s_corp"
+  | "c_corp"
+  | "llc"
+  | "other";
+
+const PASS_THROUGH_BUSINESS_TYPES: ReadonlySet<AccountBusinessType> = new Set([
+  "sole_prop",
+  "partnership",
+  "s_corp",
+  "llc",
+]);
+
+function mapAccountBusinessTypeToEntityType(
+  businessType: AccountBusinessType | null | undefined,
+): "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other" {
+  switch (businessType) {
+    case "llc":
+    case "s_corp":
+    case "c_corp":
+    case "partnership":
+      return businessType;
+    case "sole_prop":
+    case "other":
+    case null:
+    case undefined:
+      return "other";
+  }
+}
 
 interface BaseEntityCashFlowRow {
   entityId: string;
@@ -98,6 +144,37 @@ export interface ComputeEntityCashFlowInput {
    *  resolveEntityFlowAmount applies retirement-month proration so the
    *  cashflow report matches the engine's per-row crediting. */
   client?: ClientInfo;
+}
+
+export interface BusinessAccountMetadata {
+  /** Top-level business account id. */
+  id: string;
+  /** Display name. */
+  name: string;
+  /** Underlying business legal form. `null` is permitted at the schema level
+   *  but renders as `"other"` in the report's type column. */
+  businessType: AccountBusinessType | null | undefined;
+  flowMode?: EntityFlowMode;
+  distributionPolicyPercent?: number | null;
+}
+
+export interface ComputeBusinessAccountCashFlowInput {
+  years: ProjectionYear[];
+  /** Top-level business-account metadata indexed by account id. Child
+   *  accounts in the business tree are NOT included here — the function
+   *  walks the tree from each top-level id to roll up consolidated value. */
+  businessAccountsById: Map<string, BusinessAccountMetadata>;
+  /** All accounts (used to walk each business's tree for consolidated
+   *  value/growth/basis). */
+  accounts: Account[];
+  /** Same resolved currentIncomes / allExpenses arrays runProjection built.
+   *  Passed straight through to computeBusinessYearFlow so the report's
+   *  income/expense column matches what the engine taxed/distributed. */
+  incomes: Income[];
+  expenses: Expense[];
+  /** Per-year (income, expense, distribution%) override grid for business
+   *  accounts in schedule mode. */
+  accountFlowOverrides?: AccountFlowOverride[];
 }
 
 /**
@@ -300,6 +377,87 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           endingBasis,
         });
       }
+    }
+  }
+}
+
+/**
+ * Account-as-asset counterpart of {@link computeEntityCashFlow}. Walks each
+ * top-level business account's tree (parent + descendants) to roll up
+ * consolidated beginning/ending value, growth, and basis. Income/expense
+ * (and the implied distribution amount) come from `computeBusinessYearFlow`,
+ * matching what the engine taxed and distributed in the Phase 3 blocks.
+ *
+ * Rows are keyed on the business **account id** (stored in the row's
+ * `entityId` field for shape-compatibility with the existing report). The
+ * key spaces don't collide because entity ids and account ids are distinct
+ * UUIDs from different tables.
+ */
+export function computeBusinessAccountCashFlow(input: ComputeBusinessAccountCashFlowInput): void {
+  const { years, businessAccountsById, accounts } = input;
+  if (businessAccountsById.size === 0) return;
+
+  for (const year of years) {
+    for (const [accountId, biz] of businessAccountsById) {
+      const tree = collectBusinessTree(accountId, accounts);
+      // Consolidated value: parent business account + every descendant
+      // ledger. Mirrors `consolidatedBusinessValue` but uses ledger fields
+      // (begin/end/growth) instead of a static balance map, so the row
+      // walks BoY → growth → EoY cleanly. No drained-account exclusion —
+      // a paid-down loan account or zero-balance bucket still contributes 0
+      // and doesn't distort the walk.
+      let beginningTotalValue = 0;
+      let endingTotalValue = 0;
+      let totalGrowth = 0;
+      let beginningBasis = 0;
+      for (const a of tree) {
+        const ledger = year.accountLedgers[a.id];
+        if (!ledger) continue;
+        beginningTotalValue += ledger.beginningValue;
+        endingTotalValue += ledger.endingValue;
+        totalGrowth += ledger.growth;
+        beginningBasis += year.accountBasisBoY?.[a.id] ?? 0;
+      }
+
+      const business = accounts.find((a) => a.id === accountId);
+      if (!business) continue;
+      const flow = computeBusinessYearFlow(
+        business,
+        year.year,
+        input.incomes,
+        input.expenses,
+        input.accountFlowOverrides,
+      );
+      const netIncome = flow.gross - flow.exp;
+      // Match the engine's distribution rule (projection.ts Phase 3):
+      // losses (netIncome ≤ 0) → no distribution. distPercent is the
+      // resolved account-level or schedule-cell percent, defaulting to 1.0.
+      const annualDistribution = netIncome > 0 ? netIncome * flow.distPercent : 0;
+      const retainedEarnings = netIncome - annualDistribution;
+
+      // Pass-through types accumulate retained earnings into outside basis;
+      // C-corp / other keep basis flat. Same rule as the entity branch.
+      const isPassThrough =
+        biz.businessType != null && PASS_THROUGH_BUSINESS_TYPES.has(biz.businessType);
+      const endingBasis = beginningBasis + (isPassThrough ? retainedEarnings : 0);
+
+      year.entityCashFlow.set(accountId, {
+        kind: "business",
+        entityId: accountId,
+        entityName: biz.name,
+        year: year.year,
+        ages: year.ages,
+        entityType: mapAccountBusinessTypeToEntityType(biz.businessType),
+        beginningTotalValue,
+        beginningBasis,
+        growth: totalGrowth,
+        income: flow.gross,
+        expenses: flow.exp,
+        annualDistribution,
+        retainedEarnings,
+        endingTotalValue,
+        endingBasis,
+      });
     }
   }
 }

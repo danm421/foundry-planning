@@ -9,14 +9,21 @@
 // plus label lookups (account names, flow labels).
 
 import type {
-  ProjectionYear,
-  Income,
-  Expense,
-  EntityFlowOverride,
+  Account,
+  AccountFlowOverride,
   ClientInfo,
+  EntityFlowOverride,
+  Expense,
+  Income,
+  ProjectionYear,
 } from "@/engine/types";
-import { flatBusinessValueAt, type EntityMetadata } from "@/engine/entity-cashflow";
+import {
+  flatBusinessValueAt,
+  type BusinessAccountMetadata,
+  type EntityMetadata,
+} from "@/engine/entity-cashflow";
 import { resolveEntityFlows } from "@/engine/entity-flows";
+import { collectBusinessTree } from "@/engine/business/business-tree";
 
 export type LedgerSection = "growth" | "income" | "expenses" | "ending";
 
@@ -55,9 +62,19 @@ export interface EntityLedgerContext {
   /** Account → entity-owner mapping; same shape the engine consumes. The
    *  aggregator iterates this to find the entity's owned accounts. */
   accountEntityOwners: Map<string, { entityId: string; percent: number }>;
+  /** Top-level business-account metadata, keyed by account id. When the
+   *  selected dropdown id matches a key here (and not an entity), the
+   *  ledger routes through the account branch instead. */
+  businessAccountsById?: Map<string, BusinessAccountMetadata>;
+  /** All accounts. Required for the account branch to walk each business's
+   *  parent+children tree. Optional so legacy entity-only callers compile. */
+  accounts?: Account[];
   incomes: Income[];
   expenses: Expense[];
   entityFlowOverrides: EntityFlowOverride[];
+  /** Per-year (income, expense, distribution%) override grid for business
+   *  accounts in schedule mode. */
+  accountFlowOverrides?: AccountFlowOverride[];
   /** Optional. Enables retirement-month proration on the no-override
    *  growth-mode fallback inside resolveEntityFlowAmount, matching the
    *  engine's per-row crediting in the projection. */
@@ -69,7 +86,16 @@ export function getEntityLedger(
   ctx: EntityLedgerContext,
 ): EntityLedger {
   const entity = ctx.entitiesById.get(entityId);
-  if (!entity) return { growth: [], income: [], expenses: [], ending: [] };
+  if (!entity) {
+    // Account-as-asset branch: when the dropdown selection is a top-level
+    // business account id rather than an entity id, build the ledger from
+    // the account tree + computeBusinessYearFlow.
+    const bizAcct = ctx.businessAccountsById?.get(entityId);
+    if (bizAcct && ctx.accounts) {
+      return getBusinessAccountLedger(entityId, bizAcct, ctx as EntityLedgerContext & { accounts: Account[] });
+    }
+    return { growth: [], income: [], expenses: [], ending: [] };
+  }
 
   const growth: LedgerSourceRow[] = [];
   const income: LedgerSourceRow[] = [];
@@ -229,6 +255,139 @@ export function getEntityLedger(
         amount: contribution,
         sourceKind: "account",
         sourceId: accountId,
+      });
+    }
+  }
+
+  return { growth, income, expenses, ending };
+}
+
+/** Account-as-asset ledger drill-down. Growth is rolled up across the
+ *  business tree (parent + descendants); income/expense come from each
+ *  income/expense row tagged with `ownerAccountId`, OR — in schedule mode —
+ *  from a single synthetic row sourced from `accountFlowOverrides`. */
+function getBusinessAccountLedger(
+  accountId: string,
+  biz: BusinessAccountMetadata,
+  ctx: EntityLedgerContext & { accounts: Account[] },
+): EntityLedger {
+  const growth: LedgerSourceRow[] = [];
+  const income: LedgerSourceRow[] = [];
+  const expenses: LedgerSourceRow[] = [];
+  const ending: LedgerSourceRow[] = [];
+
+  // Per-account growth rows across the business tree. Mirrors the
+  // owned-account loop the entity branch uses, but the tree includes every
+  // descendant — child cash buckets, sub-investments, etc.
+  const tree = collectBusinessTree(accountId, ctx.accounts);
+  for (const a of tree) {
+    const ledger = ctx.year.accountLedgers[a.id];
+    if (!ledger) continue;
+    if (ledger.growth === 0) continue;
+    growth.push({
+      label: a.name,
+      amount: ledger.growth,
+      sourceKind: "account",
+      sourceId: a.id,
+    });
+  }
+
+  // Schedule mode: a single override cell is the source of truth for the
+  // year's income/expense — same model as schedule-mode entities.
+  const flowMode = biz.flowMode ?? "annual";
+  if (flowMode === "schedule") {
+    const ovr = (ctx.accountFlowOverrides ?? []).find(
+      (o) => o.accountId === accountId && o.year === ctx.year.year,
+    );
+    if (ovr?.incomeAmount != null && ovr.incomeAmount !== 0) {
+      income.push({
+        label: "Schedule income",
+        amount: ovr.incomeAmount,
+        sourceKind: "flow-override",
+        sourceId: `schedule:${accountId}:${ctx.year.year}:income`,
+      });
+    }
+    if (ovr?.expenseAmount != null && ovr.expenseAmount !== 0) {
+      expenses.push({
+        label: "Schedule expense",
+        amount: ovr.expenseAmount,
+        sourceKind: "flow-override",
+        sourceId: `schedule:${accountId}:${ctx.year.year}:expense`,
+      });
+    }
+  } else {
+    // Annual mode: enumerate each income/expense row tagged with the
+    // business as its owner so the drill-down lists by source. Sums match
+    // computeBusinessYearFlow's `gross` / `exp`.
+    const y = ctx.year.year;
+    for (const inc of ctx.incomes) {
+      if (inc.ownerAccountId !== accountId) continue;
+      if (y < inc.startYear || y > inc.endYear) continue;
+      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, y - inflateFrom);
+      if (amount === 0) continue;
+      income.push({
+        label: inc.name,
+        amount,
+        sourceKind: "flow-base",
+        sourceId: inc.id,
+      });
+    }
+    for (const exp of ctx.expenses) {
+      if (exp.ownerAccountId !== accountId) continue;
+      if (y < exp.startYear || y > exp.endYear) continue;
+      const inflateFrom = exp.inflationStartYear ?? exp.startYear;
+      const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, y - inflateFrom);
+      if (amount === 0) continue;
+      expenses.push({
+        label: exp.name,
+        amount,
+        sourceKind: "flow-base",
+        sourceId: exp.id,
+      });
+    }
+  }
+
+  // Ending section: year-walk BoY → growth → income − expenses − distribution.
+  // Same shape as the entity-business branch so the modal renders identically.
+  const row = ctx.year.entityCashFlow.get(accountId);
+  if (row?.kind === "business") {
+    ending.push({
+      label: "Beginning of year",
+      amount: row.beginningTotalValue,
+      sourceKind: "walk-anchor",
+      sourceId: `${accountId}:boy`,
+    });
+    if (row.growth !== 0) {
+      ending.push({
+        label: "Business growth",
+        amount: row.growth,
+        sourceKind: "walk-flow",
+        sourceId: `${accountId}:growth`,
+      });
+    }
+    if (row.income !== 0) {
+      ending.push({
+        label: "Business income",
+        amount: row.income,
+        sourceKind: "walk-flow",
+        sourceId: `${accountId}:income`,
+      });
+    }
+    if (row.expenses !== 0) {
+      ending.push({
+        label: "Business expenses",
+        amount: -row.expenses,
+        sourceKind: "walk-flow",
+        sourceId: `${accountId}:expenses`,
+      });
+    }
+    if (row.annualDistribution !== 0) {
+      ending.push({
+        label: "Annual distribution",
+        amount: -row.annualDistribution,
+        sourceKind: "walk-flow",
+        sourceId: `${accountId}:distribution`,
       });
     }
   }

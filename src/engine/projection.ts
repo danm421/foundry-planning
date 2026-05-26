@@ -20,7 +20,13 @@ import type {
   IrmaaTier,
 } from "./types";
 import { computeMedicareYear } from "./medicare";
-import { computeEntityCashFlow, type EntityMetadata } from "./entity-cashflow";
+import {
+  computeBusinessAccountCashFlow,
+  computeEntityCashFlow,
+  type BusinessAccountMetadata,
+  type EntityMetadata,
+} from "./entity-cashflow";
+import { computeBusinessYearFlow } from "./business/year-flow";
 import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -306,54 +312,6 @@ function foldLifeInsurancePayoutsIntoIncome(
   year.income.total += total;
   year.totalIncome += total;
   year.netCashFlow += total;
-}
-
-/**
- * Resolve the year's gross income, expenses, and distribution percent for a
- * top-level business account, branching on its `flowMode`:
- *   - "schedule": pull cells from `accountFlowOverrides`. Missing rows or null
- *     income/expense fields resolve to 0. `distPercent` falls back to
- *     account-level `distributionPolicyPercent` then 1.0.
- *   - "annual" (default): existing behavior — sum income/expense rows tagged
- *     with `ownerAccountId`, applying inflation/growth. `distPercent` from
- *     account-level field, default 1.0.
- *
- * Used by both the Phase 3 tax-incidence and cash-distribution blocks so they
- * share semantics.
- */
-function computeBusinessYearFlow(
-  business: Account,
-  year: number,
-  currentIncomes: readonly Income[],
-  allExpenses: readonly Expense[],
-  accountFlowOverrides: AccountFlowOverride[] | undefined,
-): { gross: number; exp: number; distPercent: number } {
-  const accountDistDefault = business.distributionPolicyPercent ?? 1.0;
-  if (business.flowMode === "schedule") {
-    const ovr = (accountFlowOverrides ?? []).find(
-      (r) => r.accountId === business.id && r.year === year,
-    );
-    return {
-      gross: ovr?.incomeAmount ?? 0,
-      exp: ovr?.expenseAmount ?? 0,
-      distPercent: ovr?.distributionPercent ?? accountDistDefault,
-    };
-  }
-  let gross = 0;
-  for (const inc of currentIncomes) {
-    if (inc.ownerAccountId !== business.id) continue;
-    if (year < inc.startYear || year > inc.endYear) continue;
-    const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-    gross += inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
-  }
-  let exp = 0;
-  for (const e of allExpenses) {
-    if (e.ownerAccountId !== business.id) continue;
-    if (year < e.startYear || year > e.endYear) continue;
-    const inflateFrom = e.inflationStartYear ?? e.startYear;
-    exp += e.annualAmount * Math.pow(1 + e.growthRate, year - inflateFrom);
-  }
-  return { gross, exp, distPercent: accountDistDefault };
 }
 
 export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
@@ -4612,6 +4570,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     expenses: lastAllExpenses,
     entityFlowOverrides: data.entityFlowOverrides ?? [],
     client: data.client,
+  });
+
+  // Account-as-asset businesses: register top-level business accounts as
+  // first-class cashflow rows alongside legacy entity-modeled businesses.
+  // Same downstream key space (year.entityCashFlow) — UI reads via the same
+  // dropdown selection.
+  const businessAccountsById = new Map<string, BusinessAccountMetadata>();
+  for (const acct of data.accounts) {
+    if (acct.category !== "business") continue;
+    if (acct.parentAccountId != null) continue;
+    businessAccountsById.set(acct.id, {
+      id: acct.id,
+      name: acct.name,
+      businessType: acct.businessType,
+      flowMode: acct.flowMode,
+      distributionPolicyPercent: acct.distributionPolicyPercent,
+    });
+  }
+  computeBusinessAccountCashFlow({
+    years,
+    businessAccountsById,
+    accounts: data.accounts,
+    incomes: currentIncomes,
+    expenses: lastAllExpenses,
+    accountFlowOverrides: data.accountFlowOverrides,
   });
 
   // Per-family-member locked-share ledger for jointly-held accounts. Only
