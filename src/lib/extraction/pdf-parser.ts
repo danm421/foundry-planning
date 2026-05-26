@@ -12,7 +12,7 @@
  *    the AI call rather than burning budget on whitespace.
  */
 
-const MAX_PAGES = 50;
+const MAX_PAGES = 300;
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 export async function extractPdfText(

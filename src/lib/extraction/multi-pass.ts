@@ -113,6 +113,12 @@ export async function extractWithMultiPass(args: {
         [SectionEntityType, [number, number][]]
     >;
 
+    // Debug: log what the classifier found so we can diagnose empty extractions.
+    const rangeSummary = sectionEntries
+        .map(([s, r]) => `${s}=${JSON.stringify(r)}`)
+        .join(" ");
+    console.log(`[multi-pass] classifier ranges: ${rangeSummary}`);
+
     const tasks = sectionEntries.flatMap(([section, ranges]) =>
         ranges.map(async ([start, end]) => {
             const text = args.pages.slice(start - 1, end).join("\n");
