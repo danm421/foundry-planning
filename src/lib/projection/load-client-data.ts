@@ -1340,6 +1340,7 @@ export const loadClientDataWithContext = cache(
       medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null
         ? parseFloat(settings.medicarePremiumInflationRate)
         : DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE,
+      medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,
     };
 
     return { clientData, resolutionContext: resolutionCtx };

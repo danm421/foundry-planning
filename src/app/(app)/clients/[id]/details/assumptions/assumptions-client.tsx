@@ -66,6 +66,7 @@ export interface AssumptionsSettings {
   taxInflationRate: string;
   ssWageGrowthRate: string;
   medicarePremiumInflationRate: string;
+  medicarePremiumInflationEnabled: boolean;
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
@@ -168,6 +169,7 @@ export default function AssumptionsClient({
             taxInflationRate={settings.taxInflationRate}
             ssWageGrowthRate={settings.ssWageGrowthRate}
             medicarePremiumInflationRate={settings.medicarePremiumInflationRate}
+            medicarePremiumInflationEnabled={settings.medicarePremiumInflationEnabled}
             surplusSpendPct={settings.surplusSpendPct}
             surplusSaveAccountId={settings.surplusSaveAccountId}
             householdAccounts={accounts

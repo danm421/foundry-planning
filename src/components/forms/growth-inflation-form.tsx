@@ -38,6 +38,7 @@ interface GrowthInflationFormProps {
   taxInflationRate?: string;
   ssWageGrowthRate?: string;
   medicarePremiumInflationRate?: string;
+  medicarePremiumInflationEnabled: boolean;
   // Surplus cash flow allocation
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
@@ -78,7 +79,7 @@ function SectionTitle({ title, help }: { title: string; help?: string }) {
   );
 }
 
-export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, surplusSpendPct, surplusSaveAccountId, householdAccounts, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, surplusSpendPct, surplusSaveAccountId, householdAccounts, ...rates }: GrowthInflationFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +89,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
   const [advancedOpen, setAdvancedOpen] = useState(
     Boolean(taxInflationRate || ssWageGrowthRate || medicarePremiumInflationRate)
   );
+  const [medicareInflEnabled, setMedicareInflEnabled] = useState(medicarePremiumInflationEnabled);
   const [inflationRateSource, setInflationRateSource] = useState<"asset_class" | "custom">(
     initialInflationRateSource
   );
@@ -185,6 +187,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
     body.taxInflationRate = taxInflRaw ? Number(taxInflRaw) / 100 : null;
     body.ssWageGrowthRate = ssWageGrowthRaw ? Number(ssWageGrowthRaw) / 100 : null;
     if (medicareInflRaw) body.medicarePremiumInflationRate = Number(medicareInflRaw) / 100;
+    body.medicarePremiumInflationEnabled = medicareInflEnabled;
 
     // Surplus cash flow allocation
     body.surplusSpendPct = toDec("surplusSpendPct");
@@ -448,15 +451,27 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3 px-3 py-2">
             <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
               <span>Medicare premium inflation</span>
-              <HelpTip text="Annual inflation applied to Medicare Part B/D premiums and Medigap. Historical average ~5%." />
+              <HelpTip text="When on, inflates Part B premiums, Part D national base, IRMAA bracket dollars, Medigap, and Part D plan premiums forward from the latest CMS-published year. Turn off to project Medicare costs in today's dollars. Historical Medicare inflation ~5%/yr." />
             </div>
-            <PercentInput
-              id="medicarePremiumInflationRate"
-              name="medicarePremiumInflationRate"
-              defaultValue={medicarePremiumInflationRate ? pct(medicarePremiumInflationRate) : ""}
-              placeholder="Defaults to 5.00%"
-              className={`${INPUT_CLS} max-w-[14rem]`}
-            />
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={medicareInflEnabled}
+                  onChange={(e) => setMedicareInflEnabled(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-700 bg-gray-900 text-accent focus:ring-1 focus:ring-accent"
+                />
+                <span>On</span>
+              </label>
+              <PercentInput
+                id="medicarePremiumInflationRate"
+                name="medicarePremiumInflationRate"
+                defaultValue={medicarePremiumInflationRate ? pct(medicarePremiumInflationRate) : ""}
+                placeholder="Defaults to 5.00%"
+                disabled={!medicareInflEnabled}
+                className={`${INPUT_CLS} max-w-[12rem] disabled:opacity-50`}
+              />
+            </div>
           </div>
         </div>
       </details>

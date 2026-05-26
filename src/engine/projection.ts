@@ -3680,10 +3680,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const medicarePreemptedExpenseIds = new Set<string>();
 
     if (hasAnyCoverage && medicareParamsReady) {
-      const standardPartBPremium = Number(taxYearParams.standardPartBPremium ?? 0);
-      const partDNationalBase = Number(taxYearParams.partDNationalBase ?? 0);
-      const irmaaTiersMfj = (taxYearParams.irmaaBracketsMfj ?? []) as IrmaaTier[];
-      const irmaaTiersSingle = (taxYearParams.irmaaBracketsSingle ?? []) as IrmaaTier[];
+      const rawStandardPartB = Number(taxYearParams.standardPartBPremium ?? 0);
+      const rawPartDBase = Number(taxYearParams.partDNationalBase ?? 0);
+      const rawIrmaaMfj = (taxYearParams.irmaaBracketsMfj ?? []) as IrmaaTier[];
+      const rawIrmaaSingle = (taxYearParams.irmaaBracketsSingle ?? []) as IrmaaTier[];
       // TODO(medicare-mfs): married_separate filers who lived with their spouse use a separate,
       // punitive IRMAA cliff structure under CMS rules. We currently bucket them as `single`,
       // which understates surcharges. Not fixed in this iteration — see future-work/engine.md.
@@ -3712,10 +3712,35 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE, DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR,
       // DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR, and DEFAULT_MEDICARE_BASE_YEAR
       // in src/lib/medicare/constants.ts.
-      const inflationRate = data.medicarePremiumInflationRate ?? 0.05;
+      const inflationEnabled = data.medicarePremiumInflationEnabled ?? true;
+      const rawInflationRate = data.medicarePremiumInflationRate ?? 0.05;
+      const inflationRate = inflationEnabled ? rawInflationRate : 0;
       const medicareBaseYear = 2025;
       const defaultMedigapMonthly = 170;
       const defaultPartDPlanMonthly = 46;
+
+      // Inflate Part B premium, Part D national base, and IRMAA bracket dollars
+      // (surcharges + MAGI bounds) forward from the resolver's source year using
+      // the Medicare-specific rate. CMS publishes new values each year — without
+      // this, projections past the latest seeded year freeze Part B/IRMAA flat
+      // even though Medigap/Part D plan portions already inflate inside
+      // computeMedicareYear. Factor = 1 for exact-match years (source = year).
+      const paramSourceYear = resolved?.sourceYear ?? year;
+      const partBFactor = Math.pow(1 + inflationRate, Math.max(0, year - paramSourceYear));
+      const standardPartBPremium = rawStandardPartB * partBFactor;
+      const partDNationalBase = rawPartDBase * partBFactor;
+      const inflateTiers = (tiers: IrmaaTier[]): IrmaaTier[] =>
+        partBFactor === 1
+          ? tiers
+          : tiers.map((t) => ({
+              tier: t.tier,
+              magiLowerBound: t.magiLowerBound * partBFactor,
+              magiUpperBound: t.magiUpperBound == null ? null : t.magiUpperBound * partBFactor,
+              partBSurcharge: t.partBSurcharge * partBFactor,
+              partDSurcharge: t.partDSurcharge * partBFactor,
+            }));
+      const irmaaTiersMfj = inflateTiers(rawIrmaaMfj);
+      const irmaaTiersSingle = inflateTiers(rawIrmaaSingle);
 
       if (medicareCoverageByOwner.client) {
         const mc = resolveSourceMagi("client");

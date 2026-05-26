@@ -439,6 +439,11 @@ export interface ClientData {
   /** Annual rate at which Medicare premiums inflate forward from their base year.
    *  null = use DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE (5% per year). */
   medicarePremiumInflationRate?: number;
+  /** When true, Part B / Part D national base / IRMAA bracket dollars inflate
+   *  forward from the latest seeded year using `medicarePremiumInflationRate`,
+   *  matching the existing Medigap/Part D plan treatment. When false, those
+   *  values pass through unchanged (legacy behavior). Default true. */
+  medicarePremiumInflationEnabled?: boolean;
 }
 
 /** 'annual' uses base+growth math; 'schedule' uses entity_flow_overrides

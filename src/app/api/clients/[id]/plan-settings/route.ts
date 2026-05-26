@@ -87,6 +87,7 @@ export async function PUT(
       taxInflationRate,
       ssWageGrowthRate,
       medicarePremiumInflationRate,
+      medicarePremiumInflationEnabled,
       planStartYear,
       planEndYear,
       defaultGrowthTaxable,
@@ -226,6 +227,7 @@ export async function PUT(
           ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
           : undefined,
         medicarePremiumInflationRate: medicarePremiumInflationRate != null ? String(medicarePremiumInflationRate) : undefined,
+        medicarePremiumInflationEnabled: typeof medicarePremiumInflationEnabled === "boolean" ? medicarePremiumInflationEnabled : undefined,
         planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
         planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
         defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,

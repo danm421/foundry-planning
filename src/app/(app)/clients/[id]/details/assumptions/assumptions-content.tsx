@@ -288,6 +288,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           taxInflationRate: settings.taxInflationRate != null ? String(settings.taxInflationRate) : "",
           ssWageGrowthRate: settings.ssWageGrowthRate != null ? String(settings.ssWageGrowthRate) : "",
           medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null ? String(settings.medicarePremiumInflationRate) : "0.05",
+          medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,
           outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
           priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
           priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),

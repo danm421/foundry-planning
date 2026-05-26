@@ -641,6 +641,9 @@ export const planSettings = pgTable("plan_settings", {
   medicarePremiumInflationRate: decimal("medicare_premium_inflation_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.05"),
+  medicarePremiumInflationEnabled: boolean("medicare_premium_inflation_enabled")
+    .notNull()
+    .default(true),
   planStartYear: integer("plan_start_year").notNull(),
   planEndYear: integer("plan_end_year").notNull(),
   // Default growth rates per account category (used when an account's growth_rate is null)

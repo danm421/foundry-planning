@@ -1,0 +1,1 @@
+ALTER TABLE "plan_settings" ADD COLUMN "medicare_premium_inflation_enabled" boolean DEFAULT true NOT NULL;
