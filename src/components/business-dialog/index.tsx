@@ -189,7 +189,7 @@ export default function BusinessDialog({
           ? undefined
           : onFlowsTab && flowsBinding
           ? {
-              label: scheduleSaveBinding ? "Save schedule" : "Save Changes",
+              label: "Save schedule",
               onClick: () => {
                 void flowsBinding.save();
               },
