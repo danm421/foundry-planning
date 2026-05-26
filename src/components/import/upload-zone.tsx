@@ -166,15 +166,30 @@ export default function UploadZone({
 
   const updateFileType = useCallback(
     (id: string, type: DocumentType | "auto") => {
-      // Picker is only editable while the file is still queued — once the
-      // POST is in flight, the server has already accepted the type.
+      // Optimistic local update for both queued and uploaded files. For
+      // uploaded files we also PATCH the server row so the stored type
+      // is what the extract route reads.
+      let target: UploadingFile | undefined;
       setFiles((prev) =>
-        prev.map((f) =>
-          f.id === id && f.state === "queued" ? { ...f, documentType: type } : f,
-        ),
+        prev.map((f) => {
+          if (f.id !== id) return f;
+          if (f.state !== "queued" && f.state !== "uploaded") return f;
+          target = f;
+          return { ...f, documentType: type };
+        }),
       );
+      if (target && target.state === "uploaded" && target.serverFileId) {
+        const url = `/api/clients/${clientId}/imports/${importId}/files/${target.serverFileId}`;
+        fetch(url, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentType: type }),
+        }).catch((err) => {
+          console.error("Failed to update document type:", err);
+        });
+      }
     },
-    [],
+    [clientId, importId],
   );
 
   const handleDragOver = useCallback(
@@ -271,7 +286,8 @@ interface UploadRowProps {
 }
 
 function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRowProps) {
-  const pickerDisabled = disabled || file.state !== "queued";
+  const pickerDisabled =
+    disabled || (file.state !== "queued" && file.state !== "uploaded");
 
   return (
     <div className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2">

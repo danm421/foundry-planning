@@ -156,6 +156,7 @@ export type AuditAction =
   | "import.file.uploaded"
   | "import.file.viewed"
   | "import.file.deleted"
+  | "import.file.document_type_updated"
   | "import.extraction.started"
   | "import.extraction.completed"
   | "import.extraction.failed"

@@ -130,6 +130,92 @@ export async function GET(_request: NextRequest, { params }: Params) {
   }
 }
 
+// Mirrors src/db/schema.ts importDocumentTypeEnum — kept in sync with the
+// list in the upload route. If you change one, change both.
+const VALID_DOC_TYPES = [
+  "auto",
+  "account_statement",
+  "pay_stub",
+  "insurance",
+  "expense_worksheet",
+  "tax_return",
+  "excel_import",
+  "fact_finder",
+  "will",
+  "family_fact_finder",
+] as const;
+
+export async function PATCH(request: NextRequest, { params }: Params) {
+  try {
+    const firmId = await requireOrgId();
+    const { userId } = await auth();
+    if (!userId) {
+      throw new UnauthorizedError();
+    }
+    const { id: clientId, importId, fileId } = await params;
+
+    await requireImportAccess({ importId, clientId, firmId, userId });
+
+    const body = (await request.json().catch(() => ({}))) as {
+      documentType?: string;
+    };
+    const documentType = body.documentType;
+    if (!documentType || !(VALID_DOC_TYPES as readonly string[]).includes(documentType)) {
+      return NextResponse.json(
+        { error: `Invalid document type: ${documentType ?? "missing"}` },
+        { status: 400 },
+      );
+    }
+
+    const [row] = await db
+      .update(clientImportFiles)
+      .set({ documentType: documentType as (typeof VALID_DOC_TYPES)[number] })
+      .where(
+        and(
+          eq(clientImportFiles.id, fileId),
+          eq(clientImportFiles.importId, importId),
+          isNull(clientImportFiles.deletedAt),
+        ),
+      )
+      .returning();
+
+    if (!row) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
+
+    await recordAudit({
+      action: "import.file.document_type_updated",
+      resourceType: "client_import_file",
+      resourceId: fileId,
+      clientId,
+      firmId,
+      metadata: { importId, documentType },
+    });
+
+    return NextResponse.json({ file: row });
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (err instanceof NotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
+    }
+    const safeMessage =
+      err instanceof Error ? err.message.slice(0, 200) : "unknown error";
+    console.error(
+      "PATCH /api/clients/[id]/imports/[importId]/files/[fileId] failed:",
+      safeMessage,
+    );
+    return NextResponse.json(
+      { error: "Update failed. Please try again." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
     const firmId = await requireOrgId();
