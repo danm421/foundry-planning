@@ -26,6 +26,7 @@ import {
   CrmTaskSidePanelFiles,
   type TaskFileRow,
 } from "@/components/crm-task-side-panel-files";
+import { Skeleton, SkeletonText } from "@/components/skeleton/skeleton";
 
 export interface TaskDetailBundle {
   task: {
@@ -86,7 +87,6 @@ export function TasksPage({
       ? initialTaskDetail
       : null,
   );
-  const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
   // Build the per-row deep-link prefix. Preserves the `tab=tasks` anchor
@@ -106,13 +106,11 @@ export function TasksPage({
     if (!activeTaskId) {
       setDetail(null);
       setDetailError(null);
-      setDetailLoading(false);
       return;
     }
     if (detail && detail.task.id === activeTaskId) return;
 
     let cancelled = false;
-    setDetailLoading(true);
     setDetailError(null);
 
     (async () => {
@@ -145,8 +143,6 @@ export function TasksPage({
       } catch (err) {
         if (cancelled) return;
         setDetailError(err instanceof Error ? err.message : "Failed to load task");
-      } finally {
-        if (!cancelled) setDetailLoading(false);
       }
     })();
 
@@ -159,19 +155,32 @@ export function TasksPage({
     ? households.find((h) => h.id === scopeHouseholdId)?.name
     : undefined;
 
-  // Side panel only renders when the URL has a task AND we have a bundle
-  // whose id matches. While loading we briefly show nothing — Task 29
-  // wires a proper skeleton.
-  const panelReady = activeTaskId && detail && detail.task.id === activeTaskId;
+  // Open the panel as soon as the URL has a task — even before the detail
+  // bundle has loaded. We paint the chrome from the matching list row
+  // (which we already have on the client) and show skeleton tab bodies
+  // while the four detail fetches run. As soon as `detail` lands we swap
+  // to the real bodies in-place without remounting the panel.
+  const detailMatches = !!(detail && detail.task.id === activeTaskId);
+  const optimisticRow = useMemo(
+    () => (activeTaskId ? initialRows.find((r) => r.id === activeTaskId) ?? null : null),
+    [activeTaskId, initialRows],
+  );
 
-  const sidePanelInitialTask: CrmTaskSidePanelTask | null = panelReady
+  const sidePanelInitialTask: CrmTaskSidePanelTask | null = detailMatches
     ? {
-        id: detail.task.id,
-        title: detail.task.title,
-        status: detail.task.status,
-        priority: detail.task.priority,
+        id: detail!.task.id,
+        title: detail!.task.title,
+        status: detail!.task.status,
+        priority: detail!.task.priority,
       }
-    : null;
+    : optimisticRow
+      ? {
+          id: optimisticRow.id,
+          title: optimisticRow.title,
+          status: optimisticRow.status,
+          priority: optimisticRow.priority,
+        }
+      : null;
 
   return (
     <>
@@ -207,49 +216,95 @@ export function TasksPage({
         />
       )}
 
-      {panelReady && sidePanelInitialTask && (
+      {activeTaskId && sidePanelInitialTask && (
         <CrmTaskSidePanel
-          taskId={detail.task.id}
+          key={activeTaskId}
+          taskId={activeTaskId}
           initialTask={sidePanelInitialTask}
           detailsTab={
-            <CrmTaskSidePanelDetails
-              taskId={detail.task.id}
-              initial={{
-                status: detail.task.status,
-                priority: detail.task.priority,
-                dueDate: detail.task.dueDate,
-                startDate: detail.task.startDate,
-                recurrence: detail.task.recurrence,
-                householdId: detail.task.householdId,
-                assigneeUserId: detail.task.assigneeUserId,
-                description: detail.task.description,
-                createdAt: detail.task.createdAt,
-                createdByUserId: detail.task.createdByUserId,
-              }}
-              members={members}
-              households={households}
-              firmTags={firmTags}
-              initialTags={detail.tags}
-            />
+            detailMatches ? (
+              <CrmTaskSidePanelDetails
+                taskId={detail!.task.id}
+                initial={{
+                  status: detail!.task.status,
+                  priority: detail!.task.priority,
+                  dueDate: detail!.task.dueDate,
+                  startDate: detail!.task.startDate,
+                  recurrence: detail!.task.recurrence,
+                  householdId: detail!.task.householdId,
+                  assigneeUserId: detail!.task.assigneeUserId,
+                  description: detail!.task.description,
+                  createdAt: detail!.task.createdAt,
+                  createdByUserId: detail!.task.createdByUserId,
+                }}
+                members={members}
+                households={households}
+                firmTags={firmTags}
+                initialTags={detail!.tags}
+              />
+            ) : (
+              <PanelBodySkeleton variant="details" />
+            )
           }
           commentsTab={
-            <CrmTaskSidePanelComments
-              taskId={detail.task.id}
-              initialComments={detail.comments}
-            />
+            detailMatches ? (
+              <CrmTaskSidePanelComments
+                taskId={detail!.task.id}
+                initialComments={detail!.comments}
+              />
+            ) : (
+              <PanelBodySkeleton variant="list" />
+            )
           }
-          activityTab={<CrmTaskSidePanelActivity rows={detail.activity} />}
+          activityTab={
+            detailMatches ? (
+              <CrmTaskSidePanelActivity rows={detail!.activity} />
+            ) : (
+              <PanelBodySkeleton variant="list" />
+            )
+          }
           filesTab={
-            <CrmTaskSidePanelFiles
-              taskId={detail.task.id}
-              initialFiles={detail.files}
-            />
+            detailMatches ? (
+              <CrmTaskSidePanelFiles
+                taskId={detail!.task.id}
+                initialFiles={detail!.files}
+              />
+            ) : (
+              <PanelBodySkeleton variant="list" />
+            )
           }
         />
       )}
-
-      {/* Reserved: detailLoading skeleton will get wired by Task 29 */}
-      {detailLoading ? null : null}
     </>
+  );
+}
+
+function PanelBodySkeleton({ variant }: { variant: "details" | "list" }) {
+  if (variant === "details") {
+    return (
+      <div className="flex flex-col gap-4">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex flex-col gap-2">
+            <Skeleton height="0.75rem" width="30%" />
+            <Skeleton height="2.25rem" className="w-full" />
+          </div>
+        ))}
+        <div className="mt-2">
+          <SkeletonText lines={3} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3"
+        >
+          <SkeletonText lines={2} />
+        </div>
+      ))}
+    </div>
   );
 }
