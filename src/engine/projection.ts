@@ -2757,9 +2757,56 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const convResolved = taxResolver ? taxResolver.getYear(year) : null;
       const convBrackets = convResolved?.params.incomeBrackets[convFilingStatus];
 
+      // Cashflow snapshot for the closure's supplemental-withdrawal estimate.
+      // Phase 12's convergence loop will draw from the withdrawal strategy to
+      // cover any post-conversion deficit — if that lands on a Trad IRA the
+      // recognized ordinary income stacks on top of the conversion and blows
+      // past the targeted ceiling. The closure needs to anticipate that.
+      //
+      // `projectedCheckingPreTax` mirrors the eventual `preSupplementalChecking`
+      // (line ~3358). At this point RMDs credited via line ~1384 live in
+      // cashDelta (not yet flushed to accountBalances); household income credits
+      // and expense/liability debits haven't hit cashDelta yet (lines ~2950 /
+      // ~2990 / ~3109), so we fold them in forward-looking. Savings,
+      // discretionary, gifts, and entity-internal cash flows are excluded —
+      // zero in retirement (where this bug bites) and the closure's own
+      // Newton-style iteration absorbs any small residual.
+      const projectedCheckingPreTax = hasChecking
+        ? (accountBalances[defaultChecking!.id] ?? 0)
+          + (cashDelta[defaultChecking!.id] ?? 0)
+          + income.total
+          - expenseBreakdown.living
+          - expenseBreakdown.other
+          - expenseBreakdown.insurance
+          - liabResult.totalPayment
+        : 0;
+
+      const householdWithdrawBalancesForConv: Record<string, number> = {};
+      if (hasChecking) {
+        for (const acct of workingAccounts) {
+          const householdShare = ownedByHouseholdAtYear(
+            acct,
+            data.giftEvents,
+            year,
+            planSettings.planStartYear,
+          );
+          if (householdShare <= 0) continue;
+          if (acct.isDefaultChecking) continue;
+          const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
+          householdWithdrawBalancesForConv[acct.id] = balance * householdShare;
+        }
+      }
+
       // Closure: returns the year's `incomeTaxBase` if Roth taxable income were
       // `r`. Used only by the `fill_up_bracket` strategy; called up to 6× to
       // converge a bracket fill that exactly matches the bracket ceiling.
+      //
+      // Two-pass when there's a deficit: first pass computes the conversion's
+      // tax bill, second pass folds in the supplemental ordinary income that
+      // the household will need to draw to cover that bill plus any
+      // pre-existing expense gap. Without the second pass the conversion is
+      // sized assuming `supplemental ordinary income = 0`, which silently
+      // overshoots when retirement expenses exceed SS + RMD inflows.
       const computeIncomeTaxBaseWithRothTaxable = (r: number): number => {
         if (!useBracket || !resolved) {
           return Math.max(0, taxableIncome + r);
@@ -2787,7 +2834,76 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
         });
-        return trial.taxResult.flow.incomeTaxBase;
+
+        if (!hasChecking || effectiveWithdrawalStrategy.length === 0) {
+          return trial.taxResult.flow.incomeTaxBase;
+        }
+
+        const initialDeficit = projectedCheckingPreTax - trial.taxes;
+        if (initialDeficit >= 0) {
+          return trial.taxResult.flow.incomeTaxBase;
+        }
+
+        // Inner convergence: the supplemental draw triggers more tax which
+        // grows the deficit. Mimic the production convergence loop (phase 12)
+        // by iterating cumulativeShortfall — each pass folds in the residual
+        // tax on the previous supplemental until checking settles near zero.
+        // 3-4 iterations is enough for a sub-dollar residual under linear-ish
+        // brackets; we cap at 4 to bound the closure's tax-calc count.
+        let cumulativeShortfall = 0;
+        let trialFinal = trial;
+        let suppOrdinary = 0;
+        let suppCapGains = 0;
+        for (let suppIter = 0; suppIter < 4; suppIter++) {
+          const checkingAfterTax =
+            projectedCheckingPreTax + (suppOrdinary + suppCapGains) - trialFinal.taxes;
+          if (checkingAfterTax >= -1) break;
+          const margRate = Math.min(0.99, Math.max(0, trialFinal.marginalCombinedRate ?? 0));
+          const stepDenominator = Math.max(0.01, 1 - margRate);
+          cumulativeShortfall += -checkingAfterTax / stepDenominator;
+
+          const suppEst = planSupplementalWithdrawal({
+            shortfall: cumulativeShortfall,
+            strategy: effectiveWithdrawalStrategy,
+            householdBalances: householdWithdrawBalancesForConv,
+            basisMap,
+            freshBasisMap,
+            rothValueMap,
+            accounts: workingAccounts,
+            ages: { client: ages.client, spouse: ages.spouse ?? null },
+            isSpouseAccount,
+            year,
+          });
+          suppOrdinary = suppEst.recognizedIncome.ordinaryIncome;
+          suppCapGains = suppEst.recognizedIncome.capitalGains;
+          if (suppOrdinary === 0 && suppCapGains === 0) break;
+
+          trialFinal = computeTaxForYear({
+            taxDetail: {
+              ...taxDetail,
+              ordinaryIncome: taxDetail.ordinaryIncome + r + suppOrdinary,
+              capitalGains: taxDetail.capitalGains + suppCapGains,
+              bySource: { ...taxDetail.bySource },
+            },
+            socialSecurityGross: income.socialSecurity,
+            totalIncome: income.total + r + suppOrdinary + suppCapGains,
+            taxableIncome: taxableIncome + r + suppOrdinary + suppCapGains,
+            filingStatus,
+            year,
+            planSettings,
+            resolved,
+            useBracket,
+            aboveLineDeductions,
+            itemizedDeductions,
+            charityCarryforwardIn: charityCarryforward,
+            charityGiftsThisYear,
+            secaResult,
+            transferEarlyWithdrawalPenalty: 0,
+            interestIncomeForTax,
+            deductionBreakdownIn: deductionBreakdownResult ?? null,
+          });
+        }
+        return trialFinal.taxResult.flow.incomeTaxBase;
       };
 
       rothConversionResult = applyRothConversions({

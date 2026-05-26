@@ -375,3 +375,195 @@ describe("Roth savings contribution credits rothValue", () => {
     expect(k401.rothValueEoY).toBeCloseTo(3000, 0);
   });
 });
+
+// ─── Roth fill_up_bracket + supplemental withdrawals ────────────────────────
+//
+// Reproduces the production bug: a retired household whose expenses exceed
+// SS + RMD inflows triggers supplemental IRA draws via the withdrawal-strategy
+// convergence loop. The Roth conversion is sized BEFORE that loop runs, so
+// the closure misses the supplemental ordinary income — pushing the actual
+// post-conversion incomeTaxBase well past the 22% ceiling into 24% / 32%.
+
+function fillBracketWithSupplementalScenario(): ClientData {
+  const conversion: RothConversion = {
+    id: "rc-fill",
+    name: "Fill 22%",
+    destinationAccountId: "acc-roth",
+    sourceAccountIds: ["acc-ira"],
+    conversionType: "fill_up_bracket",
+    fillUpBracket: 0.22,
+    fixedAmount: 0,
+    startYear: 2026,
+    indexingRate: 0,
+  };
+
+  return {
+    client: {
+      firstName: "Cooper",
+      lastName: "Test",
+      dateOfBirth: "1953-01-01", // age 73 in 2026 — RMDs already active
+      spouseDob: "1955-01-01",   // age 71 in 2026
+      filingStatus: "married_joint",
+      retirementAge: 65,
+      planEndAge: 90,
+      spouseRetirementAge: 65,
+    },
+    accounts: [
+      {
+        id: "acc-checking",
+        name: "Joint Checking",
+        category: "cash",
+        subType: "checking",
+        titlingType: "jtwros",
+        value: 50_000,
+        basis: 50_000,
+        growthRate: 0,
+        rmdEnabled: false,
+        isDefaultChecking: true,
+        owners: [
+          { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 0.5 },
+          { kind: "family_member", familyMemberId: SPOUSE_FM_ID, percent: 0.5 },
+        ],
+      },
+      {
+        id: "acc-ira",
+        name: "Cooper Trad IRA",
+        category: "retirement",
+        subType: "traditional_ira",
+        titlingType: "jtwros",
+        value: 3_000_000,
+        basis: 0,
+        growthRate: 0.05,
+        rmdEnabled: true,
+        owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+      },
+      {
+        id: "acc-roth",
+        name: "Cooper Roth IRA",
+        category: "retirement",
+        subType: "roth_ira",
+        titlingType: "jtwros",
+        value: 0,
+        basis: 0,
+        growthRate: 0.05,
+        rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+      },
+    ],
+    incomes: [
+      {
+        id: "inc-cooper-ss",
+        name: "Cooper SS",
+        type: "social_security",
+        owner: "client",
+        annualAmount: 40_000,
+        growthRate: 0.02,
+        startYear: 2026,
+        endYear: 2055,
+        claimingAge: 67,
+      },
+      {
+        id: "inc-spouse-ss",
+        name: "Spouse SS",
+        type: "social_security",
+        owner: "spouse",
+        annualAmount: 30_000,
+        growthRate: 0.02,
+        startYear: 2026,
+        endYear: 2055,
+        claimingAge: 67,
+      },
+    ],
+    // Expenses high enough that SS + RMD alone won't cover them — supplemental
+    // IRA draws kick in via the withdrawal-strategy convergence loop.
+    expenses: [
+      {
+        id: "exp-living",
+        type: "living",
+        name: "Living expenses",
+        annualAmount: 160_000,
+        growthRate: 0.02,
+        startYear: 2026,
+        endYear: 2045,
+      },
+    ],
+    liabilities: [],
+    savingsRules: [],
+    // IRA-first strategy: supplemental draws land as ordinary income, stacking
+    // on top of the Roth conversion. This is what blows past the 22% ceiling.
+    withdrawalStrategy: [
+      { accountId: "acc-ira",      priorityOrder: 1, startYear: 2026, endYear: 2055 },
+      { accountId: "acc-checking", priorityOrder: 2, startYear: 2026, endYear: 2055 },
+    ],
+    planSettings: {
+      flatFederalRate: 0,
+      flatStateRate: 0,
+      inflationRate: 0,
+      planStartYear: 2026,
+      planEndYear: 2030,
+      taxEngineMode: "bracket",
+      taxInflationRate: 0.025,
+      estateAdminExpenses: 0,
+      flatStateEstateRate: 0,
+    },
+    entities: [],
+    deductions: [],
+    transfers: [],
+    assetTransactions: [],
+    gifts: [],
+    giftEvents: [],
+    wills: [],
+    rothConversions: [conversion],
+    familyMembers: [
+      {
+        id: CLIENT_FM_ID,
+        firstName: "Cooper",
+        lastName: "Test",
+        relationship: "other",
+        role: "client",
+        dateOfBirth: "1953-01-01",
+      } as FamilyMember,
+      {
+        id: SPOUSE_FM_ID,
+        firstName: "Partner",
+        lastName: "Test",
+        relationship: "other",
+        role: "spouse",
+        dateOfBirth: "1955-01-01",
+      } as FamilyMember,
+    ],
+    externalBeneficiaries: [],
+    taxYearRows: [TAX_YEAR_2026],
+  } as ClientData;
+}
+
+describe("Roth fill_up_bracket — supplemental-withdrawal interaction", () => {
+  it("does not overshoot the 22% bracket when supplemental IRA draws cover expenses", () => {
+    const years = runProjection(fillBracketWithSupplementalScenario());
+
+    // Spot-check every year in the projection. Pre-fix this scenario blew the
+    // 22% ceiling by $147K+ in years 2027+ because the conversion was sized
+    // assuming no supplemental, then supplemental IRA draws stacked on top.
+    for (const yr of [2026, 2027, 2028, 2029, 2030]) {
+      const year = years.find((y) => y.year === yr);
+      expect(year, `year ${yr} should exist`).toBeDefined();
+
+      const conv = (year!.rothConversions ?? [])[0];
+      expect(conv, `year ${yr} should have a roth conversion`).toBeDefined();
+      expect(conv!.taxable, `year ${yr} conversion taxable > 0`).toBeGreaterThan(0);
+
+      const tier = year!.taxResult!.diag.marginalBracketTier;
+      const incomeTaxBase = year!.taxResult!.flow.incomeTaxBase;
+
+      // findMarginalTier puts a value exactly at tier.to into the next tier:
+      // a perfect 22% fill can surface as rate=0.22 (base ≈ tier.to) or
+      // rate=0.24 (base ≈ tier.from, which is the 22% ceiling).
+      const bracket22Top = tier.rate === 0.24 ? tier.from : tier.to ?? 0;
+      expect(
+        Math.abs(incomeTaxBase - bracket22Top),
+        `year ${yr}: incomeTaxBase ${incomeTaxBase} should land at 22% ceiling ${bracket22Top}`,
+      ).toBeLessThan(100);
+      expect(tier.rate, `year ${yr} marginal rate must stay ≤ 24%`).toBeLessThanOrEqual(0.24);
+    }
+  });
+});
