@@ -99,7 +99,11 @@ export function EstateFlowSummaryView({
           {survivorNetWorth && (
             <div className="w-full max-w-[280px]">
               <BoxButton
-                tone={roleFor(survivorNetWorth.ownerLabel)}
+                tone={
+                  roleFor(survivorNetWorth.ownerLabel) === "client"
+                    ? "clientSolid"
+                    : "spouseSolid"
+                }
                 title={`${survivorNetWorth.ownerLabel}'s Net Worth`}
                 value={survivorNetWorth.amount}
                 onClick={() =>
@@ -124,7 +128,6 @@ export function EstateFlowSummaryView({
             <DeathColumn
               stage={firstDeath}
               which="first"
-              role={roleFor(firstDeath.decedentLabel)}
               onSelect={setSelected}
             />
           )}
@@ -133,7 +136,6 @@ export function EstateFlowSummaryView({
             <DeathColumn
               stage={secondDeath}
               which="second"
-              role={roleFor(secondDeath.decedentLabel)}
               onSelect={setSelected}
             />
           )}
@@ -260,19 +262,16 @@ export function EstateFlowSummaryView({
 function DeathColumn({
   stage,
   which,
-  role,
   onSelect,
 }: {
   stage: DeathStage;
   which: "first" | "second";
-  role: Role;
   onSelect: (s: SelectedPanel) => void;
 }) {
-  const survivorRole: Role = role === "client" ? "spouse" : "client";
   return (
     <div className="flex flex-col items-stretch gap-0">
       <BoxButton
-        tone={role}
+        tone="clientSolid"
         title={stage.decedentLabel}
         value={stage.estateValue}
         onClick={() =>
@@ -287,7 +286,6 @@ function DeathColumn({
               <SubBoxButton
                 key={b.kind}
                 box={b}
-                survivorRole={survivorRole}
                 onClick={() => onSelect(mapSubBoxToPanel(which, b))}
               />
             ))}
@@ -396,14 +394,20 @@ function mapSubBoxToPanel(
 const TONE_CLASSES = {
   client:
     "border-amber-400/50 bg-gradient-to-br from-amber-400/30 via-amber-500/20 to-yellow-600/25 text-amber-50 shadow-lg shadow-amber-500/15 ring-1 ring-inset ring-amber-300/20",
+  clientSolid:
+    "border-amber-700/80 bg-accent/80 text-white backdrop-blur-sm shadow-lg shadow-amber-500/25 ring-1 ring-inset ring-amber-300/40",
   spouse:
     "border-slate-200/40 bg-gradient-to-br from-slate-100/15 via-slate-200/10 to-slate-300/20 text-white shadow-lg shadow-slate-200/10 ring-1 ring-inset ring-white/20",
+  spouseSolid:
+    "border-white/70 bg-white/75 text-slate-950 backdrop-blur-sm shadow-lg shadow-slate-300/25 ring-1 ring-inset ring-white/60",
   tax:
-    "border-red-400/50 bg-gradient-to-br from-red-500/30 via-red-600/20 to-red-700/25 text-red-50 shadow-lg shadow-red-500/15 ring-1 ring-inset ring-red-300/20",
+    "border-red-700/80 bg-red-600/75 text-white backdrop-blur-sm shadow-lg shadow-red-500/25 ring-1 ring-inset ring-red-300/40",
+  inheritanceSpouse:
+    "border-sky-700/80 bg-sky-500/75 text-white backdrop-blur-sm shadow-lg shadow-sky-500/25 ring-1 ring-inset ring-sky-200/40",
   heirs:
-    "border-emerald-400/50 bg-gradient-to-br from-emerald-500/30 via-emerald-600/20 to-green-700/25 text-emerald-50 shadow-lg shadow-emerald-500/15 ring-1 ring-inset ring-emerald-300/20",
+    "border-emerald-700/80 bg-emerald-600/75 text-white backdrop-blur-sm shadow-lg shadow-emerald-600/25 ring-1 ring-inset ring-emerald-400/40",
   neutral:
-    "border-slate-400/30 bg-gradient-to-br from-slate-500/15 via-slate-600/10 to-slate-700/15 text-slate-100 shadow-lg shadow-slate-500/10 ring-1 ring-inset ring-slate-300/10",
+    "border-slate-500/80 bg-slate-400/70 text-white backdrop-blur-sm shadow-lg shadow-slate-500/25 ring-1 ring-inset ring-slate-200/40",
 } as const;
 
 const INTERACTIVE =
@@ -439,18 +443,16 @@ function BoxButton({
 
 function SubBoxButton({
   box,
-  survivorRole,
   onClick,
 }: {
   box: DeathSubBox;
-  survivorRole: Role;
   onClick: () => void;
 }) {
   const tone: keyof typeof TONE_CLASSES =
     box.kind === "taxes"
       ? "tax"
       : box.kind === "inheritance_spouse"
-        ? survivorRole
+        ? "inheritanceSpouse"
         : "heirs";
   return (
     <button
@@ -477,7 +479,7 @@ function HeirBoxButton({
   onClick: () => void;
 }) {
   const activeClass = isActive
-    ? "border-emerald-300 ring-emerald-200/50 shadow-emerald-400/30 -translate-y-0.5 brightness-110"
+    ? "border-emerald-300 ring-emerald-200/70 shadow-emerald-400/40 -translate-y-0.5 brightness-110"
     : "";
   return (
     <button
@@ -485,14 +487,14 @@ function HeirBoxButton({
       onClick={onClick}
       aria-pressed={isActive}
       aria-label={`${heir.recipientLabel}: ${fmt.format(heir.total)}`}
-      className={`flex w-[220px] flex-col rounded-xl border border-emerald-400/50 bg-gradient-to-br from-emerald-500/30 via-emerald-600/20 to-green-700/25 px-5 py-4 text-emerald-50 shadow-lg shadow-emerald-500/15 ring-1 ring-inset ring-emerald-300/20 backdrop-blur-sm ${INTERACTIVE} ${activeClass}`}
+      className={`flex w-[220px] flex-col rounded-xl border border-emerald-700/80 bg-emerald-600/75 px-5 py-4 text-white backdrop-blur-sm shadow-lg shadow-emerald-600/25 ring-1 ring-inset ring-emerald-400/40 ${INTERACTIVE} ${activeClass}`}
     >
-      <span className="mb-2 text-sm font-semibold tracking-wide text-emerald-50">
+      <span className="mb-2 text-sm font-semibold tracking-wide">
         {heir.recipientLabel}
       </span>
       <Row label="Outright" amount={heir.outright} />
       <Row label="In Trust" amount={heir.inTrust} />
-      <div className="my-2 border-t border-emerald-300/20" />
+      <div className="my-2 border-t border-emerald-900/30" />
       <Row label="Total" amount={heir.total} bold />
     </button>
   );

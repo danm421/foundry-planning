@@ -50,9 +50,9 @@ export function EstateFlowSummaryDetailPanel({ selected, onClose }: Props) {
       role="dialog"
       aria-modal="false"
       aria-label={panelTitle(selected)}
-      className="flex max-h-[60vh] w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-gradient-to-b from-slate-900 to-slate-950 shadow-xl shadow-black/40 ring-1 ring-inset ring-white/5"
+      className="flex max-h-[60vh] w-full flex-col overflow-hidden rounded-xl border-2 border-amber-400 bg-gradient-to-b from-slate-900 to-slate-950 shadow-xl shadow-amber-500/30 ring-1 ring-inset ring-amber-300/20"
     >
-      <header className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+      <header className="flex items-center justify-between gap-2 border-b border-amber-400/30 px-4 py-3">
         <h2 className="truncate text-xs font-semibold uppercase tracking-wider text-gray-100">
           {panelTitle(selected)}
         </h2>
