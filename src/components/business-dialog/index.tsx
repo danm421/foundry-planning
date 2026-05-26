@@ -159,9 +159,9 @@ export default function BusinessDialog({
   const isEdit = mode === "edit";
   const title = isEdit ? "Edit Business" : "Add Business";
 
-  // Details has its primary form action; Assets / Notes are inline. Flows in
-  // either sub-mode (schedule or annual) exposes a save button via the active
-  // binding; we only suppress the primary action when no binding has registered.
+  // Details has its primary form action; Assets / Notes are inline. Flows
+  // exposes a footer save button only in schedule mode (via the schedule-grid
+  // binding); annual mode has no footer action.
   const onFlowsTab = tab === "flows";
   const noPrimaryAction =
     tab === "assets" || tab === "notes" || (onFlowsTab && !flowsBinding);
