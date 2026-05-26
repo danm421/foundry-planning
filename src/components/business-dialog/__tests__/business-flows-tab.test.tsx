@@ -64,8 +64,6 @@ const baseProps = {
   planStartYear: 2026,
   planEndYear: 2028,
   primaryClientBirthYear: 1964,
-  distributionPolicyPercent: 0.5,
-  taxTreatment: "qbi" as const,
   initialFlowOverrides: [],
   onScheduleSaveBindingChange: undefined,
   onOpenAddIncome: () => {},
@@ -164,19 +162,4 @@ describe("BusinessFlowsTab", () => {
     });
   });
 
-  it("DistributionAndTax section saves business fields via the account PUT", async () => {
-    render(<BusinessFlowsTab {...baseProps} />);
-    await act(async () => {
-      fireEvent.click(screen.getAllByRole("button", { name: /save/i })[0]);
-    });
-    await waitFor(() => expect(submitMock).toHaveBeenCalled());
-    const [edit, fallback] = submitMock.mock.calls[0];
-    expect(edit.targetKind).toBe("account");
-    expect(edit.targetId).toBe("biz-1");
-    expect(edit.desiredFields).toEqual({
-      distributionPolicyPercent: 0.5,
-      businessTaxTreatment: "qbi",
-    });
-    expect(fallback.url).toBe("/api/clients/client-1/accounts/biz-1");
-  });
 });
