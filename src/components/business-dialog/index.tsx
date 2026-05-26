@@ -109,11 +109,6 @@ export default function BusinessDialog({
   // autosave can drive it.
   const [scheduleSaveBinding, setScheduleSaveBinding] =
     useState<ScheduleSaveBinding | null>(null);
-  // DistributionAndTaxSection (annual mode) registers its save handler here so
-  // the dialog footer can drive the Save Changes button.
-  const [annualSaveBinding, setAnnualSaveBinding] =
-    useState<ScheduleSaveBinding | null>(null);
-
   // Pre-loaded overrides for the schedule grid. Refetched whenever the business
   // (or active scenario) changes. Matches entity-dialog's pattern: early-return
   // without resetting state when there's no business yet (the dialog hides the
@@ -134,11 +129,10 @@ export default function BusinessDialog({
       .catch(() => setInitialFlowOverrides([]));
   }, [clientId, currentBusiness?.id, scenarioId]);
 
-  // Saves the active tab. Flows routes to whichever sub-tab binding is active
-  // (schedule grid or annual D&T section); every other tab uses the details
-  // form's autosave handle.
-  const flowsBinding =
-    tab === "flows" ? scheduleSaveBinding ?? annualSaveBinding : null;
+  // Saves the active tab. Flows routes to the schedule-grid binding when the
+  // user is in schedule mode; every other tab uses the details form's autosave
+  // handle.
+  const flowsBinding = tab === "flows" ? scheduleSaveBinding : null;
   const saveAsync = useCallback(async () => {
     if (tab === "flows" && flowsBinding) {
       return flowsBinding.save();
@@ -165,9 +159,9 @@ export default function BusinessDialog({
   const isEdit = mode === "edit";
   const title = isEdit ? "Edit Business" : "Add Business";
 
-  // Details has its primary form action; Assets / Notes are inline. Flows in
-  // either sub-mode (schedule or annual) exposes a save button via the active
-  // binding; we only suppress the primary action when no binding has registered.
+  // Details has its primary form action; Assets / Notes are inline. Flows
+  // exposes a footer save button only in schedule mode (via the schedule-grid
+  // binding); annual mode has no footer action.
   const onFlowsTab = tab === "flows";
   const noPrimaryAction =
     tab === "assets" || tab === "notes" || (onFlowsTab && !flowsBinding);
@@ -195,7 +189,7 @@ export default function BusinessDialog({
           ? undefined
           : onFlowsTab && flowsBinding
           ? {
-              label: scheduleSaveBinding ? "Save schedule" : "Save Changes",
+              label: "Save schedule",
               onClick: () => {
                 void flowsBinding.save();
               },
@@ -274,11 +268,8 @@ export default function BusinessDialog({
           planStartYear={planStartYear}
           planEndYear={planEndYear}
           primaryClientBirthYear={primaryClientBirthYear}
-          distributionPolicyPercent={currentBusiness.distributionPolicyPercent ?? null}
-          taxTreatment={currentBusiness.businessTaxTreatment ?? "qbi"}
           initialFlowOverrides={initialFlowOverrides}
           onScheduleSaveBindingChange={setScheduleSaveBinding}
-          onAnnualSaveBindingChange={setAnnualSaveBinding}
           onOpenAddIncome={onOpenAddIncome ?? NOOP}
           onOpenAddExpense={onOpenAddExpense ?? NOOP}
           onEditIncome={onEditIncome ?? NOOP}

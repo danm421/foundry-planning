@@ -23,7 +23,6 @@ import {
 import type { BusinessAccount, BusinessFormAutoSaveHandle, BusinessTab } from "./types";
 
 type BusinessTypeValue = "sole_prop" | "partnership" | "s_corp" | "c_corp" | "llc" | "other";
-type FlowModeValue = "annual" | "schedule";
 type TaxTreatmentValue = "qbi" | "ordinary" | "non_taxable";
 
 const BUSINESS_TYPE_OPTIONS: { value: BusinessTypeValue; label: string }[] = [
@@ -97,9 +96,6 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
         ? String(Number((editing.distributionPolicyPercent * 100).toFixed(4)))
         : "",
     );
-    const [flowMode, setFlowMode] = useState<FlowModeValue>(
-      (editing?.flowMode as FlowModeValue | undefined) ?? "annual",
-    );
     const [taxTreatment, setTaxTreatment] = useState<TaxTreatmentValue>(
       (editing?.businessTaxTreatment as TaxTreatmentValue | undefined) ?? "qbi",
     );
@@ -134,9 +130,9 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
       () =>
         JSON.stringify({
           name, businessType, value, basis, growthRatePct, distributionPolicyPct,
-          flowMode, taxTreatment, owners,
+          taxTreatment, owners,
         }),
-      [name, businessType, value, basis, growthRatePct, distributionPolicyPct, flowMode, taxTreatment, owners],
+      [name, businessType, value, basis, growthRatePct, distributionPolicyPct, taxTreatment, owners],
     );
     const baselineRef = useRef<string>("");
     useEffect(() => {
@@ -165,7 +161,6 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
         growthRate,
         growthSource: growthRate === null ? "default" : "custom",
         distributionPolicyPercent,
-        flowMode,
         businessTaxTreatment: taxTreatment,
         parentAccountId: editing?.parentAccountId ?? null,
         owners: owners
@@ -337,36 +332,17 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
             Distribution &amp; tax policy
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="biz-distpct" className={fieldLabelClassName}>Distribution policy</label>
-              <PercentInput
-                id="biz-distpct"
-                value={distributionPolicyPct}
-                onChange={setDistributionPolicyPct}
-                placeholder="(no distribution)"
-              />
-              <p className="mt-1 text-xs text-ink-4">
-                Share of annual earnings paid out to owners. Leave blank for no distribution.
-              </p>
-            </div>
-            <div>
-              <label htmlFor="biz-flowmode" className={fieldLabelClassName}>Distribution mode</label>
-              <select
-                id="biz-flowmode"
-                value={flowMode}
-                onChange={(e) => setFlowMode(e.target.value as FlowModeValue)}
-                className={selectClassName}
-              >
-                <option value="annual">Annual (use distribution policy %)</option>
-                <option value="schedule">Schedule (per-year overrides)</option>
-              </select>
-              {flowMode === "schedule" && (
-                <p className="mt-1 text-xs text-ink-4">
-                  Per-year schedule editor coming in a later phase. For now, the engine treats this as zero.
-                </p>
-              )}
-            </div>
+          <div>
+            <label htmlFor="biz-distpct" className={fieldLabelClassName}>Distribution policy</label>
+            <PercentInput
+              id="biz-distpct"
+              value={distributionPolicyPct}
+              onChange={setDistributionPolicyPct}
+              placeholder="(no distribution)"
+            />
+            <p className="mt-1 text-xs text-ink-4">
+              Share of annual earnings paid out to owners. Leave blank for no distribution.
+            </p>
           </div>
 
           <div>
