@@ -23,10 +23,13 @@ import { DeathOrderToggle } from "@/components/report-controls/death-order-toggl
 import DialogTabs from "@/components/dialog-tabs";
 import { EstateFlowReportTab } from "@/components/estate-flow-report-tab";
 import { EstateFlowChartTab } from "@/components/estate-flow-chart-tab";
+import { EstateFlowComparisonTab } from "@/components/estate-flow-comparison-tab";
+import type { ProjectionResult } from "@/engine/projection";
 
 export interface EstateFlowViewProps {
   clientId: string;
   scenarioId: string;
+  scenarioName: string;
   isMarried: boolean;
   ownerNames: { clientName: string; spouseName: string | null };
   initialClientData: ClientData;
@@ -34,6 +37,10 @@ export interface EstateFlowViewProps {
   cpi: number;
   scenarios?: ScenarioOption[];
   snapshots?: SnapshotOption[];
+  /** Do-nothing baseline tree+projection, used by the Comparison tab. */
+  doNothingTree: ClientData;
+  doNothingResult: ProjectionResult;
+  doNothingScenarioName: string;
 }
 
 // ── Gift persistence ─────────────────────────────────────────────────────────
@@ -147,7 +154,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
 
-  const [activeTab, setActiveTab] = useState<"report" | "chart">("report");
+  const [activeTab, setActiveTab] =
+    useState<"report" | "chart" | "comparison">("report");
   // Residuary ("remainder estate") clause dialog.
   const [remainderDialogOpen, setRemainderDialogOpen] = useState(false);
 
@@ -516,10 +524,13 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         tabs={[
           { id: "report", label: "Report" },
           { id: "chart", label: "Flow Chart" },
+          { id: "comparison", label: "Comparison" },
         ]}
         activeTab={activeTab}
         onTabChange={(id) => {
-          if (id === "report" || id === "chart") setActiveTab(id);
+          if (id === "report" || id === "chart" || id === "comparison") {
+            setActiveTab(id);
+          }
         }}
       />
 
@@ -547,6 +558,21 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           workingGifts={workingGifts}
           isMarried={props.isMarried}
           ownerNames={ownerNames}
+        />
+      )}
+
+      {activeTab === "comparison" && (
+        <EstateFlowComparisonTab
+          clientId={props.clientId}
+          rightScenarioId={props.scenarioId}
+          rightScenarioName={props.scenarioName}
+          engineData={engineData}
+          projection={projection}
+          leftTree={props.doNothingTree}
+          leftResult={props.doNothingResult}
+          leftScenarioName={props.doNothingScenarioName}
+          scenarios={props.scenarios ?? []}
+          snapshots={props.snapshots ?? []}
         />
       )}
 

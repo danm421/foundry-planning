@@ -29,6 +29,13 @@ interface Props {
   procrastinatedResult: ProjectionResult | null;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
+  /**
+   * When true, hide the assumption chip bar and render scenario names as static
+   * labels in the comparison grid. The Estate Flow Comparison tab passes this
+   * because the chip bar's "edit assumption" flow only makes sense from the
+   * Planning page, and the right side is locked to the live sandbox.
+   */
+  embedded?: boolean;
 }
 
 export function ProjectionPanel(props: Props) {
@@ -42,11 +49,13 @@ export function ProjectionPanel(props: Props) {
 
   return (
     <section className="space-y-6 rounded border border-hair bg-card p-6">
-      <ChipBar
-        clientId={props.clientId}
-        planSettings={props.rightTree.planSettings}
-        onOpenAssumptions={() => setAssumptionsOpen(true)}
-      />
+      {!props.embedded && (
+        <ChipBar
+          clientId={props.clientId}
+          planSettings={props.rightTree.planSettings}
+          onOpenAssumptions={() => setAssumptionsOpen(true)}
+        />
+      )}
       <YearScrubber
         currentYear={startYear}
         firstDeathYear={firstDeathYear}
@@ -69,6 +78,7 @@ export function ProjectionPanel(props: Props) {
         scrubberYear={scrubberYear}
         scenarios={props.scenarios}
         snapshots={props.snapshots}
+        hidePickers={props.embedded}
       />
       <TrajectoryChart
         leftTree={props.leftTree}
@@ -84,12 +94,14 @@ export function ProjectionPanel(props: Props) {
         procrastinatedResult={props.procrastinatedResult}
       />
 
-      <AssumptionsModal
-        open={assumptionsOpen}
-        clientId={props.clientId}
-        planSettings={props.rightTree.planSettings}
-        onClose={() => setAssumptionsOpen(false)}
-      />
+      {!props.embedded && (
+        <AssumptionsModal
+          open={assumptionsOpen}
+          clientId={props.clientId}
+          planSettings={props.rightTree.planSettings}
+          onClose={() => setAssumptionsOpen(false)}
+        />
+      )}
     </section>
   );
 }

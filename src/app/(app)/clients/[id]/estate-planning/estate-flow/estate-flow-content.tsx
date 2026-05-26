@@ -8,6 +8,7 @@ import {
 import { eq, and, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import {
   giftRowToDraft,
   giftSeriesRowToDraft,
@@ -37,7 +38,11 @@ export async function EstateFlowContent({
   // base-case scenario row; otherwise the searchParams UUID, firm-scoped via
   // the join on clients. `gifts` is client-scoped and needs no resolved
   // scenario, so it loads in parallel here; `gift_series` waits below.
-  const [effectiveResult, scenarioRows, giftRows] = await Promise.all([
+  //
+  // The do-nothing baseline (left side of the Comparison tab) is loaded in
+  // parallel since it always derives from the base case regardless of the
+  // active scenario — see loadProjectionForRef.
+  const [effectiveResult, scenarioRows, giftRows, doNothingLoad] = await Promise.all([
     loadEffectiveTree(clientId, firmId, scenarioId, {}).catch(() => notFound()),
     db
       .select({
@@ -53,6 +58,7 @@ export async function EstateFlowContent({
       .from(gifts)
       .where(eq(gifts.clientId, clientId))
       .orderBy(asc(gifts.year), asc(gifts.createdAt)),
+    loadProjectionForRef(clientId, firmId, { kind: "do-nothing" }),
   ]);
   const { effectiveTree } = effectiveResult;
 
@@ -105,6 +111,7 @@ export async function EstateFlowContent({
       key={scenarioId}
       clientId={clientId}
       scenarioId={scenarioId}
+      scenarioName={resolvedScenario.name}
       isMarried={isMarried}
       ownerNames={{
         clientName: firstName ?? "Client",
@@ -115,6 +122,9 @@ export async function EstateFlowContent({
       cpi={cpi}
       scenarios={scenarioRows}
       snapshots={[]}
+      doNothingTree={doNothingLoad.tree}
+      doNothingResult={doNothingLoad.result}
+      doNothingScenarioName={doNothingLoad.scenarioName}
     />
   );
 }

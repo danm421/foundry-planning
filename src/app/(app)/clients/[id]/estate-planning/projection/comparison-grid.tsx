@@ -24,6 +24,12 @@ interface Props {
   scrubberYear: number;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
+  /**
+   * When true, render the scenario name as a static label instead of a picker
+   * dropdown on both sides. Used by the Estate Flow Comparison tab where the
+   * right side is the live sandbox and the left side is locked to do-nothing.
+   */
+  hidePickers?: boolean;
 }
 
 export function ComparisonGrid(props: Props) {
@@ -47,7 +53,7 @@ export function ComparisonGrid(props: Props) {
         clientId={props.clientId}
         scenarios={props.scenarios}
         snapshots={props.snapshots}
-        pickerValue={props.leftScenarioId}
+        pickerValue={props.hidePickers ? undefined : props.leftScenarioId}
       />
       <ComparisonCellView
         cell={data.right}
@@ -55,7 +61,7 @@ export function ComparisonGrid(props: Props) {
         clientId={props.clientId}
         scenarios={props.scenarios}
         snapshots={props.snapshots}
-        pickerValue={props.rightScenarioId}
+        pickerValue={props.hidePickers ? undefined : props.rightScenarioId}
       />
       <ComparisonCellView
         cell={data.delta}
