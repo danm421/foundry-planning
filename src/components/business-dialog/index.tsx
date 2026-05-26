@@ -39,8 +39,8 @@ export interface BusinessDialogProps {
   allAccounts?: BusinessAssetsTabProps["allAccounts"];
   allLiabilities?: BusinessAssetsTabProps["allLiabilities"];
   onDataChanged?: () => void;
-  onOpenAddAccount?: () => void;
-  onOpenAddLiability?: () => void;
+  onOpenAddAccount?: (businessId: string) => void;
+  onOpenAddLiability?: (businessId: string) => void;
   incomes?: BusinessFlowRow[];
   expenses?: BusinessFlowRow[];
   onOpenAddIncome?: () => void;
@@ -105,8 +105,13 @@ export default function BusinessDialog({
     canSave: true,
   });
 
-  // FlowScheduleGrid registers its save handler here so the dialog footer can drive it.
+  // FlowScheduleGrid registers its save handler here so the dialog's tab-change
+  // autosave can drive it.
   const [scheduleSaveBinding, setScheduleSaveBinding] =
+    useState<ScheduleSaveBinding | null>(null);
+  // DistributionAndTaxSection (annual mode) registers its save handler here so
+  // the dialog footer can drive the Save Changes button.
+  const [annualSaveBinding, setAnnualSaveBinding] =
     useState<ScheduleSaveBinding | null>(null);
 
   // Pre-loaded overrides for the schedule grid. Refetched whenever the business
@@ -129,7 +134,15 @@ export default function BusinessDialog({
       .catch(() => setInitialFlowOverrides([]));
   }, [clientId, currentBusiness?.id, scenarioId]);
 
+  // Saves the active tab. Flows routes to whichever sub-tab binding is active
+  // (schedule grid or annual D&T section); every other tab uses the details
+  // form's autosave handle.
+  const flowsBinding =
+    tab === "flows" ? scheduleSaveBinding ?? annualSaveBinding : null;
   const saveAsync = useCallback(async () => {
+    if (tab === "flows" && flowsBinding) {
+      return flowsBinding.save();
+    }
     const handle = formRef.current;
     if (!handle) return { ok: true as const };
     const result = await handle.saveAsync();
@@ -139,11 +152,11 @@ export default function BusinessDialog({
       setCurrentBusiness(result.account as BusinessAccount);
     }
     return result;
-  }, []);
+  }, [tab, flowsBinding]);
 
   const autoSave = useTabAutoSave({
-    isDirty: autoSaveState.isDirty,
-    canSave: autoSaveState.canSave,
+    isDirty: flowsBinding ? flowsBinding.isDirty : autoSaveState.isDirty,
+    canSave: flowsBinding ? true : autoSaveState.canSave,
     saveAsync,
   });
 
@@ -152,14 +165,12 @@ export default function BusinessDialog({
   const isEdit = mode === "edit";
   const title = isEdit ? "Edit Business" : "Add Business";
 
-  // Details has its primary form action; Assets / Notes are inline. Flows is
-  // special: in schedule mode the grid registers a save binding which we
-  // surface as the dialog primary action (mirrors entity-dialog).
+  // Details has its primary form action; Assets / Notes are inline. Flows in
+  // either sub-mode (schedule or annual) exposes a save button via the active
+  // binding; we only suppress the primary action when no binding has registered.
   const onFlowsTab = tab === "flows";
   const noPrimaryAction =
-    tab === "assets" ||
-    tab === "notes" ||
-    (onFlowsTab && !scheduleSaveBinding);
+    tab === "assets" || tab === "notes" || (onFlowsTab && !flowsBinding);
 
   return (
     <DialogShell
@@ -182,13 +193,14 @@ export default function BusinessDialog({
       primaryAction={
         noPrimaryAction
           ? undefined
-          : onFlowsTab && scheduleSaveBinding
+          : onFlowsTab && flowsBinding
           ? {
-              label: "Save schedule",
+              label: scheduleSaveBinding ? "Save schedule" : "Save Changes",
               onClick: () => {
-                void scheduleSaveBinding.save();
+                void flowsBinding.save();
               },
-              loading: scheduleSaveBinding.saving,
+              loading: flowsBinding.saving,
+              disabled: !flowsBinding.isDirty,
             }
           : {
               label: isEdit ? "Save Changes" : "Add Business",
@@ -266,6 +278,7 @@ export default function BusinessDialog({
           taxTreatment={currentBusiness.businessTaxTreatment ?? "qbi"}
           initialFlowOverrides={initialFlowOverrides}
           onScheduleSaveBindingChange={setScheduleSaveBinding}
+          onAnnualSaveBindingChange={setAnnualSaveBinding}
           onOpenAddIncome={onOpenAddIncome ?? NOOP}
           onOpenAddExpense={onOpenAddExpense ?? NOOP}
           onEditIncome={onEditIncome ?? NOOP}

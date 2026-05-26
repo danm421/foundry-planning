@@ -7,8 +7,10 @@ import { fillFlat, fillGrowth, type ScheduleEntry } from "@/lib/schedule-utils";
 
 /** Exposed to parent so the dialog footer can drive the save action. */
 export interface ScheduleSaveBinding {
-  save: () => Promise<void>;
+  save: () => Promise<{ ok: true } | { ok: false; error: string }>;
   saving: boolean;
+  /** True when the grid has unsaved edits since the last successful save / initial load. */
+  isDirty: boolean;
 }
 
 type EntityType =
@@ -88,6 +90,16 @@ function baseAmount(row: BaseFlow | BaseFlow[] | null, year: number): number {
 
 type Cell = string; // "" = no override; otherwise the typed string
 
+function cellsEqual(a: Record<number, Cell>, b: Record<number, Cell>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const k of aKeys) {
+    if (a[k as unknown as number] !== b[k as unknown as number]) return false;
+  }
+  return true;
+}
+
 function fmtMoney(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
@@ -113,32 +125,50 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
   }, [props.planStartYear, props.planEndYear]);
 
   // State: per-year cells. Empty string = no override; otherwise the user's typed value.
-  const [income, setIncome] = useState<Record<number, Cell>>(() => {
+  const initialIncome = useMemo(() => {
     const out: Record<number, Cell> = {};
     for (const o of props.initialOverrides) {
       if (o.incomeAmount != null) out[o.year] = String(o.incomeAmount);
     }
     return out;
-  });
-  const [expense, setExpense] = useState<Record<number, Cell>>(() => {
+  }, [props.initialOverrides]);
+  const initialExpense = useMemo(() => {
     const out: Record<number, Cell> = {};
     for (const o of props.initialOverrides) {
       if (o.expenseAmount != null) out[o.year] = String(o.expenseAmount);
     }
     return out;
-  });
-  const [dist, setDist] = useState<Record<number, Cell>>(() => {
+  }, [props.initialOverrides]);
+  const initialDist = useMemo(() => {
     const out: Record<number, Cell> = {};
     for (const o of props.initialOverrides) {
       if (o.distributionPercent != null)
         out[o.year] = String((o.distributionPercent * 100).toFixed(2));
     }
     return out;
+  }, [props.initialOverrides]);
+
+  const [income, setIncome] = useState<Record<number, Cell>>(initialIncome);
+  const [expense, setExpense] = useState<Record<number, Cell>>(initialExpense);
+  const [dist, setDist] = useState<Record<number, Cell>>(initialDist);
+  // Snapshot of last-saved cell state; isDirty is the diff against this.
+  const [savedSnapshot, setSavedSnapshot] = useState({
+    income: initialIncome,
+    expense: initialExpense,
+    dist: initialDist,
   });
 
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const isDirty = useMemo(
+    () =>
+      !cellsEqual(income, savedSnapshot.income) ||
+      !cellsEqual(expense, savedSnapshot.expense) ||
+      !cellsEqual(dist, savedSnapshot.dist),
+    [income, expense, dist, savedSnapshot],
+  );
 
   // Quick-fill panel state
   const [qfStart, setQfStart] = useState<string>(String(props.planStartYear));
@@ -180,7 +210,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     applyEntries(setDist, fillFlat(props.planStartYear, props.planEndYear, percent), String);
   }
 
-  async function handleSave() {
+  async function handleSave(): Promise<{ ok: true } | { ok: false; error: string }> {
     setSaving(true);
     setError(null);
     const overrides: FlowScheduleGridOverride[] = [];
@@ -214,8 +244,12 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
         throw new Error((j as { error?: string }).error ?? "Failed to save");
       }
       setSavedAt(new Date());
+      setSavedSnapshot({ income, expense, dist });
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setError(msg);
+      return { ok: false, error: msg };
     } finally {
       setSaving(false);
     }
@@ -223,14 +257,16 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
 
   // Stable callback for the parent: invokes the latest handleSave via ref so we
   // don't re-fire the registration effect on every keystroke.
-  const handleSaveRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const handleSaveRef = useRef<typeof handleSave>(() =>
+    Promise.resolve({ ok: true as const }),
+  );
   handleSaveRef.current = handleSave;
   const stableSave = useCallback(() => handleSaveRef.current(), []);
 
   const onSaveBindingChange = props.onSaveBindingChange;
   useEffect(() => {
-    onSaveBindingChange?.({ save: stableSave, saving });
-  }, [onSaveBindingChange, stableSave, saving]);
+    onSaveBindingChange?.({ save: stableSave, saving, isDirty });
+  }, [onSaveBindingChange, stableSave, saving, isDirty]);
   useEffect(
     () => () => onSaveBindingChange?.(null),
     [onSaveBindingChange],
@@ -313,78 +349,75 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
         <p className="rounded bg-red-900/50 px-3 py-2 text-xs text-red-400">{error}</p>
       )}
 
-      <div className="max-h-[60vh] overflow-y-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={thClass + " text-left"}>Year (Age)</th>
-              <th className={thClass}>Income</th>
-              <th className={thClass}>Expense</th>
-              {showDist && (
-                <th className={thClass}>
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span>Distribution %</span>
-                    <button
-                      type="button"
-                      onClick={() => setDistAll(0)}
-                      className={distSetButtonClass}
-                      title="Set every year to 0%"
-                    >
-                      0%
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDistAll(100)}
-                      className={distSetButtonClass}
-                      title="Set every year to 100%"
-                    >
-                      100%
-                    </button>
-                  </div>
-                </th>
-              )}
-            </tr>
-          </thead>
-            <tbody>
-              {years.map((y) => {
-                const age = y - props.primaryClientBirthYear;
-                const incBase = baseAmount(props.income, y);
-                const expBase = baseAmount(props.expense, y);
-                return (
-                  <tr key={y} className="border-b border-hair/50">
-                    <td className="py-1.5 text-ink">
-                      {y} (Age {age})
-                    </td>
-                    <td className="py-1.5">
-                      <CurrencyInput
-                        value={income[y] ?? ""}
-                        onChange={(v) => setIncome((s) => ({ ...s, [y]: v }))}
-                        placeholder={fmtMoney(incBase)}
-                      />
-                    </td>
-                    <td className="py-1.5">
-                      <CurrencyInput
-                        value={expense[y] ?? ""}
-                        onChange={(v) => setExpense((s) => ({ ...s, [y]: v }))}
-                        placeholder={fmtMoney(expBase)}
-                      />
-                    </td>
-                    {showDist && (
-                      <td className="py-1.5">
-                        <PercentInput
-                          value={dist[y] ?? ""}
-                          onChange={(v) => setDist((s) => ({ ...s, [y]: v }))}
-                          placeholder="—"
-                        />
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr>
+            <th className={thClass + " text-left"}>Year (Age)</th>
+            <th className={thClass}>Income</th>
+            <th className={thClass}>Expense</th>
+            {showDist && (
+              <th className={thClass}>
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>Distribution %</span>
+                  <button
+                    type="button"
+                    onClick={() => setDistAll(0)}
+                    className={distSetButtonClass}
+                    title="Set every year to 0%"
+                  >
+                    0%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDistAll(100)}
+                    className={distSetButtonClass}
+                    title="Set every year to 100%"
+                  >
+                    100%
+                  </button>
+                </div>
+              </th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {years.map((y) => {
+            const age = y - props.primaryClientBirthYear;
+            const incBase = baseAmount(props.income, y);
+            const expBase = baseAmount(props.expense, y);
+            return (
+              <tr key={y} className="border-b border-hair/50">
+                <td className="py-1.5 text-ink">
+                  {y} (Age {age})
+                </td>
+                <td className="py-1.5">
+                  <CurrencyInput
+                    value={income[y] ?? ""}
+                    onChange={(v) => setIncome((s) => ({ ...s, [y]: v }))}
+                    placeholder={fmtMoney(incBase)}
+                  />
+                </td>
+                <td className="py-1.5">
+                  <CurrencyInput
+                    value={expense[y] ?? ""}
+                    onChange={(v) => setExpense((s) => ({ ...s, [y]: v }))}
+                    placeholder={fmtMoney(expBase)}
+                  />
+                </td>
+                {showDist && (
+                  <td className="py-1.5">
+                    <PercentInput
+                      value={dist[y] ?? ""}
+                      onChange={(v) => setDist((s) => ({ ...s, [y]: v }))}
+                      placeholder="—"
+                    />
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </section>
   );
 }

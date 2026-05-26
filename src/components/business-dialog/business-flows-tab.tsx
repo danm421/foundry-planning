@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MoneyText from "@/components/money-text";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import { PercentInput } from "@/components/percent-input";
@@ -47,6 +47,8 @@ export interface BusinessFlowsTabProps {
   initialFlowOverrides?: FlowScheduleGridOverride[];
   /** Lifts the schedule grid's save handler so the dialog footer can drive saves. */
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
+  /** Lifts the annual-mode Distribution & Tax save handler to the dialog footer. */
+  onAnnualSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
   onOpenAddIncome: () => void;
   onOpenAddExpense: () => void;
   onEditIncome: (id: string) => void;
@@ -88,6 +90,7 @@ export default function BusinessFlowsTab({
   taxTreatment,
   initialFlowOverrides,
   onScheduleSaveBindingChange,
+  onAnnualSaveBindingChange,
   onOpenAddIncome,
   onOpenAddExpense,
   onEditIncome,
@@ -108,6 +111,11 @@ export default function BusinessFlowsTab({
   useEffect(() => {
     if (mode !== "schedule") onScheduleSaveBindingChange?.(null);
   }, [mode, onScheduleSaveBindingChange]);
+
+  // Clear annual-save binding when leaving annual mode.
+  useEffect(() => {
+    if (mode !== "annual") onAnnualSaveBindingChange?.(null);
+  }, [mode, onAnnualSaveBindingChange]);
 
   const ownedIncomes = incomes.filter((i) => i.ownerAccountId === businessId);
   const ownedExpenses = expenses.filter((e) => e.ownerAccountId === businessId);
@@ -241,6 +249,7 @@ export default function BusinessFlowsTab({
               writer={writer}
               distributionPolicyPercent={distributionPolicyPercent ?? null}
               taxTreatment={taxTreatment ?? "qbi"}
+              onSaveBindingChange={onAnnualSaveBindingChange}
             />
           )}
         </>
@@ -327,23 +336,29 @@ function DistributionAndTaxSection({
   writer,
   distributionPolicyPercent,
   taxTreatment,
+  onSaveBindingChange,
 }: {
   clientId: string;
   businessId: string;
   writer: ReturnType<typeof useScenarioWriter>;
   distributionPolicyPercent: number | null;
   taxTreatment: BusinessTaxTreatment;
+  onSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
 }) {
-  const [pct, setPct] = useState(
+  const initialPct =
     distributionPolicyPercent != null
       ? String((distributionPolicyPercent * 100).toFixed(2))
-      : "",
-  );
+      : "";
+  const [pct, setPct] = useState(initialPct);
   const [tx, setTx] = useState<BusinessTaxTreatment>(taxTreatment);
+  const [savedPct, setSavedPct] = useState(initialPct);
+  const [savedTx, setSavedTx] = useState<BusinessTaxTreatment>(taxTreatment);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function save() {
+  const isDirty = pct !== savedPct || tx !== savedTx;
+
+  async function save(): Promise<{ ok: true } | { ok: false; error: string }> {
     setSaving(true);
     setError(null);
     try {
@@ -369,12 +384,30 @@ function DistributionAndTaxSection({
         const j = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(j.error ?? "Failed to save");
       }
+      setSavedPct(pct);
+      setSavedTx(tx);
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setError(msg);
+      return { ok: false, error: msg };
     } finally {
       setSaving(false);
     }
   }
+
+  // Expose save handler to the parent dialog footer. Mirrors FlowScheduleGrid:
+  // ref-route the latest closure so re-registration doesn't fire on every keystroke.
+  const saveRef = useRef<typeof save>(save);
+  saveRef.current = save;
+  const stableSave = useCallback(() => saveRef.current(), []);
+  useEffect(() => {
+    onSaveBindingChange?.({ save: stableSave, saving, isDirty });
+  }, [onSaveBindingChange, stableSave, saving, isDirty]);
+  useEffect(
+    () => () => onSaveBindingChange?.(null),
+    [onSaveBindingChange],
+  );
 
   return (
     <section className="space-y-3 rounded-md border border-hair bg-card-2 p-4">
@@ -411,16 +444,6 @@ function DistributionAndTaxSection({
         </div>
       </div>
 
-      <div className="flex justify-end pt-1">
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving}
-          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-      </div>
     </section>
   );
 }
