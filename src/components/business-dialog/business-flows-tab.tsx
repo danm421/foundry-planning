@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import MoneyText from "@/components/money-text";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
-import { PercentInput } from "@/components/percent-input";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import type { EntityFlowMode } from "@/engine/types";
@@ -25,9 +24,6 @@ export interface BusinessFlowRow {
   inflationStartYear?: number | null;
 }
 
-const TAX_TREATMENTS = ["qbi", "ordinary", "non_taxable"] as const;
-export type BusinessTaxTreatment = (typeof TAX_TREATMENTS)[number];
-
 export interface BusinessFlowsTabProps {
   clientId: string;
   businessId: string;
@@ -40,15 +36,10 @@ export interface BusinessFlowsTabProps {
   planStartYear?: number;
   planEndYear?: number;
   primaryClientBirthYear?: number;
-  /** Editable business-only fields (Annual mode). */
-  distributionPolicyPercent?: number | null;
-  taxTreatment?: BusinessTaxTreatment;
   /** Pre-loaded overrides for the schedule grid. */
   initialFlowOverrides?: FlowScheduleGridOverride[];
   /** Lifts the schedule grid's save handler so the dialog footer can drive saves. */
   onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
-  /** Lifts the annual-mode Distribution & Tax save handler to the dialog footer. */
-  onAnnualSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
   onOpenAddIncome: () => void;
   onOpenAddExpense: () => void;
   onEditIncome: (id: string) => void;
@@ -86,11 +77,8 @@ export default function BusinessFlowsTab({
   planStartYear,
   planEndYear,
   primaryClientBirthYear,
-  distributionPolicyPercent,
-  taxTreatment,
   initialFlowOverrides,
   onScheduleSaveBindingChange,
-  onAnnualSaveBindingChange,
   onOpenAddIncome,
   onOpenAddExpense,
   onEditIncome,
@@ -111,11 +99,6 @@ export default function BusinessFlowsTab({
   useEffect(() => {
     if (mode !== "schedule") onScheduleSaveBindingChange?.(null);
   }, [mode, onScheduleSaveBindingChange]);
-
-  // Clear annual-save binding when leaving annual mode.
-  useEffect(() => {
-    if (mode !== "annual") onAnnualSaveBindingChange?.(null);
-  }, [mode, onAnnualSaveBindingChange]);
 
   const ownedIncomes = incomes.filter((i) => i.ownerAccountId === businessId);
   const ownedExpenses = expenses.filter((e) => e.ownerAccountId === businessId);
@@ -241,17 +224,6 @@ export default function BusinessFlowsTab({
             onEdit={onEditExpense}
             sign="negative"
           />
-
-          {flowMode !== undefined && (
-            <DistributionAndTaxSection
-              clientId={clientId}
-              businessId={businessId}
-              writer={writer}
-              distributionPolicyPercent={distributionPolicyPercent ?? null}
-              taxTreatment={taxTreatment ?? "qbi"}
-              onSaveBindingChange={onAnnualSaveBindingChange}
-            />
-          )}
         </>
       )}
     </div>
@@ -328,122 +300,3 @@ function FlowList({
   );
 }
 
-// ── Distribution & Tax ─────────────────────────────────────────────────────
-
-function DistributionAndTaxSection({
-  clientId,
-  businessId,
-  writer,
-  distributionPolicyPercent,
-  taxTreatment,
-  onSaveBindingChange,
-}: {
-  clientId: string;
-  businessId: string;
-  writer: ReturnType<typeof useScenarioWriter>;
-  distributionPolicyPercent: number | null;
-  taxTreatment: BusinessTaxTreatment;
-  onSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
-}) {
-  const initialPct =
-    distributionPolicyPercent != null
-      ? String((distributionPolicyPercent * 100).toFixed(2))
-      : "";
-  const [pct, setPct] = useState(initialPct);
-  const [tx, setTx] = useState<BusinessTaxTreatment>(taxTreatment);
-  const [savedPct, setSavedPct] = useState(initialPct);
-  const [savedTx, setSavedTx] = useState<BusinessTaxTreatment>(taxTreatment);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const isDirty = pct !== savedPct || tx !== savedTx;
-
-  async function save(): Promise<{ ok: true } | { ok: false; error: string }> {
-    setSaving(true);
-    setError(null);
-    try {
-      const desiredFields = {
-        distributionPolicyPercent:
-          pct.trim() === "" ? null : Number(pct) / 100,
-        businessTaxTreatment: tx,
-      };
-      const res = await writer.submit(
-        {
-          op: "edit",
-          targetKind: "account",
-          targetId: businessId,
-          desiredFields,
-        },
-        {
-          url: `/api/clients/${clientId}/accounts/${businessId}`,
-          method: "PUT",
-          body: desiredFields,
-        },
-      );
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? "Failed to save");
-      }
-      setSavedPct(pct);
-      setSavedTx(tx);
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      setError(msg);
-      return { ok: false, error: msg };
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Expose save handler to the parent dialog footer. Mirrors FlowScheduleGrid:
-  // ref-route the latest closure so re-registration doesn't fire on every keystroke.
-  const saveRef = useRef<typeof save>(save);
-  saveRef.current = save;
-  const stableSave = useCallback(() => saveRef.current(), []);
-  useEffect(() => {
-    onSaveBindingChange?.({ save: stableSave, saving, isDirty });
-  }, [onSaveBindingChange, stableSave, saving, isDirty]);
-  useEffect(
-    () => () => onSaveBindingChange?.(null),
-    [onSaveBindingChange],
-  );
-
-  return (
-    <section className="space-y-3 rounded-md border border-hair bg-card-2 p-4">
-      <h3 className="text-sm font-semibold text-ink-2">Distributions &amp; taxes</h3>
-      {error && (
-        <p className="rounded bg-red-900/50 px-3 py-2 text-xs text-red-400">{error}</p>
-      )}
-
-      <div>
-        <label className={fieldLabelClassName} htmlFor="business-dist-pct">
-          Distribution policy (% of net income to owners)
-        </label>
-        <PercentInput id="business-dist-pct" value={pct} onChange={setPct} />
-      </div>
-
-      <div>
-        <span className={fieldLabelClassName}>Tax treatment</span>
-        <div className="mt-1 flex gap-1.5">
-          {TAX_TREATMENTS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setTx(v)}
-              className={
-                "rounded-md border px-2 py-1 text-xs font-medium " +
-                (tx === v
-                  ? "border-accent bg-accent/15 text-accent"
-                  : "border-hair bg-card text-ink-3 hover:text-ink-2")
-              }
-            >
-              {v === "qbi" ? "QBI" : v === "ordinary" ? "Ordinary" : "Non-taxable"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-    </section>
-  );
-}
