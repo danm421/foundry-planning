@@ -45,6 +45,9 @@ export type TrustWarning =
       year: number;
       residual: number;
       iterations: number;
+      /** Per-conversion-id incomeTaxBase residual (actual − ceiling) when the
+       *  joint phase-12 loop failed to converge on the bracket axis. Absent or
+       *  empty means the bracket axis converged. */
       bracketResiduals?: Record<string, number>;
     };
 
