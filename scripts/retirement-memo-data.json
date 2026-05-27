@@ -1,0 +1,3259 @@
+{
+  "document": {
+    "title": "Retirement Plan Memo",
+    "subtitle": "Current vs. Proposed",
+    "advisor": "Ethos Financial Group",
+    "preparedOn": "May 26, 2026",
+    "clientNames": [
+      "Cooper Sample",
+      "Susan Sample"
+    ]
+  },
+  "household": {
+    "clientFirstName": "Cooper",
+    "clientLastName": "Sample",
+    "spouseFirstName": "Susan",
+    "clientDob": "1970-06-20",
+    "spouseDob": "1975-06-01",
+    "planStartYear": 2026,
+    "planEndYear": 2070,
+    "filingStatus": "married_joint",
+    "currentAge": 56,
+    "spouseCurrentAge": 51,
+    "inflationRate": 0.03
+  },
+  "base": {
+    "name": "Base Case",
+    "totalTaxesLifetime": 2467735.330416256,
+    "totalWithdrawalsLifetime": 10355097.365895748,
+    "endingPortfolio": 12209212.98048122,
+    "endingLiquidPortfolio": 1608118.0182884955,
+    "peakPortfolio": 12228433.84352396,
+    "peakYear": 2069,
+    "yearsModeled": 45,
+    "rows": [
+      {
+        "year": 2026,
+        "age": 56,
+        "spouseAge": 51,
+        "totalPortfolio": 4694497.165884178,
+        "liquidPortfolio": 1609497.1658841781,
+        "retirementTotal": 799566,
+        "taxableTotal": 793972.5,
+        "cashTotal": 15958.665884178248,
+        "realEstateTotal": 3033500,
+        "businessTotal": 51500,
+        "totalIncome": 472968.2205592198,
+        "totalExpenses": 448009.5546750415,
+        "netCashFlow": 24958.66588417825,
+        "taxes": 110766.15467504156,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 150000,
+        "insurance": 0
+      },
+      {
+        "year": 2027,
+        "age": 57,
+        "spouseAge": 52,
+        "totalPortfolio": 4981594.571811716,
+        "liquidPortfolio": 1809169.571811716,
+        "retirementTotal": 885246.0221899999,
+        "taxableTotal": 840523.107675,
+        "cashTotal": 83400.4419467161,
+        "realEstateTotal": 3119380,
+        "businessTotal": 53045,
+        "totalIncome": 474718.2205592198,
+        "totalExpenses": 407276.4444966819,
+        "netCashFlow": 67441.77606253786,
+        "taxes": 114003.04449668195,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 153750,
+        "insurance": 0
+      },
+      {
+        "year": 2028,
+        "age": 58,
+        "spouseAge": 53,
+        "totalPortfolio": 5281983.414329644,
+        "liquidPortfolio": 2019638.7893296448,
+        "retirementTotal": 977484.3957318171,
+        "taxableTotal": 889802.9774779852,
+        "cashTotal": 152351.4161198425,
+        "realEstateTotal": 3207708.275,
+        "businessTotal": 54636.35,
+        "totalIncome": 495284.9705592198,
+        "totalExpenses": 416785.9963860934,
+        "netCashFlow": 78498.9741731264,
+        "taxes": 117330.94638609339,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 157593.75,
+        "insurance": 0
+      },
+      {
+        "year": 2029,
+        "age": 59,
+        "spouseAge": 54,
+        "totalPortfolio": 5596515.437042841,
+        "liquidPortfolio": 2241684.9264178406,
+        "retirementTotal": 1077257.1749881331,
+        "taxableTotal": 941972.1260475195,
+        "cashTotal": 222455.62538218778,
+        "realEstateTotal": 3298555.070125,
+        "businessTotal": 56275.4405,
+        "totalIncome": 506865.18930921966,
+        "totalExpenses": 426926.9800468744,
+        "netCashFlow": 79938.20926234528,
+        "taxes": 120634.7892968745,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 161533.59374999994,
+        "insurance": 0
+      },
+      {
+        "year": 2030,
+        "age": 60,
+        "spouseAge": 55,
+        "totalPortfolio": 5933773.104807952,
+        "liquidPortfolio": 2483816.7433173265,
+        "retirementTotal": 1184608.2848294333,
+        "taxableTotal": 997199.9517976856,
+        "cashTotal": 302008.5066902075,
+        "realEstateTotal": 3391992.657775625,
+        "businessTotal": 57963.703714999996,
+        "totalIncome": 528736.7635279689,
+        "totalExpenses": 439054.8822199491,
+        "netCashFlow": 89681.8813080198,
+        "taxes": 126858.54350452205,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 165571.93359374994,
+        "insurance": 0
+      },
+      {
+        "year": 2031,
+        "age": 61,
+        "spouseAge": 56,
+        "totalPortfolio": 6257125.697134482,
+        "liquidPortfolio": 2709327.685863591,
+        "retirementTotal": 1300586.4456053805,
+        "taxableTotal": 1055665.7849715839,
+        "cashTotal": 353075.4552866266,
+        "realEstateTotal": 3488095.396444441,
+        "businessTotal": 59702.61482644999,
+        "totalIncome": 507189.5315429685,
+        "totalExpenses": 445688.5829465494,
+        "netCashFlow": 61500.948596419126,
+        "taxes": 128109.30373453078,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 169711.23193359366,
+        "insurance": 0
+      },
+      {
+        "year": 2032,
+        "age": 62,
+        "spouseAge": 57,
+        "totalPortfolio": 6596911.110752626,
+        "liquidPortfolio": 2948477.626234673,
+        "retirementTotal": 1425313.4001319024,
+        "taxableTotal": 1117559.4699444678,
+        "cashTotal": 405604.7561583024,
+        "realEstateTotal": 3586939.7912467094,
+        "businessTotal": 61493.693271243494,
+        "totalIncome": 519921.41983154265,
+        "totalExpenses": 456645.11895986693,
+        "netCashFlow": 63276.30087167572,
+        "taxes": 132238.19124199226,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 173954.0127319335,
+        "insurance": 0
+      },
+      {
+        "year": 2033,
+        "age": 63,
+        "spouseAge": 58,
+        "totalPortfolio": 6954157.220859376,
+        "liquidPortfolio": 3202214.1605742257,
+        "retirementTotal": 1559921.2035389338,
+        "taxableTotal": 1183081.9816673119,
+        "cashTotal": 459210.9753679803,
+        "realEstateTotal": 3688604.5562157696,
+        "businessTotal": 63338.5040693808,
+        "totalIncome": 532972.7803273313,
+        "totalExpenses": 468297.56111765344,
+        "netCashFlow": 64675.21920967783,
+        "taxes": 136391.12734950386,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 178302.86305023186,
+        "insurance": 0
+      },
+      {
+        "year": 2034,
+        "age": 64,
+        "spouseAge": 59,
+        "totalPortfolio": 7329779.576124762,
+        "liquidPortfolio": 3471370.238518608,
+        "retirementTotal": 1704620.8409813177,
+        "taxableTotal": 1252446.0782524664,
+        "cashTotal": 514303.31928482396,
+        "realEstateTotal": 3793170.678414692,
+        "businessTotal": 65238.65919146222,
+        "totalIncome": 546352.3748355143,
+        "totalExpenses": 479859.0309186708,
+        "netCashFlow": 66493.34391684353,
+        "taxes": 140776.87788837374,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 182760.43462648758,
+        "insurance": 0
+      },
+      {
+        "year": 2035,
+        "age": 65,
+        "spouseAge": 60,
+        "totalPortfolio": 7482318.796440151,
+        "liquidPortfolio": 3514401.493555549,
+        "retirementTotal": 1850139.9358900455,
+        "taxableTotal": 1325876.9918204085,
+        "cashTotal": 338384.56584509497,
+        "realEstateTotal": 3900721.4839173947,
+        "businessTotal": 67195.81896720608,
+        "totalIncome": 222875.1573205327,
+        "totalExpenses": 395970.3402449184,
+        "netCashFlow": -173095.18292438574,
+        "taxes": 75589.61795530902,
+        "withdrawals": 164175.753439729,
+        "rothConversionTaxable": 108022.91536465223,
+        "ssIncome": 0,
+        "living": 162352.18609319648,
+        "insurance": 8919.429484656717
+      },
+      {
+        "year": 2036,
+        "age": 66,
+        "spouseAge": 61,
+        "totalPortfolio": 7649383.111017188,
+        "liquidPortfolio": 3568828.7117670313,
+        "retirementTotal": 2006580.0732285648,
+        "taxableTotal": 1403613.159850839,
+        "cashTotal": 158635.47868762747,
+        "realEstateTotal": 4011342.705713935,
+        "businessTotal": 69211.69353622227,
+        "totalIncome": 228505.46125354597,
+        "totalExpenses": 405346.5607802099,
+        "netCashFlow": -176841.09952666392,
+        "taxes": 77781.02742877012,
+        "withdrawals": 167654.0871574675,
+        "rothConversionTaxable": 109052.95756781189,
+        "ssIncome": 0,
+        "living": 166410.99074552636,
+        "insurance": 9187.01236919642
+      },
+      {
+        "year": 2037,
+        "age": 67,
+        "spouseAge": 62,
+        "totalPortfolio": 7887107.283611249,
+        "liquidPortfolio": 3690696.685672593,
+        "retirementTotal": 2174730.2270674156,
+        "taxableTotal": 1485906.9994128938,
+        "cashTotal": 30059.459192283568,
+        "realEstateTotal": 4125122.5535963466,
+        "businessTotal": 71288.04434230895,
+        "totalIncome": 287992.4929075336,
+        "totalExpenses": 408905.4985310669,
+        "netCashFlow": -120913.00562353333,
+        "taxes": 78640.41616823306,
+        "withdrawals": 116118.0194953439,
+        "rothConversionTaxable": 64429.5084104109,
+        "ssIncome": 53713.77012264899,
+        "living": 170571.26551416452,
+        "insurance": 4794.986128189481
+      },
+      {
+        "year": 2038,
+        "age": 68,
+        "spouseAge": 63,
+        "totalPortfolio": 8142574.35756722,
+        "liquidPortfolio": 3826995.8858116367,
+        "retirementTotal": 2355435.680269685,
+        "taxableTotal": 1573025.7267884717,
+        "cashTotal": -101465.52124652018,
+        "realEstateTotal": 4242151.786083005,
+        "businessTotal": 73426.68567257821,
+        "totalIncome": 294986.2863796086,
+        "totalExpenses": 418618.10253044753,
+        "netCashFlow": -123631.81615083892,
+        "taxes": 80938.82136198395,
+        "withdrawals": 118692.98043880374,
+        "rothConversionTaxable": 64543.35700691232,
+        "ssIncome": 54788.04552510197,
+        "living": 174835.5471520186,
+        "insurance": 4938.835712035166
+      },
+      {
+        "year": 2039,
+        "age": 69,
+        "spouseAge": 64,
+        "totalPortfolio": 8413587.718171151,
+        "liquidPortfolio": 3975434.447487161,
+        "retirementTotal": 2549602.028636108,
+        "taxableTotal": 1570338.5159659837,
+        "cashTotal": -144506.0971149309,
+        "realEstateTotal": 4362523.784441234,
+        "businessTotal": 75629.48624275556,
+        "totalIncome": 302150.20331147336,
+        "totalExpenses": 431975.4891473763,
+        "netCashFlow": -129825.28583590296,
+        "taxes": 86694.37971733946,
+        "withdrawals": 124738.18793757583,
+        "rothConversionTaxable": 64673.546750663954,
+        "ssIncome": 55883.80643560401,
+        "living": 179206.43583081904,
+        "insurance": 5087.000783396221
+      },
+      {
+        "year": 2040,
+        "age": 70,
+        "spouseAge": 65,
+        "totalPortfolio": 8467910.41175951,
+        "liquidPortfolio": 3903677.4120598705,
+        "retirementTotal": 2728809.614108557,
+        "taxableTotal": 1332986.816597047,
+        "cashTotal": -158119.01864573322,
+        "realEstateTotal": 4486334.6288696015,
+        "businessTotal": 77898.37083003823,
+        "totalIncome": 83415.32800627965,
+        "totalExpenses": 418075.5069040024,
+        "netCashFlow": -334660.17889772274,
+        "taxes": 87607.73541720508,
+        "withdrawals": 329420.6465600223,
+        "rothConversionTaxable": 270234.1319813004,
+        "ssIncome": 57001.48256431609,
+        "living": 183686.59672658955,
+        "insurance": 5239.6108068981075
+      },
+      {
+        "year": 2041,
+        "age": 71,
+        "spouseAge": 66,
+        "totalPortfolio": 8514886.157876506,
+        "liquidPortfolio": 3820967.6590183685,
+        "retirementTotal": 2920626.5822076597,
+        "taxableTotal": 1072482.0912777535,
+        "cashTotal": -172141.01446704444,
+        "realEstateTotal": 4613683.176903199,
+        "businessTotal": 80235.32195493937,
+        "totalIncome": 85284.37879361506,
+        "totalExpenses": 429338.91612241,
+        "netCashFlow": -344054.53732879495,
+        "taxes": 91444.76768948926,
+        "withdrawals": 338657.7423763786,
+        "rothConversionTaxable": 282663.8462578636,
+        "ssIncome": 58141.51221560241,
+        "living": 188278.76164475424,
+        "insurance": 5396.799131105051
+      },
+      {
+        "year": 2042,
+        "age": 72,
+        "spouseAge": 67,
+        "totalPortfolio": 8608883.640167996,
+        "liquidPortfolio": 3781570.1144474163,
+        "retirementTotal": 3125941.070907589,
+        "taxableTotal": 842212.0564491774,
+        "cashTotal": -186583.01290935033,
+        "realEstateTotal": 4744671.1441069925,
+        "businessTotal": 82642.38161358755,
+        "totalIncome": 136615.51608563948,
+        "totalExpenses": 438029.41252949496,
+        "netCashFlow": -301413.8964438555,
+        "taxes": 89815.12414711252,
+        "withdrawals": 293149.65984019084,
+        "rothConversionTaxable": 253771.72215955902,
+        "ssIncome": 108724.62784317651,
+        "living": 192985.7306858731,
+        "insurance": 8264.238161358759
+      },
+      {
+        "year": 2043,
+        "age": 73,
+        "spouseAge": 68,
+        "totalPortfolio": 8698698.920089439,
+        "liquidPortfolio": 3734174.0799031267,
+        "retirementTotal": 3345703.83789898,
+        "taxableTotal": 589928.2496215063,
+        "cashTotal": -201458.00761735966,
+        "realEstateTotal": 4879403.187124317,
+        "businessTotal": 85121.65306199518,
+        "totalIncome": 139559.2308485646,
+        "totalExpenses": 449734.0905600598,
+        "netCashFlow": -310174.8597114952,
+        "taxes": 93630.99281694865,
+        "withdrawals": 301662.6996972864,
+        "rothConversionTaxable": 265620.5175173138,
+        "ssIncome": 110899.12040004005,
+        "living": 197810.37395301988,
+        "insurance": 8512.165306199522
+      },
+      {
+        "year": 2044,
+        "age": 74,
+        "spouseAge": 69,
+        "totalPortfolio": 8783779.313422577,
+        "liquidPortfolio": 3678117.02161921,
+        "retirementTotal": 3580932.6801569024,
+        "taxableTotal": 313964.97267146525,
+        "cashTotal": -216780.63120915787,
+        "realEstateTotal": 5017986.989149514,
+        "businessTotal": 87675.30265385503,
+        "totalIncome": 142568.8410177785,
+        "totalExpenses": 461887.7651003121,
+        "netCashFlow": -319318.92408253363,
+        "taxes": 97695.45030959732,
+        "withdrawals": 310550.77022534993,
+        "rothConversionTaxable": 280264.7518915633,
+        "ssIncome": 113117.10280804086,
+        "living": 202755.63330184537,
+        "insurance": 8767.530265385509
+      },
+      {
+        "year": 2045,
+        "age": 75,
+        "spouseAge": 70,
+        "totalPortfolio": 8876448.184852673,
+        "liquidPortfolio": 3625609.275223449,
+        "retirementTotal": 3779879.319070853,
+        "taxableTotal": 78291.3021020146,
+        "cashTotal": -232561.34594941844,
+        "realEstateTotal": 5160533.347895754,
+        "businessTotal": 90305.56173347068,
+        "totalIncome": 199706.0845873143,
+        "totalExpenses": 462817.7924181006,
+        "netCashFlow": -263111.70783078624,
+        "taxes": 90330.71852497506,
+        "withdrawals": 254081.43691717868,
+        "rothConversionTaxable": 219475.89860756532,
+        "ssIncome": 115379.44486420167,
+        "living": 207824.52413439148,
+        "insurance": 9030.556173347073
+      },
+      {
+        "year": 2046,
+        "age": 76,
+        "spouseAge": 71,
+        "totalPortfolio": 8954371.125912912,
+        "liquidPortfolio": 3554200.1311962637,
+        "retirementTotal": 3803017.4092931505,
+        "taxableTotal": 0,
+        "cashTotal": -248817.27809688664,
+        "realEstateTotal": 5307156.266131174,
+        "businessTotal": 93014.7285854748,
+        "totalIncome": 197164.84982317625,
+        "totalExpenses": 486073.18060324015,
+        "netCashFlow": -288908.3307800639,
+        "taxes": 105080.53867221052,
+        "withdrawals": 279605.9257740482,
+        "rothConversionTaxable": 147785.04649920075,
+        "ssIncome": 117687.03376148571,
+        "living": 213020.13723775125,
+        "insurance": 9301.472858547486
+      },
+      {
+        "year": 2047,
+        "age": 77,
+        "spouseAge": 72,
+        "totalPortfolio": 9017045.236358797,
+        "liquidPortfolio": 3463267.021057137,
+        "retirementTotal": 3728826.005659056,
+        "taxableTotal": 0,
+        "cashTotal": -265558.98460191925,
+        "realEstateTotal": 5457973.0448586205,
+        "businessTotal": 95805.17044303905,
+        "totalIncome": 188304.9695589031,
+        "totalExpenses": 507123.62224395655,
+        "netCashFlow": -318818.6526850534,
+        "taxes": 117409.20050223985,
+        "withdrawals": 309239.42913571687,
+        "rothConversionTaxable": 125532.5517108202,
+        "ssIncome": 120040.77443671541,
+        "living": 218345.64066869504,
+        "insurance": 9580.51704430391
+      },
+      {
+        "year": 2048,
+        "age": 78,
+        "spouseAge": 73,
+        "totalPortfolio": 9082407.922052806,
+        "liquidPortfolio": 3370624.2172799963,
+        "retirementTotal": 3653699.3825763543,
+        "taxableTotal": 0,
+        "cashTotal": -283075.16529635806,
+        "realEstateTotal": 5613104.379216479,
+        "businessTotal": 98679.32555633022,
+        "totalIncome": 174222.4139608657,
+        "totalExpenses": 508427.40738703654,
+        "netCashFlow": -334204.99342617084,
+        "taxes": 109769.45173398351,
+        "withdrawals": 324065.89557417977,
+        "rothConversionTaxable": 130834.86988616985,
+        "ssIncome": 122441.58992544973,
+        "living": 223804.2816854124,
+        "insurance": 9867.93255563303
+      },
+      {
+        "year": 2049,
+        "age": 79,
+        "spouseAge": 74,
+        "totalPortfolio": 9250298.709508596,
+        "liquidPortfolio": 3375984.5470052,
+        "retirementTotal": 3676550.5470052,
+        "taxableTotal": 0,
+        "cashTotal": -300566,
+        "realEstateTotal": 5772674.457180375,
+        "businessTotal": 101639.70532302013,
+        "totalIncome": 158638.92358045038,
+        "totalExpenses": 410025.71471694834,
+        "netCashFlow": -251386.79113649795,
+        "taxes": 2196.785606994294,
+        "withdrawals": 241493.98590055393,
+        "rothConversionTaxable": 0,
+        "ssIncome": 124890.42172395873,
+        "living": 229399.3887275477,
+        "insurance": 10163.97053230202
+      },
+      {
+        "year": 2050,
+        "age": 80,
+        "spouseAge": 75,
+        "totalPortfolio": 9418210.991278261,
+        "liquidPortfolio": 3376711.0336476765,
+        "retirementTotal": 3695572.0336476765,
+        "taxableTotal": 0,
+        "cashTotal": -318861,
+        "realEstateTotal": 5936811.061147873,
+        "businessTotal": 104688.89648271073,
+        "totalIncome": 162069.39456134185,
+        "totalExpenses": 419515.2296429626,
+        "netCashFlow": -257445.83508162072,
+        "taxes": 2282.055247169151,
+        "withdrawals": 246976.9454333497,
+        "rothConversionTaxable": 0,
+        "ssIncome": 127388.23015843792,
+        "living": 235134.37344573633,
+        "insurance": 10468.88964827108
+      },
+      {
+        "year": 2051,
+        "age": 81,
+        "spouseAge": 76,
+        "totalPortfolio": 9585824.369682679,
+        "liquidPortfolio": 3372349.1338147866,
+        "retirementTotal": 3710054.1338147866,
+        "taxableTotal": 0,
+        "cashTotal": -337705,
+        "realEstateTotal": 6105645.672490699,
+        "businessTotal": 107829.56337719205,
+        "totalIncome": 165575.81327458323,
+        "totalExpenses": 423388.72787657013,
+        "netCashFlow": -257812.9146019869,
+        "taxes": 2374.6316283483798,
+        "withdrawals": 252892.53646729945,
+        "rothConversionTaxable": 0,
+        "ssIncome": 129935.99476160668,
+        "living": 241012.73278187972,
+        "insurance": 4920.3781346874075
+      },
+      {
+        "year": 2052,
+        "age": 82,
+        "spouseAge": 77,
+        "totalPortfolio": 9752772.364284562,
+        "liquidPortfolio": 3362394.3348445348,
+        "retirementTotal": 3719508.3348445348,
+        "taxableTotal": 0,
+        "cashTotal": -357114,
+        "realEstateTotal": 6279313.579161519,
+        "businessTotal": 111064.45027850782,
+        "totalIncome": 169159.42863263976,
+        "totalExpenses": 433195.6336631193,
+        "netCashFlow": -264036.2050304795,
+        "taxes": 2468.5224190570893,
+        "withdrawals": 258968.2155517515,
+        "rothConversionTaxable": 0,
+        "ssIncome": 132534.7146568388,
+        "living": 247038.05110142668,
+        "insurance": 5067.989478728031
+      },
+      {
+        "year": 2053,
+        "age": 83,
+        "spouseAge": 78,
+        "totalPortfolio": 9918655.404240474,
+        "liquidPortfolio": 3346305.0340087456,
+        "retirementTotal": 3723411.0340087456,
+        "taxableTotal": 0,
+        "cashTotal": -377106,
+        "realEstateTotal": 6457953.986444866,
+        "businessTotal": 114396.38378686305,
+        "totalIncome": 172823.51577517155,
+        "totalExpenses": 443247.27380005247,
+        "netCashFlow": -270423.7580248809,
+        "taxes": 2560.7354795335164,
+        "withdrawals": 265203.7288617911,
+        "rothConversionTaxable": 0,
+        "ssIncome": 135185.40894997556,
+        "living": 253214.00237896235,
+        "insurance": 5220.029163089872
+      },
+      {
+        "year": 2054,
+        "age": 84,
+        "spouseAge": 79,
+        "totalPortfolio": 10083032.278333388,
+        "liquidPortfolio": 3323493.872088491,
+        "retirementTotal": 3721190.872088491,
+        "taxableTotal": 0,
+        "cashTotal": -397697,
+        "realEstateTotal": 6641710.130944427,
+        "businessTotal": 117828.27530046894,
+        "totalIncome": 176567.37662480096,
+        "totalExpenses": 453552.9568935712,
+        "netCashFlow": -276985.5802687702,
+        "taxes": 2654.2788665218545,
+        "withdrawals": 271608.9502307877,
+        "rothConversionTaxable": 0,
+        "ssIncome": 137889.1171289751,
+        "living": 259544.35243843638,
+        "insurance": 5376.630037982568
+      },
+      {
+        "year": 2055,
+        "age": 85,
+        "spouseAge": 80,
+        "totalPortfolio": 10245416.438171197,
+        "liquidPortfolio": 3293323.9167100852,
+        "retirementTotal": 3712229.9167100852,
+        "taxableTotal": 0,
+        "cashTotal": -418906,
+        "realEstateTotal": 6830729.39790163,
+        "businessTotal": 121363.123559483,
+        "totalIncome": 180395.34045477613,
+        "totalExpenses": 464122.3843679059,
+        "netCashFlow": -283727.0439131298,
+        "taxes": 2751.1608381849005,
+        "withdrawals": 278189.1149740077,
+        "rothConversionTaxable": 0,
+        "ssIncome": 140646.8994715546,
+        "living": 266032.96124939725,
+        "insurance": 5537.928939122045
+      },
+      {
+        "year": 2056,
+        "age": 86,
+        "spouseAge": 81,
+        "totalPortfolio": 10439659.419024581,
+        "liquidPortfolio": 3289491.9598150435,
+        "retirementTotal": 3730243.9598150435,
+        "taxableTotal": 0,
+        "cashTotal": -440752,
+        "realEstateTotal": 7025163.441943269,
+        "businessTotal": 125004.0172662675,
+        "totalIncome": 184308.76446878776,
+        "totalExpenses": 440578.62264509976,
+        "netCashFlow": -256269.858176312,
+        "taxes": 2845.389859139523,
+        "withdrawals": 250565.7913690163,
+        "rothConversionTaxable": 0,
+        "ssIncome": 143459.8374609857,
+        "living": 272683.78528063215,
+        "insurance": 5704.066807295706
+      },
+      {
+        "year": 2057,
+        "age": 87,
+        "spouseAge": 82,
+        "totalPortfolio": 10633293.851134498,
+        "liquidPortfolio": 3279371.401991469,
+        "retirementTotal": 3742624.401991469,
+        "taxableTotal": 0,
+        "cashTotal": -463253,
+        "realEstateTotal": 7225168.311358773,
+        "businessTotal": 128754.13778425552,
+        "totalIncome": 188308.03439320254,
+        "totalExpenses": 451685.9315209099,
+        "netCashFlow": -263377.8971277074,
+        "taxes": 2942.974605618011,
+        "withdrawals": 257502.70831619276,
+        "rothConversionTaxable": 0,
+        "ssIncome": 146329.03421020543,
+        "living": 279500.879912648,
+        "insurance": 5875.188811514577
+      },
+      {
+        "year": 2058,
+        "age": 88,
+        "spouseAge": 83,
+        "totalPortfolio": 10825867.440423613,
+        "liquidPortfolio": 3262346.102495157,
+        "retirementTotal": 3748775.102495157,
+        "taxableTotal": 0,
+        "cashTotal": -486429,
+        "realEstateTotal": 7430904.576010672,
+        "businessTotal": 132616.76191778318,
+        "totalIncome": 192396.56508198153,
+        "totalExpenses": 463076.18453823624,
+        "netCashFlow": -270679.6194562547,
+        "taxes": 3043.923970758461,
+        "withdrawals": 264628.1749803948,
+        "rothConversionTaxable": 0,
+        "ssIncome": 149255.6148944095,
+        "living": 286488.4019104641,
+        "insurance": 6051.444475860015
+      },
+      {
+        "year": 2059,
+        "age": 89,
+        "spouseAge": 84,
+        "totalPortfolio": 11016888.948303089,
+        "liquidPortfolio": 3237756.2245428655,
+        "retirementTotal": 3748056.2245428655,
+        "taxableTotal": 0,
+        "cashTotal": -510300,
+        "realEstateTotal": 7642537.458984906,
+        "businessTotal": 136595.26477531667,
+        "totalIncome": 196575.80113455903,
+        "totalExpenses": 474751.5455625108,
+        "netCashFlow": -278175.74442795175,
+        "taxes": 3143.2470700274225,
+        "withdrawals": 271942.75661781593,
+        "rothConversionTaxable": 0,
+        "ssIncome": 152240.7271922977,
+        "living": 293650.6119582257,
+        "insurance": 6232.987810135815
+      },
+      {
+        "year": 2060,
+        "age": 90,
+        "spouseAge": 85,
+        "totalPortfolio": 11205815.01912804,
+        "liquidPortfolio": 3204884.9243187467,
+        "retirementTotal": 3739771.9243187467,
+        "taxableTotal": 0,
+        "cashTotal": -534887,
+        "realEstateTotal": 7860236.972090716,
+        "businessTotal": 140693.12271857617,
+        "totalIncome": 200848.21752696153,
+        "totalExpenses": 486724.36304119695,
+        "netCashFlow": -285876.1455142354,
+        "taxes": 3245.953246778108,
+        "withdrawals": 279456.1680697955,
+        "rothConversionTaxable": 0,
+        "ssIncome": 155285.54173614367,
+        "living": 300991.87725718133,
+        "insurance": 6419.97744443989
+      },
+      {
+        "year": 2061,
+        "age": 91,
+        "spouseAge": 86,
+        "totalPortfolio": 11392055.116999859,
+        "liquidPortfolio": 3162963.14527662,
+        "retirementTotal": 3723175.14527662,
+        "taxableTotal": 0,
+        "cashTotal": -560212,
+        "realEstateTotal": 8084178.055323106,
+        "businessTotal": 144913.91640013346,
+        "totalIncome": 205216.32025645487,
+        "totalExpenses": 498998.17479081627,
+        "netCashFlow": -293781.8545343614,
+        "taxes": 3348.052077947561,
+        "withdrawals": 287169.2777665883,
+        "rothConversionTaxable": 0,
+        "ssIncome": 158391.25257086655,
+        "living": 308516.6741886108,
+        "insurance": 6612.576767773087
+      },
+      {
+        "year": 2062,
+        "age": 92,
+        "spouseAge": 87,
+        "totalPortfolio": 11574959.809495606,
+        "liquidPortfolio": 3111157.7551992587,
+        "retirementTotal": 3697454.7551992587,
+        "taxableTotal": 0,
+        "cashTotal": -586297,
+        "realEstateTotal": 8314540.72040421,
+        "businessTotal": 149261.33389213745,
+        "totalIncome": 209681.6470000119,
+        "totalExpenses": 511584.712908943,
+        "netCashFlow": -301903.0659089311,
+        "taxes": 3453.5533798962497,
+        "withdrawals": 295092.11183812487,
+        "rothConversionTaxable": 0,
+        "ssIncome": 161559.0776222839,
+        "living": 316229.5910433261,
+        "insurance": 6810.9540708062805
+      },
+      {
+        "year": 2063,
+        "age": 93,
+        "spouseAge": 88,
+        "totalPortfolio": 11753823.120835489,
+        "liquidPortfolio": 3048573.748403305,
+        "retirementTotal": 3661737.748403305,
+        "taxableTotal": 0,
+        "cashTotal": -613164,
+        "realEstateTotal": 8551510.198523281,
+        "businessTotal": 153739.17390890158,
+        "totalIncome": 214245.7677869008,
+        "totalExpenses": 524488.908814451,
+        "netCashFlow": -310243.14102755015,
+        "taxes": 3559.467214393656,
+        "withdrawals": 303227.8583346198,
+        "rothConversionTaxable": 0,
+        "ssIncome": 164790.25917472958,
+        "living": 324135.3308194092,
+        "insurance": 7015.282692930468
+      },
+      {
+        "year": 2064,
+        "age": 94,
+        "spouseAge": 89,
+        "totalPortfolio": 11927877.044465084,
+        "liquidPortfolio": 2974248.602940315,
+        "retirementTotal": 3615085.602940315,
+        "taxableTotal": 0,
+        "cashTotal": -640837,
+        "realEstateTotal": 8795277.092398599,
+        "businessTotal": 158351.3491261686,
+        "totalIncome": 218912.2856856996,
+        "totalExpenses": 537716.8984193873,
+        "netCashFlow": -318804.6127336877,
+        "taxes": 3663.803894753498,
+        "withdrawals": 311578.87155996944,
+        "rothConversionTaxable": 0,
+        "ssIncome": 168086.06435822413,
+        "living": 332238.71408989443,
+        "insurance": 7225.741173718383
+      },
+      {
+        "year": 2065,
+        "age": 95,
+        "spouseAge": 90,
+        "totalPortfolio": 12096277.792180218,
+        "liquidPortfolio": 2887138.3697920963,
+        "retirementTotal": 3556478.3697920963,
+        "taxableTotal": 0,
+        "cashTotal": -669340,
+        "realEstateTotal": 9046037.532788169,
+        "businessTotal": 163101.88959995366,
+        "totalIncome": 223682.83750605103,
+        "totalExpenses": 551284.0274359311,
+        "netCashFlow": -327601.1899298801,
+        "taxes": 3773.573992122335,
+        "withdrawals": 320158.67652095016,
+        "rothConversionTaxable": 0,
+        "ssIncome": 171447.78564538865,
+        "living": 340544.68194214173,
+        "insurance": 7442.5134089299345
+      },
+      {
+        "year": 2066,
+        "age": 96,
+        "spouseAge": 91,
+        "totalPortfolio": 12156744.899513664,
+        "liquidPortfolio": 2684756.613645848,
+        "retirementTotal": 3383454.613645848,
+        "taxableTotal": 0,
+        "cashTotal": -698698,
+        "realEstateTotal": 9303993.339579863,
+        "businessTotal": 167994.94628795228,
+        "totalIncome": 124745.31346816168,
+        "totalExpenses": 562746.0684800659,
+        "netCashFlow": -438000.7550119042,
+        "taxes": 1436,
+        "withdrawals": 430334.96620070643,
+        "rothConversionTaxable": 0,
+        "ssIncome": 95387.31346816168,
+        "living": 349058.2989906952,
+        "insurance": 7665.788811197833
+      },
+      {
+        "year": 2067,
+        "age": 97,
+        "spouseAge": 92,
+        "totalPortfolio": 12200159.649109667,
+        "liquidPortfolio": 2457772.666837567,
+        "retirementTotal": 3186709.666837567,
+        "taxableTotal": 0,
+        "cashTotal": -728937,
+        "realEstateTotal": 9569352.187595509,
+        "businessTotal": 173034.79467659086,
+        "totalIncome": 127534.05973752492,
+        "totalExpenses": 576967.7103186166,
+        "netCashFlow": -449433.65058109164,
+        "taxes": 1507,
+        "withdrawals": 441537.8881055579,
+        "rothConversionTaxable": 0,
+        "ssIncome": 97295.05973752492,
+        "living": 357784.7564654626,
+        "insurance": 7895.762475533767
+      },
+      {
+        "year": 2068,
+        "age": 98,
+        "spouseAge": 93,
+        "totalPortfolio": 12224710.947345024,
+        "liquidPortfolio": 2204157.3315808,
+        "retirementTotal": 2964240.3315808,
+        "taxableTotal": 0,
+        "cashTotal": -760083,
+        "realEstateTotal": 9842327.777247334,
+        "businessTotal": 178225.8385168886,
+        "totalIncome": 130386.96093227541,
+        "totalExpenses": 591547.3759345404,
+        "netCashFlow": -461160.415002265,
+        "taxes": 1576,
+        "withdrawals": 453027.77965246513,
+        "rothConversionTaxable": 0,
+        "ssIncome": 99240.96093227541,
+        "living": 366729.3753770991,
+        "insurance": 8132.635349799781
+      },
+      {
+        "year": 2069,
+        "age": 99,
+        "spouseAge": 94,
+        "totalPortfolio": 12228433.84352396,
+        "liquidPortfolio": 1921721.219662257,
+        "retirementTotal": 2713884.219662257,
+        "taxableTotal": 0,
+        "cashTotal": -792163,
+        "realEstateTotal": 10123140.01018931,
+        "businessTotal": 183572.61367239524,
+        "totalIncome": 133305.78015092094,
+        "totalExpenses": 606501.2944696284,
+        "netCashFlow": -473195.5143187074,
+        "taxes": 1650,
+        "withdrawals": 464818.89990841364,
+        "rothConversionTaxable": 0,
+        "ssIncome": 101225.78015092094,
+        "living": 375897.6097615266,
+        "insurance": 8376.614410293774
+      },
+      {
+        "year": 2070,
+        "age": 100,
+        "spouseAge": 95,
+        "totalPortfolio": 12209212.98048122,
+        "liquidPortfolio": 1608118.0182884955,
+        "retirementTotal": 2433325.0182884955,
+        "taxableTotal": 0,
+        "cashTotal": -825207,
+        "realEstateTotal": 10412015.170110159,
+        "businessTotal": 189079.7920825671,
+        "totalIncome": 136294.29575393937,
+        "totalExpenses": 621830.9332628677,
+        "netCashFlow": -485536.63750892837,
+        "taxes": 1721,
+        "withdrawals": 476908.72466632584,
+        "rothConversionTaxable": 0,
+        "ssIncome": 103250.29575393935,
+        "living": 385295.0500055647,
+        "insurance": 8627.912842602589
+      }
+    ],
+    "retirementAge": 65,
+    "spouseRetirementAge": 65,
+    "planEndAge": 100,
+    "lifeExpectancy": 95,
+    "events": {
+      "retirementYearClient": 2035,
+      "retirementYearSpouse": 2040,
+      "ssClaimYearClient": 2037,
+      "ssClaimYearSpouse": null,
+      "firstRothConversionYear": 2035,
+      "lastRothConversionYear": 2048,
+      "totalRothConverted": 2386905.6216118075,
+      "totalRothTaxesPaid": 0,
+      "rmdStartYearClient": 2043
+    },
+    "allocation": {
+      "taxable": 750000,
+      "retirement": 720000,
+      "cash": 0,
+      "realEstate": 2950000,
+      "business": 50000,
+      "lifeInsurance": 0
+    },
+    "mc": {
+      "successRate": 0.601,
+      "successPct": 60,
+      "trialsRun": 1000,
+      "medianEndingLiquid": 3922527.1530764047,
+      "p10EndingLiquid": -6006600.175032634,
+      "p90EndingLiquid": 49112032.21664936,
+      "longevity": [
+        {
+          "year": 2026,
+          "age": 56,
+          "successPct": 100
+        },
+        {
+          "year": 2027,
+          "age": 57,
+          "successPct": 100
+        },
+        {
+          "year": 2028,
+          "age": 58,
+          "successPct": 100
+        },
+        {
+          "year": 2029,
+          "age": 59,
+          "successPct": 100
+        },
+        {
+          "year": 2030,
+          "age": 60,
+          "successPct": 100
+        },
+        {
+          "year": 2031,
+          "age": 61,
+          "successPct": 100
+        },
+        {
+          "year": 2032,
+          "age": 62,
+          "successPct": 100
+        },
+        {
+          "year": 2033,
+          "age": 63,
+          "successPct": 100
+        },
+        {
+          "year": 2034,
+          "age": 64,
+          "successPct": 100
+        },
+        {
+          "year": 2035,
+          "age": 65,
+          "successPct": 100
+        },
+        {
+          "year": 2036,
+          "age": 66,
+          "successPct": 100
+        },
+        {
+          "year": 2037,
+          "age": 67,
+          "successPct": 100
+        },
+        {
+          "year": 2038,
+          "age": 68,
+          "successPct": 100
+        },
+        {
+          "year": 2039,
+          "age": 69,
+          "successPct": 100
+        },
+        {
+          "year": 2040,
+          "age": 70,
+          "successPct": 100
+        },
+        {
+          "year": 2041,
+          "age": 71,
+          "successPct": 100
+        },
+        {
+          "year": 2042,
+          "age": 72,
+          "successPct": 100
+        },
+        {
+          "year": 2043,
+          "age": 73,
+          "successPct": 100
+        },
+        {
+          "year": 2044,
+          "age": 74,
+          "successPct": 100
+        },
+        {
+          "year": 2045,
+          "age": 75,
+          "successPct": 100
+        },
+        {
+          "year": 2046,
+          "age": 76,
+          "successPct": 100
+        },
+        {
+          "year": 2047,
+          "age": 77,
+          "successPct": 99
+        },
+        {
+          "year": 2048,
+          "age": 78,
+          "successPct": 98
+        },
+        {
+          "year": 2049,
+          "age": 79,
+          "successPct": 97
+        },
+        {
+          "year": 2050,
+          "age": 80,
+          "successPct": 95
+        },
+        {
+          "year": 2051,
+          "age": 81,
+          "successPct": 94
+        },
+        {
+          "year": 2052,
+          "age": 82,
+          "successPct": 91
+        },
+        {
+          "year": 2053,
+          "age": 83,
+          "successPct": 90
+        },
+        {
+          "year": 2054,
+          "age": 84,
+          "successPct": 88
+        },
+        {
+          "year": 2055,
+          "age": 85,
+          "successPct": 86
+        },
+        {
+          "year": 2056,
+          "age": 86,
+          "successPct": 84
+        },
+        {
+          "year": 2057,
+          "age": 87,
+          "successPct": 82
+        },
+        {
+          "year": 2058,
+          "age": 88,
+          "successPct": 80
+        },
+        {
+          "year": 2059,
+          "age": 89,
+          "successPct": 78
+        },
+        {
+          "year": 2060,
+          "age": 90,
+          "successPct": 76
+        },
+        {
+          "year": 2061,
+          "age": 91,
+          "successPct": 74
+        },
+        {
+          "year": 2062,
+          "age": 92,
+          "successPct": 73
+        },
+        {
+          "year": 2063,
+          "age": 93,
+          "successPct": 72
+        },
+        {
+          "year": 2064,
+          "age": 94,
+          "successPct": 70
+        },
+        {
+          "year": 2065,
+          "age": 95,
+          "successPct": 70
+        },
+        {
+          "year": 2066,
+          "age": 96,
+          "successPct": 68
+        },
+        {
+          "year": 2067,
+          "age": 97,
+          "successPct": 66
+        },
+        {
+          "year": 2068,
+          "age": 98,
+          "successPct": 63
+        },
+        {
+          "year": 2069,
+          "age": 99,
+          "successPct": 62
+        },
+        {
+          "year": 2070,
+          "age": 100,
+          "successPct": 60
+        }
+      ],
+      "byYearQuantiles": [
+        {
+          "year": 2026,
+          "p10": 1423707.4817138636,
+          "p50": 1611611.027923398,
+          "p90": 1852032.9247289705
+        },
+        {
+          "year": 2027,
+          "p10": 1537863.7721404233,
+          "p50": 1817196.3093625517,
+          "p90": 2203318.3617675053
+        },
+        {
+          "year": 2028,
+          "p10": 1648889.50558491,
+          "p50": 2036835.620372105,
+          "p90": 2566654.533728823
+        },
+        {
+          "year": 2029,
+          "p10": 1804004.0616496822,
+          "p50": 2259549.561793592,
+          "p90": 2925202.6672416385
+        },
+        {
+          "year": 2030,
+          "p10": 1951076.883596895,
+          "p50": 2494943.550637458,
+          "p90": 3315432.4794337377
+        },
+        {
+          "year": 2031,
+          "p10": 2091252.0390713853,
+          "p50": 2747802.334761983,
+          "p90": 3724467.0804321878
+        },
+        {
+          "year": 2032,
+          "p10": 2270696.2223509215,
+          "p50": 3015456.594513898,
+          "p90": 4095380.072881233
+        },
+        {
+          "year": 2033,
+          "p10": 2444702.125361715,
+          "p50": 3254653.358584157,
+          "p90": 4543985.032784312
+        },
+        {
+          "year": 2034,
+          "p10": 2585183.2034392455,
+          "p50": 3577138.3218727307,
+          "p90": 5080600.689508608
+        },
+        {
+          "year": 2035,
+          "p10": 2499969.8549450086,
+          "p50": 3600583.742850583,
+          "p90": 5462721.373579754
+        },
+        {
+          "year": 2036,
+          "p10": 2471031.8504132843,
+          "p50": 3725157.8355866964,
+          "p90": 5753934.874421779
+        },
+        {
+          "year": 2037,
+          "p10": 2502611.460005345,
+          "p50": 3927489.4243539544,
+          "p90": 6252925.314933149
+        },
+        {
+          "year": 2038,
+          "p10": 2501166.570464252,
+          "p50": 4070371.464255743,
+          "p90": 6788979.516847327
+        },
+        {
+          "year": 2039,
+          "p10": 2506927.977309708,
+          "p50": 4302812.537500269,
+          "p90": 7334203.871595194
+        },
+        {
+          "year": 2040,
+          "p10": 2309025.7626432353,
+          "p50": 4225032.7940407535,
+          "p90": 7937318.54523031
+        },
+        {
+          "year": 2041,
+          "p10": 2084685.4193873215,
+          "p50": 4192650.916735541,
+          "p90": 8141375.236489233
+        },
+        {
+          "year": 2042,
+          "p10": 1927450.266223903,
+          "p50": 4156226.7281874614,
+          "p90": 8597925.987757275
+        },
+        {
+          "year": 2043,
+          "p10": 1787223.8113883338,
+          "p50": 4304239.763173648,
+          "p90": 9342014.29372504
+        },
+        {
+          "year": 2044,
+          "p10": 1657153.7176908364,
+          "p50": 4288235.733279029,
+          "p90": 9959897.279881282
+        },
+        {
+          "year": 2045,
+          "p10": 1543499.0619243728,
+          "p50": 4258010.733978061,
+          "p90": 10531467.366859332
+        },
+        {
+          "year": 2046,
+          "p10": 1373006.985515462,
+          "p50": 4177848.3308440773,
+          "p90": 11536675.755152415
+        },
+        {
+          "year": 2047,
+          "p10": 1236654.7892876398,
+          "p50": 4152330.035040509,
+          "p90": 11969498.213489357
+        },
+        {
+          "year": 2048,
+          "p10": 1052766.9550573402,
+          "p50": 4176119.388829308,
+          "p90": 12684924.090233188
+        },
+        {
+          "year": 2049,
+          "p10": 886098.0188902821,
+          "p50": 4220577.260262254,
+          "p90": 13494968.76796089
+        },
+        {
+          "year": 2050,
+          "p10": 692241.7048712253,
+          "p50": 4276480.219090546,
+          "p90": 14780825.795554994
+        },
+        {
+          "year": 2051,
+          "p10": 462686.88789436023,
+          "p50": 4295956.109077916,
+          "p90": 15468598.123759482
+        },
+        {
+          "year": 2052,
+          "p10": 265112.35824142816,
+          "p50": 4333517.647408955,
+          "p90": 16446319.946688455
+        },
+        {
+          "year": 2053,
+          "p10": 31171.49410753767,
+          "p50": 4419087.498303461,
+          "p90": 17913307.063205518
+        },
+        {
+          "year": 2054,
+          "p10": -241648.90469599894,
+          "p50": 4250762.670707493,
+          "p90": 18593298.914603364
+        },
+        {
+          "year": 2055,
+          "p10": -492348.52112569707,
+          "p50": 4365421.51923059,
+          "p90": 20088025.02093663
+        },
+        {
+          "year": 2056,
+          "p10": -764760.3124947133,
+          "p50": 4351405.725440719,
+          "p90": 21508894.136777498
+        },
+        {
+          "year": 2057,
+          "p10": -1044764.0208109061,
+          "p50": 4462552.750368916,
+          "p90": 22503679.554368436
+        },
+        {
+          "year": 2058,
+          "p10": -1332568.1957913009,
+          "p50": 4459402.793984154,
+          "p90": 24556716.085422073
+        },
+        {
+          "year": 2059,
+          "p10": -1628381.952409117,
+          "p50": 4529077.928306026,
+          "p90": 25810610.902735706
+        },
+        {
+          "year": 2060,
+          "p10": -1932425.1204789125,
+          "p50": 4614570.756287641,
+          "p90": 27043375.57938975
+        },
+        {
+          "year": 2061,
+          "p10": -2244919.398245501,
+          "p50": 4736453.734269005,
+          "p90": 28793597.69669728
+        },
+        {
+          "year": 2062,
+          "p10": -2566096.510083626,
+          "p50": 4819120.887577112,
+          "p90": 31274206.971001796
+        },
+        {
+          "year": 2063,
+          "p10": -2896191.3684182456,
+          "p50": 4732331.173778836,
+          "p90": 33792726.70868594
+        },
+        {
+          "year": 2064,
+          "p10": -3235443.239978215,
+          "p50": 4741495.656596051,
+          "p90": 35640223.2332674
+        },
+        {
+          "year": 2065,
+          "p10": -3584104.9164991654,
+          "p50": 4783116.512067414,
+          "p90": 39573026.35153146
+        },
+        {
+          "year": 2066,
+          "p10": -4043797.882699872,
+          "p50": 4660128.391977532,
+          "p90": 41004109.4227346
+        },
+        {
+          "year": 2067,
+          "p10": -4515574.77080543,
+          "p50": 4197739.8617202435,
+          "p90": 41203927.3549266
+        },
+        {
+          "year": 2068,
+          "p10": -4999748.550457895,
+          "p50": 4142945.451225236,
+          "p90": 45346886.550379455
+        },
+        {
+          "year": 2069,
+          "p10": -5496647.450366309,
+          "p50": 3869647.3786593005,
+          "p90": 48353602.97228245
+        },
+        {
+          "year": 2070,
+          "p10": -6006600.175032634,
+          "p50": 3922527.1530764047,
+          "p90": 49112032.21664936
+        }
+      ]
+    }
+  },
+  "proposed": {
+    "name": "Retirement Plan",
+    "totalTaxesLifetime": 3076104.7062489716,
+    "totalWithdrawalsLifetime": 12448039.289026689,
+    "endingPortfolio": 16949638.984238684,
+    "endingLiquidPortfolio": 6348544.02204596,
+    "peakPortfolio": 16949638.984238684,
+    "peakYear": 2070,
+    "yearsModeled": 45,
+    "rows": [
+      {
+        "year": 2026,
+        "age": 56,
+        "spouseAge": 51,
+        "totalPortfolio": 4710255.329067929,
+        "liquidPortfolio": 1625255.3290679283,
+        "retirementTotal": 801392,
+        "taxableTotal": 804262.5,
+        "cashTotal": 19600.829067928236,
+        "realEstateTotal": 3033500,
+        "businessTotal": 51500,
+        "totalIncome": 472968.2205592198,
+        "totalExpenses": 444367.3914912915,
+        "netCashFlow": 28600.82906792825,
+        "taxes": 107123.99149129157,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 150000,
+        "insurance": 0
+      },
+      {
+        "year": 2027,
+        "age": 57,
+        "spouseAge": 52,
+        "totalPortfolio": 5016914.974483289,
+        "liquidPortfolio": 1844489.9744832888,
+        "retirementTotal": 889192.7112,
+        "taxableTotal": 862450.891875,
+        "cashTotal": 92846.37140828872,
+        "realEstateTotal": 3119380,
+        "businessTotal": 53045,
+        "totalIncome": 474718.2205592198,
+        "totalExpenses": 403541.94820192386,
+        "netCashFlow": 71176.27235729591,
+        "taxes": 110268.54820192393,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 153750,
+        "insurance": 0
+      },
+      {
+        "year": 2028,
+        "age": 58,
+        "spouseAge": 53,
+        "totalPortfolio": 5343934.18598118,
+        "liquidPortfolio": 2081589.56098118,
+        "retirementTotal": 983878.80385532,
+        "taxableTotal": 924849.2139021562,
+        "cashTotal": 172861.54322370395,
+        "realEstateTotal": 3207708.275,
+        "businessTotal": 54636.35,
+        "totalIncome": 495284.9705592198,
+        "totalExpenses": 413090.3837151942,
+        "netCashFlow": 82194.58684402559,
+        "taxes": 113635.33371519423,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 157593.75,
+        "insurance": 0
+      },
+      {
+        "year": 2029,
+        "age": 59,
+        "spouseAge": 54,
+        "totalPortfolio": 5693482.448546912,
+        "liquidPortfolio": 2338651.937921912,
+        "retirementTotal": 1086461.7603142522,
+        "taxableTotal": 991762.0545279772,
+        "cashTotal": 260428.12307968258,
+        "realEstateTotal": 3298555.070125,
+        "businessTotal": 56275.4405,
+        "totalIncome": 506865.18930921966,
+        "totalExpenses": 423313.0899054761,
+        "netCashFlow": 83552.09940374357,
+        "taxes": 117020.89915547616,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 161533.59374999994,
+        "insurance": 0
+      },
+      {
+        "year": 2030,
+        "age": 60,
+        "spouseAge": 55,
+        "totalPortfolio": 6074892.4369128905,
+        "liquidPortfolio": 2624936.0754222656,
+        "retirementTotal": 1197026.5767979883,
+        "taxableTotal": 1063516.0391730764,
+        "cashTotal": 364393.4594512006,
+        "realEstateTotal": 3391992.657775625,
+        "businessTotal": 57963.703714999996,
+        "totalIncome": 528736.7635279689,
+        "totalExpenses": 435537.8395612659,
+        "netCashFlow": 93198.923966703,
+        "taxes": 123341.50084583885,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 165571.93359374994,
+        "insurance": 0
+      },
+      {
+        "year": 2031,
+        "age": 61,
+        "spouseAge": 56,
+        "totalPortfolio": 6452911.37084743,
+        "liquidPortfolio": 2905113.3595765387,
+        "retirementTotal": 1316664.7404574477,
+        "taxableTotal": 1140461.4246072485,
+        "cashTotal": 447987.19451184233,
+        "realEstateTotal": 3488095.396444441,
+        "businessTotal": 59702.61482644999,
+        "totalIncome": 507189.5315429685,
+        "totalExpenses": 442311.9341236211,
+        "netCashFlow": 64877.59741934744,
+        "taxes": 124732.65491160253,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 169711.23193359366,
+        "insurance": 0
+      },
+      {
+        "year": 2032,
+        "age": 62,
+        "spouseAge": 57,
+        "totalPortfolio": 6856733.823278531,
+        "liquidPortfolio": 3208300.338760578,
+        "retirementTotal": 1445547.0575283722,
+        "taxableTotal": 1222973.808677583,
+        "cashTotal": 539779.4725546229,
+        "realEstateTotal": 3586939.7912467094,
+        "businessTotal": 61493.693271243494,
+        "totalIncome": 519921.41983154265,
+        "totalExpenses": 453335.1860616939,
+        "netCashFlow": 66586.23376984877,
+        "taxes": 128928.25834381924,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 173954.0127319335,
+        "insurance": 0
+      },
+      {
+        "year": 2033,
+        "age": 63,
+        "spouseAge": 58,
+        "totalPortfolio": 7288239.620801998,
+        "liquidPortfolio": 3536296.560516848,
+        "retirementTotal": 1584857.0508168486,
+        "taxableTotal": 1311455.963735406,
+        "cashTotal": 639983.5459645939,
+        "realEstateTotal": 3688604.5562157696,
+        "businessTotal": 63338.5040693808,
+        "totalIncome": 532972.7803273313,
+        "totalExpenses": 465071.4679566874,
+        "netCashFlow": 67901.3123706439,
+        "taxes": 133165.03418853777,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 178302.86305023186,
+        "insurance": 0
+      },
+      {
+        "year": 2034,
+        "age": 64,
+        "spouseAge": 59,
+        "totalPortfolio": 7749236.697528676,
+        "liquidPortfolio": 3890827.3599225217,
+        "retirementTotal": 1734864.238711654,
+        "taxableTotal": 1406339.8027116626,
+        "cashTotal": 749623.3184992052,
+        "realEstateTotal": 3793170.678414692,
+        "businessTotal": 65238.65919146222,
+        "totalIncome": 546352.3748355143,
+        "totalExpenses": 476733.97020144155,
+        "netCashFlow": 69618.4046340728,
+        "taxes": 137651.81717114447,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 182760.43462648758,
+        "insurance": 0
+      },
+      {
+        "year": 2035,
+        "age": 65,
+        "spouseAge": 60,
+        "totalPortfolio": 8241748.360079414,
+        "liquidPortfolio": 4273831.057194813,
+        "retirementTotal": 1896358.0161573535,
+        "taxableTotal": 1508088.4874378515,
+        "cashTotal": 869384.5535996079,
+        "realEstateTotal": 3900721.4839173947,
+        "businessTotal": 67195.81896720608,
+        "totalIncome": 560068.1592064024,
+        "totalExpenses": 497663.0213840738,
+        "netCashFlow": 62405.13782232854,
+        "taxes": 142305.03969551108,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 187329.4454921498,
+        "insurance": 8919.429484656717
+      },
+      {
+        "year": 2036,
+        "age": 66,
+        "spouseAge": 61,
+        "totalPortfolio": 8767970.048816497,
+        "liquidPortfolio": 4687415.649566339,
+        "retirementTotal": 2070185.2771456223,
+        "taxableTotal": 1617198.68950398,
+        "cashTotal": 1000031.6829167372,
+        "realEstateTotal": 4011342.705713935,
+        "businessTotal": 69211.69353622227,
+        "totalIncome": 574128.2881865622,
+        "totalExpenses": 510267.170441561,
+        "netCashFlow": 63861.11774500128,
+        "taxes": 147099.94620619412,
+        "withdrawals": 0,
+        "rothConversionTaxable": 0,
+        "ssIncome": 0,
+        "living": 192012.6816294535,
+        "insurance": 9187.01236919642
+      },
+      {
+        "year": 2037,
+        "age": 67,
+        "spouseAge": 62,
+        "totalPortfolio": 9086035.985058784,
+        "liquidPortfolio": 4889625.38712013,
+        "retirementTotal": 2247254.584429374,
+        "taxableTotal": 1734203.014689593,
+        "cashTotal": 908167.7880011619,
+        "realEstateTotal": 4125122.5535963466,
+        "businessTotal": 71288.04434230895,
+        "totalIncome": 287992.4929075336,
+        "totalExpenses": 456882.40282240714,
+        "netCashFlow": -168889.90991487354,
+        "taxes": 82587.08411345242,
+        "withdrawals": 159427.28717460122,
+        "rothConversionTaxable": 88967.45752503187,
+        "ssIncome": 53713.77012264899,
+        "living": 209933.8652482025,
+        "insurance": 9462.622740272313
+      },
+      {
+        "year": 2038,
+        "age": 68,
+        "spouseAge": 63,
+        "totalPortfolio": 9419772.111231364,
+        "liquidPortfolio": 5104193.639475782,
+        "retirementTotal": 2437817.1411571624,
+        "taxableTotal": 1859672.602802385,
+        "cashTotal": 806703.8955162349,
+        "realEstateTotal": 4242151.786083005,
+        "businessTotal": 73426.68567257821,
+        "totalIncome": 294986.2863796086,
+        "totalExpenses": 467641.0560489001,
+        "netCashFlow": -172654.7696692915,
+        "taxes": 84807.44444260228,
+        "withdrawals": 162908.26824681112,
+        "rothConversionTaxable": 90784.90721963585,
+        "ssIncome": 54788.04552510197,
+        "living": 215182.21187940752,
+        "insurance": 9746.501422480482
+      },
+      {
+        "year": 2039,
+        "age": 69,
+        "spouseAge": 64,
+        "totalPortfolio": 9770092.059654359,
+        "liquidPortfolio": 5331938.78897037,
+        "retirementTotal": 2642866.241052814,
+        "taxableTotal": 1994219.9156151377,
+        "cashTotal": 694852.6323024187,
+        "realEstateTotal": 4362523.784441234,
+        "businessTotal": 75629.48624275556,
+        "totalIncome": 302150.20331147336,
+        "totalExpenses": 473736.32564928534,
+        "netCashFlow": -171586.12233781198,
+        "taxes": 87099.88487367485,
+        "withdrawals": 166499.1215544158,
+        "rothConversionTaxable": 92725.0160098584,
+        "ssIncome": 55883.80643560401,
+        "living": 220561.7671763927,
+        "insurance": 5087.000783396221
+      },
+      {
+        "year": 2040,
+        "age": 70,
+        "spouseAge": 65,
+        "totalPortfolio": 9923133.314730978,
+        "liquidPortfolio": 5358900.315031337,
+        "retirementTotal": 2834077.613592985,
+        "taxableTotal": 2138501.726509893,
+        "cashTotal": 386320.97492845834,
+        "realEstateTotal": 4486334.6288696015,
+        "businessTotal": 77898.37083003823,
+        "totalIncome": 83415.32800627965,
+        "totalExpenses": 444301.19323421805,
+        "netCashFlow": -360885.8652279384,
+        "taxes": 71444.20711820773,
+        "withdrawals": 355646.2544210403,
+        "rothConversionTaxable": 298149.360203747,
+        "ssIncome": 57001.48256431609,
+        "living": 226075.81135580252,
+        "insurance": 5239.6108068981075
+      },
+      {
+        "year": 2041,
+        "age": 71,
+        "spouseAge": 66,
+        "totalPortfolio": 10074349.562633533,
+        "liquidPortfolio": 5380431.063775394,
+        "retirementTotal": 3039123.128936438,
+        "taxableTotal": 2293222.3264228837,
+        "cashTotal": 48085.60841607259,
+        "realEstateTotal": 4613683.176903199,
+        "businessTotal": 80235.32195493937,
+        "totalIncome": 85284.37879361506,
+        "totalExpenses": 454284.7766231799,
+        "netCashFlow": -369000.39782956487,
+        "taxes": 72941.68319531591,
+        "withdrawals": 363603.5986984598,
+        "rothConversionTaxable": 305757.1376060131,
+        "ssIncome": 58141.51221560241,
+        "living": 231727.70663969754,
+        "insurance": 5396.799131105051
+      },
+      {
+        "year": 2042,
+        "age": 72,
+        "spouseAge": 67,
+        "totalPortfolio": 10266251.707289508,
+        "liquidPortfolio": 5438938.181568926,
+        "retirementTotal": 3259003.687314989,
+        "taxableTotal": 2366518.187218694,
+        "cashTotal": -186583.6929647571,
+        "realEstateTotal": 4744671.1441069925,
+        "businessTotal": 82642.38161358755,
+        "totalIncome": 136615.51608563948,
+        "totalExpenses": 470953.69021129544,
+        "netCashFlow": -334338.17412565596,
+        "taxes": 80909.76826541676,
+        "withdrawals": 328778.77805586066,
+        "rothConversionTaxable": 271581.74250078853,
+        "ssIncome": 108724.62784317651,
+        "living": 237520.89930568996,
+        "insurance": 5558.703105038203
+      },
+      {
+        "year": 2043,
+        "age": 73,
+        "spouseAge": 68,
+        "totalPortfolio": 10422599.965907345,
+        "liquidPortfolio": 5458075.125721034,
+        "retirementTotal": 3494792.604092228,
+        "taxableTotal": 2164740.609705854,
+        "cashTotal": -201458.08807704877,
+        "realEstateTotal": 4879403.187124317,
+        "businessTotal": 85121.65306199518,
+        "totalIncome": 139559.2308485646,
+        "totalExpenses": 518279.20838115754,
+        "netCashFlow": -378719.97753259295,
+        "taxes": 119314.2639107443,
+        "withdrawals": 372995.1683581122,
+        "rothConversionTaxable": 278754.18165779323,
+        "ssIncome": 110899.12040004005,
+        "living": 243458.92178833217,
+        "insurance": 5725.464198189348
+      },
+      {
+        "year": 2044,
+        "age": 74,
+        "spouseAge": 69,
+        "totalPortfolio": 10573816.789141184,
+        "liquidPortfolio": 5468154.497337816,
+        "retirementTotal": 3747640.848998301,
+        "taxableTotal": 1937293.724337405,
+        "cashTotal": -216780.07599789032,
+        "realEstateTotal": 5017986.989149514,
+        "businessTotal": 87675.30265385503,
+        "totalIncome": 142568.8410177785,
+        "totalExpenses": 532531.9191710486,
+        "netCashFlow": -389963.07815327006,
+        "taxes": 124420.14499038913,
+        "withdrawals": 384065.86848066794,
+        "rothConversionTaxable": 288363.5551012323,
+        "ssIncome": 113117.10280804086,
+        "living": 249545.39483304045,
+        "insurance": 5897.22812413503
+      },
+      {
+        "year": 2045,
+        "age": 75,
+        "spouseAge": 70,
+        "totalPortfolio": 10730090.222824065,
+        "liquidPortfolio": 5479251.313194839,
+        "retirementTotal": 3951215.6209430383,
+        "taxableTotal": 1760596.7001209778,
+        "cashTotal": -232561.00786917683,
+        "realEstateTotal": 5160533.347895754,
+        "businessTotal": 90305.56173347068,
+        "totalIncome": 213210.47000947315,
+        "totalExpenses": 542057.5889333859,
+        "netCashFlow": -328847.11892391276,
+        "taxes": 118654.59826529733,
+        "withdrawals": 316860.2251722385,
+        "rothConversionTaxable": 231146.75085643618,
+        "ssIncome": 115379.44486420167,
+        "living": 255784.02970386646,
+        "insurance": 11986.967378835066
+      },
+      {
+        "year": 2046,
+        "age": 76,
+        "spouseAge": 71,
+        "totalPortfolio": 10879840.459322024,
+        "liquidPortfolio": 5479669.464605376,
+        "retirementTotal": 4174483.034201176,
+        "taxableTotal": 1554002.4368309048,
+        "cashTotal": -248816.0064267044,
+        "realEstateTotal": 5307156.266131174,
+        "businessTotal": 93014.7285854748,
+        "totalIncome": 211390.12688518304,
+        "totalExpenses": 557710.1358174015,
+        "netCashFlow": -346320.0089322184,
+        "taxes": 124513.8971360074,
+        "withdrawals": 333973.4345438257,
+        "rothConversionTaxable": 246641.55305850733,
+        "ssIncome": 117687.03376148571,
+        "living": 262178.63044646307,
+        "insurance": 12346.57640020012
+      },
+      {
+        "year": 2047,
+        "age": 77,
+        "spouseAge": 72,
+        "totalPortfolio": 11021789.497853663,
+        "liquidPortfolio": 5468011.282552004,
+        "retirementTotal": 4420533.410138468,
+        "taxableTotal": 1313036.8771995355,
+        "cashTotal": -265559.00478599954,
+        "realEstateTotal": 5457973.0448586205,
+        "businessTotal": 95805.17044303905,
+        "totalIncome": 207973.4286356489,
+        "totalExpenses": 570951.5795103613,
+        "netCashFlow": -362978.1508747124,
+        "taxes": 130849.70222971497,
+        "withdrawals": 353397.6359360853,
+        "rothConversionTaxable": 264157.3252546661,
+        "ssIncome": 120040.77443671541,
+        "living": 268733.09620762465,
+        "insurance": 9580.51704430391
+      },
+      {
+        "year": 2048,
+        "age": 78,
+        "spouseAge": 73,
+        "totalPortfolio": 11154550.516954996,
+        "liquidPortfolio": 5442766.812182186,
+        "retirementTotal": 4692431.757369628,
+        "taxableTotal": 1033139.8578399132,
+        "cashTotal": -282804.8030273549,
+        "realEstateTotal": 5613104.379216479,
+        "businessTotal": 98679.32555633022,
+        "totalIncome": 203210.4220948731,
+        "totalExpenses": 591204.9403179423,
+        "netCashFlow": -387994.5182230692,
+        "taxes": 137669.29239014725,
+        "withdrawals": 374895.2374250087,
+        "rothConversionTaxable": 283503.86986237083,
+        "ssIncome": 122441.58992544973,
+        "living": 275451.4236128152,
+        "insurance": 13098.482902972308
+      },
+      {
+        "year": 2049,
+        "age": 79,
+        "spouseAge": 74,
+        "totalPortfolio": 11276515.07705312,
+        "liquidPortfolio": 5402200.914549725,
+        "retirementTotal": 4994049.855165486,
+        "taxableTotal": 708717.5933621277,
+        "cashTotal": -300566.5339778887,
+        "realEstateTotal": 5772674.457180375,
+        "businessTotal": 101639.70532302013,
+        "totalIncome": 196518.26343028405,
+        "totalExpenses": 609179.3068643534,
+        "netCashFlow": -412661.0434340693,
+        "taxes": 145084.59042105192,
+        "withdrawals": 399169.9331925032,
+        "rothConversionTaxable": 305324.27150983916,
+        "ssIncome": 124890.42172395873,
+        "living": 282337.70920313563,
+        "insurance": 13491.437390061477
+      },
+      {
+        "year": 2050,
+        "age": 80,
+        "spouseAge": 75,
+        "totalPortfolio": 11385851.833874539,
+        "liquidPortfolio": 5344351.8762439545,
+        "retirementTotal": 5329929.931914607,
+        "taxableTotal": 333283.2253366126,
+        "cashTotal": -318861.2810072654,
+        "realEstateTotal": 5936811.061147873,
+        "businessTotal": 104688.89648271073,
+        "totalIncome": 187508.8248334446,
+        "totalExpenses": 628114.7996465494,
+        "netCashFlow": -440605.9748131048,
+        "taxes": 153192.55589978612,
+        "withdrawals": 426710.085905265,
+        "rothConversionTaxable": 330019.1393129276,
+        "ssIncome": 127388.23015843792,
+        "living": 289396.1519332139,
+        "insurance": 13896.180511763321
+      },
+      {
+        "year": 2051,
+        "age": 81,
+        "spouseAge": 76,
+        "totalPortfolio": 11536582.391343938,
+        "liquidPortfolio": 5323107.155476046,
+        "retirementTotal": 5660852.114523498,
+        "taxableTotal": 0,
+        "cashTotal": -337744.95904745243,
+        "realEstateTotal": 6105645.672490699,
+        "businessTotal": 107829.56337719205,
+        "totalIncome": 175658.12698959434,
+        "totalExpenses": 592023.0515658573,
+        "netCashFlow": -416364.92457626294,
+        "taxes": 105997.9445755422,
+        "withdrawals": 402012.2009398354,
+        "rothConversionTaxable": 199666.0070634567,
+        "ssIncome": 129935.99476160668,
+        "living": 296631.0557315443,
+        "insurance": 14313.06592711622
+      },
+      {
+        "year": 2052,
+        "age": 82,
+        "spouseAge": 77,
+        "totalPortfolio": 11787658.964209253,
+        "liquidPortfolio": 5397280.934769225,
+        "retirementTotal": 5754394.934769225,
+        "taxableTotal": 0,
+        "cashTotal": -357114,
+        "realEstateTotal": 6279313.579161519,
+        "businessTotal": 111064.45027850782,
+        "totalIncome": 169159.42863263976,
+        "totalExpenses": 499878.86669308203,
+        "netCashFlow": -330719.4380604423,
+        "taxes": 2468.505999411975,
+        "withdrawals": 316019.8302400482,
+        "rothConversionTaxable": 0,
+        "ssIncome": 132534.7146568388,
+        "living": 304046.83212483284,
+        "insurance": 14742.45790492971
+      },
+      {
+        "year": 2053,
+        "age": 83,
+        "spouseAge": 78,
+        "totalPortfolio": 12042332.049120726,
+        "liquidPortfolio": 5469981.678888996,
+        "retirementTotal": 5847087.678888996,
+        "taxableTotal": 0,
+        "cashTotal": -377106,
+        "realEstateTotal": 6457953.986444866,
+        "businessTotal": 114396.38378686305,
+        "totalIncome": 172823.51577517155,
+        "totalExpenses": 507900.88356464024,
+        "netCashFlow": -335077.3677894687,
+        "taxes": 2560.7354795335164,
+        "withdrawals": 323637.7294107824,
+        "rothConversionTaxable": 0,
+        "ssIncome": 135185.40894997556,
+        "living": 311648.00292795367,
+        "insurance": 11439.638378686315
+      },
+      {
+        "year": 2054,
+        "age": 84,
+        "spouseAge": 79,
+        "totalPortfolio": 12300462.07790801,
+        "liquidPortfolio": 5540923.671663112,
+        "retirementTotal": 5938620.671663112,
+        "taxableTotal": 0,
+        "cashTotal": -397697,
+        "realEstateTotal": 6641710.130944427,
+        "businessTotal": 117828.27530046894,
+        "totalIncome": 176567.37662480096,
+        "totalExpenses": 513447.8074562873,
+        "netCashFlow": -336880.43083148636,
+        "taxes": 2654.2788665218545,
+        "withdrawals": 331503.8007935038,
+        "rothConversionTaxable": 0,
+        "ssIncome": 137889.1171289751,
+        "living": 319439.2030011525,
+        "insurance": 5376.630037982568
+      },
+      {
+        "year": 2055,
+        "age": 85,
+        "spouseAge": 80,
+        "totalPortfolio": 12561885.061918259,
+        "liquidPortfolio": 5609792.540457147,
+        "retirementTotal": 6028698.540457147,
+        "taxableTotal": 0,
+        "cashTotal": -418906,
+        "realEstateTotal": 6830729.39790163,
+        "businessTotal": 121363.123559483,
+        "totalIncome": 180395.34045477613,
+        "totalExpenses": 525514.6061946899,
+        "netCashFlow": -345119.26573991374,
+        "taxes": 2751.1608381849005,
+        "withdrawals": 339581.33680079173,
+        "rothConversionTaxable": 0,
+        "ssIncome": 140646.8994715546,
+        "living": 327425.1830761813,
+        "insurance": 5537.928939122045
+      },
+      {
+        "year": 2056,
+        "age": 86,
+        "spouseAge": 81,
+        "totalPortfolio": 12860797.52032729,
+        "liquidPortfolio": 5710630.061117752,
+        "retirementTotal": 6151382.061117752,
+        "taxableTotal": 0,
+        "cashTotal": -440752,
+        "realEstateTotal": 7025163.441943269,
+        "businessTotal": 125004.0172662675,
+        "totalIncome": 184308.76446878776,
+        "totalExpenses": 503505.65001755336,
+        "netCashFlow": -319196.8855487656,
+        "taxes": 2845.389859139523,
+        "withdrawals": 313492.8187414699,
+        "rothConversionTaxable": 0,
+        "ssIncome": 143459.8374609857,
+        "living": 335610.81265308574,
+        "insurance": 5704.066807295706
+      },
+      {
+        "year": 2057,
+        "age": 87,
+        "spouseAge": 82,
+        "totalPortfolio": 13165101.091009693,
+        "liquidPortfolio": 5811178.641866664,
+        "retirementTotal": 6274431.641866664,
+        "taxableTotal": 0,
+        "cashTotal": -463253,
+        "realEstateTotal": 7225168.311358773,
+        "businessTotal": 128754.13778425552,
+        "totalIncome": 188308.03439320254,
+        "totalExpenses": 516186.1345776748,
+        "netCashFlow": -327878.1001844723,
+        "taxes": 2942.974605618011,
+        "withdrawals": 322002.91137295763,
+        "rothConversionTaxable": 0,
+        "ssIncome": 146329.03421020543,
+        "living": 344001.0829694129,
+        "insurance": 5875.188811514577
+      },
+      {
+        "year": 2058,
+        "age": 88,
+        "spouseAge": 83,
+        "totalPortfolio": 13474738.225970594,
+        "liquidPortfolio": 5911216.888042139,
+        "retirementTotal": 6397645.888042139,
+        "taxableTotal": 0,
+        "cashTotal": -486429,
+        "realEstateTotal": 7430904.576010672,
+        "businessTotal": 132616.76191778318,
+        "totalIncome": 192396.56508198153,
+        "totalExpenses": 529188.8926714204,
+        "netCashFlow": -336792.3275894388,
+        "taxes": 3043.923970758461,
+        "withdrawals": 330740.8831135788,
+        "rothConversionTaxable": 0,
+        "ssIncome": 149255.6148944095,
+        "living": 352601.11004364816,
+        "insurance": 6051.444475860015
+      },
+      {
+        "year": 2059,
+        "age": 89,
+        "spouseAge": 84,
+        "totalPortfolio": 13789640.009347882,
+        "liquidPortfolio": 6010507.285587658,
+        "retirementTotal": 6520807.285587658,
+        "taxableTotal": 0,
+        "cashTotal": -510300,
+        "realEstateTotal": 7642537.458984906,
+        "businessTotal": 136595.26477531667,
+        "totalIncome": 196575.80113455903,
+        "totalExpenses": 542517.0713990243,
+        "netCashFlow": -345941.2702644653,
+        "taxes": 3143.2470700274225,
+        "withdrawals": 339708.28245432954,
+        "rothConversionTaxable": 0,
+        "ssIncome": 152240.7271922977,
+        "living": 361416.13779473933,
+        "insurance": 6232.987810135815
+      },
+      {
+        "year": 2060,
+        "age": 90,
+        "spouseAge": 85,
+        "totalPortfolio": 14109714.955456994,
+        "liquidPortfolio": 6108784.860647703,
+        "retirementTotal": 6643671.860647703,
+        "taxableTotal": 0,
+        "cashTotal": -534887,
+        "realEstateTotal": 7860236.972090716,
+        "businessTotal": 140693.12271857617,
+        "totalIncome": 200848.21752696153,
+        "totalExpenses": 556184.0270236233,
+        "netCashFlow": -355335.8094966618,
+        "taxes": 3245.953246778108,
+        "withdrawals": 348915.832052222,
+        "rothConversionTaxable": 0,
+        "ssIncome": 155285.54173614367,
+        "living": 370451.5412396078,
+        "insurance": 6419.97744443989
+      },
+      {
+        "year": 2061,
+        "age": 91,
+        "spouseAge": 86,
+        "totalPortfolio": 14434856.058140228,
+        "liquidPortfolio": 6205764.086416989,
+        "retirementTotal": 6765976.086416989,
+        "taxableTotal": 0,
+        "cashTotal": -560212,
+        "realEstateTotal": 8084178.055323106,
+        "businessTotal": 144913.91640013346,
+        "totalIncome": 205216.32025645487,
+        "totalExpenses": 570194.3303728035,
+        "netCashFlow": -364978.0101163486,
+        "taxes": 3348.052077947561,
+        "withdrawals": 358365.43334857543,
+        "rothConversionTaxable": 0,
+        "ssIncome": 158391.25257086655,
+        "living": 379712.8297705979,
+        "insurance": 6612.576767773087
+      },
+      {
+        "year": 2062,
+        "age": 92,
+        "spouseAge": 87,
+        "totalPortfolio": 14764931.339255942,
+        "liquidPortfolio": 6301129.284959596,
+        "retirementTotal": 6887426.284959596,
+        "taxableTotal": 0,
+        "cashTotal": -586297,
+        "realEstateTotal": 8314540.72040421,
+        "businessTotal": 149261.33389213745,
+        "totalIncome": 209681.6470000119,
+        "totalExpenses": 584560.7723804797,
+        "netCashFlow": -374879.12538046786,
+        "taxes": 3453.5533798962497,
+        "withdrawals": 368068.17130966164,
+        "rothConversionTaxable": 0,
+        "ssIncome": 161559.0776222839,
+        "living": 389205.65051486285,
+        "insurance": 6810.9540708062805
+      },
+      {
+        "year": 2063,
+        "age": 93,
+        "spouseAge": 88,
+        "totalPortfolio": 15099788.629815662,
+        "liquidPortfolio": 6394539.257383478,
+        "retirementTotal": 7007703.257383478,
+        "taxableTotal": 0,
+        "cashTotal": -613164,
+        "realEstateTotal": 8551510.198523281,
+        "businessTotal": 153739.17390890158,
+        "totalIncome": 214245.7677869008,
+        "totalExpenses": 599289.3697727761,
+        "netCashFlow": -385043.60198587534,
+        "taxes": 3559.467214393656,
+        "withdrawals": 378028.319292945,
+        "rothConversionTaxable": 0,
+        "ssIncome": 164790.25917472958,
+        "living": 398935.7917777344,
+        "insurance": 7015.282692930468
+      },
+      {
+        "year": 2064,
+        "age": 94,
+        "spouseAge": 89,
+        "totalPortfolio": 15439252.685537688,
+        "liquidPortfolio": 6485624.24401292,
+        "retirementTotal": 7126461.24401292,
+        "taxableTotal": 0,
+        "cashTotal": -640837,
+        "realEstateTotal": 8795277.092398599,
+        "businessTotal": 158351.3491261686,
+        "totalIncome": 218912.2856856996,
+        "totalExpenses": 614387.3709016707,
+        "netCashFlow": -395475.08521597105,
+        "taxes": 3663.803894753498,
+        "withdrawals": 388249.34404225275,
+        "rothConversionTaxable": 0,
+        "ssIncome": 168086.06435822413,
+        "living": 408909.18657217774,
+        "insurance": 7225.741173718383
+      },
+      {
+        "year": 2065,
+        "age": 95,
+        "spouseAge": 90,
+        "totalPortfolio": 15783114.226590086,
+        "liquidPortfolio": 6573974.804201965,
+        "retirementTotal": 7243314.804201965,
+        "taxableTotal": 0,
+        "cashTotal": -669340,
+        "realEstateTotal": 9046037.532788169,
+        "businessTotal": 163101.88959995366,
+        "totalIncome": 223682.83750605103,
+        "totalExpenses": 629871.2617302715,
+        "netCashFlow": -406188.42422422045,
+        "taxes": 3773.573992122335,
+        "withdrawals": 398745.9108152905,
+        "rothConversionTaxable": 0,
+        "ssIncome": 171447.78564538865,
+        "living": 419131.9162364821,
+        "insurance": 7442.5134089299345
+      },
+      {
+        "year": 2066,
+        "age": 96,
+        "spouseAge": 91,
+        "totalPortfolio": 16029772.034801388,
+        "liquidPortfolio": 6557783.748933572,
+        "retirementTotal": 7256481.748933572,
+        "taxableTotal": 0,
+        "cashTotal": -698698,
+        "realEstateTotal": 9303993.339579863,
+        "businessTotal": 167994.94628795228,
+        "totalIncome": 124745.31346816168,
+        "totalExpenses": 643297.9836317649,
+        "netCashFlow": -518552.6701636032,
+        "taxes": 1436,
+        "withdrawals": 510886.8813524053,
+        "rothConversionTaxable": 0,
+        "ssIncome": 95387.31346816168,
+        "living": 429610.21414239414,
+        "insurance": 7665.788811197833
+      },
+      {
+        "year": 2067,
+        "age": 97,
+        "spouseAge": 92,
+        "totalPortfolio": 16270834.584604967,
+        "liquidPortfolio": 6528447.602332867,
+        "retirementTotal": 7257384.602332867,
+        "taxableTotal": 0,
+        "cashTotal": -728937,
+        "realEstateTotal": 9569352.187595509,
+        "businessTotal": 173034.79467659086,
+        "totalIncome": 127534.05973752492,
+        "totalExpenses": 659533.423349108,
+        "netCashFlow": -531999.363611583,
+        "taxes": 1507,
+        "withdrawals": 524103.60113604926,
+        "rothConversionTaxable": 0,
+        "ssIncome": 97295.05973752492,
+        "living": 440350.469495954,
+        "insurance": 7895.762475533767
+      },
+      {
+        "year": 2068,
+        "age": 98,
+        "spouseAge": 93,
+        "totalPortfolio": 16505269.358567154,
+        "liquidPortfolio": 6484715.742802931,
+        "retirementTotal": 7244798.742802931,
+        "taxableTotal": 0,
+        "cashTotal": -760083,
+        "realEstateTotal": 9842327.777247334,
+        "businessTotal": 178225.8385168886,
+        "totalIncome": 130386.96093227541,
+        "totalExpenses": 676177.231790794,
+        "netCashFlow": -545790.2708585185,
+        "taxes": 1576,
+        "withdrawals": 537657.6355087188,
+        "rothConversionTaxable": 0,
+        "ssIncome": 99240.96093227541,
+        "living": 451359.23123335274,
+        "insurance": 8132.635349799781
+      },
+      {
+        "year": 2069,
+        "age": 99,
+        "spouseAge": 94,
+        "totalPortfolio": 16731945.053545356,
+        "liquidPortfolio": 6425232.42968365,
+        "retirementTotal": 7217395.42968365,
+        "taxableTotal": 0,
+        "cashTotal": -792163,
+        "realEstateTotal": 10123140.01018931,
+        "businessTotal": 183572.61367239524,
+        "totalIncome": 133305.78015092094,
+        "totalExpenses": 693246.8967222883,
+        "netCashFlow": -559941.1165713674,
+        "taxes": 1650,
+        "withdrawals": 551564.5021610736,
+        "rothConversionTaxable": 0,
+        "ssIncome": 101225.78015092094,
+        "living": 462643.21201418655,
+        "insurance": 8376.614410293774
+      },
+      {
+        "year": 2070,
+        "age": 100,
+        "spouseAge": 95,
+        "totalPortfolio": 16949638.984238684,
+        "liquidPortfolio": 6348544.02204596,
+        "retirementTotal": 7173751.02204596,
+        "taxableTotal": 0,
+        "cashTotal": -825207,
+        "realEstateTotal": 10412015.170110159,
+        "businessTotal": 189079.7920825671,
+        "totalIncome": 136294.29575393937,
+        "totalExpenses": 710745.1755718443,
+        "netCashFlow": -574450.8798179049,
+        "taxes": 1721,
+        "withdrawals": 565822.9669753023,
+        "rothConversionTaxable": 0,
+        "ssIncome": 103250.29575393935,
+        "living": 474209.2923145412,
+        "insurance": 8627.912842602589
+      }
+    ],
+    "retirementAge": 67,
+    "spouseRetirementAge": 65,
+    "planEndAge": 100,
+    "lifeExpectancy": 95,
+    "events": {
+      "retirementYearClient": 2037,
+      "retirementYearSpouse": 2040,
+      "ssClaimYearClient": 2037,
+      "ssClaimYearSpouse": null,
+      "firstRothConversionYear": 2037,
+      "lastRothConversionYear": 2051,
+      "totalRothConverted": 3575542.2747423043,
+      "totalRothTaxesPaid": 0,
+      "rmdStartYearClient": 2043
+    },
+    "allocation": {
+      "taxable": 750000,
+      "retirement": 720000,
+      "cash": 0,
+      "realEstate": 2950000,
+      "business": 50000,
+      "lifeInsurance": 0
+    },
+    "mc": {
+      "successRate": 0.636,
+      "successPct": 64,
+      "trialsRun": 1000,
+      "medianEndingLiquid": 5467406.5705904085,
+      "p10EndingLiquid": -9332914.640559701,
+      "p90EndingLiquid": 57295607.358759984,
+      "longevity": [
+        {
+          "year": 2026,
+          "age": 56,
+          "successPct": 100
+        },
+        {
+          "year": 2027,
+          "age": 57,
+          "successPct": 100
+        },
+        {
+          "year": 2028,
+          "age": 58,
+          "successPct": 100
+        },
+        {
+          "year": 2029,
+          "age": 59,
+          "successPct": 100
+        },
+        {
+          "year": 2030,
+          "age": 60,
+          "successPct": 100
+        },
+        {
+          "year": 2031,
+          "age": 61,
+          "successPct": 100
+        },
+        {
+          "year": 2032,
+          "age": 62,
+          "successPct": 100
+        },
+        {
+          "year": 2033,
+          "age": 63,
+          "successPct": 100
+        },
+        {
+          "year": 2034,
+          "age": 64,
+          "successPct": 100
+        },
+        {
+          "year": 2035,
+          "age": 65,
+          "successPct": 100
+        },
+        {
+          "year": 2036,
+          "age": 66,
+          "successPct": 100
+        },
+        {
+          "year": 2037,
+          "age": 67,
+          "successPct": 100
+        },
+        {
+          "year": 2038,
+          "age": 68,
+          "successPct": 100
+        },
+        {
+          "year": 2039,
+          "age": 69,
+          "successPct": 100
+        },
+        {
+          "year": 2040,
+          "age": 70,
+          "successPct": 100
+        },
+        {
+          "year": 2041,
+          "age": 71,
+          "successPct": 100
+        },
+        {
+          "year": 2042,
+          "age": 72,
+          "successPct": 100
+        },
+        {
+          "year": 2043,
+          "age": 73,
+          "successPct": 100
+        },
+        {
+          "year": 2044,
+          "age": 74,
+          "successPct": 100
+        },
+        {
+          "year": 2045,
+          "age": 75,
+          "successPct": 100
+        },
+        {
+          "year": 2046,
+          "age": 76,
+          "successPct": 100
+        },
+        {
+          "year": 2047,
+          "age": 77,
+          "successPct": 100
+        },
+        {
+          "year": 2048,
+          "age": 78,
+          "successPct": 100
+        },
+        {
+          "year": 2049,
+          "age": 79,
+          "successPct": 100
+        },
+        {
+          "year": 2050,
+          "age": 80,
+          "successPct": 99
+        },
+        {
+          "year": 2051,
+          "age": 81,
+          "successPct": 97
+        },
+        {
+          "year": 2052,
+          "age": 82,
+          "successPct": 96
+        },
+        {
+          "year": 2053,
+          "age": 83,
+          "successPct": 94
+        },
+        {
+          "year": 2054,
+          "age": 84,
+          "successPct": 93
+        },
+        {
+          "year": 2055,
+          "age": 85,
+          "successPct": 90
+        },
+        {
+          "year": 2056,
+          "age": 86,
+          "successPct": 89
+        },
+        {
+          "year": 2057,
+          "age": 87,
+          "successPct": 87
+        },
+        {
+          "year": 2058,
+          "age": 88,
+          "successPct": 85
+        },
+        {
+          "year": 2059,
+          "age": 89,
+          "successPct": 83
+        },
+        {
+          "year": 2060,
+          "age": 90,
+          "successPct": 81
+        },
+        {
+          "year": 2061,
+          "age": 91,
+          "successPct": 79
+        },
+        {
+          "year": 2062,
+          "age": 92,
+          "successPct": 78
+        },
+        {
+          "year": 2063,
+          "age": 93,
+          "successPct": 76
+        },
+        {
+          "year": 2064,
+          "age": 94,
+          "successPct": 74
+        },
+        {
+          "year": 2065,
+          "age": 95,
+          "successPct": 72
+        },
+        {
+          "year": 2066,
+          "age": 96,
+          "successPct": 71
+        },
+        {
+          "year": 2067,
+          "age": 97,
+          "successPct": 69
+        },
+        {
+          "year": 2068,
+          "age": 98,
+          "successPct": 67
+        },
+        {
+          "year": 2069,
+          "age": 99,
+          "successPct": 65
+        },
+        {
+          "year": 2070,
+          "age": 100,
+          "successPct": 64
+        }
+      ],
+      "byYearQuantiles": [
+        {
+          "year": 2026,
+          "p10": 1421792.6488487879,
+          "p50": 1614361.3244583164,
+          "p90": 1869240.1325932094
+        },
+        {
+          "year": 2027,
+          "p10": 1536466.6489145677,
+          "p50": 1829564.1910010497,
+          "p90": 2229960.2678805003
+        },
+        {
+          "year": 2028,
+          "p10": 1655663.1991653526,
+          "p50": 2060453.5168281626,
+          "p90": 2610119.6167384414
+        },
+        {
+          "year": 2029,
+          "p10": 1827061.0067450386,
+          "p50": 2301343.8694125963,
+          "p90": 2995336.058621386
+        },
+        {
+          "year": 2030,
+          "p10": 1997819.0695927916,
+          "p50": 2561428.83664114,
+          "p90": 3412408.738958877
+        },
+        {
+          "year": 2031,
+          "p10": 2171085.062382666,
+          "p50": 2852608.515367455,
+          "p90": 3862532.7667611116
+        },
+        {
+          "year": 2032,
+          "p10": 2387894.3873078073,
+          "p50": 3158644.0032529095,
+          "p90": 4280187.8001041375
+        },
+        {
+          "year": 2033,
+          "p10": 2605613.030974213,
+          "p50": 3444821.924907624,
+          "p90": 4779355.1528319
+        },
+        {
+          "year": 2034,
+          "p10": 2804482.4688539314,
+          "p50": 3827222.9254455734,
+          "p90": 5389835.675437549
+        },
+        {
+          "year": 2035,
+          "p10": 3024582.976339806,
+          "p50": 4158901.3245637566,
+          "p90": 6078577.134351965
+        },
+        {
+          "year": 2036,
+          "p10": 3323212.58538604,
+          "p50": 4610458.646462839,
+          "p90": 6661324.6826560795
+        },
+        {
+          "year": 2037,
+          "p10": 3392970.7241978347,
+          "p50": 4846712.805461685,
+          "p90": 7242870.136343966
+        },
+        {
+          "year": 2038,
+          "p10": 3426038.968576038,
+          "p50": 5023343.690309543,
+          "p90": 7806289.534584826
+        },
+        {
+          "year": 2039,
+          "p10": 3471703.2849595547,
+          "p50": 5312511.977840638,
+          "p90": 8389535.446931247
+        },
+        {
+          "year": 2040,
+          "p10": 3305876.5840394897,
+          "p50": 5261824.263433365,
+          "p90": 9051956.33524418
+        },
+        {
+          "year": 2041,
+          "p10": 3093817.824581025,
+          "p50": 5238502.646913949,
+          "p90": 9280487.582659695
+        },
+        {
+          "year": 2042,
+          "p10": 2959917.066868345,
+          "p50": 5267267.556610893,
+          "p90": 9847728.749746237
+        },
+        {
+          "year": 2043,
+          "p10": 2731583.6878453325,
+          "p50": 5468869.409266834,
+          "p90": 10548475.788789269
+        },
+        {
+          "year": 2044,
+          "p10": 2574297.970624634,
+          "p50": 5402238.8744746,
+          "p90": 11339274.78205951
+        },
+        {
+          "year": 2045,
+          "p10": 2439720.7499655327,
+          "p50": 5354373.538176256,
+          "p90": 11991661.859622844
+        },
+        {
+          "year": 2046,
+          "p10": 2196014.28991522,
+          "p50": 5269583.08720299,
+          "p90": 13027870.01098082
+        },
+        {
+          "year": 2047,
+          "p10": 2114487.720568388,
+          "p50": 5301908.355940323,
+          "p90": 13557262.597294461
+        },
+        {
+          "year": 2048,
+          "p10": 1829127.9690765738,
+          "p50": 5336500.939027154,
+          "p90": 14328087.260149796
+        },
+        {
+          "year": 2049,
+          "p10": 1668540.0542299282,
+          "p50": 5297216.545593568,
+          "p90": 15057966.80834138
+        },
+        {
+          "year": 2050,
+          "p10": 1468890.9122793623,
+          "p50": 5340787.3720219955,
+          "p90": 16459346.633378645
+        },
+        {
+          "year": 2051,
+          "p10": 1299408.0673891196,
+          "p50": 5438628.243037343,
+          "p90": 17233149.00970259
+        },
+        {
+          "year": 2052,
+          "p10": 983128.0860615913,
+          "p50": 5446328.945953245,
+          "p90": 18388006.704779163
+        },
+        {
+          "year": 2053,
+          "p10": 687442.739342358,
+          "p50": 5469995.5870293155,
+          "p90": 19720509.70266242
+        },
+        {
+          "year": 2054,
+          "p10": 411297.0290062397,
+          "p50": 5537941.4723696485,
+          "p90": 20697957.415756516
+        },
+        {
+          "year": 2055,
+          "p10": 137717.24073601887,
+          "p50": 5617397.07955026,
+          "p90": 22710952.25450104
+        },
+        {
+          "year": 2056,
+          "p10": -212626.48496945458,
+          "p50": 5737538.266036148,
+          "p90": 24129048.321057677
+        },
+        {
+          "year": 2057,
+          "p10": -507456.4447396513,
+          "p50": 5729888.458303066,
+          "p90": 25106684.26054687
+        },
+        {
+          "year": 2058,
+          "p10": -864493.2833619947,
+          "p50": 5755164.341364903,
+          "p90": 27315390.641378693
+        },
+        {
+          "year": 2059,
+          "p10": -1254758.1656329208,
+          "p50": 5975614.1074149115,
+          "p90": 29060263.564671412
+        },
+        {
+          "year": 2060,
+          "p10": -1680882.639305208,
+          "p50": 6174708.443282722,
+          "p90": 30409580.761352748
+        },
+        {
+          "year": 2061,
+          "p10": -2145639.953997927,
+          "p50": 6207720.056953582,
+          "p90": 32262238.670680016
+        },
+        {
+          "year": 2062,
+          "p10": -2652848.3666853546,
+          "p50": 6139441.212851705,
+          "p90": 35147294.16409416
+        },
+        {
+          "year": 2063,
+          "p10": -3206016.2101435913,
+          "p50": 6099039.346620344,
+          "p90": 38516991.8835984
+        },
+        {
+          "year": 2064,
+          "p10": -3808775.6076949793,
+          "p50": 6267398.412552233,
+          "p90": 40890410.88999737
+        },
+        {
+          "year": 2065,
+          "p10": -4465004.302784879,
+          "p50": 6263748.70123937,
+          "p90": 45135178.09775843
+        },
+        {
+          "year": 2066,
+          "p10": -5282729.496443771,
+          "p50": 6221199.035541926,
+          "p90": 47285869.08845453
+        },
+        {
+          "year": 2067,
+          "p10": -6172555.776347527,
+          "p50": 5984945.078199699,
+          "p90": 48955893.777546816
+        },
+        {
+          "year": 2068,
+          "p10": -7140097.23032499,
+          "p50": 5588471.063749077,
+          "p90": 53188836.68510729
+        },
+        {
+          "year": 2069,
+          "p10": -8191387.762050076,
+          "p50": 5318462.092761191,
+          "p90": 57086756.29894467
+        },
+        {
+          "year": 2070,
+          "p10": -9332914.640559701,
+          "p50": 5467406.5705904085,
+          "p90": 57295607.358759984
+        }
+      ]
+    }
+  },
+  "inventory": {
+    "accounts": [
+      {
+        "id": "47d0a94b-e589-467c-be9a-3bea312458be",
+        "name": "Special Needs Trust — Cash",
+        "category": "cash",
+        "value": 0
+      },
+      {
+        "id": "573b1c44-067d-4112-aa90-762af7a0c55f",
+        "name": "Home",
+        "category": "real_estate",
+        "value": 950000
+      },
+      {
+        "id": "f64f749e-cadd-4555-a29c-dfa8fdb4e584",
+        "name": "IRA",
+        "category": "retirement",
+        "value": 400000
+      },
+      {
+        "id": "9b075ef3-ced1-4470-ae0a-50ffba62353d",
+        "name": "Real Estate",
+        "category": "real_estate",
+        "value": 1000000
+      },
+      {
+        "id": "bb751a7f-e4ac-4ca3-b669-93fdb7c68870",
+        "name": "Roth IRA - Cooper",
+        "category": "retirement",
+        "value": 0
+      },
+      {
+        "id": "d962bfbd-6208-4b7e-a9c6-9b18daccda9f",
+        "name": "Susan - 401k",
+        "category": "retirement",
+        "value": 320000
+      },
+      {
+        "id": "349055d9-53f2-4017-bdf0-f6237cba7d37",
+        "name": "Household Cash",
+        "category": "cash",
+        "value": 0
+      },
+      {
+        "id": "5699b4f6-e438-443e-808d-9561c4dece5a",
+        "name": "New Trust — Cash",
+        "category": "cash",
+        "value": 0
+      },
+      {
+        "id": "b31fc7d0-259d-4eda-b764-3d1def67abfb",
+        "name": "Schwab Ind. Account",
+        "category": "taxable",
+        "value": 750000
+      },
+      {
+        "id": "4d2e10a5-156e-45ec-a420-bbf39d5ec495",
+        "name": "IDGT — Cash",
+        "category": "cash",
+        "value": 0
+      },
+      {
+        "id": "d55bb66d-c593-469a-bee3-073f4161501a",
+        "name": "Cooper - Term",
+        "category": "life_insurance",
+        "value": 0
+      },
+      {
+        "id": "82800156-cbf0-4e64-a95a-b37c734b6bb4",
+        "name": "Consulting Business — Cash",
+        "category": "cash",
+        "value": 0
+      },
+      {
+        "id": "f43af48f-178c-417f-8934-79dba967de93",
+        "name": "Consulting Business",
+        "category": "business",
+        "value": 50000
+      },
+      {
+        "id": "28bdf6d1-1dcf-45c9-b795-c0dc4c04cc9d",
+        "name": "Rental",
+        "category": "real_estate",
+        "value": 1000000
+      },
+      {
+        "id": "3a0e9191-25fe-42ca-83f9-bf0c47c2e1e6",
+        "name": "Cooper - Term 2",
+        "category": "life_insurance",
+        "value": 0
+      }
+    ],
+    "liabilities": [
+      {
+        "id": "d4fef69c-4183-42c8-a5da-dd32500d1c66",
+        "name": "Loan",
+        "balance": 10000
+      },
+      {
+        "id": "3660f797-13b9-408c-bbc1-ae2be8bec3db",
+        "name": "Home Mortgage",
+        "balance": 600000
+      }
+    ],
+    "incomes": [
+      {
+        "id": "a06d4d57-6297-46e5-ba4e-436eafb45e55",
+        "type": "social_security",
+        "name": "Social Security — Cooper",
+        "annualAmount": 0,
+        "startYear": 2026,
+        "endYear": 2070,
+        "owner": "client"
+      },
+      {
+        "id": "33c18db2-bea8-4ac4-ad29-f209c3ec71fb",
+        "type": "social_security",
+        "name": "Social Security — Susan",
+        "annualAmount": 0,
+        "startYear": 2026,
+        "endYear": 2070,
+        "owner": "spouse"
+      },
+      {
+        "id": "d99f3ccb-8eb5-44f9-ae81-f52fb2694458",
+        "type": "salary",
+        "name": "Cooper's Salary",
+        "annualAmount": 250000,
+        "startYear": 2026,
+        "endYear": 2035,
+        "owner": "client"
+      },
+      {
+        "id": "5b0eb216-2942-4ea1-a3a1-34aba08feff2",
+        "type": "salary",
+        "name": "Cooper - Side Income",
+        "annualAmount": 20000,
+        "startYear": 2026,
+        "endYear": 2035,
+        "owner": "client"
+      },
+      {
+        "id": "07b1b3b7-492c-40c3-961d-d9a57379b9ec",
+        "type": "salary",
+        "name": "Salary - Susan",
+        "annualAmount": 160000,
+        "startYear": 2026,
+        "endYear": 2039,
+        "owner": "spouse"
+      },
+      {
+        "id": "085c3ca4-704d-40c9-96dd-efdb359c3303",
+        "type": "other",
+        "name": "Cooper - Other",
+        "annualAmount": 10000,
+        "startYear": 2030,
+        "endYear": 2070,
+        "owner": "client"
+      }
+    ],
+    "expenses": [
+      {
+        "id": "de54f6d4-513a-4e9c-86d0-85f3dd741882",
+        "type": "living",
+        "name": "Current Living Expenses",
+        "annualAmount": 150000,
+        "startYear": 2026,
+        "endYear": 2035,
+        "startYearRef": "plan_start",
+        "endYearRef": "client_retirement",
+        "growthRate": 0.03
+      },
+      {
+        "id": "e7c38963-150d-4688-8521-d8ff25aa20ea",
+        "type": "living",
+        "name": "Retirement Living Expenses",
+        "annualAmount": 130000,
+        "startYear": 2035,
+        "endYear": 2070,
+        "startYearRef": "client_retirement",
+        "endYearRef": "plan_end",
+        "growthRate": 0.03
+      }
+    ]
+  },
+  "scenarioChanges": [
+    {
+      "kind": "client_edit",
+      "field": "retirementAge",
+      "from": 65,
+      "to": 67
+    },
+    {
+      "kind": "expense_edit",
+      "expenseName": "Retirement Living Expenses",
+      "expenseType": "living",
+      "field": "annualAmount",
+      "from": 130000,
+      "to": 160000
+    },
+    {
+      "kind": "reinvestment",
+      "name": "Reinvest in Aggressive",
+      "year": 2026,
+      "portfolioName": "Aggressive (100/0)",
+      "portfolioDescription": "100% equity, no fixed income",
+      "accountNames": [
+        "Special Needs Trust — Cash",
+        "IRA",
+        "Roth IRA - Cooper",
+        "Susan - 401k",
+        "Household Cash",
+        "Schwab Ind. Account"
+      ],
+      "realizeTaxesOnSwitch": false
+    }
+  ],
+  "estate": {
+    "base": {
+      "firstDeath": {
+        "year": 2065,
+        "grossEstate": 11423085.87298523,
+        "taxableEstate": 0,
+        "federalEstateTax": 0,
+        "stateEstateTax": 0,
+        "totalEstateTax": 0,
+        "totalTaxesAndExpenses": 0
+      },
+      "secondDeath": {
+        "year": 2070,
+        "grossEstate": 13034419.98048122,
+        "taxableEstate": 13034419.98048122,
+        "federalEstateTax": 0,
+        "stateEstateTax": 0,
+        "totalEstateTax": 0,
+        "totalTaxesAndExpenses": 0
+      }
+    },
+    "proposed": {
+      "firstDeath": {
+        "year": 2065,
+        "grossEstate": 15109922.3073951,
+        "taxableEstate": 0,
+        "federalEstateTax": 0,
+        "stateEstateTax": 0,
+        "totalEstateTax": 0,
+        "totalTaxesAndExpenses": 0
+      },
+      "secondDeath": {
+        "year": 2070,
+        "grossEstate": 17774845.984238684,
+        "taxableEstate": 17774845.984238684,
+        "federalEstateTax": 0,
+        "stateEstateTax": 0,
+        "totalEstateTax": 0,
+        "totalTaxesAndExpenses": 0
+      }
+    }
+  }
+}
