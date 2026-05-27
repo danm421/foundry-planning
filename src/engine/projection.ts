@@ -3827,7 +3827,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR, and DEFAULT_MEDICARE_BASE_YEAR
       // in src/lib/medicare/constants.ts.
       const inflationEnabled = data.medicarePremiumInflationEnabled ?? true;
-      const rawInflationRate = data.medicarePremiumInflationRate ?? 0.05;
+      const rawInflationRate = data.medicarePremiumInflationRate ?? 0.03;
       const inflationRate = inflationEnabled ? rawInflationRate : 0;
       const medicareBaseYear = 2025;
       const defaultMedigapMonthly = 170;

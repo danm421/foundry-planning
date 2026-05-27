@@ -437,7 +437,7 @@ export interface ClientData {
   /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */
   medicareCoverage?: MedicareCoverage[];
   /** Annual rate at which Medicare premiums inflate forward from their base year.
-   *  null = use DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE (5% per year). */
+   *  null = use DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE (3% per year). */
   medicarePremiumInflationRate?: number;
   /** When true, Part B / Part D national base / IRMAA bracket dollars inflate
    *  forward from the latest seeded year using `medicarePremiumInflationRate`,

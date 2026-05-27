@@ -640,7 +640,7 @@ export const planSettings = pgTable("plan_settings", {
     .default("0.03"),
   medicarePremiumInflationRate: decimal("medicare_premium_inflation_rate", { precision: 5, scale: 4 })
     .notNull()
-    .default("0.05"),
+    .default("0.03"),
   medicarePremiumInflationEnabled: boolean("medicare_premium_inflation_enabled")
     .notNull()
     .default(true),

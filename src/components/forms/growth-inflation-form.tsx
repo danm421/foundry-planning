@@ -451,7 +451,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3 px-3 py-2">
             <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
               <span>Medicare premium inflation</span>
-              <HelpTip text="When on, inflates Part B premiums, Part D national base, IRMAA bracket dollars, Medigap, and Part D plan premiums forward from the latest CMS-published year. Turn off to project Medicare costs in today's dollars. Historical Medicare inflation ~5%/yr." />
+              <HelpTip text="When on, inflates Part B premiums, Part D national base, IRMAA bracket dollars, Medigap, and Part D plan premiums forward from the latest CMS-published year. Turn off to project Medicare costs in today's dollars. Historical Medicare inflation has run ~4-6%/yr; the conservative default is 3%." />
             </div>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
@@ -467,7 +467,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 id="medicarePremiumInflationRate"
                 name="medicarePremiumInflationRate"
                 defaultValue={medicarePremiumInflationRate ? pct(medicarePremiumInflationRate) : ""}
-                placeholder="Defaults to 5.00%"
+                placeholder="Defaults to 3.00%"
                 disabled={!medicareInflEnabled}
                 className={`${INPUT_CLS} max-w-[12rem] disabled:opacity-50`}
               />

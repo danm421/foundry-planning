@@ -1,0 +1,1 @@
+ALTER TABLE "plan_settings" ALTER COLUMN "medicare_premium_inflation_rate" SET DEFAULT '0.03';

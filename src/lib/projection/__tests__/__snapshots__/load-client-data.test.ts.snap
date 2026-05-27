@@ -172,7 +172,8 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     },
   ],
   "medicareCoverage": [],
-  "medicarePremiumInflationRate": 0.05,
+  "medicarePremiumInflationEnabled": undefined,
+  "medicarePremiumInflationRate": 0.03,
   "notesReceivable": [],
   "planSettings": {
     "estateAdminExpenses": 0,
