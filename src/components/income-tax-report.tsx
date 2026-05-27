@@ -152,6 +152,41 @@ export default function IncomeTaxReport({ clientId }: Props) {
     [years, yearRange]
   );
 
+  // Optimistic + persist: update client-side data, re-run projection, fire-and-forget PATCH.
+  // Surface a non-fatal error if persistence fails so the user knows their change
+  // isn't saved — local state still reflects the new value either way.
+  const [assumptionSaveError, setAssumptionSaveError] = useState<string | null>(null);
+  const handleMedicareInflationChange = (next: { rate?: number; enabled?: boolean }) => {
+    if (!clientData) return;
+    const updated: ClientData = {
+      ...clientData,
+      medicarePremiumInflationRate:
+        next.rate !== undefined ? next.rate : clientData.medicarePremiumInflationRate,
+      medicarePremiumInflationEnabled:
+        next.enabled !== undefined ? next.enabled : clientData.medicarePremiumInflationEnabled,
+    };
+    setClientData(updated);
+    setYears(runProjection(updated));
+    setAssumptionSaveError(null);
+    const body: Record<string, number | boolean> = {};
+    if (next.rate !== undefined) body.medicarePremiumInflationRate = next.rate;
+    if (next.enabled !== undefined) body.medicarePremiumInflationEnabled = next.enabled;
+    fetch(`/api/clients/${clientId}/plan-settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string };
+          setAssumptionSaveError(err.error ?? `Save failed (HTTP ${res.status})`);
+        }
+      })
+      .catch((e) => {
+        setAssumptionSaveError(e instanceof Error ? e.message : "Save failed");
+      });
+  };
+
   useEffect(() => {
     setClientData(null);
     setAccountNames({});
@@ -257,6 +292,9 @@ export default function IncomeTaxReport({ clientId }: Props) {
             clientLifeExpectancy={clientData?.client.lifeExpectancy}
             spouseLifeExpectancy={clientData?.client.spouseLifeExpectancy}
             clientData={clientData}
+            clientId={clientId}
+            onMedicareInflationChange={handleMedicareInflationChange}
+            medicareAssumptionSaveError={assumptionSaveError}
           />
         </div>
       </div>

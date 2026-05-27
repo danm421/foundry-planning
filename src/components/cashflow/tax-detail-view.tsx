@@ -36,6 +36,15 @@ interface TaxDetailViewProps {
   clientLifeExpectancy?: number;
   spouseLifeExpectancy?: number | null;
   clientData?: ClientData | null;
+  /** When provided, enables inline assumption controls (e.g. Medicare inflation
+   *  toggle) that persist to plan settings via /api/clients/[id]/plan-settings. */
+  clientId?: string;
+  /** Called when the user changes a Medicare inflation control. Parent is
+   *  responsible for updating clientData state, re-running the projection, and
+   *  persisting via PATCH. */
+  onMedicareInflationChange?: (next: { rate?: number; enabled?: boolean }) => void;
+  /** Non-fatal save error from the most recent assumption persist (null = ok). */
+  medicareAssumptionSaveError?: string | null;
 }
 
 export function TaxDetailView({
@@ -52,6 +61,9 @@ export function TaxDetailView({
   clientLifeExpectancy,
   spouseLifeExpectancy,
   clientData,
+  clientId,
+  onMedicareInflationChange,
+  medicareAssumptionSaveError,
 }: TaxDetailViewProps) {
   return (
     <>
@@ -102,6 +114,9 @@ export function TaxDetailView({
           years={years}
           yearRange={yearRange}
           clientData={clientData}
+          clientId={clientId}
+          onInflationChange={onMedicareInflationChange}
+          saveError={medicareAssumptionSaveError ?? null}
         />
       )}
     </>
