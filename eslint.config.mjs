@@ -5,9 +5,35 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Override default ignores of eslint-config-next.
+  {
+    files: ["src/lib/presentations/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@react-pdf/renderer",
+              message:
+                "src/lib/presentations/ must stay framework-free. Move PDF-rendering code to src/components/presentations/.",
+            },
+            {
+              name: "react",
+              message:
+                "src/lib/presentations/ must stay framework-free. Move React code to src/components/presentations/.",
+            },
+          ],
+          patterns: [
+            {
+              group: ["react/*", "@react-pdf/renderer/*"],
+              message: "src/lib/presentations/ must stay framework-free.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   globalIgnores([
-    // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",
     "build/**",
