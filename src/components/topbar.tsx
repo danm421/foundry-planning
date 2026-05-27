@@ -47,6 +47,7 @@ const TABS: ReadonlyArray<{
     ],
   },
   { label: "Comparison", href: "comparison" },
+  { label: "Presentations", href: "presentations" },
 ];
 
 interface TopbarProps {
