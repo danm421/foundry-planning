@@ -40,7 +40,13 @@ export type TrustWarning =
   | { code: "trust_tax_insufficient_cash"; entityId: string; shortfall: number }
   | { code: "entity_overdraft"; entityId: string; shortfall: number }
   | { code: "trust_note_cash_shortfall"; entityId: string; year: number; shortfall: number }
-  | { code: "engine_iteration_limit"; year: number; residual: number; iterations: number };
+  | {
+      code: "engine_iteration_limit";
+      year: number;
+      residual: number;
+      iterations: number;
+      bracketResiduals?: Record<string, number>;
+    };
 
 export interface TrustTaxBreakdown {
   entityId: string;

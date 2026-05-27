@@ -18,6 +18,7 @@ import type {
   MedicareCoverage,
   MedicareYearDetail,
   IrmaaTier,
+  RothConversion,
 } from "./types";
 import { computeMedicareYear } from "./medicare";
 import {
@@ -2743,83 +2744,59 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // IRA distributions, and SE earnings which ride in ordinaryIncome.
     const interestIncomeForTax = realizationOI;
 
-    // ── Roth Conversions (deferred application) ──────────────────────────────
-    // Run conversions HERE — after aboveLine/itemized are computed — so the
-    // `fill_up_bracket` strategy can use an accurate `incomeTaxBase` closure
-    // that accounts for SS taxability stack-up, QBI, above-line, and
-    // itemized-vs-std. The legacy proxy ignored all of these.
-    if (data.rothConversions && data.rothConversions.length > 0) {
-      const convFilingStatus = effectiveFilingStatus(
-        (client.filingStatus ?? "single") as FilingStatus,
-        firstDeathYear,
+    // ── Household withdraw balances (hoisted: needed by both phase 5b
+    // bracket-filler sizing and phase 12 supplemental / legacy-no-checking
+    // gap-fill). Build unconditionally — the legacy no-checking path also
+    // reads this map at line ~4095. T9: year-aware ownership — gift events
+    // that transferred account ownership reduce the household's tappable
+    // balance starting the gift's effective year.
+    const householdWithdrawBalances: Record<string, number> = {};
+    for (const acct of workingAccounts) {
+      const householdShare = ownedByHouseholdAtYear(
+        acct,
+        data.giftEvents,
         year,
+        planSettings.planStartYear,
       );
-      const convResolved = taxResolver ? taxResolver.getYear(year) : null;
-      const convBrackets = convResolved?.params.incomeBrackets[convFilingStatus];
+      if (householdShare <= 0) continue;
+      if (acct.isDefaultChecking) continue;
+      const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
+      householdWithdrawBalances[acct.id] = balance * householdShare;
+    }
 
-      // Cashflow snapshot for the closure's supplemental-withdrawal estimate.
-      // Phase 12's convergence loop will draw from the withdrawal strategy to
-      // cover any post-conversion deficit — if that lands on a Trad IRA the
-      // recognized ordinary income stacks on top of the conversion and blows
-      // past the targeted ceiling. The closure needs to anticipate that.
-      //
-      // `projectedCheckingPreTax` mirrors the eventual `preSupplementalChecking`
-      // (line ~3358). At this point RMDs credited via line ~1384 live in
-      // cashDelta (not yet flushed to accountBalances); household income credits
-      // and expense/liability debits haven't hit cashDelta yet (lines ~2950 /
-      // ~2990 / ~3109), so we fold them in forward-looking. Savings,
-      // discretionary, gifts, and entity-internal cash flows are excluded —
-      // zero in retirement (where this bug bites) and the closure's own
-      // Newton-style iteration absorbs any small residual.
-      const projectedCheckingPreTax = hasChecking
-        ? (accountBalances[defaultChecking!.id] ?? 0)
-          + (cashDelta[defaultChecking!.id] ?? 0)
-          + income.total
-          - expenseBreakdown.living
-          - expenseBreakdown.other
-          - expenseBreakdown.insurance
-          - liabResult.totalPayment
-        : 0;
+    // ── Roth Conversions — Phase 5b (size-only for fill_up_bracket) ─────────
+    // `fill_up_bracket` sizing is deferred to phase 12's joint loop because
+    // the supplemental withdrawal's recognized income (which also draws from
+    // ordinary-income sources) needs to be jointly converged with the
+    // conversion target. Other strategies (fixed/full/deplete) don't depend on
+    // the supplemental side and apply immediately.
+    const _isFillBracketActiveYear = (conv: RothConversion, yr: number): boolean => {
+      if (yr < conv.startYear) return false;
+      if (conv.endYear != null && yr > conv.endYear) return false;
+      return true;
+    };
 
-      const householdWithdrawBalancesForConv: Record<string, number> = {};
-      if (hasChecking) {
-        for (const acct of workingAccounts) {
-          const householdShare = ownedByHouseholdAtYear(
-            acct,
-            data.giftEvents,
-            year,
-            planSettings.planStartYear,
-          );
-          if (householdShare <= 0) continue;
-          if (acct.isDefaultChecking) continue;
-          const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
-          householdWithdrawBalancesForConv[acct.id] = balance * householdShare;
-        }
-      }
-
-      // Closure: returns the year's `incomeTaxBase` if Roth taxable income were
-      // `r`. Used only by the `fill_up_bracket` strategy; called up to 6× to
-      // converge a bracket fill that exactly matches the bracket ceiling.
-      //
-      // Two-pass when there's a deficit: first pass computes the conversion's
-      // tax bill, second pass folds in the supplemental ordinary income that
-      // the household will need to draw to cover that bill plus any
-      // pre-existing expense gap. Without the second pass the conversion is
-      // sized assuming `supplemental ordinary income = 0`, which silently
-      // overshoots when retirement expenses exceed SS + RMD inflows.
-      const computeIncomeTaxBaseWithRothTaxable = (r: number): number => {
+    // Probe: returns this year's `incomeTaxBase` if Roth taxable income were
+    // `r` and supplemental withdrawals contributed `(suppOrdinary, suppCapGains)`.
+    // Captures the year-loop's tax inputs by closure so phase 12 can call it
+    // each iteration with a fresh supplemental snapshot.
+    const buildIncomeTaxBaseProbe = (): (
+      (r: number, suppOrdinary?: number, suppCapGains?: number) => number
+    ) => {
+      return (r: number, suppOrdinary: number = 0, suppCapGains: number = 0): number => {
         if (!useBracket || !resolved) {
-          return Math.max(0, taxableIncome + r);
+          return Math.max(0, taxableIncome + r + suppOrdinary + suppCapGains);
         }
         const trial = computeTaxForYear({
           taxDetail: {
             ...taxDetail,
-            ordinaryIncome: taxDetail.ordinaryIncome + r,
+            ordinaryIncome: taxDetail.ordinaryIncome + r + suppOrdinary,
+            capitalGains: taxDetail.capitalGains + suppCapGains,
             bySource: { ...taxDetail.bySource },
           },
           socialSecurityGross: income.socialSecurity,
-          totalIncome: income.total + r,
-          taxableIncome: taxableIncome + r,
+          totalIncome: income.total + r + suppOrdinary + suppCapGains,
+          taxableIncome: taxableIncome + r + suppOrdinary + suppCapGains,
           filingStatus,
           year,
           planSettings,
@@ -2834,106 +2811,97 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
         });
-
-        if (!hasChecking || effectiveWithdrawalStrategy.length === 0) {
-          return trial.taxResult.flow.incomeTaxBase;
-        }
-
-        const initialDeficit = projectedCheckingPreTax - trial.taxes;
-        if (initialDeficit >= 0) {
-          return trial.taxResult.flow.incomeTaxBase;
-        }
-
-        // Inner convergence: the supplemental draw triggers more tax which
-        // grows the deficit. Mimic the production convergence loop (phase 12)
-        // by iterating cumulativeShortfall — each pass folds in the residual
-        // tax on the previous supplemental until checking settles near zero.
-        // 3-4 iterations is enough for a sub-dollar residual under linear-ish
-        // brackets; we cap at 4 to bound the closure's tax-calc count.
-        let cumulativeShortfall = 0;
-        let trialFinal = trial;
-        let suppOrdinary = 0;
-        let suppCapGains = 0;
-        for (let suppIter = 0; suppIter < 4; suppIter++) {
-          const checkingAfterTax =
-            projectedCheckingPreTax + (suppOrdinary + suppCapGains) - trialFinal.taxes;
-          if (checkingAfterTax >= -1) break;
-          const margRate = Math.min(0.99, Math.max(0, trialFinal.marginalCombinedRate ?? 0));
-          const stepDenominator = Math.max(0.01, 1 - margRate);
-          cumulativeShortfall += -checkingAfterTax / stepDenominator;
-
-          const suppEst = planSupplementalWithdrawal({
-            shortfall: cumulativeShortfall,
-            strategy: effectiveWithdrawalStrategy,
-            householdBalances: householdWithdrawBalancesForConv,
-            basisMap,
-            freshBasisMap,
-            rothValueMap,
-            accounts: workingAccounts,
-            ages: { client: ages.client, spouse: ages.spouse ?? null },
-            isSpouseAccount,
-            year,
-          });
-          suppOrdinary = suppEst.recognizedIncome.ordinaryIncome;
-          suppCapGains = suppEst.recognizedIncome.capitalGains;
-          if (suppOrdinary === 0 && suppCapGains === 0) break;
-
-          trialFinal = computeTaxForYear({
-            taxDetail: {
-              ...taxDetail,
-              ordinaryIncome: taxDetail.ordinaryIncome + r + suppOrdinary,
-              capitalGains: taxDetail.capitalGains + suppCapGains,
-              bySource: { ...taxDetail.bySource },
-            },
-            socialSecurityGross: income.socialSecurity,
-            totalIncome: income.total + r + suppOrdinary + suppCapGains,
-            taxableIncome: taxableIncome + r + suppOrdinary + suppCapGains,
-            filingStatus,
-            year,
-            planSettings,
-            resolved,
-            useBracket,
-            aboveLineDeductions,
-            itemizedDeductions,
-            charityCarryforwardIn: charityCarryforward,
-            charityGiftsThisYear,
-            secaResult,
-            transferEarlyWithdrawalPenalty: 0,
-            interestIncomeForTax,
-            deductionBreakdownIn: deductionBreakdownResult ?? null,
-          });
-        }
-        return trialFinal.taxResult.flow.incomeTaxBase;
+        return trial.taxResult.flow.incomeTaxBase;
       };
+    };
 
-      rothConversionResult = applyRothConversions({
-        conversions: data.rothConversions,
-        accounts: workingAccounts,
-        accountBalances,
-        basisMap,
-        rothValueMap,
-        accountLedgers,
+    // Solve for the Roth taxable amount that lands `incomeTaxBase ≈ ceiling`
+    // given a fixed supplemental snapshot. Bounded fixed-point — handles
+    // non-linearities from SS taxability / QBI / piecewise deductions.
+    const sizeFillBracketConversion = (
+      ceiling: number,
+      probe: ReturnType<typeof buildIncomeTaxBaseProbe>,
+      suppOrdinary: number,
+      suppCapGains: number,
+    ): number => {
+      const baseAt0 = probe(0, suppOrdinary, suppCapGains);
+      if (baseAt0 >= ceiling) return 0;
+      let target = ceiling - baseAt0;
+      for (let i = 0; i < 6; i++) {
+        const baseAtTarget = probe(target, suppOrdinary, suppCapGains);
+        const delta = ceiling - baseAtTarget;
+        if (Math.abs(delta) < 1) break;
+        target = Math.max(0, target + delta);
+      }
+      return Math.max(0, target);
+    };
+
+    // Phase 5b: size-only. Splits conversions into bracket-fillers (deferred
+    // to phase 12) and the rest (applied here).
+    const pendingFillBracketTargets: Record<string, number> = {};
+    const fillBracketCeilingsById: Record<string, number> = {};
+    let fillBracketProbe: ReturnType<typeof buildIncomeTaxBaseProbe> | null = null;
+
+    if (data.rothConversions && data.rothConversions.length > 0) {
+      const convFilingStatus = effectiveFilingStatus(
+        (client.filingStatus ?? "single") as FilingStatus,
+        firstDeathYear,
         year,
-        ownerAges: { client: ages.client, spouse: ages.spouse },
-        spouseFamilyMemberId: spouseFmId,
-        ordinaryBrackets: convBrackets,
-        computeIncomeTaxBaseWithRothTaxable,
-      });
+      );
+      const convResolved = taxResolver ? taxResolver.getYear(year) : null;
+      const convBrackets = convResolved?.params.incomeBrackets[convFilingStatus];
 
-      // Fold the conversion's taxable income into the year's tax inputs so
-      // the final tax calc sees it. The empty-placeholder `rothConversionResult`
-      // already contributed 0 to `taxableIncome` (line 1252) and `taxDetail`
-      // (lines 1381 / 1397) earlier in this year loop.
-      if (rothConversionResult.taxableOrdinaryIncome > 0) {
-        taxableIncome += rothConversionResult.taxableOrdinaryIncome;
-        taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
-        for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
-          if (info.taxable > 0) {
-            taxDetail.bySource[`roth_conversion:${cid}`] = {
-              type: "ordinary_income",
-              amount: info.taxable,
-            };
+      const bracketFillers: RothConversion[] = [];
+      const otherStrategies: RothConversion[] = [];
+      for (const conv of data.rothConversions) {
+        if (conv.conversionType === "fill_up_bracket") bracketFillers.push(conv);
+        else otherStrategies.push(conv);
+      }
+
+      if (otherStrategies.length > 0) {
+        rothConversionResult = applyRothConversions({
+          conversions: otherStrategies,
+          accounts: workingAccounts,
+          accountBalances,
+          basisMap,
+          rothValueMap,
+          accountLedgers,
+          year,
+          ownerAges: { client: ages.client, spouse: ages.spouse },
+          spouseFamilyMemberId: spouseFmId,
+          ordinaryBrackets: convBrackets,
+        });
+        if (rothConversionResult.taxableOrdinaryIncome > 0) {
+          taxableIncome += rothConversionResult.taxableOrdinaryIncome;
+          taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
+          for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
+            if (info.taxable > 0) {
+              taxDetail.bySource[`roth_conversion:${cid}`] = {
+                type: "ordinary_income",
+                amount: info.taxable,
+              };
+            }
           }
+        }
+      }
+
+      if (bracketFillers.length > 0 && convBrackets) {
+        fillBracketProbe = buildIncomeTaxBaseProbe();
+        for (const conv of bracketFillers) {
+          if (!_isFillBracketActiveYear(conv, year)) continue;
+          if (conv.fillUpBracket == null) continue;
+          const tier = convBrackets.find(
+            (t) => Math.abs(t.rate - conv.fillUpBracket!) < 1e-9,
+          );
+          if (!tier || tier.to == null) continue;
+          const ceiling = tier.to - 1;
+          fillBracketCeilingsById[conv.id] = ceiling;
+          pendingFillBracketTargets[conv.id] = sizeFillBracketConversion(
+            ceiling,
+            fillBracketProbe,
+            0,
+            0,
+          );
         }
       }
     }
@@ -3487,31 +3455,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // accounts for taxes (which are paid from checking later in this phase).
     // See the post-convergence block below.
 
-    // 12b. Build withdrawal source balances reflecting post-BoY-purchase state
-    // so gap-fill doesn't pull from an account that was just drained to fund a
-    // purchase. Withdrawals are scoped to the household share of each account
-    // — entity-owned percentages stay with the entity and aren't tappable for
-    // household shortfalls.
-    // T9: use year-aware helper so gift events that transferred account ownership
-    // to an entity reduce the household's tappable withdrawal balance starting
-    // the year the gift fires.
-    const householdWithdrawBalances: Record<string, number> = {};
-    for (const acct of workingAccounts) {
-      const householdShare = ownedByHouseholdAtYear(acct, data.giftEvents, year, planSettings.planStartYear);
-      if (householdShare <= 0) continue;
-      if (acct.isDefaultChecking) continue;
-      const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
-      householdWithdrawBalances[acct.id] = balance * householdShare;
-    }
+    // 12b. `householdWithdrawBalances` was hoisted above phase 5b so the
+    // bracket-filler sizer can see it. See the construction at the top of
+    // the year-loop body.
 
-    // Iterative tax + supplemental convergence (audit F5).
-    //
-    // Goal: settle on a (supplemental withdrawal, total tax) pair such that
-    // checking ends within $1 of zero. Each iteration grows the cumulative
-    // shortfall, plans a categorized supplemental withdrawal against that
-    // shortfall, layers the recognized income on top of the baseline taxDetail,
-    // and reruns the full tax pipeline. Converges in 1-3 iterations on typical
-    // deficit years; MAX_ITER is a safety cap.
+    // Iterative tax + supplemental convergence (audit F5) — now jointly
+    // converging the fill_up_bracket Roth conversion target. Each iteration:
+    //   (a) re-sizes every bracket-filler conversion given the current
+    //       supplemental withdrawal snapshot;
+    //   (b) re-plans the supplemental withdrawal against `reservedBalances`
+    //       (a copy of householdWithdrawBalances with the conversion's source
+    //       pool reserved so we don't double-budget the same IRA);
+    //   (c) reruns the tax pipeline with BOTH the bracket-filler taxable AND
+    //       the supplemental recognized income layered onto baselineTaxDetail.
+    // Converges in 1-3 iterations on typical deficit years; MAX_ITER caps.
     const baselineTaxDetail = { ...taxDetail, bySource: { ...taxDetail.bySource } };
     const MAX_ITER = 5;
     const TOLERANCE = 1;
@@ -3526,23 +3483,91 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let taxOutForIter = taxOut;
     let convergenceWarning: TrustWarning | null = null;
 
+    // If bracket-fillers exist, recompute `taxOutForIter` with the seeded
+    // fill-bracket taxable layered in. This runs whether or not we enter the
+    // hasChecking loop — the no-checking path uses `taxOutForIter` directly
+    // as the final result, and the loop path needs it for the initial
+    // `checkingAfterTax` calc (else the surplus-no-draws short circuit fires
+    // before `taxOutForIter` reflects the conversion's tax bill).
+    if (fillBracketProbe) {
+      const seededTotal = Object.values(pendingFillBracketTargets)
+        .reduce((s, v) => s + v, 0);
+      if (seededTotal > 0) {
+        const seededTaxDetail: typeof taxDetail = {
+          ...baselineTaxDetail,
+          ordinaryIncome: baselineTaxDetail.ordinaryIncome + seededTotal,
+          bySource: { ...baselineTaxDetail.bySource },
+        };
+        taxOutForIter = computeTaxForYear({
+          taxDetail: seededTaxDetail,
+          socialSecurityGross: income.socialSecurity,
+          totalIncome: income.total,
+          taxableIncome: taxableIncome + seededTotal,
+          filingStatus,
+          year,
+          planSettings,
+          resolved: resolved ?? null,
+          useBracket,
+          aboveLineDeductions,
+          itemizedDeductions,
+          charityCarryforwardIn: charityCarryforward,
+          charityGiftsThisYear,
+          secaResult,
+          transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+          interestIncomeForTax,
+          deductionBreakdownIn: deductionBreakdownResult ?? null,
+        });
+      }
+    }
+
     if (hasChecking) {
       let checkingAfterTax = preSupplementalChecking - taxOutForIter.taxes;
 
-      const initialTaxes = taxOut.taxes;
+      const initialTaxes = taxOutForIter.taxes;
       for (let iter = 0; iter < MAX_ITER; iter++) {
-        if (Math.abs(checkingAfterTax) <= TOLERANCE) break;
-        // Initial-surplus / final-surplus case with no draws-to-undo: nothing to do.
-        // Without this, the loop spins MAX_ITER times on every non-deficit year and
-        // emits a spurious convergenceWarning at the last iteration.
-        if (checkingAfterTax > 0 && cumulativeShortfall === 0) break;
+        // Joint convergence test: bracket fillers must also be on-target.
+        let bracketConverged = true;
+        if (fillBracketProbe) {
+          for (const [cid, ceiling] of Object.entries(fillBracketCeilingsById)) {
+            const baseAtCurrent = fillBracketProbe(
+              pendingFillBracketTargets[cid] ?? 0,
+              supplementalPlan.recognizedIncome.ordinaryIncome,
+              supplementalPlan.recognizedIncome.capitalGains,
+            );
+            if (Math.abs(baseAtCurrent - ceiling) > TOLERANCE) {
+              bracketConverged = false;
+              break;
+            }
+          }
+        }
+        if (Math.abs(checkingAfterTax) <= TOLERANCE && bracketConverged) break;
 
-        // Newton-style step. Each unit of supplemental withdrawal produces
-        // (taxOnIncrement + penaltyOnIncrement) of new tax burden, leaving
-        // (1 - effectiveRate) units of net cash in checking. Divide the residual
-        // by (1 - effectiveRate) so we converge in 1-2 iters under linear regimes
-        // (typical) instead of 10+ under simple fixed-point. First iter uses the
-        // unscaled residual since supplementalPlan is still empty.
+        // Initial-surplus / final-surplus case with no draws-to-undo: nothing
+        // to do unless brackets still need adjustment.
+        if (checkingAfterTax > 0 && cumulativeShortfall === 0 && bracketConverged) break;
+
+        // Step (b): re-plan supplemental withdrawal using the CURRENT
+        // bracket-filler target as a balance reservation. Done first so step (a)
+        // can size the conversion against the freshly-updated supplemental — if
+        // we sized the conversion first using stale supp, the next iteration
+        // would zero it out (when new supp pushes base above ceiling) and slow
+        // convergence. Source-list order matches applyRothConversions.
+        const reservedBalances: Record<string, number> = { ...householdWithdrawBalances };
+        if (fillBracketProbe) {
+          for (const [cid, target] of Object.entries(pendingFillBracketTargets)) {
+            const conv = data.rothConversions!.find((c) => c.id === cid)!;
+            let remaining = target;
+            for (const sid of conv.sourceAccountIds) {
+              if (remaining <= 0) break;
+              const avail = reservedBalances[sid] ?? 0;
+              const reserve = Math.min(remaining, avail);
+              reservedBalances[sid] = Math.max(0, avail - reserve);
+              remaining -= reserve;
+            }
+          }
+        }
+
+        // Newton-style step on the supplemental side (existing logic).
         const supplementalCost =
           supplementalPlan.total > 0
             ? taxOutForIter.taxes - initialTaxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty
@@ -3563,7 +3588,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         supplementalPlan = planSupplementalWithdrawal({
           shortfall: cumulativeShortfall,
           strategy: effectiveWithdrawalStrategy,
-          householdBalances: householdWithdrawBalances,
+          householdBalances: reservedBalances,
           basisMap,
           freshBasisMap,
           rothValueMap,
@@ -3573,21 +3598,43 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           year,
         });
 
-        const taxDetailWithSupp: typeof taxDetail = {
+        // Step (a): NOW size each fill_up_bracket conversion against the
+        // freshly-planned supplemental snapshot. Final target + final supp are
+        // jointly consistent inside this iter — step (c) below sees both.
+        if (fillBracketProbe) {
+          for (const cid of Object.keys(fillBracketCeilingsById)) {
+            pendingFillBracketTargets[cid] = sizeFillBracketConversion(
+              fillBracketCeilingsById[cid],
+              fillBracketProbe,
+              supplementalPlan.recognizedIncome.ordinaryIncome,
+              supplementalPlan.recognizedIncome.capitalGains,
+            );
+          }
+        }
+
+        const totalFillBracketTaxable = Object.values(pendingFillBracketTargets)
+          .reduce((s, v) => s + v, 0);
+
+        // Step (c): tax calc with BOTH fill-bracket taxable AND supplemental income.
+        const taxDetailWithBoth: typeof taxDetail = {
           ...baselineTaxDetail,
           ordinaryIncome:
-            baselineTaxDetail.ordinaryIncome + supplementalPlan.recognizedIncome.ordinaryIncome,
+            baselineTaxDetail.ordinaryIncome
+            + totalFillBracketTaxable
+            + supplementalPlan.recognizedIncome.ordinaryIncome,
           capitalGains:
-            baselineTaxDetail.capitalGains + supplementalPlan.recognizedIncome.capitalGains,
+            baselineTaxDetail.capitalGains
+            + supplementalPlan.recognizedIncome.capitalGains,
           bySource: { ...baselineTaxDetail.bySource },
         };
 
         taxOutForIter = computeTaxForYear({
-          taxDetail: taxDetailWithSupp,
+          taxDetail: taxDetailWithBoth,
           socialSecurityGross: income.socialSecurity,
           totalIncome: income.total,
           taxableIncome:
             taxableIncome
+            + totalFillBracketTaxable
             + supplementalPlan.recognizedIncome.ordinaryIncome
             + supplementalPlan.recognizedIncome.capitalGains,
           filingStatus,
@@ -3609,14 +3656,87 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           taxOutForIter.taxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
         checkingAfterTax = preSupplementalChecking + supplementalPlan.total - taxAndPenalty;
 
-        if (iter === MAX_ITER - 1 && Math.abs(checkingAfterTax) > TOLERANCE) {
-          convergenceWarning = {
-            code: "engine_iteration_limit",
-            year,
-            residual: checkingAfterTax,
-            iterations: MAX_ITER,
+        if (iter === MAX_ITER - 1) {
+          const bracketResiduals: Record<string, number> = {};
+          if (fillBracketProbe) {
+            for (const [cid, ceiling] of Object.entries(fillBracketCeilingsById)) {
+              bracketResiduals[cid] = fillBracketProbe(
+                pendingFillBracketTargets[cid] ?? 0,
+                supplementalPlan.recognizedIncome.ordinaryIncome,
+                supplementalPlan.recognizedIncome.capitalGains,
+              ) - ceiling;
+            }
+          }
+          const anyBracketResidual = Object.values(bracketResiduals).some(
+            (r) => Math.abs(r) > TOLERANCE,
+          );
+          if (Math.abs(checkingAfterTax) > TOLERANCE || anyBracketResidual) {
+            convergenceWarning = {
+              code: "engine_iteration_limit",
+              year,
+              residual: checkingAfterTax,
+              iterations: MAX_ITER,
+              ...(Object.keys(bracketResiduals).length > 0
+                ? { bracketResiduals }
+                : {}),
+            };
+          }
+        }
+      }
+    }
+
+    // After phase 12 converges, actually apply the bracket-filler conversions
+    // with the converged targets. This mutates accountBalances / basisMap /
+    // rothValueMap / accountLedgers and updates rothConversionResult so the
+    // year output sees the conversions. The tax bill in `taxOutForIter`
+    // already reflects these targets — we don't re-run the tax calc.
+    if (
+      fillBracketProbe &&
+      data.rothConversions &&
+      Object.keys(pendingFillBracketTargets).length > 0
+    ) {
+      const convFilingStatus = effectiveFilingStatus(
+        (client.filingStatus ?? "single") as FilingStatus,
+        firstDeathYear,
+        year,
+      );
+      const convBrackets = taxResolver
+        ? taxResolver.getYear(year)?.params.incomeBrackets[convFilingStatus]
+        : undefined;
+
+      const fillerConversions = data.rothConversions.filter(
+        (c) =>
+          c.conversionType === "fill_up_bracket" &&
+          pendingFillBracketTargets[c.id] != null,
+      );
+      const fillerResult = applyRothConversions({
+        conversions: fillerConversions,
+        accounts: workingAccounts,
+        accountBalances,
+        basisMap,
+        rothValueMap,
+        accountLedgers,
+        year,
+        ownerAges: { client: ages.client, spouse: ages.spouse },
+        spouseFamilyMemberId: spouseFmId,
+        ordinaryBrackets: convBrackets,
+        targetTaxableOverride: pendingFillBracketTargets,
+      });
+
+      rothConversionResult.taxableOrdinaryIncome += fillerResult.taxableOrdinaryIncome;
+      for (const [cid, info] of Object.entries(fillerResult.byConversion)) {
+        rothConversionResult.byConversion[cid] = info;
+        if (info.taxable > 0) {
+          taxDetail.bySource[`roth_conversion:${cid}`] = {
+            type: "ordinary_income",
+            amount: info.taxable,
           };
         }
+      }
+
+      if (fillerResult.taxableOrdinaryIncome > 0) {
+        taxableIncome += fillerResult.taxableOrdinaryIncome;
+        taxDetail.ordinaryIncome += fillerResult.taxableOrdinaryIncome;
       }
     }
 
