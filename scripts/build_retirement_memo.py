@@ -14,7 +14,7 @@ Page 3: Trajectory + key events + cash-flow story + tax & estate comparison
 Page 4: Retirement Plan Analysis (Monte Carlo hero, inputs, longevity,
         estate transfer)
 
-Reads a JSON payload produced by `generate-retirement-memo.local.ts`.
+Reads a JSON payload produced by `generate-retirement-memo.ts`.
 
 Usage:
   python3 scripts/build_retirement_memo.py \
@@ -286,6 +286,74 @@ class NumberChip(Flowable):
         c.setFillColor(colors.white)
         c.setFont("Helvetica-Bold", 7.5)
         c.drawCentredString(cx, cy - 2.5, str(self.number))
+
+
+class SummaryDeltasCard(Flowable):
+    """Page-5 summary card. Each row reads `Change in X    ±$N` with the
+    delta colored by directional-good-ness (heirs/charities up = green,
+    taxes down = green). Mirrors `impact-vs-base-panel.tsx`."""
+
+    ROW_HEIGHT = 22
+    PAD_X = 12
+    HEADER_HEIGHT = 28
+    BOTTOM_PAD = 10
+
+    def __init__(self, width: float, title: str,
+                 rows: list[tuple[str, float, str]]):
+        # rows: (label, delta, "good-up" | "good-down")
+        Flowable.__init__(self)
+        self.w = width
+        self.title = title
+        self.rows = rows
+        self.h = self.HEADER_HEIGHT + self.ROW_HEIGHT * len(rows) + self.BOTTOM_PAD
+
+    def wrap(self, *a):
+        return (self.w, self.h)
+
+    @staticmethod
+    def _fmt_delta(v: float) -> str:
+        if abs(v) < 0.5:
+            return "+$0"
+        sign = "+" if v > 0 else "−"
+        return f"{sign}${abs(v):,.0f}"
+
+    @staticmethod
+    def _delta_color(v: float, kind: str):
+        if abs(v) < 0.5:
+            return GREEN
+        positive = (kind == "good-up" and v > 0) or (kind == "good-down" and v < 0)
+        return GREEN if positive else RED
+
+    def draw(self):
+        c = self.canv
+        w, h = self.w, self.h
+        c.setFillColor(colors.HexColor("#F8FAFC"))
+        c.setStrokeColor(BORDER_CLR)
+        c.setLineWidth(0.5)
+        c.roundRect(0, 0, w, h, 6, fill=1, stroke=1)
+        c.setStrokeColor(GOLD)
+        c.setLineWidth(2)
+        c.line(0, h - 1, w, h - 1)
+
+        # Header
+        c.setFont("Helvetica-Bold", 9.5)
+        c.setFillColor(NAVY)
+        c.drawString(self.PAD_X, h - 18, self.title)
+
+        # Rows
+        y = h - self.HEADER_HEIGHT
+        for label, delta, kind in self.rows:
+            y -= self.ROW_HEIGHT
+            c.setFont("Helvetica", 8.5)
+            c.setFillColor(TEXT_DARK)
+            c.drawString(self.PAD_X, y + 6, label)
+            c.setFont("Helvetica-Bold", 9.5)
+            c.setFillColor(self._delta_color(delta, kind))
+            c.drawRightString(w - self.PAD_X, y + 6, self._fmt_delta(delta))
+            # Light divider between rows
+            c.setStrokeColor(BORDER_CLR)
+            c.setLineWidth(0.3)
+            c.line(self.PAD_X, y + 2, w - self.PAD_X, y + 2)
 
 
 class HeroResultBand(Flowable):
@@ -796,95 +864,6 @@ def _longevity_chart(data: dict):
     return make
 
 
-def _stacked_income_chart(data: dict, side: str = "proposed"):
-    """Stacked area chart: where the money comes from each year."""
-    rows = data[side]["rows"]
-
-    def make():
-        years = [r["year"] for r in rows]
-        ss = [r["ssIncome"] / 1e3 for r in rows]
-        # Approximate buckets:
-        salaries = [(r["totalIncome"] - r["ssIncome"] - r["withdrawals"]) / 1e3 for r in rows]
-        salaries = [max(0, s) for s in salaries]
-        wd = [r["withdrawals"] / 1e3 for r in rows]
-        fig, ax = plt.subplots(figsize=(6.4, 1.4))
-        ax.stackplot(
-            years, salaries, ss, wd,
-            labels=["Salary & Other Income", "Social Security", "Portfolio Withdrawals"],
-            colors=[HEX_NAVY, HEX_GOLD, HEX_GREEN], alpha=0.92, edgecolor="white", linewidth=0.3,
-        )
-        ax.set_ylabel("$K / year", fontsize=7)
-        ax.legend(fontsize=6, loc="upper left", framealpha=0.9)
-        _style_ax(ax, f"How Income Funds Each Year — {data[side]['name']}")
-        ax.set_xlim(years[0], years[-1])
-        fig.tight_layout()
-        return fig
-
-    return make
-
-
-def _estate_chart(data: dict):
-    """Side-by-side: gross legacy passing to heirs at second death,
-    plus an estate-tax overlay when there is one. When no federal/state
-    estate tax is projected, surface that fact explicitly in the title."""
-    base = data["estate"]["base"]
-    prop = data["estate"]["proposed"]
-
-    def _gross(side):
-        sd = side["secondDeath"] or side["firstDeath"]
-        return _n((sd or {}).get("grossEstate", 0))
-
-    def _tax(side):
-        sd = side["secondDeath"] or side["firstDeath"]
-        return _n((sd or {}).get("totalEstateTax", 0))
-
-    base_gross = _gross(base) / 1e6
-    prop_gross = _gross(prop) / 1e6
-    base_tax = _tax(base) / 1e6
-    prop_tax = _tax(prop) / 1e6
-
-    def make():
-        if base_gross == 0 and prop_gross == 0:
-            return None
-        fig, ax = plt.subplots(figsize=(3.2, 1.9))
-        labels = ["Current Plan", "Proposed Plan"]
-        x = np.arange(len(labels))
-        w = 0.45
-
-        # Net = gross - tax
-        base_net = max(0, base_gross - base_tax)
-        prop_net = max(0, prop_gross - prop_tax)
-
-        ax.bar(x, [base_net, prop_net], w,
-               color=[HEX_SLATE, HEX_GOLD], edgecolor="white", linewidth=.5,
-               label="Net to heirs")
-        if max(base_tax, prop_tax) > 0:
-            ax.bar(x, [base_tax, prop_tax], w, bottom=[base_net, prop_net],
-                   color=HEX_RED, alpha=0.7, edgecolor="white", linewidth=.5,
-                   label="Estate tax")
-            ax.legend(fontsize=6, framealpha=.85, loc="upper left")
-
-        for i, (gross, _net) in enumerate(zip([base_gross, prop_gross],
-                                              [base_net, prop_net])):
-            ax.text(i, gross + max(base_gross, prop_gross) * 0.02,
-                    f"${gross:.1f}M", ha="center", va="bottom",
-                    fontsize=10, fontweight="bold",
-                    color=HEX_SLATE if i == 0 else HEX_GOLD)
-
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, fontsize=7)
-        ax.set_ylabel("$M passed at second death", fontsize=7)
-        title = "Projected Legacy at Second Death"
-        if max(base_tax, prop_tax) == 0:
-            title += "  (no estate tax projected)"
-        _style_ax(ax, title)
-        ax.set_ylim(0, max(base_gross, prop_gross) * 1.25)
-        fig.tight_layout()
-        return fig
-
-    return make
-
-
 def _annual_income_tax_chart(data: dict):
     """Side-by-side annual income tax (current vs proposed) with a translucent
     band over the proposed Roth-conversion window so the conversion-driven
@@ -936,56 +915,216 @@ def _annual_income_tax_chart(data: dict):
     return make
 
 
-def _expense_chart(data: dict):
-    """Annual living + insurance expense for the proposed plan, showing how
-    real-dollar spending grows with inflation through the plan horizon."""
-    rows = data["proposed"]["rows"]
+def _combined_cashflow_chart(data: dict):
+    """Annual cash flow — stacked income bars (Salaries / Social Security /
+    Other Inflows / RMDs / Withdrawals) with Total Expenses overlaid as a
+    dark line. Mirrors the in-app Cash Flow chart from
+    `src/components/cashflow-report.tsx`. Vertical dashed event markers
+    indicate retirement and death years for both spouses."""
+    prop = data["proposed"]
+    rows = prop["rows"]
+    ev = prop["events"]
+    death_client = prop.get("deathYearClient")
+    death_spouse = prop.get("deathYearSpouse")
+    h = data["household"]
+    client = h["clientFirstName"]
+    spouse = h.get("spouseFirstName")
 
     def make():
         years = [r["year"] for r in rows]
-        living = [r["living"] / 1e3 for r in rows]
-        insurance = [r["insurance"] / 1e3 for r in rows]
-        fig, ax = plt.subplots(figsize=(6.4, 1.4))
-        ax.stackplot(
-            years, living, insurance,
-            labels=["Living expense", "Insurance"],
-            colors=[HEX_NAVY, HEX_AMBER], alpha=0.92,
-            edgecolor="white", linewidth=0.3,
+        if not years:
+            return None
+        # Segments in stack order (bottom → top), color-matched to the in-app
+        # chart but slightly desaturated for a light-background PDF.
+        segments = [
+            ("Salaries",        [r["salaries"]     / 1e3 for r in rows], "#16a34a"),
+            ("Social Security", [r["ssIncome"]     / 1e3 for r in rows], "#2563eb"),
+            ("Other Inflows",   [r["otherInflows"] / 1e3 for r in rows], "#5eead4"),
+            ("RMDs",            [r["rmds"]         / 1e3 for r in rows], "#f97316"),
+            ("Withdrawals",     [r["withdrawals"]  / 1e3 for r in rows], "#ef4444"),
+        ]
+        expenses = [r["totalExpenses"] / 1e3 for r in rows]
+
+        fig, ax = plt.subplots(figsize=(6.6, 2.4))
+        bottoms = [0.0] * len(years)
+        for label, vals, color in segments:
+            ax.bar(years, vals, bottom=bottoms, width=0.82,
+                   color=color, edgecolor="white", linewidth=0.2,
+                   label=label)
+            bottoms = [b + v for b, v in zip(bottoms, vals)]
+
+        # Total Expenses overlay — dark line so it reads against the colored
+        # bars on a light background (white in the in-app dark-mode chart).
+        ax.plot(years, expenses, color="#111111", lw=1.6,
+                label="Total Expenses", zorder=10)
+
+        ymax = max(max(bottoms), max(expenses)) if bottoms else 0
+        ax.set_ylim(0, ymax * 1.28)
+
+        # Event markers. Order: client retires → spouse retires → first death →
+        # second death. Roth-window shading kept subtle so the bars dominate.
+        markers: list[tuple[int, str]] = []
+        if ev.get("retirementYearClient"):
+            markers.append((ev["retirementYearClient"], f"{client} retires"))
+        if ev.get("retirementYearSpouse") and spouse:
+            markers.append((ev["retirementYearSpouse"], f"{spouse} retires"))
+        if death_client:
+            markers.append((death_client, f"{client} passes"))
+        if death_spouse and spouse:
+            markers.append((death_spouse, f"{spouse} passes"))
+
+        # Roth conversion window as a translucent band — preserved from the
+        # prior chart so the deliberate tax pull-forward stays visible.
+        roth_first = ev.get("firstRothConversionYear")
+        roth_last = ev.get("lastRothConversionYear")
+        if roth_first and roth_last and roth_last > roth_first:
+            ax.axvspan(roth_first - 0.5, roth_last + 0.5,
+                       color=HEX_GREEN, alpha=0.07, zorder=0)
+
+        # Stagger labels to two rows so closely-spaced events (e.g. Cooper
+        # retires 2037 / Susan retires 2040, or both passings near end of
+        # plan) stay readable. Labels alternate top → bottom-of-headroom.
+        # Use bbox padding so the label boxes never collide with the chart
+        # title; the title sits outside the data area above ymax.
+        markers.sort(key=lambda m: m[0])
+        label_high = ymax * 1.20
+        label_low = ymax * 1.07
+        for idx, (yr, label) in enumerate(markers):
+            if not (min(years) <= yr <= max(years)):
+                continue
+            ax.axvline(x=yr, color=HEX_SLATE, linestyle="--",
+                       linewidth=0.8, alpha=0.55, zorder=2)
+            row_y = label_high if idx % 2 == 0 else label_low
+            # Right-align near the right edge so labels don't spill off-plot,
+            # left-align near the left edge for symmetry.
+            if yr > max(years) - 3:
+                ha = "right"
+            elif yr < min(years) + 3:
+                ha = "left"
+            else:
+                ha = "center"
+            ax.text(
+                yr, row_y, label,
+                ha=ha, va="bottom",
+                fontsize=5.8, color=HEX_NAVY, fontweight="bold",
+                bbox=dict(facecolor="white", edgecolor="none",
+                          alpha=0.85, pad=1.2),
+                zorder=6,
+            )
+
+        # X-axis ticks every ~5 years.
+        step = max(1, len(years) // 10)
+        tick_years = [y for i, y in enumerate(years) if i % step == 0]
+        if years[-1] not in tick_years:
+            tick_years.append(years[-1])
+        ax.set_xticks(tick_years)
+        ax.set_xticklabels([str(y) for y in tick_years],
+                           rotation=35, ha="right", fontsize=6)
+
+        ax.set_ylabel("$K / year", fontsize=7)
+        # Legend below the chart — keeps the upper corners free for the
+        # retirement and death labels at the top of the data area.
+        ax.legend(
+            fontsize=6, framealpha=0.9,
+            loc="upper center", bbox_to_anchor=(0.5, -0.22),
+            ncol=6, frameon=False,
         )
-        # Mark retirement transition.
-        prop_ret_yr = data["proposed"]["events"].get("retirementYearClient")
-        if prop_ret_yr and min(years) <= prop_ret_yr <= max(years):
-            ax.axvline(prop_ret_yr, color=HEX_GOLD, lw=1.0, ls=":")
-            ax.text(prop_ret_yr, max(living) * 1.02, "Retirement",
-                    ha="center", fontsize=6, color=HEX_GOLD,
-                    fontweight="bold")
-        ax.set_ylabel("Annual expense ($K)", fontsize=7)
-        ax.set_xlabel("Year", fontsize=7)
-        ax.legend(fontsize=6, framealpha=.85, loc="upper left")
-        _style_ax(ax, "Annual Living & Insurance Expense — Proposed")
+        _style_ax(ax, "Cash Flow — Inflows by Source vs. Total Expenses")
         fig.tight_layout()
         return fig
 
     return make
 
 
-def _lifetime_tax_chart(data: dict):
-    """Single comparison bar chart for cumulative lifetime taxes."""
-    base = data["base"]["totalTaxesLifetime"] / 1e6
-    prop = data["proposed"]["totalTaxesLifetime"] / 1e6
+def _legacy_categories(data: dict) -> list[tuple[str, float, float, str]]:
+    """Categories for the page-5 Estate-Disposition grouped bar chart and
+    Summary-Deltas card. Returns (label, base_value, proposed_value, kind)
+    tuples. The charities row/column is omitted entirely when both plans
+    are $0, per the v3 spec."""
+    base = data["base"]
+    prop = data["proposed"]
+    cats: list[tuple[str, float, float, str]] = [
+        ("Total to Heirs",
+         _n(base.get("totalToHeirs", 0)),
+         _n(prop.get("totalToHeirs", 0)),
+         "good-up"),
+        ("Total Estate Taxes",
+         _n(base.get("estateTaxLastYear", 0)),
+         _n(prop.get("estateTaxLastYear", 0)),
+         "good-down"),
+        ("Total Retirement Income Taxes",
+         _n(base.get("totalRetirementIncomeTaxes", base.get("totalTaxesLifetime", 0))),
+         _n(prop.get("totalRetirementIncomeTaxes", prop.get("totalTaxesLifetime", 0))),
+         "good-down"),
+    ]
+    base_char = _n(base.get("totalToCharities", 0))
+    prop_char = _n(prop.get("totalToCharities", 0))
+    if base_char > 0 or prop_char > 0:
+        cats.append(("Total to Charities", base_char, prop_char, "good-up"))
+    return cats
+
+
+def _estate_disposition_chart(data: dict):
+    """Grouped bar chart — base case vs proposed plan across the legacy
+    categories surfaced by `_legacy_categories`. Mirrors the in-app
+    `impact-vs-base-panel.tsx` chart."""
+    cats = _legacy_categories(data)
 
     def make():
-        fig, ax = plt.subplots(figsize=(3.2, 1.9))
-        bars = ax.bar(["Current", "Proposed"], [base, prop],
-                      color=[HEX_SLATE, HEX_GOLD], edgecolor="white",
-                      linewidth=1, width=0.5)
-        for b, v in zip(bars, [base, prop]):
-            ax.text(b.get_x() + b.get_width() / 2, v + max(base, prop) * 0.02,
-                    f"${v:.1f}M", ha="center", va="bottom",
-                    fontsize=10, fontweight="bold")
-        ax.set_ylabel("Lifetime income taxes paid", fontsize=7)
-        _style_ax(ax, "Cumulative Lifetime Income Taxes (Plan Years)")
-        ax.set_ylim(0, max(base, prop) * 1.25)
+        if not cats:
+            return None
+        labels = [c[0] for c in cats]
+        base_vals = [c[1] for c in cats]
+        prop_vals = [c[2] for c in cats]
+        # Display in millions when any value exceeds $1M, else thousands.
+        peak = max(max(base_vals), max(prop_vals)) if cats else 0
+        use_m = peak >= 1e6
+        scale = 1e6 if use_m else 1e3
+        unit = "$M" if use_m else "$K"
+
+        fig, ax = plt.subplots(figsize=(3.2, 2.0))
+        x = np.arange(len(labels))
+        w = 0.36
+        b1 = ax.bar(x - w / 2, [v / scale for v in base_vals], w,
+                    color=HEX_SLATE, edgecolor="white", linewidth=0.5,
+                    label="Base case")
+        b2 = ax.bar(x + w / 2, [v / scale for v in prop_vals], w,
+                    color=HEX_GOLD, edgecolor="white", linewidth=0.5,
+                    label="Retirement Plan")
+
+        # Bar-top labels — formatted compact so the chart doesn't fight for
+        # space with the category labels below.
+        ymax = max((peak / scale), 0.1) if cats else 1
+        for bars, vals in ((b1, base_vals), (b2, prop_vals)):
+            for bar, v in zip(bars, vals):
+                if v <= 0:
+                    continue
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + ymax * 0.02,
+                    _dollar(v),
+                    ha="center", va="bottom",
+                    fontsize=6, fontweight="bold",
+                )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=6.5, rotation=0, ha="center")
+        ax.set_ylabel(unit, fontsize=7)
+        ax.set_ylim(0, ymax * 1.25)
+        ax.legend(fontsize=6.5, framealpha=0.9, loc="upper center",
+                  bbox_to_anchor=(0.5, -0.18), ncol=2, frameon=False)
+        _style_ax(ax, "Estate Disposition at Plan End")
+        # Wrap long category labels onto two lines via textwrap-like manual
+        # break — matplotlib doesn't auto-wrap tick labels.
+        wrapped = []
+        for lbl in labels:
+            if len(lbl) > 18:
+                words = lbl.split()
+                mid = len(words) // 2
+                wrapped.append("\n".join([" ".join(words[:mid]), " ".join(words[mid:])]))
+            else:
+                wrapped.append(lbl)
+        ax.set_xticklabels(wrapped, fontsize=6, rotation=0, ha="center")
         fig.tight_layout()
         return fig
 
@@ -1672,43 +1811,39 @@ def _roth_conversion_section(story: list, data: dict):
 
 
 def _page4_cash_flow(story: list, data: dict):
-    """PAGE 4 — How spending, income, and income tax interact year by year."""
+    """PAGE 4 — How inflows, expenses, and income tax interact year by year."""
     story.append(Paragraph("Spending, Income & Taxes", ST["section"]))
     story.append(GoldRule(CONTENT_W * 0.35))
     story.append(Spacer(1, 0.04 * inch))
 
-    _expenses_section(story, data)
-    story.append(Spacer(1, 0.06 * inch))
-
-    _income_section(story, data)
+    _cash_flow_section(story, data)
     story.append(Spacer(1, 0.06 * inch))
 
     _income_tax_section(story, data)
     story.append(PageBreak())
 
 
-def _expenses_section(story: list, data: dict):
-    """How spending works — explain the lifestyle assumption, inflation, and
-    the pre-vs-post-retirement step."""
+def _cash_flow_section(story: list, data: dict):
+    """Combined cash-flow story — bars stack inflows by source, the dark line
+    is total expense, and the gap is the cushion. Replaces the prior
+    "How Spending Works" + "How Income Funds Each Year" subsections."""
     h = data["household"]
     prop = data["proposed"]
     prop_rows = prop["rows"]
     yr1 = prop_rows[0]
     living_yr1 = yr1["living"]
     insurance_yr1 = yr1["insurance"]
-
-    # Find the first retirement-year row for a real "what spending looks like
-    # in year-one of retirement" reading point.
-    ret_yr = prop["events"].get("retirementYearClient")
-    ret_row = next((r for r in prop_rows if r["year"] == ret_yr), None) if ret_yr else None
     end_row = prop_rows[-1]
 
-    # Inflation rate from household block.
+    # Find the first retirement-year row so the narrative can quote a real
+    # year-one-of-retirement spending number.
+    ret_yr = prop["events"].get("retirementYearClient")
+    ret_row = next((r for r in prop_rows if r["year"] == ret_yr), None) if ret_yr else None
+    spouse_ret_yr = prop["events"].get("retirementYearSpouse")
+    ss_yr = prop["events"].get("ssClaimYearClient")
+
     infl = h.get("inflationRate", 0.03) * 100
 
-    # Pull the underlying expense intent (today's-dollar amounts) from the
-    # scenario_change payload + base expense inventory so the narrative is
-    # anchored to the advisor's actual inputs.
     exp_inv = data.get("inventory", {}).get("expenses", []) or []
     pre_ret = next((e for e in exp_inv if e["name"] == "Current Living Expenses"), None)
     post_ret_base = next(
@@ -1720,12 +1855,12 @@ def _expenses_section(story: list, data: dict):
         None,
     )
     post_ret_proposed_today = _n((post_ret_edit or {}).get("to", post_ret_base["annualAmount"] if post_ret_base else 0))
+    pre_today = pre_ret["annualAmount"] if pre_ret else living_yr1
 
-    story.append(Paragraph("How Spending Works", ST["subsection"]))
+    story.append(Paragraph("How Cash Flow Works", ST["subsection"]))
     story.append(GoldRule(CONTENT_W * 0.2))
     story.append(Spacer(1, 0.04 * inch))
 
-    pre_today = pre_ret["annualAmount"] if pre_ret else living_yr1
     paragraphs = [
         (
             f"Spending is modeled in two phases. <b>Pre-retirement</b> the plan carries a "
@@ -1734,55 +1869,44 @@ def _expenses_section(story: list, data: dict):
             f"<b>Post-retirement</b> the assumption resets to "
             f"<b>{_dollar(post_ret_proposed_today)}/yr</b> in today's dollars — the line item "
             f"the proposed plan raised from {_dollar((post_ret_edit or {}).get('from', post_ret_base['annualAmount'] if post_ret_base else 0))} "
-            f"so the projection reflects what life actually costs rather than an optimistic floor."
-        ),
-        (
-            f"Inflated forward, that translates to roughly {_dollar(living_yr1)} of living "
-            f"expense in Year&nbsp;1 ({h['planStartYear']}), "
+            f"so the projection reflects what life actually costs rather than an optimistic floor. "
+            f"Inflated forward that becomes about {_dollar(living_yr1)} of living expense in "
+            f"Year&nbsp;1 ({h['planStartYear']})"
             + (
-                f"about {_dollar(ret_row['living'])} in the first full year of retirement "
-                f"({ret_yr}), and {_dollar(end_row['living'])} at plan end ({end_row['year']}). "
+                f", roughly {_dollar(ret_row['living'])} in the first full year of retirement "
+                f"({ret_yr})"
                 if ret_row else ""
             )
-            + f"Insurance premiums are layered on top — starting at {_dollar(insurance_yr1)} in "
-            f"Year&nbsp;1 and growing with healthcare inflation as Medicare picks up coverage."
+            + f", and {_dollar(end_row['living'])} at plan end ({end_row['year']}). "
+            f"Insurance premiums layer on top, starting at {_dollar(insurance_yr1)} and growing "
+            f"with healthcare inflation as Medicare picks up coverage."
+        ),
+        (
+            f"Inflows shift over the horizon. Through {ret_yr - 1 if ret_yr else 'retirement'}, "
+            f"<b>salaries</b> fund the household. Starting in {ret_yr}, {h['clientFirstName']}'s "
+            f"salary ends; "
+            + (f"Social Security begins in {ss_yr}" if ss_yr else "Social Security begins later")
+            + (f", and {h['spouseFirstName']} retires in {spouse_ret_yr}" if (h.get("spouseFirstName") and spouse_ret_yr) else "")
+            + ". From that point on, Social Security covers a steady baseline, RMDs eventually "
+            "kick in once {client} reaches 73, and portfolio withdrawals fill any remaining gap "
+            "between expenses and other income.".format(client=h["clientFirstName"])
+        ),
+        (
+            "The chart below stacks each year's inflows by source — salaries, Social Security, "
+            "other income, RMDs, and discretionary portfolio withdrawals — with <b>Total "
+            "Expenses</b> overlaid as the dark line. The gap between the top of the bars and "
+            "the line is the cushion (or the shortfall) for that year. Vertical dashed markers "
+            "tag the retirement and life-event years that reshape the picture."
         ),
     ]
     for p in paragraphs:
         story.append(Paragraph(p, ST["narrative"]))
         story.append(Spacer(1, 0.02 * inch))
 
-    chart = _make_chart(_expense_chart(data), wi=5.6, hi=1.4)
+    chart = _make_chart(_combined_cashflow_chart(data), wi=6.6, hi=2.4)
     if chart:
         chart.hAlign = "CENTER"
         story.append(chart)
-
-
-def _income_section(story: list, data: dict):
-    story.append(Paragraph("How Income Funds Each Year", ST["subsection"]))
-    story.append(GoldRule(CONTENT_W * 0.2))
-    story.append(Spacer(1, 0.04 * inch))
-
-    h = data["household"]
-    prop = data["proposed"]
-    ret_yr = prop["events"].get("retirementYearClient")
-    ss_yr = prop["events"].get("ssClaimYearClient")
-    spouse_ret_yr = prop["events"].get("retirementYearSpouse")
-    sentence = (
-        f"Through {ret_yr - 1 if ret_yr else 'retirement'}, salary funds the household. "
-        f"Starting in {ret_yr}, {h['clientFirstName']}'s salary ends; "
-        + (f"Social Security begins in {ss_yr}" if ss_yr else "Social Security begins later")
-        + (f", and {h['spouseFirstName']} retires in {spouse_ret_yr}" if (h.get("spouseFirstName") and spouse_ret_yr) else "")
-        + ". From that point on, Social Security covers a steady baseline and portfolio "
-        "withdrawals fill the gap between expenses and other income."
-    )
-    story.append(Paragraph(sentence, ST["narrative"]))
-    story.append(Spacer(1, 0.04 * inch))
-
-    inc = _make_chart(_stacked_income_chart(data, "proposed"), wi=5.6, hi=1.5)
-    if inc:
-        inc.hAlign = "CENTER"
-        story.append(inc)
 
 
 def _income_tax_section(story: list, data: dict):
@@ -1935,16 +2059,28 @@ def _page5_analysis(story: list, data: dict):
         story.append(lon)
     story.append(Spacer(1, 0.06 * inch))
 
-    # Side-by-side: lifetime income taxes and estate
-    story.append(Paragraph("Lifetime Income Tax & Legacy", ST["subsection"]))
+    # Side-by-side: Summary-Deltas card (left) + Estate-Disposition chart (right).
+    story.append(Paragraph("Impact vs. Base Case at Plan End", ST["subsection"]))
     story.append(GoldRule(CONTENT_W * 0.2))
     story.append(Spacer(1, 0.04 * inch))
 
-    left = _make_chart(_lifetime_tax_chart(data), wi=3.1, hi=1.6)
-    right = _make_chart(_estate_chart(data), wi=3.1, hi=1.6)
-    if left and right:
-        t2 = Table([[left, right]], colWidths=[HALF + 4, HALF + 4])
-        t2.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    cats = _legacy_categories(data)
+    delta_rows = [
+        (f"Change in {label}", prop_v - base_v, kind)
+        for label, base_v, prop_v, kind in cats
+    ]
+    card = SummaryDeltasCard(
+        HALF, "Summary Deltas (vs Base Case at Plan End)", delta_rows,
+    )
+    chart = _make_chart(_estate_disposition_chart(data), wi=3.1, hi=2.0)
+
+    if chart:
+        t2 = Table([[card, chart]], colWidths=[HALF + 4, HALF + 4])
+        t2.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ]))
         story.append(t2)
 
     # Disclosure
