@@ -216,6 +216,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
     diag: {
       marginalFederalRate: calcMarginalRate(incomeTaxBase, brackets),
       marginalBracketTier: findMarginalTier(incomeTaxBase, brackets) ?? brackets[0],
+      incomeBracketsForFiling: brackets,
       effectiveFederalRate: grossTotalIncome > 0 ? totalFederalTax / grossTotalIncome : 0,
       bracketsUsed: p,
       inflationFactor: input.inflationFactor,

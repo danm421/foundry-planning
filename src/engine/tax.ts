@@ -72,6 +72,7 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       // Flat-rate fallback has no real bracket structure; synthesize a single
       // open-ended tier so consumers reading marginalBracketTier still work.
       marginalBracketTier: { from: 0, to: null, rate: input.flatFederalRate },
+      incomeBracketsForFiling: [{ from: 0, to: null, rate: input.flatFederalRate }],
       effectiveFederalRate: input.flatFederalRate,
       bracketsUsed: input.taxParams,
       inflationFactor: 1.0,

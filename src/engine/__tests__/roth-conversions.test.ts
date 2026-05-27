@@ -124,8 +124,10 @@ describe("applyRothConversions", () => {
       ordinaryBrackets,
       taxDeduction,
     });
-    // Headroom = 201050 - (80000 - 30000) = 151050
-    expect(r.taxableOrdinaryIncome).toBeCloseTo(151050, 0);
+    // Headroom = 201050 - (80000 - 30000) = 151050, minus a $1 backoff so the
+    // marginal-bracket display reads the targeted (22%) tier rather than the
+    // next one up.
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(151049, 0);
   });
 
   it("fill_up_bracket: 0 when the chosen bracket is already exceeded", () => {
@@ -206,8 +208,9 @@ describe("applyRothConversions", () => {
       ordinaryBrackets,
       computeIncomeTaxBaseWithRothTaxable: computeBase,
     });
-    // Should converge to tier.to = 201050. Conversion = 201050 - 100000 = 101050.
-    expect(r.taxableOrdinaryIncome).toBeCloseTo(101050, 0);
+    // Converges to tier.to - 1 = 201049 (one-dollar backoff keeps the marginal
+    // bracket display in the targeted tier). Conversion = 201049 - 100000 = 101049.
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(101049, 0);
   });
 
   it("fill_up_bracket via computeBase: handles SS-taxability phase-in (overshoot bug)", () => {
@@ -276,8 +279,8 @@ describe("applyRothConversions", () => {
       ordinaryBrackets,
       computeIncomeTaxBaseWithRothTaxable: computeBase,
     });
-    // 201050 - 95000 = 106050.
-    expect(r.taxableOrdinaryIncome).toBeCloseTo(106050, 0);
+    // 201050 - 95000 = 106050, minus a $1 backoff = 106049.
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(106049, 0);
   });
 
   it("fill_up_bracket via computeBase: returns 0 when baseline already exceeds bracket", () => {

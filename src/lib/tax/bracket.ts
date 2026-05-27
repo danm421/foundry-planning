@@ -1,4 +1,5 @@
 import type { ProjectionYear } from "@/engine/types";
+import type { BracketTier } from "./types";
 
 export interface TaxBracketRow {
   year: number;
@@ -17,6 +18,27 @@ export interface TaxBracketRow {
   changeInBase: number;
 }
 
+/**
+ * Pick the bracket tier `incomeTaxBase` *currently sits in* — the rate the
+ * household's last dollar paid into. Differs from `findMarginalTier` (the
+ * "next dollar" rate) only at the exact `tier.to` boundary: a perfect
+ * fill_up_bracket conversion that lands `incomeTaxBase` at the 22% ceiling
+ * would otherwise classify as 24% (rate of the next dollar). Advisor
+ * intuition is "I filled 22%, so my bracket is 22%" — match that.
+ */
+function pickFilledTier(
+  incomeTaxBase: number,
+  brackets: BracketTier[] | undefined,
+): BracketTier | null {
+  if (!brackets || brackets.length === 0) return null;
+  if (incomeTaxBase < 0) return brackets[0];
+  for (const tier of brackets) {
+    const top = tier.to ?? Infinity;
+    if (incomeTaxBase <= top) return tier;
+  }
+  return brackets[brackets.length - 1];
+}
+
 export function buildTaxBracketRows(years: ProjectionYear[]): TaxBracketRow[] {
   const rows: TaxBracketRow[] = [];
   let prevBase: number | null = null;
@@ -30,7 +52,14 @@ export function buildTaxBracketRows(years: ProjectionYear[]): TaxBracketRow[] {
     }
 
     const incomeTaxBase = taxResult.flow.incomeTaxBase;
-    const tier = taxResult.diag.marginalBracketTier;
+    const brackets = taxResult.diag.incomeBracketsForFiling;
+    // Reclassify with "filled tier" semantics (inclusive at tier.to) so a
+    // perfect bracket-fill reads as the targeted tier, not the next one up.
+    // Engine math (marginalFederalRate, tax calc) keeps its "next dollar"
+    // semantics — this affects display only.
+    const tier =
+      pickFilledTier(incomeTaxBase, brackets) ??
+      taxResult.diag.marginalBracketTier;
 
     const conversionGross = (year.rothConversions ?? []).reduce(
       (sum, c) => sum + c.gross,
@@ -54,7 +83,7 @@ export function buildTaxBracketRows(years: ProjectionYear[]): TaxBracketRow[] {
       conversionGross,
       conversionTaxable,
       incomeTaxBase,
-      marginalRate: taxResult.diag.marginalFederalRate,
+      marginalRate: tier.rate,
       intoBracket,
       remainingInBracket,
       changeInBase,

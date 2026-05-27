@@ -165,6 +165,12 @@ export interface TaxResult {
      *  without re-walking BracketsByStatus and worrying about which filing
      *  status the engine actually used (flips at first-death). */
     marginalBracketTier: BracketTier;
+    /** The bracket list actually applied this year (filing-status resolved).
+     *  Mirrors the input the marginal-rate calc walks. Reports that need to
+     *  classify `incomeTaxBase` with different boundary semantics (e.g. the
+     *  "filled tier" the last dollar paid into, vs the marginal "next dollar"
+     *  tier) can walk this list directly. */
+    incomeBracketsForFiling: BracketTier[];
     effectiveFederalRate: number;
     bracketsUsed: TaxYearParameters;
     inflationFactor: number;

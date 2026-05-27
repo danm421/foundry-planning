@@ -260,9 +260,17 @@ function _resolveTargetAmount(
       );
       if (!tier || tier.to == null) return 0;
 
+      // Aim for $1 short of tier.to. findMarginalTier uses `base < top` (strict
+      // less-than), so a base landing exactly at tier.to gets classified into
+      // the NEXT bracket — making a perfect "fill 22%" read as "24% bracket
+      // with $0 into it" on the advisor's bracket table. The $1 backoff keeps
+      // the final base inside the targeted tier so the marginal-bracket
+      // display matches advisor intent.
+      const ceiling = tier.to - 1;
+
       // Preferred path: caller supplied a `computeIncomeTaxBaseWithRothTaxable`
       // closure that returns the year's true `incomeTaxBase` for any hypothetical
-      // Roth-conversion taxable amount. Iterate to converge `incomeTaxBase ≈ tier.to`.
+      // Roth-conversion taxable amount. Iterate to converge `incomeTaxBase ≈ ceiling`.
       //
       // Two-pass with bounded fixed-point iteration handles non-linearities like:
       //   - SS taxability phase-in (50%/85% thresholds bend the curve)
@@ -273,14 +281,14 @@ function _resolveTargetAmount(
       // than the taxable amount we solve for; the per-slice loop in the main
       // function caps the gross to source-pool balance, which is the right
       // behavior (we never want to over-convert). The taxable result will be
-      // a bit shy of tier.to in basis-heavy cases — acceptable.
+      // a bit shy of ceiling in basis-heavy cases — acceptable.
       if (computeIncomeTaxBaseWithRothTaxable) {
         const baseAt0 = computeIncomeTaxBaseWithRothTaxable(0);
-        if (baseAt0 >= tier.to) return 0;
-        let target = tier.to - baseAt0; // initial guess assumes linear
+        if (baseAt0 >= ceiling) return 0;
+        let target = ceiling - baseAt0; // initial guess assumes linear
         for (let i = 0; i < 6; i++) {
           const baseAtTarget = computeIncomeTaxBaseWithRothTaxable(target);
-          const delta = tier.to - baseAtTarget;
+          const delta = ceiling - baseAtTarget;
           if (Math.abs(delta) < 1) break;
           // Conservative update: never let target go negative; if SS or other
           // stack-up made the previous guess overshoot, pull it back.
@@ -296,7 +304,7 @@ function _resolveTargetAmount(
         0,
         preConversionOrdinaryIncome - (taxDeduction ?? 0),
       );
-      return Math.max(0, tier.to - taxableBeforeConv);
+      return Math.max(0, ceiling - taxableBeforeConv);
     }
 
     default:
