@@ -100,6 +100,7 @@ export type AuditAction =
   | "client_comparison.update"
   | "client_comparison.delete"
   | "comparison.export_pdf"
+  | "presentations.export_pdf"
   | "comparison_template.create"
   | "comparison_template.update"
   | "comparison_template.delete"
