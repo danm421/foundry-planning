@@ -116,12 +116,11 @@ describe("buildCashFlowPageData — markers", () => {
   });
 
   it("collapses same-year retirements into a single joint marker", () => {
-    // new Date("1966-01-01").getFullYear() = 1965 (UTC midnight → prev day in local TZ).
-    // Cooper retires at 1965+65=2030; Susan retires at 1969+61=2030. Same year → joint collapse.
+    // Cooper retires 1966+65=2031; Susan retires 1970+61=2031. Same year → joint collapse.
     const retirementMarkers = data.table.markers.filter((m) => m.kind === "retirement");
     expect(retirementMarkers).toHaveLength(1);
     expect(retirementMarkers[0]).toMatchObject({
-      year: 2030,
+      year: 2031,
       who: "joint",
       kind: "retirement",
     });
@@ -130,7 +129,7 @@ describe("buildCashFlowPageData — markers", () => {
   });
 
   it("labels client-only end-of-life with client name", () => {
-    // Cooper dies 1965+100=2065, Susan dies 1969+99=2068. Separate years → separate markers.
+    // Cooper dies 1966+100=2066, Susan dies 1970+99=2069. Separate years → separate markers.
     const eol = data.table.markers.find((m) => m.kind === "endOfLife" && m.who === "client");
     expect(eol?.label).toContain("Cooper");
   });

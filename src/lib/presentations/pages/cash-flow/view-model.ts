@@ -80,10 +80,10 @@ function filterYearsToRange(
 function computeFirstRetirementYear(client: ClientInfo): number | null {
   const candidates: number[] = [];
   if (client.dateOfBirth && client.retirementAge != null) {
-    candidates.push(new Date(client.dateOfBirth).getFullYear() + client.retirementAge);
+    candidates.push(new Date(client.dateOfBirth).getUTCFullYear() + client.retirementAge);
   }
   if (client.spouseDob && client.spouseRetirementAge != null) {
-    candidates.push(new Date(client.spouseDob).getFullYear() + client.spouseRetirementAge);
+    candidates.push(new Date(client.spouseDob).getUTCFullYear() + client.spouseRetirementAge);
   }
   return candidates.length ? Math.min(...candidates) : null;
 }
@@ -121,7 +121,7 @@ function buildMarkers(
     principals.push({
       who: "client",
       name: clientName,
-      yob: new Date(ci.dateOfBirth).getFullYear(),
+      yob: new Date(ci.dateOfBirth).getUTCFullYear(),
       retirementAge: ci.retirementAge ?? null,
       lifeExpectancyOrPlanEnd: ci.lifeExpectancy ?? ci.planEndAge ?? null,
     });
@@ -130,7 +130,7 @@ function buildMarkers(
     principals.push({
       who: "spouse",
       name: spouseName ?? ci.spouseName ?? "Spouse",
-      yob: new Date(ci.spouseDob).getFullYear(),
+      yob: new Date(ci.spouseDob).getUTCFullYear(),
       retirementAge: ci.spouseRetirementAge ?? null,
       lifeExpectancyOrPlanEnd: ci.spouseLifeExpectancy ?? ci.planEndAge ?? null,
     });
