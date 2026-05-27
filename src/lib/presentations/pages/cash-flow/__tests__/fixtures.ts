@@ -285,7 +285,7 @@ export function makeClientData(): ClientData {
     spouseName: "Susan",
     spouseDob: "1970-01-01",
     spouseRetirementAge: 61,
-    spouseLifeExpectancy: 96,
+    spouseLifeExpectancy: 99,
     filingStatus: "married_joint",
   };
 
