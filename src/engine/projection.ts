@@ -2841,22 +2841,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const pendingFillBracketTargets: Record<string, number> = {};
     const fillBracketCeilingsById: Record<string, number> = {};
     let fillBracketProbe: ReturnType<typeof buildIncomeTaxBaseProbe> | null = null;
+    const convFilingStatus = effectiveFilingStatus(
+      (client.filingStatus ?? "single") as FilingStatus,
+      firstDeathYear,
+      year,
+    );
+    const convBrackets = taxResolver
+      ? taxResolver.getYear(year)?.params.incomeBrackets[convFilingStatus]
+      : undefined;
+    const bracketFillerById = new Map<string, RothConversion>();
 
     if (data.rothConversions && data.rothConversions.length > 0) {
-      const convFilingStatus = effectiveFilingStatus(
-        (client.filingStatus ?? "single") as FilingStatus,
-        firstDeathYear,
-        year,
-      );
-      const convResolved = taxResolver ? taxResolver.getYear(year) : null;
-      const convBrackets = convResolved?.params.incomeBrackets[convFilingStatus];
-
       const bracketFillers: RothConversion[] = [];
       const otherStrategies: RothConversion[] = [];
       for (const conv of data.rothConversions) {
         if (conv.conversionType === "fill_up_bracket") bracketFillers.push(conv);
         else otherStrategies.push(conv);
       }
+      for (const conv of bracketFillers) bracketFillerById.set(conv.id, conv);
 
       if (otherStrategies.length > 0) {
         rothConversionResult = applyRothConversions({
@@ -3555,7 +3557,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const reservedBalances: Record<string, number> = { ...householdWithdrawBalances };
         if (fillBracketProbe) {
           for (const [cid, target] of Object.entries(pendingFillBracketTargets)) {
-            const conv = data.rothConversions!.find((c) => c.id === cid)!;
+            const conv = bracketFillerById.get(cid);
+            if (!conv) continue;
             let remaining = target;
             for (const sid of conv.sourceAccountIds) {
               if (remaining <= 0) break;
@@ -3695,15 +3698,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       data.rothConversions &&
       Object.keys(pendingFillBracketTargets).length > 0
     ) {
-      const convFilingStatus = effectiveFilingStatus(
-        (client.filingStatus ?? "single") as FilingStatus,
-        firstDeathYear,
-        year,
-      );
-      const convBrackets = taxResolver
-        ? taxResolver.getYear(year)?.params.incomeBrackets[convFilingStatus]
-        : undefined;
-
       const fillerConversions = data.rothConversions.filter(
         (c) =>
           c.conversionType === "fill_up_bracket" &&
