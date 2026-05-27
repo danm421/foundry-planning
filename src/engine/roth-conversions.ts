@@ -40,6 +40,14 @@ export interface RothConversionsInput {
   filingStatus?: FilingStatus;
   /** Legacy fallback: standard or itemized deduction the household will use. */
   taxDeduction?: number;
+  /**
+   * Per-conversion-id target taxable amount, pre-converged by the caller.
+   * When set for a `fill_up_bracket` conversion, this OVERRIDES the closure
+   * and the conversion uses the supplied target directly (still capped at
+   * source-pool balance). The closure path is the legacy/single-pass mode;
+   * the override path is used by the phase-12 joint-convergence loop.
+   */
+  targetTaxableOverride?: Record<string, number>;
 }
 
 export interface RothConversionsResult {
@@ -234,6 +242,12 @@ function _resolveTargetAmount(
     }
 
     case "fill_up_bracket": {
+      const override = input.targetTaxableOverride?.[conv.id];
+      if (override != null) {
+        // Caller (phase 12 joint loop) already converged the target. Apply it
+        // directly — no closure iteration. Negative/zero means "skip this year".
+        return Math.max(0, override);
+      }
       const {
         ordinaryBrackets,
         computeIncomeTaxBaseWithRothTaxable,
