@@ -21,15 +21,18 @@ export interface ChartSpec {
     gridlineColor: string;
   };
 
+  // seriesId is just a render key; drill pages emit drill-specific ids
+  // (e.g. "income.salaries", "expenses.living") so a chart with arbitrary
+  // stacks/lines can reuse the same renderer.
   stacks: Array<{
-    seriesId: "salary" | "ss" | "otherInflows" | "rmd" | "withdrawals";
+    seriesId: string;
     label: string;
     color: string;                           // resolved hex
     values: number[];                        // one per domain entry
   }>;
 
   lines: Array<{
-    seriesId: "totalExpenses";
+    seriesId: string;
     label: string;
     color: string;
     strokeWidth: number;

@@ -24,9 +24,20 @@ describe("registry — Cash Flow page", () => {
     expect(typeof cashFlowPage.OptionsControl).toBe("function");
   });
 
-  it("is registered alongside cover and toc in PRESENTATION_PAGES", () => {
+  it("is registered alongside the framing pages + every cash-flow drill in PRESENTATION_PAGES", () => {
     expect(Object.keys(PRESENTATION_PAGES).sort()).toEqual(
-      ["cashFlow", "cover", "toc"].sort(),
+      [
+        "cashFlow",
+        "cashFlowActivity",
+        "cashFlowAssets",
+        "cashFlowExpenses",
+        "cashFlowGrowth",
+        "cashFlowIncome",
+        "cashFlowNet",
+        "cashFlowSavings",
+        "cover",
+        "toc",
+      ].sort(),
     );
   });
 });

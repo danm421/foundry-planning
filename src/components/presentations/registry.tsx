@@ -29,6 +29,26 @@ import { CashflowPagePdf } from "./pages/cash-flow/page-pdf";
 import { CoverOptionsControl } from "./pages/cover/options-control";
 import { CoverPdf } from "./pages/cover/page-pdf";
 import { TocPdf, type TocSection } from "./pages/toc/page-pdf";
+// Shared drill-down infrastructure used by every Cash Flow > * drill page.
+import { DrillPagePdf } from "./shared/drill-page-pdf";
+import { DrillOptionsControl } from "./shared/drill-options-control";
+import {
+  DRILL_PAGE_OPTIONS_DEFAULT,
+  drillOptionsSchema,
+  summarizeDrillOptions,
+  estimateDrillPageCount,
+} from "@/lib/presentations/shared/drill-options";
+import type {
+  DrillPageData,
+  DrillPageOptions,
+} from "@/lib/presentations/shared/drill-types";
+import { buildIncomeDrillData } from "@/lib/presentations/pages/cash-flow-income/view-model";
+import { buildExpensesDrillData } from "@/lib/presentations/pages/cash-flow-expenses/view-model";
+import { buildSavingsDrillData } from "@/lib/presentations/pages/cash-flow-savings/view-model";
+import { buildNetCashFlowDrillData } from "@/lib/presentations/pages/cash-flow-net/view-model";
+import { buildPortfolioGrowthDrillData } from "@/lib/presentations/pages/cash-flow-growth/view-model";
+import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-flow-activity/view-model";
+import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
 import type { ProjectionYear, ClientData } from "@/engine/types";
 
 export interface BuildDataContext {
@@ -139,10 +159,108 @@ export const tocPage: PresentationPage<TocPageData, TocPageOptions> = {
   ),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Cash Flow drill-down pages — every one is a thin wrapper: drill-specific
+// view-model + shared options/control/page-pdf. Column defs + chart stacks
+// mirror the matching Level-1 drill in cashflow-report.tsx.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeDrillPage(
+  id: string,
+  title: string,
+  description: string,
+  build: (input: {
+    years: ProjectionYear[];
+    clientData: ClientData;
+    options: DrillPageOptions;
+    scenarioLabel: string;
+    clientName: string;
+    spouseName: string | null;
+  }) => DrillPageData,
+): PresentationPage<DrillPageData, DrillPageOptions> {
+  return {
+    id,
+    title,
+    description,
+    defaultOptions: DRILL_PAGE_OPTIONS_DEFAULT,
+    optionsSchema: drillOptionsSchema,
+    summarizeOptions: summarizeDrillOptions,
+    estimatePageCount: estimateDrillPageCount,
+    OptionsControl: DrillOptionsControl,
+    supportsScenarioOverride: true,
+    buildData: (ctx, options) =>
+      build({
+        years: ctx.years,
+        clientData: ctx.clientData,
+        options,
+        scenarioLabel: ctx.scenarioLabel,
+        clientName: ctx.clientName,
+        spouseName: ctx.spouseName,
+      }),
+    renderPdf: (input) => <DrillPagePdf {...input} />,
+  };
+}
+
+export const cashFlowIncomePage = makeDrillPage(
+  "cashFlowIncome",
+  "Cash Flow — Income",
+  "Annual breakdown of income sources (salaries, Social Security, business, trust, deferred, capital gains, other).",
+  buildIncomeDrillData,
+);
+
+export const cashFlowExpensesPage = makeDrillPage(
+  "cashFlowExpenses",
+  "Cash Flow — Expenses",
+  "Annual breakdown of expenses by category (living, surplus, liabilities, insurance, real estate, taxes, other).",
+  buildExpensesDrillData,
+);
+
+export const cashFlowSavingsPage = makeDrillPage(
+  "cashFlowSavings",
+  "Cash Flow — Savings",
+  "Annual savings contributions, per-account.",
+  buildSavingsDrillData,
+);
+
+export const cashFlowNetPage = makeDrillPage(
+  "cashFlowNet",
+  "Cash Flow — Net Cash Flow",
+  "Supplemental withdrawals by asset category with beginning-of-year portfolio and withdrawal rate.",
+  buildNetCashFlowDrillData,
+);
+
+export const cashFlowGrowthPage = makeDrillPage(
+  "cashFlowGrowth",
+  "Cash Flow — Portfolio Growth",
+  "Portfolio investment growth by asset category.",
+  buildPortfolioGrowthDrillData,
+);
+
+export const cashFlowActivityPage = makeDrillPage(
+  "cashFlowActivity",
+  "Cash Flow — Portfolio Activity",
+  "External contributions to and distributions from the portfolio.",
+  buildPortfolioActivityDrillData,
+);
+
+export const cashFlowAssetsPage = makeDrillPage(
+  "cashFlowAssets",
+  "Cash Flow — Portfolio Assets",
+  "Year-end portfolio asset values by category, with liquid and grand totals.",
+  buildPortfolioAssetsDrillData,
+);
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
   cashFlow: cashFlowPage,
+  cashFlowIncome: cashFlowIncomePage,
+  cashFlowExpenses: cashFlowExpensesPage,
+  cashFlowSavings: cashFlowSavingsPage,
+  cashFlowNet: cashFlowNetPage,
+  cashFlowGrowth: cashFlowGrowthPage,
+  cashFlowActivity: cashFlowActivityPage,
+  cashFlowAssets: cashFlowAssetsPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;

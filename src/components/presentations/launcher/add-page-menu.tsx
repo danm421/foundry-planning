@@ -13,7 +13,6 @@ interface Props {
 
 const PLACEHOLDER_PAGES = [
   { title: "Balance Sheet", note: "coming soon" },
-  { title: "Income", note: "coming soon" },
 ];
 
 export function AddPageMenu({ alreadySelected, onAdd }: Props) {
