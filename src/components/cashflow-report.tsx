@@ -737,6 +737,18 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       expensesByType["real_estate_expense"].push(synthId);
     }
 
+    // Medicare premiums (Part B + Part D + IRMAA + Medigap) are emitted by the
+    // engine as `expenses.bySource.medicarePremiums` and folded into
+    // `expenses.insurance`. Register the synthetic ID under the insurance drill
+    // segment so the Insurance drill-down breaks Medicare out as its own column
+    // instead of leaving it hidden inside the rolled-up Insurance total. The
+    // all-zero-columns filter drops the column for plans with no Medicare cost.
+    if (clientData.medicareCoverage && clientData.medicareCoverage.length > 0) {
+      expenseNames["medicarePremiums"] = "Medicare Premiums";
+      if (!expensesByType["insurance"]) expensesByType["insurance"] = [];
+      expensesByType["insurance"].push("medicarePremiums");
+    }
+
     // Technique-generated income and expense sources (sales and purchases).
     // These use synthetic bySource keys added by the projection engine.
     // Technique income sources go into "technique_income" (for Level 0 Other Income
