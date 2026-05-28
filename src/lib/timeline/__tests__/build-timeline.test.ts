@@ -108,4 +108,33 @@ describe("buildTimeline", () => {
     const spouseSs = events.filter((e) => e.subject === "spouse" && e.id.startsWith("income:ss_begin:"));
     expect(spouseSs).toHaveLength(1);
   });
+
+  it("sorts estate before strategy when both fall on the same year/subject", () => {
+    const data = buildClientData();
+    data.entities = [
+      { id: "ent-ilit", name: "Cooper ILIT", trustSubType: "ilit", isIrrevocable: true } as any,
+    ];
+    data.gifts = [
+      { id: "g-1", year: 2032, amount: 50000, grantor: "client", recipientEntityId: "ent-ilit", useCrummeyPowers: true },
+    ];
+    data.reinvestments = [
+      {
+        id: "rein-x",
+        name: "Glide path",
+        accountIds: ["acct-brokerage"],
+        year: 2032,
+        newGrowthRate: 0.05,
+        realizeTaxesOnSwitch: false,
+        soldFractionByAccount: { "acct-brokerage": 0.3 },
+      },
+    ];
+    const projection = runProjection(data);
+    const events = buildTimeline(data, projection);
+    const sameYear = events.filter((e) => e.year === 2032 && (e.category === "estate" || e.category === "strategy"));
+    expect(sameYear.length).toBeGreaterThanOrEqual(2);
+    const estateIdx = sameYear.findIndex((e) => e.category === "estate");
+    const strategyIdx = sameYear.findIndex((e) => e.category === "strategy");
+    expect(estateIdx).toBeGreaterThanOrEqual(0);
+    expect(strategyIdx).toBeGreaterThan(estateIdx);
+  });
 });
