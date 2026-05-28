@@ -9,6 +9,8 @@ const COLORS: Record<TimelineCategory, string> = {
   portfolio: "bg-blue-400/10 text-blue-300 ring-blue-400/40 shadow-[0_0_12px_rgba(96,165,250,0.15)]",
   insurance: "bg-fuchsia-400/10 text-fuchsia-300 ring-fuchsia-400/40 shadow-[0_0_12px_rgba(232,121,249,0.15)]",
   tax: "bg-rose-400/10 text-rose-300 ring-rose-400/40 shadow-[0_0_12px_rgba(251,113,133,0.15)]",
+  estate: "bg-violet-400/10 text-violet-300 ring-violet-400/40 shadow-[0_0_12px_rgba(167,139,250,0.15)]",
+  strategy: "bg-teal-400/10 text-teal-300 ring-teal-400/40 shadow-[0_0_12px_rgba(45,212,191,0.15)]",
 };
 
 /** Plural label for category legends / filters. */
@@ -19,6 +21,8 @@ export const CATEGORY_LEGEND_LABEL: Record<TimelineCategory, string> = {
   portfolio: "Portfolio",
   insurance: "Insurance",
   tax: "Tax",
+  estate: "Estate",
+  strategy: "Strategy",
 };
 
 const LABELS = CATEGORY_LEGEND_LABEL;
@@ -49,4 +53,6 @@ export const CATEGORY_HEX: Record<TimelineCategory, string> = {
   portfolio: "#60A5FA",  // blue-400
   insurance: "#E879F9",  // fuchsia-400
   tax: "#FB7185",        // rose-400
+  estate: "#A78BFA",     // violet-400
+  strategy: "#2DD4BF",   // teal-400
 };
