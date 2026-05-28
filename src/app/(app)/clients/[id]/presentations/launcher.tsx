@@ -1,47 +1,219 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   ScenarioPickerDropdown,
   type ScenarioOption,
   type SnapshotOption,
 } from "@/components/scenario/scenario-picker-dropdown";
+import {
+  PRESENTATION_PAGES,
+  type PresentationPageId,
+} from "@/components/presentations/registry";
+import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
+import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
+import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
+import { AddPageMenu } from "@/components/presentations/launcher/add-page-menu";
+import {
+  useLauncherState,
+  type LauncherState,
+  type LoadedTemplate,
+} from "@/components/presentations/launcher/use-launcher-state";
 
-interface PresentationsLauncherProps {
+interface Props {
   clientId: string;
+  currentUserId: string;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
+  initialTemplates: { shared: LoadedTemplate[]; mine: LoadedTemplate[] };
 }
 
-export function PresentationsLauncher({
-  clientId,
-  scenarios,
-  snapshots,
-}: PresentationsLauncherProps) {
-  // Picker value space: "base" | <scenarioId> | `snap:<snapshotId>`.
-  // The export-pdf API takes scenarioId: string | null — "base" maps to null.
-  const [pickerValue, setPickerValue] = useState<string>("base");
+function makeInitialState(): LauncherState {
+  return {
+    topScenarioPickerValue: "base",
+    filename: "",
+    pages: [
+      {
+        pageId: "cashFlow" as PresentationPageId,
+        options: PRESENTATION_PAGES.cashFlow.defaultOptions,
+        scenarioOverride: undefined,
+      },
+    ],
+    loadedTemplate: null,
+    isModified: false,
+  };
+}
+
+export function PresentationsLauncher(props: Props) {
+  const [state, dispatch] = useLauncherState(makeInitialState());
+
+  const [templates, setTemplates] = useState(props.initialTemplates);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over == null || active.id === over.id) return;
+      const fromIdx = state.pages.findIndex(
+        (_, i) => `row-${i}` === String(active.id),
+      );
+      const toIdx = state.pages.findIndex(
+        (_, i) => `row-${i}` === String(over.id),
+      );
+      if (fromIdx >= 0 && toIdx >= 0)
+        dispatch({ type: "reorder", from: fromIdx, to: toIdx });
+    },
+    [state.pages, dispatch],
+  );
+
+  async function refreshTemplates() {
+    const res = await fetch("/api/presentation-templates");
+    if (res.ok) setTemplates(await res.json());
+  }
+
+  async function handleSaveAsNew(input: {
+    name: string;
+    visibility: "shared" | "private";
+  }) {
+    const res = await fetch("/api/presentation-templates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: input.name,
+        visibility: input.visibility,
+        pages: state.pages.map((p) => ({
+          pageId: p.pageId,
+          options: p.options,
+        })),
+      }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setError(j.error ?? "Save failed");
+      return;
+    }
+    const created = await res.json();
+    dispatch({
+      type: "savedAs",
+      template: {
+        id: created.id,
+        name: created.name,
+        visibility: created.visibility,
+        createdByUserId: created.createdByUserId,
+        pages: created.pages,
+      },
+    });
+    await refreshTemplates();
+    setShowSaveModal(false);
+  }
+
+  async function handleUpdateLoaded() {
+    if (!state.loadedTemplate) return;
+    const res = await fetch(
+      `/api/presentation-templates/${state.loadedTemplate.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pages: state.pages.map((p) => ({
+            pageId: p.pageId,
+            options: p.options,
+          })),
+        }),
+      },
+    );
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setError(j.error ?? "Update failed");
+      return;
+    }
+    const updated = await res.json();
+    dispatch({
+      type: "savedAs",
+      template: { ...state.loadedTemplate, pages: updated.pages },
+    });
+    await refreshTemplates();
+  }
+
+  async function handleRename(id: string, newName: string) {
+    await fetch(`/api/presentation-templates/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: newName }),
+    });
+    await refreshTemplates();
+  }
+
+  async function handleChangeVisibility(
+    id: string,
+    v: "shared" | "private",
+  ) {
+    await fetch(`/api/presentation-templates/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ visibility: v }),
+    });
+    await refreshTemplates();
+  }
+
+  async function handleDelete(id: string) {
+    await fetch(`/api/presentation-templates/${id}`, { method: "DELETE" });
+    if (state.loadedTemplate?.id === id) dispatch({ type: "clear" });
+    await refreshTemplates();
+  }
+
+  function handleLoadTemplate(id: string) {
+    const all = [...templates.shared, ...templates.mine];
+    const t = all.find((x) => x.id === id);
+    if (t) dispatch({ type: "loadTemplate", template: t });
+  }
 
   async function handleGenerate() {
     setError(null);
     setGenerating(true);
     try {
-      const scenarioId = pickerValue === "base" ? null : pickerValue;
+      const scenarioId =
+        state.topScenarioPickerValue === "base"
+          ? null
+          : state.topScenarioPickerValue;
       const res = await fetch(
-        `/api/clients/${clientId}/presentations/export-pdf`,
+        `/api/clients/${props.clientId}/presentations/export-pdf`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             scenarioId,
-            pages: ["cashFlow"],
+            filename: state.filename || undefined,
+            pages: state.pages.map((p) => ({
+              pageId: p.pageId,
+              options: p.options,
+              scenarioOverride: p.scenarioOverride,
+            })),
           }),
         },
       );
       if (!res.ok) {
-        const j = await res.json().catch(() => ({ error: "Unknown error" }));
+        const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `HTTP ${res.status}`);
       }
       const blob = await res.blob();
@@ -60,55 +232,166 @@ export function PresentationsLauncher({
     }
   }
 
-  return (
-    <div className="p-6 max-w-2xl">
-      <h1 className="text-2xl font-semibold mb-2">Presentations</h1>
-      <p className="text-sm text-gray-600 mb-6">
-        Generate a multi-page client presentation. For now, the only available
-        page is Cash Flow.
-      </p>
+  const generateDisabled = generating || state.pages.length === 0;
+  const isLoadedTemplateMine =
+    state.loadedTemplate?.createdByUserId === props.currentUserId;
 
-      <div className="border rounded p-4 space-y-4 bg-white">
-        <div>
-          <label className="block text-sm font-medium mb-1">Scenario</label>
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold mb-4">Presentations</h1>
+
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded border bg-white p-3">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs text-gray-600">Scenario</span>
           <ScenarioPickerDropdown
-            value={pickerValue}
-            onChange={setPickerValue}
-            scenarios={scenarios}
-            snapshots={snapshots}
+            value={state.topScenarioPickerValue}
+            onChange={(v) => dispatch({ type: "setTopScenario", value: v })}
+            scenarios={props.scenarios}
+            snapshots={props.snapshots}
             ariaLabel="Scenario for presentation"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm flex-1 min-w-[16rem]">
+          <span className="text-xs text-gray-600">Filename</span>
+          <input
+            type="text"
+            value={state.filename}
+            onChange={(e) =>
+              dispatch({ type: "setFilename", value: e.target.value })
+            }
+            placeholder="(auto)"
+            className="rounded border px-2 py-1 text-sm"
+          />
+        </label>
+        <div className="flex items-center gap-2">
+          {state.loadedTemplate && state.isModified && isLoadedTemplateMine && (
+            <button
+              type="button"
+              onClick={handleUpdateLoaded}
+              className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Update “{state.loadedTemplate.name}”
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowSaveModal(true)}
+            className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
+          >
+            Save as new…
+          </button>
+          <button
+            type="button"
+            disabled={generateDisabled}
+            onClick={handleGenerate}
+            className="rounded bg-amber-700 px-4 py-2 text-sm text-white hover:bg-amber-800 disabled:opacity-50"
+          >
+            {generating ? "Generating…" : "Generate PDF"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-2 lg:col-span-2">
+          {state.pages.length === 0 ? (
+            <div className="rounded border border-dashed p-6 text-center text-sm text-gray-500">
+              Add a page to get started
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={state.pages.map((_, i) => `row-${i}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                {state.pages.map((p, i) => (
+                  <SortableRow key={`row-${i}`} id={`row-${i}`}>
+                    <SelectedPageRow
+                      index={i}
+                      pageId={p.pageId}
+                      options={p.options}
+                      scenarioOverride={p.scenarioOverride}
+                      onOptionsChange={(opts) =>
+                        dispatch({
+                          type: "updatePageOptions",
+                          index: i,
+                          options: opts,
+                        })
+                      }
+                      onScenarioOverrideChange={(v) =>
+                        dispatch({
+                          type: "setScenarioOverride",
+                          index: i,
+                          value: v,
+                        })
+                      }
+                      onRemove={() =>
+                        dispatch({ type: "removePage", index: i })
+                      }
+                      scenarios={props.scenarios}
+                      snapshots={props.snapshots}
+                    />
+                  </SortableRow>
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
+          <AddPageMenu
+            alreadySelected={state.pages.map((p) => p.pageId)}
+            onAdd={(id) =>
+              dispatch({
+                type: "addPage",
+                pageId: id,
+                options: PRESENTATION_PAGES[id].defaultOptions,
+              })
+            }
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Pages</label>
-          <div className="space-y-1">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked readOnly />
-              <span>Cash Flow</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-400">
-              <input type="checkbox" disabled />
-              <span>Balance Sheet (coming soon)</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-400">
-              <input type="checkbox" disabled />
-              <span>Income (coming soon)</span>
-            </label>
-          </div>
+          <TemplatesPanel
+            shared={templates.shared}
+            mine={templates.mine}
+            loadedTemplateId={state.loadedTemplate?.id ?? null}
+            currentUserId={props.currentUserId}
+            onLoad={handleLoadTemplate}
+            onRename={handleRename}
+            onChangeVisibility={handleChangeVisibility}
+            onDelete={handleDelete}
+            onSaveAsNew={() => setShowSaveModal(true)}
+          />
         </div>
-
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="rounded bg-amber-700 px-4 py-2 text-white text-sm hover:bg-amber-800 disabled:opacity-50"
-        >
-          {generating ? "Generating…" : "Generate PDF"}
-        </button>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
+
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+      <SaveTemplateModal
+        open={showSaveModal}
+        initialName={state.loadedTemplate?.name ?? ""}
+        initialVisibility={state.loadedTemplate?.visibility ?? "private"}
+        onSave={handleSaveAsNew}
+        onCancel={() => setShowSaveModal(false)}
+      />
+    </div>
+  );
+}
+
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
     </div>
   );
 }
