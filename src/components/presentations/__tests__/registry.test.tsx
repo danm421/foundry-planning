@@ -1,0 +1,30 @@
+import { describe, it, expect } from "vitest";
+import { cashFlowPage, PRESENTATION_PAGES } from "../registry";
+import { CASH_FLOW_PAGE_OPTIONS_DEFAULT } from "@/lib/presentations/types";
+
+describe("registry — Cash Flow page", () => {
+  it("validates its default options via optionsSchema", () => {
+    expect(() => cashFlowPage.optionsSchema.parse(CASH_FLOW_PAGE_OPTIONS_DEFAULT))
+      .not.toThrow();
+  });
+
+  it("summarizes its default options to 'Retirement only'", () => {
+    expect(cashFlowPage.summarizeOptions(CASH_FLOW_PAGE_OPTIONS_DEFAULT))
+      .toBe("Retirement only");
+  });
+
+  it("estimates one PDF page", () => {
+    // estimatePageCount currently ignores its inputs; pass undefined for data
+    // and the default options.
+    expect(cashFlowPage.estimatePageCount(undefined as never, CASH_FLOW_PAGE_OPTIONS_DEFAULT))
+      .toBe(1);
+  });
+
+  it("exports an OptionsControl React component", () => {
+    expect(typeof cashFlowPage.OptionsControl).toBe("function");
+  });
+
+  it("is registered as the only page in PRESENTATION_PAGES", () => {
+    expect(Object.keys(PRESENTATION_PAGES)).toEqual(["cashFlow"]);
+  });
+});

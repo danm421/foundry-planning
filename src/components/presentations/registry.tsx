@@ -1,9 +1,14 @@
+import type { z } from "zod";
+import type { ComponentType, ReactElement } from "react";
 import type { CashFlowPageData, CashFlowPageOptions, BuildCashFlowInput } from "@/lib/presentations/types";
 import { CASH_FLOW_PAGE_OPTIONS_DEFAULT } from "@/lib/presentations/types";
 import { buildCashFlowPageData } from "@/lib/presentations/pages/cash-flow/view-model";
-import type { ProjectionYear, ClientData } from "@/engine/types";
+import { cashFlowOptionsSchema } from "@/lib/presentations/pages/cash-flow/options-schema";
+import { summarizeCashFlowOptions } from "@/lib/presentations/pages/cash-flow/summarize-options";
+import { estimateCashFlowPageCount } from "@/lib/presentations/pages/cash-flow/estimate-page-count";
+import { CashFlowOptionsControl } from "./pages/cash-flow/options-control";
 import { CashflowPagePdf } from "./pages/cash-flow/page-pdf";
-import type { ReactElement } from "react";
+import type { ProjectionYear, ClientData } from "@/engine/types";
 
 export interface BuildDataContext {
   years: ProjectionYear[];
@@ -18,6 +23,10 @@ export interface PresentationPage<TData, TOptions> {
   title: string;
   description: string;
   defaultOptions: TOptions;
+  optionsSchema: z.ZodType<TOptions>;
+  summarizeOptions: (options: TOptions) => string;
+  estimatePageCount: (data: TData, options: TOptions) => number;
+  OptionsControl: ComponentType<{ value: TOptions; onChange: (next: TOptions) => void }>;
   buildData: (ctx: BuildDataContext, options: TOptions) => TData;
   renderPdf: (input: {
     data: TData;
@@ -34,6 +43,10 @@ export const cashFlowPage: PresentationPage<CashFlowPageData, CashFlowPageOption
   title: "Cash Flow",
   description: "Annual income, expenses, withdrawals, and portfolio totals.",
   defaultOptions: CASH_FLOW_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: cashFlowOptionsSchema,
+  summarizeOptions: summarizeCashFlowOptions,
+  estimatePageCount: estimateCashFlowPageCount,
+  OptionsControl: CashFlowOptionsControl,
   buildData: (ctx, options) =>
     buildCashFlowPageData({
       years: ctx.years,
