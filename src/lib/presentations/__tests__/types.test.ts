@@ -3,9 +3,12 @@ import type { PresentationPageDescriptor } from "../types";
 
 describe("PresentationPageDescriptor", () => {
   it("requires options (not optional)", () => {
-    // options must be required: { pageId: string; options: unknown } must be
-    // assignable TO PresentationPageDescriptor (i.e. PresentationPageDescriptor
-    // must not have options as optional).
-    expectTypeOf<{ pageId: string; options: unknown }>().toMatchTypeOf<PresentationPageDescriptor>();
+    // PresentationPageDescriptor must extend { options: unknown } (required).
+    // If options were optional, PresentationPageDescriptor would NOT extend the
+    // required shape and this assertion would fail — catching the regression.
+    expectTypeOf<PresentationPageDescriptor>().toMatchTypeOf<{
+      pageId: string;
+      options: unknown;
+    }>();
   });
 });
