@@ -6,8 +6,8 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 // ── Page-level ──────────────────────────────────────────────────────────────
 
 export interface PresentationPageDescriptor {
-  pageId: string;                            // "cashFlow"
-  options?: Record<string, unknown>;         // per-page options bag
+  pageId: string;                            // "cashFlow" (narrowed to PresentationPageId at the API boundary)
+  options: unknown;                          // per-page options bag (required)
 }
 
 export interface PresentationCompositionInput {
