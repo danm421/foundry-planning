@@ -6,7 +6,9 @@ export type TimelineCategory =
   | "transaction"
   | "portfolio"
   | "insurance"
-  | "tax";
+  | "tax"
+  | "estate"
+  | "strategy";
 
 export type TimelineSubject = "primary" | "spouse" | "joint";
 
@@ -53,4 +55,6 @@ export const CATEGORY_PRIORITY: Record<TimelineCategory, number> = {
   portfolio: 3,
   insurance: 4,
   tax: 5,
+  estate: 6,
+  strategy: 7,
 };
