@@ -61,7 +61,7 @@ function Section(props: {
 }) {
   return (
     <div>
-      <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-ink-3">
+      <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-2">
         {props.title}
       </div>
       {props.items.length === 0 ? (

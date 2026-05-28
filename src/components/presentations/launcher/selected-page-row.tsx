@@ -50,7 +50,7 @@ export function SelectedPageRow(props: Props) {
         </span>
         <div className="flex-1">
           <div className="text-sm font-medium text-ink">{page.title}</div>
-          <div className="text-xs text-ink-3">{summary}</div>
+          <div className="text-xs text-ink-2">{summary}</div>
         </div>
         {Options && (
           <button

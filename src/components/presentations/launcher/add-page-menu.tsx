@@ -27,7 +27,7 @@ export function AddPageMenu({ alreadySelected, onAdd }: Props) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded border border-dashed border-hair-2 px-3 py-2 text-sm text-ink-3 transition-colors hover:border-accent hover:text-accent"
+        className="rounded border border-dashed border-hair-2 px-3 py-2 text-sm text-ink-2 transition-colors hover:border-accent hover:text-accent"
       >
         ⊕ Add page
       </button>

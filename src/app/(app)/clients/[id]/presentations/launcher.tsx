@@ -254,7 +254,7 @@ export function PresentationsLauncher(props: Props) {
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded border border-hair bg-card p-3">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-[11px] uppercase tracking-[0.12em] text-ink-3">
+          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-2">
             Scenario
           </span>
           <ScenarioPickerDropdown
@@ -266,7 +266,7 @@ export function PresentationsLauncher(props: Props) {
           />
         </label>
         <label className="flex flex-col gap-1 text-sm flex-1 min-w-[16rem]">
-          <span className="text-[11px] uppercase tracking-[0.12em] text-ink-3">
+          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-2">
             Filename
           </span>
           <input
