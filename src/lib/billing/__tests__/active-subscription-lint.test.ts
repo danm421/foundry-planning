@@ -135,6 +135,10 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/plan-settings/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/presentation-templates/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/presentation-templates/[id]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/report-comments/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/comparison-layout/route.ts":
