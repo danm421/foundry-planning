@@ -3539,57 +3539,79 @@
     }
   },
   "heirDistributions": {
-    "base": [
-      {
-        "key": "spouse|700e50bc-9679-4aa5-b699-4afdd4064ca7",
-        "label": "Susan Sample",
-        "kind": "spouse",
-        "netTotal": 13951066.807191007,
-        "outright": 13951066.807191007,
-        "inTrust": 0
+    "base": {
+      "firstDeath": {
+        "decedent": "client",
+        "decedentName": "Cooper Sample",
+        "year": 2065,
+        "recipients": [
+          {
+            "key": "spouse|700e50bc-9679-4aa5-b699-4afdd4064ca7",
+            "label": "Susan Sample",
+            "kind": "spouse",
+            "netTotal": 13951066.807191007,
+            "mechanismSummary": "Beneficiary Designation + Bequest – Remainder + Specific Bequest + Account Titling"
+          }
+        ]
       },
-      {
-        "key": "family_member|ee579f90-cc1a-4fb1-8b9f-3861ef47ad3b",
-        "label": "Child Sample",
-        "kind": "family_member",
-        "netTotal": 7343515.8675833205,
-        "outright": 7343515.8675833205,
-        "inTrust": 0
-      },
-      {
-        "key": "family_member|b9d724dc-57b0-4167-9fe1-6f4b0b6f1741",
-        "label": "Second Child Sample",
-        "kind": "family_member",
-        "netTotal": 7343515.8675833205,
-        "outright": 7343515.8675833205,
-        "inTrust": 0
+      "secondDeath": {
+        "decedent": "spouse",
+        "decedentName": "Susan Sample",
+        "year": 2070,
+        "recipients": [
+          {
+            "key": "family_member|ee579f90-cc1a-4fb1-8b9f-3861ef47ad3b",
+            "label": "Child Sample",
+            "kind": "family_member",
+            "netTotal": 7343515.8675833205,
+            "mechanismSummary": "Bequest – Remainder + Beneficiary Designation"
+          },
+          {
+            "key": "family_member|b9d724dc-57b0-4167-9fe1-6f4b0b6f1741",
+            "label": "Second Child Sample",
+            "kind": "family_member",
+            "netTotal": 7343515.8675833205,
+            "mechanismSummary": "Bequest – Remainder + Beneficiary Designation"
+          }
+        ]
       }
-    ],
-    "proposed": [
-      {
-        "key": "spouse|700e50bc-9679-4aa5-b699-4afdd4064ca7",
-        "label": "Susan Sample",
-        "kind": "spouse",
-        "netTotal": 13026737.684582643,
-        "outright": 13026737.684582643,
-        "inTrust": 0
+    },
+    "proposed": {
+      "firstDeath": {
+        "decedent": "client",
+        "decedentName": "Cooper Sample",
+        "year": 2065,
+        "recipients": [
+          {
+            "key": "spouse|700e50bc-9679-4aa5-b699-4afdd4064ca7",
+            "label": "Susan Sample",
+            "kind": "spouse",
+            "netTotal": 13026737.684582643,
+            "mechanismSummary": "Beneficiary Designation + Bequest – Remainder + Specific Bequest + Account Titling"
+          }
+        ]
       },
-      {
-        "key": "family_member|ee579f90-cc1a-4fb1-8b9f-3861ef47ad3b",
-        "label": "Child Sample",
-        "kind": "family_member",
-        "netTotal": 6200569.730691509,
-        "outright": 6200569.730691509,
-        "inTrust": 0
-      },
-      {
-        "key": "family_member|b9d724dc-57b0-4167-9fe1-6f4b0b6f1741",
-        "label": "Second Child Sample",
-        "kind": "family_member",
-        "netTotal": 6200569.730691509,
-        "outright": 6200569.730691509,
-        "inTrust": 0
+      "secondDeath": {
+        "decedent": "spouse",
+        "decedentName": "Susan Sample",
+        "year": 2070,
+        "recipients": [
+          {
+            "key": "family_member|ee579f90-cc1a-4fb1-8b9f-3861ef47ad3b",
+            "label": "Child Sample",
+            "kind": "family_member",
+            "netTotal": 6200569.730691509,
+            "mechanismSummary": "Bequest – Remainder + Beneficiary Designation"
+          },
+          {
+            "key": "family_member|b9d724dc-57b0-4167-9fe1-6f4b0b6f1741",
+            "label": "Second Child Sample",
+            "kind": "family_member",
+            "netTotal": 6200569.730691509,
+            "mechanismSummary": "Bequest – Remainder + Beneficiary Designation"
+          }
+        ]
       }
-    ]
+    }
   }
 }

@@ -48,7 +48,6 @@ import { loadEffectiveTree } from "../src/lib/scenario/loader";
 import { getMonteCarloResult } from "../src/lib/projection/get-monte-carlo-result";
 import { buildEstateTransferReportData } from "../src/lib/estate/transfer-report";
 import type {
-  EstateTransferReportData,
   DeathSectionData,
 } from "../src/lib/estate/transfer-report";
 import type { ProjectionResult } from "../src/engine";
@@ -246,86 +245,104 @@ function legacyTotalsFor(
 
 /**
  * Per-recipient inheritance rollup for the Heir Distributions table on the
- * PDF estate page. Uses the same estate-transfer engine as the in-app report
- * so the dollar numbers match what advisors see in the Estate Flow tab.
+ * PDF estate page. Sourced from `buildEstateTransferReportData` so the dollar
+ * figures match the in-app Estate Flow report exactly.
  *
- * For each recipient we sum `netTotal` (post-drain) across both deaths and
- * split that net into "outright" vs "in trust" by attributing each underlying
- * asset line proportionally — trust entity recipients are 100% in-trust by
- * definition; everything else follows the asset's `distributionForm`, with
- * unmarked lines (titling, beneficiary designations, default-order) treated
- * as outright. The resulting outright + in-trust splits sum back to netTotal.
+ * v4 fix: split into firstDeath and secondDeath sections (no aggregate sum —
+ * the aggregate double-counts when assets pass through the surviving spouse).
+ * Each recipient row carries a `mechanism` summary (Beneficiary Designation,
+ * Trust Pour-Out, Will, Default Order, Titling, etc.) using values the engine
+ * actually emits. Only trust_pour_out lines carry a meaningful Outright vs.
+ * In-Trust signal; that detail is appended to the mechanism string when set
+ * and is otherwise omitted (rather than fabricated).
  */
-interface HeirDistribution {
+interface HeirRecipientRow {
   key: string;
   label: string;
   kind: "spouse" | "family_member" | "entity" | "external_beneficiary" | "system_default";
   netTotal: number;
-  outright: number;
-  inTrust: number;
+  mechanismSummary: string;
 }
 
-function rollupHeirDistributions(
-  report: EstateTransferReportData,
-): HeirDistribution[] {
-  const byKey = new Map<string, {
-    key: string;
-    label: string;
-    kind: HeirDistribution["kind"];
-    netTotal: number;
-    grossOutright: number;
-    grossInTrust: number;
-  }>();
+interface HeirDeathSection {
+  decedent: "client" | "spouse";
+  decedentName: string;
+  year: number;
+  recipients: HeirRecipientRow[];
+}
 
-  const visit = (section: DeathSectionData | null) => {
-    if (!section) return;
-    for (const group of section.recipients) {
-      const entry = byKey.get(group.key) ?? {
-        key: group.key,
-        label: group.recipientLabel,
-        kind: group.recipientKind as HeirDistribution["kind"],
-        netTotal: 0,
-        grossOutright: 0,
-        grossInTrust: 0,
-      };
-      entry.netTotal += group.netTotal;
-      const isTrustRecipient = group.recipientKind === "entity";
-      for (const mech of group.byMechanism) {
-        for (const asset of mech.assets) {
-          const inTrust = isTrustRecipient || asset.distributionForm === "in_trust";
-          if (inTrust) entry.grossInTrust += asset.amount;
-          else entry.grossOutright += asset.amount;
-        }
-      }
-      byKey.set(group.key, entry);
+interface HeirDistributions {
+  firstDeath: HeirDeathSection | null;
+  secondDeath: HeirDeathSection | null;
+}
+
+const MECHANISM_LABEL: Record<string, string> = {
+  titling: "Account Titling",
+  beneficiary_designation: "Beneficiary Designation",
+  will: "Specific Bequest",
+  will_residuary: "Bequest – Remainder",
+  will_liability_bequest: "Will Liability Bequest",
+  fallback_spouse: "Default Order — Spouse",
+  fallback_children: "Default Order — Children",
+  fallback_other_heirs: "Default Order — Other Heirs",
+  unlinked_liability_proportional: "Unlinked Debt",
+  trust_pour_out: "Trust Pour-Out",
+};
+
+function summarizeMechanisms(
+  group: import("../src/lib/estate/transfer-report").RecipientGroup,
+): string {
+  const totals = new Map<string, { amount: number; outright: number; inTrust: number }>();
+  for (const mech of group.byMechanism) {
+    const entry = totals.get(mech.mechanism) ?? { amount: 0, outright: 0, inTrust: 0 };
+    entry.amount += mech.total;
+    for (const asset of mech.assets) {
+      if (asset.distributionForm === "in_trust") entry.inTrust += asset.amount;
+      else if (asset.distributionForm === "outright") entry.outright += asset.amount;
     }
-  };
+    totals.set(mech.mechanism, entry);
+  }
+  if (totals.size === 0) return "—";
 
-  visit(report.firstDeath);
-  visit(report.secondDeath);
-
-  return Array.from(byKey.values())
-    .filter((d) => d.netTotal > 1)
-    .map((d) => {
-      const gross = d.grossOutright + d.grossInTrust;
-      const scale = gross > 0 ? d.netTotal / gross : 0;
-      return {
-        key: d.key,
-        label: d.label,
-        kind: d.kind,
-        netTotal: d.netTotal,
-        outright: d.grossOutright * scale,
-        inTrust: d.grossInTrust * scale,
-      };
+  const sorted = Array.from(totals.entries()).sort((a, b) => b[1].amount - a[1].amount);
+  return sorted
+    .map(([mech, t]) => {
+      const base = MECHANISM_LABEL[mech] ?? mech;
+      if (mech === "trust_pour_out") {
+        if (t.inTrust > 0 && t.outright > 0) return `${base} (mixed)`;
+        if (t.inTrust > 0) return `${base} (in trust)`;
+        if (t.outright > 0) return `${base} (outright)`;
+      }
+      return base;
     })
+    .join(" + ");
+}
+
+function sectionFor(section: DeathSectionData | null): HeirDeathSection | null {
+  if (!section) return null;
+  const recipients: HeirRecipientRow[] = section.recipients
+    .filter((g) => g.netTotal > 1)
+    .map((g) => ({
+      key: g.key,
+      label: g.recipientLabel,
+      kind: g.recipientKind as HeirRecipientRow["kind"],
+      netTotal: g.netTotal,
+      mechanismSummary: summarizeMechanisms(g),
+    }))
     .sort((a, b) => b.netTotal - a.netTotal);
+  return {
+    decedent: section.decedent,
+    decedentName: section.decedentName,
+    year: section.year,
+    recipients,
+  };
 }
 
 function buildHeirDistributionsFor(
   projection: ProjectionResult,
   clientData: ClientData,
   ownerNames: { clientName: string; spouseName: string | null },
-): HeirDistribution[] {
+): HeirDistributions {
   const report = buildEstateTransferReportData({
     projection,
     asOf: { kind: "split" },
@@ -333,7 +350,10 @@ function buildHeirDistributionsFor(
     clientData,
     ownerNames,
   });
-  return rollupHeirDistributions(report);
+  return {
+    firstDeath: sectionFor(report.firstDeath),
+    secondDeath: sectionFor(report.secondDeath),
+  };
 }
 
 function deathYearsFor(

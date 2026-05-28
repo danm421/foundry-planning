@@ -2115,57 +2115,32 @@ def _plan_comparison_section(story: list, data: dict):
 
 
 def _heir_distributions_section(story: list, data: dict):
-    """Per-recipient net inheritance table under the proposed plan, with an
-    outright vs. in-trust dispositional split. Sourced from the same engine
-    the in-app Estate Flow report uses, so dollars match what advisors see."""
+    """Per-recipient net inheritance tables under the proposed plan, split
+    into first-death and second-death sections so the dollar columns don't
+    double-count assets that pass through the surviving spouse. Mechanism
+    column uses values the engine actually emits (Beneficiary Designation,
+    Trust Pour-Out, Will, Default Order, Titling) — no fabricated labels."""
 
-    heirs = (data.get("heirDistributions") or {}).get("proposed") or []
-    if not heirs:
+    dist = (data.get("heirDistributions") or {}).get("proposed") or {}
+    sections = [d for d in (dist.get("firstDeath"), dist.get("secondDeath")) if d]
+    if not sections:
         return
 
     intro_style = _s(
         "heir_intro", fontSize=9, leading=12, textColor=TEXT_LIGHT,
         fontName="Helvetica-Oblique",
     )
-    section_parts: list = [
-        Spacer(1, 0.16 * inch),
-        Paragraph("Where the Estate Goes at Second Death", ST["subsection"]),
-        GoldRule(CONTENT_W * 0.2),
-        Spacer(1, 0.04 * inch),
-        Paragraph(
-            "Net amount each recipient receives under the proposed plan, split "
-            "between outright distributions and amounts that remain in trust. "
-            "Totals are net of estate taxes, administration, and any "
-            "inherited-IRA income tax.",
-            intro_style,
-        ),
-        Spacer(1, 0.06 * inch),
-    ]
-
+    death_label_style = _s(
+        "death_label", fontSize=10, leading=13, textColor=NAVY,
+        fontName="Helvetica-Bold",
+    )
     th_style = _s("heir_th", fontSize=8.5, textColor=WHITE, fontName="Helvetica-Bold")
-    th_center = _s("heir_thc", fontSize=8.5, textColor=WHITE,
-                   fontName="Helvetica-Bold", alignment=TA_RIGHT)
+    th_right = _s("heir_thc", fontSize=8.5, textColor=WHITE,
+                  fontName="Helvetica-Bold", alignment=TA_RIGHT)
     label_style = _s("heir_label", fontSize=9, leading=12)
-    num_style = _s("heir_num", fontSize=9, leading=12, alignment=TA_RIGHT)
+    mech_style = _s("heir_mech", fontSize=8.5, leading=11, textColor=TEXT_LIGHT)
     total_style = _s("heir_total", fontSize=9, leading=12, alignment=TA_RIGHT,
                      fontName="Helvetica-Bold", textColor=NAVY)
-
-    table_data: list = [[
-        Paragraph("Recipient", th_style),
-        Paragraph("Outright", th_center),
-        Paragraph("In Trust", th_center),
-        Paragraph("Net Total", th_center),
-    ]]
-    style_cmds: list = [
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.6, NAVY),
-        ("BOX", (0, 0), (-1, -1), 0.4, BORDER_CLR),
-    ]
 
     KIND_LABEL = {
         "spouse": "Surviving Spouse",
@@ -2175,37 +2150,86 @@ def _heir_distributions_section(story: list, data: dict):
         "system_default": "Default Order",
     }
 
-    for i, h in enumerate(heirs, start=1):
-        label = h.get("label") or "Unnamed recipient"
-        kind = h.get("kind")
-        kind_label = KIND_LABEL.get(kind, kind or "")
-        net = _n(h.get("netTotal", 0))
-        outright = _n(h.get("outright", 0))
-        in_trust = _n(h.get("inTrust", 0))
+    section_parts: list = [
+        Spacer(1, 0.16 * inch),
+        Paragraph("Where the Estate Goes", ST["subsection"]),
+        GoldRule(CONTENT_W * 0.2),
+        Spacer(1, 0.04 * inch),
+        Paragraph(
+            "Per-recipient net inheritance at each projected death event under "
+            "the proposed plan. Net of estate taxes, administration, and "
+            "inherited-account income tax. The mechanism column shows how the "
+            "transfer happens; only trust pour-outs carry an inline outright "
+            "vs. in-trust distinction.",
+            intro_style,
+        ),
+        Spacer(1, 0.08 * inch),
+    ]
 
-        recipient_html = (
-            f"{label}<br/><font size='6.5' color='{HEX_NAVY}'>{kind_label}</font>"
-            if kind_label else label
+    for s_idx, section in enumerate(sections):
+        if s_idx > 0:
+            section_parts.append(Spacer(1, 0.10 * inch))
+
+        decedent_name = section.get("decedentName") or "—"
+        year = section.get("year") or ""
+        death_order = "First Death" if s_idx == 0 else "Second Death"
+        section_parts.append(Paragraph(
+            f"{death_order} — {decedent_name} ({year})",
+            death_label_style,
+        ))
+        section_parts.append(Spacer(1, 0.03 * inch))
+
+        recipients = section.get("recipients") or []
+        table_data: list = [[
+            Paragraph("Recipient", th_style),
+            Paragraph("Mechanism", th_style),
+            Paragraph("Net Amount", th_right),
+        ]]
+        style_cmds: list = [
+            ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.6, NAVY),
+            ("BOX", (0, 0), (-1, -1), 0.4, BORDER_CLR),
+        ]
+
+        if not recipients:
+            table_data.append([
+                Paragraph("No transfers projected at this death event.", mech_style),
+                Paragraph("", mech_style),
+                Paragraph("—", total_style),
+            ])
+            style_cmds.append(("SPAN", (0, 1), (1, 1)))
+            style_cmds.append(("LINEBELOW", (0, 1), (-1, 1), 0.25, BORDER_CLR))
+        else:
+            for i, r in enumerate(recipients, start=1):
+                label = r.get("label") or "Unnamed recipient"
+                kind = r.get("kind")
+                kind_label = KIND_LABEL.get(kind, kind or "")
+                net = _n(r.get("netTotal", 0))
+                mech = r.get("mechanismSummary") or "—"
+
+                recipient_html = (
+                    f"{label}<br/><font size='6.5' color='{HEX_NAVY}'>{kind_label}</font>"
+                    if kind_label else label
+                )
+                table_data.append([
+                    Paragraph(recipient_html, label_style),
+                    Paragraph(mech, mech_style),
+                    Paragraph(_dollar(net), total_style),
+                ])
+                style_cmds.append(("LINEBELOW", (0, i), (-1, i), 0.25, BORDER_CLR))
+
+        heir_table = Table(
+            table_data,
+            colWidths=[CONTENT_W * 0.34, CONTENT_W * 0.44, CONTENT_W * 0.22],
         )
-        table_data.append([
-            Paragraph(recipient_html, label_style),
-            Paragraph(_dollar(outright) if outright > 0 else "—", num_style),
-            Paragraph(_dollar(in_trust) if in_trust > 0 else "—", num_style),
-            Paragraph(_dollar(net), total_style),
-        ])
-        style_cmds.append(("LINEBELOW", (0, i), (-1, i), 0.25, BORDER_CLR))
+        heir_table.setStyle(TableStyle(style_cmds))
+        section_parts.append(heir_table)
 
-    heir_table = Table(
-        table_data,
-        colWidths=[
-            CONTENT_W * 0.38,
-            CONTENT_W * 0.21,
-            CONTENT_W * 0.21,
-            CONTENT_W * 0.20,
-        ],
-    )
-    heir_table.setStyle(TableStyle(style_cmds))
-    section_parts.append(heir_table)
     story.append(KeepTogether(section_parts))
 
 
