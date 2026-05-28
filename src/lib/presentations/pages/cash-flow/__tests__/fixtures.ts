@@ -110,12 +110,19 @@ export function makeProjectionYears(): ProjectionYear[] {
         total: 200_000,
         bySource: {},
       },
+      expenses: {
+        living: 70_000, liabilities: 0, other: 0, insurance: 0,
+        realEstate: 0, taxes: 0, cashGifts: 0, discretionary: 0,
+        total: 70_000, bySource: {}, byLiability: {}, interestByLiability: {},
+      },
       savings: { byAccount: {}, total: 50_000, employerTotal: 0 },
+      totalIncome: 200_000,
       totalExpenses: 120_000,
+      netCashFlow: 80_000,
       portfolioAssets: {
-        taxable: {},
-        cash: {},
-        retirement: {},
+        taxable: { brokerage: 500_000 },
+        cash: { checking: 100_000 },
+        retirement: { ira: 750_000 },
         realEstate: {},
         business: {},
         lifeInsurance: {},
@@ -131,7 +138,19 @@ export function makeProjectionYears(): ProjectionYear[] {
         accessibleTrustAssetsTotal: 0,
         total: 1_350_000,
       },
-      accountLedgers: {},
+      accountLedgers: {
+        // Growth = 20k, contributions 50k (savings), no distributions
+        brokerage: {
+          beginningValue: 480_000, growth: 12_000, contributions: 20_000,
+          distributions: 0, internalContributions: 0, internalDistributions: 0,
+          rmdAmount: 0, fees: 0, endingValue: 512_000, entries: [],
+        },
+        ira: {
+          beginningValue: 720_000, growth: 8_000, contributions: 30_000,
+          distributions: 0, internalContributions: 0, internalDistributions: 0,
+          rmdAmount: 0, fees: 0, endingValue: 758_000, entries: [],
+        },
+      },
     }),
 
     // 2031 — retirement year (Cooper 65, Susan 61)
@@ -149,9 +168,16 @@ export function makeProjectionYears(): ProjectionYear[] {
         total: 35_000,
         bySource: {},
       },
-      withdrawals: { byAccount: {}, total: 80_000 },
+      withdrawals: { byAccount: { ira: 40_000 }, total: 40_000 },
+      expenses: {
+        living: 130_000, liabilities: 0, other: 0, insurance: 0,
+        realEstate: 0, taxes: 0, cashGifts: 0, discretionary: 0,
+        total: 130_000, bySource: {}, byLiability: {}, interestByLiability: {},
+      },
       savings: { byAccount: {}, total: 0, employerTotal: 0 },
+      totalIncome: 75_000,
       totalExpenses: 130_000,
+      netCashFlow: -55_000,
       portfolioAssets: {
         taxable: {},
         cash: {},
@@ -194,9 +220,16 @@ export function makeProjectionYears(): ProjectionYear[] {
         total: 40_000,
         bySource: {},
       },
-      withdrawals: { byAccount: {}, total: 100_000 },
+      withdrawals: { byAccount: { ira: 40_000 }, total: 40_000 },
+      expenses: {
+        living: 140_000, liabilities: 0, other: 0, insurance: 0,
+        realEstate: 0, taxes: 0, cashGifts: 0, discretionary: 0,
+        total: 140_000, bySource: {}, byLiability: {}, interestByLiability: {},
+      },
       savings: { byAccount: {}, total: 0, employerTotal: 0 },
+      totalIncome: 100_000,
       totalExpenses: 140_000,
+      netCashFlow: -40_000,
       portfolioAssets: {
         taxable: {},
         cash: {},
@@ -241,9 +274,16 @@ export function makeProjectionYears(): ProjectionYear[] {
         total: 45_000,
         bySource: {},
       },
-      withdrawals: { byAccount: {}, total: 50_000 },
+      withdrawals: { byAccount: {}, total: 0 },
+      expenses: {
+        living: 150_000, liabilities: 0, other: 0, insurance: 0,
+        realEstate: 0, taxes: 0, cashGifts: 0, discretionary: 0,
+        total: 150_000, bySource: {}, byLiability: {}, interestByLiability: {},
+      },
       savings: { byAccount: {}, total: 0, employerTotal: 0 },
+      totalIncome: 95_000,
       totalExpenses: 150_000,
+      netCashFlow: -55_000,
       portfolioAssets: {
         taxable: {},
         cash: {},

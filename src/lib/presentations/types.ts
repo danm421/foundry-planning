@@ -35,15 +35,22 @@ export interface CashFlowTableRow {
   ageClient: number | null;
   ageSpouse: number | null;
   cells: {
-    totalExpenses: number;
-    salary: number;
-    socialSecurity: number;
-    otherIncome: number;
-    rmds: number;
-    withdrawals: number;
-    totalWithdrawalsSpent: number;
-    netSavings: number;
-    totalPortfolioAssets: number;
+    // Chart-stack components (also feed table totals)
+    salary: number;             // r.income.salaries
+    socialSecurity: number;     // r.income.socialSecurity
+    otherInflows: number;       // business + deferred + capitalGains + trust + other
+    rmds: number;               // sum of rmd ledger entries (= sum of l.rmdAmount)
+    withdrawals: number;        // r.withdrawals.total (chart-only — table shows it under Net Cash Flow)
+
+    // Table summary columns
+    totalIncome: number;        // r.totalIncome
+    expenses: number;           // r.expenses.total
+    savings: number;            // r.savings.total
+    totalExpenses: number;      // r.totalExpenses (= expenses + savings)
+    netCashFlow: number;        // r.netCashFlow
+    portfolioGrowth: number;    // sum of ledger.growth over portfolio accounts
+    portfolioActivity: number;  // externalContributions − externalDistributions
+    portfolioAssets: number;    // liquid: taxable + cash + retirement + lifeInsurance
   };
 }
 

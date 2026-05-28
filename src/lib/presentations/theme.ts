@@ -16,10 +16,14 @@ export const PRESENTATION_THEME = {
   steel: "#3b6ea3",
   accentMuted: "#d4a86a",
   accentTint: "#f4e6c8",
-  // Resolved palettes — used by ChartSpec builder so adapters never look up
-  // tokens themselves.
-  chartStack: ["#3b6ea3", "#b87f1f", "#2f6b4a", "#d4a86a", "#5a5a60"],
-  chartLine: "#a13a3a",
+  // Cash-flow chart palette — matches the in-app Cash Flow chart's saturated
+  // colors so PDF and screen tell the same visual story. Order matches the
+  // stack render order in cashflow-chart-spec.ts:
+  //   [Social Security, Salaries, Other Inflows, RMDs, Withdrawals]
+  chartStack: ["#2563eb", "#16a34a", "#99f6e4", "#f97316", "#ef4444"],
+  // Dark ink line for Total Expenses overlay — pops against light paper and
+  // doesn't collide with the saturated withdrawals red.
+  chartLine: "#1a1a1d",
 } as const;
 
 export type PresentationTheme = typeof PRESENTATION_THEME;

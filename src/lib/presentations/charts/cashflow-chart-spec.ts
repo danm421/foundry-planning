@@ -24,17 +24,18 @@ export function buildCashFlowChartSpec(
   const xExtent = extent(years) as [number, number];
   const xTicks = xExtent[0] === undefined ? [] : ticks(xExtent[0], xExtent[1], 6);
 
-  // Stacks (bottom-up render order: salary, ss, other, rmd, withdrawals).
+  // Stacks bottom→top, matching the in-app Cash Flow chart.
+  // chartStack order is [SS, Salaries, Other Inflows, RMDs, Withdrawals].
   const stacks: ChartSpec["stacks"] = [
-    { seriesId: "salary", label: "Salary",
-      color: PRESENTATION_THEME.chartStack[0],
-      values: rows.map((r) => r.cells.salary) },
     { seriesId: "ss", label: "Social Security",
-      color: PRESENTATION_THEME.chartStack[1],
+      color: PRESENTATION_THEME.chartStack[0],
       values: rows.map((r) => r.cells.socialSecurity) },
-    { seriesId: "otherIncome", label: "Other Income",
+    { seriesId: "salary", label: "Salaries",
+      color: PRESENTATION_THEME.chartStack[1],
+      values: rows.map((r) => r.cells.salary) },
+    { seriesId: "otherInflows", label: "Other Inflows",
       color: PRESENTATION_THEME.chartStack[2],
-      values: rows.map((r) => r.cells.otherIncome) },
+      values: rows.map((r) => r.cells.otherInflows) },
     { seriesId: "rmd", label: "RMDs",
       color: PRESENTATION_THEME.chartStack[3],
       values: rows.map((r) => r.cells.rmds) },

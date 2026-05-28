@@ -17,12 +17,12 @@ describe("PRESENTATION_THEME", () => {
 
   it("defines the cash-flow chart palette in stack-render order", () => {
     expect(PRESENTATION_THEME.chartStack).toEqual([
-      "#3b6ea3", // salary
-      "#b87f1f", // social security
-      "#2f6b4a", // other income
-      "#d4a86a", // rmd
-      "#5a5a60", // discretionary withdrawals
+      "#2563eb", // social security
+      "#16a34a", // salaries
+      "#99f6e4", // other inflows
+      "#f97316", // rmds
+      "#ef4444", // withdrawals
     ]);
-    expect(PRESENTATION_THEME.chartLine).toBe("#a13a3a"); // total expenses
+    expect(PRESENTATION_THEME.chartLine).toBe("#1a1a1d"); // total expenses
   });
 });

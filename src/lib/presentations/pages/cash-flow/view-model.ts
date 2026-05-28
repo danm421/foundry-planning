@@ -10,6 +10,10 @@ import type {
 import type { ClientData, ClientInfo, ProjectionYear } from "@/engine/types";
 import { buildCashFlowChartSpec } from "../../charts/cashflow-chart-spec";
 
+const PORTFOLIO_BUCKETS = [
+  "taxable", "cash", "retirement", "realEstate", "business", "lifeInsurance",
+] as const;
+
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
 
@@ -20,30 +24,35 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
 
   const rows: CashFlowTableRow[] = visibleYears.map((py) => {
     const rmds = sumRmdAmounts(py);
-    const otherIncome =
+    const otherInflows =
       py.income.business +
       py.income.trust +
       py.income.deferred +
       py.income.other +
       py.income.capitalGains;
-    const discretionary = py.withdrawals.total - rmds;
+    const ids = portfolioAccountIds(py);
     return {
       year: py.year,
       ageClient: py.ages.client ?? null,
       ageSpouse: py.ages.spouse ?? null,
       cells: {
-        totalExpenses: py.totalExpenses,
         salary: py.income.salaries,
         socialSecurity: py.income.socialSecurity,
-        otherIncome,
+        otherInflows,
         rmds,
-        withdrawals: discretionary,
-        totalWithdrawalsSpent: py.withdrawals.total,
-        netSavings: py.savings.total,
-        totalPortfolioAssets:
+        withdrawals: py.withdrawals.total,
+        totalIncome: py.totalIncome,
+        expenses: py.expenses.total,
+        savings: py.savings.total,
+        totalExpenses: py.totalExpenses,
+        netCashFlow: py.netCashFlow,
+        portfolioGrowth: portfolioGrowthTotal(py, ids),
+        portfolioActivity: portfolioActivityTotal(py, ids),
+        portfolioAssets:
           py.portfolioAssets.taxableTotal +
           py.portfolioAssets.cashTotal +
-          py.portfolioAssets.retirementTotal,
+          py.portfolioAssets.retirementTotal +
+          py.portfolioAssets.lifeInsuranceTotal,
       },
     };
   });
@@ -96,6 +105,39 @@ function sumRmdAmounts(py: ProjectionYear): number {
     }
   }
   return total;
+}
+
+// Account ids appearing in any portfolio bucket — used to scope growth /
+// activity sums to the same accounts the in-app Cash Flow report counts.
+function portfolioAccountIds(py: ProjectionYear): Set<string> {
+  const ids = new Set<string>();
+  for (const bucket of PORTFOLIO_BUCKETS) {
+    const byAcct = py.portfolioAssets[bucket] as Record<string, number> | undefined;
+    if (!byAcct) continue;
+    for (const id of Object.keys(byAcct)) ids.add(id);
+  }
+  return ids;
+}
+
+function portfolioGrowthTotal(py: ProjectionYear, ids: Set<string>): number {
+  let sum = 0;
+  for (const id of ids) sum += py.accountLedgers?.[id]?.growth ?? 0;
+  return sum;
+}
+
+// External (non-internal-transfer) additions minus distributions — same
+// netting the in-app drill-down uses so supplemental refill legs don't
+// inflate the activity column.
+function portfolioActivityTotal(py: ProjectionYear, ids: Set<string>): number {
+  let additions = 0;
+  let distributions = 0;
+  for (const id of ids) {
+    const led = py.accountLedgers?.[id];
+    if (!led) continue;
+    additions += led.contributions - (led.internalContributions ?? 0);
+    distributions += led.distributions - (led.internalDistributions ?? 0);
+  }
+  return additions - distributions;
 }
 
 function buildMarkers(

@@ -22,7 +22,7 @@ export interface ChartSpec {
   };
 
   stacks: Array<{
-    seriesId: "salary" | "ss" | "otherIncome" | "rmd" | "withdrawals";
+    seriesId: "salary" | "ss" | "otherInflows" | "rmd" | "withdrawals";
     label: string;
     color: string;                           // resolved hex
     values: number[];                        // one per domain entry

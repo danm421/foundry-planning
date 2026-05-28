@@ -35,8 +35,30 @@ describe("buildCashFlowPageData — retirement-onward range (default)", () => {
     expect(r2036?.cells.totalExpenses).toBe(140_000);
     expect(r2036?.cells.salary).toBe(0);
     expect(r2036?.cells.socialSecurity).toBe(33_000);
-    expect(r2036?.cells.otherIncome).toBe(7_000); // 5000 business + 2000 capitalGains
-    expect(r2036?.cells.totalPortfolioAssets).toBe(1_310_000);
+    expect(r2036?.cells.otherInflows).toBe(7_000); // 5000 business + 2000 capitalGains
+    expect(r2036?.cells.totalIncome).toBe(100_000);
+    expect(r2036?.cells.expenses).toBe(140_000);
+    expect(r2036?.cells.savings).toBe(0);
+    expect(r2036?.cells.netCashFlow).toBe(-40_000);
+    expect(r2036?.cells.portfolioAssets).toBe(1_310_000); // taxable + cash + retirement + LI(0)
+  });
+
+  it("computes portfolio growth and activity from ledgers in years that have portfolio buckets populated", () => {
+    // 2026 is the only fixture year with populated portfolioAssets buckets.
+    const lifetime = buildCashFlowPageData({
+      years,
+      clientData,
+      options: { range: "lifetime", showCallout: false },
+      scenarioLabel: "Base Case",
+      clientName: "Cooper",
+      spouseName: "Susan",
+    });
+    const r2026 = lifetime.table.rows.find((r) => r.year === 2026);
+    // growth = 12_000 (brokerage) + 8_000 (ira)
+    expect(r2026?.cells.portfolioGrowth).toBe(20_000);
+    // activity = external contributions − external distributions
+    //         = (20_000 + 30_000) − 0 = 50_000
+    expect(r2026?.cells.portfolioActivity).toBe(50_000);
   });
 
   it("includes the default callout when range = retirement", () => {
@@ -93,15 +115,14 @@ describe("buildCashFlowPageData — RMD splitting", () => {
     spouseName: "Susan",
   });
 
-  it("splits rmds from discretionary withdrawals using ledger categories", () => {
+  it("reports rmds (from ledgers) and withdrawals (engine total, excluding rmds) separately", () => {
     const r2031 = data.table.rows.find((r) => r.year === 2031);
-    expect(r2031?.cells.rmds).toBe(40_000);                  // ledger entry category=rmd
-    expect(r2031?.cells.withdrawals).toBe(40_000);            // total − rmds
-    expect(r2031?.cells.totalWithdrawalsSpent).toBe(80_000); // engine total
+    expect(r2031?.cells.rmds).toBe(40_000);              // sum of rmd ledger entries
+    expect(r2031?.cells.withdrawals).toBe(40_000);       // engine withdrawals.total
 
     const r2071 = data.table.rows.find((r) => r.year === 2071);
     expect(r2071?.cells.rmds).toBe(50_000);
-    expect(r2071?.cells.withdrawals).toBe(0); // all 50k was rmd
+    expect(r2071?.cells.withdrawals).toBe(0);             // no supplemental withdrawals
   });
 });
 

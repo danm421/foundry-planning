@@ -4,13 +4,17 @@ import type { CashFlowTableRow, TableMarker } from "../../types";
 
 const rows: CashFlowTableRow[] = [
   { year: 2031, ageClient: 65, ageSpouse: 61, cells: {
-      totalExpenses: 130_000, salary: 0, socialSecurity: 30_000, otherIncome: 5_000,
-      rmds: 40_000, withdrawals: 40_000, totalWithdrawalsSpent: 80_000,
-      netSavings: 0, totalPortfolioAssets: 1_400_000 } },
+      salary: 0, socialSecurity: 30_000, otherInflows: 5_000,
+      rmds: 40_000, withdrawals: 40_000,
+      totalIncome: 75_000, expenses: 130_000, savings: 0, totalExpenses: 130_000,
+      netCashFlow: -55_000, portfolioGrowth: 0, portfolioActivity: 0,
+      portfolioAssets: 1_400_000 } },
   { year: 2036, ageClient: 70, ageSpouse: 66, cells: {
-      totalExpenses: 140_000, salary: 0, socialSecurity: 33_000, otherIncome: 7_000,
-      rmds: 60_000, withdrawals: 40_000, totalWithdrawalsSpent: 100_000,
-      netSavings: 0, totalPortfolioAssets: 1_310_000 } },
+      salary: 0, socialSecurity: 33_000, otherInflows: 7_000,
+      rmds: 60_000, withdrawals: 40_000,
+      totalIncome: 100_000, expenses: 140_000, savings: 0, totalExpenses: 140_000,
+      netCashFlow: -40_000, portfolioGrowth: 0, portfolioActivity: 0,
+      portfolioAssets: 1_310_000 } },
 ];
 
 const markers: TableMarker[] = [
@@ -31,21 +35,21 @@ describe("buildCashFlowChartSpec", () => {
     expect(spec.xAxis.domain).toEqual([2031, 2036]);
   });
 
-  it("emits 5 stack series in correct order with hex colors", () => {
+  it("emits 5 stack series matching the in-app chart order with hex colors", () => {
     expect(spec.stacks.map((s) => s.seriesId)).toEqual([
-      "salary", "ss", "otherIncome", "rmd", "withdrawals",
+      "ss", "salary", "otherInflows", "rmd", "withdrawals",
     ]);
-    expect(spec.stacks[0].color).toBe("#3b6ea3"); // salary = steel
-    expect(spec.stacks[1].color).toBe("#b87f1f"); // ss = accent
-    expect(spec.stacks[2].color).toBe("#2f6b4a"); // other income = good
-    expect(spec.stacks[3].color).toBe("#d4a86a"); // rmd = accentMuted
-    expect(spec.stacks[4].color).toBe("#5a5a60"); // withdrawals = ink2
+    expect(spec.stacks[0].color).toBe("#2563eb"); // social security
+    expect(spec.stacks[1].color).toBe("#16a34a"); // salaries
+    expect(spec.stacks[2].color).toBe("#99f6e4"); // other inflows
+    expect(spec.stacks[3].color).toBe("#f97316"); // rmds
+    expect(spec.stacks[4].color).toBe("#ef4444"); // withdrawals
   });
 
   it("emits the expenses line", () => {
     expect(spec.lines).toHaveLength(1);
     expect(spec.lines[0].seriesId).toBe("totalExpenses");
-    expect(spec.lines[0].color).toBe("#a13a3a");
+    expect(spec.lines[0].color).toBe("#1a1a1d");
     expect(spec.lines[0].values).toEqual([130_000, 140_000]);
   });
 
