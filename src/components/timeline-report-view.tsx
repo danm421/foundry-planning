@@ -24,7 +24,7 @@ export default function TimelineReportView({ clientId }: Props) {
 
   const [sparklineMode, setSparklineMode] = useState<SparklineMode>("netWorth");
   const [activeCategories, setActiveCategories] = useState<Set<TimelineCategory>>(
-    new Set(["life", "income", "transaction", "portfolio", "insurance", "tax"]),
+    new Set(["life", "income", "transaction", "portfolio", "insurance", "tax", "estate", "strategy"]),
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);

@@ -12,6 +12,8 @@ const CATEGORIES: { id: TimelineCategory; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
   { id: "insurance", label: "Insurance" },
   { id: "tax", label: "Tax" },
+  { id: "estate", label: "Estate" },
+  { id: "strategy", label: "Strategy" },
 ];
 
 const CHIP_ACTIVE: Record<TimelineCategory, string> = {
@@ -25,6 +27,10 @@ const CHIP_ACTIVE: Record<TimelineCategory, string> = {
   insurance:
     "border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-300 shadow-[0_0_12px_rgba(232,121,249,0.2)]",
   tax: "border-rose-400/40 bg-rose-400/10 text-rose-300 shadow-[0_0_12px_rgba(251,113,133,0.2)]",
+  estate:
+    "border-violet-400/40 bg-violet-400/10 text-violet-300 shadow-[0_0_12px_rgba(167,139,250,0.2)]",
+  strategy:
+    "border-teal-400/40 bg-teal-400/10 text-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.2)]",
 };
 
 interface Props {
