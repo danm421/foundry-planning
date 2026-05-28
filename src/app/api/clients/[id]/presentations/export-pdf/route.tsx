@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { renderToStream } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { firms } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
   loadClientData,
@@ -29,10 +32,32 @@ const PAGE_IDS = Object.keys(PRESENTATION_PAGES) as [
   ...PresentationPageId[],
 ];
 
+// Per-pageId descriptor: options is validated against the page's
+// registered optionsSchema, plus an optional scenarioOverride label.
+// With only one registered page today, this collapses to a single object
+// schema; when a 2nd page lands it auto-promotes to a discriminatedUnion.
+const descriptorVariants = PAGE_IDS.map((pid) =>
+  z.object({
+    pageId: z.literal(pid),
+    options: PRESENTATION_PAGES[pid].optionsSchema,
+    scenarioOverride: z.string().nullable().optional(),
+  }),
+);
+const pageDescriptorSchema =
+  descriptorVariants.length === 1
+    ? descriptorVariants[0]
+    : z.discriminatedUnion(
+        "pageId",
+        descriptorVariants as unknown as [
+          (typeof descriptorVariants)[number],
+          ...(typeof descriptorVariants)[number][],
+        ],
+      );
+
 const BodySchema = z.object({
   scenarioId: z.string().nullable().default(null),
-  pages: z.array(z.enum(PAGE_IDS)).min(1),
-  options: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+  filename: z.string().trim().min(1).max(120).optional(),
+  pages: z.array(pageDescriptorSchema).min(1),
 });
 
 const slugify = (s: string) =>
@@ -86,25 +111,33 @@ export async function POST(
 
     const scenarioLabel = parsed.data.scenarioId ?? "Base Case";
 
+    const [firmRow] = await db
+      .select({ displayName: firms.displayName })
+      .from(firms)
+      .where(eq(firms.firmId, firmId));
+    const firmName = firmRow?.displayName ?? "Foundry Planning";
+
     // Cast required: renderToStream expects ReactElement<DocumentProps> but
     // createElement infers ReactElement<PresentationDocumentProps>. The element
     // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
-    const doc = React.createElement(
-      PresentationDocument,
-      {
-        pages: parsed.data.pages.map((pid) => ({
-          pageId: pid,
-          options: parsed.data.options?.[pid],
-        })),
-        firmName: "Foundry Planning",
-        clientName: clientFullName,
-        reportDate: dateLong(new Date()),
-        scenarioLabel,
-        spouseName: spouseFirstName,
-        years: projection.years,
-        clientData,
-      },
-    ) as unknown as React.ReactElement<DocumentProps>;
+    const doc = React.createElement(PresentationDocument, {
+      pages: parsed.data.pages.map((p) => ({
+        pageId: p.pageId,
+        options: p.options as unknown as Record<string, unknown>,
+        // V1 label-only override: a string becomes the per-page scenario
+        // label; null/undefined fall through to the top-level scenarioLabel.
+        scenarioOverrideLabel:
+          typeof p.scenarioOverride === "string" ? p.scenarioOverride : null,
+      })),
+      firmName,
+      firmTagline: null,
+      clientName: clientFullName,
+      reportDate: dateLong(new Date()),
+      scenarioLabel,
+      spouseName: spouseFirstName,
+      years: projection.years,
+      clientData,
+    }) as unknown as React.ReactElement<DocumentProps>;
 
     // @react-pdf/renderer has a memory-leak history on large docs, and
     // a malformed doc could send it into an unbounded paginate loop.
@@ -119,7 +152,9 @@ export async function POST(
       ),
     ]);
 
-    const filename = `${slugify(clientLastName) || "client"}-presentation.pdf`;
+    const filename = parsed.data.filename
+      ? parsed.data.filename
+      : `${slugify(clientLastName) || "client"}-presentation.pdf`;
 
     await recordAudit({
       action: "presentations.export_pdf",
@@ -128,8 +163,11 @@ export async function POST(
       clientId: id,
       firmId,
       metadata: {
-        pages: parsed.data.pages,
+        pages: parsed.data.pages.map((p) => p.pageId),
         scenarioId: parsed.data.scenarioId,
+        hasOverrides: parsed.data.pages.some(
+          (p) => p.scenarioOverride !== undefined,
+        ),
       },
     });
 
