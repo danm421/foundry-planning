@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { resolveGroup, DEFAULT_GROUP_KEYS, type ResolvedGroup } from "../resolver";
+import { resolveGroup, DEFAULT_GROUP_KEYS } from "../resolver";
+import type { AccountCategory } from "../liquid-filter";
 
 type AccountLite = { id: string; category: string };
 
@@ -16,7 +17,7 @@ function mkAccounts(): AccountLite[] {
 describe("resolveGroup — default keys", () => {
   it("'all-liquid' returns every liquid account", async () => {
     const result = await resolveGroup("client-1", "all-liquid", {
-      fetchAccounts: async () => mkAccounts(),
+      fetchAccounts: async () => mkAccounts() as Array<{ id: string; category: AccountCategory }>,
       fetchCustomGroup: async () => null,
     });
     expect(result.isDefault).toBe(true);
@@ -27,7 +28,7 @@ describe("resolveGroup — default keys", () => {
 
   it("'taxable' returns only taxable accounts", async () => {
     const r = await resolveGroup("client-1", "taxable", {
-      fetchAccounts: async () => mkAccounts(),
+      fetchAccounts: async () => mkAccounts() as Array<{ id: string; category: AccountCategory }>,
       fetchCustomGroup: async () => null,
     });
     expect(r.isDefault).toBe(true);
@@ -37,7 +38,7 @@ describe("resolveGroup — default keys", () => {
 
   it("'retirement' returns only retirement accounts", async () => {
     const r = await resolveGroup("client-1", "retirement", {
-      fetchAccounts: async () => mkAccounts(),
+      fetchAccounts: async () => mkAccounts() as Array<{ id: string; category: AccountCategory }>,
       fetchCustomGroup: async () => null,
     });
     expect(r.accountIds).toEqual(["a3"]);
@@ -45,7 +46,7 @@ describe("resolveGroup — default keys", () => {
 
   it("'cash' returns only cash accounts", async () => {
     const r = await resolveGroup("client-1", "cash", {
-      fetchAccounts: async () => mkAccounts(),
+      fetchAccounts: async () => mkAccounts() as Array<{ id: string; category: AccountCategory }>,
       fetchCustomGroup: async () => null,
     });
     expect(r.accountIds).toEqual(["a2"]);

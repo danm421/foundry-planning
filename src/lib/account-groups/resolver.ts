@@ -47,10 +47,7 @@ function isDefaultKey(key: string): key is DefaultGroupKey {
 export async function resolveGroup(
   clientId: string,
   groupKey: GroupKey,
-  deps: {
-    fetchAccounts: () => Promise<Array<{ id: string; category: string }>>;
-    fetchCustomGroup: ResolverDeps["fetchCustomGroup"];
-  },
+  deps: ResolverDeps,
 ): Promise<ResolvedGroup> {
   const accounts = await deps.fetchAccounts();
 
@@ -58,7 +55,7 @@ export async function resolveGroup(
     const accountIds = accounts
       .filter((a) =>
         groupKey === "all-liquid"
-          ? isLiquid(a.category as AccountCategory)
+          ? isLiquid(a.category)
           : a.category === groupKey,
       )
       .map((a) => a.id);
