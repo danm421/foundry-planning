@@ -67,14 +67,20 @@ export function EstateFlowChartTab({
 
   // The OOE Irrev Trusts box needs a single concrete year (for ledger
   // balances, ownership-at-year, ILIT in-force, and cumulative-gift cutoffs).
-  // In "split" mode the death-stage boxes already key off the transfer
-  // report's per-death year independently, so pick the second-death year for
-  // OOE — that's when heirs receive the final distribution and the OOE
-  // column should mirror the end state. Fall back to first-death, then
-  // today, if those events aren't available.
+  // - "today" → `todayYear - 1` so OOE reflects the authored balances and
+  //    owners *right now*, before any of this year's projected gifts /
+  //    transfers / contributions land. (No projection row exists for
+  //    `todayYear - 1`, so `computeOutOfEstate` falls through to its static
+  //    `accountAmount` + `account.owners` path, and the gift cutoff
+  //    `gift.year > asOfYear` excludes anything dated this year.)
+  // - "split" → second-death year so OOE mirrors the end state at the
+  //    final heir distribution (death-stage boxes key off the transfer
+  //    report's per-death years independently). Fall back to first-death,
+  //    then today, if those events aren't available.
+  // - explicit year → that year (end-of-year).
   const asOfYear =
     selectedAsOf === "today"
-      ? todayYear
+      ? todayYear - 1
       : selectedAsOf === "split"
         ? secondDeathYear ?? firstDeathYear ?? todayYear
         : selectedAsOf;
