@@ -210,7 +210,11 @@ export type AuditAction =
   | "crm.task.file_deleted"
   | "crm.tag.create"
   // Medicare coverage (per-person, client-scoped overrides)
-  | "medicare_coverage.upsert";
+  | "medicare_coverage.upsert"
+  // Presentation templates
+  | "presentation_template.create"
+  | "presentation_template.update"
+  | "presentation_template.delete";
 
 type Args = {
   action: AuditAction;
