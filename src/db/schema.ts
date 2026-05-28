@@ -3180,3 +3180,35 @@ export const lifeInsuranceSolverSettingsRelations = relations(
 
 export type LifeInsuranceSolverSettingsRow = InferSelectModel<typeof lifeInsuranceSolverSettings>;
 export type NewLifeInsuranceSolverSettingsRow = InferInsertModel<typeof lifeInsuranceSolverSettings>;
+
+// Presentation templates: a saved, ordered list of presentation pages
+// with their per-page options. Firm-scoped; either shared (any firm
+// member sees them) or private (only the creator sees them). Page
+// descriptors validated against the registry's per-pageId optionsSchema
+// at the API boundary, so this column is a generic jsonb.
+export const presentationTemplates = pgTable(
+  "presentation_templates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").notNull(),
+    visibility: text("visibility", { enum: ["shared", "private"] })
+      .notNull()
+      .default("private"),
+    name: text("name").notNull(),
+    pages: jsonb("pages").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("presentation_templates_firm_visibility_idx").on(t.firmId, t.visibility),
+    index("presentation_templates_firm_creator_idx").on(t.firmId, t.createdByUserId),
+    uniqueIndex("presentation_templates_unique_name_per_creator_visibility_idx")
+      .on(t.firmId, t.visibility, t.createdByUserId, t.name),
+  ],
+);
+
+export type PresentationTemplateRow = InferSelectModel<typeof presentationTemplates>;
+export type NewPresentationTemplateRow = InferInsertModel<typeof presentationTemplates>;
