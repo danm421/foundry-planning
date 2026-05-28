@@ -68,6 +68,31 @@ export async function resolveGroup(
     };
   }
 
-  // Custom UUID branch — implemented in Task 4.
-  throw new Error(`Custom group resolution not yet implemented: ${groupKey}`);
+  // Custom UUID branch.
+  const custom = await deps.fetchCustomGroup(clientId, groupKey);
+  if (!custom) {
+    throw new Error(`Account group not found: ${groupKey}`);
+  }
+
+  const liquidAccountIds = new Set(
+    accounts.filter((a) => isLiquid(a.category)).map((a) => a.id),
+  );
+  const accountIds: string[] = [];
+  let stripped = 0;
+  for (const aid of custom.memberAccountIds) {
+    if (liquidAccountIds.has(aid)) {
+      accountIds.push(aid);
+    } else {
+      stripped += 1;
+    }
+  }
+
+  return {
+    groupKey,
+    groupName: custom.name,
+    groupColor: custom.color,
+    isDefault: false,
+    accountIds,
+    strippedMemberCount: stripped,
+  };
 }
