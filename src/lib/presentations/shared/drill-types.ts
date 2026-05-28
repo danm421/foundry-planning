@@ -12,7 +12,8 @@ export type DrillPageOptions = CashFlowPageOptions;
 export interface DrillColumn {
   key: string;        // matches DrillRow.cells key
   header: string;     // single line, or two lines split by "\n"
-  width: number;      // points (portrait LETTER usable ~526pt minus left gutter ~66pt)
+  width: number;      // points. Only honored on the last column (right-pinned).
+                      // Middle columns share remaining space equally via flex.
   strong?: boolean;   // bolds the header + cells (totals)
   signColor?: boolean; // green/red on +/- (Net Cash Flow style)
   format?: "currency" | "percent"; // default = currency. percent expects 0..1 fractions.

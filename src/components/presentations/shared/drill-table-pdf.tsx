@@ -74,6 +74,7 @@ const styles = StyleSheet.create({
 const COL_MARKER_W = 10;
 const COL_YEAR_W = 26;
 const COL_AGE_W = 30;
+const flexCell = { flex: 1 } as const;
 
 export function DrillTablePdf({ data }: { data: DrillPageData }) {
   const markerByYear = new Map(data.table.markers.map((m) => [m.year, m]));
@@ -90,18 +91,21 @@ export function DrillTablePdf({ data }: { data: DrillPageData }) {
         <Text style={[styles.th, { width: COL_AGE_W }, styles.tdLeft]}>
           Age(s)
         </Text>
-        {data.table.columns.map((c) => (
-          <Text
-            key={c.key}
-            style={[
-              c.strong ? styles.thStrong : styles.th,
-              { width: c.width },
-              styles.tdRight,
-            ]}
-          >
-            {c.header}
-          </Text>
-        ))}
+        {data.table.columns.map((c, i) => {
+          const isLast = i === data.table.columns.length - 1;
+          return (
+            <Text
+              key={c.key}
+              style={[
+                c.strong ? styles.thStrong : styles.th,
+                isLast ? { width: c.width } : flexCell,
+                styles.tdRight,
+              ]}
+            >
+              {c.header}
+            </Text>
+          );
+        })}
       </View>
       {data.table.rows.map((row) => (
         <DrillDataRow
@@ -135,10 +139,15 @@ function DrillDataRow({
       <Text style={[styles.td, { width: COL_AGE_W }, styles.tdLeft]}>
         {jointAge(row.ageClient, row.ageSpouse)}
       </Text>
-      {columns.map((c) => {
+      {columns.map((c, i) => {
+        const isLast = i === columns.length - 1;
         const v = row.cells[c.key] ?? 0;
         const baseStyle = c.strong ? styles.tdStrong : styles.td;
-        const style: Style[] = [baseStyle, { width: c.width }, styles.tdRight];
+        const style: Style[] = [
+          baseStyle,
+          isLast ? { width: c.width } : flexCell,
+          styles.tdRight,
+        ];
         if (c.signColor) style.push(v < 0 ? styles.tdNeg : styles.tdPos);
         const text =
           c.format === "percent" ? `${(v * 100).toFixed(2)}%` : compactCurrency(v);
