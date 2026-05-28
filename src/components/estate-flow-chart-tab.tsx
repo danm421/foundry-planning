@@ -61,14 +61,23 @@ export function EstateFlowChartTab({
   );
   const todayYear = projectionYears[0] ?? new Date().getFullYear();
 
-  // The OOE Irrev Trusts box gates trust-owned policies on `isPolicyInForce`,
-  // which needs a concrete year. "split" doesn't pick a single year — use
-  // `todayYear` as the default. The death-stage boxes already key off the
-  // transfer-report's per-death year independently, so this only affects OOE.
+  // Death years from the projection's firstDeathEvent / secondDeathEvent.
+  const firstDeathYear = projection.firstDeathEvent?.year;
+  const secondDeathYear = projection.secondDeathEvent?.year;
+
+  // The OOE Irrev Trusts box needs a single concrete year (for ledger
+  // balances, ownership-at-year, ILIT in-force, and cumulative-gift cutoffs).
+  // In "split" mode the death-stage boxes already key off the transfer
+  // report's per-death year independently, so pick the second-death year for
+  // OOE — that's when heirs receive the final distribution and the OOE
+  // column should mirror the end state. Fall back to first-death, then
+  // today, if those events aren't available.
   const asOfYear =
-    selectedAsOf === "today" || selectedAsOf === "split"
+    selectedAsOf === "today"
       ? todayYear
-      : selectedAsOf;
+      : selectedAsOf === "split"
+        ? secondDeathYear ?? firstDeathYear ?? todayYear
+        : selectedAsOf;
 
   const summary = useMemo(
     () =>
@@ -82,10 +91,6 @@ export function EstateFlowChartTab({
       }),
     [reportData, engineData, workingGifts, ownerNames, asOfYear, projection],
   );
-
-  // Death years from the projection's firstDeathEvent / secondDeathEvent.
-  const firstDeathYear = projection.firstDeathEvent?.year;
-  const secondDeathYear = projection.secondDeathEvent?.year;
 
   // Milestones for the AsOfDropdown.
   const milestones = useMemo(
