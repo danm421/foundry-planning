@@ -39,7 +39,7 @@ import matplotlib.ticker as mticker
 import numpy as np
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
@@ -49,6 +49,7 @@ from reportlab.platypus import (
     Frame,
     Image,
     KeepInFrame,
+    KeepTogether,
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -1247,10 +1248,10 @@ def _draw_content_page(canvas, doc):
 # NARRATIVE BUILDERS
 # ═════════════════════════════════════════════════════════════════════════
 
-def build_executive_summary(data: dict) -> str:
-    """5-sentence executive summary, generated from real comparison data.
-    Leads with the dollar-impact (which is more dramatic than the MC delta
-    here) rather than burying it behind the success-rate number."""
+def build_executive_summary(data: dict) -> list[str]:
+    """Narrative-style executive summary, broken into 3 paragraphs:
+    diagnosis of the current plan, what the proposed plan changes and why,
+    and the bottom-line outcome across the horizons we measure."""
     h = data["household"]
     base = data["base"]
     prop = data["proposed"]
@@ -1258,7 +1259,6 @@ def build_executive_summary(data: dict) -> str:
     prop_mc = prop.get("mc", {})
     base_pct = base_mc.get("successPct", 0)
     prop_pct = prop_mc.get("successPct", 0)
-    delta = prop_pct - base_pct
 
     end_base = base["endingPortfolio"]
     end_prop = prop["endingPortfolio"]
@@ -1272,59 +1272,52 @@ def build_executive_summary(data: dict) -> str:
     spouse_name = h.get("spouseFirstName") or ""
     couple = f"{client_name} & {spouse_name}" if spouse_name else client_name
 
-    # Net estate at second death
     sd_base = (data["estate"]["base"]["secondDeath"] or {}).get("grossEstate", 0)
     sd_prop = (data["estate"]["proposed"]["secondDeath"] or {}).get("grossEstate", 0)
     estate_delta = sd_prop - sd_base
-
-    sentences = []
-
-    sentences.append(
-        f"{couple}, by retiring at {prop_ret_age} instead of {base_ret_age}, adjusting your "
-        f"lifestyle assumption to a more realistic level, and reallocating retirement assets "
-        f"toward a growth-oriented portfolio, the proposed plan projects a meaningfully stronger "
-        f"financial picture across every horizon we measured."
-    )
-
-    sentences.append(
-        f"At plan end the proposed path holds roughly {_dollar(end_prop)} of total assets versus "
-        f"{_dollar(end_base)} on the current plan — about {_dollar(abs(end_delta))} more "
-        f"({end_delta_pct:+.0f}%) — and the projected legacy at second death grows to "
-        f"{_dollar(sd_prop)} versus {_dollar(sd_base)}, roughly {_dollar(abs(estate_delta))} more "
-        f"available to heirs."
-    )
 
     base_total_tax = base["totalTaxesLifetime"]
     prop_total_tax = prop["totalTaxesLifetime"]
     tax_delta = prop_total_tax - base_total_tax
     base_roth = base["events"]["totalRothConverted"]
     prop_roth = prop["events"]["totalRothConverted"]
-    sentences.append(
-        f"Lifetime taxes rise by {_dollar(abs(tax_delta))} (from {_dollar(base_total_tax)} to "
-        f"{_dollar(prop_total_tax)}) because the proposed plan runs a longer Roth-conversion "
-        f"ladder ({_dollar(prop_roth)} converted vs {_dollar(base_roth)}) — but that pulls "
-        f"taxes forward at known low-bracket rates and replaces them with decades of tax-free "
-        f"growth and lower RMDs in your 80s."
+
+    plan_end_age = prop.get("planEndAge") or base.get("planEndAge") or 0
+
+    # Paragraph 1 — diagnosis of where the current plan stands.
+    p1 = (
+        f"{couple}, your current plan is already in a workable position: it projects a "
+        f"{base_pct}% Monte Carlo success rate through age {plan_end_age}, an ending portfolio "
+        f"of about {_dollar(end_base)}, and a projected legacy of {_dollar(sd_base)} at second "
+        f"death. The opportunity isn't whether you can retire — it's how much more durability "
+        f"and how much more legacy you can pull from the same underlying picture."
     )
 
-    # Compare median ending liquid (more interpretable than negative
-    # 10th-percentile numbers which reflect shortfall depth in failed trials).
-    sentences.append(
-        f"Across 1,000 Monte Carlo trials the probability your portfolio supports your "
-        f"spending need through age {prop['planEndAge']} improves from {base_pct}% to "
-        f"{prop_pct}%, and the median trajectory of liquid assets at plan end rises from "
-        f"{_dollar(base_mc.get('medianEndingLiquid', 0))} on the current plan to "
-        f"{_dollar(prop_mc.get('medianEndingLiquid', 0))} on the proposed plan — a stronger "
-        f"central case in addition to a higher success rate."
+    # Paragraph 2 — what the proposed plan changes and why.
+    p2 = (
+        f"The proposed plan tightens three levers: retirement at {prop_ret_age} rather than "
+        f"{base_ret_age}, a more realistic post-retirement spending assumption, and a longer "
+        f"Roth-conversion ladder ({_dollar(prop_roth)} total converted vs {_dollar(base_roth)} "
+        f"on the current path) inside a growth-oriented portfolio. Lifetime income taxes rise "
+        f"by about {_dollar(abs(tax_delta))} — the cost of pulling conversions forward at "
+        f"known low-bracket rates — and that buys decades of tax-free growth, smaller RMDs in "
+        f"your 80s, and a stronger central case in every projection that follows."
     )
 
-    sentences.append(
-        f"In short — for you, {couple}, the proposed plan trades two extra working years and a "
-        f"larger Roth strategy today for substantially more durability throughout retirement, "
-        f"a healthier legacy, and a clearer line of sight to your long-term goals."
+    # Paragraph 3 — bottom-line outcome across horizons.
+    p3 = (
+        f"At plan end the proposed path holds roughly {_dollar(end_prop)} of total assets "
+        f"versus {_dollar(end_base)} on the current plan — about {_dollar(abs(end_delta))} more "
+        f"({end_delta_pct:+.0f}%) — Monte Carlo success climbs from {base_pct}% to {prop_pct}%, "
+        f"the median liquid trajectory at plan end rises from "
+        f"{_dollar(base_mc.get('medianEndingLiquid', 0))} to "
+        f"{_dollar(prop_mc.get('medianEndingLiquid', 0))}, and the projected legacy at second "
+        f"death grows to {_dollar(sd_prop)} — roughly {_dollar(abs(estate_delta))} more "
+        f"available to heirs. Two extra working years and a deliberate tax-bracket strategy "
+        f"today trade for substantially more wealth and confidence across every horizon."
     )
 
-    return " ".join(sentences)
+    return [p1, p2, p3]
 
 
 def build_change_bullets(data: dict) -> list[str]:
@@ -1519,8 +1512,11 @@ def _page2_summary(story: list, data: dict):
     story.append(GoldRule(CONTENT_W * 0.35))
     story.append(Spacer(1, 0.08 * inch))
 
-    summary = build_executive_summary(data)
-    story.append(Paragraph(summary, ST["narrative"]))
+    summary_paragraphs = build_executive_summary(data)
+    for i, para in enumerate(summary_paragraphs):
+        story.append(Paragraph(para, ST["narrative"]))
+        if i < len(summary_paragraphs) - 1:
+            story.append(Spacer(1, 0.06 * inch))
     story.append(Spacer(1, 0.08 * inch))
 
     # KPI cards — Success rate, Ending portfolio, Lifetime taxes, Peak portfolio.
@@ -1946,6 +1942,273 @@ def _income_tax_section(story: list, data: dict):
         story.append(chart)
 
 
+def _plan_comparison_section(story: list, data: dict):
+    """Comprehensive side-by-side table comparing the current and proposed plans
+    across strategy inputs, resilience, tax strategy, and portfolio/legacy outcomes.
+    Sits between the cash-flow page and the Monte Carlo analysis page so the
+    advisor (and client) can verify every comparison number on one surface."""
+
+    story.append(Paragraph("Plan Comparison At-a-Glance", ST["section"]))
+    story.append(GoldRule(CONTENT_W * 0.35))
+    story.append(Spacer(1, 0.06 * inch))
+
+    story.append(Paragraph(
+        "A row-by-row view of how the proposed plan compares to the current plan "
+        "across the inputs and outputs that matter most. The narrative on page 2 "
+        "tells the story; this page lets you verify every number behind it.",
+        ST["narrative"],
+    ))
+    story.append(Spacer(1, 0.12 * inch))
+
+    base = data["base"]
+    prop = data["proposed"]
+    base_mc = base.get("mc", {})
+    prop_mc = prop.get("mc", {})
+    changes = data.get("scenarioChanges", []) or []
+
+    # Retirement living expense — pull from scenario-edit when present so the
+    # comparison reflects the actual delta the advisor authored.
+    living_edit = next(
+        (
+            c for c in changes
+            if c.get("kind") == "expense_edit"
+            and c.get("expenseType") == "living"
+            and "Retirement" in (c.get("expenseName") or "")
+        ),
+        None,
+    )
+    if living_edit:
+        base_living = _n(living_edit["from"])
+        prop_living = _n(living_edit["to"])
+    else:
+        # Fallback: first post-retirement-year `living` row on each scenario.
+        prop_ret_year = prop["retirementAge"] - data["household"]["currentAge"] + data["household"]["planStartYear"]
+        base_living = next((r["living"] for r in base["rows"] if r["year"] >= prop_ret_year), 0)
+        prop_living = next((r["living"] for r in prop["rows"] if r["year"] >= prop_ret_year), 0)
+
+    # Investment overlay — pull from the reinvestment scenario change.
+    reinv = next((c for c in changes if c.get("kind") == "reinvestment"), None)
+    base_alloc = "Per-account allocation"
+    if reinv:
+        desc = reinv.get("portfolioDescription")
+        prop_alloc = reinv["portfolioName"] + (f" — {desc}" if desc else "")
+    else:
+        prop_alloc = base_alloc
+
+    sd_base = data["estate"]["base"].get("secondDeath") or {}
+    sd_prop = data["estate"]["proposed"].get("secondDeath") or {}
+
+    # Rows: a string entry is a section header; a tuple is (metric, current, proposed).
+    rows: list = []
+    rows.append("Plan Strategy")
+    rows.append((
+        "Retirement age",
+        str(base["retirementAge"]),
+        str(prop["retirementAge"]),
+    ))
+    rows.append((
+        "Annual retirement living expense",
+        _dollar(base_living),
+        _dollar(prop_living),
+    ))
+    rows.append((
+        "Investment allocation",
+        base_alloc,
+        prop_alloc,
+    ))
+
+    rows.append("Resilience")
+    rows.append((
+        "Monte Carlo success rate",
+        f"{base_mc.get('successPct', 0)}%",
+        f"{prop_mc.get('successPct', 0)}%",
+    ))
+    rows.append((
+        f"Median ending liquid (age {prop.get('planEndAge', '')})",
+        _dollar(base_mc.get("medianEndingLiquid", 0)),
+        _dollar(prop_mc.get("medianEndingLiquid", 0)),
+    ))
+
+    rows.append("Tax Strategy")
+    rows.append((
+        "Lifetime Roth converted",
+        _dollar(base["events"]["totalRothConverted"]),
+        _dollar(prop["events"]["totalRothConverted"]),
+    ))
+    rows.append((
+        "Lifetime income taxes",
+        _dollar(base["totalTaxesLifetime"]),
+        _dollar(prop["totalTaxesLifetime"]),
+    ))
+
+    rows.append("Portfolio & Legacy")
+    rows.append((
+        "Total portfolio at plan end",
+        _dollar(base["endingPortfolio"]),
+        _dollar(prop["endingPortfolio"]),
+    ))
+    rows.append((
+        "Peak portfolio value",
+        f"{_dollar(base['peakPortfolio'])} ({base['peakYear']})",
+        f"{_dollar(prop['peakPortfolio'])} ({prop['peakYear']})",
+    ))
+    rows.append((
+        "Gross estate at second death",
+        _dollar(sd_base.get("grossEstate", 0)),
+        _dollar(sd_prop.get("grossEstate", 0)),
+    ))
+    rows.append((
+        "Estate tax at second death",
+        _dollar(sd_base.get("totalEstateTax", 0)),
+        _dollar(sd_prop.get("totalEstateTax", 0)),
+    ))
+
+    th_style = _s("th", fontSize=9, textColor=WHITE, fontName="Helvetica-Bold")
+    th_center = _s("th_c", fontSize=9, textColor=WHITE, fontName="Helvetica-Bold", alignment=TA_CENTER)
+    sec_style = _s("cmp_section", fontSize=9, textColor=NAVY, fontName="Helvetica-Bold")
+    label_style = ST["body"]
+    cur_style = _s("cmp_cur", fontSize=9, leading=12, textColor=TEXT_LIGHT, alignment=TA_CENTER)
+    prop_style = _s("cmp_prop", fontSize=9, leading=12, textColor=NAVY,
+                    fontName="Helvetica-Bold", alignment=TA_CENTER)
+
+    table_data: list = [[
+        Paragraph("Metric", th_style),
+        Paragraph("Current Plan", th_center),
+        Paragraph("Proposed Plan", th_center),
+    ]]
+    style_cmds: list = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, NAVY),
+        ("BOX", (0, 0), (-1, -1), 0.4, BORDER_CLR),
+    ]
+
+    for r_idx, r in enumerate(rows, start=1):
+        if isinstance(r, str):
+            table_data.append([Paragraph(r, sec_style), "", ""])
+            style_cmds.append(("SPAN", (0, r_idx), (-1, r_idx)))
+            style_cmds.append(("BACKGROUND", (0, r_idx), (-1, r_idx), CARD_BG))
+            style_cmds.append(("TOPPADDING", (0, r_idx), (-1, r_idx), 5))
+            style_cmds.append(("BOTTOMPADDING", (0, r_idx), (-1, r_idx), 5))
+        else:
+            label, cur, prop_v = r
+            table_data.append([
+                Paragraph(label, label_style),
+                Paragraph(cur, cur_style),
+                Paragraph(prop_v, prop_style),
+            ])
+            style_cmds.append(("LINEBELOW", (0, r_idx), (-1, r_idx), 0.25, BORDER_CLR))
+
+    cmp_table = Table(
+        table_data,
+        colWidths=[CONTENT_W * 0.42, CONTENT_W * 0.29, CONTENT_W * 0.29],
+        repeatRows=1,
+    )
+    cmp_table.setStyle(TableStyle(style_cmds))
+    story.append(cmp_table)
+
+    story.append(PageBreak())
+
+
+def _heir_distributions_section(story: list, data: dict):
+    """Per-recipient net inheritance table under the proposed plan, with an
+    outright vs. in-trust dispositional split. Sourced from the same engine
+    the in-app Estate Flow report uses, so dollars match what advisors see."""
+
+    heirs = (data.get("heirDistributions") or {}).get("proposed") or []
+    if not heirs:
+        return
+
+    intro_style = _s(
+        "heir_intro", fontSize=9, leading=12, textColor=TEXT_LIGHT,
+        fontName="Helvetica-Oblique",
+    )
+    section_parts: list = [
+        Spacer(1, 0.16 * inch),
+        Paragraph("Where the Estate Goes at Second Death", ST["subsection"]),
+        GoldRule(CONTENT_W * 0.2),
+        Spacer(1, 0.04 * inch),
+        Paragraph(
+            "Net amount each recipient receives under the proposed plan, split "
+            "between outright distributions and amounts that remain in trust. "
+            "Totals are net of estate taxes, administration, and any "
+            "inherited-IRA income tax.",
+            intro_style,
+        ),
+        Spacer(1, 0.06 * inch),
+    ]
+
+    th_style = _s("heir_th", fontSize=8.5, textColor=WHITE, fontName="Helvetica-Bold")
+    th_center = _s("heir_thc", fontSize=8.5, textColor=WHITE,
+                   fontName="Helvetica-Bold", alignment=TA_RIGHT)
+    label_style = _s("heir_label", fontSize=9, leading=12)
+    num_style = _s("heir_num", fontSize=9, leading=12, alignment=TA_RIGHT)
+    total_style = _s("heir_total", fontSize=9, leading=12, alignment=TA_RIGHT,
+                     fontName="Helvetica-Bold", textColor=NAVY)
+
+    table_data: list = [[
+        Paragraph("Recipient", th_style),
+        Paragraph("Outright", th_center),
+        Paragraph("In Trust", th_center),
+        Paragraph("Net Total", th_center),
+    ]]
+    style_cmds: list = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, NAVY),
+        ("BOX", (0, 0), (-1, -1), 0.4, BORDER_CLR),
+    ]
+
+    KIND_LABEL = {
+        "spouse": "Surviving Spouse",
+        "family_member": "Family",
+        "entity": "Trust",
+        "external_beneficiary": "External Beneficiary",
+        "system_default": "Default Order",
+    }
+
+    for i, h in enumerate(heirs, start=1):
+        label = h.get("label") or "Unnamed recipient"
+        kind = h.get("kind")
+        kind_label = KIND_LABEL.get(kind, kind or "")
+        net = _n(h.get("netTotal", 0))
+        outright = _n(h.get("outright", 0))
+        in_trust = _n(h.get("inTrust", 0))
+
+        recipient_html = (
+            f"{label}<br/><font size='6.5' color='{HEX_NAVY}'>{kind_label}</font>"
+            if kind_label else label
+        )
+        table_data.append([
+            Paragraph(recipient_html, label_style),
+            Paragraph(_dollar(outright) if outright > 0 else "—", num_style),
+            Paragraph(_dollar(in_trust) if in_trust > 0 else "—", num_style),
+            Paragraph(_dollar(net), total_style),
+        ])
+        style_cmds.append(("LINEBELOW", (0, i), (-1, i), 0.25, BORDER_CLR))
+
+    heir_table = Table(
+        table_data,
+        colWidths=[
+            CONTENT_W * 0.38,
+            CONTENT_W * 0.21,
+            CONTENT_W * 0.21,
+            CONTENT_W * 0.20,
+        ],
+    )
+    heir_table.setStyle(TableStyle(style_cmds))
+    section_parts.append(heir_table)
+    story.append(KeepTogether(section_parts))
+
+
 def _page5_analysis(story: list, data: dict):
     """PAGE 5 — Retirement Plan Analysis (Monte Carlo hero + inputs + longevity + estate)."""
 
@@ -2083,6 +2346,11 @@ def _page5_analysis(story: list, data: dict):
         ]))
         story.append(t2)
 
+    # Heir Distributions table — per-recipient net inheritance under the
+    # proposed plan, split by disposition. Same engine as the in-app Estate
+    # Flow report.
+    _heir_distributions_section(story, data)
+
     # Disclosure
     story.append(Spacer(1, 0.12 * inch))
     story.append(GoldRule(CONTENT_W))
@@ -2133,6 +2401,7 @@ def build_retirement_memo_pdf(data: dict) -> bytes:
     _page2_summary(story, data)
     _page3_mechanics(story, data)
     _page4_cash_flow(story, data)
+    _plan_comparison_section(story, data)
     _page5_analysis(story, data)
 
     doc.build(story)

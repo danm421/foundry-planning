@@ -46,7 +46,13 @@ import {
 import { runProjectionWithEvents } from "../src/engine/projection";
 import { loadEffectiveTree } from "../src/lib/scenario/loader";
 import { getMonteCarloResult } from "../src/lib/projection/get-monte-carlo-result";
-import type { ProjectionYear } from "../src/engine/types";
+import { buildEstateTransferReportData } from "../src/lib/estate/transfer-report";
+import type {
+  EstateTransferReportData,
+  DeathSectionData,
+} from "../src/lib/estate/transfer-report";
+import type { ProjectionResult } from "../src/engine";
+import type { ClientData, ProjectionYear } from "../src/engine/types";
 
 // ─── arg parsing ──────────────────────────────────────────────────────
 function arg(name: string, fallback?: string): string | undefined {
@@ -238,6 +244,98 @@ function legacyTotalsFor(
   };
 }
 
+/**
+ * Per-recipient inheritance rollup for the Heir Distributions table on the
+ * PDF estate page. Uses the same estate-transfer engine as the in-app report
+ * so the dollar numbers match what advisors see in the Estate Flow tab.
+ *
+ * For each recipient we sum `netTotal` (post-drain) across both deaths and
+ * split that net into "outright" vs "in trust" by attributing each underlying
+ * asset line proportionally — trust entity recipients are 100% in-trust by
+ * definition; everything else follows the asset's `distributionForm`, with
+ * unmarked lines (titling, beneficiary designations, default-order) treated
+ * as outright. The resulting outright + in-trust splits sum back to netTotal.
+ */
+interface HeirDistribution {
+  key: string;
+  label: string;
+  kind: "spouse" | "family_member" | "entity" | "external_beneficiary" | "system_default";
+  netTotal: number;
+  outright: number;
+  inTrust: number;
+}
+
+function rollupHeirDistributions(
+  report: EstateTransferReportData,
+): HeirDistribution[] {
+  const byKey = new Map<string, {
+    key: string;
+    label: string;
+    kind: HeirDistribution["kind"];
+    netTotal: number;
+    grossOutright: number;
+    grossInTrust: number;
+  }>();
+
+  const visit = (section: DeathSectionData | null) => {
+    if (!section) return;
+    for (const group of section.recipients) {
+      const entry = byKey.get(group.key) ?? {
+        key: group.key,
+        label: group.recipientLabel,
+        kind: group.recipientKind as HeirDistribution["kind"],
+        netTotal: 0,
+        grossOutright: 0,
+        grossInTrust: 0,
+      };
+      entry.netTotal += group.netTotal;
+      const isTrustRecipient = group.recipientKind === "entity";
+      for (const mech of group.byMechanism) {
+        for (const asset of mech.assets) {
+          const inTrust = isTrustRecipient || asset.distributionForm === "in_trust";
+          if (inTrust) entry.grossInTrust += asset.amount;
+          else entry.grossOutright += asset.amount;
+        }
+      }
+      byKey.set(group.key, entry);
+    }
+  };
+
+  visit(report.firstDeath);
+  visit(report.secondDeath);
+
+  return Array.from(byKey.values())
+    .filter((d) => d.netTotal > 1)
+    .map((d) => {
+      const gross = d.grossOutright + d.grossInTrust;
+      const scale = gross > 0 ? d.netTotal / gross : 0;
+      return {
+        key: d.key,
+        label: d.label,
+        kind: d.kind,
+        netTotal: d.netTotal,
+        outright: d.grossOutright * scale,
+        inTrust: d.grossInTrust * scale,
+      };
+    })
+    .sort((a, b) => b.netTotal - a.netTotal);
+}
+
+function buildHeirDistributionsFor(
+  projection: ProjectionResult,
+  clientData: ClientData,
+  ownerNames: { clientName: string; spouseName: string | null },
+): HeirDistribution[] {
+  const report = buildEstateTransferReportData({
+    projection,
+    asOf: { kind: "split" },
+    ordering: "primaryFirst",
+    clientData,
+    ownerNames,
+  });
+  return rollupHeirDistributions(report);
+}
+
 function deathYearsFor(
   result: { firstDeathEvent?: import("../src/engine/types").EstateTaxResult; secondDeathEvent?: import("../src/engine/types").EstateTaxResult },
 ) {
@@ -350,6 +448,15 @@ async function main() {
   const mcBase = await getMonteCarloResult(CLIENT_ID, client.firmId, baseScenario.id, {});
   console.log("[memo] running Monte Carlo for proposed scenario (1000 trials)…");
   const mcProposed = await getMonteCarloResult(CLIENT_ID, client.firmId, proposedScenario.id, {});
+
+  // Heir distributions — same engine as the in-app Estate Flow report, rolled
+  // up per recipient with an outright vs. in-trust split for the PDF.
+  const ownerNames = {
+    clientName: `${primary.firstName} ${primary.lastName}`,
+    spouseName: spouse ? `${spouse.firstName} ${spouse.lastName}` : null,
+  };
+  const heirDistributionsBase = buildHeirDistributionsFor(baseResult, baseTree, ownerNames);
+  const heirDistributionsProposed = buildHeirDistributionsFor(proposedResult, proposedTree, ownerNames);
 
   // Summarize.
   const baseRows = baseResult.years.map((y) => summarizeYear(y, dob, spouseDob));
@@ -702,6 +809,10 @@ async function main() {
             }
           : null,
       },
+    },
+    heirDistributions: {
+      base: heirDistributionsBase,
+      proposed: heirDistributionsProposed,
     },
   };
 
