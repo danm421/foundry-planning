@@ -8,6 +8,7 @@ import WithdrawalStrategySection from "@/components/withdrawal-strategy-section"
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
 import { DeductionsClient } from "./deductions-client";
+import AccountGroupsTab from "./account-groups-tab";
 import type {
   DerivedRow,
   ExpenseDeductionRow,
@@ -92,6 +93,12 @@ interface AssumptionsClientProps {
   resolvedInflationRate: number;
   hasInflationAssetClass: boolean;
   deductionsData: DeductionsTabData;
+  liquidAccounts: Array<{
+    id: string;
+    name: string;
+    category: "taxable" | "cash" | "retirement";
+    value: number;
+  }>;
   /** Reserved seam for wizard-mode trimming. Today the wrapper in
    *  assumptions/page.tsx supplies the page h2 + max-w-3xl; wizard mode
    *  drops both via the step component rather than via this prop. */
@@ -103,6 +110,7 @@ const TABS = [
   { id: "growth-inflation", label: "Growth & Inflation" },
   { id: "withdrawal", label: "Withdrawal Strategy" },
   { id: "deductions", label: "Deductions" },
+  { id: "account-groups", label: "Account Groups" },
 ];
 
 export default function AssumptionsClient({
@@ -117,6 +125,7 @@ export default function AssumptionsClient({
   resolvedInflationRate,
   hasInflationAssetClass,
   deductionsData,
+  liquidAccounts,
 }: AssumptionsClientProps) {
   const [activeTab, setActiveTab] = useState("tax-rates");
 
@@ -200,6 +209,12 @@ export default function AssumptionsClient({
             milestones={milestones}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}
+          />
+        )}
+        {activeTab === "account-groups" && (
+          <AccountGroupsTab
+            clientId={clientId}
+            liquidAccounts={liquidAccounts}
           />
         )}
       </div>
