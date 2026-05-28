@@ -15,30 +15,35 @@ export function CashFlowOptionsControl({ value, onChange }: Props) {
   const endYear = isCustom ? (value.range as { endYear: number }).endYear : CURRENT_YEAR + 30;
 
   return (
-    <div className="space-y-2 text-sm">
+    <div className="space-y-3 text-sm text-ink-2">
       <fieldset className="space-y-1">
         <legend className="sr-only">Range</legend>
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 hover:text-ink">
           <input
             type="radio"
+            className="accent-accent"
             checked={value.range === "retirement"}
             onChange={() => onChange({ ...value, range: "retirement" })}
           />
           <span>Retirement only</span>
         </label>
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 hover:text-ink">
           <input
             type="radio"
+            className="accent-accent"
             checked={value.range === "lifetime"}
             onChange={() => onChange({ ...value, range: "lifetime" })}
           />
           <span>Lifetime</span>
         </label>
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 hover:text-ink">
           <input
             type="radio"
+            className="accent-accent"
             checked={isCustom}
-            onChange={() => onChange({ ...value, range: { startYear, endYear } })}
+            onChange={() =>
+              onChange({ ...value, range: { startYear, endYear } })
+            }
           />
           <span>Custom range</span>
         </label>
@@ -46,11 +51,13 @@ export function CashFlowOptionsControl({ value, onChange }: Props) {
       {isCustom && (
         <div className="flex items-center gap-3 pl-6">
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-gray-500">Start year</span>
+            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
+              Start year
+            </span>
             <input
               type="number"
               aria-label="Start year"
-              className="w-24 rounded border px-2 py-1"
+              className="w-24 rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
               value={startYear}
               onChange={(e) =>
                 onChange({
@@ -61,11 +68,13 @@ export function CashFlowOptionsControl({ value, onChange }: Props) {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-gray-500">End year</span>
+            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
+              End year
+            </span>
             <input
               type="number"
               aria-label="End year"
-              className="w-24 rounded border px-2 py-1"
+              className="w-24 rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
               value={endYear}
               onChange={(e) =>
                 onChange({

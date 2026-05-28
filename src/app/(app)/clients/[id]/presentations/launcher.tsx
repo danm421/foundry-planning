@@ -238,11 +238,15 @@ export function PresentationsLauncher(props: Props) {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">Presentations</h1>
+      <h1 className="text-2xl font-semibold text-ink mb-4">
+        Presentations<span className="dot">.</span>
+      </h1>
 
-      <div className="mb-4 flex flex-wrap items-end gap-3 rounded border bg-white p-3">
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded border border-hair bg-card p-3">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-gray-600">Scenario</span>
+          <span className="text-[11px] uppercase tracking-[0.12em] text-ink-3">
+            Scenario
+          </span>
           <ScenarioPickerDropdown
             value={state.topScenarioPickerValue}
             onChange={(v) => dispatch({ type: "setTopScenario", value: v })}
@@ -252,7 +256,9 @@ export function PresentationsLauncher(props: Props) {
           />
         </label>
         <label className="flex flex-col gap-1 text-sm flex-1 min-w-[16rem]">
-          <span className="text-xs text-gray-600">Filename</span>
+          <span className="text-[11px] uppercase tracking-[0.12em] text-ink-3">
+            Filename
+          </span>
           <input
             type="text"
             value={state.filename}
@@ -260,7 +266,7 @@ export function PresentationsLauncher(props: Props) {
               dispatch({ type: "setFilename", value: e.target.value })
             }
             placeholder="(auto)"
-            className="rounded border px-2 py-1 text-sm"
+            className="rounded border border-hair bg-card-2 px-2 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
         </label>
         <div className="flex items-center gap-2">
@@ -268,7 +274,7 @@ export function PresentationsLauncher(props: Props) {
             <button
               type="button"
               onClick={handleUpdateLoaded}
-              className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
+              className="rounded border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-card-hover hover:text-ink"
             >
               Update “{state.loadedTemplate.name}”
             </button>
@@ -276,7 +282,7 @@ export function PresentationsLauncher(props: Props) {
           <button
             type="button"
             onClick={() => setShowSaveModal(true)}
-            className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
+            className="rounded border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-card-hover hover:text-ink"
           >
             Save as new…
           </button>
@@ -284,7 +290,7 @@ export function PresentationsLauncher(props: Props) {
             type="button"
             disabled={generateDisabled}
             onClick={handleGenerate}
-            className="rounded bg-amber-700 px-4 py-2 text-sm text-white hover:bg-amber-800 disabled:opacity-50"
+            className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             {generating ? "Generating…" : "Generate PDF"}
           </button>
@@ -294,7 +300,7 @@ export function PresentationsLauncher(props: Props) {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-2 lg:col-span-2">
           {state.pages.length === 0 ? (
-            <div className="rounded border border-dashed p-6 text-center text-sm text-gray-500">
+            <div className="rounded border border-dashed border-hair-2 bg-card/40 p-6 text-center text-sm text-ink-3">
               Add a page to get started
             </div>
           ) : (
@@ -366,7 +372,11 @@ export function PresentationsLauncher(props: Props) {
         </div>
       </div>
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="mt-3 text-sm text-crit" role="alert">
+          {error}
+        </p>
+      )}
 
       <SaveTemplateModal
         open={showSaveModal}

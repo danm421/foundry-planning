@@ -17,7 +17,7 @@ interface Props {
 
 export function TemplatesPanel(props: Props) {
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-4 rounded border border-hair bg-card p-4 text-sm">
       <Section
         title="Firm (shared)"
         items={props.shared}
@@ -41,7 +41,7 @@ export function TemplatesPanel(props: Props) {
       <button
         type="button"
         onClick={props.onSaveAsNew}
-        className="w-full rounded border border-dashed py-2 text-sm text-gray-600 hover:text-amber-700 hover:border-amber-700"
+        className="w-full rounded border border-dashed border-hair-2 py-2 text-sm text-ink-3 transition-colors hover:border-accent hover:text-accent"
       >
         + New from current
       </button>
@@ -61,13 +61,13 @@ function Section(props: {
 }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+      <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-ink-3">
         {props.title}
       </div>
       {props.items.length === 0 ? (
-        <div className="text-xs text-gray-400 italic">No templates yet</div>
+        <div className="text-xs italic text-ink-4">No templates yet</div>
       ) : (
-        <ul className="space-y-1">
+        <ul className="space-y-0.5">
           {props.items.map((t) => (
             <Row
               key={t.id}
@@ -98,14 +98,16 @@ function Row(props: {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <li
-      className={`flex items-center justify-between rounded px-2 py-1 ${
-        props.isLoaded ? "bg-amber-50" : "hover:bg-gray-50"
+      className={`group flex items-center justify-between rounded px-2 py-1 transition-colors ${
+        props.isLoaded
+          ? "border-l-2 border-accent bg-card-2 text-ink"
+          : "border-l-2 border-transparent text-ink-2 hover:bg-card-2 hover:text-ink"
       }`}
     >
       <button
         type="button"
         onClick={props.onLoad}
-        className="text-left flex-1 text-sm"
+        className="flex-1 truncate text-left text-sm"
       >
         {props.template.name}
       </button>
@@ -114,12 +116,12 @@ function Row(props: {
           type="button"
           aria-label={`More actions for ${props.template.name}`}
           onClick={() => setMenuOpen((v) => !v)}
-          className="px-2 text-gray-400 hover:text-gray-700"
+          className="rounded px-2 py-0.5 text-ink-4 transition-colors hover:bg-card-hover hover:text-ink-2"
         >
           …
         </button>
         {menuOpen && (
-          <div className="absolute right-0 z-10 mt-1 w-44 rounded border bg-white py-1 text-sm shadow">
+          <div className="absolute right-0 z-10 mt-1 w-44 overflow-hidden rounded border border-hair bg-card-2 py-1 text-sm shadow-xl">
             {props.canEdit && (
               <button
                 type="button"
@@ -128,7 +130,7 @@ function Row(props: {
                   if (next && next.trim()) props.onRename(next.trim());
                   setMenuOpen(false);
                 }}
-                className="block w-full px-3 py-1 text-left hover:bg-gray-50"
+                className="block w-full px-3 py-1.5 text-left text-ink-2 transition-colors hover:bg-card-hover hover:text-ink"
               >
                 Rename
               </button>
@@ -142,7 +144,7 @@ function Row(props: {
                   );
                   setMenuOpen(false);
                 }}
-                className="block w-full px-3 py-1 text-left hover:bg-gray-50"
+                className="block w-full px-3 py-1.5 text-left text-ink-2 transition-colors hover:bg-card-hover hover:text-ink"
               >
                 {props.template.visibility === "shared"
                   ? "Make private"
@@ -157,7 +159,7 @@ function Row(props: {
                     props.onDelete();
                   setMenuOpen(false);
                 }}
-                className="block w-full px-3 py-1 text-left text-red-600 hover:bg-red-50"
+                className="block w-full px-3 py-1.5 text-left text-crit transition-colors hover:bg-card-hover"
               >
                 Delete
               </button>

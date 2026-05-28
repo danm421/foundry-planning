@@ -37,26 +37,39 @@ export function SelectedPageRow(props: Props) {
         ? "Base case"
         : props.scenarioOverride;
 
+  const hasOverride = props.scenarioOverride !== undefined;
+
   return (
-    <div className="rounded border bg-white p-3 space-y-2">
+    <div className="rounded border border-hair bg-card-2 p-3 space-y-2 transition-colors hover:border-hair-2">
       <div className="flex items-center gap-3">
-        <span className="cursor-grab text-gray-400 select-none" aria-hidden>
+        <span
+          className="cursor-grab text-ink-4 select-none hover:text-ink-3"
+          aria-hidden
+        >
           ⠿
         </span>
         <div className="flex-1">
-          <div className="font-medium text-sm">{page.title}</div>
-          <div className="text-xs text-gray-500">{summary}</div>
+          <div className="text-sm font-medium text-ink">{page.title}</div>
+          <div className="text-xs text-ink-3">{summary}</div>
         </div>
         <button
           type="button"
-          className="text-xs underline text-gray-600"
+          className={`rounded px-2 py-1 text-xs transition-colors ${
+            showOptions
+              ? "bg-card-hover text-ink"
+              : "text-ink-3 hover:bg-card-hover hover:text-ink"
+          }`}
           onClick={() => setShowOptions((v) => !v)}
         >
           Options
         </button>
         <button
           type="button"
-          className="text-xs underline text-gray-600"
+          className={`rounded px-2 py-1 text-xs transition-colors ${
+            hasOverride
+              ? "text-accent hover:bg-card-hover"
+              : "text-ink-3 hover:bg-card-hover hover:text-ink"
+          }`}
           onClick={() => setShowScenario((v) => !v)}
         >
           {scenarioLabel}
@@ -64,14 +77,14 @@ export function SelectedPageRow(props: Props) {
         <button
           type="button"
           aria-label={`Remove ${page.title}`}
-          className="text-gray-400 hover:text-red-600"
+          className="rounded p-1 text-ink-4 transition-colors hover:bg-card-hover hover:text-crit"
           onClick={props.onRemove}
         >
           ✕
         </button>
       </div>
       {showOptions && (
-        <div className="border-t pt-2">
+        <div className="border-t border-hair pt-2">
           <Options
             value={props.options as never}
             onChange={(v) => props.onOptionsChange(v)}
@@ -79,7 +92,7 @@ export function SelectedPageRow(props: Props) {
         </div>
       )}
       {showScenario && (
-        <div className="border-t pt-2 space-y-2">
+        <div className="border-t border-hair pt-2 space-y-2">
           <ScenarioPickerDropdown
             value={
               props.scenarioOverride === undefined
@@ -93,7 +106,7 @@ export function SelectedPageRow(props: Props) {
           />
           <button
             type="button"
-            className="text-xs underline text-gray-600"
+            className="text-xs text-ink-3 underline-offset-2 hover:text-ink hover:underline"
             onClick={() => props.onScenarioOverrideChange(undefined)}
           >
             Use default scenario
