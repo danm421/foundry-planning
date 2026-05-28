@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildTimeline } from "../build-timeline";
 import { runProjection } from "@/engine";
 import { buildClientData } from "@/engine/__tests__/fixtures";
+import type { EntitySummary } from "@/engine/types";
 
 describe("buildTimeline", () => {
   it("returns events sorted by (year asc, category priority, then life-kind or subject)", () => {
@@ -112,7 +113,7 @@ describe("buildTimeline", () => {
   it("sorts estate before strategy when both fall on the same year/subject", () => {
     const data = buildClientData();
     data.entities = [
-      { id: "ent-ilit", name: "Cooper ILIT", trustSubType: "ilit", isIrrevocable: true } as any,
+      { id: "ent-ilit", name: "Cooper ILIT", trustSubType: "ilit", isIrrevocable: true } as unknown as EntitySummary,
     ];
     data.gifts = [
       { id: "g-1", year: 2032, amount: 50000, grantor: "client", recipientEntityId: "ent-ilit", useCrummeyPowers: true },

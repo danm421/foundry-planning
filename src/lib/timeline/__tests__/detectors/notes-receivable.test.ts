@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { detectNotesReceivableEvents } from "../../detectors/notes-receivable";
 import { runProjection } from "@/engine";
 import { buildClientData } from "@/engine/__tests__/fixtures";
+import type { EntitySummary } from "@/engine/types";
+import type { NoteReceivable } from "@/engine/notes-receivable/types";
 
 describe("detectNotesReceivableEvents", () => {
   it("emits origination + maturity cards under 'transaction' for a plain note", () => {
@@ -20,7 +22,7 @@ describe("detectNotesReceivableEvents", () => {
         termMonths: 60,
         extraPayments: [],
         owners: [],
-      } as any,
+      } as NoteReceivable,
     ];
     const projection = runProjection(data);
     const events = detectNotesReceivableEvents(data, projection);
@@ -38,7 +40,7 @@ describe("detectNotesReceivableEvents", () => {
   it("routes trust-linked notes into the 'estate' category with sale-to-trust title", () => {
     const data = buildClientData();
     data.entities = [
-      { id: "ent-idgt", name: "Family IDGT", trustSubType: "idgt", isIrrevocable: true } as any,
+      { id: "ent-idgt", name: "Family IDGT", trustSubType: "idgt", isIrrevocable: true } as unknown as EntitySummary,
     ];
     data.notesReceivable = [
       {
@@ -54,7 +56,7 @@ describe("detectNotesReceivableEvents", () => {
         linkedTrustEntityId: "ent-idgt",
         extraPayments: [],
         owners: [],
-      } as any,
+      } as NoteReceivable,
     ];
     const projection = runProjection(data);
     const events = detectNotesReceivableEvents(data, projection);
@@ -82,7 +84,7 @@ describe("detectNotesReceivableEvents", () => {
         termMonths: 30,
         extraPayments: [],
         owners: [],
-      } as any,
+      } as NoteReceivable,
       {
         id: "note-jun36",
         name: "June-start 36-month note",
@@ -96,7 +98,7 @@ describe("detectNotesReceivableEvents", () => {
         termMonths: 36,
         extraPayments: [],
         owners: [],
-      } as any,
+      } as NoteReceivable,
     ];
     const projection = runProjection(data);
     const events = detectNotesReceivableEvents(data, projection);
@@ -126,7 +128,7 @@ describe("detectNotesReceivableEvents", () => {
           { id: "x-lump-2", noteReceivableId: "note-extras", year: 2034, type: "lump_sum", amount: 50000 },
         ],
         owners: [],
-      } as any,
+      } as NoteReceivable,
     ];
     const projection = runProjection(data);
     const events = detectNotesReceivableEvents(data, projection);

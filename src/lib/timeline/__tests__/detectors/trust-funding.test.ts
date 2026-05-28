@@ -3,6 +3,7 @@ import { detectTrustFundingEvents } from "../../detectors/trust-funding";
 import { runProjection } from "@/engine";
 import type { ProjectionYear } from "@/engine";
 import { buildClientData } from "@/engine/__tests__/fixtures";
+import type { EntitySummary } from "@/engine/types";
 
 function mkTrustRow(transfersIn: number) {
   return {
@@ -31,7 +32,7 @@ describe("detectTrustFundingEvents", () => {
   it("emits a per-year per-trust funding card from gifts to a trust", () => {
     const data = buildClientData();
     data.entities = [
-      { id: "ent-ilit", name: "Cooper ILIT", trustSubType: "ilit", isIrrevocable: true } as any,
+      { id: "ent-ilit", name: "Cooper ILIT", trustSubType: "ilit", isIrrevocable: true } as unknown as EntitySummary,
     ];
     data.gifts = [
       { id: "g1", year: 2030, amount: 19000, grantor: "client", recipientEntityId: "ent-ilit", useCrummeyPowers: true },
@@ -51,7 +52,7 @@ describe("detectTrustFundingEvents", () => {
   it("emits an initial-funding event when a trust shows activity with no prior gift event", () => {
     const data = buildClientData();
     data.entities = [
-      { id: "ent-rev", name: "Revocable Trust", trustSubType: "revocable" } as any,
+      { id: "ent-rev", name: "Revocable Trust", trustSubType: "revocable" } as unknown as EntitySummary,
     ];
     data.gifts = [];
     const projection = mkProjectionWithEntityCashFlow(5, "ent-rev", 500000);
@@ -65,7 +66,7 @@ describe("detectTrustFundingEvents", () => {
   it("suppresses initial-funding when gift-based funding already exists at or before first activity year", () => {
     const data = buildClientData();
     data.entities = [
-      { id: "ent-idgt", name: "IDGT", trustSubType: "idgt", isIrrevocable: true } as any,
+      { id: "ent-idgt", name: "IDGT", trustSubType: "idgt", isIrrevocable: true } as unknown as EntitySummary,
     ];
     data.gifts = [
       { id: "g1", year: 2030, amount: 100000, grantor: "client", recipientEntityId: "ent-idgt", useCrummeyPowers: false },

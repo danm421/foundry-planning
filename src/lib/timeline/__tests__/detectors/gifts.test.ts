@@ -2,13 +2,14 @@ import { describe, it, expect } from "vitest";
 import { detectGiftEvents } from "../../detectors/gifts";
 import { runProjection } from "@/engine";
 import { buildClientData } from "@/engine/__tests__/fixtures";
+import type { FamilyMember, EntitySummary } from "@/engine/types";
 
 describe("detectGiftEvents", () => {
   it("aggregates multiple gifts in the same year into one card", () => {
     const data = buildClientData();
     data.familyMembers = [
-      { id: "fm-kid-1", firstName: "Avery", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as any,
-      { id: "fm-kid-2", firstName: "Blake", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as any,
+      { id: "fm-kid-1", firstName: "Avery", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as FamilyMember,
+      { id: "fm-kid-2", firstName: "Blake", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as FamilyMember,
     ];
     data.gifts = [
       { id: "g-1", year: 2030, amount: 19000, grantor: "client", recipientFamilyMemberId: "fm-kid-1", useCrummeyPowers: false },
@@ -27,10 +28,10 @@ describe("detectGiftEvents", () => {
   it("excludes gifts whose recipient is a trust entity", () => {
     const data = buildClientData();
     data.entities = [
-      { id: "ent-ilit", name: "Cooper ILIT", trustSubType: "ilit", isIrrevocable: true } as any,
+      { id: "ent-ilit", name: "Cooper ILIT", trustSubType: "ilit", isIrrevocable: true } as unknown as EntitySummary,
     ];
     data.familyMembers = [
-      { id: "fm-kid-1", firstName: "Avery", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as any,
+      { id: "fm-kid-1", firstName: "Avery", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as FamilyMember,
     ];
     data.gifts = [
       { id: "g-cash", year: 2030, amount: 19000, grantor: "client", recipientFamilyMemberId: "fm-kid-1", useCrummeyPowers: false },
@@ -46,8 +47,8 @@ describe("detectGiftEvents", () => {
   it("adds a Crummey-vs-outright summary row when both kinds appear same year", () => {
     const data = buildClientData();
     data.familyMembers = [
-      { id: "fm-a", firstName: "Avery", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as any,
-      { id: "fm-b", firstName: "Blake", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as any,
+      { id: "fm-a", firstName: "Avery", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as FamilyMember,
+      { id: "fm-b", firstName: "Blake", lastName: null, role: "child", relationship: "child", dateOfBirth: null } as FamilyMember,
     ];
     data.gifts = [
       { id: "g-out", year: 2030, amount: 19000, grantor: "client", recipientFamilyMemberId: "fm-a", useCrummeyPowers: false },
