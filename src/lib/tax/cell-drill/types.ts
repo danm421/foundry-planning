@@ -9,6 +9,7 @@ export type IncomeColumnKey =
   | "dividends"
   | "capitalGains"
   | "shortCapitalGains"
+  | "qbi"
   | "totalIncome"
   | "nonTaxableIncome"
   | "grossTotalIncome";

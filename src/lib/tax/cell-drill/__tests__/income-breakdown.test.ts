@@ -5,7 +5,12 @@ import { buildIncomeCellDrill } from "../income-breakdown";
 import type { CellDrillContext } from "../types";
 
 const ctx: CellDrillContext = {
-  accountNames: { acc_1: "Joint Brokerage", acc_2: "401k", acc_3: "Roth IRA" },
+  accountNames: {
+    acc_1: "Joint Brokerage",
+    acc_2: "401k",
+    acc_3: "Roth IRA",
+    biz_llc: "Consulting LLC",
+  },
   incomes: [
     { id: "inc_w", name: "Client Salary", type: "salary", owner: "client", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0 } as never,
     { id: "inc_ss_c", name: "Client SS", type: "social_security", owner: "client", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0 } as never,
@@ -101,6 +106,31 @@ describe("buildIncomeCellDrill — direct columns", () => {
     const props = buildIncomeCellDrill({ year: makeYear(), columnKey: "shortCapitalGains", ctx });
     expect(props.total).toBe(1_000);
     expect(props.groups[0].rows.map((r) => r.label)).toEqual(["Joint Brokerage — ST CG"]);
+  });
+
+  it("QBI filters by qbi type and labels business-pass-through rows", () => {
+    const year = makeYear({
+      taxDetail: {
+        earnedIncome: 100_000, ordinaryIncome: 8_000, dividends: 3_000,
+        capitalGains: 4_000, stCapitalGains: 1_000,
+        qbi: 9_000, taxExempt: 1_500, taxExemptInterest: 1_500,
+        bySource: {
+          inc_w: { type: "earned_income", amount: 100_000 },
+          "acc_1:oi": { type: "ordinary_income", amount: 8_000 },
+          "acc_1:qdiv": { type: "dividends", amount: 3_000 },
+          "acc_1:ltcg": { type: "capital_gains", amount: 4_000 },
+          "acc_1:stcg": { type: "stcg", amount: 1_000 },
+          "acc_3:te": { type: "tax_exempt", amount: 1_500 },
+          "business_passthrough:biz_llc": { type: "qbi", amount: 9_000 },
+        },
+      } as never,
+    });
+    const props = buildIncomeCellDrill({ year, columnKey: "qbi", ctx });
+    expect(props.title).toBe("QBI — 2030");
+    expect(props.total).toBe(9_000);
+    expect(props.groups[0].rows).toEqual([
+      { id: "business_passthrough:biz_llc", label: "Consulting LLC — Pass-Through", amount: 9_000 },
+    ]);
   });
 
   it("rows are sorted desc by amount", () => {
@@ -246,6 +276,45 @@ describe("buildIncomeCellDrill — Total Income", () => {
     // Sum of all rows reconciles to total ± $1.
     const sum = props.groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0);
     expect(Math.abs(sum - 133_000)).toBeLessThanOrEqual(1);
+  });
+
+  it("includes a QBI group when pass-through QBI is present", () => {
+    const year = makeYear({
+      taxResult: {
+        income: { earnedIncome: 100_000, taxableSocialSecurity: 17_000, ordinaryIncome: 8_000,
+          dividends: 3_000, capitalGains: 4_000, shortCapitalGains: 1_000,
+          totalIncome: 142_000, nonTaxableIncome: 4_500, grossTotalIncome: 146_500 },
+        flow: { incomeTaxBase: 120_000 },
+        diag: { marginalFederalRate: 0.22, marginalBracketTier: { from: 94300, to: 201050, rate: 0.22 } },
+      } as never,
+      taxDetail: {
+        earnedIncome: 100_000, ordinaryIncome: 8_000, dividends: 3_000,
+        capitalGains: 4_000, stCapitalGains: 1_000,
+        qbi: 9_000, taxExempt: 1_500, taxExemptInterest: 1_500,
+        bySource: {
+          inc_w: { type: "earned_income", amount: 100_000 },
+          "acc_1:oi": { type: "ordinary_income", amount: 8_000 },
+          "acc_1:qdiv": { type: "dividends", amount: 3_000 },
+          "acc_1:ltcg": { type: "capital_gains", amount: 4_000 },
+          "acc_1:stcg": { type: "stcg", amount: 1_000 },
+          "acc_3:te": { type: "tax_exempt", amount: 1_500 },
+          "business_passthrough:biz_llc": { type: "qbi", amount: 9_000 },
+        },
+      } as never,
+    });
+    const props = buildIncomeCellDrill({ year, columnKey: "totalIncome", ctx });
+    expect(props.total).toBe(142_000);
+    expect(props.groups.map((g) => g.label)).toEqual([
+      "Earned Income",
+      "Taxable Social Security",
+      "Ordinary Income",
+      "Dividends",
+      "LT Capital Gains",
+      "ST Capital Gains",
+      "QBI",
+    ]);
+    const sum = props.groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0);
+    expect(Math.abs(sum - 142_000)).toBeLessThanOrEqual(1);
   });
 
   it("omits empty categories", () => {

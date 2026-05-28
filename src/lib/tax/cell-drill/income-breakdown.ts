@@ -13,6 +13,7 @@ const COLUMN_LABEL: Record<IncomeColumnKey, string> = {
   dividends: "Dividends",
   capitalGains: "LT Capital Gains",
   shortCapitalGains: "ST Capital Gains",
+  qbi: "QBI",
   totalIncome: "Total Income",
   nonTaxableIncome: "Non-Taxable Income",
   grossTotalIncome: "Gross Total Income",
@@ -29,6 +30,7 @@ const DIRECT_CONFIG: Partial<Record<IncomeColumnKey, DirectConfig>> = {
   dividends:         { sourceType: "dividends",        taxDetailKey: "dividends" },
   capitalGains:      { sourceType: "capital_gains",    taxDetailKey: "capitalGains" },
   shortCapitalGains: { sourceType: "stcg",             taxDetailKey: "stCapitalGains" },
+  qbi:               { sourceType: "qbi",              taxDetailKey: "qbi" },
 };
 
 export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps {
@@ -80,6 +82,7 @@ function totalIncomeGroups(
   push("Dividends", directRows(year, "dividends", ctx));
   push("LT Capital Gains", directRows(year, "capital_gains", ctx));
   push("ST Capital Gains", directRows(year, "stcg", ctx));
+  push("QBI", directRows(year, "qbi", ctx));
   return groups;
 }
 
