@@ -61,10 +61,10 @@ export function PageFrame({
       </View>
       <View style={styles.headerAccentRule} />
       <View style={styles.body}>{children}</View>
-      <View style={styles.footerHair} />
-      <View style={styles.footerRow}>
+      <View style={styles.footerHair} fixed />
+      <View style={styles.footerRow} fixed>
         <Text>Confidential · Personal</Text>
-        <Text>{`Page ${pageIndex} of ${totalPages}`}</Text>
+        <Text render={({ pageNumber, totalPages: tp }) => `Page ${pageNumber} of ${tp}`} />
       </View>
     </Page>
   );
