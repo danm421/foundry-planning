@@ -45,6 +45,12 @@ export class ReservedNameError extends Error {
   }
 }
 
+export class GroupNotFoundError extends Error {
+  constructor(public readonly groupId: string) {
+    super(`Account group not found: ${groupId}`);
+  }
+}
+
 type ClientAccount = {
   id: string;
   clientId: string;
@@ -138,7 +144,13 @@ export async function updateAccountGroup(
   groupId: string,
   input: UpdateAccountGroupInput,
 ): Promise<void> {
-  // Authorization: caller has already proven the group belongs to this client.
+  // Authorization: verify the group exists and belongs to this client before any write.
+  const [owned] = await db
+    .select({ id: accountGroups.id })
+    .from(accountGroups)
+    .where(and(eq(accountGroups.id, groupId), eq(accountGroups.clientId, clientId)));
+  if (!owned) throw new GroupNotFoundError(groupId);
+
   if (input.name !== undefined) {
     if (isReservedName(input.name)) throw new ReservedNameError(input.name);
     if (await loadCollidingName(clientId, input.name, groupId)) {
@@ -158,7 +170,7 @@ export async function updateAccountGroup(
   if (input.color !== undefined) patch.color = input.color ?? null;
   if (input.sortOrder !== undefined) patch.sortOrder = input.sortOrder;
 
-  await db.update(accountGroups).set(patch).where(eq(accountGroups.id, groupId));
+  await db.update(accountGroups).set(patch).where(and(eq(accountGroups.id, groupId), eq(accountGroups.clientId, clientId)));
 
   if (input.memberAccountIds !== undefined) {
     // Full-replace semantics: delete all then insert the new set.
