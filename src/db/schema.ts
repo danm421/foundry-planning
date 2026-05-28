@@ -1298,7 +1298,7 @@ export const accountOwners = pgTable(
 export const accountGroups = pgTable(
   "account_groups",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").defaultRandom().primaryKey(),
     clientId: uuid("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
@@ -1307,11 +1307,11 @@ export const accountGroups = pgTable(
     color: text("color"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .notNull(),
   },
   (t) => ({
     clientIdx: index("account_groups_client_idx").on(t.clientId),
@@ -1332,8 +1332,8 @@ export const accountGroupMembers = pgTable(
       .notNull()
       .references(() => accounts.id, { onDelete: "cascade" }),
     addedAt: timestamp("added_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .notNull(),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.accountGroupId, t.accountId] }),
