@@ -1295,6 +1295,52 @@ export const accountOwners = pgTable(
   }),
 );
 
+export const accountGroups = pgTable(
+  "account_groups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    color: text("color"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    clientIdx: index("account_groups_client_idx").on(t.clientId),
+    nameUniq: uniqueIndex("account_groups_client_name_unique").on(
+      t.clientId,
+      sql`LOWER(${t.name})`,
+    ),
+  }),
+);
+
+export const accountGroupMembers = pgTable(
+  "account_group_members",
+  {
+    accountGroupId: uuid("account_group_id")
+      .notNull()
+      .references(() => accountGroups.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.accountGroupId, t.accountId] }),
+    accountIdx: index("account_group_members_account_idx").on(t.accountId),
+  }),
+);
+
 export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
   accountId: uuid("account_id")
     .primaryKey()
