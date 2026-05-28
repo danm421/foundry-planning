@@ -7,6 +7,11 @@ import { detectTransactionEvents } from "./detectors/transactions";
 import { detectPortfolioEvents, DEFAULT_PORTFOLIO_THRESHOLDS } from "./detectors/portfolio";
 import { detectInsuranceEvents } from "./detectors/insurance";
 import { detectTaxEvents } from "./detectors/tax";
+import { detectRothConversionEvents } from "./detectors/roth-conversions";
+import { detectGiftEvents } from "./detectors/gifts";
+import { detectTrustFundingEvents } from "./detectors/trust-funding";
+import { detectReinvestmentEvents } from "./detectors/reinvestments";
+import { detectNotesReceivableEvents } from "./detectors/notes-receivable";
 
 const SUBJECT_PRIORITY = { primary: 0, spouse: 1, joint: 2 } as const;
 
@@ -57,6 +62,11 @@ export function buildTimeline(
     ...detectPortfolioEvents(data, projection, DEFAULT_PORTFOLIO_THRESHOLDS),
     ...detectInsuranceEvents(data, projection),
     ...detectTaxEvents(data, projection),
+    ...detectRothConversionEvents(data, projection),
+    ...detectGiftEvents(data, projection),
+    ...detectTrustFundingEvents(data, projection),
+    ...detectReinvestmentEvents(data, projection),
+    ...detectNotesReceivableEvents(data, projection),
   ];
 
   const ssCollisionSubjectSet = ssCollisionSubjects(raw);
