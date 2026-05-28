@@ -48,6 +48,16 @@ function makeInitialState(): LauncherState {
     filename: "",
     pages: [
       {
+        pageId: "cover" as PresentationPageId,
+        options: PRESENTATION_PAGES.cover.defaultOptions,
+        scenarioOverride: undefined,
+      },
+      {
+        pageId: "toc" as PresentationPageId,
+        options: PRESENTATION_PAGES.toc.defaultOptions,
+        scenarioOverride: undefined,
+      },
+      {
         pageId: "cashFlow" as PresentationPageId,
         options: PRESENTATION_PAGES.cashFlow.defaultOptions,
         scenarioOverride: undefined,

@@ -17,6 +17,37 @@ export interface PresentationCompositionInput {
   pages: PresentationPageDescriptor[];
 }
 
+// ── Cover page ─────────────────────────────────────────────────────────────
+
+export interface CoverPageOptions {
+  title: string;                             // optional document title rendered above the firm name; empty = hidden
+}
+
+export const COVER_PAGE_OPTIONS_DEFAULT: CoverPageOptions = {
+  title: "",
+};
+
+export interface CoverPageData {
+  title: string;
+  firmName: string;
+  firmTagline: string | null;
+  clientName: string;
+  spouseName: string | null;
+  scenarioLabel: string;
+  reportDate: string;
+}
+
+// ── Table of contents ──────────────────────────────────────────────────────
+
+export type TocPageOptions = Record<string, never>;
+
+export const TOC_PAGE_OPTIONS_DEFAULT: TocPageOptions = {};
+
+// TOC data is computed by the document composer (it needs cross-page page
+// counts), not by buildData; renderPdf reads sections off the renderPdf input
+// instead. The data slot stays empty.
+export type TocPageData = Record<string, never>;
+
 // ── Cash-flow page ─────────────────────────────────────────────────────────
 
 export interface CashFlowPageOptions {

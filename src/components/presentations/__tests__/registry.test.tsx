@@ -24,7 +24,9 @@ describe("registry — Cash Flow page", () => {
     expect(typeof cashFlowPage.OptionsControl).toBe("function");
   });
 
-  it("is registered as the only page in PRESENTATION_PAGES", () => {
-    expect(Object.keys(PRESENTATION_PAGES)).toEqual(["cashFlow"]);
+  it("is registered alongside cover and toc in PRESENTATION_PAGES", () => {
+    expect(Object.keys(PRESENTATION_PAGES).sort()).toEqual(
+      ["cashFlow", "cover", "toc"].sort(),
+    );
   });
 });

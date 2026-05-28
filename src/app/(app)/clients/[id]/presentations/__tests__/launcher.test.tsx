@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe("PresentationsLauncher", () => {
-  it("pre-selects Cash Flow on empty state and renders Generate enabled", () => {
+  it("pre-selects Cover + TOC + Cash Flow on empty state and renders Generate enabled", () => {
     render(
       <PresentationsLauncher
         clientId="c1"
@@ -29,6 +29,8 @@ describe("PresentationsLauncher", () => {
         initialTemplates={{ shared: [], mine: [] }}
       />,
     );
+    expect(screen.getByText("Cover Sheet")).toBeInTheDocument();
+    expect(screen.getByText("Table of Contents")).toBeInTheDocument();
     expect(screen.getByText("Cash Flow")).toBeInTheDocument();
     expect(
       (screen.getByRole("button", { name: /Generate PDF/i }) as HTMLButtonElement)
@@ -46,6 +48,8 @@ describe("PresentationsLauncher", () => {
         initialTemplates={{ shared: [], mine: [] }}
       />,
     );
+    fireEvent.click(screen.getByLabelText("Remove Cover Sheet"));
+    fireEvent.click(screen.getByLabelText("Remove Table of Contents"));
     fireEvent.click(screen.getByLabelText("Remove Cash Flow"));
     expect(
       (screen.getByRole("button", { name: /Generate PDF/i }) as HTMLButtonElement)

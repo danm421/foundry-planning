@@ -52,28 +52,32 @@ export function SelectedPageRow(props: Props) {
           <div className="text-sm font-medium text-ink">{page.title}</div>
           <div className="text-xs text-ink-3">{summary}</div>
         </div>
-        <button
-          type="button"
-          className={`rounded px-2 py-1 text-xs transition-colors ${
-            showOptions
-              ? "bg-card-hover text-ink"
-              : "text-ink-3 hover:bg-card-hover hover:text-ink"
-          }`}
-          onClick={() => setShowOptions((v) => !v)}
-        >
-          Options
-        </button>
-        <button
-          type="button"
-          className={`rounded px-2 py-1 text-xs transition-colors ${
-            hasOverride
-              ? "text-accent hover:bg-card-hover"
-              : "text-ink-3 hover:bg-card-hover hover:text-ink"
-          }`}
-          onClick={() => setShowScenario((v) => !v)}
-        >
-          {scenarioLabel}
-        </button>
+        {Options && (
+          <button
+            type="button"
+            className={`rounded px-2 py-1 text-xs transition-colors ${
+              showOptions
+                ? "bg-card-hover text-ink"
+                : "text-ink-3 hover:bg-card-hover hover:text-ink"
+            }`}
+            onClick={() => setShowOptions((v) => !v)}
+          >
+            Options
+          </button>
+        )}
+        {page.supportsScenarioOverride && (
+          <button
+            type="button"
+            className={`rounded px-2 py-1 text-xs transition-colors ${
+              hasOverride
+                ? "text-accent hover:bg-card-hover"
+                : "text-ink-3 hover:bg-card-hover hover:text-ink"
+            }`}
+            onClick={() => setShowScenario((v) => !v)}
+          >
+            {scenarioLabel}
+          </button>
+        )}
         <button
           type="button"
           aria-label={`Remove ${page.title}`}
@@ -83,7 +87,7 @@ export function SelectedPageRow(props: Props) {
           ✕
         </button>
       </div>
-      {showOptions && (
+      {showOptions && Options && (
         <div className="border-t border-hair pt-2">
           <Options
             value={props.options as never}
@@ -91,7 +95,7 @@ export function SelectedPageRow(props: Props) {
           />
         </div>
       )}
-      {showScenario && (
+      {showScenario && page.supportsScenarioOverride && (
         <div className="border-t border-hair pt-2 space-y-2">
           <ScenarioPickerDropdown
             value={
