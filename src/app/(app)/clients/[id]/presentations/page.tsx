@@ -1,8 +1,10 @@
 import { eq } from "drizzle-orm";
+import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { scenarios as scenariosTable, scenarioSnapshots } from "@/db/schema";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
+import { listTemplatesForUser } from "@/lib/presentations/templates-repo";
 import { PresentationsLauncher } from "./launcher";
 
 export default async function PresentationsPage({
@@ -12,9 +14,11 @@ export default async function PresentationsPage({
 }) {
   const { id: clientId } = await params;
   const firmId = await requireOrgId();
+  const { userId } = await auth();
+  if (!userId) throw new UnauthorizedError();
   await findClientInFirm(clientId, firmId);
 
-  const [scenarioRows, snapshotRows] = await Promise.all([
+  const [scenarioRows, snapshotRows, templates] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -31,13 +35,16 @@ export default async function PresentationsPage({
       })
       .from(scenarioSnapshots)
       .where(eq(scenarioSnapshots.clientId, clientId)),
+    listTemplatesForUser(firmId, userId),
   ]);
 
   return (
     <PresentationsLauncher
       clientId={clientId}
+      currentUserId={userId}
       scenarios={scenarioRows}
       snapshots={snapshotRows}
+      initialTemplates={templates}
     />
   );
 }
