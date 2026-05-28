@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
-import { UnauthorizedError } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { templatePagesSchema } from "@/lib/presentations/template-descriptor-schema";
@@ -26,10 +26,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { userId, orgId } = await auth();
+    const firmId = await requireOrgId();
+    const { userId } = await auth();
     if (!userId) throw new UnauthorizedError();
-    if (!orgId) throw new UnauthorizedError("Organization context required");
-    const firmId = orgId;
     const { id } = await params;
 
     const existing = await getTemplateById(id, firmId);
@@ -82,10 +81,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { userId, orgId } = await auth();
+    const firmId = await requireOrgId();
+    const { userId } = await auth();
     if (!userId) throw new UnauthorizedError();
-    if (!orgId) throw new UnauthorizedError("Organization context required");
-    const firmId = orgId;
     const { id } = await params;
 
     const existing = await getTemplateById(id, firmId);

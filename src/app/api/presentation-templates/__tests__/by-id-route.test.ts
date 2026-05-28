@@ -3,9 +3,21 @@ import { db } from "@/db";
 import { presentationTemplates, firms } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+const DEFAULT_AUTH = { userId: "user_owner", orgId: "firm_test" };
+
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ userId: "user_owner", orgId: "firm_test" })),
+  auth: vi.fn(async () => DEFAULT_AUTH),
 }));
+
+async function setAuth(overrides: { userId?: string; orgId?: string | null }) {
+  const { auth } = await import("@clerk/nextjs/server");
+  vi.mocked(auth).mockResolvedValue({ ...DEFAULT_AUTH, ...overrides } as never);
+}
+
+async function resetAuth() {
+  const { auth } = await import("@clerk/nextjs/server");
+  vi.mocked(auth).mockResolvedValue(DEFAULT_AUTH as never);
+}
 
 const FIRM = "firm_test";
 
@@ -20,7 +32,10 @@ async function cleanupFirm() {
 }
 
 beforeAll(ensureFirm);
-beforeEach(cleanupTemplates);
+beforeEach(async () => {
+  await cleanupTemplates();
+  await resetAuth();
+});
 afterAll(async () => {
   await cleanupTemplates();
   await cleanupFirm();
@@ -56,8 +71,7 @@ describe("PATCH /api/presentation-templates/[id]", () => {
 
   it("returns 403 when called by another user", async () => {
     const t = await seed("user_owner");
-    const { auth } = await import("@clerk/nextjs/server");
-    vi.mocked(auth).mockResolvedValueOnce({ userId: "user_other", orgId: FIRM } as never);
+    await setAuth({ userId: "user_other" });
     const { PATCH } = await import("../[id]/route");
     const res = await PATCH(
       new Request("http://x", { method: "PATCH", body: JSON.stringify({ name: "x" }) }),
@@ -68,8 +82,7 @@ describe("PATCH /api/presentation-templates/[id]", () => {
 
   it("returns 404 for cross-firm access", async () => {
     const t = await seed("user_owner");
-    const { auth } = await import("@clerk/nextjs/server");
-    vi.mocked(auth).mockResolvedValueOnce({ userId: "user_owner", orgId: "firm_other" } as never);
+    await setAuth({ orgId: "firm_other" });
     const { PATCH } = await import("../[id]/route");
     const res = await PATCH(
       new Request("http://x", { method: "PATCH", body: JSON.stringify({ name: "x" }) }),
@@ -89,8 +102,7 @@ describe("DELETE /api/presentation-templates/[id]", () => {
 
   it("returns 403 when called by another user", async () => {
     const t = await seed("user_owner", "TD2");
-    const { auth } = await import("@clerk/nextjs/server");
-    vi.mocked(auth).mockResolvedValueOnce({ userId: "user_other", orgId: FIRM } as never);
+    await setAuth({ userId: "user_other" });
     const { DELETE } = await import("../[id]/route");
     const res = await DELETE(new Request("http://x"), { params: Promise.resolve({ id: t.id }) });
     expect(res.status).toBe(403);
