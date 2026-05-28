@@ -77,8 +77,12 @@ export function searchReports(
       sections.push({ heading: "Recently added", rows: recentRows });
     }
 
+    const recentIdSet = new Set(recentRows.map((r) => r.id));
+
     for (const category of CATEGORY_ORDER) {
-      const rows = ALL_IDS.filter((id) => PRESENTATION_PAGES[id].category === category)
+      const rows = ALL_IDS.filter(
+          (id) => PRESENTATION_PAGES[id].category === category && !recentIdSet.has(id),
+        )
         .sort((a, b) => PRESENTATION_PAGES[a].title.localeCompare(PRESENTATION_PAGES[b].title))
         .map((id) => toRow(id, counts));
       if (rows.length > 0) sections.push({ heading: category, rows });

@@ -44,4 +44,21 @@ describe("searchReports", () => {
     const empty = searchReports("", {}, []);
     expect(ws.order).toEqual(empty.order);
   });
+
+  it("does not duplicate a recent id in its category section", () => {
+    const result = searchReports("", {}, ["cashFlow"]);
+    // appears in Recently added...
+    expect(result.sections[0].heading).toBe("Recently added");
+    expect(result.sections[0].rows.some((r) => r.id === "cashFlow")).toBe(true);
+    // ...and NOT again in the Cash Flow category
+    const cashFlowCategory = result.sections.find(
+      (s, i) => i > 0 && s.heading === "Cash Flow",
+    );
+    expect(cashFlowCategory?.rows.some((r) => r.id === "cashFlow")).toBe(false);
+  });
+
+  it("empty-query order has no duplicate ids, even with recents", () => {
+    const result = searchReports("", {}, ["cashFlow", "cover"]);
+    expect(new Set(result.order).size).toBe(result.order.length);
+  });
 });
