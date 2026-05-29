@@ -49,6 +49,9 @@ export function HoldingsTab({
   const [fetchingPrice, setFetchingPrice] = useState(false);
   // Guards against out-of-order responses: only the latest ticker's result wins.
   const quoteSeq = useRef(0);
+  // Last ticker we successfully priced — skip refetching it so a manually-edited
+  // price isn't clobbered on a re-blur (and we don't burn a paid quote call).
+  const lastQuotedTicker = useRef("");
 
   // Remember the pre-flip source so the toggle can revert to it.
   const preFlipSource = useRef<GrowthSource>(growthSource === "holdings" ? "default" : growthSource);
@@ -114,6 +117,7 @@ export function HoldingsTab({
       setRows(list);
       await flipToHoldingsIfFirst(list.length);
       setTicker(""); setShares(""); setPrice(""); setBasis(""); setPriceAsOf(null);
+      lastQuotedTicker.current = "";
     } catch {
       setError("Couldn't add the holding. Check the values and try again.");
     } finally {
@@ -123,14 +127,14 @@ export function HoldingsTab({
 
   async function handleTickerBlur() {
     const t = ticker.trim().toUpperCase();
-    if (!canEdit || !accountId || t === "") return;
+    if (!canEdit || !accountId || t === "" || t === lastQuotedTicker.current) return;
     const seq = ++quoteSeq.current;
     setFetchingPrice(true);
     try {
       const quote = await getQuote(clientId, accountId, t);
       // Ignore a stale response if the ticker changed (or blurred again) since.
       if (seq !== quoteSeq.current) return;
-      if (quote) { setPrice(String(quote.price)); setPriceAsOf(quote.asOf); }
+      if (quote) { setPrice(String(quote.price)); setPriceAsOf(quote.asOf); lastQuotedTicker.current = t; }
     } finally {
       if (seq === quoteSeq.current) setFetchingPrice(false);
     }
