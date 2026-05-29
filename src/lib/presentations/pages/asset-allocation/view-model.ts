@@ -27,6 +27,8 @@ export function buildAssetAllocationData(
   bundle: InvestmentsBundle,
   options: AssetAllocationOptions,
 ): AssetAllocationData {
+  // "all-liquid" is always present — the bundle loader resolves it with pure
+  // in-memory deps that cannot fail, so the fallback is always defined.
   const resolved = bundle.resolvedGroups[options.groupKey] ?? bundle.resolvedGroups["all-liquid"];
   const idSet = new Set(resolved.accountIds);
 
@@ -54,10 +56,12 @@ export function buildAssetAllocationData(
   }
 
   const targetByClass = new Map((benchmark ?? []).map((w) => [w.assetClassId, w.weight]));
-  const tableRows: AllocationTableRow[] = household.byAssetClass.map((c) => ({
-    id: c.id, name: c.name, value: c.value, currentPct: c.pctOfClassified,
-    targetPct: benchmark ? targetByClass.get(c.id) ?? 0 : null,
-  }));
+  const tableRows: AllocationTableRow[] = options.showTable
+    ? household.byAssetClass.map((c) => ({
+        id: c.id, name: c.name, value: c.value, currentPct: c.pctOfClassified,
+        targetPct: benchmark ? targetByClass.get(c.id) ?? 0 : null,
+      }))
+    : [];
 
   const disclosureParts: string[] = [];
   if (household.excludedNonInvestableValue > 0) disclosureParts.push(`$${fmt(household.excludedNonInvestableValue)} in business / real estate`);

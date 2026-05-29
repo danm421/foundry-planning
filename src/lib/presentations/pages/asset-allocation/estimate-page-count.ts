@@ -1,8 +1,10 @@
 import type { AssetAllocationData } from "./view-model";
-/** Donut row + header consume most of page 1; ~20 table rows fit alongside.
- *  Drift adds a chart block. Anything beyond that spills to a second page. */
-export function estimateAssetAllocationPageCount(data: AssetAllocationData): number {
-  const tableHeavy = data.tableRows.length > 20;
-  const hasDrift = data.driftRows !== null && data.driftRows.length > 0;
-  return tableHeavy && hasDrift ? 2 : 1;
+
+/** Donuts + table + optional drift fit a single page in the common case.
+ *  Page counts are computed before data exists (document.tsx passes undefined
+ *  for data), so this must be data-independent — like every other page. */
+export function estimateAssetAllocationPageCount(
+  _data?: AssetAllocationData,
+): number {
+  return 1;
 }

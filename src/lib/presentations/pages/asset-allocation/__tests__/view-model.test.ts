@@ -52,4 +52,8 @@ describe("buildAssetAllocationData", () => {
     const data = buildAssetAllocationData(bundle(), { groupKey: "deleted-uuid", view: "detailed", includeOutOfEstate: false, showTable: true });
     expect(data.subtitle).toBe("All Liquid Assets");
   });
+  it("returns empty tableRows when showTable is false", () => {
+    const data = buildAssetAllocationData(bundle(), { groupKey: "all-liquid", view: "detailed", includeOutOfEstate: false, showTable: false });
+    expect(data.tableRows).toHaveLength(0);
+  });
 });

@@ -16,14 +16,18 @@ const SERIES: Record<
   model_portfolio: { label: "Model Portfolios", pointStyle: "star", color: "#ec4899" },
 };
 
-/** Snap [min,max] to whole percents, padding -4pp below and +1pp above. */
+/** Snap [min,max] to whole percents, padding -4pp below and +1pp above.
+ *  The lower bound clamps to 0 for non-negative data; for all-negative data
+ *  this would yield [0,0], so we guarantee hi > lo by at least 0.01. */
 export function snapPercentDomain(values: number[]): [number, number] {
   const lo = Math.min(...values);
   const hi = Math.max(...values);
   // Floor/ceil to whole percent boundaries, then pad outward.
   const floorPct = Math.floor(Math.round(lo * 1000) / 10) / 100;
   const ceilPct = Math.ceil(Math.round(hi * 1000) / 10) / 100;
-  return [Math.max(0, Math.round((floorPct - 0.04) * 100) / 100), Math.round((ceilPct + 0.01) * 100) / 100];
+  const lower = Math.max(0, Math.round((floorPct - 0.04) * 100) / 100);
+  const upper = Math.round((ceilPct + 0.01) * 100) / 100;
+  return [lower, Math.max(upper, lower + 0.01)];
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
