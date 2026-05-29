@@ -94,6 +94,8 @@ import {
   type MonteCarloReportPayload,
 } from "@/lib/presentations/pages/monte-carlo/view-model";
 import { AssetAllocationPagePdf } from "./pages/asset-allocation/page-pdf";
+import { AssetAllocationOptionsControl } from "./pages/asset-allocation/options-control";
+import { PortfolioAnalysisOptionsControl } from "./pages/portfolio-analysis/options-control";
 import {
   assetAllocationOptionsSchema,
   ASSET_ALLOCATION_OPTIONS_DEFAULT,
@@ -533,6 +535,7 @@ export const assetAllocationPage: PresentationPage<AssetAllocationData, AssetAll
   optionsSchema: assetAllocationOptionsSchema,
   summarizeOptions: summarizeAssetAllocationOptions,
   estimatePageCount: estimateAssetAllocationPageCount,
+  OptionsControl: AssetAllocationOptionsControl,
   supportsScenarioOverride: false,
   buildData: (ctx, options) => {
     if (!ctx.investments) return EMPTY_ALLOCATION_DATA;
@@ -550,6 +553,7 @@ export const portfolioAnalysisPage: PresentationPage<PortfolioAnalysisData, Port
   optionsSchema: portfolioAnalysisOptionsSchema,
   summarizeOptions: summarizePortfolioAnalysisOptions,
   estimatePageCount: estimatePortfolioAnalysisPageCount,
+  OptionsControl: PortfolioAnalysisOptionsControl,
   supportsScenarioOverride: false,
   buildData: (ctx, options) => {
     if (!ctx.investments) {
