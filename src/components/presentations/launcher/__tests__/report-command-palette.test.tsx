@@ -34,7 +34,7 @@ describe("ReportCommandPalette", () => {
     const input = screen.getByPlaceholderText(/search reports/i);
     fireEvent.change(input, { target: { value: "income" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onAdd).toHaveBeenCalledWith("cashFlowIncome");
+    expect(onAdd).toHaveBeenCalledWith("incomeTaxAboveLine");
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -43,7 +43,7 @@ describe("ReportCommandPalette", () => {
     const input = screen.getByPlaceholderText(/search reports/i);
     fireEvent.change(input, { target: { value: "income" } });
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
-    expect(onAdd).toHaveBeenCalledWith("cashFlowIncome");
+    expect(onAdd).toHaveBeenCalledWith("incomeTaxAboveLine");
     expect(onClose).toHaveBeenCalled();
   });
 
