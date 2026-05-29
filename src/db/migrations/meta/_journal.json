@@ -925,6 +925,27 @@
       "when": 1780008890723,
       "tag": "0131_account_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1780022479546,
+      "tag": "0132_backfill_asset_class_slugs",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1780023097980,
+      "tag": "0133_superb_clint_barton",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1780061304862,
+      "tag": "0134_typical_blue_shield",
+      "breakpoints": true
     }
   ]
 }

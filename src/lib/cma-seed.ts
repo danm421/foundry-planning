@@ -1,10 +1,11 @@
+import type { AssetClassSlug } from "./investments/asset-class-slugs";
 import type { AssetTypeId } from "./investments/asset-types";
 
 export interface SeedAssetClass {
   name: string;
   /** Optional stable slug used to look up engine-referenced classes
    * (e.g. "inflation") without relying on a human-edited name. */
-  slug?: string;
+  slug?: AssetClassSlug;
   geometricReturn: number;
   arithmeticMean: number;
   volatility: number;
@@ -25,21 +26,21 @@ export interface SeedModelPortfolio {
 // Arithmetic mean is derived as `geometric + σ²/2` (the standard log-normal
 // convergence) — kept as a stored field because the engine reads it directly.
 export const DEFAULT_ASSET_CLASSES: SeedAssetClass[] = [
-  { name: "US Large Cap",                geometricReturn: 0.1145, arithmeticMean: 0.1265, volatility: 0.1552, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
-  { name: "US Mid Cap",                  geometricReturn: 0.1048, arithmeticMean: 0.1205, volatility: 0.1772, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
-  { name: "US Small Cap",                geometricReturn: 0.1074, arithmeticMean: 0.1269, volatility: 0.1976, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.90, pctQualifiedDividends: 0.10, pctTaxExempt: 0,   assetType: "equities" },
-  { name: "Global ex-US Stock Market",   geometricReturn: 0.0649, arithmeticMean: 0.0804, volatility: 0.1763, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.80, pctQualifiedDividends: 0.20, pctTaxExempt: 0,   assetType: "equities" },
-  { name: "Emerging Markets",            geometricReturn: 0.0681, arithmeticMean: 0.0887, volatility: 0.2031, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
-  { name: "Short Term Treasury",         geometricReturn: 0.0205, arithmeticMean: 0.0207, volatility: 0.0181, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
-  { name: "10-year Treasury",            geometricReturn: 0.0323, arithmeticMean: 0.0349, volatility: 0.0725, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
-  { name: "TIPS",                        geometricReturn: 0.0356, arithmeticMean: 0.0372, volatility: 0.0572, pctOrdinaryIncome: 0.80, pctLtCapitalGains: 0.20, pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
-  { name: "High Yield Corporate Bonds",  geometricReturn: 0.0581, arithmeticMean: 0.0614, volatility: 0.0814, pctOrdinaryIncome: 0.85, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
-  { name: "Intermediate-Term Tax-Exempt",geometricReturn: 0.0333, arithmeticMean: 0.0342, volatility: 0.0431, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 1.0, assetType: "tax_exempt_bonds" },
-  { name: "Long Term Treasury",          geometricReturn: 0.0388, arithmeticMean: 0.0466, volatility: 0.1252, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
-  { name: "REIT",                        geometricReturn: 0.0773, arithmeticMean: 0.1021, volatility: 0.2228, pctOrdinaryIncome: 0.60, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0.25, pctTaxExempt: 0,   assetType: "equities" },
-  { name: "Gold",                        geometricReturn: 0.1135, arithmeticMean: 0.1283, volatility: 0.1720, pctOrdinaryIncome: 0,    pctLtCapitalGains: 1.0,  pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "other" },
-  { name: "Commodities",                 geometricReturn: 0.0195, arithmeticMean: 0.0459, volatility: 0.2298, pctOrdinaryIncome: 0,    pctLtCapitalGains: 1.0,  pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "other" },
-  { name: "Inflation", slug: "inflation", geometricReturn: 0.025, arithmeticMean: 0.0255, volatility: 0.005, pctOrdinaryIncome: 1.0, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "other" },
+  { name: "US Large Cap",                slug: "us_large_cap",          geometricReturn: 0.1145, arithmeticMean: 0.1265, volatility: 0.1552, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "US Mid Cap",                  slug: "us_mid_cap",            geometricReturn: 0.1048, arithmeticMean: 0.1205, volatility: 0.1772, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "US Small Cap",                slug: "us_small_cap",          geometricReturn: 0.1074, arithmeticMean: 0.1269, volatility: 0.1976, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.90, pctQualifiedDividends: 0.10, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Global ex-US Stock Market",   slug: "global_ex_us",          geometricReturn: 0.0649, arithmeticMean: 0.0804, volatility: 0.1763, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.80, pctQualifiedDividends: 0.20, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Emerging Markets",            slug: "emerging_markets",      geometricReturn: 0.0681, arithmeticMean: 0.0887, volatility: 0.2031, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Short Term Treasury",         slug: "short_term_treasury",   geometricReturn: 0.0205, arithmeticMean: 0.0207, volatility: 0.0181, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "10-year Treasury",            slug: "ten_year_treasury",     geometricReturn: 0.0323, arithmeticMean: 0.0349, volatility: 0.0725, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "TIPS",                        slug: "tips",                  geometricReturn: 0.0356, arithmeticMean: 0.0372, volatility: 0.0572, pctOrdinaryIncome: 0.80, pctLtCapitalGains: 0.20, pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "High Yield Corporate Bonds",  slug: "high_yield_corporate",  geometricReturn: 0.0581, arithmeticMean: 0.0614, volatility: 0.0814, pctOrdinaryIncome: 0.85, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "Intermediate-Term Tax-Exempt",slug: "tax_exempt_muni",       geometricReturn: 0.0333, arithmeticMean: 0.0342, volatility: 0.0431, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 1.0, assetType: "tax_exempt_bonds" },
+  { name: "Long Term Treasury",          slug: "long_term_treasury",    geometricReturn: 0.0388, arithmeticMean: 0.0466, volatility: 0.1252, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "REIT",                        slug: "reit",                  geometricReturn: 0.0773, arithmeticMean: 0.1021, volatility: 0.2228, pctOrdinaryIncome: 0.60, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0.25, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Gold",                        slug: "gold",                  geometricReturn: 0.1135, arithmeticMean: 0.1283, volatility: 0.1720, pctOrdinaryIncome: 0,    pctLtCapitalGains: 1.0,  pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "other" },
+  { name: "Commodities",                 slug: "commodities",           geometricReturn: 0.0195, arithmeticMean: 0.0459, volatility: 0.2298, pctOrdinaryIncome: 0,    pctLtCapitalGains: 1.0,  pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "other" },
+  { name: "Inflation",                   slug: "inflation",             geometricReturn: 0.025,  arithmeticMean: 0.0255, volatility: 0.005,  pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "other" },
 ];
 
 export const DEFAULT_MODEL_PORTFOLIOS: SeedModelPortfolio[] = [

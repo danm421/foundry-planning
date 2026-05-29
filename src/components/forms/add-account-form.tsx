@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImper
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
+import { HoldingsTab } from "./holdings-tab";
+import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab from "./beneficiaries-tab";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
@@ -142,7 +144,7 @@ interface AddAccountFormProps {
   /** Existing account names for auto-increment default naming on create. */
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
-  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries";
+  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings";
   /**
    * When true, only the Beneficiaries tab button renders and all other panels
    * are unmounted. Prevents accidental overwrite when `initial` is a lite shape
@@ -348,7 +350,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [accountRothValue, setAccountRothValue] = useState<string>(
     initial?.rothValue != null ? String(initial.rothValue) : "",
   );
-  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries">(
+  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings">(
     initialTab ?? "details",
   );
   const [subType, setSubType] = useState(
@@ -403,8 +405,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
-  const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom" | "asset_mix" | "inflation">(
-    (initial?.growthSource as "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation") ?? "default"
+  const [growthSource, setGrowthSource] = useState<GrowthSource>(
+    (initial?.growthSource as GrowthSource) ?? "default"
   );
   // Real estate uses its own source toggle (custom vs. plan inflation). Stored
   // in the same `growth_source` column on save.
@@ -416,6 +418,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   );
   const [customAllocations, setCustomAllocations] = useState<{ assetClassId: string; weight: number }[]>([]);
   const [allocationsLoaded, setAllocationsLoaded] = useState(false);
+  const [holdingsTotals, setHoldingsTotals] = useState<{ value: number; basis: number } | null>(null);
   // Controlled state for previously-uncontrolled fields. Conversion from
   // `defaultValue` is a prerequisite for tab-switch auto-save (the save path
   // needs to read these without scraping FormData) — and it also closes a
@@ -607,6 +610,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       setModelPortfolioId("");
     } else if (v === "custom") {
       setGrowthSource("custom");
+      setModelPortfolioId("");
+    } else if (v === "holdings") {
+      setGrowthSource("holdings");
       setModelPortfolioId("");
     } else {
       setGrowthSource("default");
@@ -1049,6 +1055,19 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               Asset Mix
             </button>
           )}
+          {!lockTab && showAssetMixTab && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("holdings")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "holdings"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              Holdings
+            </button>
+          )}
           {!lockTab && showRmdCheckbox && (
             <button
               type="button"
@@ -1213,7 +1232,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               <CurrencyInput
                 id="value"
                 name="value"
-                value={accountValue}
+                value={growthSource === "holdings" && holdingsTotals ? holdingsTotals.value : accountValue}
+                disabled={growthSource === "holdings"}
                 onChange={(raw) => {
                   setAccountValue(raw);
                   // Auto-mirror basis from value for plain non-retirement
@@ -1227,6 +1247,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 }}
                 className={inputClassName}
               />
+              {growthSource === "holdings" && (
+                <p className="mt-1 text-xs text-gray-400">
+                  Value &amp; cost basis are derived from this account&apos;s holdings.
+                </p>
+              )}
             </div>
 
             {category === "retirement" && (subType === "401k" || subType === "403b") ? (
@@ -1254,7 +1279,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 <CurrencyInput
                   id="basis"
                   name="basis"
-                  value={accountBasis}
+                  value={growthSource === "holdings" && holdingsTotals ? holdingsTotals.basis : accountBasis}
+                  disabled={growthSource === "holdings"}
                   onChange={(raw) => {
                     setAccountBasis(raw);
                     setUserEditedBasis(true);
@@ -1283,6 +1309,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     ))}
                     {ASSET_MIX_CATEGORIES.includes(category) && (
                       <option value="asset_mix">Asset mix (custom)</option>
+                    )}
+                    {ASSET_MIX_CATEGORIES.includes(category) && (
+                      <option value="holdings">Holdings (positions)</option>
                     )}
                     {(category === "cash" || category === "taxable" || category === "retirement") && (
                       <option value="inflation">
@@ -1609,6 +1638,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             }
             allocations={customAllocations}
             onChange={setCustomAllocations}
+          />
+        </div>
+      )}
+
+      {!lockTab && showAssetMixTab && assetClasses && (
+        <div className={activeTab === "holdings" ? "" : "hidden"}>
+          <HoldingsTab
+            clientId={clientId}
+            accountId={isEdit ? (initial?.id ?? null) : null}
+            scenarioActive={writer.scenarioActive}
+            assetClasses={assetClasses}
+            growthSource={growthSource}
+            onGrowthSourceSynced={setGrowthSource}
+            onTotalsChange={setHoldingsTotals}
           />
         </div>
       )}

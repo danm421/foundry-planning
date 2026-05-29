@@ -5,6 +5,7 @@ import {
   accounts,
   accountAssetAllocations,
   accountFlowOverrides,
+  accountHoldings,
   accountOwners,
   assetClasses,
   assetTransactions,
@@ -46,7 +47,9 @@ import {
   willResiduaryRecipients,
   wills,
   withdrawalStrategies,
+  holdingAssetClassOverrides,
   medicareCoverage,
+  securityAssetClassWeights,
 } from "@/db/schema";
 import type {
   AccountFlowOverride,
@@ -69,6 +72,7 @@ import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expe
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
 import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constants";
+import { rollupHoldings, type HoldingInput } from "@/lib/investments/holdings-rollup";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
 import {
   resolveAccountFromRaw,
@@ -331,6 +335,29 @@ export const loadClientDataWithContext = cache(
         );
     }
 
+    // ── Holdings (growthSource = "holdings") ─────────────────────────────────
+    let holdingRows: (typeof accountHoldings.$inferSelect)[] = [];
+    if (accountRows.length > 0) {
+      holdingRows = await db
+        .select()
+        .from(accountHoldings)
+        .where(inArray(accountHoldings.accountId, accountRows.map((a) => a.id)));
+    }
+    const holdingIds = holdingRows.map((h) => h.id);
+    const securityIds = Array.from(
+      new Set(holdingRows.map((h) => h.securityId).filter((s): s is string => s != null)),
+    );
+    const [holdingOverrideRows, securityWeightRows] = await Promise.all([
+      holdingIds.length
+        ? db.select().from(holdingAssetClassOverrides)
+            .where(inArray(holdingAssetClassOverrides.holdingId, holdingIds))
+        : Promise.resolve([]),
+      securityIds.length
+        ? db.select().from(securityAssetClassWeights)
+            .where(inArray(securityAssetClassWeights.securityId, securityIds))
+        : Promise.resolve([]),
+    ]);
+
     // Load ownership junction rows for accounts and liabilities
     const accountIds = accountRows.map((a) => a.id);
     const liabilityIds = liabilityRows.map((l) => l.id);
@@ -419,6 +446,52 @@ export const loadClientDataWithContext = cache(
           .where(eq(clientCmaOverrides.clientId, id))
       : [];
 
+    // Slug → firm assetClassId map (assetClassRows carry the canonical slug).
+    const slugToAssetClassId = new Map<string, string>();
+    for (const ac of assetClassRows) {
+      if (ac.slug) slugToAssetClassId.set(ac.slug, ac.id);
+    }
+
+    const overridesByHolding = new Map<string, { assetClassId: string; weight: number }[]>();
+    for (const o of holdingOverrideRows) {
+      const list = overridesByHolding.get(o.holdingId) ?? [];
+      list.push({ assetClassId: o.assetClassId, weight: parseFloat(o.weight) });
+      overridesByHolding.set(o.holdingId, list);
+    }
+    const weightsBySecurity = new Map<string, { slug: string; weight: number }[]>();
+    for (const w of securityWeightRows) {
+      const list = weightsBySecurity.get(w.securityId) ?? [];
+      list.push({ slug: w.assetClassSlug, weight: parseFloat(w.weight) });
+      weightsBySecurity.set(w.securityId, list);
+    }
+    const holdingsByAccountId = new Map<string, HoldingInput[]>();
+    for (const h of holdingRows) {
+      const list = holdingsByAccountId.get(h.accountId) ?? [];
+      list.push({
+        id: h.id,
+        securityId: h.securityId,
+        shares: parseFloat(h.shares),
+        price: parseFloat(h.price),
+        costBasis: parseFloat(h.costBasis),
+        securityWeights: h.securityId ? weightsBySecurity.get(h.securityId) ?? [] : [],
+        overrides: overridesByHolding.get(h.id) ?? [],
+      });
+      holdingsByAccountId.set(h.accountId, list);
+    }
+
+    // Only accounts whose effective growth source is "holdings" get rolled up.
+    const accountHoldingsAllocations: { accountId: string; assetClassId: string; weight: string }[] = [];
+    const holdingsTotalsByAccountId = new Map<string, { value: number; basis: number }>();
+    for (const account of accountRows) {
+      if ((account.growthSource ?? "default") !== "holdings") continue;
+      const list = holdingsByAccountId.get(account.id) ?? [];
+      const rollup = rollupHoldings(list, slugToAssetClassId);
+      holdingsTotalsByAccountId.set(account.id, { value: rollup.value, basis: rollup.basis });
+      for (const a of rollup.allocations) {
+        accountHoldingsAllocations.push({ accountId: account.id, assetClassId: a.assetClassId, weight: String(a.weight) });
+      }
+    }
+
     // Growth-source resolver — owns allocsByPortfolio, allocsByAccount, acMap,
     // inflationFallback. Resolver API replaces the inline resolve* helpers from route.ts.
     const resolver = createGrowthSourceResolver({
@@ -438,6 +511,7 @@ export const loadClientDataWithContext = cache(
       accountAssetAllocations: accountAllocRows.filter((a) =>
         accountRows.some((acc) => acc.id === a.accountId),
       ),
+      accountHoldingsAllocations,
       // DB schema uses sourceAssetClassId; resolver type expects assetClassId
       clientCmaOverrides: cmaOverrideRows
         .filter((o) => o.sourceAssetClassId != null)
@@ -602,6 +676,8 @@ export const loadClientDataWithContext = cache(
           : undefined;
       } else if (effectiveSource === "asset_mix") {
         baseAlloc = resolver.accountAllocMap(account.id);
+      } else if (effectiveSource === "holdings") {
+        baseAlloc = resolver.holdingsAllocMap(account.id);
       }
       accountBaseAllocByAccountId.set(account.id, baseAlloc);
     }
@@ -617,6 +693,7 @@ export const loadClientDataWithContext = cache(
       policiesByAccount,
       ownersByAccountId,
       accountBaseAllocByAccountId,
+      holdingsTotalsByAccountId,
     };
 
     const mappedAccounts = accountRows.map((a) =>

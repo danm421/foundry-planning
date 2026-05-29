@@ -264,6 +264,7 @@ export const growthSourceEnum = pgEnum("growth_source", [
   "custom",
   "asset_mix",
   "inflation",
+  "holdings",
 ]);
 
 export const scenarioOpTypeEnum = pgEnum("scenario_op_type", ["add", "edit", "remove"]);
@@ -1108,7 +1109,10 @@ export const assetClasses = pgTable("asset_classes", {
   assetType: varchar("asset_type", { length: 32 }).notNull().default("other"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (t) => [unique("asset_classes_firm_id_name_unique").on(t.firmId, t.name)]);
+}, (t) => [
+  unique("asset_classes_firm_id_name_unique").on(t.firmId, t.name),
+  uniqueIndex("asset_classes_firm_slug_uniq").on(t.firmId, t.slug).where(sql`${t.slug} IS NOT NULL`),
+]);
 
 export const modelPortfolios = pgTable("model_portfolios", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -1186,6 +1190,91 @@ export const assetClassCorrelations = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("asset_class_correlations_pair_uniq").on(t.assetClassIdA, t.assetClassIdB)]
+);
+
+// Global, firm-agnostic security reference. Keyed by (identifier_type,
+// identifier). Populated by the classification layer (bulk pull + on-demand).
+export const securities = pgTable(
+  "securities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    identifierType: varchar("identifier_type", { length: 16 }).notNull(), // ticker | cusip | figi
+    identifier: text("identifier").notNull(),
+    figi: text("figi"),
+    name: text("name"),
+    securityType: varchar("security_type", { length: 16 }).notNull().default("other"), // etf|mutual_fund|stock|bond|cash|other
+    classifierSource: varchar("classifier_source", { length: 16 }).notNull().default("eodhd"), // eodhd|seed|manual
+    classifierVersion: integer("classifier_version").notNull().default(1),
+    rawPayload: jsonb("raw_payload"),
+    classifiedAt: timestamp("classified_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("securities_identifier_uniq").on(t.identifierType, t.identifier)]
+);
+
+// A security's blend across canonical asset-class slugs. Weights sum ≈ 1.
+export const securityAssetClassWeights = pgTable(
+  "security_asset_class_weights",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    securityId: uuid("security_id")
+      .notNull()
+      .references(() => securities.id, { onDelete: "cascade" }),
+    // Canonical slug (see asset-class-slugs.ts). Intentionally NOT a FK to
+    // asset_classes.slug: securities are global/firm-agnostic while asset_classes
+    // is firm-scoped — a later phase resolves slug → firm assetClassId per firm.
+    assetClassSlug: varchar("asset_class_slug", { length: 50 }).notNull(),
+    weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
+  },
+  (t) => [uniqueIndex("security_acw_uniq").on(t.securityId, t.assetClassSlug)]
+);
+
+// Individual positions inside an investment account. Org-scoped via the
+// account → client → firm chain. When an account has holdings and its
+// growthSource is "holdings", these are authoritative for value + basis and
+// roll up (value-weighted) into the account's asset-class blend.
+export const accountHoldings = pgTable(
+  "account_holdings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    // Nullable: a fully-manual holding (override-only, no classified security).
+    securityId: uuid("security_id").references(() => securities.id, {
+      onDelete: "set null",
+    }),
+    displayTicker: text("display_ticker"),
+    displayName: text("display_name"),
+    shares: decimal("shares", { precision: 18, scale: 6 }).notNull().default("0"),
+    price: decimal("price", { precision: 15, scale: 4 }).notNull().default("0"),
+    priceAsOf: date("price_as_of"),
+    costBasis: decimal("cost_basis", { precision: 15, scale: 2 }).notNull().default("0"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("account_holdings_account_idx").on(t.accountId)]
+);
+
+// Per-holding manual asset-class blend. When present (≥1 row), WINS permanently
+// over the security's derived slug blend for that holding. Firm assetClassId
+// (not a canonical slug) — overrides are firm-specific by construction.
+export const holdingAssetClassOverrides = pgTable(
+  "holding_asset_class_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    holdingId: uuid("holding_id")
+      .notNull()
+      .references(() => accountHoldings.id, { onDelete: "cascade" }),
+    assetClassId: uuid("asset_class_id")
+      .notNull()
+      .references(() => assetClasses.id, { onDelete: "cascade" }),
+    weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
+  },
+  (t) => [uniqueIndex("holding_acw_override_uniq").on(t.holdingId, t.assetClassId)]
 );
 
 export const accounts = pgTable("accounts", {

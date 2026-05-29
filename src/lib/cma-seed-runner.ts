@@ -5,7 +5,7 @@ import {
   modelPortfolioAllocations,
   assetClassCorrelations,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   DEFAULT_ASSET_CLASSES,
   DEFAULT_MODEL_PORTFOLIOS,
@@ -49,8 +49,8 @@ export async function seedCmaForFirm(firmId: string): Promise<SeedResult> {
       .where(eq(assetClasses.firmId, firmId))
   ).length;
 
-  // Asset classes — ON CONFLICT DO NOTHING protects against concurrent callers
-  // (e.g. React strict-mode double-mount firing two lazy seeds in parallel).
+  // Asset classes — ON CONFLICT DO UPDATE sets only the slug (backfills slugs for
+  // rows seeded before slug was introduced); safe for concurrent callers.
   await db
     .insert(assetClasses)
     .values(
@@ -69,8 +69,9 @@ export async function seedCmaForFirm(firmId: string): Promise<SeedResult> {
         assetType: ac.assetType,
       }))
     )
-    .onConflictDoNothing({
+    .onConflictDoUpdate({
       target: [assetClasses.firmId, assetClasses.name],
+      set: { slug: sql`excluded.slug` },
     });
 
   const allClasses = await db

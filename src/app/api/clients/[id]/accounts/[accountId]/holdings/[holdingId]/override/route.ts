@@ -1,0 +1,104 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/db";
+import {
+  accountHoldings,
+  holdingAssetClassOverrides,
+  assetClasses,
+  accounts,
+  clients,
+} from "@/db/schema";
+import { eq, and } from "drizzle-orm";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { parseBody } from "@/lib/schemas/common";
+import { holdingOverrideSchema } from "@/lib/schemas/holdings";
+import { recordAudit } from "@/lib/audit";
+
+export const dynamic = "force-dynamic";
+
+async function assertHoldingInFirm(
+  clientId: string,
+  accountId: string,
+  holdingId: string,
+  firmId: string,
+) {
+  const [row] = await db
+    .select({ id: accountHoldings.id })
+    .from(accountHoldings)
+    .innerJoin(accounts, eq(accounts.id, accountHoldings.accountId))
+    .innerJoin(clients, eq(clients.id, accounts.clientId))
+    .where(
+      and(
+        eq(accountHoldings.id, holdingId),
+        eq(accountHoldings.accountId, accountId),
+        eq(accounts.clientId, clientId),
+        eq(clients.firmId, firmId),
+      ),
+    );
+  return row ?? null;
+}
+
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; accountId: string; holdingId: string }> },
+) {
+  try {
+    const firmId = await requireOrgId();
+    const { id, accountId, holdingId } = await params;
+
+    if (!(await assertHoldingInFirm(id, accountId, holdingId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const parsed = await parseBody(holdingOverrideSchema, req);
+    if (!parsed.ok) return parsed.response;
+    const { overrides } = parsed.data;
+
+    // Every referenced asset class must belong to this firm.
+    const classIds = Array.from(new Set(overrides.map((o) => o.assetClassId)));
+    if (classIds.length > 0) {
+      const valid = await db
+        .select({ id: assetClasses.id })
+        .from(assetClasses)
+        .where(eq(assetClasses.firmId, firmId));
+      const validIds = new Set(valid.map((c) => c.id));
+      for (const cid of classIds) {
+        if (!validIds.has(cid)) {
+          return NextResponse.json({ error: "Invalid asset class reference" }, { status: 400 });
+        }
+      }
+    }
+
+    const nonZero = overrides.filter((o) => o.weight > 0);
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(holdingAssetClassOverrides)
+        .where(eq(holdingAssetClassOverrides.holdingId, holdingId));
+      if (nonZero.length > 0) {
+        await tx.insert(holdingAssetClassOverrides).values(
+          nonZero.map((o) => ({
+            holdingId,
+            assetClassId: o.assetClassId,
+            weight: String(o.weight),
+          })),
+        );
+      }
+    });
+
+    await recordAudit({
+      action: "account.holding.override.update",
+      resourceType: "account",
+      resourceId: accountId,
+      clientId: id,
+      firmId,
+      metadata: { holdingId, count: nonZero.length },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("PUT holding override error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
