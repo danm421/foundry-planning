@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import type { ProjectionYear } from "@/engine";
-import { buildTaxBracketRows } from "@/lib/tax/bracket";
+import { buildTaxBracketRows, buildStateBracketRows, type StateBracketRow } from "@/lib/tax/bracket";
 import type { BracketColumnKey } from "@/lib/tax/cell-drill/types";
-import type { StateIncomeTaxResult } from "@/lib/tax/state-income";
 import { USPS_STATE_NAMES } from "@/lib/usps-states";
 
 interface TaxBracketTabProps {
@@ -51,69 +50,6 @@ function ClickableCell({
       {children}
     </button>
   );
-}
-
-// ---------------- State-mode row helpers ----------------
-
-interface StateBracketRow {
-  year: number;
-  clientAge: number;
-  spouseAge: number | null;
-  stateCode: string | null;
-  stateTaxableIncome: number;
-  marginalRate: number;
-  intoBracket: number;
-  remainingInBracket: number | null;
-  stateTax: number;
-  changeInBase: number;
-}
-
-function pickMarginalTier(
-  taxableIncome: number,
-  brackets: StateIncomeTaxResult["bracketsUsed"],
-): { from: number; to: number | null; rate: number } | null {
-  if (brackets.length === 0) return null;
-  for (const tier of brackets) {
-    const lowerOk = taxableIncome >= tier.from;
-    const upperOk = tier.to == null || taxableIncome < tier.to;
-    if (lowerOk && upperOk) return tier;
-  }
-  // Above all tiers — pin to top tier.
-  return brackets[brackets.length - 1];
-}
-
-function buildStateBracketRows(years: ProjectionYear[]): StateBracketRow[] {
-  const rows: StateBracketRow[] = [];
-  let prevBase: number | null = null;
-
-  for (const year of years) {
-    const state = year.taxResult?.state;
-    if (!state) continue;
-
-    const base = state.stateTaxableIncome;
-    const tier = pickMarginalTier(base, state.bracketsUsed);
-    const intoBracket = tier ? Math.max(0, base - tier.from) : 0;
-    const remainingInBracket =
-      tier && tier.to != null ? Math.max(0, tier.to - base) : null;
-    const changeInBase = prevBase == null ? 0 : base - prevBase;
-
-    rows.push({
-      year: year.year,
-      clientAge: year.ages.client,
-      spouseAge: year.ages.spouse ?? null,
-      stateCode: state.state,
-      stateTaxableIncome: base,
-      marginalRate: tier?.rate ?? 0,
-      intoBracket,
-      remainingInBracket,
-      stateTax: state.stateTax,
-      changeInBase,
-    });
-
-    prevBase = base;
-  }
-
-  return rows;
 }
 
 // ---------------- Federal table (extracted) ----------------
