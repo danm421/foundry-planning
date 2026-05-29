@@ -1,5 +1,6 @@
 import type { ProjectionYear } from "@/engine/types";
 import type { BracketTier } from "./types";
+import type { StateIncomeTaxResult } from "./state-income";
 
 export interface TaxBracketRow {
   year: number;
@@ -90,6 +91,66 @@ export function buildTaxBracketRows(years: ProjectionYear[]): TaxBracketRow[] {
     });
 
     prevBase = incomeTaxBase;
+  }
+
+  return rows;
+}
+
+export interface StateBracketRow {
+  year: number;
+  clientAge: number;
+  spouseAge: number | null;
+  stateCode: string | null;
+  stateTaxableIncome: number;
+  marginalRate: number;
+  intoBracket: number;
+  remainingInBracket: number | null;
+  stateTax: number;
+  changeInBase: number;
+}
+
+export function pickStateMarginalTier(
+  taxableIncome: number,
+  brackets: StateIncomeTaxResult["bracketsUsed"],
+): BracketTier | null {
+  if (brackets.length === 0) return null;
+  for (const tier of brackets) {
+    const lowerOk = taxableIncome >= tier.from;
+    const upperOk = tier.to == null || taxableIncome < tier.to;
+    if (lowerOk && upperOk) return tier;
+  }
+  return brackets[brackets.length - 1];
+}
+
+export function buildStateBracketRows(years: ProjectionYear[]): StateBracketRow[] {
+  const rows: StateBracketRow[] = [];
+  let prevBase: number | null = null;
+
+  for (const year of years) {
+    const state = year.taxResult?.state;
+    if (!state) continue;
+
+    const base = state.stateTaxableIncome;
+    const tier = pickStateMarginalTier(base, state.bracketsUsed);
+    const intoBracket = tier ? Math.max(0, base - tier.from) : 0;
+    const remainingInBracket =
+      tier && tier.to != null ? Math.max(0, tier.to - base) : null;
+    const changeInBase = prevBase == null ? 0 : base - prevBase;
+
+    rows.push({
+      year: year.year,
+      clientAge: year.ages.client,
+      spouseAge: year.ages.spouse ?? null,
+      stateCode: state.state,
+      stateTaxableIncome: base,
+      marginalRate: tier?.rate ?? 0,
+      intoBracket,
+      remainingInBracket,
+      stateTax: state.stateTax,
+      changeInBase,
+    });
+
+    prevBase = base;
   }
 
   return rows;

@@ -17,7 +17,11 @@ describe("searchReports", () => {
 
   it("ranks a title match above a description-only match", () => {
     const result = searchReports("income", {}, []);
-    expect(result.order[0]).toBe("cashFlowIncome");
+    // Title-prefix matches (rank 0) sort first, alphabetically by title. The
+    // Income Tax pages all begin "Income Tax —", so the first of them wins over
+    // "Cash Flow — Income" (a title-substring, rank 1) and any description-only hit.
+    expect(result.order[0]).toBe("incomeTaxAboveLine");
+    expect(result.order).toContain("cashFlowIncome");
     expect(result.sections.every((s) => s.heading === "Cash Flow")).toBe(true);
   });
 

@@ -35,7 +35,8 @@ export function SelectedPageRow(props: Props) {
       ? "Default scenario"
       : props.scenarioOverride === null
         ? "Base case"
-        : props.scenarioOverride;
+        : (props.scenarios.find((s) => s.id === props.scenarioOverride)?.name ??
+          props.scenarioOverride);
 
   const hasOverride = props.scenarioOverride !== undefined;
 

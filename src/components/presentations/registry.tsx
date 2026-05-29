@@ -49,6 +49,14 @@ import { buildNetCashFlowDrillData } from "@/lib/presentations/pages/cash-flow-n
 import { buildPortfolioGrowthDrillData } from "@/lib/presentations/pages/cash-flow-growth/view-model";
 import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-flow-activity/view-model";
 import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
+import { buildTaxIncomeDrillData } from "@/lib/presentations/pages/income-tax-income/view-model";
+import { buildTaxFederalDrillData } from "@/lib/presentations/pages/income-tax-federal/view-model";
+import { buildTaxStateDrillData } from "@/lib/presentations/pages/income-tax-state/view-model";
+import { buildTaxAboveLineDrillData } from "@/lib/presentations/pages/income-tax-above-line/view-model";
+import { buildTaxBelowLineDrillData } from "@/lib/presentations/pages/income-tax-below-line/view-model";
+import { buildTaxOtherTaxesDrillData } from "@/lib/presentations/pages/income-tax-other-taxes/view-model";
+import { buildTaxBracketFederalDrillData } from "@/lib/presentations/pages/income-tax-bracket-federal/view-model";
+import { buildTaxBracketStateDrillData } from "@/lib/presentations/pages/income-tax-bracket-state/view-model";
 import type { ProjectionYear, ClientData } from "@/engine/types";
 
 export const CATEGORY_ORDER = [
@@ -268,6 +276,68 @@ export const cashFlowAssetsPage = makeDrillPage(
   buildPortfolioAssetsDrillData,
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Income Tax pages — mirror the in-app Income Tax report tabs. Summary pages
+// (Income, Federal, State) carry stacked-bar charts; the deduction/other-tax
+// and bracket drills are table-only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const incomeTaxIncomePage = makeDrillPage(
+  "incomeTaxIncome",
+  "Income Tax — Income",
+  "Annual income breakdown: earned, taxable Social Security, ordinary, dividends, capital gains, QBI, and totals.",
+  buildTaxIncomeDrillData,
+);
+
+export const incomeTaxFederalPage = makeDrillPage(
+  "incomeTaxFederal",
+  "Income Tax — Federal",
+  "Federal tax waterfall: total income through AGI, deductions, taxable income, regular tax, other taxes, total tax, and marginal rate.",
+  buildTaxFederalDrillData,
+);
+
+export const incomeTaxStatePage = makeDrillPage(
+  "incomeTaxState",
+  "Income Tax — State",
+  "State tax flow: federal base, add-backs, subtractions, state AGI, deductions, state taxable income, and state tax.",
+  buildTaxStateDrillData,
+);
+
+export const incomeTaxAboveLinePage = makeDrillPage(
+  "incomeTaxAboveLine",
+  "Income Tax — Above-Line Deductions",
+  "Above-the-line deduction components: retirement contributions, tagged expenses, and manual entries.",
+  buildTaxAboveLineDrillData,
+);
+
+export const incomeTaxBelowLinePage = makeDrillPage(
+  "incomeTaxBelowLine",
+  "Income Tax — Below-Line Deductions",
+  "Itemized deduction components, the itemized total, the standard deduction, and the deduction taken.",
+  buildTaxBelowLineDrillData,
+);
+
+export const incomeTaxOtherTaxesPage = makeDrillPage(
+  "incomeTaxOtherTaxes",
+  "Income Tax — Other Taxes",
+  "Taxes beyond regular federal income tax: capital gains tax, AMT, NIIT, additional Medicare, FICA, and state tax.",
+  buildTaxOtherTaxesDrillData,
+);
+
+export const incomeTaxBracketFederalPage = makeDrillPage(
+  "incomeTaxBracketFederal",
+  "Income Tax — Tax Bracket (Federal)",
+  "Federal bracket stacking: Roth conversions, income tax base, marginal rate, amount into and remaining in the marginal bracket.",
+  buildTaxBracketFederalDrillData,
+);
+
+export const incomeTaxBracketStatePage = makeDrillPage(
+  "incomeTaxBracketState",
+  "Income Tax — Tax Bracket (State)",
+  "State bracket stacking: state taxable income, marginal rate, amount into and remaining in the marginal bracket, and state tax.",
+  buildTaxBracketStateDrillData,
+);
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -279,6 +349,14 @@ export const PRESENTATION_PAGES = {
   cashFlowGrowth: cashFlowGrowthPage,
   cashFlowActivity: cashFlowActivityPage,
   cashFlowAssets: cashFlowAssetsPage,
+  incomeTaxIncome: incomeTaxIncomePage,
+  incomeTaxFederal: incomeTaxFederalPage,
+  incomeTaxState: incomeTaxStatePage,
+  incomeTaxAboveLine: incomeTaxAboveLinePage,
+  incomeTaxBelowLine: incomeTaxBelowLinePage,
+  incomeTaxOtherTaxes: incomeTaxOtherTaxesPage,
+  incomeTaxBracketFederal: incomeTaxBracketFederalPage,
+  incomeTaxBracketState: incomeTaxBracketStatePage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
