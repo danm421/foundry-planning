@@ -17,9 +17,8 @@ export interface PortfolioAnalysisData {
   unplottable: UnplottableAccount[];
 }
 
-function sortValue(r: AnalysisRow, key: PortfolioAnalysisOptions["sortKey"]): number | string {
+function numericSortValue(r: AnalysisRow, key: Exclude<PortfolioAnalysisOptions["sortKey"], "name">): number {
   switch (key) {
-    case "name": return r.name.toLowerCase();
     case "return": return r.stats.geometricReturn;
     case "mean": return r.stats.arithmeticMean;
     case "stdDev": return r.stats.stdDev;
@@ -57,9 +56,10 @@ export function buildPortfolioAnalysisData(
 
   const dir = options.sortDir === "asc" ? 1 : -1;
   visible.sort((a, b) => {
-    const av = sortValue(a, options.sortKey);
-    const bv = sortValue(b, options.sortKey);
-    return av < bv ? -dir : av > bv ? dir : 0;
+    if (options.sortKey === "name") {
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase()) * dir;
+    }
+    return (numericSortValue(a, options.sortKey) - numericSortValue(b, options.sortKey)) * dir;
   });
 
   return {

@@ -8,7 +8,11 @@ function Marker({ x, y, color, style }: { x: number; y: number; color: string; s
   if (style === "rect") return <Rect x={x - r} y={y - r} width={r * 2} height={r * 2} fill={color} />;
   if (style === "triangle") return <Path d={`M ${x} ${y - r} L ${x + r} ${y + r} L ${x - r} ${y + r} Z`} fill={color} />;
   if (style === "rectRot") return <Path d={`M ${x} ${y - r} L ${x + r} ${y} L ${x} ${y + r} L ${x - r} ${y} Z`} fill={color} />;
-  if (style === "star") return <Path d={`M ${x} ${y - r} L ${x + r} ${y + r} L ${x - r} ${y - 1} L ${x + r} ${y - 1} L ${x - r} ${y + r} Z`} fill={color} />;
+  if (style === "star") {
+    const sr = 3.5;
+    const ir = sr * 0.35;
+    return <Path d={`M ${x} ${y - sr} L ${x + ir} ${y - ir} L ${x + sr} ${y} L ${x + ir} ${y + ir} L ${x} ${y + sr} L ${x - ir} ${y + ir} L ${x - sr} ${y} L ${x - ir} ${y - ir} Z`} fill={color} />;
+  }
   return <Circle cx={x} cy={y} r={r} fill={color} />;
 }
 
@@ -28,8 +32,17 @@ export function ScatterPdf({ spec }: { spec: ScatterSpec }) {
             </G>
           ))}
           {spec.xAxis.ticks.map((t) => (
-            <SvgText key={`x${t}`} x={x(t)} y={innerH + 12} style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: T.ink3 }}>{spec.xAxis.labelFormat(t)}</SvgText>
+            <G key={`x${t}`}>
+              <Line x1={x(t)} x2={x(t)} y1={0} y2={innerH} stroke={spec.gridlineColor} strokeWidth={0.5} />
+              <SvgText x={x(t)} y={innerH + 12} style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: T.ink3 }}>{spec.xAxis.labelFormat(t)}</SvgText>
+            </G>
           ))}
+          {/* x-axis title */}
+          <SvgText x={innerW / 2} y={innerH + 30} style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink2, textAnchor: "middle" }}>{spec.xAxis.title}</SvgText>
+          {/* y-axis title — rotated -90° around its anchor point */}
+          <G transform={`rotate(-90, -38, ${innerH / 2})`}>
+            <SvgText x={-38} y={innerH / 2} style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink2, textAnchor: "middle" }}>{spec.yAxis.title}</SvgText>
+          </G>
           {spec.points.map((p) => (
             <Marker key={p.key} x={x(p.x)} y={y(p.y)} color={p.color} style={p.pointStyle} />
           ))}
