@@ -195,7 +195,7 @@ export default function InvestmentsClient({
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.1fr_1fr]">
+      <div className={`grid grid-cols-1 gap-6 ${shouldShowDrift ? "lg:grid-cols-[1fr_1.1fr_1fr]" : "lg:grid-cols-[1fr_1.1fr]"}`}>
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
           <h3 className="mb-3 text-sm font-semibold text-gray-300">Allocation Details</h3>
           {drilledRowId === null ? (

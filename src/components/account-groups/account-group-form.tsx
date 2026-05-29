@@ -72,6 +72,8 @@ export default function AccountGroupForm({
         ? `/api/clients/${clientId}/account-groups/${initial.id}`
         : `/api/clients/${clientId}/account-groups`;
       const method = initial ? "PATCH" : "POST";
+      const liquidIds = new Set(liquidAccounts.map((a) => a.id));
+      const memberAccountIds = [...selected].filter((id) => liquidIds.has(id));
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -79,7 +81,7 @@ export default function AccountGroupForm({
           name: name.trim(),
           description: description.trim() || null,
           color,
-          memberAccountIds: [...selected],
+          memberAccountIds,
         }),
       });
       if (!res.ok) {
