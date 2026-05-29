@@ -210,6 +210,15 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
     endYearRef: d.endYearRef,
   }));
 
+  const liquidAccounts = accountRows
+    .filter((a) => ["taxable", "cash", "retirement"].includes(a.category))
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category as "taxable" | "cash" | "retirement",
+      value: Number(a.value),
+    }));
+
   return (
     <AssumptionsClient
       clientId={clientId}
@@ -272,6 +281,7 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         currentYear,
         saltCap,
       }}
+      liquidAccounts={liquidAccounts}
       embed="wizard"
     />
   );
