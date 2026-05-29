@@ -58,17 +58,22 @@ export function buildDrillChartSpec(
     values: ln.values,
   }));
 
-  // Y-axis = max of (stack totals, line maxes). Empty data still picks 1.
-  const stackTotals = years.map((_, i) =>
-    stacks.reduce((sum, s) => sum + (s.values[i] ?? 0), 0),
+  // Per-year positive and negative stack subtotals (separate, so diverging
+  // bars get a symmetric-ish domain). For all-positive data negTotals are 0.
+  const posTotals = years.map((_, i) =>
+    stacks.reduce((sum, s) => sum + Math.max(0, s.values[i] ?? 0), 0),
   );
-  const lineMax = specLines.reduce(
-    (acc, ln) => Math.max(acc, ...ln.values),
-    0,
+  const negTotals = years.map((_, i) =>
+    stacks.reduce((sum, s) => sum + Math.min(0, s.values[i] ?? 0), 0),
   );
-  const yMax = Math.max(lineMax, ...stackTotals, 1);
-  const yDomainMax = niceCeiling(yMax * 1.05);
-  const yTicks = ticks(0, yDomainMax, 5);
+  const allLineValues = specLines.flatMap((ln) => ln.values);
+
+  const candidateMax = Math.max(0, ...posTotals, ...allLineValues, 1);
+  const candidateMin = Math.min(0, ...negTotals, ...allLineValues);
+
+  const yDomainMax = niceCeiling(candidateMax * 1.05);
+  const yDomainMin = candidateMin < 0 ? -niceCeiling(-candidateMin * 1.05) : 0;
+  const yTicks = ticks(yDomainMin, yDomainMax, 6);
 
   const specMarkers: ChartSpec["markers"] = markers.map((m) => ({
     atX: m.year,
@@ -104,7 +109,7 @@ export function buildDrillChartSpec(
       labelFormat: (v: number) => String(v),
     },
     yAxis: {
-      domain: [0, yDomainMax],
+      domain: [yDomainMin, yDomainMax],
       ticks: yTicks,
       labelFormat: (v: number) => compactCurrency(v),
       gridlineColor: PRESENTATION_THEME.hair,
