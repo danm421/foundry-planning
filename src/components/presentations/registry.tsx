@@ -93,6 +93,32 @@ import {
   type MonteCarloPageData,
   type MonteCarloReportPayload,
 } from "@/lib/presentations/pages/monte-carlo/view-model";
+import { AssetAllocationPagePdf } from "./pages/asset-allocation/page-pdf";
+import {
+  assetAllocationOptionsSchema,
+  ASSET_ALLOCATION_OPTIONS_DEFAULT,
+  type AssetAllocationOptions,
+} from "@/lib/presentations/pages/asset-allocation/options-schema";
+import { summarizeAssetAllocationOptions } from "@/lib/presentations/pages/asset-allocation/summarize-options";
+import { estimateAssetAllocationPageCount } from "@/lib/presentations/pages/asset-allocation/estimate-page-count";
+import {
+  buildAssetAllocationData,
+  type AssetAllocationData,
+} from "@/lib/presentations/pages/asset-allocation/view-model";
+import { PortfolioAnalysisPagePdf } from "./pages/portfolio-analysis/page-pdf";
+import {
+  portfolioAnalysisOptionsSchema,
+  PORTFOLIO_ANALYSIS_OPTIONS_DEFAULT,
+  type PortfolioAnalysisOptions,
+} from "@/lib/presentations/pages/portfolio-analysis/options-schema";
+import { summarizePortfolioAnalysisOptions } from "@/lib/presentations/pages/portfolio-analysis/summarize-options";
+import { estimatePortfolioAnalysisPageCount } from "@/lib/presentations/pages/portfolio-analysis/estimate-page-count";
+import {
+  buildPortfolioAnalysisData,
+  type PortfolioAnalysisData,
+} from "@/lib/presentations/pages/portfolio-analysis/view-model";
+import { buildScatterSpec } from "@/lib/presentations/charts/scatter-chart-spec";
+import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -103,6 +129,7 @@ export const CATEGORY_ORDER = [
   "Insurance",
   "Tax",
   "Net Worth",
+  "Investments",
 ] as const;
 
 export type PresentationCategory = (typeof CATEGORY_ORDER)[number];
@@ -123,6 +150,8 @@ export interface BuildDataContext {
    *  runs the sim server-side and injects the compact payload. Null/undefined
    *  for every other deck — non-MC pages ignore it. */
   monteCarlo?: MonteCarloReportPayload | null;
+  /** Present only when a deck includes an investment page; loaded conditionally. */
+  investments?: InvestmentsBundle;
 }
 
 export interface RenderPdfInput<TData> {
@@ -481,6 +510,56 @@ export const monteCarloPage: PresentationPage<MonteCarloPageData, MonteCarloPage
   renderPdf: (input) => <MonteCarloPagePdf {...input} />,
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Investments pages — backed by InvestmentsBundle loaded at export time.
+// Both pages guard a missing bundle and render gracefully.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EMPTY_ALLOCATION_DATA: AssetAllocationData = {
+  subtitle: "No investment data available for this client.",
+  currentDonut: { kind: "donut", size: 150, rings: [], legend: [] },
+  benchmarkDonut: null,
+  tableRows: [],
+  driftRows: null,
+  disclosure: "",
+};
+
+export const assetAllocationPage: PresentationPage<AssetAllocationData, AssetAllocationOptions> = {
+  id: "assetAllocation",
+  title: "Asset Allocation",
+  description: "Current allocation vs. the recommended portfolio, with drift.",
+  category: "Investments",
+  defaultOptions: ASSET_ALLOCATION_OPTIONS_DEFAULT,
+  optionsSchema: assetAllocationOptionsSchema,
+  summarizeOptions: summarizeAssetAllocationOptions,
+  estimatePageCount: estimateAssetAllocationPageCount,
+  supportsScenarioOverride: false,
+  buildData: (ctx, options) => {
+    if (!ctx.investments) return EMPTY_ALLOCATION_DATA;
+    return buildAssetAllocationData(ctx.investments, options);
+  },
+  renderPdf: (input) => <AssetAllocationPagePdf {...input} />,
+};
+
+export const portfolioAnalysisPage: PresentationPage<PortfolioAnalysisData, PortfolioAnalysisOptions> = {
+  id: "portfolioAnalysis",
+  title: "Portfolio Analysis",
+  description: "Risk/return scatter of selected entities with a detail table.",
+  category: "Investments",
+  defaultOptions: PORTFOLIO_ANALYSIS_OPTIONS_DEFAULT,
+  optionsSchema: portfolioAnalysisOptionsSchema,
+  summarizeOptions: summarizePortfolioAnalysisOptions,
+  estimatePageCount: estimatePortfolioAnalysisPageCount,
+  supportsScenarioOverride: false,
+  buildData: (ctx, options) => {
+    if (!ctx.investments) {
+      return { scatter: buildScatterSpec([]), tableRows: [], unplottable: [] };
+    }
+    return buildPortfolioAnalysisData(ctx.investments, options);
+  },
+  renderPdf: (input) => <PortfolioAnalysisPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -506,6 +585,8 @@ export const PRESENTATION_PAGES = {
   estateFlowChart: estateFlowChartPage,
   estateFlow: estateFlowReportPage,
   monteCarlo: monteCarloPage,
+  assetAllocation: assetAllocationPage,
+  portfolioAnalysis: portfolioAnalysisPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;

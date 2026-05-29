@@ -5,6 +5,7 @@ import type { ProjectionResult } from "@/engine";
 import { ensureFontsRegistered } from "./shared/fonts";
 import type { TocSection } from "./pages/toc/page-pdf";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
+import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 
 interface PresentationDocumentProps {
   pages: Array<{
@@ -22,6 +23,8 @@ interface PresentationDocumentProps {
   projection: ProjectionResult;
   clientData: ClientData;
   monteCarlo?: MonteCarloReportPayload | null;
+  /** Present only when the deck includes an investment page. */
+  investments?: InvestmentsBundle;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {
@@ -67,6 +70,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             firmTagline: props.firmTagline,
             reportDate: props.reportDate,
             monteCarlo: props.monteCarlo ?? null,
+            investments: props.investments,
           },
           options as never,
         );

@@ -24,9 +24,10 @@ describe("registry — Cash Flow page", () => {
     expect(typeof cashFlowPage.OptionsControl).toBe("function");
   });
 
-  it("is registered alongside the framing pages + every cash-flow drill + income-tax + estate page in PRESENTATION_PAGES", () => {
+  it("is registered alongside the framing pages + every cash-flow drill + income-tax + estate + investment pages in PRESENTATION_PAGES", () => {
     expect(Object.keys(PRESENTATION_PAGES).sort()).toEqual(
       [
+        "assetAllocation",
         "cashFlow",
         "cashFlowActivity",
         "cashFlowAssets",
@@ -50,6 +51,7 @@ describe("registry — Cash Flow page", () => {
         "incomeTaxOtherTaxes",
         "incomeTaxState",
         "monteCarlo",
+        "portfolioAnalysis",
         "toc",
       ].sort(),
     );

@@ -29,6 +29,7 @@ import {
 } from "@/components/presentations/registry";
 import { dateLong } from "@/lib/presentations/format";
 import { recordAudit } from "@/lib/audit";
+import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import React from "react";
 
 export const dynamic = "force-dynamic";
@@ -155,6 +156,15 @@ export async function POST(
       }
     }
 
+    // Conditionally load the investments bundle — only when the deck includes
+    // at least one investment page, to avoid unnecessary DB queries.
+    const needsInvestments = parsed.data.pages.some(
+      (p) => p.pageId === "assetAllocation" || p.pageId === "portfolioAnalysis",
+    );
+    const investments = needsInvestments
+      ? (await loadInvestmentsBundle(id, firmId)) ?? undefined
+      : undefined;
+
     const ci = clientData.client;
     const clientFirstName = ci.firstName;
     const clientLastName = ci.lastName ?? "";
@@ -191,6 +201,7 @@ export async function POST(
       projection,
       clientData,
       monteCarlo,
+      investments,
     }) as unknown as React.ReactElement<DocumentProps>;
 
     // @react-pdf/renderer has a memory-leak history on large docs, and
