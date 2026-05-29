@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   listHoldings, createHolding, updateHolding, deleteHolding,
-  setHoldingOverride, classifyTicker, setAccountGrowthSource,
+  setHoldingOverride, classifyTicker, setAccountGrowthSource, getQuote,
 } from "../holdings-client";
 
 function mockFetch(status: number, json: unknown) {
@@ -90,5 +90,29 @@ describe("holdings-client", () => {
   it("throws on a non-ok response", async () => {
     vi.stubGlobal("fetch", mockFetch(500, { error: "boom" }));
     await expect(listHoldings(C, A)).rejects.toThrow();
+  });
+});
+
+describe("getQuote", () => {
+  it("GETs the quote endpoint with the ticker query and returns price + asOf", async () => {
+    const f = mockFetch(200, { price: 201.5, asOf: "2026-05-28" });
+    vi.stubGlobal("fetch", f);
+    const q = await getQuote(C, A, "AAPL");
+    expect(f).toHaveBeenCalledWith(
+      `/api/clients/${C}/accounts/${A}/holdings/quote?ticker=AAPL`,
+    );
+    expect(q).toEqual({ price: 201.5, asOf: "2026-05-28" });
+  });
+
+  it("returns null when the route reports a miss ({ price: null })", async () => {
+    const f = mockFetch(200, { price: null });
+    vi.stubGlobal("fetch", f);
+    expect(await getQuote(C, A, "ZZZZ")).toBeNull();
+  });
+
+  it("returns null on a transport error instead of throwing", async () => {
+    const f = mockFetch(500, { error: "boom" });
+    vi.stubGlobal("fetch", f);
+    expect(await getQuote(C, A, "AAPL")).toBeNull();
   });
 });

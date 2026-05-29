@@ -39,6 +39,11 @@ export interface ClassifyResult {
   weights: { slug: string; weight: number }[];
 }
 
+export interface QuoteResult {
+  price: number;
+  asOf: string;
+}
+
 const base = (clientId: string, accountId: string) =>
   `/api/clients/${clientId}/accounts/${accountId}/holdings`;
 
@@ -91,6 +96,23 @@ export async function classifyTicker(
   // The route is fail-soft (always 200 with { security:null, weights:[] } on
   // miss/error), so this only throws on transport/5xx failures.
   return json(await fetch(`${base(clientId, accountId)}/classify`, jsonInit("POST", { ticker })));
+}
+
+/** Fetch the latest EOD close for a ticker. Returns null on a miss or any
+ *  transport error — callers leave the price field untouched on null. */
+export async function getQuote(
+  clientId: string, accountId: string, ticker: string,
+): Promise<QuoteResult | null> {
+  try {
+    const url = `${base(clientId, accountId)}/quote?ticker=${encodeURIComponent(ticker.trim().toUpperCase())}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { price: number | null; asOf?: string };
+    if (typeof body.price !== "number" || typeof body.asOf !== "string") return null;
+    return { price: body.price, asOf: body.asOf };
+  } catch {
+    return null;
+  }
 }
 
 export async function setAccountGrowthSource(
