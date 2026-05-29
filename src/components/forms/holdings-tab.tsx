@@ -6,10 +6,9 @@ import type { AssetClassOption } from "./asset-mix-tab";
 import { HoldingOverrideEditor } from "./holding-override-editor";
 import {
   listHoldings, createHolding, updateHolding, deleteHolding,
-  setHoldingOverride, classifyTicker, setAccountGrowthSource, getQuote,
+  setHoldingOverride, classifyTicker, setAccountDeriveFromHoldings, getQuote,
   type HoldingRow,
 } from "@/lib/investments/holdings-client";
-import type { GrowthSource } from "@/lib/investments/allocation";
 import { summarizeHoldings, rowChip } from "@/lib/investments/holdings-display";
 
 interface Props {
@@ -19,10 +18,10 @@ interface Props {
   /** True while a scenario overlay is active — holdings edit is base-mode only. */
   scenarioActive: boolean;
   assetClasses: AssetClassOption[];
-  /** Current account growth source (from the form). */
-  growthSource: GrowthSource;
-  /** Sync the form's growth-source state after an immediate flip/revert. */
-  onGrowthSourceSynced: (next: GrowthSource) => void;
+  /** Whether this account derives its mix + value from holdings. */
+  deriveFromHoldings: boolean;
+  /** Persist + reflect a change to deriveFromHoldings. */
+  onDeriveFromHoldingsChange: (next: boolean) => void;
   /** Report derived totals up so the Details tab can show read-only value/basis. */
   onTotalsChange: (totals: { value: number; basis: number } | null) => void;
 }
@@ -32,7 +31,7 @@ const money = (n: number) =>
 
 export function HoldingsTab({
   clientId, accountId, scenarioActive, assetClasses,
-  growthSource, onGrowthSourceSynced, onTotalsChange,
+  deriveFromHoldings, onDeriveFromHoldingsChange, onTotalsChange,
 }: Props) {
   const [rows, setRows] = useState<HoldingRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -52,9 +51,6 @@ export function HoldingsTab({
   // Last ticker we successfully priced — skip refetching it so a manually-edited
   // price isn't clobbered on a re-blur (and we don't burn a paid quote call).
   const lastQuotedTicker = useRef("");
-
-  // Remember the pre-flip source so the toggle can revert to it.
-  const preFlipSource = useRef<GrowthSource>(growthSource === "holdings" ? "default" : growthSource);
 
   const canEdit = accountId != null && !scenarioActive;
 
@@ -81,19 +77,11 @@ export function HoldingsTab({
     onTotalsChange(rows.length > 0 ? { value: summary.value, basis: summary.basis } : null);
   }, [rows, summary, onTotalsChange]);
 
-  const flipToHoldings = useCallback(async () => {
+  const setDerive = useCallback(async (next: boolean) => {
     if (!accountId) return;
-    preFlipSource.current = growthSource;
-    await setAccountGrowthSource(clientId, accountId, "holdings");
-    onGrowthSourceSynced("holdings");
-  }, [clientId, accountId, growthSource, onGrowthSourceSynced]);
-
-  const flipToHoldingsIfFirst = useCallback(
-    async (newCount: number) => {
-      if (newCount === 1 && growthSource !== "holdings") await flipToHoldings();
-    },
-    [growthSource, flipToHoldings],
-  );
+    await setAccountDeriveFromHoldings(clientId, accountId, next);
+    onDeriveFromHoldingsChange(next);
+  }, [clientId, accountId, onDeriveFromHoldingsChange]);
 
   async function handleAdd() {
     if (!accountId || ticker.trim() === "") return;
@@ -115,7 +103,9 @@ export function HoldingsTab({
       // (securityWeights/overrides/needsReview) so the chip + preview are correct.
       const list = await listHoldings(clientId, accountId);
       setRows(list);
-      await flipToHoldingsIfFirst(list.length);
+      // First holding on an opted-in account: the server sync already seeded the
+      // mix + set growthSource; just make sure the form reflects derive=true.
+      if (list.length === 1 && deriveFromHoldings) onDeriveFromHoldingsChange(true);
       setTicker(""); setShares(""); setPrice(""); setBasis(""); setPriceAsOf(null);
       lastQuotedTicker.current = "";
     } catch {
@@ -181,13 +171,6 @@ export function HoldingsTab({
     setRows(list);
   }
 
-  async function revertSource() {
-    if (!accountId) return;
-    const target: GrowthSource = preFlipSource.current === "holdings" ? "default" : preFlipSource.current;
-    await setAccountGrowthSource(clientId, accountId, target);
-    onGrowthSourceSynced(target);
-  }
-
   // ── Gate states ──────────────────────────────────────────────────────────
   if (accountId == null) {
     return (
@@ -204,37 +187,27 @@ export function HoldingsTab({
     );
   }
 
-  const inHoldingsMode = growthSource === "holdings";
+  const driving = deriveFromHoldings && rows.length > 0;
 
   return (
     <div className="space-y-4">
-      {/* Holdings-mode banner + toggle */}
-      {inHoldingsMode ? (
-        <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
-          <span>This account is driven by its holdings — value &amp; blend are derived from the positions below.</span>
-          <button type="button" onClick={revertSource} className="ml-3 shrink-0 underline">
-            Use a different source
-          </button>
-        </div>
-      ) : (
-        rows.length > 0 && (
+      {/* Holdings-driving banner + toggle */}
+      {rows.length > 0 && (
+        driving ? (
+          <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
+            <span>This account&apos;s value &amp; asset mix are derived from the holdings below.</span>
+            <button type="button" onClick={() => setDerive(false)} className="ml-3 shrink-0 underline">
+              Use a different source
+            </button>
+          </div>
+        ) : (
           <div className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-3 py-2 text-sm text-gray-300">
             <span>Holdings are entered but not driving this account.</span>
-            <button
-              type="button"
-              onClick={flipToHoldings}
-              className="ml-3 shrink-0 underline"
-            >
+            <button type="button" onClick={() => setDerive(true)} className="ml-3 shrink-0 underline">
               Drive this account from holdings
             </button>
           </div>
         )
-      )}
-
-      {inHoldingsMode && rows.length === 0 && (
-        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
-          This account is in holdings mode but has no holdings — its value is $0 until you add positions.
-        </p>
       )}
 
       {error && (
