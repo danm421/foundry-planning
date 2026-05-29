@@ -1,6 +1,9 @@
 "use client";
 import { createContext, useContext, type ReactNode } from "react";
-import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
+import {
+  type InvestmentOptionCatalog,
+  EMPTY_INVESTMENT_OPTION_CATALOG,
+} from "@/lib/presentations/investment-option-catalog";
 
 const Ctx = createContext<InvestmentOptionCatalog | null>(null);
 
@@ -9,5 +12,5 @@ export function PresentationOptionsProvider({ value, children }: { value: Invest
 }
 
 export function useInvestmentOptionCatalog(): InvestmentOptionCatalog {
-  return useContext(Ctx) ?? { groups: [{ key: "all-liquid", name: "All Liquid Assets" }], entities: [] };
+  return useContext(Ctx) ?? EMPTY_INVESTMENT_OPTION_CATALOG;
 }

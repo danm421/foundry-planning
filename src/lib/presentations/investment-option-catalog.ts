@@ -8,14 +8,18 @@ export interface InvestmentOptionCatalog {
   entities: InvestmentEntityOption[];
 }
 
-const EMPTY: InvestmentOptionCatalog = { groups: [{ key: "all-liquid", name: "All Liquid Assets" }], entities: [] };
+/** Fallback catalog when no investment data is available (also the context default). */
+export const EMPTY_INVESTMENT_OPTION_CATALOG: InvestmentOptionCatalog = {
+  groups: [{ key: "all-liquid", name: "All Liquid Assets" }],
+  entities: [],
+};
 
 /** Builder-UI catalog: selectable account groups + plottable analysis entities. */
 export async function listInvestmentOptionCatalog(
   clientId: string, firmId: string,
 ): Promise<InvestmentOptionCatalog> {
   const bundle = await loadInvestmentsBundle(clientId, firmId);
-  if (!bundle) return EMPTY;
+  if (!bundle) return EMPTY_INVESTMENT_OPTION_CATALOG;
   const ctx = buildStatsContext(bundle.assetClassData, bundle.correlationRows, bundle.riskFreeRate);
   const resolver = buildInvestmentsResolver(bundle);
   const { rows } = buildAnalysisRows({
