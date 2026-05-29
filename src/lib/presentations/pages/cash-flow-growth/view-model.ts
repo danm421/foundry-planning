@@ -14,6 +14,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { STACK_COLORS } from "../cash-flow-assets/view-model";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -32,16 +33,6 @@ const CATEGORIES: Array<{
   { bucket: "business",      key: "business",      label: "Business" },
   { bucket: "lifeInsurance", key: "lifeInsurance", label: "Life\nInsurance" },
 ];
-
-// Match the in-app portfolio chart palette (portfolio-chart.tsx).
-const CATEGORY_COLORS: Record<string, string> = {
-  taxable: "#facc15",
-  cash: "#9ca3af",
-  retirement: "#f97316",
-  realEstate: "#0891b2",
-  business: "#7c3aed",
-  lifeInsurance: "#16a34a",
-};
 
 export interface BuildPortfolioGrowthDrillInput {
   years: ProjectionYear[];
@@ -114,7 +105,7 @@ export function buildPortfolioGrowthDrillData(
     stacks: activeCats.map((c) => ({
       seriesId: c.key,
       label: c.label.replace("\n", " "),
-      color: CATEGORY_COLORS[c.key] ?? "#9ca3af",
+      color: STACK_COLORS[c.key as keyof typeof STACK_COLORS] ?? "#9ca3af",
       values: visibleYears.map((y) => growthByCategorySegment(y, c.bucket)),
     })),
     markers,

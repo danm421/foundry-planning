@@ -20,8 +20,9 @@ const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
 
 // Chart palette — matches buildPortfolioDatasets() in
-// components/cashflow/charts/portfolio-chart.tsx.
-const STACK_COLORS = {
+// components/cashflow/charts/portfolio-chart.tsx. Also reused by the Portfolio
+// Growth drill (cash-flow-growth/view-model.ts).
+export const STACK_COLORS = {
   cash:                 "#9ca3af",
   taxable:              "#facc15",
   retirement:           "#f97316",
