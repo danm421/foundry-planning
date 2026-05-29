@@ -80,7 +80,19 @@ import { EstateFlowChartPagePdf } from "./pages/estate-flow-chart/page-pdf";
 import { buildEstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
 import type { EstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
 import { EstateFlowReportPagePdf } from "./pages/estate-flow/page-pdf";
-import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
+import { MonteCarloPagePdf } from "./pages/monte-carlo/page-pdf";
+import { MonteCarloOptionsControl } from "./pages/monte-carlo/options-control";
+import {
+  monteCarloOptionsSchema,
+  MONTE_CARLO_OPTIONS_DEFAULT,
+  type MonteCarloPageOptions,
+} from "@/lib/presentations/pages/monte-carlo/options-schema";
+import { summarizeMonteCarloOptions } from "@/lib/presentations/pages/monte-carlo/summarize-options";
+import {
+  buildMonteCarloData,
+  type MonteCarloPageData,
+  type MonteCarloReportPayload,
+} from "@/lib/presentations/pages/monte-carlo/view-model";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -451,6 +463,24 @@ export const estateFlowReportPage: PresentationPage<EstateFlowReportData, Estate
   renderPdf: (input) => <EstateFlowReportPagePdf {...input} />,
 };
 
+export const monteCarloPage: PresentationPage<MonteCarloPageData, MonteCarloPageOptions> = {
+  id: "monteCarlo",
+  title: "Monte Carlo",
+  description: "Probability of success, portfolio fan, ending distribution, and longevity.",
+  category: "Monte Carlo",
+  defaultOptions: MONTE_CARLO_OPTIONS_DEFAULT,
+  optionsSchema: monteCarloOptionsSchema,
+  summarizeOptions: summarizeMonteCarloOptions,
+  // Data-independent estimate (document.tsx calls this with no data): the
+  // dashboard page + a typical one-page yearly table. Long horizons may spill
+  // to a 3rd physical page — same numbering limitation as the cash-flow drills.
+  estimatePageCount: () => 2,
+  OptionsControl: MonteCarloOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildMonteCarloData(ctx, options),
+  renderPdf: (input) => <MonteCarloPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -475,6 +505,7 @@ export const PRESENTATION_PAGES = {
   estateGiftTax: estateGiftTaxPage,
   estateFlowChart: estateFlowChartPage,
   estateFlow: estateFlowReportPage,
+  monteCarlo: monteCarloPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
