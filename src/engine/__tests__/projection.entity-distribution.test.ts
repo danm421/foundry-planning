@@ -547,3 +547,76 @@ describe("Phase 3: distribution routes to owner's default cash account", () => {
     expect(distEntry!.amount).toBeCloseTo(100_000, 0);
   });
 });
+
+describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => {
+  it("loss with no liquidatable holdings: business cash goes negative + entity_overdraft", () => {
+    // $100k income, $150k expense → -$50k loss. Business owns only its cash
+    // account (untappable), so the deficit stays.
+    const lossExpense: Expense = {
+      id: "x1",
+      type: "other",
+      name: "Big Loss",
+      annualAmount: 150_000,
+      startYear: 2026,
+      endYear: 2026,
+      growthRate: 0,
+      ownerAccountId: "biz-llc",
+    };
+    const data = mkData({ expenses: [lossExpense] });
+    const y0 = runProjection(data)[0];
+
+    // No distribution in a loss year.
+    const hhDist = y0.accountLedgers["hh-checking"].entries.find(
+      (e) => e.category === "entity_distribution",
+    );
+    expect(hhDist).toBeUndefined();
+    // The loss landed on business cash and stayed (nothing to liquidate).
+    expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(-50_000, 0);
+    // Entity gap-fill warnings surface under `trustWarnings` (entityGapFillWarnings
+    // is merged into it at projection.ts:4655).
+    expect(y0.trustWarnings?.some((w) => w.code === "entity_overdraft")).toBe(true);
+  });
+
+  it("loss with a liquidatable business-owned taxable account: it's drained first", () => {
+    // -$50k loss, but the business owns a $200k taxable account → gap-fill
+    // liquidates $50k to refill business cash back toward $0.
+    const lossExpense: Expense = {
+      id: "x1",
+      type: "other",
+      name: "Big Loss",
+      annualAmount: 150_000,
+      startYear: 2026,
+      endYear: 2026,
+      growthRate: 0,
+      ownerAccountId: "biz-llc",
+    };
+    const bizTaxable: Account = {
+      id: "biz-taxable",
+      name: "Business Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 200_000,
+      basis: 200_000, // full basis → no cap gain on liquidation
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "biz-llc", percent: 1 }],
+    } as Account;
+    const data: ClientData = {
+      ...mkData({ expenses: [lossExpense] }),
+      accounts: [hhChecking, bizAccount(), bizChecking("biz-llc"), bizTaxable],
+    };
+    const y0 = runProjection(data)[0];
+
+    // Business cash refilled to ~$0; the taxable account funded the $50k.
+    expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(0, 0);
+    expect(endBalance(y0, "biz-taxable")).toBeCloseTo(150_000, 0);
+    // No overdraft: gap-fill fully covered the loss. `trustWarnings` is omitted
+    // from the year object entirely when there's nothing to report (it's only
+    // populated when warnings exist — projection.ts:4667), so normalize the
+    // undefined-vs-empty case before asserting absence.
+    expect(
+      y0.trustWarnings?.some((w) => w.code === "entity_overdraft") ?? false,
+    ).toBe(false);
+  });
+});
