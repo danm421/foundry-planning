@@ -44,6 +44,7 @@ export function PageFrame({
   reportDate,
   pageIndex,
   totalPages,
+  orientation = "portrait",
   children,
 }: {
   firmName: string;
@@ -51,10 +52,11 @@ export function PageFrame({
   reportDate: string;
   pageIndex: number;
   totalPages: number;
+  orientation?: "portrait" | "landscape";
   children: ReactNode;
 }) {
   return (
-    <Page size="LETTER" orientation="portrait" style={styles.page}>
+    <Page size="LETTER" orientation={orientation} style={styles.page}>
       <View style={styles.headerRow}>
         <Text>{firmName}</Text>
         <Text>{`${clientName}  ·  ${reportDate}`}</Text>

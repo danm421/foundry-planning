@@ -63,6 +63,23 @@ import { buildGiftTaxDrillData } from "@/lib/presentations/pages/estate-gift-tax
 import type { EstateDrillInput } from "@/lib/presentations/pages/estate-shared";
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
+import { buildEstateFlowChartData } from "@/lib/presentations/pages/estate-flow-chart/view-model";
+import type { EstateFlowChartData } from "@/lib/presentations/pages/estate-flow-chart/view-model";
+import {
+  estateOptionsSchema,
+  ESTATE_PAGE_OPTIONS_DEFAULT,
+  type EstatePageOptions,
+} from "@/lib/presentations/pages/estate-shared/options-schema";
+import { summarizeEstateOptions } from "@/lib/presentations/pages/estate-shared/summarize-options";
+import {
+  estimateEstateChartPageCount,
+  estimateEstateReportPageCount,
+} from "@/lib/presentations/pages/estate-shared/estimate-page-count";
+import { EstateOptionsControl } from "./pages/estate-shared/options-control";
+import { EstateFlowChartPagePdf } from "./pages/estate-flow-chart/page-pdf";
+import { buildEstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
+import type { EstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
+import { EstateFlowReportPagePdf } from "./pages/estate-flow/page-pdf";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -79,6 +96,8 @@ export type PresentationCategory = (typeof CATEGORY_ORDER)[number];
 
 export interface BuildDataContext {
   years: ProjectionYear[];
+  /** Full projection — superset of `years`. Estate pages consume the death
+   *  events and ledgers that `years` alone doesn't expose. */
   projection: ProjectionResult;
   clientData: ClientData;
   scenarioLabel: string;
@@ -397,6 +416,36 @@ export const incomeTaxBracketStatePage = makeDrillPage(
   buildTaxBracketStateDrillData,
 );
 
+export const estateFlowChartPage: PresentationPage<EstateFlowChartData, EstatePageOptions> = {
+  id: "estateFlowChart",
+  title: "Estate Flow — Chart",
+  description: "Visual estate flow: estate value through each death to heirs, taxes, and trusts.",
+  category: "Estate",
+  defaultOptions: ESTATE_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: estateOptionsSchema,
+  summarizeOptions: summarizeEstateOptions,
+  estimatePageCount: estimateEstateChartPageCount,
+  OptionsControl: EstateOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildEstateFlowChartData(ctx, options),
+  renderPdf: (input) => <EstateFlowChartPagePdf {...input} />,
+};
+
+export const estateFlowReportPage: PresentationPage<EstateFlowReportData, EstatePageOptions> = {
+  id: "estateFlow",
+  title: "Estate Flow — Report",
+  description: "Ownership today, transfers at first death, and final distribution at second death.",
+  category: "Estate",
+  defaultOptions: ESTATE_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: estateOptionsSchema,
+  summarizeOptions: summarizeEstateOptions,
+  estimatePageCount: estimateEstateReportPageCount,
+  OptionsControl: EstateOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildEstateFlowReportData(ctx, options),
+  renderPdf: (input) => <EstateFlowReportPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -419,6 +468,8 @@ export const PRESENTATION_PAGES = {
   estateTransfer: estateTransferPage,
   estateLiquidity: estateLiquidityPage,
   estateGiftTax: estateGiftTaxPage,
+  estateFlowChart: estateFlowChartPage,
+  estateFlow: estateFlowReportPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;

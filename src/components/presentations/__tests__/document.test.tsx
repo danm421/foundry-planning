@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { PresentationDocument } from "../document";
+import type { ProjectionResult } from "@/engine";
 import {
   makeProjectionYears,
   makeClientData,
@@ -10,6 +11,11 @@ describe("PresentationDocument", () => {
   it("renders cover + TOC + cash flow without throwing", async () => {
     const years = makeProjectionYears();
     const clientData = makeClientData();
+    // Only the cashFlow page is rendered here; it consumes `years`, not the
+    // estate `projection`. Stub the projection rather than running the full
+    // estate engine on this minimal cash-flow fixture (which has no accounts /
+    // planSettings and trips the today-hypothetical estate-tax invariants).
+    const projection = { years } as unknown as ProjectionResult;
     const buf = await renderToBuffer(
       <PresentationDocument
         pages={[{ pageId: "cashFlow", options: undefined }]}
@@ -20,6 +26,7 @@ describe("PresentationDocument", () => {
         scenarioLabel="Base Case"
         spouseName="Susan Sample"
         years={years}
+        projection={projection}
         clientData={clientData}
       />,
     );
