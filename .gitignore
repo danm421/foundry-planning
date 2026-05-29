@@ -65,6 +65,7 @@ next-env.d.ts
 # `.local` suffix.
 scripts/*.local.ts
 scripts/.backfill-securities.checkpoint.json
+scripts/.backfill-securities.checkpoint.json.tmp
 
 # Sentry Config File
 .env.sentry-build-plugin
