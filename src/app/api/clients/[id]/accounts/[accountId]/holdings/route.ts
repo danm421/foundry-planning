@@ -6,6 +6,7 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { holdingCreateSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
+import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 
 export const dynamic = "force-dynamic";
 
@@ -152,6 +153,8 @@ export async function POST(
       firmId,
       metadata: { holdingId: row.id, ticker: b.displayTicker ?? null },
     });
+
+    await syncAccountFromHoldings(accountId);
 
     return NextResponse.json(row, { status: 201 });
   } catch (err) {

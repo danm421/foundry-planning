@@ -1,26 +1,27 @@
 import { describe, it, expect } from "vitest";
 import { resolveAccountFromRaw, type ResolutionContext } from "../resolve-entity";
 
-// Minimal resolver stub exposing only what the holdings branch touches.
+// Minimal resolver stub. Holdings-driven accounts now resolve their blend
+// through the normal asset_mix path (growthSource is forced to "asset_mix" by
+// syncAccountFromHoldings); value/basis come from holdingsTotalsByAccountId.
 const resolver = {
   getCategoryGrowthSource: () => "default",
-  resolveAccountHoldings: () => ({ geoReturn: 0.07, pctOi: 0.1, pctLtcg: 0.6, pctQdiv: 0.3, pctTaxEx: 0 }),
   resolvePortfolio: () => ({ geoReturn: 0, pctOi: 0, pctLtcg: 0, pctQdiv: 0, pctTaxEx: 0 }),
-  resolveAccountMix: () => ({ geoReturn: 0, pctOi: 0, pctLtcg: 0, pctQdiv: 0, pctTaxEx: 0 }),
+  resolveAccountMix: () => ({ geoReturn: 0.07, pctOi: 0.1, pctLtcg: 0.6, pctQdiv: 0.3, pctTaxEx: 0 }),
   resolveCategoryDefault: () => ({ rate: 0.05 }),
 } as unknown as ResolutionContext["resolver"];
 
 const rawBase = {
   id: "acct1", name: "Brokerage", category: "taxable" as const, subType: "individual",
-  value: "0", basis: "0", growthSource: "holdings", growthRate: null, turnoverPct: "0",
+  value: "0", basis: "0", growthSource: "asset_mix", growthRate: null, turnoverPct: "0",
   annualPropertyTax: "0", propertyTaxGrowthRate: "0", rmdEnabled: false, isDefaultChecking: false,
   modelPortfolioId: null, overridePctOi: null, overridePctLtCg: null, overridePctQdiv: null,
   overridePctTaxExempt: null, priorYearEndValue: null, insuredPerson: null,
   titlingType: "jtwros" as const,
 };
 
-describe("resolveAccountFromRaw — holdings", () => {
-  it("uses resolveAccountHoldings for growth + realization", () => {
+describe("resolveAccountFromRaw — holdings-driven (asset_mix)", () => {
+  it("resolves growth + realization through the asset_mix path", () => {
     const ctx = { resolver, resolvedInflationRate: 0.025 } as ResolutionContext;
     const acct = resolveAccountFromRaw(rawBase, ctx);
     expect(acct.growthRate).toBeCloseTo(0.07, 6);

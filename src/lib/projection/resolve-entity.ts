@@ -129,20 +129,6 @@ export function resolveAccountFromRaw(
         raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : resolved.pctTaxEx,
       turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
     };
-  } else if (effectiveSource === "holdings") {
-    const resolved = resolver.resolveAccountHoldings(raw.id);
-    growthRate = resolved.geoReturn;
-    realization = {
-      pctOrdinaryIncome:
-        raw.overridePctOi != null ? parseFloat(raw.overridePctOi) : resolved.pctOi,
-      pctLtCapitalGains:
-        raw.overridePctLtCg != null ? parseFloat(raw.overridePctLtCg) : resolved.pctLtcg,
-      pctQualifiedDividends:
-        raw.overridePctQdiv != null ? parseFloat(raw.overridePctQdiv) : resolved.pctQdiv,
-      pctTaxExempt:
-        raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : resolved.pctTaxEx,
-      turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
-    };
   } else if (effectiveSource === "custom" && raw.growthRate != null) {
     growthRate = n(raw.growthRate);
   } else {

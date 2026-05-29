@@ -20,6 +20,7 @@ import type { LoadedProjection } from "@/lib/scenario/load-projection-for-ref";
 import {
   resolveAccountAllocation,
   computeHouseholdAllocation,
+  toGrowthSource,
   type InvestableAccount,
   type AccountLite,
   type PlanSettingsLite,
@@ -148,9 +149,9 @@ export async function loadAllocationForPlan(
   }
 
   const planLite: PlanSettingsLite = {
-    growthSourceTaxable: settings.growthSourceTaxable,
-    growthSourceCash: settings.growthSourceCash,
-    growthSourceRetirement: settings.growthSourceRetirement,
+    growthSourceTaxable: toGrowthSource(settings.growthSourceTaxable),
+    growthSourceCash: toGrowthSource(settings.growthSourceCash),
+    growthSourceRetirement: toGrowthSource(settings.growthSourceRetirement),
     modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable ?? null,
     modelPortfolioIdCash: settings.modelPortfolioIdCash ?? null,
     modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement ?? null,
@@ -167,7 +168,7 @@ export async function loadAllocationForPlan(
       id: a.id,
       name: a.name,
       category: a.category,
-      growthSource: a.growthSource,
+      growthSource: toGrowthSource(a.growthSource),
       modelPortfolioId: a.modelPortfolioId ?? null,
       value: Number(a.value),
       ownerEntityId: entityId,

@@ -1,11 +1,14 @@
 import { cache } from "react";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
   clients,
   scenarios,
   accounts,
   accountOwners,
+  accountHoldings,
+  holdingAssetClassOverrides,
+  securityAssetClassWeights,
   planSettings,
   entities,
   modelPortfolioAllocations,
@@ -17,6 +20,8 @@ import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { IndexInput } from "@/engine/monteCarlo/returns";
 import { ClientNotFoundError, ProjectionInputError } from "./load-client-data";
+import { type HoldingInput } from "@/lib/investments/holdings-rollup";
+import { computeHoldingsTotals } from "./holdings-totals";
 
 export type MonteCarloPayload = {
   indices: IndexInput[];
@@ -77,6 +82,65 @@ export const loadMonteCarloData = cache(
     ]);
     const settings = settingsRow[0];
     if (!settings) throw new ProjectionInputError(`Client ${clientId} has no plan settings`);
+
+    // ── Holdings-derived starting balances ──────────────────────────────────
+    // Accounts driven by their holdings (deriveFromHoldings, ≥1 holding) take
+    // their starting value from the rollup, mirroring the deterministic loader.
+    // Their mix already resolves via account_asset_allocations (asset_mix path).
+    let holdingRows: (typeof accountHoldings.$inferSelect)[] = [];
+    if (accountRows.length > 0) {
+      holdingRows = await db
+        .select()
+        .from(accountHoldings)
+        .where(inArray(accountHoldings.accountId, accountRows.map((a) => a.id)));
+    }
+    const holdingIds = holdingRows.map((h) => h.id);
+    const securityIds = Array.from(
+      new Set(holdingRows.map((h) => h.securityId).filter((s): s is string => s != null)),
+    );
+    const [holdingOverrideRows, securityWeightRows] = await Promise.all([
+      holdingIds.length
+        ? db.select().from(holdingAssetClassOverrides)
+            .where(inArray(holdingAssetClassOverrides.holdingId, holdingIds))
+        : Promise.resolve([]),
+      securityIds.length
+        ? db.select().from(securityAssetClassWeights)
+            .where(inArray(securityAssetClassWeights.securityId, securityIds))
+        : Promise.resolve([]),
+    ]);
+    const slugToAssetClassId = new Map<string, string>();
+    for (const ac of assetClassRows) if (ac.slug) slugToAssetClassId.set(ac.slug, ac.id);
+    const overridesByHolding = new Map<string, { assetClassId: string; weight: number }[]>();
+    for (const o of holdingOverrideRows) {
+      const list = overridesByHolding.get(o.holdingId) ?? [];
+      list.push({ assetClassId: o.assetClassId, weight: parseFloat(o.weight) });
+      overridesByHolding.set(o.holdingId, list);
+    }
+    const weightsBySecurity = new Map<string, { slug: string; weight: number }[]>();
+    for (const w of securityWeightRows) {
+      const list = weightsBySecurity.get(w.securityId) ?? [];
+      list.push({ slug: w.assetClassSlug, weight: parseFloat(w.weight) });
+      weightsBySecurity.set(w.securityId, list);
+    }
+    const holdingsByAccountId = new Map<string, HoldingInput[]>();
+    for (const h of holdingRows) {
+      const list = holdingsByAccountId.get(h.accountId) ?? [];
+      list.push({
+        id: h.id,
+        securityId: h.securityId,
+        shares: parseFloat(h.shares),
+        price: parseFloat(h.price),
+        costBasis: parseFloat(h.costBasis),
+        securityWeights: h.securityId ? weightsBySecurity.get(h.securityId) ?? [] : [],
+        overrides: overridesByHolding.get(h.id) ?? [],
+      });
+      holdingsByAccountId.set(h.accountId, list);
+    }
+    const holdingsTotalsByAccountId = computeHoldingsTotals({
+      accounts: accountRows,
+      holdingsByAccountId,
+      slugToAssetClassId,
+    });
 
     // ── Resolve per-account mixes ───────────────────────────────────────────
     // Per PDF p.6/p.7: custom rates, inflation-linked rates, and non-investable
@@ -184,7 +248,7 @@ export const loadMonteCarloData = cache(
     for (const acct of accountRows) {
       if (acct.category !== "taxable" && acct.category !== "cash" && acct.category !== "retirement") continue;
       if (!accountInEstate(acct)) continue;
-      startingLiquidBalance += parseFloat(acct.value);
+      startingLiquidBalance += holdingsTotalsByAccountId.get(acct.id)?.value ?? parseFloat(acct.value);
     }
 
     // ── Seed management ──────────────────────────────────────────────────

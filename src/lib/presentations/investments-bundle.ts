@@ -5,6 +5,7 @@ import {
   type PlanSettingsLite,
   type AssetClassLite,
   type GrowthSource,
+  toGrowthSource,
 } from "@/lib/investments/allocation";
 import type { AssetClassWeight, ModelPortfolioLite } from "@/lib/investments/benchmarks";
 import type { ResolverDeps, ResolvedGroup } from "@/lib/account-groups/resolver";
@@ -169,7 +170,7 @@ export async function loadInvestmentsBundle(
   const accounts: BundleAccount[] = acctRows.map((a) => {
     const entityId = accountEntityOwner.get(a.id) ?? null;
     return {
-      id: a.id, name: a.name, category: a.category, growthSource: a.growthSource,
+      id: a.id, name: a.name, category: a.category, growthSource: toGrowthSource(a.growthSource),
       modelPortfolioId: a.modelPortfolioId ?? null, value: Number(a.value),
       ownerEntityId: entityId,
       entityInPortfolio: entityId !== null && (entityIncludeInPortfolio.get(entityId) ?? false),
@@ -190,9 +191,9 @@ export async function loadInvestmentsBundle(
   const riskFreeRate = Number(cashClass?.arithmeticMean ?? 0);
 
   const planLite: PlanSettingsLite = {
-    growthSourceTaxable: settings.growthSourceTaxable,
-    growthSourceCash: settings.growthSourceCash,
-    growthSourceRetirement: settings.growthSourceRetirement,
+    growthSourceTaxable: toGrowthSource(settings.growthSourceTaxable),
+    growthSourceCash: toGrowthSource(settings.growthSourceCash),
+    growthSourceRetirement: toGrowthSource(settings.growthSourceRetirement),
     modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable ?? null,
     modelPortfolioIdCash: settings.modelPortfolioIdCash ?? null,
     modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement ?? null,

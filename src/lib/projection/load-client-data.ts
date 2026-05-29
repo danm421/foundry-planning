@@ -72,7 +72,8 @@ import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expe
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
 import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constants";
-import { rollupHoldings, type HoldingInput } from "@/lib/investments/holdings-rollup";
+import { type HoldingInput } from "@/lib/investments/holdings-rollup";
+import { computeHoldingsTotals } from "./holdings-totals";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
 import {
   resolveAccountFromRaw,
@@ -479,18 +480,15 @@ export const loadClientDataWithContext = cache(
       holdingsByAccountId.set(h.accountId, list);
     }
 
-    // Only accounts whose effective growth source is "holdings" get rolled up.
-    const accountHoldingsAllocations: { accountId: string; assetClassId: string; weight: string }[] = [];
-    const holdingsTotalsByAccountId = new Map<string, { value: number; basis: number }>();
-    for (const account of accountRows) {
-      if ((account.growthSource ?? "default") !== "holdings") continue;
-      const list = holdingsByAccountId.get(account.id) ?? [];
-      const rollup = rollupHoldings(list, slugToAssetClassId);
-      holdingsTotalsByAccountId.set(account.id, { value: rollup.value, basis: rollup.basis });
-      for (const a of rollup.allocations) {
-        accountHoldingsAllocations.push({ accountId: account.id, assetClassId: a.assetClassId, weight: String(a.weight) });
-      }
-    }
+    // Accounts driven by their holdings (deriveFromHoldings, ≥1 holding) take
+    // their value/basis from the rollup. The blend itself is no longer rolled
+    // up here — syncAccountFromHoldings persists it into account_asset_allocations
+    // on write, so it flows through the normal asset_mix path.
+    const holdingsTotalsByAccountId = computeHoldingsTotals({
+      accounts: accountRows,
+      holdingsByAccountId,
+      slugToAssetClassId,
+    });
 
     // Growth-source resolver — owns allocsByPortfolio, allocsByAccount, acMap,
     // inflationFallback. Resolver API replaces the inline resolve* helpers from route.ts.
@@ -511,7 +509,6 @@ export const loadClientDataWithContext = cache(
       accountAssetAllocations: accountAllocRows.filter((a) =>
         accountRows.some((acc) => acc.id === a.accountId),
       ),
-      accountHoldingsAllocations,
       // DB schema uses sourceAssetClassId; resolver type expects assetClassId
       clientCmaOverrides: cmaOverrideRows
         .filter((o) => o.sourceAssetClassId != null)
@@ -676,8 +673,6 @@ export const loadClientDataWithContext = cache(
           : undefined;
       } else if (effectiveSource === "asset_mix") {
         baseAlloc = resolver.accountAllocMap(account.id);
-      } else if (effectiveSource === "holdings") {
-        baseAlloc = resolver.holdingsAllocMap(account.id);
       }
       accountBaseAllocByAccountId.set(account.id, baseAlloc);
     }

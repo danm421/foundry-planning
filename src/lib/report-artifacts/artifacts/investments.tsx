@@ -23,6 +23,7 @@ import {
   computeDrift,
   isInvestableAccount,
   resolveAccountAllocation,
+  toGrowthSource,
   type InvestableAccount,
   type AccountLite,
   type PlanSettingsLite,
@@ -199,9 +200,9 @@ async function fetchInvestmentsData(
   const cashAssetClassId = classRows.find((c) => c.slug === "cash")?.id ?? null;
 
   const planLite: PlanSettingsLite = {
-    growthSourceTaxable: settings.growthSourceTaxable,
-    growthSourceCash: settings.growthSourceCash,
-    growthSourceRetirement: settings.growthSourceRetirement,
+    growthSourceTaxable: toGrowthSource(settings.growthSourceTaxable),
+    growthSourceCash: toGrowthSource(settings.growthSourceCash),
+    growthSourceRetirement: toGrowthSource(settings.growthSourceRetirement),
     modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable ?? null,
     modelPortfolioIdCash: settings.modelPortfolioIdCash ?? null,
     modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement ?? null,
@@ -221,7 +222,7 @@ async function fetchInvestmentsData(
       id: a.id,
       name: a.name,
       category: a.category,
-      growthSource: a.growthSource,
+      growthSource: toGrowthSource(a.growthSource),
       modelPortfolioId: a.modelPortfolioId ?? null,
       value: Number(a.value),
       ownerEntityId: entityId,
@@ -275,7 +276,7 @@ async function fetchInvestmentsData(
     const acctLite: AccountLite = {
       id: a.id,
       category: a.category,
-      growthSource: a.growthSource,
+      growthSource: toGrowthSource(a.growthSource),
       modelPortfolioId: a.modelPortfolioId ?? null,
     };
     const result = resolveAccountAllocation(

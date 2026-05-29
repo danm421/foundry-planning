@@ -15,6 +15,7 @@ import {
   validateOwnersTenant,
   validateAccountOwnershipRules,
 } from "@/lib/ownership";
+import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 
 export const dynamic = "force-dynamic";
 
@@ -190,6 +191,12 @@ export async function PUT(
       after: await toAccountSnapshot(updated!),
       fieldLabels: ACCOUNT_FIELD_LABELS,
     });
+
+    // Holdings-tab opt-in toggle: when an account is (re)enabled to derive from
+    // its holdings, immediately roll them up into its asset mix.
+    if (accountUpdate.deriveFromHoldings === true) {
+      await syncAccountFromHoldings(accountId);
+    }
 
     return NextResponse.json(updated!);
   } catch (err) {
