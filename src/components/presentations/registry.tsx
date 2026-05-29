@@ -51,6 +51,17 @@ import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-
 import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
+import { buildEstateFlowChartData } from "@/lib/presentations/pages/estate-flow-chart/view-model";
+import type { EstateFlowChartData } from "@/lib/presentations/pages/estate-flow-chart/view-model";
+import {
+  estateOptionsSchema,
+  ESTATE_PAGE_OPTIONS_DEFAULT,
+  type EstatePageOptions,
+} from "@/lib/presentations/pages/estate-shared/options-schema";
+import { summarizeEstateOptions } from "@/lib/presentations/pages/estate-shared/summarize-options";
+import { estimateEstateChartPageCount } from "@/lib/presentations/pages/estate-shared/estimate-page-count";
+import { EstateOptionsControl } from "./pages/estate-shared/options-control";
+import { EstateFlowChartPagePdf } from "./pages/estate-flow-chart/page-pdf";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -272,6 +283,21 @@ export const cashFlowAssetsPage = makeDrillPage(
   buildPortfolioAssetsDrillData,
 );
 
+export const estateFlowChartPage: PresentationPage<EstateFlowChartData, EstatePageOptions> = {
+  id: "estateFlowChart",
+  title: "Estate Flow — Chart",
+  description: "Visual estate flow: estate value through each death to heirs, taxes, and trusts.",
+  category: "Estate",
+  defaultOptions: ESTATE_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: estateOptionsSchema,
+  summarizeOptions: summarizeEstateOptions,
+  estimatePageCount: estimateEstateChartPageCount,
+  OptionsControl: EstateOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildEstateFlowChartData(ctx, options),
+  renderPdf: (input) => <EstateFlowChartPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -283,6 +309,7 @@ export const PRESENTATION_PAGES = {
   cashFlowGrowth: cashFlowGrowthPage,
   cashFlowActivity: cashFlowActivityPage,
   cashFlowAssets: cashFlowAssetsPage,
+  estateFlowChart: estateFlowChartPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
