@@ -69,10 +69,11 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     db.select({ id: entitiesTable.id, includeInPortfolio: entitiesTable.includeInPortfolio })
       .from(entitiesTable)
       .where(eq(entitiesTable.clientId, clientId)),
-    // Correlation rows are firm-scoped transitively: assetClassCorrelations references
-    // assetClasses which have a firmId; buildCorrelationMatrix drops unknown ids so
-    // rows from other firms are harmlessly ignored — but we filter by the firm's
-    // asset class ids for safety and efficiency.
+    // Correlation rows are fetched unfiltered here because classRows (which carries
+    // the firm's asset-class ids) is resolved by this same Promise.all and its ids
+    // aren't known at query-build time. Firm scoping is applied on use:
+    // buildCorrelationMatrix silently drops any pair whose A- or B-side id is not in
+    // the firm's class list — the same drop-on-build scoping used for mixRows above.
     db.select({
       assetClassIdA: assetClassCorrelations.assetClassIdA,
       assetClassIdB: assetClassCorrelations.assetClassIdB,
@@ -239,9 +240,9 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     assetClasses: assetClassData,
     assetClassMeta: assetClassLites,
     accounts: analysisAccounts,
-    // resolver expects AccountLite (id + category + growthSource + modelPortfolioId);
-    // buildAnalysisRows passes AnalysisAccount which carries all those fields,
-    // so the cast is safe — we just widen the parameter signature.
+    // AnalysisAccount carries all fields the resolver reads at runtime; this cast
+    // aligns its declared parameter type with BuildAnalysisInput's looser { id }
+    // signature.
     resolver: resolver as (acct: { id: string }) => ReturnType<typeof resolver>,
     modelPortfolios: portfolioLites,
     modelPortfolioAllocationsByPortfolioId,
