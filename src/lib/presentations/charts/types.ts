@@ -51,3 +51,43 @@ export interface ChartSpec {
     items: Array<{ label: string; color: string; kind: "swatch" | "line" }>;
   };
 }
+
+export interface DonutSegment {
+  key: string;
+  label: string;
+  value: number;
+  color: string;
+  /** 0..1 share of the ring (precomputed). */
+  fraction: number;
+}
+
+export interface DonutSpec {
+  kind: "donut";
+  size: number; // square viewport in pt
+  /** One ring (single view) or two (combined: [inner types, outer classes]). */
+  rings: { segments: DonutSegment[] }[];
+  centerLabel?: string;
+  centerSubLabel?: string;
+  legend: { label: string; color: string; pct: number }[];
+}
+
+export interface ScatterPoint {
+  key: string;
+  label: string;
+  x: number; // std dev (0..1)
+  y: number; // arithmetic mean (0..1)
+  color: string;
+  pointStyle: "circle" | "rect" | "triangle" | "rectRot" | "star";
+}
+
+export interface ScatterSpec {
+  kind: "scatter";
+  width: number;
+  height: number;
+  margin: { top: number; right: number; bottom: number; left: number };
+  gridlineColor: string;
+  xAxis: { domain: [number, number]; ticks: number[]; labelFormat: (v: number) => string; title: string };
+  yAxis: { domain: [number, number]; ticks: number[]; labelFormat: (v: number) => string; title: string };
+  points: ScatterPoint[];
+  legend: { items: { label: string; color: string; pointStyle: ScatterPoint["pointStyle"] }[] };
+}
