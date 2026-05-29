@@ -20,6 +20,12 @@ describe("buildTaxBracketStateDrillData", () => {
     expect(r.cells.intoBracket).toBe(450_000);
     expect(r.cells.remainingInBracket).toBe(0); // top tier (null) rendered as 0
     expect(r.cells.stateTax).toBe(9_000);
-    expect(d.chartSpec).toBeUndefined();
+  });
+
+  it("emits an Into/Remaining bracket-fill chart (no line)", () => {
+    const d = buildTaxBracketStateDrillData({ ...base, options: { range: "lifetime", showCallout: false } });
+    expect(d.chartSpec).toBeDefined();
+    expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual(["intoBracket", "remainingInBracket"]);
+    expect(d.chartSpec!.lines).toHaveLength(0);
   });
 });
