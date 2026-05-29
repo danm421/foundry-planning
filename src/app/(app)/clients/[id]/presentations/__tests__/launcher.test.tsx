@@ -27,6 +27,7 @@ describe("PresentationsLauncher", () => {
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
+        investmentCatalog={{ groups: [], entities: [] }}
       />,
     );
     expect(screen.getByText("Cover Sheet")).toBeInTheDocument();
@@ -46,6 +47,7 @@ describe("PresentationsLauncher", () => {
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
+        investmentCatalog={{ groups: [], entities: [] }}
       />,
     );
     fireEvent.click(screen.getByLabelText("Remove Cover Sheet"));

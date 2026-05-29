@@ -33,6 +33,8 @@ import {
   type LauncherState,
   type LoadedTemplate,
 } from "@/components/presentations/launcher/use-launcher-state";
+import { PresentationOptionsProvider } from "@/components/presentations/options-context";
+import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 
 interface Props {
   clientId: string;
@@ -40,6 +42,7 @@ interface Props {
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
   initialTemplates: { shared: LoadedTemplate[]; mine: LoadedTemplate[] };
+  investmentCatalog: InvestmentOptionCatalog;
 }
 
 function makeInitialState(): LauncherState {
@@ -247,6 +250,7 @@ export function PresentationsLauncher(props: Props) {
     state.loadedTemplate?.createdByUserId === props.currentUserId;
 
   return (
+    <PresentationOptionsProvider value={props.investmentCatalog}>
     <div className="p-6">
       <h1 className="text-2xl font-semibold text-ink mb-4">
         Presentations<span className="dot">.</span>
@@ -399,6 +403,7 @@ export function PresentationsLauncher(props: Props) {
         onCancel={() => setShowSaveModal(false)}
       />
     </div>
+    </PresentationOptionsProvider>
   );
 }
 
