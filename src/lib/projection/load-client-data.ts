@@ -347,14 +347,16 @@ export const loadClientDataWithContext = cache(
     const securityIds = Array.from(
       new Set(holdingRows.map((h) => h.securityId).filter((s): s is string => s != null)),
     );
-    const holdingOverrideRows = holdingIds.length
-      ? await db.select().from(holdingAssetClassOverrides)
-          .where(inArray(holdingAssetClassOverrides.holdingId, holdingIds))
-      : [];
-    const securityWeightRows = securityIds.length
-      ? await db.select().from(securityAssetClassWeights)
-          .where(inArray(securityAssetClassWeights.securityId, securityIds))
-      : [];
+    const [holdingOverrideRows, securityWeightRows] = await Promise.all([
+      holdingIds.length
+        ? db.select().from(holdingAssetClassOverrides)
+            .where(inArray(holdingAssetClassOverrides.holdingId, holdingIds))
+        : Promise.resolve([]),
+      securityIds.length
+        ? db.select().from(securityAssetClassWeights)
+            .where(inArray(securityAssetClassWeights.securityId, securityIds))
+        : Promise.resolve([]),
+    ]);
 
     // Load ownership junction rows for accounts and liabilities
     const accountIds = accountRows.map((a) => a.id);
