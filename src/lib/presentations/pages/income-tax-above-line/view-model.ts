@@ -7,9 +7,17 @@ import type {
 } from "../../shared/drill-types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
+import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
+
+type AboveLine = NonNullable<ProjectionYear["deductionBreakdown"]>["aboveLine"];
+const ABOVE_STACK: Array<{ key: string; label: string; color: string; pick: (a: AboveLine | undefined) => number }> = [
+  { key: "retirementContributions", label: "Retirement Contributions", color: "#2563eb", pick: (a) => a?.retirementContributions ?? 0 },
+  { key: "taggedExpenses",          label: "Tagged Expenses",          color: "#16a34a", pick: (a) => a?.taggedExpenses ?? 0 },
+  { key: "manualEntries",           label: "Manual Entries",           color: "#f97316", pick: (a) => a?.manualEntries ?? 0 },
+];
 
 export interface BuildTaxAboveLineDrillInput {
   years: ProjectionYear[];
@@ -45,10 +53,21 @@ export function buildTaxAboveLineDrillData(input: BuildTaxAboveLineDrillInput): 
   });
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
+
+  const chartSpec = buildDrillChartSpec({
+    years: visibleYears.map((y) => y.year),
+    stacks: ABOVE_STACK.map((s) => ({
+      seriesId: s.key, label: s.label, color: s.color,
+      values: visibleYears.map((y) => s.pick(y.deductionBreakdown?.aboveLine)),
+    })),
+    markers,
+  });
+
   return {
     title: "Income Tax — Above-Line Deductions",
     subtitle: scenarioLabel,
     callout: computeCallout(options, "Above-line deductions shown from Retirement."),
+    chartSpec,
     table: { columns, rows, markers },
     footnote: DISCLAIMER,
   };
