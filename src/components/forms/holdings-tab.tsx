@@ -1,7 +1,7 @@
 // src/components/forms/holdings-tab.tsx
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import { HoldingOverrideEditor } from "./holding-override-editor";
 import {
@@ -20,9 +20,9 @@ interface Props {
   scenarioActive: boolean;
   assetClasses: AssetClassOption[];
   /** Current account growth source (from the form). */
-  growthSource: string;
+  growthSource: GrowthSource;
   /** Sync the form's growth-source state after an immediate flip/revert. */
-  onGrowthSourceSynced: (next: string) => void;
+  onGrowthSourceSynced: (next: GrowthSource) => void;
   /** Report derived totals up so the Details tab can show read-only value/basis. */
   onTotalsChange: (totals: { value: number; basis: number } | null) => void;
 }
@@ -47,11 +47,11 @@ export function HoldingsTab({
   const [adding, setAdding] = useState(false);
 
   // Remember the pre-flip source so the toggle can revert to it.
-  const preFlipSource = useRef<string>(growthSource === "holdings" ? "default" : growthSource);
+  const preFlipSource = useRef<GrowthSource>(growthSource === "holdings" ? "default" : growthSource);
 
   const canEdit = accountId != null && !scenarioActive;
 
-  const summary = summarizeHoldings(rows, assetClasses);
+  const summary = useMemo(() => summarizeHoldings(rows, assetClasses), [rows, assetClasses]);
 
   // Load on mount / account change.
   useEffect(() => {
@@ -72,17 +72,20 @@ export function HoldingsTab({
   // authoritative value/basis on the Details tab).
   useEffect(() => {
     onTotalsChange(rows.length > 0 ? { value: summary.value, basis: summary.basis } : null);
-  }, [rows, summary.value, summary.basis, onTotalsChange]);
+  }, [rows, summary, onTotalsChange]);
+
+  const flipToHoldings = useCallback(async () => {
+    if (!accountId) return;
+    preFlipSource.current = growthSource;
+    await setAccountGrowthSource(clientId, accountId, "holdings");
+    onGrowthSourceSynced("holdings");
+  }, [clientId, accountId, growthSource, onGrowthSourceSynced]);
 
   const flipToHoldingsIfFirst = useCallback(
     async (newCount: number) => {
-      if (newCount === 1 && growthSource !== "holdings" && accountId) {
-        preFlipSource.current = growthSource;
-        await setAccountGrowthSource(clientId, accountId, "holdings");
-        onGrowthSourceSynced("holdings");
-      }
+      if (newCount === 1 && growthSource !== "holdings") await flipToHoldings();
     },
-    [clientId, accountId, growthSource, onGrowthSourceSynced],
+    [growthSource, flipToHoldings],
   );
 
   async function handleAdd() {
@@ -92,7 +95,7 @@ export function HoldingsTab({
     try {
       const t = ticker.trim().toUpperCase();
       const classified = await classifyTicker(clientId, accountId, t); // fail-soft
-      const created = await createHolding(clientId, accountId, {
+      await createHolding(clientId, accountId, {
         securityId: classified.security?.id ?? null,
         displayTicker: t,
         displayName: classified.security?.name ?? null,
@@ -106,7 +109,6 @@ export function HoldingsTab({
       setRows(list);
       await flipToHoldingsIfFirst(list.length);
       setTicker(""); setShares(""); setPrice(""); setBasis("");
-      void created;
     } catch {
       setError("Couldn't add the holding. Check the values and try again.");
     } finally {
@@ -157,7 +159,7 @@ export function HoldingsTab({
 
   async function revertSource() {
     if (!accountId) return;
-    const target = (preFlipSource.current === "holdings" ? "default" : preFlipSource.current) as GrowthSource;
+    const target: GrowthSource = preFlipSource.current === "holdings" ? "default" : preFlipSource.current;
     await setAccountGrowthSource(clientId, accountId, target);
     onGrowthSourceSynced(target);
   }
@@ -196,12 +198,7 @@ export function HoldingsTab({
             <span>Holdings are entered but not driving this account.</span>
             <button
               type="button"
-              onClick={async () => {
-                if (!accountId) return;
-                preFlipSource.current = growthSource;
-                await setAccountGrowthSource(clientId, accountId, "holdings");
-                onGrowthSourceSynced("holdings");
-              }}
+              onClick={flipToHoldings}
               className="ml-3 shrink-0 underline"
             >
               Drive this account from holdings

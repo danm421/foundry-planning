@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import { HoldingsTab } from "./holdings-tab";
+import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab from "./beneficiaries-tab";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
@@ -404,8 +405,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
-  const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom" | "asset_mix" | "inflation" | "holdings">(
-    (initial?.growthSource as "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation" | "holdings") ?? "default"
+  const [growthSource, setGrowthSource] = useState<GrowthSource>(
+    (initial?.growthSource as GrowthSource) ?? "default"
   );
   // Real estate uses its own source toggle (custom vs. plan inflation). Stored
   // in the same `growth_source` column on save.
@@ -1649,9 +1650,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             scenarioActive={writer.scenarioActive}
             assetClasses={assetClasses}
             growthSource={growthSource}
-            onGrowthSourceSynced={(next) =>
-              setGrowthSource(next as "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation" | "holdings")
-            }
+            onGrowthSourceSynced={setGrowthSource}
             onTotalsChange={setHoldingsTotals}
           />
         </div>

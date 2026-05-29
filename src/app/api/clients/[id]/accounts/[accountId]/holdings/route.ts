@@ -76,14 +76,16 @@ export async function GET(
     const securityIds = Array.from(
       new Set(rows.map((r) => r.securityId).filter((s): s is string => s != null)),
     );
-    const overrideRows = holdingIds.length
-      ? await db.select().from(holdingAssetClassOverrides)
-          .where(inArray(holdingAssetClassOverrides.holdingId, holdingIds))
-      : [];
-    const weightRows = securityIds.length
-      ? await db.select().from(securityAssetClassWeights)
-          .where(inArray(securityAssetClassWeights.securityId, securityIds))
-      : [];
+    const [overrideRows, weightRows] = await Promise.all([
+      holdingIds.length
+        ? db.select().from(holdingAssetClassOverrides)
+            .where(inArray(holdingAssetClassOverrides.holdingId, holdingIds))
+        : [],
+      securityIds.length
+        ? db.select().from(securityAssetClassWeights)
+            .where(inArray(securityAssetClassWeights.securityId, securityIds))
+        : [],
+    ]);
 
     const weightsBySecurity = new Map<string, { slug: string; weight: number }[]>();
     for (const w of weightRows) {

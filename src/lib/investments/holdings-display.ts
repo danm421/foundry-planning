@@ -64,8 +64,7 @@ export function rowChip(row: HoldingRow, assetClasses: readonly AssetClassLite[]
   if (row.needsReview || row.securityWeights.length === 0)
     return { kind: "needs_review", label: "Needs review" };
   if (row.securityWeights.length === 1) {
-    const id = slugMap(assetClasses).get(row.securityWeights[0].slug);
-    const name = assetClasses.find((ac) => ac.id === id)?.name;
+    const name = assetClasses.find((ac) => ac.slug === row.securityWeights[0].slug)?.name;
     return { kind: "derived", label: name ?? "Needs review" };
   }
   return { kind: "derived", label: `Blend (${row.securityWeights.length})` };
