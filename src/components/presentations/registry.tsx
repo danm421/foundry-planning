@@ -57,7 +57,12 @@ import { buildTaxBelowLineDrillData } from "@/lib/presentations/pages/income-tax
 import { buildTaxOtherTaxesDrillData } from "@/lib/presentations/pages/income-tax-other-taxes/view-model";
 import { buildTaxBracketFederalDrillData } from "@/lib/presentations/pages/income-tax-bracket-federal/view-model";
 import { buildTaxBracketStateDrillData } from "@/lib/presentations/pages/income-tax-bracket-state/view-model";
+import { buildEstateTransferDrillData } from "@/lib/presentations/pages/estate-transfer/view-model";
+import { buildEstateLiquidityDrillData } from "@/lib/presentations/pages/estate-liquidity/view-model";
+import { buildGiftTaxDrillData } from "@/lib/presentations/pages/estate-gift-tax/view-model";
+import type { EstateDrillInput } from "@/lib/presentations/pages/estate-shared";
 import type { ProjectionYear, ClientData } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -74,6 +79,7 @@ export type PresentationCategory = (typeof CATEGORY_ORDER)[number];
 
 export interface BuildDataContext {
   years: ProjectionYear[];
+  projection: ProjectionResult;
   clientData: ClientData;
   scenarioLabel: string;
   clientName: string;
@@ -227,6 +233,59 @@ function makeDrillPage(
   };
 }
 
+// Estate drill pages mirror makeDrillPage but pass the full ProjectionResult
+// (estate builders need ordering resolution + gift ledger + death events).
+function makeEstateDrillPage(
+  id: string,
+  title: string,
+  description: string,
+  build: (input: EstateDrillInput) => DrillPageData,
+): PresentationPage<DrillPageData, DrillPageOptions> {
+  return {
+    id,
+    title,
+    description,
+    category: "Estate",
+    defaultOptions: DRILL_PAGE_OPTIONS_DEFAULT,
+    optionsSchema: drillOptionsSchema,
+    summarizeOptions: summarizeDrillOptions,
+    estimatePageCount: estimateDrillPageCount,
+    OptionsControl: DrillOptionsControl,
+    supportsScenarioOverride: true,
+    buildData: (ctx, options) =>
+      build({
+        projection: ctx.projection,
+        clientData: ctx.clientData,
+        options,
+        scenarioLabel: ctx.scenarioLabel,
+        clientName: ctx.clientName,
+        spouseName: ctx.spouseName,
+      }),
+    renderPdf: (input) => <DrillPagePdf {...input} />,
+  };
+}
+
+export const estateTransferPage = makeEstateDrillPage(
+  "estateTransfer",
+  "Estate Transfer",
+  "Year-by-year gross estate, taxes & expenses, net to heirs, and total to heirs (hypothetical death each year).",
+  buildEstateTransferDrillData,
+);
+
+export const estateLiquidityPage = makeEstateDrillPage(
+  "estateLiquidity",
+  "Estate Liquidity",
+  "Year-by-year insurance benefit, portfolio assets, transfer cost, and liquidity surplus/deficit.",
+  buildEstateLiquidityDrillData,
+);
+
+export const estateGiftTaxPage = makeEstateDrillPage(
+  "estateGiftTax",
+  "Gift Tax",
+  "Cumulative lifetime gifts, credit used, and gift tax per spouse with combined totals.",
+  buildGiftTaxDrillData,
+);
+
 export const cashFlowIncomePage = makeDrillPage(
   "cashFlowIncome",
   "Cash Flow — Income",
@@ -357,6 +416,9 @@ export const PRESENTATION_PAGES = {
   incomeTaxOtherTaxes: incomeTaxOtherTaxesPage,
   incomeTaxBracketFederal: incomeTaxBracketFederalPage,
   incomeTaxBracketState: incomeTaxBracketStatePage,
+  estateTransfer: estateTransferPage,
+  estateLiquidity: estateLiquidityPage,
+  estateGiftTax: estateGiftTaxPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;

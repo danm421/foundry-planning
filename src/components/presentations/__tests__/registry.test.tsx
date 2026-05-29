@@ -24,7 +24,7 @@ describe("registry — Cash Flow page", () => {
     expect(typeof cashFlowPage.OptionsControl).toBe("function");
   });
 
-  it("is registered alongside the framing pages + every cash-flow drill in PRESENTATION_PAGES", () => {
+  it("is registered alongside the framing pages + every cash-flow drill + income-tax + estate page in PRESENTATION_PAGES", () => {
     expect(Object.keys(PRESENTATION_PAGES).sort()).toEqual(
       [
         "cashFlow",
@@ -36,6 +36,9 @@ describe("registry — Cash Flow page", () => {
         "cashFlowNet",
         "cashFlowSavings",
         "cover",
+        "estateGiftTax",
+        "estateLiquidity",
+        "estateTransfer",
         "incomeTaxAboveLine",
         "incomeTaxBelowLine",
         "incomeTaxBracketFederal",
