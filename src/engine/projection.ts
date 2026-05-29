@@ -3345,9 +3345,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         data.accountFlowOverrides,
       );
       const netIncome = flow.gross - flow.exp;
-      if (netIncome <= 0) continue;
-      const distAmount = netIncome * flow.distPercent;
-      if (distAmount === 0) continue;
       // Source: the business's own child cash account if one exists. When the
       // business has no child cash bucket (default state — creation doesn't
       // auto-provision one), the debit side is skipped and net income flows
@@ -3360,6 +3357,37 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           a.category === "cash" &&
           a.isDefaultChecking === true,
       );
+
+      // Record the business's own gross income and expenses on its cash
+      // account so it holds the business's true balance (retained earnings
+      // after the distribution below). Without this the account's only entry
+      // was the distribution debit, so it spiralled negative — distributing
+      // money it never received. Losses are posted too: a loss drives
+      // businessCash negative and step 12c's per-entity gap-fill liquidates the
+      // business's own liquid holdings (or emits `entity_overdraft` when none
+      // remain) — the same treatment household checking gets.
+      if (businessCash) {
+        if (flow.gross !== 0) {
+          creditCash(businessCash.id, flow.gross, {
+            category: "income",
+            label: `Income: ${business.name}`,
+            sourceId: business.id,
+          });
+        }
+        if (flow.exp !== 0) {
+          creditCash(businessCash.id, -flow.exp, {
+            category: "expense",
+            label: `Expenses: ${business.name}`,
+            sourceId: business.id,
+          });
+        }
+      }
+
+      // Distribution: only profitable businesses distribute (P3-8: losses → no
+      // distribution).
+      if (netIncome <= 0) continue;
+      const distAmount = netIncome * flow.distPercent;
+      if (distAmount === 0) continue;
       // Destination: primary family-member owner's default cash account.
       // Falls back to household defaultChecking when the business has no
       // family owners or the owner has no associated cash account.
