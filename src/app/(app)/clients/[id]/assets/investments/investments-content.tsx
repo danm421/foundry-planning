@@ -24,14 +24,17 @@ import {
 } from "@/lib/investments/allocation";
 import { resolveBenchmark, type AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
+import { resolveGroup, type GroupKey } from "@/lib/account-groups/resolver";
+import { fetchAccountGroupForResolver, listAccountGroups } from "@/lib/account-groups/queries";
 import InvestmentsClient from "./investments-client";
 
 interface Props {
   clientId: string;
   firmId: string;
+  groupKey: string;
 }
 
-export async function InvestmentsContent({ clientId, firmId }: Props) {
+export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) {
   const [scenario] = await db
     .select()
     .from(scenarios)
@@ -82,6 +85,31 @@ export async function InvestmentsContent({ clientId, firmId }: Props) {
     }
   }
 
+  const resolverDeps = {
+    fetchAccounts: async () =>
+      acctRows.map((a) => ({ id: a.id, category: a.category })),
+    fetchCustomGroup: (cid: string, gid: string) =>
+      fetchAccountGroupForResolver(cid, gid),
+  };
+
+  // resolveGroup and listAccountGroups are independent — run in parallel.
+  // A custom group can be deleted out from under a stale ?group= URL; in that
+  // case resolveGroup throws, so fall back to the all-liquid view instead of
+  // crashing the page.
+  const [resolvedGroupOrNull, customGroupRows] = await Promise.all([
+    resolveGroup(clientId, groupKey as GroupKey, resolverDeps).catch(() => null),
+    listAccountGroups(clientId),
+  ]);
+  const resolvedGroup =
+    resolvedGroupOrNull ?? (await resolveGroup(clientId, "all-liquid", resolverDeps));
+  const groupAccountIdSet = new Set(resolvedGroup.accountIds);
+
+  const customGroupsForBar = customGroupRows.map((g) => ({
+    id: g.id,
+    name: g.name,
+    color: g.color,
+  }));
+
   // Index asset allocations by account id (filter to this client's accounts).
   const accountIds = new Set(acctRows.map((a) => a.id));
   const accountMixByAccountId: Record<string, AssetClassWeight[]> = {};
@@ -112,7 +140,9 @@ export async function InvestmentsContent({ clientId, firmId }: Props) {
   };
 
   const buildAccounts = (includeOutOfEstate: boolean): InvestableAccount[] =>
-    acctRows.map((a) => {
+    acctRows
+      .filter((a) => groupAccountIdSet.has(a.id))
+      .map((a) => {
       const entityId = accountEntityOwner.get(a.id) ?? null;
       const entityInPortfolio = entityId !== null && (entityIncludeInPortfolio.get(entityId) ?? false);
       return {
@@ -168,6 +198,10 @@ export async function InvestmentsContent({ clientId, firmId }: Props) {
       selectedBenchmarkPortfolioId={settings.selectedBenchmarkPortfolioId ?? null}
       benchmarkWeights={benchmark ?? []}
       existingCommentBody={existingCommentBody}
+      selectedGroupKey={resolvedGroup.groupKey}
+      selectedGroupIsDefault={resolvedGroup.isDefault}
+      customGroups={customGroupsForBar}
+      strippedMemberCount={resolvedGroup.strippedMemberCount}
     />
   );
 }

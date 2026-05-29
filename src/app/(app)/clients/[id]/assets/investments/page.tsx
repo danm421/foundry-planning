@@ -9,11 +9,13 @@ import InvestmentsSkeleton from "./loading-skeleton";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ group?: string }>;
 }
 
-export default async function InvestmentsPage({ params }: PageProps) {
+export default async function InvestmentsPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id: clientId } = await params;
+  const { group } = await searchParams;
 
   const [client] = await db
     .select()
@@ -23,7 +25,11 @@ export default async function InvestmentsPage({ params }: PageProps) {
 
   return (
     <Suspense fallback={<InvestmentsSkeleton />}>
-      <InvestmentsContent clientId={clientId} firmId={firmId} />
+      <InvestmentsContent
+        clientId={clientId}
+        firmId={firmId}
+        groupKey={group ?? "all-liquid"}
+      />
     </Suspense>
   );
 }

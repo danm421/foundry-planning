@@ -16,6 +16,7 @@ import { colorForAssetClass, UNALLOCATED_COLOR } from "@/lib/investments/palette
 import { ExportButton } from "@/components/exports/export-button";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import "@/lib/report-artifacts/index";
+import AccountGroupPillBar from "@/components/account-groups/account-group-pill-bar";
 
 interface Props {
   clientId: string;
@@ -28,6 +29,10 @@ interface Props {
   selectedBenchmarkPortfolioId: string | null;
   benchmarkWeights: AssetClassWeight[];
   existingCommentBody: string;
+  selectedGroupKey: string;
+  selectedGroupIsDefault: boolean;
+  customGroups: Array<{ id: string; name: string; color: string | null }>;
+  strippedMemberCount?: number;
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
@@ -47,6 +52,10 @@ export default function InvestmentsClient({
   selectedBenchmarkPortfolioId,
   benchmarkWeights,
   existingCommentBody,
+  selectedGroupKey,
+  selectedGroupIsDefault,
+  customGroups,
+  strippedMemberCount,
 }: Props) {
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
@@ -71,6 +80,9 @@ export default function InvestmentsClient({
     { reportId: "investments", chartId: "donut", dataVersion: "v1" },
     useCallback(() => donutCanvasRef.current, []),
   );
+
+  const shouldShowDrift =
+    selectedGroupIsDefault && selectedGroupKey !== "all-liquid";
 
   const hasComment = existingCommentBody.trim().length > 0;
   const disclosureParts: string[] = [];
@@ -123,6 +135,18 @@ export default function InvestmentsClient({
             selectedBenchmarkPortfolioId={selectedBenchmarkPortfolioId}
           />
         </div>
+        <AccountGroupPillBar
+          clientId={clientId}
+          customGroups={customGroups}
+          selected={selectedGroupKey}
+        />
+        {strippedMemberCount !== undefined && strippedMemberCount > 0 && (
+          <p className="text-xs text-yellow-400">
+            {strippedMemberCount} account{strippedMemberCount === 1 ? "" : "s"} in
+            this group are no longer eligible (illiquid or removed). Edit the group
+            in <em>Assumptions › Account Groups</em> to clean up.
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <div
             role="radiogroup"
@@ -171,7 +195,7 @@ export default function InvestmentsClient({
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.1fr_1fr]">
+      <div className={`grid grid-cols-1 gap-6 ${shouldShowDrift ? "lg:grid-cols-[1fr_1.1fr_1fr]" : "lg:grid-cols-[1fr_1.1fr]"}`}>
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
           <h3 className="mb-3 text-sm font-semibold text-gray-300">Allocation Details</h3>
           {drilledRowId === null ? (
@@ -231,10 +255,12 @@ export default function InvestmentsClient({
           <p className="mt-3 text-center text-xs text-gray-400">{disclosure}</p>
         </section>
 
-        <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-gray-300">Drift vs Target</h3>
-          <DriftChart drift={drift} assetClasses={assetClasses} />
-        </section>
+        {shouldShowDrift && (
+          <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-gray-300">Drift vs Target</h3>
+            <DriftChart drift={drift} assetClasses={assetClasses} />
+          </section>
+        )}
       </div>
 
       <div className="flex items-center justify-between border-t border-gray-800 pt-4">

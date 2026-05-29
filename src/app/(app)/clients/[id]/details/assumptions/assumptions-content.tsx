@@ -247,6 +247,15 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     endYearRef: d.endYearRef,
   }));
 
+  const liquidAccounts = accountRows
+    .filter((a) => ["taxable", "cash", "retirement"].includes(a.category))
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category as "taxable" | "cash" | "retirement",
+      value: Number(a.value),
+    }));
+
   return (
     <div className="max-w-3xl space-y-6">
       <div>
@@ -310,6 +319,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
         milestones={milestones}
         clientFirstName={effectiveTree.client.firstName}
         spouseFirstName={effectiveTree.client.spouseName?.split(" ")[0]}
+        liquidAccounts={liquidAccounts}
         deductionsData={{
           derivedRows,
           expenseDeductionRows,

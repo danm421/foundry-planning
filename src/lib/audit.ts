@@ -214,7 +214,11 @@ export type AuditAction =
   // Presentation templates
   | "presentation_template.create"
   | "presentation_template.update"
-  | "presentation_template.delete";
+  | "presentation_template.delete"
+  // Account groups
+  | "account_group.create"
+  | "account_group.update"
+  | "account_group.delete";
 
 type Args = {
   action: AuditAction;
