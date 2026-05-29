@@ -53,6 +53,7 @@ export default function InvestmentsClient({
   benchmarkWeights,
   existingCommentBody,
   selectedGroupKey,
+  selectedGroupIsDefault,
   customGroups,
   strippedMemberCount,
 }: Props) {
@@ -79,6 +80,9 @@ export default function InvestmentsClient({
     { reportId: "investments", chartId: "donut", dataVersion: "v1" },
     useCallback(() => donutCanvasRef.current, []),
   );
+
+  const shouldShowDrift =
+    selectedGroupIsDefault && selectedGroupKey !== "all-liquid";
 
   const hasComment = existingCommentBody.trim().length > 0;
   const disclosureParts: string[] = [];
@@ -251,10 +255,12 @@ export default function InvestmentsClient({
           <p className="mt-3 text-center text-xs text-gray-400">{disclosure}</p>
         </section>
 
-        <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-gray-300">Drift vs Target</h3>
-          <DriftChart drift={drift} assetClasses={assetClasses} />
-        </section>
+        {shouldShowDrift && (
+          <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-gray-300">Drift vs Target</h3>
+            <DriftChart drift={drift} assetClasses={assetClasses} />
+          </section>
+        )}
       </div>
 
       <div className="flex items-center justify-between border-t border-gray-800 pt-4">
