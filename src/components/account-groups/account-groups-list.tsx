@@ -53,6 +53,16 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+// Keys of every branch (non-leaf) node, so we can expand the group hierarchy
+// by default while leaving leaf nodes — which reveal individual accounts — closed.
+function collectBranchKeys(nodes: TreeNode[]): string[] {
+  return nodes.flatMap((n) =>
+    n.children && n.children.length > 0
+      ? [n.key, ...collectBranchKeys(n.children)]
+      : [],
+  );
+}
+
 export default function AccountGroupsList({
   allAccounts,
   customGroups,
@@ -60,7 +70,12 @@ export default function AccountGroupsList({
   onEdit,
   onDelete,
 }: Props) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const tree = useMemo(() => buildAssetTree(allAccounts), [allAccounts]);
+  // Start with every branch node expanded — the full group hierarchy is visible,
+  // but leaf nodes stay collapsed so individual accounts only show on click.
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(collectBranchKeys(tree)),
+  );
   const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -69,7 +84,6 @@ export default function AccountGroupsList({
       return next;
     });
 
-  const tree = useMemo(() => buildAssetTree(allAccounts), [allAccounts]);
   const accountsById = useMemo(() => {
     const m = new Map<string, AssetAccount>();
     for (const a of allAccounts) m.set(a.id, a);
