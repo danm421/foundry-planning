@@ -154,7 +154,7 @@ export const g3ClientData: ClientData = {
 // ─── G4: Split 401(k) savings rule, Roth/pre-tax ────────────────────────────
 
 /** Minimal bracket-mode tax year parameters used by G4 only. */
-const g4TaxYearRow: TaxYearParameters = {
+export const g4TaxYearRow: TaxYearParameters = {
   year: 2026,
   incomeBrackets: {
     married_joint: [

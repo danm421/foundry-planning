@@ -11,6 +11,7 @@ import {
   buildRecipientDrilldown,
   type RecipientGroup,
 } from "@/lib/gifts/build-recipient-drilldown";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { GiftCumulativeTable } from "./gift-cumulative-table";
 import {
   GiftWarningAlert,
@@ -109,16 +110,15 @@ export default function GiftTaxReportView({
       ]),
     );
 
-    const annualExclusionsByYear: Record<number, number> = {};
-    const taxYearRows = (tree.taxYearRows ?? []) as Array<{
-      year: number;
-      giftAnnualExclusion?: string | null;
-    }>;
-    for (const r of taxYearRows) {
-      if (r.giftAnnualExclusion != null) {
-        annualExclusionsByYear[r.year] = parseFloat(r.giftAnnualExclusion);
-      }
-    }
+    // Dense map: seeded years exact, out-years projected forward (audit F2).
+    // Must match the engine's `buildAnnualExclusionsMap` so the drilldown agrees
+    // with the ledger on what a gift past the last seeded year is taxed.
+    const annualExclusionsByYear = buildAnnualExclusionMap(
+      tree.taxYearRows ?? [],
+      tree.planSettings.planStartYear,
+      tree.planSettings.planEndYear,
+      tree.planSettings.taxInflationRate ?? tree.planSettings.inflationRate ?? 0,
+    );
 
     const yearByYear = new Map(projection.years.map((y) => [y.year, y]));
     const accountValueAtYear = (accountId: string, year: number): number => {

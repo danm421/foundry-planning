@@ -306,7 +306,16 @@ function transferCost(branch: HypotheticalEstateTaxOrdering): number {
 }
 
 function branchDeathCost(d: EstateTaxResult): number {
-  return d.totalTaxesAndExpenses + sumDrainKind(d.drainAttributions, "ird_tax");
+  // `totalTaxesAndExpenses` is federal + state + admin only. The engine drains
+  // liquid assets for creditor debt and IRD tax too (final-death.ts), so a
+  // transfer cost that omits them understates the real liquidity demand and can
+  // report a false surplus (audit F6). Matches the transfer report's "Debts
+  // Paid" reduction line so the two estate surfaces agree.
+  return (
+    d.totalTaxesAndExpenses +
+    sumDrainKind(d.drainAttributions, "debts_paid") +
+    sumDrainKind(d.drainAttributions, "ird_tax")
+  );
 }
 
 function sumDrainKind(
