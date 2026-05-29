@@ -8,9 +8,20 @@ import type {
 } from "../../shared/drill-types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
+import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
+
+type TaxFlow = NonNullable<ProjectionYear["taxResult"]>["flow"];
+const OTHER_STACK: Array<{ key: string; label: string; color: string; pick: (f: TaxFlow | undefined) => number }> = [
+  { key: "capitalGainsTax",    label: "Capital Gains", color: "#facc15", pick: (f) => f?.capitalGainsTax ?? 0 },
+  { key: "amt",                label: "AMT",           color: "#7c3aed", pick: (f) => f?.amtAdditional ?? 0 },
+  { key: "niit",               label: "NIIT",          color: "#0891b2", pick: (f) => f?.niit ?? 0 },
+  { key: "additionalMedicare", label: "Add'l Medicare", color: "#ea580c", pick: (f) => f?.additionalMedicare ?? 0 },
+  { key: "fica",               label: "FICA",          color: "#16a34a", pick: (f) => f?.fica ?? 0 },
+  { key: "stateTax",           label: "State Tax",     color: "#9ca3af", pick: (f) => f?.stateTax ?? 0 },
+];
 
 export interface BuildTaxOtherTaxesDrillInput {
   years: ProjectionYear[];
@@ -50,10 +61,21 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
   });
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
+
+  const chartSpec = buildDrillChartSpec({
+    years: visibleYears.map((y) => y.year),
+    stacks: OTHER_STACK.map((s) => ({
+      seriesId: s.key, label: s.label, color: s.color,
+      values: visibleYears.map((y) => s.pick(y.taxResult?.flow)),
+    })),
+    markers,
+  });
+
   return {
     title: "Income Tax — Other Taxes",
     subtitle: scenarioLabel,
     callout: computeCallout(options, "Other taxes shown from Retirement."),
+    chartSpec,
     table: { columns, rows, markers },
     footnote: DISCLAIMER,
   };
