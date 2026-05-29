@@ -17,6 +17,8 @@ import { ExportButton } from "@/components/exports/export-button";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import "@/lib/report-artifacts/index";
 import AccountGroupPillBar from "@/components/account-groups/account-group-pill-bar";
+import PortfolioAnalysisClient from "./portfolio-analysis-client";
+import type { AnalysisRow, UnplottableAccount } from "@/lib/investments/portfolio-analysis";
 
 interface Props {
   clientId: string;
@@ -33,6 +35,8 @@ interface Props {
   selectedGroupIsDefault: boolean;
   customGroups: Array<{ id: string; name: string; color: string | null }>;
   strippedMemberCount?: number;
+  analysisRows: AnalysisRow[];
+  unplottableAccounts: UnplottableAccount[];
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
@@ -56,7 +60,10 @@ export default function InvestmentsClient({
   selectedGroupIsDefault,
   customGroups,
   strippedMemberCount,
+  analysisRows,
+  unplottableAccounts,
 }: Props) {
+  const [pageView, setPageView] = useState<"allocation" | "analysis">("allocation");
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
   const [view, setView] = useState<AllocationView>("detailed");
@@ -119,7 +126,30 @@ export default function InvestmentsClient({
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-3">
+      <div className="inline-flex rounded-md border border-gray-700 p-0.5 text-sm">
+        <button
+          type="button"
+          onClick={() => setPageView("allocation")}
+          className={pageView === "allocation" ? "rounded bg-gray-700 px-3 py-1" : "px-3 py-1 text-gray-400"}
+        >
+          Allocation
+        </button>
+        <button
+          type="button"
+          onClick={() => setPageView("analysis")}
+          className={pageView === "analysis" ? "rounded bg-gray-700 px-3 py-1" : "px-3 py-1 text-gray-400"}
+        >
+          Portfolio Analysis
+        </button>
+      </div>
+
+      {pageView === "analysis" && (
+        <PortfolioAnalysisClient analysisRows={analysisRows} unplottableAccounts={unplottableAccounts} />
+      )}
+
+      {pageView === "allocation" && (
+        <>
+        <header className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
             <nav className="mb-1 text-xs uppercase tracking-wide text-gray-400">
@@ -287,6 +317,8 @@ export default function InvestmentsClient({
         reportKey="investments_asset_allocation"
         initialBody={existingCommentBody}
       />
+        </>
+      )}
     </div>
   );
 }
