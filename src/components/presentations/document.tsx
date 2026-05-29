@@ -1,6 +1,7 @@
 import { Document } from "@react-pdf/renderer";
 import { PRESENTATION_PAGES, type PresentationPageId } from "./registry";
 import type { ProjectionYear, ClientData } from "@/engine/types";
+import type { ProjectionResult } from "@/engine/projection";
 import { ensureFontsRegistered } from "./shared/fonts";
 import type { TocSection } from "./pages/toc/page-pdf";
 
@@ -17,6 +18,7 @@ interface PresentationDocumentProps {
   scenarioLabel: string;
   spouseName: string | null;
   years: ProjectionYear[];
+  projection: ProjectionResult;
   clientData: ClientData;
 }
 
@@ -54,6 +56,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
         const data = page.buildData(
           {
             years: props.years,
+            projection: props.projection,
             clientData: props.clientData,
             scenarioLabel: pageScenarioLabel,
             clientName: props.clientName,

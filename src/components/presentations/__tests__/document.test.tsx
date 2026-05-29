@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { PresentationDocument } from "../document";
+import { runProjectionWithEvents } from "@/engine/projection";
 import {
   makeProjectionYears,
   makeClientData,
@@ -10,6 +11,7 @@ describe("PresentationDocument", () => {
   it("renders cover + TOC + cash flow without throwing", async () => {
     const years = makeProjectionYears();
     const clientData = makeClientData();
+    const projection = runProjectionWithEvents(clientData);
     const buf = await renderToBuffer(
       <PresentationDocument
         pages={[{ pageId: "cashFlow", options: undefined }]}
@@ -20,6 +22,7 @@ describe("PresentationDocument", () => {
         scenarioLabel="Base Case"
         spouseName="Susan Sample"
         years={years}
+        projection={projection}
         clientData={clientData}
       />,
     );
