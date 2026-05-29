@@ -45,6 +45,13 @@ describe("buildInvestmentsResolver", () => {
     const result = resolver({ id: "a1", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null });
     expect(result).toEqual({ classified: [{ assetClassId: "eq", weight: 1 }] });
   });
+
+  it("resolves a model_portfolio account to the portfolio's weights", () => {
+    const b = fixture();
+    const resolver = buildInvestmentsResolver(b);
+    const result = resolver({ id: "a2", category: "retirement", growthSource: "model_portfolio", modelPortfolioId: "mp1" });
+    expect(result).toEqual({ classified: [{ assetClassId: "bd", weight: 1 }] });
+  });
 });
 
 describe("bundleGroupDeps", () => {

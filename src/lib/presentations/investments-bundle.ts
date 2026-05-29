@@ -120,9 +120,11 @@ export async function loadInvestmentsBundle(
   const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, entityRows, correlationRows] =
     await Promise.all([
       db.select().from(accountsTable).where(and(eq(accountsTable.clientId, clientId), eq(accountsTable.scenarioId, scenario.id))),
+      // No WHERE clause: accountAssetAllocations has no clientId; scoped transitively by filtering to this client's accountIds below.
       db.select().from(accountAssetAllocations),
       db.select().from(assetClassesTable).where(eq(assetClassesTable.firmId, firmId)),
       db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+      // No WHERE clause: modelPortfolioAllocations has no firmId; scoped transitively by filtering to this firm's portfolioIds below.
       db.select().from(modelPortfolioAllocations),
       db.select({ id: entitiesTable.id, includeInPortfolio: entitiesTable.includeInPortfolio })
         .from(entitiesTable).where(eq(entitiesTable.clientId, clientId)),
@@ -183,8 +185,9 @@ export async function loadInvestmentsBundle(
     pctLtCapitalGains: Number(c.pctLtCapitalGains), pctQualifiedDividends: Number(c.pctQualifiedDividends),
     pctTaxExempt: Number(c.pctTaxExempt),
   }));
-  const cashAssetClassId = classRows.find((c) => c.slug === "cash")?.id ?? null;
-  const riskFreeRate = Number(classRows.find((c) => c.slug === "cash")?.arithmeticMean ?? 0);
+  const cashClass = classRows.find((c) => c.slug === "cash") ?? null;
+  const cashAssetClassId = cashClass?.id ?? null;
+  const riskFreeRate = Number(cashClass?.arithmeticMean ?? 0);
 
   const planLite: PlanSettingsLite = {
     growthSourceTaxable: settings.growthSourceTaxable,
@@ -210,15 +213,19 @@ export async function loadInvestmentsBundle(
     groupOptions: [],
   };
 
-  // Pre-resolve every selectable group (default keys + custom groups).
+  // Pre-resolve every selectable group (default keys + custom groups) in parallel,
+  // preserving deterministic order: default keys first, then custom groups in order.
   const deps = bundleGroupDeps(bundle);
   const keys: GroupKey[] = [...DEFAULT_GROUP_KEYS, ...customGroups.map((g) => g.id)];
-  for (const key of keys) {
-    const resolved = await resolveGroup(clientId, key, deps).catch(() => null);
+  const resolvedList = await Promise.all(
+    keys.map((key) => resolveGroup(clientId, key, deps).catch(() => null)),
+  );
+  keys.forEach((key, i) => {
+    const resolved = resolvedList[i];
     if (resolved) {
       bundle.resolvedGroups[key] = resolved;
       bundle.groupOptions.push({ key, name: resolved.groupName });
     }
-  }
+  });
   return bundle;
 }
