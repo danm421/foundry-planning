@@ -32,6 +32,11 @@ export const holdingOverrideSchema = z
 
 export const classifyTickerSchema = z.object({ ticker: z.string().trim().min(1).max(32) }).strict();
 
+// Query-param validation for GET /holdings/quote. Same shape as classify; named
+// separately for intent (price lookup vs asset-class lookup).
+export const quoteTickerSchema = classifyTickerSchema;
+export type QuoteTickerQuery = z.infer<typeof quoteTickerSchema>;
+
 export type HoldingCreateBody = z.infer<typeof holdingCreateSchema>;
 export type HoldingUpdateBody = z.infer<typeof holdingUpdateSchema>;
 export type HoldingOverrideBody = z.infer<typeof holdingOverrideSchema>;

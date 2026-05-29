@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { holdingCreateSchema, holdingUpdateSchema, holdingOverrideSchema, classifyTickerSchema } from "../holdings";
+import { holdingCreateSchema, holdingUpdateSchema, holdingOverrideSchema, classifyTickerSchema, quoteTickerSchema } from "../holdings";
 
 describe("holdings schemas", () => {
   it("accepts a valid create body", () => {
@@ -35,5 +35,17 @@ describe("holdings schemas", () => {
 
   it("update is a partial of create", () => {
     expect(holdingUpdateSchema.safeParse({ price: 99 }).success).toBe(true);
+  });
+});
+
+describe("quoteTickerSchema", () => {
+  it("accepts a non-empty ticker", () => {
+    expect(quoteTickerSchema.safeParse({ ticker: "AAPL" }).success).toBe(true);
+  });
+  it("rejects an empty ticker", () => {
+    expect(quoteTickerSchema.safeParse({ ticker: "" }).success).toBe(false);
+  });
+  it("rejects a missing ticker", () => {
+    expect(quoteTickerSchema.safeParse({}).success).toBe(false);
   });
 });
