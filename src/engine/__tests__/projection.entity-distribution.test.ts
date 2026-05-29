@@ -549,19 +549,20 @@ describe("Phase 3: distribution routes to owner's default cash account", () => {
 });
 
 describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => {
+  // $100k income, $150k expense → -$50k loss.
+  const lossExpense: Expense = {
+    id: "x1",
+    type: "other",
+    name: "Big Loss",
+    annualAmount: 150_000,
+    startYear: 2026,
+    endYear: 2026,
+    growthRate: 0,
+    ownerAccountId: "biz-llc",
+  };
+
   it("loss with no liquidatable holdings: business cash goes negative + entity_overdraft", () => {
-    // $100k income, $150k expense → -$50k loss. Business owns only its cash
-    // account (untappable), so the deficit stays.
-    const lossExpense: Expense = {
-      id: "x1",
-      type: "other",
-      name: "Big Loss",
-      annualAmount: 150_000,
-      startYear: 2026,
-      endYear: 2026,
-      growthRate: 0,
-      ownerAccountId: "biz-llc",
-    };
+    // Business owns only its cash account (untappable), so the deficit stays.
     const data = mkData({ expenses: [lossExpense] });
     const y0 = runProjection(data)[0];
 
@@ -580,16 +581,6 @@ describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => 
   it("loss with a liquidatable business-owned taxable account: it's drained first", () => {
     // -$50k loss, but the business owns a $200k taxable account → gap-fill
     // liquidates $50k to refill business cash back toward $0.
-    const lossExpense: Expense = {
-      id: "x1",
-      type: "other",
-      name: "Big Loss",
-      annualAmount: 150_000,
-      startYear: 2026,
-      endYear: 2026,
-      growthRate: 0,
-      ownerAccountId: "biz-llc",
-    };
     const bizTaxable: Account = {
       id: "biz-taxable",
       name: "Business Brokerage",
@@ -616,7 +607,7 @@ describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => 
     // populated when warnings exist — projection.ts:4667), so normalize the
     // undefined-vs-empty case before asserting absence.
     expect(
-      y0.trustWarnings?.some((w) => w.code === "entity_overdraft") ?? false,
+      (y0.trustWarnings ?? []).some((w) => w.code === "entity_overdraft"),
     ).toBe(false);
   });
 });
