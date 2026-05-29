@@ -8,9 +8,20 @@ import type {
 } from "../../shared/drill-types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
+import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { PRESENTATION_THEME } from "../../theme";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
+
+type BelowLine = NonNullable<ProjectionYear["deductionBreakdown"]>["belowLine"];
+const BELOW_STACK: Array<{ key: string; label: string; color: string; pick: (b: BelowLine | undefined) => number }> = [
+  { key: "charitable",    label: "Charitable",      color: "#7c3aed", pick: (b) => b?.charitable ?? 0 },
+  { key: "taxesPaid",     label: "Taxes Paid (SALT)", color: "#2563eb", pick: (b) => b?.taxesPaid ?? 0 },
+  { key: "propertyTaxes", label: "Property",        color: "#0891b2", pick: (b) => b?.propertyTaxes ?? 0 },
+  { key: "interestPaid",  label: "Interest",        color: "#f97316", pick: (b) => b?.interestPaid ?? 0 },
+  { key: "otherItemized", label: "Other Itemized",  color: "#9ca3af", pick: (b) => b?.otherItemized ?? 0 },
+];
 
 export interface BuildTaxBelowLineDrillInput {
   years: ProjectionYear[];
@@ -54,10 +65,27 @@ export function buildTaxBelowLineDrillData(input: BuildTaxBelowLineDrillInput): 
   });
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
+
+  const chartSpec = buildDrillChartSpec({
+    years: visibleYears.map((y) => y.year),
+    stacks: BELOW_STACK.map((s) => ({
+      seriesId: s.key, label: s.label, color: s.color,
+      values: visibleYears.map((y) => s.pick(y.deductionBreakdown?.belowLine)),
+    })),
+    lines: [{
+      seriesId: "standard",
+      label: "Standard Deduction",
+      color: PRESENTATION_THEME.chartLine,
+      values: visibleYears.map((y) => y.deductionBreakdown?.belowLine?.standardDeduction ?? 0),
+    }],
+    markers,
+  });
+
   return {
     title: "Income Tax — Below-Line Deductions",
     subtitle: scenarioLabel,
     callout: computeCallout(options, "Below-line deductions shown from Retirement."),
+    chartSpec,
     table: { columns, rows, markers },
     footnote: DISCLAIMER,
   };
