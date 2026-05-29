@@ -352,6 +352,7 @@ describe("Phase 3: business cash account nets to retained earnings (regression)"
       planSettings: multiYearPlan,
     };
     const years = runProjection(data);
+    expect(years.length).toBe(3);
     expect(endBalance(years[0], "biz-llc-checking")).toBeCloseTo(50_000, 0);
     expect(endBalance(years[1], "biz-llc-checking")).toBeCloseTo(100_000, 0);
     expect(endBalance(years[2], "biz-llc-checking")).toBeCloseTo(150_000, 0);
