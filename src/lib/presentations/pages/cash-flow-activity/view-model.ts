@@ -13,6 +13,8 @@ import type {
 } from "../../shared/drill-types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
+import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { PRESENTATION_THEME } from "../../theme";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -92,10 +94,26 @@ export function buildPortfolioActivityDrillData(
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
 
+  const additionsByYear = visibleYears.map((py) => additionsTotal(py));
+  const distributionsByYear = visibleYears.map((py) => distributionsTotal(py));
+  const chartSpec = buildDrillChartSpec({
+    years: visibleYears.map((y) => y.year),
+    stacks: [
+      { seriesId: "additions",     label: "Additions",     color: "#16a34a", values: additionsByYear },
+      { seriesId: "distributions", label: "Distributions", color: "#ef4444", values: distributionsByYear.map((d) => -d) },
+    ],
+    lines: [{
+      seriesId: "net", label: "Net", color: PRESENTATION_THEME.chartLine,
+      values: additionsByYear.map((a, i) => a - distributionsByYear[i]),
+    }],
+    markers,
+  });
+
   return {
     title: "Portfolio Activity",
     subtitle: scenarioLabel,
     callout: computeCallout(options),
+    chartSpec,
     table: { columns, rows, markers },
     footnote: DISCLAIMER,
   };
