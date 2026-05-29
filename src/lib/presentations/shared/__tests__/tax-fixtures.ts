@@ -116,7 +116,7 @@ export function makeTaxYears(): ProjectionYear[] {
         aboveLine: { retirementContributions: 20_000, taggedExpenses: 3_000, manualEntries: 1_000, total: 24_000 },
         belowLine: {
           charitable: 10_000, taxesPaid: 10_000, stateIncomeTax: 9_000, propertyTaxes: 5_000,
-          interestPaid: 6_000, otherItemized: 1_000, itemizedTotal: 28_000,
+          interestPaid: 6_000, otherItemized: 2_000, itemizedTotal: 28_000,
           standardDeduction: 30_000, taxDeductions: 30_000,
         },
       }),
