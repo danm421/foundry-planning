@@ -27,7 +27,6 @@ export interface MonteCarloPageData {
   available: boolean;
   title: string;
   subtitle: string;
-  aborted: boolean;
   kpis: Array<{ label: string; value: string }>;
   heroKind: MonteCarloChartKind;
   fan: FanChartSpec;
@@ -52,8 +51,7 @@ export function buildMonteCarloData(
     return {
       available: false,
       title: "Monte Carlo",
-      subtitle: `${ctx.scenarioLabel}`,
-      aborted: false,
+      subtitle: ctx.scenarioLabel,
       kpis: [],
       heroKind: options.highlight,
       fan: EMPTY_FAN,
@@ -86,7 +84,7 @@ export function buildMonteCarloData(
   const success = buildSuccessChartSpec({
     successRates: payload.successRates,
     years: summary.byYear.map((r) => r.year),
-    ages: summary.byYear.map((r) => (r.age.client != null ? r.age.client : null)),
+    ages: summary.byYear.map((r) => r.age.client ?? null),
   });
 
   const kpis = [
@@ -129,7 +127,6 @@ export function buildMonteCarloData(
     available: true,
     title: "Monte Carlo",
     subtitle: `${ctx.scenarioLabel} · ${summary.trialsRun.toLocaleString("en-US")} trials`,
-    aborted: summary.aborted,
     kpis,
     heroKind: options.highlight,
     fan,

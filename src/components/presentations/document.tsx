@@ -4,6 +4,7 @@ import type { ProjectionYear, ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { ensureFontsRegistered } from "./shared/fonts";
 import type { TocSection } from "./pages/toc/page-pdf";
+import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 
 interface PresentationDocumentProps {
   pages: Array<{
@@ -20,7 +21,7 @@ interface PresentationDocumentProps {
   years: ProjectionYear[];
   projection: ProjectionResult;
   clientData: ClientData;
-  monteCarlo?: import("@/lib/presentations/pages/monte-carlo/view-model").MonteCarloReportPayload | null;
+  monteCarlo?: MonteCarloReportPayload | null;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {

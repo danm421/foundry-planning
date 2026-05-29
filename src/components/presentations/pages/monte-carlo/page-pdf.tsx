@@ -7,7 +7,7 @@ import { FanChartPdf } from "./charts/fan-pdf";
 import { HistogramPdf } from "./charts/histogram-pdf";
 import { SuccessPdf } from "./charts/success-pdf";
 import type { MonteCarloPageData } from "@/lib/presentations/pages/monte-carlo/view-model";
-import type { MonteCarloChartKind } from "@/lib/presentations/pages/monte-carlo/options-schema";
+import { MONTE_CARLO_CHART_KINDS, type MonteCarloChartKind } from "@/lib/presentations/pages/monte-carlo/options-schema";
 
 const styles = StyleSheet.create({
   kpiRow: { flexDirection: "row", gap: 8, marginTop: 10, marginBottom: 12 },
@@ -49,9 +49,7 @@ export function MonteCarloPagePdf({
   pageIndex: number;
   totalPages: number;
 }) {
-  const others = (["fan", "histogram", "longevity"] as MonteCarloChartKind[]).filter(
-    (k) => k !== data.heroKind,
-  );
+  const others = MONTE_CARLO_CHART_KINDS.filter((k) => k !== data.heroKind);
 
   return (
     <PageFrame
@@ -96,7 +94,7 @@ export function MonteCarloPagePdf({
               title: "",
               subtitle: "",
               table: data.table,
-              footnote: data.footnote,
+              footnote: "",
             }}
           />
 

@@ -5,6 +5,13 @@ import type { HistogramSeries } from "@/lib/monte-carlo/histogram-series";
 
 type Margin = { top: number; right: number; bottom: number; left: number };
 
+// All three charts share the same canvas size + vertical margins; only the
+// left gutter varies with the y-axis label width.
+const BASE = { width: 540, height: 300 } as const;
+function margin(left: number): Margin {
+  return { top: 20, right: 16, bottom: 40, left };
+}
+
 function niceCeiling(v: number): number {
   if (v <= 0) return 1;
   const magnitude = Math.pow(10, Math.floor(Math.log10(v)));
@@ -53,9 +60,8 @@ export function buildFanChartSpec(input: BuildFanChartSpecInput): FanChartSpec {
   const xTicks = years.length <= 8 ? years : ticks(years[0], years[years.length - 1], 8);
 
   return {
-    width: 540,
-    height: 300,
-    margin: { top: 20, right: 16, bottom: 40, left: 64 },
+    ...BASE,
+    margin: margin(64),
     years,
     xTicks,
     yDomain: [0, yDomainMax],
@@ -107,9 +113,8 @@ export function buildHistogramChartSpec(series: HistogramSeries): HistogramChart
   ];
 
   return {
-    width: 540,
-    height: 300,
-    margin: { top: 20, right: 16, bottom: 40, left: 56 },
+    ...BASE,
+    margin: margin(56),
     bins,
     xDomain: [x0, x1],
     yDomain: [0, yDomainMax],
@@ -154,9 +159,8 @@ export function buildSuccessChartSpec(input: BuildSuccessChartSpecInput): Succes
   });
   const labelEvery = bars.length <= 12 ? 1 : Math.ceil(bars.length / 12);
   return {
-    width: 540,
-    height: 300,
-    margin: { top: 20, right: 16, bottom: 40, left: 44 },
+    ...BASE,
+    margin: margin(44),
     bars,
     labelEvery,
     colors: { grid: T.hair, axis: T.ink3 },
