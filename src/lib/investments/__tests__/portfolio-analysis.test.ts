@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { aggregateWeights } from "../portfolio-analysis";
+import { aggregateWeights, buildAnalysisRows } from "../portfolio-analysis";
 import type { AccountAllocationResult } from "../allocation";
+import { buildStatsContext } from "../portfolio-stats";
+import type { AssetClassData } from "@/lib/portfolio-math";
+
+const AC = (id: string, mean: number, vol: number): AssetClassData => ({
+  id, arithmeticMean: mean, geometricReturn: mean, volatility: vol,
+  pctOrdinaryIncome: 0, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0,
+});
 
 const classified = (rows: [string, number][]): AccountAllocationResult => ({
   classified: rows.map(([assetClassId, weight]) => ({ assetClassId, weight })),
@@ -40,5 +47,50 @@ describe("aggregateWeights", () => {
     const out = aggregateWeights([{ value: 100, result: classified([["eq", 0.6]]) }]);
     expect(out.residualUnallocatedPct).toBeCloseTo(0.4, 10);
     expect(out.weights).toEqual([{ assetClassId: "eq", weight: 1 }]);
+  });
+});
+
+describe("buildAnalysisRows", () => {
+  const classes = [AC("eq", 0.09, 0.16), AC("bond", 0.04, 0.05)];
+  const ctx = buildStatsContext(classes, [], 0.02);
+
+  const accounts = [
+    { id: "a1", name: "Brokerage", category: "taxable" as const, value: 100,
+      growthSource: "asset_mix" as const, modelPortfolioId: null },
+    { id: "a2", name: "401k", category: "retirement" as const, value: 300,
+      growthSource: "asset_mix" as const, modelPortfolioId: null },
+    { id: "a3", name: "Checking", category: "taxable" as const, value: 50,
+      growthSource: "custom" as const, modelPortfolioId: null },
+  ];
+  const resolver = (acct: { id: string }): AccountAllocationResult => {
+    if (acct.id === "a1") return { classified: [{ assetClassId: "eq", weight: 1 }] };
+    if (acct.id === "a2") return { classified: [{ assetClassId: "eq", weight: 0.5 }, { assetClassId: "bond", weight: 0.5 }] };
+    return { unallocated: true };
+  };
+
+  it("emits one row per entity with computed stats, plus an unplottable list", () => {
+    const { rows, unplottable } = buildAnalysisRows({
+      assetClasses: classes,
+      assetClassMeta: [
+        { id: "eq", name: "US Equity", sortOrder: 0, assetType: "equities" },
+        { id: "bond", name: "Bonds", sortOrder: 1, assetType: "taxable_bonds" },
+      ],
+      accounts,
+      resolver,
+      modelPortfolios: [{ id: "mp1", name: "60/40" }],
+      modelPortfolioAllocationsByPortfolioId: {
+        mp1: [{ assetClassId: "eq", weight: 0.6 }, { assetClassId: "bond", weight: 0.4 }],
+      },
+      customGroups: [{ id: "g1", name: "Core", color: "#fff", accountIds: ["a1", "a2"] }],
+      ctx,
+    });
+
+    expect(unplottable.map((u) => u.id)).toContain("a3");
+    const taxable = rows.find((r) => r.type === "category" && r.id === "taxable")!;
+    expect(taxable.stats.arithmeticMean).toBeCloseTo(0.09, 10);
+    const group = rows.find((r) => r.type === "custom_group" && r.id === "g1")!;
+    expect(group.stats.arithmeticMean).toBeCloseTo((250 / 400) * 0.09 + (150 / 400) * 0.04, 10);
+    expect(rows.some((r) => r.type === "model_portfolio" && r.id === "mp1")).toBe(true);
+    expect(rows.some((r) => r.type === "asset_class" && r.id === "eq")).toBe(true);
   });
 });
