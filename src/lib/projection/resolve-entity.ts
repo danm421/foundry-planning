@@ -25,6 +25,10 @@ export interface ResolutionContext {
    *  reinvestment `soldFractionByAccount` after `applyScenarioChanges`.
    *  Accounts absent from the map resolve to a conservative full turnover. */
   accountBaseAllocByAccountId?: Map<string, Map<string, number> | undefined>;
+  /** Per-account authoritative value/basis sums from the holdings rollup.
+   *  Present only for accounts in `holdings` growth-source mode. When set,
+   *  the account's value/basis are derived from holdings, not the raw row. */
+  holdingsTotalsByAccountId?: Map<string, { value: number; basis: number }>;
 }
 
 type Numericish = string | number | null | undefined;
@@ -125,6 +129,20 @@ export function resolveAccountFromRaw(
         raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : resolved.pctTaxEx,
       turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
     };
+  } else if (effectiveSource === "holdings") {
+    const resolved = resolver.resolveAccountHoldings(raw.id);
+    growthRate = resolved.geoReturn;
+    realization = {
+      pctOrdinaryIncome:
+        raw.overridePctOi != null ? parseFloat(raw.overridePctOi) : resolved.pctOi,
+      pctLtCapitalGains:
+        raw.overridePctLtCg != null ? parseFloat(raw.overridePctLtCg) : resolved.pctLtcg,
+      pctQualifiedDividends:
+        raw.overridePctQdiv != null ? parseFloat(raw.overridePctQdiv) : resolved.pctQdiv,
+      pctTaxExempt:
+        raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : resolved.pctTaxEx,
+      turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
+    };
   } else if (effectiveSource === "custom" && raw.growthRate != null) {
     growthRate = n(raw.growthRate);
   } else {
@@ -173,8 +191,8 @@ export function resolveAccountFromRaw(
     name: raw.name,
     category: raw.category as Account["category"],
     subType: raw.subType,
-    value: n(raw.value),
-    basis: n(raw.basis),
+    value: ctx.holdingsTotalsByAccountId?.get(raw.id)?.value ?? n(raw.value),
+    basis: ctx.holdingsTotalsByAccountId?.get(raw.id)?.basis ?? n(raw.basis),
     rothValue: raw.rothValue != null ? n(raw.rothValue) : 0,
     growthRate,
     rmdEnabled: raw.rmdEnabled,
