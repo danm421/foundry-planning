@@ -42,6 +42,7 @@ describe("buildEstateFlowReportData", () => {
       showHeirDetail: true,
     });
     expect(data.title).toBe("Estate Flow");
+    expect(data.subtitle).toContain("As of 2026");
     expect(data.ownership.grandTotal).toBe(100);
     expect(data.firstColumn?.decedentName).toBe("Cooper");
     expect(data.secondColumn).toBeNull();

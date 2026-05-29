@@ -70,7 +70,7 @@ function DeathSpine({ stage }: { stage: DeathStage }) {
   return (
     <>
       <View style={styles.estateBox}>
-        <Text style={styles.estateLabel}>{stage.decedentLabel}</Text>
+        <Text style={styles.estateLabel}>{stage.decedentLabel} · {stage.year}</Text>
         <Text style={styles.estateValue}>{fmt.format(stage.estateValue)}</Text>
       </View>
       {stage.subBoxes.length > 0 && <Chevron />}

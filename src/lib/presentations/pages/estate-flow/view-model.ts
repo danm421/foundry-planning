@@ -34,7 +34,7 @@ export function buildEstateFlowReportData(
   );
   return {
     title: "Estate Flow",
-    subtitle: ctx.scenarioLabel,
+    subtitle: `${ctx.scenarioLabel} · As of ${asOfYear}`,
     ownership,
     asOfYear,
     firstColumn,

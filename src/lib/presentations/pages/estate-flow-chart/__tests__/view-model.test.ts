@@ -39,6 +39,7 @@ describe("buildEstateFlowChartData", () => {
     });
     expect(data.title).toBe("Estate Flow");
     expect(data.subtitle).toContain("Base Case");
+    expect(data.subtitle).toContain("As of 2026");
     expect(data.summary?.totals.totalToHeirs).toBe(5000);
     expect(data.showHeirDetail).toBe(true);
   });

@@ -14,10 +14,10 @@ export function buildEstateFlowChartData(
   ctx: BuildDataContext,
   options: EstatePageOptions,
 ): EstateFlowChartData {
-  const { summary } = prepEstate(ctx, options.asOf);
+  const { summary, asOfYear } = prepEstate(ctx, options.asOf);
   return {
     title: "Estate Flow",
-    subtitle: ctx.scenarioLabel,
+    subtitle: `${ctx.scenarioLabel} · As of ${asOfYear}`,
     summary,
     showHeirDetail: options.showHeirDetail,
   };
