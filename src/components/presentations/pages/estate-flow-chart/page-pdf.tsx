@@ -149,7 +149,7 @@ export function EstateFlowChartPagePdf({
             <View style={[styles.totalBox, { backgroundColor: T.crit }]}>
               <Text style={styles.totalLabel}>Total Taxes & Expenses</Text>
               <Text style={styles.totalValue}>
-                {fmt.format(Math.abs(s.totals.totalTaxesAndExpenses))}
+                {fmt.format(s.totals.totalTaxesAndExpenses)}
               </Text>
             </View>
             <View style={[styles.totalBox, { backgroundColor: T.good }]}>

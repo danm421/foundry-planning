@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 
-// prepEstate is exercised by its own test; here we only assert the view-model
-// forwards the summary + framing and tolerates a null summary.
+// prepEstate has its own dedicated coverage in
+// src/lib/presentations/shared/__tests__/estate-context.test.ts (real
+// ClientData fixture + projection). Here we mock it away and only assert the
+// view-model forwards the summary + framing and tolerates a null summary.
 vi.mock("@/lib/presentations/shared/estate-context", () => ({
   prepEstate: () => ({
     reportData: { isEmpty: false },
