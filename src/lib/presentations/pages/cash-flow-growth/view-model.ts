@@ -13,6 +13,7 @@ import type {
 } from "../../shared/drill-types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
+import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -31,6 +32,16 @@ const CATEGORIES: Array<{
   { bucket: "business",      key: "business",      label: "Business" },
   { bucket: "lifeInsurance", key: "lifeInsurance", label: "Life\nInsurance" },
 ];
+
+// Match the in-app portfolio chart palette (portfolio-chart.tsx).
+const CATEGORY_COLORS: Record<string, string> = {
+  taxable: "#facc15",
+  cash: "#9ca3af",
+  retirement: "#f97316",
+  realEstate: "#0891b2",
+  business: "#7c3aed",
+  lifeInsurance: "#16a34a",
+};
 
 export interface BuildPortfolioGrowthDrillInput {
   years: ProjectionYear[];
@@ -98,10 +109,22 @@ export function buildPortfolioGrowthDrillData(
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
 
+  const chartSpec = buildDrillChartSpec({
+    years: visibleYears.map((y) => y.year),
+    stacks: activeCats.map((c) => ({
+      seriesId: c.key,
+      label: c.label.replace("\n", " "),
+      color: CATEGORY_COLORS[c.key] ?? "#9ca3af",
+      values: visibleYears.map((y) => growthByCategorySegment(y, c.bucket)),
+    })),
+    markers,
+  });
+
   return {
     title: "Portfolio Growth",
     subtitle: scenarioLabel,
     callout: computeCallout(options),
+    chartSpec,
     table: { columns, rows, markers },
     footnote: DISCLAIMER,
   };
