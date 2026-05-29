@@ -137,6 +137,11 @@ function mkData(overrides: {
   };
 }
 
+/** End-of-year balance of an account from its ledger snapshot. */
+function endBalance(year: ReturnType<typeof runProjection>[number], acctId: string): number {
+  return year.accountLedgers[acctId]?.endingValue ?? 0;
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("Phase 3: business-account tax incidence", () => {
@@ -324,6 +329,59 @@ describe("Phase 3: trust regression — taxTreatment ignored", () => {
 
     const hhEntries = y0.accountLedgers["hh-checking"].entries;
     expect(hhEntries.find((e) => e.category === "entity_distribution")).toBeUndefined();
+  });
+});
+
+describe("Phase 3: business cash account nets to retained earnings (regression)", () => {
+  it("100% distribution: business cash nets to ~$0 every year (no phantom deficit)", () => {
+    // $100k income, no expenses, 100% distribution → nothing retained → biz cash ~$0.
+    const multiYearPlan: PlanSettings = { ...planSettings, planEndYear: 2030 };
+    const data: ClientData = { ...mkData(), planSettings: multiYearPlan };
+    const years = runProjection(data);
+    expect(years.length).toBe(5);
+    for (const y of years) {
+      expect(endBalance(y, "biz-llc-checking")).toBeCloseTo(0, 0);
+    }
+  });
+
+  it("50% distribution: business cash accumulates the retained half each year", () => {
+    // $100k net income × (1 - 0.5) = $50k retained per year, compounding (no growth).
+    const multiYearPlan: PlanSettings = { ...planSettings, planEndYear: 2028 };
+    const data: ClientData = {
+      ...mkData({ bizOverrides: { distributionPolicyPercent: 0.5 } }),
+      planSettings: multiYearPlan,
+    };
+    const years = runProjection(data);
+    expect(endBalance(years[0], "biz-llc-checking")).toBeCloseTo(50_000, 0);
+    expect(endBalance(years[1], "biz-llc-checking")).toBeCloseTo(100_000, 0);
+    expect(endBalance(years[2], "biz-llc-checking")).toBeCloseTo(150_000, 0);
+  });
+
+  it("business cash ledger carries granular income / expense / distribution entries", () => {
+    // $100k income, $30k expense, 100% distribution.
+    const expense: Expense = {
+      id: "e1",
+      type: "other",
+      name: "LLC Expense",
+      annualAmount: 30_000,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0,
+      ownerAccountId: "biz-llc",
+    };
+    const data = mkData({ expenses: [expense] });
+    const y0 = runProjection(data)[0];
+    const entries = y0.accountLedgers["biz-llc-checking"].entries;
+
+    const inc = entries.find((e) => e.category === "income");
+    const exp = entries.find((e) => e.category === "expense");
+    const dist = entries.find((e) => e.category === "entity_distribution");
+    expect(inc?.amount).toBeCloseTo(100_000, 0);
+    expect(exp?.amount).toBeCloseTo(-30_000, 0);
+    // netIncome = $70k, 100% distributed.
+    expect(dist?.amount).toBeCloseTo(-70_000, 0);
+    // Nets to ~$0.
+    expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(0, 0);
   });
 });
 
