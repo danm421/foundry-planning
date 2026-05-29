@@ -264,6 +264,7 @@ export const growthSourceEnum = pgEnum("growth_source", [
   "custom",
   "asset_mix",
   "inflation",
+  "holdings",
 ]);
 
 export const scenarioOpTypeEnum = pgEnum("scenario_op_type", ["add", "edit", "remove"]);
@@ -1227,6 +1228,53 @@ export const securityAssetClassWeights = pgTable(
     weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
   },
   (t) => [uniqueIndex("security_acw_uniq").on(t.securityId, t.assetClassSlug)]
+);
+
+// Individual positions inside an investment account. Org-scoped via the
+// account → client → firm chain. When an account has holdings and its
+// growthSource is "holdings", these are authoritative for value + basis and
+// roll up (value-weighted) into the account's asset-class blend.
+export const accountHoldings = pgTable(
+  "account_holdings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    // Nullable: a fully-manual holding (override-only, no classified security).
+    securityId: uuid("security_id").references(() => securities.id, {
+      onDelete: "set null",
+    }),
+    displayTicker: text("display_ticker"),
+    displayName: text("display_name"),
+    shares: decimal("shares", { precision: 18, scale: 6 }).notNull().default("0"),
+    price: decimal("price", { precision: 15, scale: 4 }).notNull().default("0"),
+    priceAsOf: date("price_as_of"),
+    costBasis: decimal("cost_basis", { precision: 15, scale: 2 }).notNull().default("0"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("account_holdings_account_idx").on(t.accountId)]
+);
+
+// Per-holding manual asset-class blend. When present (≥1 row), WINS permanently
+// over the security's derived slug blend for that holding. Firm assetClassId
+// (not a canonical slug) — overrides are firm-specific by construction.
+export const holdingAssetClassOverrides = pgTable(
+  "holding_asset_class_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    holdingId: uuid("holding_id")
+      .notNull()
+      .references(() => accountHoldings.id, { onDelete: "cascade" }),
+    assetClassId: uuid("asset_class_id")
+      .notNull()
+      .references(() => assetClasses.id, { onDelete: "cascade" }),
+    weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
+  },
+  (t) => [uniqueIndex("holding_acw_override_uniq").on(t.holdingId, t.assetClassId)]
 );
 
 export const accounts = pgTable("accounts", {

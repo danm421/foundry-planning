@@ -939,6 +939,13 @@
       "when": 1780023097980,
       "tag": "0133_superb_clint_barton",
       "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1780061304862,
+      "tag": "0134_typical_blue_shield",
+      "breakpoints": true
     }
   ]
 }
