@@ -3,7 +3,7 @@ import { snapPercentDomain, buildScatterSpec } from "../scatter-chart-spec";
 import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
 
 describe("snapPercentDomain", () => {
-  it("snaps to whole percents with -4pp low / +2pp high padding", () => {
+  it("snaps to whole percents with -4pp low / +1pp high padding", () => {
     expect(snapPercentDomain([0.071, 0.123])).toEqual([0.03, 0.14]);
   });
   it("handles a single value", () => {

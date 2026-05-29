@@ -3,6 +3,8 @@ import type { ScatterSpec, ScatterPoint } from "./types";
 import type { AnalysisRow, EntityType } from "@/lib/investments/portfolio-analysis";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 
+// Series colors mirror the first five entries of PALETTE in lib/investments/palette.ts.
+// Kept independent here because scatter series are entity-type categories, not asset classes.
 const SERIES: Record<
   EntityType,
   { label: string; pointStyle: ScatterPoint["pointStyle"]; color: string }
