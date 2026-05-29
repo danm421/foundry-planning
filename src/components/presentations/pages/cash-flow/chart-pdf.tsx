@@ -2,6 +2,7 @@ import { View, Svg, G, Rect, Line, Polyline, Text as SvgText } from "@react-pdf/
 import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { stackRects } from "./chart-geom";
 
 export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
   const innerW = spec.width - spec.margin.left - spec.margin.right;
@@ -14,8 +15,7 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
 
   const y = scaleLinear()
     .domain(spec.yAxis.domain)
-    .range([innerH, 0])
-    .clamp(true);
+    .range([innerH, 0]);
 
   const barWidth = x.bandwidth();
 
@@ -48,29 +48,31 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
             </SvgText>
           ))}
 
-          {/* Stacked bars */}
+          {/* Stacked bars (positive up, negative down from zero) */}
           {spec.xAxis.domain.map((xv, i) => {
             const cx = x(xv);
             if (cx == null) return null;
-            let cumulative = 0;
-            return spec.stacks.map((s) => {
-              const v = s.values[i];
-              const y0 = y(cumulative);
-              const y1 = y(cumulative + v);
-              cumulative += v;
-              const h = Math.max(0, y0 - y1);
-              return (
-                <Rect
-                  key={`bar-${s.seriesId}-${xv}`}
-                  x={cx}
-                  y={y1}
-                  width={barWidth}
-                  height={h}
-                  fill={s.color}
-                />
-              );
-            });
+            const rects = stackRects((v) => y(v), spec.stacks.map((s) => s.values[i] ?? 0));
+            return spec.stacks.map((s, k) => (
+              <Rect
+                key={`bar-${s.seriesId}-${xv}`}
+                x={cx}
+                y={rects[k].y}
+                width={barWidth}
+                height={rects[k].height}
+                fill={s.color}
+              />
+            ));
           })}
+
+          {/* Zero baseline for diverging charts */}
+          {spec.yAxis.domain[0] < 0 && (
+            <Line
+              x1={0} x2={innerW} y1={y(0)} y2={y(0)}
+              stroke={PRESENTATION_THEME.ink3}
+              strokeWidth={0.75}
+            />
+          )}
 
           {/* Line overlay (expenses) */}
           {spec.lines.map((ln) => {
