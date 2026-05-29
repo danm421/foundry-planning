@@ -78,13 +78,13 @@ describe("holdings-client", () => {
   });
 
   it("setAccountGrowthSource PUTs { growthSource } to the account route", async () => {
-    const f = mockFetch(200, { id: A, growthSource: "holdings" });
+    const f = mockFetch(200, { id: A, growthSource: "asset_mix" });
     vi.stubGlobal("fetch", f);
-    await setAccountGrowthSource(C, A, "holdings");
+    await setAccountGrowthSource(C, A, "asset_mix");
     const [url, opts] = f.mock.calls[0];
     expect(url).toBe(`/api/clients/${C}/accounts/${A}`);
     expect(opts.method).toBe("PUT");
-    expect(JSON.parse(opts.body)).toEqual({ growthSource: "holdings" });
+    expect(JSON.parse(opts.body)).toEqual({ growthSource: "asset_mix" });
   });
 
   it("throws on a non-ok response", async () => {

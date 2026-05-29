@@ -26,6 +26,7 @@ const baseRow: typeof accounts.$inferSelect = {
   priorYearEndValue: null,
   isDefaultChecking: false,
   growthSource: "default",
+  deriveFromHoldings: true,
   modelPortfolioId: null,
   turnoverPct: "0",
   overridePctOi: null,
