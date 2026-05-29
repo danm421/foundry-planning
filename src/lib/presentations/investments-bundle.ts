@@ -129,8 +129,11 @@ export async function loadInvestmentsBundle(
       db.select({
         assetClassIdA: assetClassCorrelations.assetClassIdA,
         assetClassIdB: assetClassCorrelations.assetClassIdB,
+        // decimal columns return string from Drizzle — coerce at the boundary
         correlation: assetClassCorrelations.correlation,
-      }).from(assetClassCorrelations),
+      }).from(assetClassCorrelations).then((rows) =>
+        rows.map((r) => ({ ...r, correlation: Number(r.correlation) })),
+      ),
     ]);
 
   const entityIncludeInPortfolio = new Map<string, boolean>();
