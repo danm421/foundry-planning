@@ -18,7 +18,7 @@ import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import "@/lib/report-artifacts/index";
 import AccountGroupPillBar from "@/components/account-groups/account-group-pill-bar";
 import PortfolioAnalysisClient from "./portfolio-analysis-client";
-import type { AnalysisRow, UnplottableAccount } from "@/lib/investments/portfolio-analysis";
+import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
 
 interface Props {
   clientId: string;
@@ -36,7 +36,6 @@ interface Props {
   customGroups: Array<{ id: string; name: string; color: string | null }>;
   strippedMemberCount?: number;
   analysisRows: AnalysisRow[];
-  unplottableAccounts: UnplottableAccount[];
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
@@ -61,7 +60,6 @@ export default function InvestmentsClient({
   customGroups,
   strippedMemberCount,
   analysisRows,
-  unplottableAccounts,
 }: Props) {
   const [pageView, setPageView] = useState<"allocation" | "analysis">("allocation");
   const [commentOpen, setCommentOpen] = useState(false);
@@ -144,7 +142,7 @@ export default function InvestmentsClient({
       </div>
 
       {pageView === "analysis" && (
-        <PortfolioAnalysisClient analysisRows={analysisRows} unplottableAccounts={unplottableAccounts} />
+        <PortfolioAnalysisClient analysisRows={analysisRows} />
       )}
 
       {pageView === "allocation" && (

@@ -3,38 +3,53 @@
 import { Chart as ChartJS, LinearScale, PointElement, Tooltip, Legend } from "chart.js";
 import { Scatter } from "react-chartjs-2";
 import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
-import { colorForAssetClass } from "@/lib/investments/palette";
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
-const SERIES: { type: AnalysisRow["type"]; label: string; pointStyle: string; color: string }[] = [
-  { type: "asset_class", label: "Asset Classes", pointStyle: "circle", color: "#3b82f6" },
-  { type: "account", label: "Accounts", pointStyle: "rect", color: "#10b981" },
-  { type: "category", label: "Account Categories", pointStyle: "triangle", color: "#f59e0b" },
-  { type: "custom_group", label: "Custom Groups", pointStyle: "rectRot", color: "#8b5cf6" },
-  { type: "model_portfolio", label: "Model Portfolios", pointStyle: "star", color: "#ec4899" },
-];
-
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
 
-export function PortfolioAnalysisScatter({ rows }: { rows: AnalysisRow[] }) {
-  const datasets = SERIES.map((s) => {
-    const seriesRows = rows.filter((r) => r.type === s.type);
-    return {
-      label: s.label,
-      pointStyle: s.pointStyle,
-      pointRadius: 7,
-      pointHoverRadius: 9,
-      backgroundColor: seriesRows.map((r) =>
-        r.type === "asset_class" && r.sortOrder !== undefined
-          ? colorForAssetClass({ sortOrder: r.sortOrder })
-          : s.color,
-      ),
-      borderColor: "#111827",
-      borderWidth: 1,
-      data: seriesRows.map((r) => ({ x: r.stats.stdDev, y: r.stats.arithmeticMean, _row: r })),
-    };
-  });
+// High-contrast axis styling (chart sits on a dark surface — push labels/grid
+// light so they read clearly against the dark background).
+const AXIS_INK = "#e5e7eb"; // gray-200 — tick + title labels
+const GRID_COLOR = "#6b7280"; // gray-500 — grid lines (vs near-invisible default)
+const AXIS_BORDER = "#9ca3af"; // gray-400 — axis lines
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Axis range snapped to whole percentages: 4pp below the lowest value (never
+// below 0), 2pp above the highest. Returns a sane default when there's no data.
+function axisBounds(values: number[]): { min: number; max: number } {
+  if (values.length === 0) return { min: 0, max: 0.1 };
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  return {
+    min: Math.max(0, round2(Math.floor(lo * 100) / 100 - 0.04)),
+    max: round2(Math.ceil(hi * 100) / 100 + 0.02),
+  };
+}
+
+export function PortfolioAnalysisScatter({
+  rows,
+  colorMap,
+}: {
+  rows: AnalysisRow[];
+  colorMap: Map<string, string>;
+}) {
+  const xBounds = axisBounds(rows.map((r) => r.stats.stdDev));
+  const yBounds = axisBounds(rows.map((r) => r.stats.arithmeticMean));
+
+  // One dataset per plotted entity so the legend lists each by its table name,
+  // each in its own color.
+  const datasets = rows.map((r) => ({
+    label: r.name,
+    pointStyle: "circle" as const,
+    pointRadius: 7,
+    pointHoverRadius: 9,
+    backgroundColor: colorMap.get(r.key) ?? "#3b82f6",
+    borderColor: "#111827",
+    borderWidth: 1.5,
+    data: [{ x: r.stats.stdDev, y: r.stats.arithmeticMean, _row: r }],
+  }));
 
   return (
     <Scatter
@@ -43,11 +58,25 @@ export function PortfolioAnalysisScatter({ rows }: { rows: AnalysisRow[] }) {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
-          x: { title: { display: true, text: "Standard Deviation" }, ticks: { callback: (v) => pct(Number(v)) } },
-          y: { title: { display: true, text: "Arithmetic Mean Return" }, ticks: { callback: (v) => pct(Number(v)) } },
+          x: {
+            min: xBounds.min,
+            max: xBounds.max,
+            title: { display: true, text: "Standard Deviation", color: AXIS_INK, font: { size: 13, weight: "bold" } },
+            ticks: { color: AXIS_INK, stepSize: 0.01, callback: (v) => pct(Number(v)) },
+            grid: { color: GRID_COLOR },
+            border: { color: AXIS_BORDER, width: 2 },
+          },
+          y: {
+            min: yBounds.min,
+            max: yBounds.max,
+            title: { display: true, text: "Arithmetic Mean Return", color: AXIS_INK, font: { size: 13, weight: "bold" } },
+            ticks: { color: AXIS_INK, stepSize: 0.01, callback: (v) => pct(Number(v)) },
+            grid: { color: GRID_COLOR },
+            border: { color: AXIS_BORDER, width: 2 },
+          },
         },
         plugins: {
-          legend: { position: "bottom" },
+          legend: { position: "bottom", labels: { color: AXIS_INK, usePointStyle: true } },
           tooltip: {
             callbacks: {
               label: (item) => {

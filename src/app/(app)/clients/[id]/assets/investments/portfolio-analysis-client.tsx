@@ -2,18 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { PortfolioAnalysisScatter } from "./portfolio-analysis-scatter";
-import type { AnalysisRow, EntityType, UnplottableAccount } from "@/lib/investments/portfolio-analysis";
+import { AddToChartButton } from "./portfolio-analysis-picker";
+import { SERIES, labelForType, buildColorMap } from "./portfolio-analysis-series";
+import { HelpTip } from "@/components/help-tip";
+import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
 
-const SERIES: { type: EntityType; label: string }[] = [
-  { type: "asset_class", label: "Asset Classes" },
-  { type: "account", label: "Accounts" },
-  { type: "category", label: "Account Categories" },
-  { type: "custom_group", label: "Custom Groups" },
-  { type: "model_portfolio", label: "Model Portfolios" },
-];
+// Categories pre-plotted on first load.
+const DEFAULT_CATEGORY_IDS = new Set(["taxable", "retirement"]);
 
-// Default: categories + custom groups + model portfolios on; asset classes + accounts off.
-const DEFAULT_ON: Set<EntityType> = new Set(["category", "custom_group", "model_portfolio"]);
+function defaultSelection(rows: AnalysisRow[]): Set<string> {
+  return new Set(
+    rows.filter((r) => r.type === "category" && DEFAULT_CATEGORY_IDS.has(r.id)).map((r) => r.key),
+  );
+}
 
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
 const money = (v: number) =>
@@ -23,19 +24,33 @@ type SortKey = "name" | "arithmeticMean" | "geometricReturn" | "stdDev" | "sharp
 
 export default function PortfolioAnalysisClient({
   analysisRows,
-  unplottableAccounts,
 }: {
   analysisRows: AnalysisRow[];
-  unplottableAccounts: UnplottableAccount[];
 }) {
-  const [enabled, setEnabled] = useState<Set<EntityType>>(new Set(DEFAULT_ON));
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() =>
+    defaultSelection(analysisRows),
+  );
   const [sortKey, setSortKey] = useState<SortKey>("stdDev");
   const [asc, setAsc] = useState(true);
 
   const visible = useMemo(
-    () => analysisRows.filter((r) => enabled.has(r.type)),
-    [analysisRows, enabled],
+    () => analysisRows.filter((r) => selectedKeys.has(r.key)),
+    [analysisRows, selectedKeys],
   );
+
+  // One color per plotted item, keyed by row.key so chart, legend, table, and
+  // selected list all match.
+  const colorMap = useMemo(() => buildColorMap(visible), [visible]);
+
+  // Selected rows for the list display, grouped by series order then name.
+  const selectedList = useMemo(() => {
+    const typeOrder = new Map(SERIES.map((s, i) => [s.type, i]));
+    return [...visible].sort(
+      (a, b) =>
+        (typeOrder.get(a.type) ?? 0) - (typeOrder.get(b.type) ?? 0) ||
+        a.name.localeCompare(b.name),
+    );
+  }, [visible]);
 
   const sorted = useMemo(() => {
     const dir = asc ? 1 : -1;
@@ -63,16 +78,19 @@ export default function PortfolioAnalysisClient({
     });
   }, [visible, sortKey, asc]);
 
-  const toggle = (t: EntityType) =>
-    setEnabled((prev) => {
+  const addKeys = (keys: string[]) =>
+    setSelectedKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(t)) {
-        next.delete(t);
-      } else {
-        next.add(t);
-      }
+      keys.forEach((k) => next.add(k));
       return next;
     });
+  const removeKey = (key: string) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  const clearAll = () => setSelectedKeys(new Set());
 
   const sortBtn = (key: SortKey, label: string) => (
     <button
@@ -94,17 +112,61 @@ export default function PortfolioAnalysisClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-3">
-        {SERIES.map((s) => (
-          <label key={s.type} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={enabled.has(s.type)} onChange={() => toggle(s.type)} />
-            {s.label}
-          </label>
-        ))}
-      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="h-[460px]">
+          <PortfolioAnalysisScatter rows={visible} colorMap={colorMap} />
+        </div>
 
-      <div className="h-[480px]">
-        <PortfolioAnalysisScatter rows={visible} />
+        <div className="flex h-[460px] flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <AddToChartButton
+              rows={analysisRows}
+              selectedKeys={selectedKeys}
+              onAdd={(key) => addKeys([key])}
+              onAddMany={addKeys}
+            />
+            {visible.length > 0 && (
+              <button
+                type="button"
+                onClick={clearAll}
+                className="text-sm text-ink-3 hover:text-ink underline-offset-2 hover:underline"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {selectedList.length === 0 ? (
+            <p className="text-sm text-ink-4">Nothing plotted yet — use “Add to chart” to pick what to show.</p>
+          ) : (
+            <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+              {selectedList.map((r) => (
+                <li
+                  key={r.key}
+                  className="flex items-center justify-between gap-3 rounded border border-hair px-3 py-2 text-sm"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: colorMap.get(r.key) }}
+                    />
+                    <span className="truncate text-ink">{r.name}</span>
+                    <span className="shrink-0 text-xs text-ink-4">{labelForType(r.type)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeKey(r.key)}
+                    aria-label={`Remove ${r.name}`}
+                    className="shrink-0 text-ink-4 transition-colors hover:text-ink"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <table className="w-full text-sm">
@@ -112,10 +174,30 @@ export default function PortfolioAnalysisClient({
           <tr className="border-b">
             <th className="py-2 text-left">{sortBtn("name", "Name")}</th>
             <th className="py-2 text-left">Type</th>
-            <th className="py-2 text-right">{sortBtn("arithmeticMean", "Return")}</th>
-            <th className="py-2 text-right">{sortBtn("geometricReturn", "Geometric")}</th>
-            <th className="py-2 text-right">{sortBtn("stdDev", "Std Dev")}</th>
-            <th className="py-2 text-right">{sortBtn("sharpe", "Sharpe")}</th>
+            <th className="py-2 text-right">
+              <span className="inline-flex items-center gap-1">
+                {sortBtn("geometricReturn", "Return")}
+                <HelpTip text="Geometric (compound) annual return — the growth rate actually realized over time once volatility drag is accounted for. This is the return used for straight-line cash-flow projections." />
+              </span>
+            </th>
+            <th className="py-2 text-right">
+              <span className="inline-flex items-center gap-1">
+                {sortBtn("arithmeticMean", "Mean")}
+                <HelpTip text="Arithmetic mean of annual returns — the simple average expected return in any given year. Used as the return input for Monte Carlo simulation." />
+              </span>
+            </th>
+            <th className="py-2 text-right">
+              <span className="inline-flex items-center gap-1">
+                {sortBtn("stdDev", "Std Dev")}
+                <HelpTip text="Standard deviation of annual returns — how much returns swing year to year (volatility, i.e. risk). Used as the volatility input for Monte Carlo simulation." />
+              </span>
+            </th>
+            <th className="py-2 text-right">
+              <span className="inline-flex items-center gap-1">
+                {sortBtn("sharpe", "Sharpe")}
+                <HelpTip text="Sharpe ratio — return earned per unit of risk (return above the risk-free rate ÷ standard deviation). Higher means better risk-adjusted return." />
+              </span>
+            </th>
             <th className="py-2 text-right">{sortBtn("value", "Value")}</th>
           </tr>
         </thead>
@@ -123,14 +205,23 @@ export default function PortfolioAnalysisClient({
           {sorted.map((r) => (
             <tr key={r.key} className="border-b border-gray-800">
               <td className="py-2">
-                {r.name}
-                {r.residualUnallocatedPct > 0.005
-                  ? ` (${pct(r.residualUnallocatedPct)} unallocated)`
-                  : ""}
+                <span className="inline-flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: colorMap.get(r.key) }}
+                  />
+                  <span>
+                    {r.name}
+                    {r.residualUnallocatedPct > 0.005
+                      ? ` (${pct(r.residualUnallocatedPct)} unallocated)`
+                      : ""}
+                  </span>
+                </span>
               </td>
-              <td className="py-2">{SERIES.find((s) => s.type === r.type)?.label}</td>
-              <td className="py-2 text-right">{pct(r.stats.arithmeticMean)}</td>
+              <td className="py-2">{labelForType(r.type)}</td>
               <td className="py-2 text-right">{pct(r.stats.geometricReturn)}</td>
+              <td className="py-2 text-right">{pct(r.stats.arithmeticMean)}</td>
               <td className="py-2 text-right">{pct(r.stats.stdDev)}</td>
               <td className="py-2 text-right">
                 {r.stats.sharpe === null ? "—" : r.stats.sharpe.toFixed(2)}
@@ -140,19 +231,6 @@ export default function PortfolioAnalysisClient({
           ))}
         </tbody>
       </table>
-
-      {unplottableAccounts.length > 0 && (
-        <div className="text-sm text-gray-400">
-          <p className="font-medium">Not plottable (no asset mix):</p>
-          <ul className="list-disc pl-5">
-            {unplottableAccounts.map((u) => (
-              <li key={u.id}>
-                {u.name} — {money(u.value)} ({u.reason})
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }

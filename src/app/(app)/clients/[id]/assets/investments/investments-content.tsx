@@ -236,7 +236,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     growthSource: a.growthSource,
     modelPortfolioId: a.modelPortfolioId ?? null,
   }));
-  const { rows: analysisRows, unplottable } = buildAnalysisRows({
+  const { rows: analysisRows } = buildAnalysisRows({
     assetClasses: assetClassData,
     assetClassMeta: assetClassLites,
     accounts: analysisAccounts,
@@ -272,7 +272,6 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       customGroups={customGroupsForBar}
       strippedMemberCount={resolvedGroup.strippedMemberCount}
       analysisRows={analysisRows}
-      unplottableAccounts={unplottable}
     />
   );
 }
