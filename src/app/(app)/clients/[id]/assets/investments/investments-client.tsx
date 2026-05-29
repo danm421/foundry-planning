@@ -16,6 +16,7 @@ import { colorForAssetClass, UNALLOCATED_COLOR } from "@/lib/investments/palette
 import { ExportButton } from "@/components/exports/export-button";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import "@/lib/report-artifacts/index";
+import AccountGroupPillBar from "@/components/account-groups/account-group-pill-bar";
 
 interface Props {
   clientId: string;
@@ -28,6 +29,10 @@ interface Props {
   selectedBenchmarkPortfolioId: string | null;
   benchmarkWeights: AssetClassWeight[];
   existingCommentBody: string;
+  selectedGroupKey: string;
+  selectedGroupIsDefault: boolean;
+  customGroups: Array<{ id: string; name: string; color: string | null }>;
+  strippedMemberCount?: number;
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
@@ -47,6 +52,9 @@ export default function InvestmentsClient({
   selectedBenchmarkPortfolioId,
   benchmarkWeights,
   existingCommentBody,
+  selectedGroupKey,
+  customGroups,
+  strippedMemberCount,
 }: Props) {
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
@@ -123,6 +131,18 @@ export default function InvestmentsClient({
             selectedBenchmarkPortfolioId={selectedBenchmarkPortfolioId}
           />
         </div>
+        <AccountGroupPillBar
+          clientId={clientId}
+          customGroups={customGroups}
+          selected={selectedGroupKey}
+        />
+        {strippedMemberCount !== undefined && strippedMemberCount > 0 && (
+          <p className="text-xs text-yellow-400">
+            {strippedMemberCount} account{strippedMemberCount === 1 ? "" : "s"} in
+            this group are no longer eligible (illiquid or removed). Edit the group
+            in <em>Assumptions › Account Groups</em> to clean up.
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <div
             role="radiogroup"
