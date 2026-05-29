@@ -29,7 +29,8 @@ export function rollupHoldings(
   let value = 0;
   let basis = 0;
   for (const h of holdings) {
-    value += h.shares * h.price;
+    const mv = h.shares * h.price;
+    if (Number.isFinite(mv) && mv > 0) value += mv;
     basis += h.costBasis;
   }
 
@@ -37,7 +38,7 @@ export function rollupHoldings(
   if (value > 0) {
     for (const h of holdings) {
       const mv = h.shares * h.price;
-      if (mv <= 0) continue;
+      if (!Number.isFinite(mv) || mv <= 0) continue;
       const holdingWeight = mv / value;
 
       // Override blend wins; else map the security's slug blend to firm ids.
@@ -49,7 +50,7 @@ export function rollupHoldings(
               .filter((w): w is { assetClassId: string; weight: number } => w.assetClassId != null);
 
       for (const b of blend) {
-        if (b.weight <= 0) continue;
+        if (!Number.isFinite(b.weight) || b.weight <= 0) continue;
         byAssetClass.set(
           b.assetClassId,
           (byAssetClass.get(b.assetClassId) ?? 0) + holdingWeight * b.weight,

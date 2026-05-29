@@ -91,4 +91,21 @@ describe("rollupHoldings", () => {
     expect(r.basis).toBe(500);
     expect(r.allocations).toEqual([]);
   });
+
+  it("ignores holdings with non-finite market value or weights", () => {
+    const holdings: HoldingInput[] = [
+      // NaN market value (bad share count) → skipped entirely
+      { id: "h1", securityId: "s1", shares: NaN, price: 100, costBasis: 0,
+        securityWeights: [{ slug: "us_large_cap", weight: 1 }], overrides: [] },
+      // valid $100 holding with one NaN weight that must be dropped
+      { id: "h2", securityId: "s2", shares: 1, price: 100, costBasis: 0,
+        securityWeights: [
+          { slug: "us_large_cap", weight: 1 },
+          { slug: "us_small_cap", weight: NaN },
+        ],
+        overrides: [] },
+    ];
+    const r = rollupHoldings(holdings, SLUG_TO_ID);
+    expect(r.allocations).toEqual([{ assetClassId: "ac-large", weight: 1 }]);
+  });
 });
