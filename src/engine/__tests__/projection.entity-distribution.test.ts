@@ -137,6 +137,11 @@ function mkData(overrides: {
   };
 }
 
+/** End-of-year balance of an account from its ledger snapshot. */
+function endBalance(year: ReturnType<typeof runProjection>[number], acctId: string): number {
+  return year.accountLedgers[acctId]?.endingValue ?? 0;
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("Phase 3: business-account tax incidence", () => {
@@ -327,6 +332,60 @@ describe("Phase 3: trust regression — taxTreatment ignored", () => {
   });
 });
 
+describe("Phase 3: business cash account nets to retained earnings (regression)", () => {
+  it("100% distribution: business cash nets to ~$0 every year (no phantom deficit)", () => {
+    // $100k income, no expenses, 100% distribution → nothing retained → biz cash ~$0.
+    const multiYearPlan: PlanSettings = { ...planSettings, planEndYear: 2030 };
+    const data: ClientData = { ...mkData(), planSettings: multiYearPlan };
+    const years = runProjection(data);
+    expect(years.length).toBe(5);
+    for (const y of years) {
+      expect(endBalance(y, "biz-llc-checking")).toBeCloseTo(0, 0);
+    }
+  });
+
+  it("50% distribution: business cash accumulates the retained half each year", () => {
+    // $100k net income × (1 - 0.5) = $50k retained per year, compounding (no growth).
+    const multiYearPlan: PlanSettings = { ...planSettings, planEndYear: 2028 };
+    const data: ClientData = {
+      ...mkData({ bizOverrides: { distributionPolicyPercent: 0.5 } }),
+      planSettings: multiYearPlan,
+    };
+    const years = runProjection(data);
+    expect(years.length).toBe(3);
+    expect(endBalance(years[0], "biz-llc-checking")).toBeCloseTo(50_000, 0);
+    expect(endBalance(years[1], "biz-llc-checking")).toBeCloseTo(100_000, 0);
+    expect(endBalance(years[2], "biz-llc-checking")).toBeCloseTo(150_000, 0);
+  });
+
+  it("business cash ledger carries granular income / expense / distribution entries", () => {
+    // $100k income, $30k expense, 100% distribution.
+    const expense: Expense = {
+      id: "e1",
+      type: "other",
+      name: "LLC Expense",
+      annualAmount: 30_000,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0,
+      ownerAccountId: "biz-llc",
+    };
+    const data = mkData({ expenses: [expense] });
+    const y0 = runProjection(data)[0];
+    const entries = y0.accountLedgers["biz-llc-checking"].entries;
+
+    const inc = entries.find((e) => e.category === "income");
+    const exp = entries.find((e) => e.category === "expense");
+    const dist = entries.find((e) => e.category === "entity_distribution");
+    expect(inc?.amount).toBeCloseTo(100_000, 0);
+    expect(exp?.amount).toBeCloseTo(-30_000, 0);
+    // netIncome = $70k, 100% distributed.
+    expect(dist?.amount).toBeCloseTo(-70_000, 0);
+    // Nets to ~$0.
+    expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(0, 0);
+  });
+});
+
 describe("Phase 3: multi-year 2-owner LLC integration", () => {
   it("60/40 owners, 50% distribution, 3-year QBI projection: cash + tax accumulate correctly", () => {
     const multiYearPlan: PlanSettings = { ...planSettings, planEndYear: 2028 };
@@ -486,5 +545,69 @@ describe("Phase 3: distribution routes to owner's default cash account", () => {
     const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
     expect(distEntry).toBeDefined();
     expect(distEntry!.amount).toBeCloseTo(100_000, 0);
+  });
+});
+
+describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => {
+  // $100k income, $150k expense → -$50k loss.
+  const lossExpense: Expense = {
+    id: "x1",
+    type: "other",
+    name: "Big Loss",
+    annualAmount: 150_000,
+    startYear: 2026,
+    endYear: 2026,
+    growthRate: 0,
+    ownerAccountId: "biz-llc",
+  };
+
+  it("loss with no liquidatable holdings: business cash goes negative + entity_overdraft", () => {
+    // Business owns only its cash account (untappable), so the deficit stays.
+    const data = mkData({ expenses: [lossExpense] });
+    const y0 = runProjection(data)[0];
+
+    // No distribution in a loss year.
+    const hhDist = y0.accountLedgers["hh-checking"].entries.find(
+      (e) => e.category === "entity_distribution",
+    );
+    expect(hhDist).toBeUndefined();
+    // The loss landed on business cash and stayed (nothing to liquidate).
+    expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(-50_000, 0);
+    // Entity gap-fill warnings surface under `trustWarnings` (entityGapFillWarnings
+    // is merged into it at projection.ts:4655).
+    expect(y0.trustWarnings?.some((w) => w.code === "entity_overdraft")).toBe(true);
+  });
+
+  it("loss with a liquidatable business-owned taxable account: it's drained first", () => {
+    // -$50k loss, but the business owns a $200k taxable account → gap-fill
+    // liquidates $50k to refill business cash back toward $0.
+    const bizTaxable: Account = {
+      id: "biz-taxable",
+      name: "Business Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 200_000,
+      basis: 200_000, // full basis → no cap gain on liquidation
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "biz-llc", percent: 1 }],
+    } as Account;
+    const data: ClientData = {
+      ...mkData({ expenses: [lossExpense] }),
+      accounts: [hhChecking, bizAccount(), bizChecking("biz-llc"), bizTaxable],
+    };
+    const y0 = runProjection(data)[0];
+
+    // Business cash refilled to ~$0; the taxable account funded the $50k.
+    expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(0, 0);
+    expect(endBalance(y0, "biz-taxable")).toBeCloseTo(150_000, 0);
+    // No overdraft: gap-fill fully covered the loss. `trustWarnings` is omitted
+    // from the year object entirely when there's nothing to report (it's only
+    // populated when warnings exist — projection.ts:4667), so normalize the
+    // undefined-vs-empty case before asserting absence.
+    expect(
+      (y0.trustWarnings ?? []).some((w) => w.code === "entity_overdraft"),
+    ).toBe(false);
   });
 });
