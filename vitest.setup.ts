@@ -5,3 +5,31 @@ import "@testing-library/jest-dom";
 // test file imports modules that read process.env at import time (notably
 // src/db/index.ts). Vitest / Vite only expose VITE_ prefixed vars natively.
 config({ path: ".env.local" });
+
+// Node 25 ships a partial global `localStorage` object that exists but has no
+// methods (getItem / setItem / clear / removeItem are all undefined). When
+// vitest runs a `@vitest-environment jsdom` test, it sets up a proper
+// localStorage on `jsdom.window`, but the `populateGlobal` utility skips
+// overriding keys that already exist in the Node global and are not in its
+// hardcoded KEYS allowlist — so `global.localStorage` stays as the Node stub.
+//
+// Fix: whenever jsdom has set up its own window storage objects, forward them
+// to the global scope so test code can call `localStorage.clear()` etc.
+const jsdomWindow = (globalThis as { jsdom?: { window: Window & typeof globalThis } }).jsdom
+  ?.window;
+if (jsdomWindow) {
+  if (jsdomWindow.localStorage) {
+    Object.defineProperty(globalThis, "localStorage", {
+      value: jsdomWindow.localStorage,
+      writable: true,
+      configurable: true,
+    });
+  }
+  if (jsdomWindow.sessionStorage) {
+    Object.defineProperty(globalThis, "sessionStorage", {
+      value: jsdomWindow.sessionStorage,
+      writable: true,
+      configurable: true,
+    });
+  }
+}

@@ -51,6 +51,19 @@ import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-
 import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
 import type { ProjectionYear, ClientData } from "@/engine/types";
 
+export const CATEGORY_ORDER = [
+  "Framing",
+  "Cash Flow",
+  "Balance Sheet",
+  "Estate",
+  "Monte Carlo",
+  "Insurance",
+  "Tax",
+  "Net Worth",
+] as const;
+
+export type PresentationCategory = (typeof CATEGORY_ORDER)[number];
+
 export interface BuildDataContext {
   years: ProjectionYear[];
   clientData: ClientData;
@@ -78,6 +91,7 @@ export interface PresentationPage<TData, TOptions> {
   id: string;
   title: string;
   description: string;
+  category: PresentationCategory;
   defaultOptions: TOptions;
   optionsSchema: z.ZodType<TOptions>;
   summarizeOptions: (options: TOptions) => string;
@@ -94,6 +108,7 @@ export const cashFlowPage: PresentationPage<CashFlowPageData, CashFlowPageOption
   id: "cashFlow",
   title: "Cash Flow",
   description: "Annual income, expenses, withdrawals, and portfolio totals.",
+  category: "Cash Flow",
   defaultOptions: CASH_FLOW_PAGE_OPTIONS_DEFAULT,
   optionsSchema: cashFlowOptionsSchema,
   summarizeOptions: summarizeCashFlowOptions,
@@ -116,6 +131,7 @@ export const coverPage: PresentationPage<CoverPageData, CoverPageOptions> = {
   id: "cover",
   title: "Cover Sheet",
   description: "Title page with firm, client, scenario, and date.",
+  category: "Framing",
   defaultOptions: COVER_PAGE_OPTIONS_DEFAULT,
   optionsSchema: coverOptionsSchema,
   summarizeOptions: summarizeCoverOptions,
@@ -148,6 +164,7 @@ export const tocPage: PresentationPage<TocPageData, TocPageOptions> = {
   id: "toc",
   title: "Table of Contents",
   description: "Auto-generated contents page listing the document's sections.",
+  category: "Framing",
   defaultOptions: TOC_PAGE_OPTIONS_DEFAULT,
   optionsSchema: tocOptionsSchema,
   summarizeOptions: summarizeTocOptions,
@@ -182,6 +199,7 @@ function makeDrillPage(
     id,
     title,
     description,
+    category: "Cash Flow",
     defaultOptions: DRILL_PAGE_OPTIONS_DEFAULT,
     optionsSchema: drillOptionsSchema,
     summarizeOptions: summarizeDrillOptions,

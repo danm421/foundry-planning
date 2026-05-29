@@ -27,7 +27,7 @@ import {
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
-import { AddPageMenu } from "@/components/presentations/launcher/add-page-menu";
+import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
 import {
   useLauncherState,
   type LauncherState,
@@ -355,8 +355,11 @@ export function PresentationsLauncher(props: Props) {
               </SortableContext>
             </DndContext>
           )}
-          <AddPageMenu
-            alreadySelected={state.pages.map((p) => p.pageId)}
+          <AddPageButton
+            counts={state.pages.reduce<Record<string, number>>((acc, p) => {
+              acc[p.pageId] = (acc[p.pageId] ?? 0) + 1;
+              return acc;
+            }, {})}
             onAdd={(id) =>
               dispatch({
                 type: "addPage",
