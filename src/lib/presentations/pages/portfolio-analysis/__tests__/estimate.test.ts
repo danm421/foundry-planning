@@ -3,6 +3,6 @@ import { estimatePortfolioAnalysisPageCount } from "../estimate-page-count";
 
 describe("estimatePortfolioAnalysisPageCount", () => {
   it("returns a fixed page count without reading data (called with undefined at estimate time)", () => {
-    expect(estimatePortfolioAnalysisPageCount(undefined)).toBe(2);
+    expect(estimatePortfolioAnalysisPageCount()).toBe(2);
   });
 });
