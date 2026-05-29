@@ -1,4 +1,4 @@
-import { View, Text } from "@react-pdf/renderer";
+import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { SectionHead } from "@/components/presentations/shared/section-head";
 import { Callout } from "@/components/presentations/shared/callout";
@@ -9,6 +9,12 @@ import { DonutPdf } from "./donut-pdf";
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const usd = (v: number) => `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+const S = StyleSheet.create({
+  headCell: { fontSize: 7, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.5 },
+  bodyName: { flex: 2, fontSize: 8, color: T.ink },
+  bodyNum: { flex: 1, fontSize: 8, color: T.ink2, textAlign: "right", fontFamily: "JetBrains Mono" },
+});
 
 export function AssetAllocationPagePdf({
   data,
@@ -34,17 +40,17 @@ export function AssetAllocationPagePdf({
       {data.tableRows.length > 0 && (
         <View style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingBottom: 3 }}>
-            <Text style={{ flex: 2, fontSize: 7, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.5 }}>Asset class</Text>
-            <Text style={{ flex: 1, fontSize: 7, color: T.ink3, textAlign: "right", textTransform: "uppercase", letterSpacing: 0.5 }}>Value</Text>
-            <Text style={{ flex: 1, fontSize: 7, color: T.ink3, textAlign: "right", textTransform: "uppercase", letterSpacing: 0.5 }}>Current</Text>
-            {data.benchmarkDonut && <Text style={{ flex: 1, fontSize: 7, color: T.ink3, textAlign: "right", textTransform: "uppercase", letterSpacing: 0.5 }}>Target</Text>}
+            <Text style={[S.headCell, { flex: 2 }]}>Asset class</Text>
+            <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Value</Text>
+            <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current</Text>
+            {data.benchmarkDonut && <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Target</Text>}
           </View>
           {data.tableRows.map((r) => (
             <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
-              <Text style={{ flex: 2, fontSize: 8, color: T.ink }}>{r.name}</Text>
-              <Text style={{ flex: 1, fontSize: 8, color: T.ink2, textAlign: "right", fontFamily: "JetBrains Mono" }}>{usd(r.value)}</Text>
-              <Text style={{ flex: 1, fontSize: 8, color: T.ink2, textAlign: "right", fontFamily: "JetBrains Mono" }}>{pct(r.currentPct)}</Text>
-              {data.benchmarkDonut && <Text style={{ flex: 1, fontSize: 8, color: T.ink2, textAlign: "right", fontFamily: "JetBrains Mono" }}>{r.targetPct === null ? "—" : pct(r.targetPct)}</Text>}
+              <Text style={S.bodyName}>{r.name}</Text>
+              <Text style={S.bodyNum}>{usd(r.value)}</Text>
+              <Text style={S.bodyNum}>{pct(r.currentPct)}</Text>
+              {data.benchmarkDonut && <Text style={S.bodyNum}>{r.targetPct === null ? "—" : pct(r.targetPct)}</Text>}
             </View>
           ))}
         </View>
@@ -59,6 +65,7 @@ export function AssetAllocationPagePdf({
                 <View style={{
                   position: "absolute", left: "50%",
                   width: `${Math.min(50, Math.abs(d.diffPct) * 100 * 2)}%`,
+                  // @react-pdf: unset base `left` for the negative (left-side) bar
                   ...(d.diffPct >= 0 ? {} : { right: "50%", left: undefined as never }),
                   height: 8, backgroundColor: d.diffPct >= 0 ? T.good : T.accent,
                 }} />

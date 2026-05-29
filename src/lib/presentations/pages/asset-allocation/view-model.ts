@@ -35,7 +35,7 @@ export function buildAssetAllocationData(
     .map((a) => ({
       id: a.id, name: a.name, category: a.category, growthSource: a.growthSource,
       modelPortfolioId: a.modelPortfolioId, value: a.value, ownerEntityId: a.ownerEntityId,
-      ownerEntityInPortfolio: a.ownerEntityId !== null && (options.includeOutOfEstate || a.entityInPortfolio),
+      ownerEntityInPortfolio: options.includeOutOfEstate || a.entityInPortfolio,
     }));
 
   const resolver = buildInvestmentsResolver(bundle);
@@ -46,9 +46,12 @@ export function buildAssetAllocationData(
   );
   const showDrift = benchmark !== null && resolved.isDefault && resolved.groupKey !== "all-liquid";
 
-  const nameByClassId: Record<string, string> = {};
-  for (const c of bundle.assetClassLites) nameByClassId[c.id] = c.name;
-  const driftRows = showDrift ? computeDrift(household.byAssetClass, benchmark!, nameByClassId) : null;
+  let driftRows: DriftRow[] | null = null;
+  if (showDrift && benchmark) {
+    const nameByClassId: Record<string, string> = {};
+    for (const c of bundle.assetClassLites) nameByClassId[c.id] = c.name;
+    driftRows = computeDrift(household.byAssetClass, benchmark, nameByClassId);
+  }
 
   const targetByClass = new Map((benchmark ?? []).map((w) => [w.assetClassId, w.weight]));
   const tableRows: AllocationTableRow[] = household.byAssetClass.map((c) => ({
