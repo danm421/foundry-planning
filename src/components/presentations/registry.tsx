@@ -59,9 +59,15 @@ import {
   type EstatePageOptions,
 } from "@/lib/presentations/pages/estate-shared/options-schema";
 import { summarizeEstateOptions } from "@/lib/presentations/pages/estate-shared/summarize-options";
-import { estimateEstateChartPageCount } from "@/lib/presentations/pages/estate-shared/estimate-page-count";
+import {
+  estimateEstateChartPageCount,
+  estimateEstateReportPageCount,
+} from "@/lib/presentations/pages/estate-shared/estimate-page-count";
 import { EstateOptionsControl } from "./pages/estate-shared/options-control";
 import { EstateFlowChartPagePdf } from "./pages/estate-flow-chart/page-pdf";
+import { buildEstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
+import type { EstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
+import { EstateFlowReportPagePdf } from "./pages/estate-flow/page-pdf";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -298,6 +304,21 @@ export const estateFlowChartPage: PresentationPage<EstateFlowChartData, EstatePa
   renderPdf: (input) => <EstateFlowChartPagePdf {...input} />,
 };
 
+export const estateFlowReportPage: PresentationPage<EstateFlowReportData, EstatePageOptions> = {
+  id: "estateFlow",
+  title: "Estate Flow — Report",
+  description: "Ownership today, transfers at first death, and final distribution at second death.",
+  category: "Estate",
+  defaultOptions: ESTATE_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: estateOptionsSchema,
+  summarizeOptions: summarizeEstateOptions,
+  estimatePageCount: estimateEstateReportPageCount,
+  OptionsControl: EstateOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildEstateFlowReportData(ctx, options),
+  renderPdf: (input) => <EstateFlowReportPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -310,6 +331,7 @@ export const PRESENTATION_PAGES = {
   cashFlowActivity: cashFlowActivityPage,
   cashFlowAssets: cashFlowAssetsPage,
   estateFlowChart: estateFlowChartPage,
+  estateFlow: estateFlowReportPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
