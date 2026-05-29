@@ -1,13 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-
-type LiquidAccount = {
-  id: string;
-  name: string;
-  category: "taxable" | "cash" | "retirement";
-  value: number;
-};
+import type { LiquidAccount } from "@/components/account-groups/types";
 
 export type CustomGroup = {
   id: string;

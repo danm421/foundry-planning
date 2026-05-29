@@ -7,13 +7,7 @@ import AccountGroupsList, {
 import AccountGroupForm, {
   type GroupFormInitial,
 } from "@/components/account-groups/account-group-form";
-
-type LiquidAccount = {
-  id: string;
-  name: string;
-  category: "taxable" | "cash" | "retirement";
-  value: number;
-};
+import type { LiquidAccount } from "@/components/account-groups/types";
 
 interface Props {
   clientId: string;

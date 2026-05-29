@@ -15,6 +15,7 @@ import type {
   MortgageInterestRow,
   PropertyTaxRow,
 } from "@/components/deductions-derived-summary";
+import type { LiquidAccount } from "@/components/account-groups/types";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -93,12 +94,7 @@ interface AssumptionsClientProps {
   resolvedInflationRate: number;
   hasInflationAssetClass: boolean;
   deductionsData: DeductionsTabData;
-  liquidAccounts: Array<{
-    id: string;
-    name: string;
-    category: "taxable" | "cash" | "retirement";
-    value: number;
-  }>;
+  liquidAccounts: LiquidAccount[];
   /** Reserved seam for wizard-mode trimming. Today the wrapper in
    *  assumptions/page.tsx supplies the page h2 + max-w-3xl; wizard mode
    *  drops both via the step component rather than via this prop. */

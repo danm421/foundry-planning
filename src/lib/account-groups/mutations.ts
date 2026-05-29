@@ -163,7 +163,7 @@ export async function updateAccountGroup(
   }
 
   // Build a typed patch — only include fields that were supplied.
-  type GroupPatch = Parameters<ReturnType<typeof db.update<typeof accountGroups>>["set"]>[0];
+  type GroupPatch = Partial<typeof accountGroups.$inferInsert>;
   const patch: GroupPatch = { updatedAt: new Date() };
   if (input.name !== undefined) patch.name = input.name.trim();
   if (input.description !== undefined) patch.description = input.description ?? null;
