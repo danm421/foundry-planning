@@ -40,7 +40,7 @@ interface AddAccountDialogProps {
   /** Seeds parent-business on create so the dialog defaults the new account to
    *  being owned by that business (used by "+ Add sub-account"). */
   initialParentAccountId?: string | null;
-  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "beneficiaries";
+  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "beneficiaries" | "holdings";
   /**
    * When true, restrict the dialog to the Beneficiaries tab: hide all other tab
    * buttons and unmount their panels. Used by the Beneficiary Summary deep-link
