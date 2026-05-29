@@ -49,6 +49,7 @@ describe("registry — Cash Flow page", () => {
         "incomeTaxIncome",
         "incomeTaxOtherTaxes",
         "incomeTaxState",
+        "monteCarlo",
         "toc",
       ].sort(),
     );
