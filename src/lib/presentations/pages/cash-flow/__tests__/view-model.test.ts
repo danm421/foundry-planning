@@ -115,14 +115,41 @@ describe("buildCashFlowPageData — RMD splitting", () => {
     spouseName: "Susan",
   });
 
-  it("reports rmds (from ledgers) and withdrawals (engine total, excluding rmds) separately", () => {
+  // Each RMD writes two `category: "rmd"` ledger entries (a `-rmd` distribution
+  // on the source account and a `+rmd` credit on checking). RMDs must be summed
+  // once via `rmdAmount`, NOT by abs-summing those entries — otherwise the
+  // column reports double the true RMD. The fixtures reproduce both entries.
+  it("reports rmds once (not double-counted from the paired ledger entries)", () => {
     const r2031 = data.table.rows.find((r) => r.year === 2031);
-    expect(r2031?.cells.rmds).toBe(40_000);              // sum of rmd ledger entries
+    expect(r2031?.cells.rmds).toBe(40_000);              // single rmdAmount, not 80k
     expect(r2031?.cells.withdrawals).toBe(40_000);       // engine withdrawals.total
 
     const r2071 = data.table.rows.find((r) => r.year === 2071);
-    expect(r2071?.cells.rmds).toBe(50_000);
+    expect(r2071?.cells.rmds).toBe(50_000);              // single rmdAmount, not 100k
     expect(r2071?.cells.withdrawals).toBe(0);             // no supplemental withdrawals
+  });
+});
+
+describe("buildCashFlowPageData — chart stack vs Total Expenses line", () => {
+  const data = buildCashFlowPageData({
+    years: makeProjectionYears(),
+    clientData: makeClientData(),
+    options: { range: "lifetime", showCallout: false },
+    scenarioLabel: "Base Case",
+    clientName: "Cooper",
+    spouseName: "Susan",
+  });
+
+  // In retirement the gap-fill withdrawal sizes the stack to exactly meet
+  // expenses, so the stacked bar tops out on the Total Expenses line. A
+  // double-counted RMD would push the bar above the line (the original PDF bug).
+  it("stacked bar tops out at the Total Expenses line in an RMD year (2036)", () => {
+    const { stacks, lines, xAxis } = data.chartSpec;
+    const i = xAxis.domain.indexOf(2036);
+    expect(i).toBeGreaterThanOrEqual(0);
+    const stackTotal = stacks.reduce((sum, s) => sum + s.values[i], 0);
+    expect(stackTotal).toBe(lines[0].values[i]);
+    expect(stackTotal).toBe(140_000); // ss 33k + other 7k + rmd 60k + withdrawal 40k
   });
 });
 

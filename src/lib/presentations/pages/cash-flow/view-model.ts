@@ -97,12 +97,17 @@ function computeFirstRetirementYear(client: ClientInfo): number | null {
   return candidates.length ? Math.min(...candidates) : null;
 }
 
+// Sum the engine's per-ledger `rmdAmount` — set once on the source retirement
+// account. Mirrors the in-app Cash Flow chart (solver-cash-flow-chart.tsx).
+// Do NOT scan `entries` for `category === "rmd"`: each RMD writes two such
+// entries (a `-rmd` distribution on the retirement account and a `+rmd` credit
+// on checking via `creditCash`), so `Math.abs`-summing them double-counts —
+// inflating the table's RMDs column and pushing the chart's stacked bar above
+// the Total Expenses line in RMD years.
 function sumRmdAmounts(py: ProjectionYear): number {
   let total = 0;
   for (const ledger of Object.values(py.accountLedgers ?? {})) {
-    for (const entry of ledger.entries ?? []) {
-      if (entry.category === "rmd") total += Math.abs(entry.amount);
-    }
+    total += ledger.rmdAmount ?? 0;
   }
   return total;
 }
