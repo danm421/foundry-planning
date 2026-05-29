@@ -12,6 +12,7 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { holdingOverrideSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
+import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,8 @@ export async function PUT(
       firmId,
       metadata: { holdingId, count: nonZero.length },
     });
+
+    await syncAccountFromHoldings(accountId);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
