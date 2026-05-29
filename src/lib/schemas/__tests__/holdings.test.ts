@@ -19,6 +19,13 @@ describe("holdings schemas", () => {
     expect(ok.success).toBe(true);
     const bad = holdingOverrideSchema.safeParse({ overrides: [{ assetClassId: "11111111-1111-1111-1111-111111111111", weight: 1.5 }] });
     expect(bad.success).toBe(false);
+    const overTotal = holdingOverrideSchema.safeParse({
+      overrides: [
+        { assetClassId: "11111111-1111-1111-1111-111111111111", weight: 0.7 },
+        { assetClassId: "22222222-2222-2222-2222-222222222222", weight: 0.7 },
+      ],
+    });
+    expect(overTotal.success).toBe(false);
   });
 
   it("classify requires a non-empty ticker", () => {
