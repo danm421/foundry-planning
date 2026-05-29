@@ -7,6 +7,8 @@ import {
   accountOwners,
   accountAssetAllocations,
   assetClasses as assetClassesTable,
+  assetClassCorrelations,
+  accountGroupMembers,
   modelPortfolios,
   modelPortfolioAllocations,
   reportComments,
@@ -26,6 +28,8 @@ import { resolveBenchmark, type AssetClassWeight } from "@/lib/investments/bench
 import type { AssetTypeId } from "@/lib/investments/asset-types";
 import { resolveGroup, type GroupKey } from "@/lib/account-groups/resolver";
 import { fetchAccountGroupForResolver, listAccountGroups } from "@/lib/account-groups/queries";
+import { buildStatsContext } from "@/lib/investments/portfolio-stats";
+import { buildAnalysisRows } from "@/lib/investments/portfolio-analysis";
 import InvestmentsClient from "./investments-client";
 
 interface Props {
@@ -51,7 +55,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
   // have no firm_id columns of their own. We firm-scope transitively by filtering
   // accounts by (clientId + scenarioId) and model_portfolios by firmId, then
   // intersecting allocations with those id sets when we build the indexes below.
-  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, commentRows, entityRows] = await Promise.all([
+  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, commentRows, entityRows, correlationRows] = await Promise.all([
     db.select().from(accountsTable).where(and(eq(accountsTable.clientId, clientId), eq(accountsTable.scenarioId, scenario.id))),
     db.select().from(accountAssetAllocations),
     db.select().from(assetClassesTable).where(eq(assetClassesTable.firmId, firmId)),
@@ -65,6 +69,15 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     db.select({ id: entitiesTable.id, includeInPortfolio: entitiesTable.includeInPortfolio })
       .from(entitiesTable)
       .where(eq(entitiesTable.clientId, clientId)),
+    // Correlation rows are firm-scoped transitively: assetClassCorrelations references
+    // assetClasses which have a firmId; buildCorrelationMatrix drops unknown ids so
+    // rows from other firms are harmlessly ignored — but we filter by the firm's
+    // asset class ids for safety and efficiency.
+    db.select({
+      assetClassIdA: assetClassCorrelations.assetClassIdA,
+      assetClassIdB: assetClassCorrelations.assetClassIdB,
+      correlation: assetClassCorrelations.correlation,
+    }).from(assetClassCorrelations),
   ]);
 
   const entityIncludeInPortfolio = new Map<string, boolean>();
@@ -109,6 +122,21 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     name: g.name,
     color: g.color,
   }));
+
+  // Load account group membership for portfolio-analysis (custom groups need their
+  // member account ids). Scoped via the group ids we already loaded (which are
+  // themselves client-scoped via listAccountGroups).
+  const memberIdsByGroup = new Map<string, string[]>();
+  if (customGroupRows.length > 0) {
+    const groupIds = customGroupRows.map((g) => g.id);
+    const memberRows = await db
+      .select({ accountGroupId: accountGroupMembers.accountGroupId, accountId: accountGroupMembers.accountId })
+      .from(accountGroupMembers)
+      .where(inArray(accountGroupMembers.accountGroupId, groupIds));
+    for (const row of memberRows) {
+      (memberIdsByGroup.get(row.accountGroupId) ?? memberIdsByGroup.set(row.accountGroupId, []).get(row.accountGroupId)!).push(row.accountId);
+    }
+  }
 
   // Index asset allocations by account id (filter to this client's accounts).
   const accountIds = new Set(acctRows.map((a) => a.id));
@@ -186,6 +214,46 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
   const driftInEstate = benchmark ? computeDrift(householdInEstate.byAssetClass, benchmark, nameByClassId) : [];
   const driftAll = benchmark ? computeDrift(householdAll.byAssetClass, benchmark, nameByClassId) : [];
 
+  // Build portfolio-analysis rows (risk/return scatter data).
+  const assetClassData = classRows.map((c) => ({
+    id: c.id,
+    arithmeticMean: Number(c.arithmeticMean),
+    geometricReturn: Number(c.geometricReturn),
+    volatility: Number(c.volatility),
+    pctOrdinaryIncome: Number(c.pctOrdinaryIncome),
+    pctLtCapitalGains: Number(c.pctLtCapitalGains),
+    pctQualifiedDividends: Number(c.pctQualifiedDividends),
+    pctTaxExempt: Number(c.pctTaxExempt),
+  }));
+  const riskFreeRate = Number(classRows.find((c) => c.slug === "cash")?.arithmeticMean ?? 0);
+  const statsCtx = buildStatsContext(assetClassData, correlationRows, riskFreeRate);
+  const analysisAccounts = acctRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category,
+    value: Number(a.value),
+    growthSource: a.growthSource,
+    modelPortfolioId: a.modelPortfolioId ?? null,
+  }));
+  const { rows: analysisRows, unplottable } = buildAnalysisRows({
+    assetClasses: assetClassData,
+    assetClassMeta: assetClassLites,
+    accounts: analysisAccounts,
+    // resolver expects AccountLite (id + category + growthSource + modelPortfolioId);
+    // buildAnalysisRows passes AnalysisAccount which carries all those fields,
+    // so the cast is safe — we just widen the parameter signature.
+    resolver: resolver as (acct: { id: string }) => ReturnType<typeof resolver>,
+    modelPortfolios: portfolioLites,
+    modelPortfolioAllocationsByPortfolioId,
+    customGroups: customGroupRows.map((g) => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      accountIds: memberIdsByGroup.get(g.id) ?? [],
+    })),
+    ctx: statsCtx,
+  });
+
   return (
     <InvestmentsClient
       clientId={clientId}
@@ -202,6 +270,8 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       selectedGroupIsDefault={resolvedGroup.isDefault}
       customGroups={customGroupsForBar}
       strippedMemberCount={resolvedGroup.strippedMemberCount}
+      analysisRows={analysisRows}
+      unplottableAccounts={unplottable}
     />
   );
 }
