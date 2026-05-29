@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import type { LiquidAccount } from "@/components/account-groups/types";
+import { useMemo, useState } from "react";
+import type { AssetAccount } from "@/components/account-groups/types";
+import { buildAssetTree, type TreeNode } from "@/lib/account-groups/asset-tree";
 
 export type CustomGroup = {
   id: string;
@@ -13,43 +14,120 @@ export type CustomGroup = {
 };
 
 interface Props {
-  liquidAccounts: LiquidAccount[];
+  allAccounts: AssetAccount[];
   customGroups: CustomGroup[];
   onCreate: () => void;
   onEdit: (groupId: string) => void;
   onDelete: (groupId: string) => void;
 }
 
+// Custom groups are liquid-only by design; illiquid members are flagged via the
+// "no longer eligible" badge and excluded from the displayed value/member list,
+// preserving the value semantics from the pre-tree UI.
+const LIQUID: ReadonlySet<AssetAccount["category"]> = new Set([
+  "taxable",
+  "cash",
+  "retirement",
+]);
+
 function formatDollars(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+      className={`h-3 w-3 shrink-0 text-gray-500 transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path
+        d="M4 2l4 4-4 4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function AccountGroupsList({
-  liquidAccounts,
+  allAccounts,
   customGroups,
   onCreate,
   onEdit,
   onDelete,
 }: Props) {
-  const { defaults, memberValuesById } = useMemo(() => {
-    const counts: Record<"taxable" | "cash" | "retirement", number> = { taxable: 0, cash: 0, retirement: 0 };
-    const values: Record<"taxable" | "cash" | "retirement", number> = { taxable: 0, cash: 0, retirement: 0 };
-    const map = new Map<string, number>();
-    for (const a of liquidAccounts) {
-      counts[a.category] += 1;
-      values[a.category] += a.value;
-      map.set(a.id, a.value);
-    }
-    return {
-      defaults: [
-        { key: "all-liquid", label: "All Liquid Assets", count: liquidAccounts.length, value: values.taxable + values.cash + values.retirement },
-        { key: "taxable",    label: "Taxable",            count: counts.taxable,    value: values.taxable },
-        { key: "retirement", label: "Retirement",         count: counts.retirement, value: values.retirement },
-        { key: "cash",       label: "Cash",               count: counts.cash,       value: values.cash },
-      ],
-      memberValuesById: map,
-    };
-  }, [liquidAccounts]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const tree = useMemo(() => buildAssetTree(allAccounts), [allAccounts]);
+  const accountsById = useMemo(() => {
+    const m = new Map<string, AssetAccount>();
+    for (const a of allAccounts) m.set(a.id, a);
+    return m;
+  }, [allAccounts]);
+
+  function renderAccountRow(a: AssetAccount, indent: number) {
+    return (
+      <li
+        key={a.id}
+        className="flex items-center justify-between py-1.5 pr-4 text-sm"
+        style={{ paddingLeft: indent }}
+      >
+        <span className="truncate text-gray-300">{a.name}</span>
+        <span className="text-gray-400">${formatDollars(a.value)}</span>
+      </li>
+    );
+  }
+
+  function renderNode(node: TreeNode, depth: number) {
+    const isOpen = expanded.has(node.key);
+    const indent = 16 + depth * 18;
+    const childIndent = 16 + (depth + 1) * 18;
+    const expandable =
+      (node.children?.length ?? 0) > 0 || (node.accounts?.length ?? 0) > 0;
+
+    return (
+      <li key={node.key}>
+        <button
+          type="button"
+          onClick={() => expandable && toggle(node.key)}
+          aria-expanded={expandable ? isOpen : undefined}
+          disabled={!expandable}
+          className="flex w-full items-center justify-between py-2 pr-4 text-sm hover:bg-gray-800/40 disabled:cursor-default disabled:hover:bg-transparent"
+          style={{ paddingLeft: indent }}
+        >
+          <span className="flex items-center gap-2 text-gray-100">
+            {expandable ? (
+              <Chevron open={isOpen} />
+            ) : (
+              <span className="inline-block h-3 w-3 shrink-0" />
+            )}
+            {node.label}
+          </span>
+          <span className="text-gray-400">
+            {node.count} {node.count === 1 ? "account" : "accounts"} · $
+            {formatDollars(node.value)}
+          </span>
+        </button>
+        {isOpen && node.children && (
+          <ul>{node.children.map((c) => renderNode(c, depth + 1))}</ul>
+        )}
+        {isOpen && node.accounts && node.accounts.length > 0 && (
+          <ul>{node.accounts.map((a) => renderAccountRow(a, childIndent))}</ul>
+        )}
+      </li>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -58,14 +136,7 @@ export default function AccountGroupsList({
           Default groups (read-only)
         </h3>
         <ul className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
-          {defaults.map((g) => (
-            <li key={g.key} className="flex items-center justify-between px-4 py-2 text-sm">
-              <span className="text-gray-100">● {g.label}</span>
-              <span className="text-gray-400">
-                {g.count} {g.count === 1 ? "account" : "accounts"} · ${formatDollars(g.value)}
-              </span>
-            </li>
-          ))}
+          {tree.map((node) => renderNode(node, 0))}
         </ul>
       </section>
 
@@ -89,45 +160,72 @@ export default function AccountGroupsList({
         ) : (
           <ul className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
             {customGroups.map((g) => {
-              const memberValue = g.memberAccountIds
-                .reduce((s, id) => s + (memberValuesById.get(id) ?? 0), 0);
+              const key = `custom:${g.id}`;
+              const isOpen = expanded.has(key);
+              const members = g.memberAccountIds
+                .map((id) => accountsById.get(id))
+                .filter(
+                  (a): a is AssetAccount => a != null && LIQUID.has(a.category),
+                );
+              const memberValue = members.reduce((s, a) => s + a.value, 0);
+              const expandable = members.length > 0;
               return (
-                <li key={g.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-gray-100">
-                      <span style={{ color: g.color ?? undefined }}>●</span>
-                      <span className="truncate">{g.name}</span>
-                      {g.illiquidMemberCount > 0 && (
-                        <span className="rounded bg-yellow-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase text-yellow-300">
-                          {g.illiquidMemberCount} no longer eligible
-                        </span>
+                <li key={g.id}>
+                  <div className="flex items-center justify-between px-4 py-2 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => expandable && toggle(key)}
+                      aria-expanded={expandable ? isOpen : undefined}
+                      disabled={!expandable}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
+                    >
+                      {expandable ? (
+                        <Chevron open={isOpen} />
+                      ) : (
+                        <span className="inline-block h-3 w-3 shrink-0" />
                       )}
+                      <span className="flex min-w-0 flex-col">
+                        <span className="flex items-center gap-2 text-gray-100">
+                          <span style={{ color: g.color ?? undefined }}>●</span>
+                          <span className="truncate">{g.name}</span>
+                          {g.illiquidMemberCount > 0 && (
+                            <span className="rounded bg-yellow-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase text-yellow-300">
+                              {g.illiquidMemberCount} no longer eligible
+                            </span>
+                          )}
+                        </span>
+                        {g.description && (
+                          <span className="truncate text-xs text-gray-400">
+                            {g.description}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <div className="flex items-center gap-4 pl-4">
+                      <span className="text-gray-400">
+                        {g.memberAccountIds.length}{" "}
+                        {g.memberAccountIds.length === 1 ? "account" : "accounts"}{" "}
+                        · ${formatDollars(memberValue)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onEdit(g.id)}
+                        className="text-xs text-gray-300 hover:text-white"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(g.id)}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Delete
+                      </button>
                     </div>
-                    {g.description && (
-                      <div className="truncate text-xs text-gray-400">{g.description}</div>
-                    )}
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-gray-400">
-                      {g.memberAccountIds.length}{" "}
-                      {g.memberAccountIds.length === 1 ? "account" : "accounts"} · $
-                      {formatDollars(memberValue)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onEdit(g.id)}
-                      className="text-xs text-gray-300 hover:text-white"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(g.id)}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  {isOpen && members.length > 0 && (
+                    <ul>{members.map((a) => renderAccountRow(a, 16 + 18))}</ul>
+                  )}
                 </li>
               );
             })}
