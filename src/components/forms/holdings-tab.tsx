@@ -6,7 +6,7 @@ import type { AssetClassOption } from "./asset-mix-tab";
 import { HoldingOverrideEditor } from "./holding-override-editor";
 import {
   listHoldings, createHolding, updateHolding, deleteHolding,
-  setHoldingOverride, classifyTicker, setAccountGrowthSource,
+  setHoldingOverride, classifyTicker, setAccountGrowthSource, getQuote,
   type HoldingRow,
 } from "@/lib/investments/holdings-client";
 import type { GrowthSource } from "@/lib/investments/allocation";
@@ -45,6 +45,10 @@ export function HoldingsTab({
   const [price, setPrice] = useState("");
   const [basis, setBasis] = useState("");
   const [adding, setAdding] = useState(false);
+  const [priceAsOf, setPriceAsOf] = useState<string | null>(null);
+  const [fetchingPrice, setFetchingPrice] = useState(false);
+  // Guards against out-of-order responses: only the latest ticker's result wins.
+  const quoteSeq = useRef(0);
 
   // Remember the pre-flip source so the toggle can revert to it.
   const preFlipSource = useRef<GrowthSource>(growthSource === "holdings" ? "default" : growthSource);
@@ -101,6 +105,7 @@ export function HoldingsTab({
         displayName: classified.security?.name ?? null,
         shares: shares === "" ? 0 : parseFloat(shares),
         price: price === "" ? 0 : parseFloat(price),
+        priceAsOf: priceAsOf ?? undefined,
         costBasis: basis === "" ? 0 : parseFloat(basis),
       });
       // The POST response is a raw row; re-list to get the enriched shape
@@ -108,11 +113,26 @@ export function HoldingsTab({
       const list = await listHoldings(clientId, accountId);
       setRows(list);
       await flipToHoldingsIfFirst(list.length);
-      setTicker(""); setShares(""); setPrice(""); setBasis("");
+      setTicker(""); setShares(""); setPrice(""); setBasis(""); setPriceAsOf(null);
     } catch {
       setError("Couldn't add the holding. Check the values and try again.");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleTickerBlur() {
+    const t = ticker.trim().toUpperCase();
+    if (!canEdit || !accountId || t === "") return;
+    const seq = ++quoteSeq.current;
+    setFetchingPrice(true);
+    try {
+      const quote = await getQuote(clientId, accountId, t);
+      // Ignore a stale response if the ticker changed (or blurred again) since.
+      if (seq !== quoteSeq.current) return;
+      if (quote) { setPrice(String(quote.price)); setPriceAsOf(quote.asOf); }
+    } finally {
+      if (seq === quoteSeq.current) setFetchingPrice(false);
     }
   }
 
@@ -220,9 +240,10 @@ export function HoldingsTab({
       {/* Add-holding row */}
       <div className="flex flex-wrap items-end gap-2 rounded-md border border-gray-700 bg-gray-900/40 p-3">
         <AddField label="Ticker" value={ticker} onChange={setTicker} width="w-28"
-          onEnter={handleAdd} placeholder="VTI" />
+          onEnter={handleAdd} onBlur={handleTickerBlur} placeholder="VTI" />
         <AddField label="Shares" value={shares} onChange={setShares} width="w-24" onEnter={handleAdd} />
-        <AddField label="Price" value={price} onChange={setPrice} width="w-24" onEnter={handleAdd} />
+        <AddField label="Price" value={price} onChange={setPrice} width="w-24"
+          onEnter={handleAdd} placeholder={fetchingPrice ? "fetching…" : undefined} />
         <AddField label="Cost basis" value={basis} onChange={setBasis} width="w-28" onEnter={handleAdd} />
         <button
           type="button"
@@ -344,10 +365,10 @@ function chipClass(kind: "derived" | "manual" | "needs_review") {
 }
 
 function AddField({
-  label, value, onChange, width, onEnter, placeholder,
+  label, value, onChange, width, onEnter, onBlur, placeholder,
 }: {
   label: string; value: string; onChange: (v: string) => void;
-  width: string; onEnter: () => void; placeholder?: string;
+  width: string; onEnter: () => void; onBlur?: () => void; placeholder?: string;
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -358,6 +379,7 @@ function AddField({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={() => onBlur?.()}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onEnter(); } }}
         className={`h-9 ${width} rounded-md border border-gray-600 bg-gray-800 px-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent`}
       />
