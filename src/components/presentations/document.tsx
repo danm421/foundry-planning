@@ -20,6 +20,7 @@ interface PresentationDocumentProps {
   years: ProjectionYear[];
   projection: ProjectionResult;
   clientData: ClientData;
+  monteCarlo?: import("@/lib/presentations/pages/monte-carlo/view-model").MonteCarloReportPayload | null;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {
@@ -64,6 +65,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             firmName: props.firmName,
             firmTagline: props.firmTagline,
             reportDate: props.reportDate,
+            monteCarlo: props.monteCarlo ?? null,
           },
           options as never,
         );

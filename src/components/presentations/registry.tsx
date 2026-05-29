@@ -80,6 +80,7 @@ import { EstateFlowChartPagePdf } from "./pages/estate-flow-chart/page-pdf";
 import { buildEstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
 import type { EstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
 import { EstateFlowReportPagePdf } from "./pages/estate-flow/page-pdf";
+import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -106,6 +107,10 @@ export interface BuildDataContext {
   firmName: string;
   firmTagline: string | null;
   reportDate: string;
+  /** Present only when the deck includes a Monte Carlo page; the export route
+   *  runs the sim server-side and injects the compact payload. Null/undefined
+   *  for every other deck — non-MC pages ignore it. */
+  monteCarlo?: MonteCarloReportPayload | null;
 }
 
 export interface RenderPdfInput<TData> {
