@@ -8,6 +8,8 @@ import type {
 } from "../../shared/drill-types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
+import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { PRESENTATION_THEME } from "../../theme";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -52,10 +54,34 @@ export function buildTaxBracketFederalDrillData(input: BuildTaxBracketFederalDri
   }));
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
+
+  const chartSpec = buildDrillChartSpec({
+    years: visibleYears.map((y) => y.year),
+    stacks: [
+      {
+        seriesId: "intoBracket", label: "Into Bracket",
+        color: PRESENTATION_THEME.accent,
+        values: bracketRows.map((br) => br.intoBracket),
+      },
+      {
+        seriesId: "remainingInBracket", label: "Remaining in Bracket",
+        color: PRESENTATION_THEME.hair,
+        values: bracketRows.map((br) => br.remainingInBracket ?? 0),
+      },
+    ],
+    lines: [{
+      seriesId: "conversionTaxable", label: "Taxable Conversion",
+      color: PRESENTATION_THEME.steel,
+      values: bracketRows.map((br) => br.conversionTaxable),
+    }],
+    markers,
+  });
+
   return {
     title: "Income Tax — Tax Bracket (Federal)",
     subtitle: scenarioLabel,
     callout: computeCallout(options, "Bracket detail shown from Retirement."),
+    chartSpec,
     table: { columns, rows, markers },
     footnote: DISCLAIMER,
   };
