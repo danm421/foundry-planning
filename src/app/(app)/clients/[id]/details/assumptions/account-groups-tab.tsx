@@ -7,11 +7,12 @@ import AccountGroupsList, {
 import AccountGroupForm, {
   type GroupFormInitial,
 } from "@/components/account-groups/account-group-form";
-import type { LiquidAccount } from "@/components/account-groups/types";
+import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
 
 interface Props {
   clientId: string;
   liquidAccounts: LiquidAccount[];
+  allAccounts: AssetAccount[];
 }
 
 type Mode =
@@ -19,7 +20,7 @@ type Mode =
   | { kind: "create" }
   | { kind: "edit"; group: GroupFormInitial };
 
-export default function AccountGroupsTab({ clientId, liquidAccounts }: Props) {
+export default function AccountGroupsTab({ clientId, liquidAccounts, allAccounts }: Props) {
   const [groups, setGroups] = useState<CustomGroup[] | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export default function AccountGroupsTab({ clientId, liquidAccounts }: Props) {
         </div>
       )}
       <AccountGroupsList
-        liquidAccounts={liquidAccounts}
+        allAccounts={allAccounts}
         customGroups={groups ?? []}
         onCreate={() => setMode({ kind: "create" })}
         onEdit={(groupId) => {

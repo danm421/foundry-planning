@@ -256,6 +256,13 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
       value: Number(a.value),
     }));
 
+  const allAccounts = accountRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category as import("@/components/account-groups/types").AssetCategory,
+    value: Number(a.value),
+  }));
+
   return (
     <div className="max-w-3xl space-y-6">
       <div>
@@ -320,6 +327,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
         clientFirstName={effectiveTree.client.firstName}
         spouseFirstName={effectiveTree.client.spouseName?.split(" ")[0]}
         liquidAccounts={liquidAccounts}
+        allAccounts={allAccounts}
         deductionsData={{
           derivedRows,
           expenseDeductionRows,
