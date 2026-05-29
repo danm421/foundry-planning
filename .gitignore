@@ -64,6 +64,7 @@ next-env.d.ts
 # pattern above. Committed versions live next to them without the
 # `.local` suffix.
 scripts/*.local.ts
+scripts/.backfill-securities.checkpoint.json
 
 # Sentry Config File
 .env.sentry-build-plugin
