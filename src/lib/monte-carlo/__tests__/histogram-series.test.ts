@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildHistogramSeries } from "../lib/terminal-histogram-series";
+import { buildHistogramSeries } from "@/lib/monte-carlo/histogram-series";
 
 describe("buildHistogramSeries", () => {
   it("snaps bin edges to nicely rounded numbers", () => {

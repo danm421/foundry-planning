@@ -12,6 +12,16 @@ import {
   ProjectionInputError,
 } from "@/lib/projection/load-client-data";
 import { runProjectionWithEvents } from "@/engine/projection";
+import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
+import {
+  runMonteCarlo,
+  summarizeMonteCarlo,
+  createReturnEngine,
+  liquidPortfolioTotal,
+} from "@/engine";
+import { buildHistogramSeries } from "@/lib/monte-carlo/histogram-series";
+import { successByYear } from "@/lib/comparison/success-by-year";
+import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import { PresentationDocument } from "@/components/presentations/document";
 import {
   PRESENTATION_PAGES,
@@ -103,6 +113,48 @@ export async function POST(
 
     const projection = runProjectionWithEvents(clientData);
 
+    // Monte Carlo runs server-side only when the deck includes the MC page.
+    // The engine is pure/Node-safe; we reuse the persisted base-case seed so
+    // the PDF is reproducible. Scenario override is label-only (V1), so a
+    // single payload covers the whole deck — mirrors the shared `projection`.
+    let monteCarlo: MonteCarloReportPayload | null = null;
+    if (parsed.data.pages.some((p) => p.pageId === "monteCarlo")) {
+      try {
+        const mc = await loadMonteCarloData(id, firmId);
+        const engine = createReturnEngine({
+          indices: mc.indices,
+          correlation: mc.correlation,
+          seed: mc.seed,
+        });
+        const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.mix]));
+        const result = await runMonteCarlo({
+          data: clientData,
+          returnEngine: engine,
+          accountMixes,
+          trials: 1000,
+          requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
+        });
+        const summary = summarizeMonteCarlo(result, {
+          client: clientData.client,
+          planSettings: clientData.planSettings,
+          startingLiquidBalance: mc.startingLiquidBalance,
+        });
+        monteCarlo = {
+          summary,
+          histogram: buildHistogramSeries(result.endingLiquidAssets),
+          successRates: successByYear(
+            result.byYearLiquidAssetsPerTrial,
+            mc.requiredMinimumAssetLevel,
+          ),
+          deterministic: projection.years.map(liquidPortfolioTotal),
+        };
+      } catch (mcErr) {
+        // Non-fatal: leave monteCarlo null so the page renders its graceful
+        // "data unavailable" frame instead of failing the whole export.
+        console.error("Monte Carlo server-side run failed for export", mcErr);
+      }
+    }
+
     const ci = clientData.client;
     const clientFirstName = ci.firstName;
     const clientLastName = ci.lastName ?? "";
@@ -138,6 +190,7 @@ export async function POST(
       years: projection.years,
       projection,
       clientData,
+      monteCarlo,
     }) as unknown as React.ReactElement<DocumentProps>;
 
     // @react-pdf/renderer has a memory-leak history on large docs, and

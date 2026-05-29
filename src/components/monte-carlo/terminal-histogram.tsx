@@ -10,7 +10,7 @@ import {
   type ChartOptions,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
-import { buildHistogramSeries } from "./lib/terminal-histogram-series";
+import { buildHistogramSeries } from "@/lib/monte-carlo/histogram-series";
 import { formatShortCurrency, formatInteger, formatPercent } from "./lib/format";
 import { PromoteButton } from "./promote-button";
 
