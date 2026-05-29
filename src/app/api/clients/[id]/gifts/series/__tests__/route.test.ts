@@ -53,6 +53,7 @@ vi.mock("@/lib/db-helpers", () => ({
 }));
 
 vi.mock("@/lib/audit", () => ({
+  recordAudit: vi.fn().mockResolvedValue(undefined),
   recordCreate: vi.fn().mockResolvedValue(undefined),
   recordUpdate: vi.fn().mockResolvedValue(undefined),
   recordDelete: vi.fn().mockResolvedValue(undefined),

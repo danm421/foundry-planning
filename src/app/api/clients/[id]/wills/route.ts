@@ -8,7 +8,8 @@ import {
   willResiduaryRecipients,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 import { willCreateSchema } from "@/lib/schemas/wills";
 import {
   gatherCrossRefs,
@@ -31,7 +32,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -134,7 +135,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -219,6 +220,15 @@ export async function POST(
         );
       }
       return willRow.id;
+    });
+
+    await recordAudit({
+      action: "will.create",
+      resourceType: "will",
+      resourceId: willId,
+      clientId: id,
+      firmId,
+      metadata: { grantor: data.grantor, bequestCount: data.bequests.length },
     });
 
     return NextResponse.json(

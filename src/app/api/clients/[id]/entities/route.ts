@@ -49,6 +49,15 @@ function deriveLegacyOwner(
 
 export const dynamic = "force-dynamic";
 
+/** Validation failure raised from inside the entity-creation transaction so
+ *  the partial writes roll back; mapped to a 400 in the POST catch (audit F6). */
+class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BadRequestError";
+  }
+}
+
 async function verifyClient(clientId: string, firmId: string) {
   const [client] = await db
     .select()
@@ -147,71 +156,10 @@ export async function POST(
         ? null
         : (deriveLegacyOwner(data.owners, householdMembers) ?? data.owner ?? null);
 
-    const [entity] = await db
-      .insert(entities)
-      .values({
-        clientId: id,
-        name: data.name,
-        entityType: data.entityType,
-        notes: data.notes ?? null,
-        includeInPortfolio: data.includeInPortfolio ?? false,
-        accessibleToClient: data.accessibleToClient ?? false,
-        crummeyPowers: data.crummeyPowers ?? false,
-        isGrantor: data.isGrantor ?? false,
-        grantorStatusEndYear: data.grantorStatusEndYear ?? null,
-        value: data.value != null ? String(data.value) : "0",
-        basis: data.basis != null ? String(data.basis) : "0",
-        owner: legacyOwner,
-        grantor: data.grantor ?? null,
-        beneficiaries: data.beneficiaries ?? null,
-        trustSubType:
-          data.entityType === "trust"
-            ? ((data.trustSubType ?? null) as TrustSubType | null)
-            : null,
-        isIrrevocable:
-          data.entityType === "trust" ? data.isIrrevocable ?? null : null,
-        trustee: data.entityType === "trust" ? data.trustee ?? null : null,
-        trustEnds: data.entityType === "trust" ? (data.trustEnds ?? null) : null,
-        distributionMode:
-          data.entityType === "trust"
-            ? (data.distributionMode ?? null)
-            : null,
-        distributionAmount:
-          data.entityType === "trust" && data.distributionAmount != null
-            ? String(data.distributionAmount)
-            : null,
-        distributionPercent:
-          data.entityType === "trust" && data.distributionPercent != null
-            ? String(data.distributionPercent)
-            : null,
-        taxTreatment: data.taxTreatment ?? "ordinary",
-        distributionPolicyPercent:
-          data.entityType !== "trust" && data.entityType !== "foundation" && data.distributionPolicyPercent != null
-            ? String(data.distributionPolicyPercent)
-            : null,
-        valueGrowthRate:
-          data.entityType !== "trust" && data.entityType !== "foundation" && data.valueGrowthRate != null
-            ? String(data.valueGrowthRate)
-            : null,
-      })
-      .returning();
-
     // Insert entity_owners rows for business-type entities. Trusts skip this —
     // their grantor/beneficiary structure is captured in dedicated columns.
     const isBusinessType = !["trust", "foundation"].includes(data.entityType);
-    if (isBusinessType && data.owners && data.owners.length > 0) {
-      await db.insert(entityOwners).values(
-        data.owners.map((o) => ({
-          entityId: entity.id,
-          familyMemberId: o.familyMemberId,
-          percent: String(o.percent),
-        })),
-      );
-    }
 
-    // Create a default checking account for this entity in every one of the client's
-    // scenarios so the projection engine can route the entity's incomes/expenses/RMDs
-    // through a dedicated cash bucket.
     // Only base-case scenarios receive the default checking account — the
     // accounts_scenario_base_only trigger rejects writes to non-base scenarios.
     const scenarioRows = await db
@@ -219,138 +167,213 @@ export async function POST(
       .from(scenarios)
       .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
 
-    if (scenarioRows.length > 0) {
-      // Insert one entity-checking account per scenario, then wire ownership via
-      // the account_owners junction table (no legacy owner/ownerEntityId columns).
-      const insertedAccounts = await db.insert(accounts).values(
-        scenarioRows.map((s) => ({
+    // All entity-creation writes (entity row + owners + per-scenario default
+    // checking accounts + optional split-interest details/auto-gift) must
+    // commit together or not at all (audit F6). Validation that should abort
+    // throws BadRequestError → rolls the transaction back → mapped to 400.
+    const { entity, trustSplitAudit } = await db.transaction(async (tx) => {
+      let trustSplitAudit: Record<string, unknown> | null = null;
+      const [entity] = await tx
+        .insert(entities)
+        .values({
           clientId: id,
-          scenarioId: s.id,
-          name: `${entity.name} — Cash`,
-          category: "cash" as const,
-          subType: "checking" as const,
-          value: "0",
-          basis: "0",
-          growthRate: null,
-          rmdEnabled: false,
-          isDefaultChecking: true,
-        }))
-      ).returning({ id: accounts.id });
+          name: data.name,
+          entityType: data.entityType,
+          notes: data.notes ?? null,
+          includeInPortfolio: data.includeInPortfolio ?? false,
+          accessibleToClient: data.accessibleToClient ?? false,
+          crummeyPowers: data.crummeyPowers ?? false,
+          isGrantor: data.isGrantor ?? false,
+          grantorStatusEndYear: data.grantorStatusEndYear ?? null,
+          value: data.value != null ? String(data.value) : "0",
+          basis: data.basis != null ? String(data.basis) : "0",
+          owner: legacyOwner,
+          grantor: data.grantor ?? null,
+          beneficiaries: data.beneficiaries ?? null,
+          trustSubType:
+            data.entityType === "trust"
+              ? ((data.trustSubType ?? null) as TrustSubType | null)
+              : null,
+          isIrrevocable:
+            data.entityType === "trust" ? data.isIrrevocable ?? null : null,
+          trustee: data.entityType === "trust" ? data.trustee ?? null : null,
+          trustEnds: data.entityType === "trust" ? (data.trustEnds ?? null) : null,
+          distributionMode:
+            data.entityType === "trust"
+              ? (data.distributionMode ?? null)
+              : null,
+          distributionAmount:
+            data.entityType === "trust" && data.distributionAmount != null
+              ? String(data.distributionAmount)
+              : null,
+          distributionPercent:
+            data.entityType === "trust" && data.distributionPercent != null
+              ? String(data.distributionPercent)
+              : null,
+          taxTreatment: data.taxTreatment ?? "ordinary",
+          distributionPolicyPercent:
+            data.entityType !== "trust" && data.entityType !== "foundation" && data.distributionPolicyPercent != null
+              ? String(data.distributionPolicyPercent)
+              : null,
+          valueGrowthRate:
+            data.entityType !== "trust" && data.entityType !== "foundation" && data.valueGrowthRate != null
+              ? String(data.valueGrowthRate)
+              : null,
+        })
+        .returning();
 
-      // Create accountOwners rows linking each new account to this entity.
-      if (insertedAccounts.length > 0) {
-        await db.insert(accountOwners).values(
-          insertedAccounts.map((a) => ({
-            accountId: a.id,
+      if (isBusinessType && data.owners && data.owners.length > 0) {
+        await tx.insert(entityOwners).values(
+          data.owners.map((o) => ({
             entityId: entity.id,
-            familyMemberId: null,
-            percent: "1.0000",
+            familyMemberId: o.familyMemberId,
+            percent: String(o.percent),
+          })),
+        );
+      }
+
+      // Create a default checking account per base-case scenario so the
+      // projection engine can route the entity's incomes/expenses/RMDs through
+      // a dedicated cash bucket, then wire ownership via account_owners.
+      if (scenarioRows.length > 0) {
+        const insertedAccounts = await tx.insert(accounts).values(
+          scenarioRows.map((s) => ({
+            clientId: id,
+            scenarioId: s.id,
+            name: `${entity.name} — Cash`,
+            category: "cash" as const,
+            subType: "checking" as const,
+            value: "0",
+            basis: "0",
+            growthRate: null,
+            rmdEnabled: false,
+            isDefaultChecking: true,
           }))
-        );
+        ).returning({ id: accounts.id });
+
+        if (insertedAccounts.length > 0) {
+          await tx.insert(accountOwners).values(
+            insertedAccounts.map((a) => ({
+              accountId: a.id,
+              entityId: entity.id,
+              familyMemberId: null,
+              percent: "1.0000",
+            }))
+          );
+        }
       }
-    }
-
-    if (
-      (data.trustSubType === "clt" || data.trustSubType === "crt") &&
-      data.splitInterest
-    ) {
-      const si = data.splitInterest;
-
-      if (data.grantor !== "client" && data.grantor !== "spouse") {
-        return NextResponse.json(
-          {
-            error: `grantor ('client' or 'spouse') is required for ${data.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
-          },
-          { status: 400 },
-        );
-      }
-
-      const measuringLife1 = si.measuringLife1Id
-        ? (await db
-            .select()
-            .from(familyMembers)
-            .where(
-              and(
-                eq(familyMembers.id, si.measuringLife1Id),
-                eq(familyMembers.clientId, id),
-              ),
-            )
-            .limit(1))[0]
-        : null;
-      const measuringLife2 = si.measuringLife2Id
-        ? (await db
-            .select()
-            .from(familyMembers)
-            .where(
-              and(
-                eq(familyMembers.id, si.measuringLife2Id),
-                eq(familyMembers.clientId, id),
-              ),
-            )
-            .limit(1))[0]
-        : null;
-
-      if (si.measuringLife1Id && !measuringLife1) {
-        return NextResponse.json(
-          { error: "measuringLife1Id does not belong to this client" },
-          { status: 400 },
-        );
-      }
-      if (si.measuringLife2Id && !measuringLife2) {
-        return NextResponse.json(
-          { error: "measuringLife2Id does not belong to this client" },
-          { status: 400 },
-        );
-      }
-
-      const ageAtFromDob = (
-        dob: string | null,
-        year: number,
-      ): number | undefined => {
-        if (!dob) return undefined;
-        return year - parseInt(dob.slice(0, 4), 10);
-      };
-
-      const age1 = measuringLife1
-        ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
-        : undefined;
-      const age2 = measuringLife2
-        ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
-        : undefined;
 
       if (
-        (si.termType === "single_life" ||
-          si.termType === "joint_life" ||
-          si.termType === "shorter_of_years_or_life") &&
-        age1 == null
+        (data.trustSubType === "clt" || data.trustSubType === "crt") &&
+        data.splitInterest
       ) {
-        return NextResponse.json(
-          { error: "measuring life 1 is missing date_of_birth" },
-          { status: 400 },
-        );
-      }
-      if (si.termType === "joint_life" && age2 == null) {
-        return NextResponse.json(
-          { error: "measuring life 2 is missing date_of_birth" },
-          { status: 400 },
-        );
-      }
+        const si = data.splitInterest;
 
-      const isExisting = si.origin === "existing";
-      const isCrt = data.trustSubType === "crt";
+        if (data.grantor !== "client" && data.grantor !== "spouse") {
+          throw new BadRequestError(
+            `grantor ('client' or 'spouse') is required for ${data.trustSubType === "crt" ? "CRTs" : "CLTs"}`,
+          );
+        }
 
-      // Normalize both compute paths to the same DB-row shape:
-      //   originalIncomeInterest    = the "income side" PV (gift for CLT, retained-income PV for CRT)
-      //   originalRemainderInterest = the "remainder side" PV (taxable gift for CLT, charitable deduction for CRT)
-      const interests = isExisting
-        ? {
-            originalIncomeInterest: si.originalIncomeInterest!,
-            originalRemainderInterest: si.originalRemainderInterest!,
-            remainderFactor: undefined as number | undefined,
-          }
-        : isCrt
-          ? (() => {
-              const r = computeCrtInceptionInterests({
+        const measuringLife1 = si.measuringLife1Id
+          ? (await tx
+              .select()
+              .from(familyMembers)
+              .where(
+                and(
+                  eq(familyMembers.id, si.measuringLife1Id),
+                  eq(familyMembers.clientId, id),
+                ),
+              )
+              .limit(1))[0]
+          : null;
+        const measuringLife2 = si.measuringLife2Id
+          ? (await tx
+              .select()
+              .from(familyMembers)
+              .where(
+                and(
+                  eq(familyMembers.id, si.measuringLife2Id),
+                  eq(familyMembers.clientId, id),
+                ),
+              )
+              .limit(1))[0]
+          : null;
+
+        if (si.measuringLife1Id && !measuringLife1) {
+          throw new BadRequestError(
+            "measuringLife1Id does not belong to this client",
+          );
+        }
+        if (si.measuringLife2Id && !measuringLife2) {
+          throw new BadRequestError(
+            "measuringLife2Id does not belong to this client",
+          );
+        }
+
+        const ageAtFromDob = (
+          dob: string | null,
+          year: number,
+        ): number | undefined => {
+          if (!dob) return undefined;
+          return year - parseInt(dob.slice(0, 4), 10);
+        };
+
+        const age1 = measuringLife1
+          ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
+          : undefined;
+        const age2 = measuringLife2
+          ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
+          : undefined;
+
+        if (
+          (si.termType === "single_life" ||
+            si.termType === "joint_life" ||
+            si.termType === "shorter_of_years_or_life") &&
+          age1 == null
+        ) {
+          throw new BadRequestError(
+            "measuring life 1 is missing date_of_birth",
+          );
+        }
+        if (si.termType === "joint_life" && age2 == null) {
+          throw new BadRequestError(
+            "measuring life 2 is missing date_of_birth",
+          );
+        }
+
+        const isExisting = si.origin === "existing";
+        const isCrt = data.trustSubType === "crt";
+
+        // Normalize both compute paths to the same DB-row shape:
+        //   originalIncomeInterest    = the "income side" PV (gift for CLT, retained-income PV for CRT)
+        //   originalRemainderInterest = the "remainder side" PV (taxable gift for CLT, charitable deduction for CRT)
+        const interests = isExisting
+          ? {
+              originalIncomeInterest: si.originalIncomeInterest!,
+              originalRemainderInterest: si.originalRemainderInterest!,
+              remainderFactor: undefined as number | undefined,
+            }
+          : isCrt
+            ? (() => {
+                const r = computeCrtInceptionInterests({
+                  inceptionValue: si.inceptionValue,
+                  payoutType: si.payoutType,
+                  payoutPercent: si.payoutPercent,
+                  payoutAmount: si.payoutAmount,
+                  irc7520Rate: si.irc7520Rate,
+                  termType: si.termType,
+                  termYears: si.termYears,
+                  measuringLifeAge1: age1,
+                  measuringLifeAge2: age2,
+                });
+                return {
+                  originalIncomeInterest: r.incomeInterest,
+                  originalRemainderInterest: r.charitableDeduction,
+                  remainderFactor: r.remainderFactor,
+                };
+              })()
+            : computeCltInceptionInterests({
                 inceptionValue: si.inceptionValue,
                 payoutType: si.payoutType,
                 payoutPercent: si.payoutPercent,
@@ -361,64 +384,41 @@ export async function POST(
                 measuringLifeAge1: age1,
                 measuringLifeAge2: age2,
               });
-              return {
-                originalIncomeInterest: r.incomeInterest,
-                originalRemainderInterest: r.charitableDeduction,
-                remainderFactor: r.remainderFactor,
-              };
-            })()
-          : computeCltInceptionInterests({
-              inceptionValue: si.inceptionValue,
-              payoutType: si.payoutType,
-              payoutPercent: si.payoutPercent,
-              payoutAmount: si.payoutAmount,
-              irc7520Rate: si.irc7520Rate,
-              termType: si.termType,
-              termYears: si.termYears,
-              measuringLifeAge1: age1,
-              measuringLifeAge2: age2,
-            });
 
-      await db.insert(trustSplitInterestDetails).values({
-        entityId: entity.id,
-        clientId: id,
-        inceptionYear: si.inceptionYear,
-        inceptionValue: si.inceptionValue.toString(),
-        payoutType: si.payoutType,
-        payoutPercent: si.payoutPercent != null ? si.payoutPercent.toString() : null,
-        payoutAmount: si.payoutAmount != null ? si.payoutAmount.toString() : null,
-        irc7520Rate: si.irc7520Rate.toString(),
-        termType: si.termType,
-        termYears: si.termYears ?? null,
-        measuringLife1Id: si.measuringLife1Id ?? null,
-        measuringLife2Id: si.measuringLife2Id ?? null,
-        charityId: si.charityId,
-        originalIncomeInterest: interests.originalIncomeInterest.toString(),
-        originalRemainderInterest: interests.originalRemainderInterest.toString(),
-      });
-
-      // Auto-emit the remainder-interest gift only for NEW CLTs. CRTs do not
-      // emit a gift at inception (income beneficiary = grantor / spouse, so
-      // there's either no transfer or a marital deduction applies).
-      if (!isExisting && !isCrt) {
-        await db.insert(gifts).values({
+        await tx.insert(trustSplitInterestDetails).values({
+          entityId: entity.id,
           clientId: id,
-          year: si.inceptionYear,
-          amount: interests.originalRemainderInterest.toString(),
-          grantor: data.grantor,
-          recipientEntityId: entity.id,
-          eventKind: "clt_remainder_interest",
-          notes: `Auto-emitted at CLT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
+          inceptionYear: si.inceptionYear,
+          inceptionValue: si.inceptionValue.toString(),
+          payoutType: si.payoutType,
+          payoutPercent: si.payoutPercent != null ? si.payoutPercent.toString() : null,
+          payoutAmount: si.payoutAmount != null ? si.payoutAmount.toString() : null,
+          irc7520Rate: si.irc7520Rate.toString(),
+          termType: si.termType,
+          termYears: si.termYears ?? null,
+          measuringLife1Id: si.measuringLife1Id ?? null,
+          measuringLife2Id: si.measuringLife2Id ?? null,
+          charityId: si.charityId,
+          originalIncomeInterest: interests.originalIncomeInterest.toString(),
+          originalRemainderInterest: interests.originalRemainderInterest.toString(),
         });
-      }
 
-      await recordAudit({
-        action: "trust_split_interest.create",
-        resourceType: "trust_split_interest_details",
-        resourceId: entity.id,
-        clientId: id,
-        firmId,
-        metadata: {
+        // Auto-emit the remainder-interest gift only for NEW CLTs. CRTs do not
+        // emit a gift at inception (income beneficiary = grantor / spouse, so
+        // there's either no transfer or a marital deduction applies).
+        if (!isExisting && !isCrt) {
+          await tx.insert(gifts).values({
+            clientId: id,
+            year: si.inceptionYear,
+            amount: interests.originalRemainderInterest.toString(),
+            grantor: data.grantor,
+            recipientEntityId: entity.id,
+            eventKind: "clt_remainder_interest",
+            notes: `Auto-emitted at CLT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
+          });
+        }
+
+        trustSplitAudit = {
           subType: data.trustSubType,
           origin: si.origin ?? "new",
           inceptionYear: si.inceptionYear,
@@ -429,7 +429,20 @@ export async function POST(
           remainderFactor: interests.remainderFactor,
           originalIncomeInterest: interests.originalIncomeInterest,
           originalRemainderInterest: interests.originalRemainderInterest,
-        },
+        };
+      }
+
+      return { entity, trustSplitAudit };
+    });
+
+    if (trustSplitAudit) {
+      await recordAudit({
+        action: "trust_split_interest.create",
+        resourceType: "trust_split_interest_details",
+        resourceId: entity.id,
+        clientId: id,
+        firmId,
+        metadata: trustSplitAudit,
       });
     }
 
@@ -453,6 +466,9 @@ export async function POST(
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (err instanceof BadRequestError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     console.error("POST /api/clients/[id]/entities error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

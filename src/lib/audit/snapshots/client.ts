@@ -1,17 +1,11 @@
 // src/lib/audit/snapshots/client.ts
+import "server-only";
 import { clients } from "@/db/schema";
-import type { EntitySnapshot, FieldLabels } from "../types";
+import type { EntitySnapshot } from "../types";
 
-export const CLIENT_FIELD_LABELS: FieldLabels = {
-  retirementAge: { label: "Retirement age", format: "text" },
-  retirementMonth: { label: "Retirement month", format: "text" },
-  planEndAge: { label: "Plan end age", format: "text" },
-  lifeExpectancy: { label: "Life expectancy", format: "text" },
-  spouseRetirementAge: { label: "Spouse retirement age", format: "text" },
-  spouseRetirementMonth: { label: "Spouse retirement month", format: "text" },
-  spouseLifeExpectancy: { label: "Spouse life expectancy", format: "text" },
-  filingStatus: { label: "Filing status", format: "text" },
-};
+// Labels live in the server-free `../field-labels` (audit F3); re-exported
+// here so server callers keep one import site.
+export { CLIENT_FIELD_LABELS } from "../field-labels";
 
 type ClientRow = typeof clients.$inferSelect;
 

@@ -42,8 +42,12 @@ const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
 
 // Mock BEFORE importing anything that touches the module (route handlers).
+// Mock both org helpers: the gift routes were migrated from the loose
+// `getOrgId()` to the strict `requireOrgId()` (audit F2), so the firm the
+// handler reads depends on which one it imports. Set both via `setFirm()`.
 vi.mock("@/lib/db-helpers", () => ({
   getOrgId: vi.fn(),
+  requireOrgId: vi.fn(),
 }));
 
 const FIRM_A = "firm_gifts_test_a";
@@ -54,6 +58,7 @@ type FirmSeed = {
   scenarioId: string;
   fmId: string;
   accountId: string;
+  liabId: string;
   irrevTrustId: string;
   revTrustId: string;
 };
@@ -63,6 +68,13 @@ d("gifts tenant isolation", () => {
   let schema: typeof import("@/db/schema");
   let helpers: typeof import("@/lib/db-helpers");
   let drizzleOrm: typeof import("drizzle-orm");
+
+  // Drive both org helpers so the test is agnostic to which one a given
+  // handler imports (loose `getOrgId` vs strict `requireOrgId`).
+  function setFirm(firmId: string) {
+    vi.mocked(helpers.getOrgId).mockResolvedValue(firmId);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(firmId);
+  }
 
   beforeAll(async () => {
     dbMod = await import("@/db");
@@ -91,6 +103,7 @@ d("gifts tenant isolation", () => {
       scenarios,
       familyMembers,
       accounts,
+      liabilities,
       entities,
       crmHouseholds,
       crmHouseholdContacts,
@@ -136,6 +149,16 @@ d("gifts tenant isolation", () => {
         subType: "brokerage",
       })
       .returning();
+    const [liability] = await db
+      .insert(liabilities)
+      .values({
+        clientId: client.id,
+        scenarioId: scenario.id,
+        name: "Test Mortgage",
+        startYear: 2020,
+        termMonths: 360,
+      })
+      .returning();
     const [irrevTrust] = await db
       .insert(entities)
       .values({
@@ -163,6 +186,7 @@ d("gifts tenant isolation", () => {
       scenarioId: scenario.id,
       fmId: fm.id,
       accountId: account.id,
+      liabId: liability.id,
       irrevTrustId: irrevTrust.id,
       revTrustId: revTrust.id,
     };
@@ -171,6 +195,7 @@ d("gifts tenant isolation", () => {
   beforeEach(async () => {
     await cleanup();
     vi.mocked(helpers.getOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockReset();
   });
 
   it("Firm B cannot GET Firm A's gifts list", async () => {
@@ -188,7 +213,7 @@ d("gifts tenant isolation", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    setFirm(FIRM_B);
     const { GET } = await import("@/app/api/clients/[id]/gifts/route");
     const res = await GET(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -203,7 +228,7 @@ d("gifts tenant isolation", () => {
 
   it("Firm B cannot POST a gift to Firm A's client", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    setFirm(FIRM_B);
     const { POST } = await import("@/app/api/clients/[id]/gifts/route");
     const body = {
       year: 2026,
@@ -228,7 +253,7 @@ d("gifts tenant isolation", () => {
   it("Firm A cannot POST a gift with Firm B's trust as recipient", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    setFirm(FIRM_A);
     const { POST } = await import("@/app/api/clients/[id]/gifts/route");
     const body = {
       year: 2026,
@@ -253,7 +278,7 @@ d("gifts tenant isolation", () => {
   it("Firm A cannot POST a gift with Firm B's family member as recipient", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    setFirm(FIRM_A);
     const { POST } = await import("@/app/api/clients/[id]/gifts/route");
     const body = {
       year: 2026,
@@ -275,9 +300,60 @@ d("gifts tenant isolation", () => {
     expect(res.status).toBe(400);
   });
 
+  it("Firm A cannot POST a gift transferring Firm B's account (F1)", async () => {
+    const a = await setupFirmWithClient(FIRM_A);
+    const b = await setupFirmWithClient(FIRM_B);
+    setFirm(FIRM_A);
+    const { POST } = await import("@/app/api/clients/[id]/gifts/route");
+    // Recipient trust is Firm A's own (in-client), but the account being
+    // transferred belongs to Firm B. Past-dated + percent set so that, absent
+    // the FK guard, the dual-write would rewrite Firm B's account_owners.
+    const body = {
+      year: 1990,
+      grantor: "client",
+      recipientEntityId: a.irrevTrustId,
+      accountId: b.accountId,
+      percent: 1,
+    };
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify(body),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { params: Promise.resolve({ id: a.clientId }) } as any,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("Firm A cannot POST a gift transferring Firm B's liability (F1)", async () => {
+    const a = await setupFirmWithClient(FIRM_A);
+    const b = await setupFirmWithClient(FIRM_B);
+    setFirm(FIRM_A);
+    const { POST } = await import("@/app/api/clients/[id]/gifts/route");
+    const body = {
+      year: 1990,
+      grantor: "client",
+      recipientEntityId: a.irrevTrustId,
+      liabilityId: b.liabId,
+      percent: 1,
+    };
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify(body),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { params: Promise.resolve({ id: a.clientId }) } as any,
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("POST to a revocable trust recipient returns 400", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    setFirm(FIRM_A);
     const { POST } = await import("@/app/api/clients/[id]/gifts/route");
     const body = {
       year: 2026,
@@ -302,7 +378,7 @@ d("gifts tenant isolation", () => {
   it("Firm B cannot PATCH Firm A's gift", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     // Seed a gift under Firm A.
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    setFirm(FIRM_A);
     const { db } = dbMod;
     const { gifts } = schema;
     const [seeded] = await db
@@ -318,7 +394,7 @@ d("gifts tenant isolation", () => {
       } as any)
       .returning();
 
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    setFirm(FIRM_B);
     const { PATCH } = await import("@/app/api/clients/[id]/gifts/[giftId]/route");
     const res = await PATCH(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -331,7 +407,7 @@ d("gifts tenant isolation", () => {
 
   it("Firm B cannot DELETE Firm A's gift", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    setFirm(FIRM_A);
     const { db } = dbMod;
     const { gifts } = schema;
     const [seeded] = await db
@@ -347,7 +423,7 @@ d("gifts tenant isolation", () => {
       } as any)
       .returning();
 
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    setFirm(FIRM_B);
     const { DELETE } = await import("@/app/api/clients/[id]/gifts/[giftId]/route");
     const res = await DELETE(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,3 +1,4 @@
+import "server-only";
 import { db } from "@/db";
 import {
   accounts,
@@ -6,30 +7,13 @@ import {
 import { inArray } from "drizzle-orm";
 import type {
   EntitySnapshot,
-  FieldLabels,
   ReferenceValue,
 } from "../types";
 
-export const ACCOUNT_FIELD_LABELS: FieldLabels = {
-  name: { label: "Name", format: "text" },
-  category: { label: "Category", format: "text" },
-  subType: { label: "Subtype", format: "text" },
-  value: { label: "Account value", format: "currency" },
-  basis: { label: "Cost basis", format: "currency" },
-  rothValue: { label: "Roth value", format: "currency" },
-  growthRate: { label: "Growth rate", format: "percent" },
-  rmdEnabled: { label: "RMD enabled", format: "text" },
-  priorYearEndValue: { label: "Prior year-end balance", format: "currency" },
-  isDefaultChecking: { label: "Default checking", format: "text" },
-  growthSource: { label: "Growth source", format: "text" },
-  modelPortfolio: { label: "Model portfolio", format: "reference" },
-  turnoverPct: { label: "Turnover %", format: "percent" },
-  annualPropertyTax: { label: "Annual property tax", format: "currency" },
-  propertyTaxGrowthRate: { label: "Property tax growth", format: "percent" },
-  propertyTaxGrowthSource: { label: "Property tax growth source", format: "text" },
-  titlingType: { label: "Titling type", format: "text" },
-  source: { label: "Source", format: "text" },
-};
+// Labels live in the server-free `../field-labels` so the client activity
+// feed can import them without pulling in `@/db` (audit F3). Re-exported here
+// so server callers keep importing `{ toAccountSnapshot, ACCOUNT_FIELD_LABELS }`.
+export { ACCOUNT_FIELD_LABELS } from "../field-labels";
 
 type AccountRow = typeof accounts.$inferSelect;
 

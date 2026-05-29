@@ -105,7 +105,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           err,
         );
         emit("error", {
-          message: err instanceof Error ? err.message : "Internal server error",
+          message: "Internal server error",
         });
       } finally {
         controller.close();

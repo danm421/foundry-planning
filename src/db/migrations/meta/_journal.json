@@ -946,6 +946,13 @@
       "when": 1780061304862,
       "tag": "0134_typical_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1780093196008,
+      "tag": "0135_f7_client_scenario_indexes",
+      "breakpoints": true
     }
   ]
 }

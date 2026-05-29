@@ -60,9 +60,10 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgId: vi.fn(),
 }));
 
-// Suppress audit noise in tests (gifts route does not currently call recordCreate,
-// but mock it defensively so future additions don't break the suite).
+// Suppress audit noise in tests. The gift routes record via recordAudit
+// (audit F8); the record* helpers are mocked defensively too.
 vi.mock("@/lib/audit", () => ({
+  recordAudit: vi.fn().mockResolvedValue(undefined),
   recordCreate: vi.fn().mockResolvedValue(undefined),
   recordUpdate: vi.fn().mockResolvedValue(undefined),
   recordDelete: vi.fn().mockResolvedValue(undefined),
@@ -223,7 +224,7 @@ d("POST /api/clients/[id]/gifts", () => {
 
   beforeEach(async () => {
     await cleanup();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
   });
 
   // ── tests ──────────────────────────────────────────────────────────────────
@@ -523,7 +524,7 @@ d("PATCH /api/clients/[id]/gifts/[giftId]", () => {
 
   beforeEach(async () => {
     await cleanup();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
   });
 
   it("4. PATCH percent on parent propagates to bundled child gift", async () => {
@@ -827,7 +828,7 @@ d("DELETE /api/clients/[id]/gifts/[giftId]", () => {
 
   beforeEach(async () => {
     await cleanup();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
   });
 
   it("6. DELETE parent gift cascades — child gift is removed", async () => {
@@ -1164,7 +1165,7 @@ d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
 
   beforeEach(async () => {
     await cleanup();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
   });
 
   it("7. Past-dated asset transfer (year < projectionStartYear) updates account_owners", async () => {

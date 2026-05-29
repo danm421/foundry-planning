@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, entities, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesUpdateSchema } from "@/lib/schemas/gift-series";
 
@@ -22,7 +23,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; seriesId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, seriesId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -94,6 +95,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Gift series not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "gift_series.update",
+      resourceType: "gift_series",
+      resourceId: seriesId,
+      clientId: id,
+      firmId,
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -110,7 +119,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; seriesId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, seriesId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -124,6 +133,14 @@ export async function DELETE(
     if (!deleted) {
       return NextResponse.json({ error: "Gift series not found" }, { status: 404 });
     }
+
+    await recordAudit({
+      action: "gift_series.delete",
+      resourceType: "gift_series",
+      resourceId: seriesId,
+      clientId: id,
+      firmId,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

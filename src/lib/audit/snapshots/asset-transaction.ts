@@ -1,37 +1,13 @@
 // src/lib/audit/snapshots/asset-transaction.ts
+import "server-only";
 import { db } from "@/db";
 import { accounts, assetTransactions, modelPortfolios } from "@/db/schema";
 import { inArray } from "drizzle-orm";
-import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
+import type { EntitySnapshot, ReferenceValue } from "../types";
 
-export const ASSET_TRANSACTION_FIELD_LABELS: FieldLabels = {
-  name: { label: "Name", format: "text" },
-  type: { label: "Type", format: "text" },
-  year: { label: "Year", format: "text" },
-  account: { label: "Account", format: "reference" },
-  overrideSaleValue: { label: "Override sale value", format: "currency" },
-  overrideBasis: { label: "Override basis", format: "currency" },
-  transactionCostPct: { label: "Transaction cost %", format: "percent" },
-  transactionCostFlat: { label: "Transaction cost (flat)", format: "currency" },
-  proceedsAccount: { label: "Proceeds account", format: "reference" },
-  qualifiesForHomeSaleExclusion: {
-    label: "Home sale exclusion",
-    format: "text",
-  },
-  assetName: { label: "Asset name", format: "text" },
-  assetCategory: { label: "Asset category", format: "text" },
-  assetSubType: { label: "Asset subtype", format: "text" },
-  purchasePrice: { label: "Purchase price", format: "currency" },
-  growthRate: { label: "Growth rate", format: "percent" },
-  growthSource: { label: "Growth source", format: "text" },
-  modelPortfolio: { label: "Model portfolio", format: "reference" },
-  basis: { label: "Cost basis", format: "currency" },
-  fundingAccount: { label: "Funding account", format: "reference" },
-  mortgageAmount: { label: "Mortgage amount", format: "currency" },
-  mortgageRate: { label: "Mortgage rate", format: "percent" },
-  mortgageTermMonths: { label: "Mortgage term (months)", format: "text" },
-  businessAccount: { label: "Business sold", format: "reference" },
-};
+// Labels live in the server-free `../field-labels` (audit F3); re-exported
+// here so server callers keep one import site.
+export { ASSET_TRANSACTION_FIELD_LABELS } from "../field-labels";
 
 type AssetTransactionRow = typeof assetTransactions.$inferSelect;
 

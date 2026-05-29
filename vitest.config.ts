@@ -29,6 +29,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // `server-only` throws unless the bundler sets the `react-server` export
+      // condition (Next's server graph does; vitest doesn't), which would break
+      // unit tests that import server-only modules directly (audit snapshots,
+      // crm-tasks helpers). Alias it to the package's own no-op `empty.js` —
+      // the exact module the react-server condition selects — via an absolute
+      // path, since the package `exports` map doesn't expose the subpath.
+      "server-only": path.resolve(__dirname, "node_modules/server-only/empty.js"),
     },
   },
 });

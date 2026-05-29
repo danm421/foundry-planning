@@ -1,4 +1,5 @@
 // src/lib/audit/snapshots/roth-conversion.ts
+import "server-only";
 import { db } from "@/db";
 import { accounts, rothConversions } from "@/db/schema";
 import { inArray } from "drizzle-orm";

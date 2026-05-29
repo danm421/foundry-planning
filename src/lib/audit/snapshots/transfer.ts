@@ -1,21 +1,13 @@
 // src/lib/audit/snapshots/transfer.ts
+import "server-only";
 import { db } from "@/db";
 import { accounts, transfers } from "@/db/schema";
 import { inArray } from "drizzle-orm";
-import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
+import type { EntitySnapshot, ReferenceValue } from "../types";
 
-export const TRANSFER_FIELD_LABELS: FieldLabels = {
-  name: { label: "Name", format: "text" },
-  sourceAccount: { label: "Source account", format: "reference" },
-  targetAccount: { label: "Target account", format: "reference" },
-  amount: { label: "Amount", format: "currency" },
-  mode: { label: "Mode", format: "text" },
-  startYear: { label: "Start year", format: "text" },
-  startYearRef: { label: "Start year ref", format: "text" },
-  endYear: { label: "End year", format: "text" },
-  endYearRef: { label: "End year ref", format: "text" },
-  growthRate: { label: "Growth rate", format: "percent" },
-};
+// Labels live in the server-free `../field-labels` (audit F3); re-exported
+// here so server callers keep one import site.
+export { TRANSFER_FIELD_LABELS } from "../field-labels";
 
 type TransferRow = typeof transfers.$inferSelect;
 

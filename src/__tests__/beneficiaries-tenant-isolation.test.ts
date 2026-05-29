@@ -163,7 +163,7 @@ d("beneficiaries tenant isolation", () => {
 
   beforeEach(async () => {
     await cleanup();
-    vi.mocked(helpers.getOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockReset();
   });
 
   it("Firm B cannot GET Firm A's external beneficiaries list", async () => {
@@ -176,7 +176,7 @@ d("beneficiaries tenant isolation", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values({ clientId: a.clientId, name: "Stanford" } as any);
 
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_B);
     const { GET } = await import(
       "@/app/api/clients/[id]/external-beneficiaries/route"
     );
@@ -190,7 +190,7 @@ d("beneficiaries tenant isolation", () => {
 
   it("Firm B cannot PUT a designation onto Firm A's account", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_B);
     const { PUT } = await import(
       "@/app/api/clients/[id]/accounts/[accountId]/beneficiaries/route"
     );
@@ -214,7 +214,7 @@ d("beneficiaries tenant isolation", () => {
   it("Firm A cannot designate Firm B's family member onto its own account", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { PUT } = await import(
       "@/app/api/clients/[id]/accounts/[accountId]/beneficiaries/route"
     );
@@ -238,7 +238,6 @@ d("beneficiaries tenant isolation", () => {
   it("Firm A cannot PATCH its account with Firm B's family member as owner", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
     vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { PATCH } = await import(
       "@/app/api/clients/[id]/accounts/[accountId]/route"

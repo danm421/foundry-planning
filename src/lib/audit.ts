@@ -89,6 +89,16 @@ export type AuditAction =
   | "family_member.create"
   | "family_member.update"
   | "family_member.delete"
+  // Estate flow — gifts (one-off + recurring series) and wills
+  | "gift.create"
+  | "gift.update"
+  | "gift.delete"
+  | "gift_series.create"
+  | "gift_series.update"
+  | "gift_series.delete"
+  | "will.create"
+  | "will.update"
+  | "will.delete"
   // Reports & comments
   | "report_comment.create"
   | "report_comment.update"

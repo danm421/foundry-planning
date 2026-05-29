@@ -1,4 +1,5 @@
 // src/lib/audit/snapshots/reinvestment.ts
+import "server-only";
 import { db } from "@/db";
 import {
   accounts,

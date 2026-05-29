@@ -8,7 +8,8 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 import { giftUpdateSchema } from "@/lib/schemas/gifts";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; giftId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, giftId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -168,6 +169,13 @@ export async function PATCH(
     if (!row) {
       return NextResponse.json({ error: "Gift not found" }, { status: 404 });
     }
+    await recordAudit({
+      action: "gift.update",
+      resourceType: "gift",
+      resourceId: giftId,
+      clientId: id,
+      firmId,
+    });
     return NextResponse.json(row);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -183,7 +191,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; giftId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, giftId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -195,6 +203,14 @@ export async function DELETE(
     if (!row) {
       return NextResponse.json({ error: "Gift not found" }, { status: 404 });
     }
+    await recordAudit({
+      action: "gift.delete",
+      resourceType: "gift",
+      resourceId: giftId,
+      clientId: id,
+      firmId,
+      metadata: { year: row.year, grantor: row.grantor },
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

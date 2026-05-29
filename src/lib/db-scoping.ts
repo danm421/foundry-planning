@@ -3,6 +3,7 @@ import {
   accounts,
   clients,
   entities,
+  liabilities,
   modelPortfolios,
   assetClasses,
 } from "@/db/schema";
@@ -60,6 +61,24 @@ export async function assertBusinessAccountsInClient(
   const missing = ids.find((v) => !business.has(v));
   return missing
     ? { ok: false, reason: `Account ${missing} is not a business account` }
+    : { ok: true };
+}
+
+/** Verify every liability id belongs to `clientId` (and thus the firm). */
+export async function assertLiabilitiesInClient(
+  clientId: string,
+  liabilityIds: (string | null | undefined)[]
+): Promise<FkCheck> {
+  const ids = liabilityIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length === 0) return { ok: true };
+  const rows = await db
+    .select({ id: liabilities.id })
+    .from(liabilities)
+    .where(and(eq(liabilities.clientId, clientId), inArray(liabilities.id, ids)));
+  const found = new Set(rows.map((r) => r.id));
+  const missing = ids.find((v) => !found.has(v));
+  return missing
+    ? { ok: false, reason: `Liability ${missing} not owned by this client` }
     : { ok: true };
 }
 

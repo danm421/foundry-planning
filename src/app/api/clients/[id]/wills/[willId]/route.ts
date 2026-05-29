@@ -8,7 +8,8 @@ import {
   willResiduaryRecipients,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 import { willUpdateSchema } from "@/lib/schemas/wills";
 import {
   gatherCrossRefs,
@@ -39,7 +40,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, willId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -121,7 +122,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, willId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -204,6 +205,15 @@ export async function PATCH(
         .where(eq(wills.id, willId));
     });
 
+    await recordAudit({
+      action: "will.update",
+      resourceType: "will",
+      resourceId: willId,
+      clientId: id,
+      firmId,
+      metadata: { bequestCount: bequests.length },
+    });
+
     return NextResponse.json({
       id: willId,
       warnings: computeSoftWarnings(bequests),
@@ -237,7 +247,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, willId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -246,6 +256,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
     }
     await db.delete(wills).where(eq(wills.id, willId));
+    await recordAudit({
+      action: "will.delete",
+      resourceType: "will",
+      resourceId: willId,
+      clientId: id,
+      firmId,
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

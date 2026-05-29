@@ -9,7 +9,7 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { beneficiarySetSchema } from "@/lib/schemas/beneficiaries";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, accountId } = await params;
     if (!(await verifyClientAndAccount(id, accountId, firmId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -67,7 +67,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, accountId } = await params;
     if (!(await verifyClientAndAccount(id, accountId, firmId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

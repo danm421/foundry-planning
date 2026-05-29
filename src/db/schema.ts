@@ -530,7 +530,10 @@ export const scenarios = pgTable("scenarios", {
   monteCarloSeed: integer("monte_carlo_seed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Scenarios are listed per client (engine load + base-case lookup) (audit F7).
+  clientIdx: index("scenarios_client_idx").on(t.clientId),
+}));
 
 export const scenarioToggleGroups = pgTable("scenario_toggle_groups", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -545,7 +548,10 @@ export const scenarioToggleGroups = pgTable("scenario_toggle_groups", {
   orderIndex: integer("order_index").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Toggle groups are listed per scenario (audit F7).
+  scenarioIdx: index("scenario_toggle_groups_scenario_idx").on(t.scenarioId),
+}));
 
 export const scenarioChanges = pgTable("scenario_changes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -601,7 +607,10 @@ export const scenarioSnapshots = pgTable("scenario_snapshots", {
   // in 0053 before the table was first written to in production.
   frozenByUserId: text("frozen_by_user_id").notNull(),
   sourceKind: scenarioSnapshotSourceKindEnum("source_kind").notNull().default("manual"),
-});
+}, (t) => ({
+  // Snapshots are listed per client (audit F7).
+  clientIdx: index("scenario_snapshots_client_idx").on(t.clientId),
+}));
 
 export const planSettings = pgTable("plan_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -772,7 +781,11 @@ export const entities = pgTable("entities", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Engine load path filters entities by client_id (entities are client- not
+  // scenario-scoped) (audit F7).
+  clientIdx: index("entities_client_idx").on(t.clientId),
+}));
 
 // Ownership of a business entity. Mirrors account_owners' polymorphic shape:
 // an owner is exactly one of family_member_id (individual) or owner_entity_id
@@ -1348,7 +1361,11 @@ export const accounts = pgTable("accounts", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Engine load path filters every projection by (client_id, scenario_id);
+  // accounts is the hottest table and was previously full-scanned (audit F7).
+  clientScenarioIdx: index("accounts_client_scenario_idx").on(t.clientId, t.scenarioId),
+}));
 
 export const accountOwners = pgTable(
   "account_owners",
@@ -1531,6 +1548,8 @@ export const incomes = pgTable("incomes", {
     "incomes_one_owner",
     sql`(${t.ownerEntityId} IS NOT NULL)::int + (${t.ownerAccountId} IS NOT NULL)::int <= 1`,
   ),
+  // Engine load path filters incomes by (client_id, scenario_id) (audit F7).
+  clientScenarioIdx: index("incomes_client_scenario_idx").on(t.clientId, t.scenarioId),
 }));
 
 export const medicareCoverageTypeEnum = pgEnum("medicare_coverage_type", [
@@ -1611,6 +1630,8 @@ export const expenses = pgTable("expenses", {
     "expenses_one_owner",
     sql`(${t.ownerEntityId} IS NOT NULL)::int + (${t.ownerAccountId} IS NOT NULL)::int <= 1`,
   ),
+  // Engine load path filters expenses by (client_id, scenario_id) (audit F7).
+  clientScenarioIdx: index("expenses_client_scenario_idx").on(t.clientId, t.scenarioId),
 }));
 
 export const liabilities = pgTable("liabilities", {
@@ -1649,7 +1670,10 @@ export const liabilities = pgTable("liabilities", {
   }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Engine load path filters liabilities by (client_id, scenario_id) (audit F7).
+  clientScenarioIdx: index("liabilities_client_scenario_idx").on(t.clientId, t.scenarioId),
+}));
 
 export const liabilityOwners = pgTable(
   "liability_owners",
@@ -1821,7 +1845,10 @@ export const savingsRules = pgTable("savings_rules", {
   annualLimit: decimal("annual_limit", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Engine load path filters savings_rules by (client_id, scenario_id) (audit F7).
+  clientScenarioIdx: index("savings_rules_client_scenario_idx").on(t.clientId, t.scenarioId),
+}));
 
 export const clientOpenItems = pgTable(
   "client_open_items",
@@ -1860,7 +1887,10 @@ export const withdrawalStrategies = pgTable("withdrawal_strategies", {
   endYearRef: yearRefEnum("end_year_ref"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Engine load path filters withdrawal_strategies by (client_id, scenario_id) (audit F7).
+  clientScenarioIdx: index("withdrawal_strategies_client_scenario_idx").on(t.clientId, t.scenarioId),
+}));
 
 // ── Relations ────────────────────────────────────────────────────────────────
 

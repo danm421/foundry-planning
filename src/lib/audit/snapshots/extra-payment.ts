@@ -1,15 +1,13 @@
 // src/lib/audit/snapshots/extra-payment.ts
+import "server-only";
 import { db } from "@/db";
 import { extraPayments, liabilities } from "@/db/schema";
 import { inArray } from "drizzle-orm";
-import type { EntitySnapshot, FieldLabels } from "../types";
+import type { EntitySnapshot } from "../types";
 
-export const EXTRA_PAYMENT_FIELD_LABELS: FieldLabels = {
-  liability: { label: "Liability", format: "reference" },
-  year: { label: "Year", format: "text" },
-  type: { label: "Type", format: "text" },
-  amount: { label: "Amount", format: "currency" },
-};
+// Labels live in the server-free `../field-labels` (audit F3); re-exported
+// here so server callers keep one import site.
+export { EXTRA_PAYMENT_FIELD_LABELS } from "../field-labels";
 
 type ExtraPaymentRow = typeof extraPayments.$inferSelect;
 

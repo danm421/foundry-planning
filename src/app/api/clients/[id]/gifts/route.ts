@@ -10,7 +10,12 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
+import {
+  assertAccountsInClient,
+  assertLiabilitiesInClient,
+} from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 import { giftCreateSchema } from "@/lib/schemas/gifts";
 import {
   applyOwnershipTransfer,
@@ -33,7 +38,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -58,7 +63,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -157,6 +162,19 @@ export async function POST(
       }
     }
 
+    // Cross-tenant FK guard: accountId/liabilityId come straight from the body
+    // and feed bare-id lookups + the destructive applyOwnershipTransfer dual-write.
+    // Without these, a caller could transfer another firm's account/liability
+    // ownership (audit F1). Validate they belong to this client before any use.
+    const acctCheck = await assertAccountsInClient(id, [data.accountId]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+    const liabCheck = await assertLiabilitiesInClient(id, [data.liabilityId]);
+    if (!liabCheck.ok) {
+      return NextResponse.json({ error: liabCheck.reason }, { status: 400 });
+    }
+
     const row = await db.transaction(async (tx) => {
       const [parent] = await tx
         .insert(gifts)
@@ -186,7 +204,10 @@ export async function POST(
       let linkedLiabilityId: string | null = null;
       if (data.accountId != null && data.liabilityId == null) {
         const linked = await tx.query.liabilities.findFirst({
-          where: eq(liabilities.linkedPropertyId, data.accountId),
+          where: and(
+            eq(liabilities.linkedPropertyId, data.accountId),
+            eq(liabilities.clientId, id),
+          ),
         });
         if (linked) {
           linkedLiabilityId = linked.id;
@@ -277,6 +298,19 @@ export async function POST(
       // ── end past-dated dual-write ─────────────────────────────────────────
 
       return parent;
+    });
+    await recordAudit({
+      action: "gift.create",
+      resourceType: "gift",
+      resourceId: row.id,
+      clientId: id,
+      firmId,
+      metadata: {
+        year: row.year,
+        grantor: row.grantor,
+        accountId: row.accountId,
+        liabilityId: row.liabilityId,
+      },
     });
     return NextResponse.json(row, { status: 201 });
   } catch (err) {

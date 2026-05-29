@@ -1,4 +1,5 @@
 // src/lib/audit/snapshots/note-receivable.ts
+import "server-only";
 import { db } from "@/db";
 import { entities, notesReceivable } from "@/db/schema";
 import { inArray } from "drizzle-orm";

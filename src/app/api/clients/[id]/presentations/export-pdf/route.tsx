@@ -107,7 +107,16 @@ export async function POST(
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       if (err instanceof ProjectionInputError) {
-        return NextResponse.json({ error: err.message }, { status: 422 });
+        // The raw message embeds internal client / CRM-household UUIDs (audit
+        // F4). Keep the detail server-side; return a generic message.
+        console.error(
+          "POST /clients/[id]/presentations/export-pdf projection input error",
+          err,
+        );
+        return NextResponse.json(
+          { error: "Client data is incomplete or invalid for this projection." },
+          { status: 422 },
+        );
       }
       throw err;
     }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 
 vi.mock("@/lib/db-helpers", () => ({
-  getOrgId: vi.fn(),
+  requireOrgId: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -339,14 +339,14 @@ let _liabilityWhereId: string | null = null;
 describe("POST /api/clients/[id]/wills (shape)", () => {
   beforeEach(async () => {
     const helpers = await import("@/lib/db-helpers");
-    vi.mocked(helpers.getOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockReset();
     _liabilityWhereId = null;
     resetState();
   });
 
-  it("returns 401 when getOrgId throws Unauthorized", async () => {
+  it("returns 401 when requireOrgId throws Unauthorized", async () => {
     const helpers = await import("@/lib/db-helpers");
-    vi.mocked(helpers.getOrgId).mockRejectedValue(new Error("Unauthorized"));
+    vi.mocked(helpers.requireOrgId).mockRejectedValue(new Error("Unauthorized"));
     const { POST } = await import("../route");
     const res = await POST(
       new Request("http://x", {
@@ -360,7 +360,7 @@ describe("POST /api/clients/[id]/wills (shape)", () => {
 
   it("returns 400 on invalid body", async () => {
     const helpers = await import("@/lib/db-helpers");
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A_ID);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A_ID);
     const { POST } = await import("../route");
     const res = await POST(
       new Request("http://x", {
@@ -435,8 +435,8 @@ function makeLiabilityBequest(overrides: {
 describe("POST /api/clients/[id]/wills — liability bequest validation", () => {
   beforeEach(async () => {
     const helpers = await import("@/lib/db-helpers");
-    vi.mocked(helpers.getOrgId).mockReset();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A_ID);
+    vi.mocked(helpers.requireOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A_ID);
     _liabilityWhereId = null;
     resetState();
   });
@@ -602,8 +602,8 @@ describe("POST /api/clients/[id]/wills — liability bequest validation", () => 
 describe("PATCH /api/clients/[id]/wills/[willId] — liability bequest round-trip", () => {
   beforeEach(async () => {
     const helpers = await import("@/lib/db-helpers");
-    vi.mocked(helpers.getOrgId).mockReset();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A_ID);
+    vi.mocked(helpers.requireOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A_ID);
     _liabilityWhereId = null;
     resetState({
       wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
@@ -665,8 +665,8 @@ const RESIDUARY_ROW_SPOUSE = {
 describe("residuary recipients — GET / POST / PATCH", () => {
   beforeEach(async () => {
     const helpers = await import("@/lib/db-helpers");
-    vi.mocked(helpers.getOrgId).mockReset();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A_ID);
+    vi.mocked(helpers.requireOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A_ID);
     _liabilityWhereId = null;
     resetState();
   });

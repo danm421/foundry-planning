@@ -117,6 +117,18 @@ describe("resolveAgeInYear", () => {
   it("returns 50 for an unparseable DOB", () => {
     expect(resolveAgeInYear("not-a-date", 2025)).toBe(50);
   });
+  it("is timezone-safe for a Jan-1 DOB (audit F5)", () => {
+    // `new Date("1960-01-01")` is parsed as UTC midnight, so `.getFullYear()`
+    // reads 1959 in any negative-UTC-offset zone → age off by one. The
+    // slice-based parse must stay 1960 → age 50, not 51, regardless of TZ.
+    const original = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      expect(resolveAgeInYear("1960-01-01", 2010)).toBe(50);
+    } finally {
+      process.env.TZ = original;
+    }
+  });
 });
 
 describe("computeDeferralLimit", () => {

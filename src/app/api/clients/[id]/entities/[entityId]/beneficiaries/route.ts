@@ -8,7 +8,7 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { beneficiarySetSchema } from "@/lib/schemas/beneficiaries";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, entityId } = await params;
     const v = await verifyClientAndTrust(id, entityId, firmId);
     if (!v.ok)
@@ -72,7 +72,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, entityId } = await params;
     const v = await verifyClientAndTrust(id, entityId, firmId);
     if (!v.ok)

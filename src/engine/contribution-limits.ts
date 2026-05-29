@@ -24,9 +24,13 @@ function groupForSubType(subType: string): LimitGroup {
  *  than crash). */
 export function resolveAgeInYear(dateOfBirth: string | null | undefined, year: number): number {
   if (!dateOfBirth) return 50;
-  const parsed = new Date(dateOfBirth);
-  if (Number.isNaN(parsed.getTime())) return 50;
-  return year - parsed.getFullYear();
+  // TZ-safe: parse the leading "YYYY" directly instead of `new Date(dob)`,
+  // which treats a date-only ISO string as UTC midnight and reads the wrong
+  // year via `.getFullYear()` in any negative-UTC-offset zone (audit F5).
+  // Matches the `dob.slice(0,4)` convention used everywhere else in the engine.
+  const birthYear = parseInt(dateOfBirth.slice(0, 4), 10);
+  if (Number.isNaN(birthYear)) return 50;
+  return year - birthYear;
 }
 
 /** Employee deferral limit for a given age, per IRS SECURE 2.0 tiers:

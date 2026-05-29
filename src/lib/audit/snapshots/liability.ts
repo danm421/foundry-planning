@@ -1,24 +1,13 @@
 // src/lib/audit/snapshots/liability.ts
+import "server-only";
 import { db } from "@/db";
 import { accounts, liabilities } from "@/db/schema";
 import { inArray } from "drizzle-orm";
-import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
+import type { EntitySnapshot, ReferenceValue } from "../types";
 
-export const LIABILITY_FIELD_LABELS: FieldLabels = {
-  name: { label: "Name", format: "text" },
-  balance: { label: "Balance", format: "currency" },
-  balanceAsOfMonth: { label: "Balance as-of month", format: "text" },
-  balanceAsOfYear: { label: "Balance as-of year", format: "text" },
-  interestRate: { label: "Interest rate", format: "percent" },
-  monthlyPayment: { label: "Monthly payment", format: "currency" },
-  startYear: { label: "Start year", format: "text" },
-  startMonth: { label: "Start month", format: "text" },
-  startYearRef: { label: "Start year ref", format: "text" },
-  termMonths: { label: "Term (months)", format: "text" },
-  termUnit: { label: "Term unit", format: "text" },
-  linkedProperty: { label: "Linked property", format: "reference" },
-  isInterestDeductible: { label: "Interest deductible", format: "text" },
-};
+// Labels live in the server-free `../field-labels` (audit F3); re-exported
+// here so server callers keep one import site.
+export { LIABILITY_FIELD_LABELS } from "../field-labels";
 
 type LiabilityRow = typeof liabilities.$inferSelect;
 

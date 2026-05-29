@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, entities, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesSchema } from "@/lib/schemas/gift-series";
 
@@ -119,6 +120,19 @@ export async function POST(
         notes: data.notes ?? null,
       })
       .returning();
+
+    await recordAudit({
+      action: "gift_series.create",
+      resourceType: "gift_series",
+      resourceId: row.id,
+      clientId: id,
+      firmId,
+      metadata: {
+        grantor: row.grantor,
+        startYear: row.startYear,
+        endYear: row.endYear,
+      },
+    });
 
     return NextResponse.json({ id: row.id }, { status: 201 });
   } catch (err) {
