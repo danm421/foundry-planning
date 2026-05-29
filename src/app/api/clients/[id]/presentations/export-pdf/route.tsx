@@ -136,6 +136,7 @@ export async function POST(
       scenarioLabel,
       spouseName: spouseFirstName,
       years: projection.years,
+      projection,
       clientData,
     }) as unknown as React.ReactElement<DocumentProps>;
 

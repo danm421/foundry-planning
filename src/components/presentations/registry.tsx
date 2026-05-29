@@ -50,6 +50,7 @@ import { buildPortfolioGrowthDrillData } from "@/lib/presentations/pages/cash-fl
 import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-flow-activity/view-model";
 import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
 import type { ProjectionYear, ClientData } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -66,6 +67,7 @@ export type PresentationCategory = (typeof CATEGORY_ORDER)[number];
 
 export interface BuildDataContext {
   years: ProjectionYear[];
+  projection: ProjectionResult;
   clientData: ClientData;
   scenarioLabel: string;
   clientName: string;
