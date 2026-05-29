@@ -219,6 +219,13 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
       value: Number(a.value),
     }));
 
+  const allAccounts = accountRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category as import("@/components/account-groups/types").AssetCategory,
+    value: Number(a.value),
+  }));
+
   return (
     <AssumptionsClient
       clientId={clientId}
@@ -282,6 +289,7 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         saltCap,
       }}
       liquidAccounts={liquidAccounts}
+      allAccounts={allAccounts}
       embed="wizard"
     />
   );
