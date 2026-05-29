@@ -13,6 +13,7 @@ import type {
 
 function makeLedger(
   entries: AccountLedger["entries"],
+  rmdAmount = 0,
 ): AccountLedger {
   return {
     beginningValue: 0,
@@ -21,7 +22,7 @@ function makeLedger(
     distributions: 0,
     internalContributions: 0,
     internalDistributions: 0,
-    rmdAmount: 0,
+    rmdAmount,
     fees: 0,
     endingValue: 0,
     entries,
@@ -197,10 +198,18 @@ export function makeProjectionYears(): ProjectionYear[] {
         accessibleTrustAssetsTotal: 0,
         total: 1_400_000,
       },
+      // Faithful to the engine: an RMD writes a `-rmd` distribution on the
+      // source account (with `rmdAmount` set) AND a `+rmd` credit on checking.
       accountLedgers: {
-        ira: makeLedger([
-          { category: "rmd", label: "RMD", amount: -40_000 },
-          { category: "withdrawal", label: "Withdrawal", amount: -40_000 },
+        ira: makeLedger(
+          [
+            { category: "rmd", label: "RMD", amount: -40_000 },
+            { category: "withdrawal", label: "Withdrawal", amount: -40_000 },
+          ],
+          40_000,
+        ),
+        checking: makeLedger([
+          { category: "rmd", label: "RMD from ira", amount: 40_000 },
         ]),
       },
     }),
@@ -250,9 +259,15 @@ export function makeProjectionYears(): ProjectionYear[] {
         total: 1_310_000,
       },
       accountLedgers: {
-        ira: makeLedger([
-          { category: "rmd", label: "RMD", amount: -60_000 },
-          { category: "withdrawal", label: "Withdrawal", amount: -40_000 },
+        ira: makeLedger(
+          [
+            { category: "rmd", label: "RMD", amount: -60_000 },
+            { category: "withdrawal", label: "Withdrawal", amount: -40_000 },
+          ],
+          60_000,
+        ),
+        checking: makeLedger([
+          { category: "rmd", label: "RMD from ira", amount: 60_000 },
         ]),
       },
     }),
@@ -304,8 +319,12 @@ export function makeProjectionYears(): ProjectionYear[] {
         total: 670_000,
       },
       accountLedgers: {
-        ira: makeLedger([
-          { category: "rmd", label: "RMD", amount: -50_000 },
+        ira: makeLedger(
+          [{ category: "rmd", label: "RMD", amount: -50_000 }],
+          50_000,
+        ),
+        checking: makeLedger([
+          { category: "rmd", label: "RMD from ira", amount: 50_000 },
         ]),
       },
     }),
