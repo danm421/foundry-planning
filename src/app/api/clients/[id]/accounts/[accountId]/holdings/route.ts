@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accountHoldings, accounts, clients } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { holdingCreateSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
@@ -46,7 +46,7 @@ export async function GET(
 
     return NextResponse.json(rows);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("GET /api/clients/[id]/accounts/[accountId]/holdings error:", err);
@@ -99,7 +99,7 @@ export async function POST(
 
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("POST /api/clients/[id]/accounts/[accountId]/holdings error:", err);

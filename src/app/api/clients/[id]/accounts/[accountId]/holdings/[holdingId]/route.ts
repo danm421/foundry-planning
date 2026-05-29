@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accountHoldings, accounts, clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { holdingUpdateSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
@@ -75,7 +75,7 @@ export async function PUT(
 
     return NextResponse.json(row);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("PUT holding error:", err);
@@ -108,7 +108,7 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("DELETE holding error:", err);

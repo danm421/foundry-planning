@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accounts, clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { classifyTickerSchema } from "@/lib/schemas/holdings";
 import { getSecurityByTicker, upsertClassifiedSecurity } from "@/lib/investments/classification/persist";
@@ -54,7 +54,7 @@ export async function POST(
       weights: (stored?.weights ?? []).map((w) => ({ slug: w.assetClassSlug, weight: parseFloat(w.weight) })),
     });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("POST classify error:", err);
