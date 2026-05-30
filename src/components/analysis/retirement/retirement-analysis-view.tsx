@@ -12,9 +12,11 @@
 // Explore edits change while on the probability view.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { RetirementSummary } from "@/lib/analysis/derive-retirement-summary";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
+import { useToast } from "@/components/toast";
 import { AnalysisShell } from "@/components/analysis/analysis-shell";
 import { AnalysisHeadline } from "@/components/analysis/analysis-headline";
 import { AnalysisKpiRow } from "@/components/analysis/analysis-kpi-row";
@@ -58,11 +60,15 @@ export function RetirementAnalysisView({
   currentYears,
   currentSummary,
 }: Props) {
+  const router = useRouter();
+  const { showToast } = useToast();
+
   const [view, setView] = useState<"summary" | "probability">("summary");
   const [explored, setExplored] = useState<{
     years: ProjectionYear[];
     summary: RetirementSummary;
   } | null>(null);
+  const [savingScenario, setSavingScenario] = useState(false);
 
   // PoS state
   const [posRate, setPosRate] = useState<number | null>(null);
@@ -101,6 +107,46 @@ export function RetirementAnalysisView({
   const onMutationsChange = useCallback((mutations: SolverMutation[]) => {
     setExploreMutations(mutations);
   }, []);
+
+  const handleSaveScenario = useCallback(async () => {
+    if (exploreMutations.length === 0) return; // guard: no edits to save
+    if (savingScenario) return; // guard: already in-flight
+
+    // Name: "Retirement Analysis — <asOfLabel>" (max 60 chars, truncate defensively)
+    const rawName = `Retirement Analysis — ${asOfLabel}`;
+    const name = rawName.length > 60 ? rawName.slice(0, 60) : rawName;
+
+    setSavingScenario(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/solver/save-scenario`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ source, mutations: exploreMutations, name }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      await res.json(); // consume body; scenarioId not used (no navigation)
+      // Refresh server components so the new scenario appears in the
+      // ScenarioChipRow (mirrors live-solver-workspace.tsx pattern).
+      router.refresh();
+      showToast({
+        message: `Saved as scenario "${name}"`,
+        durationMs: 6000,
+      });
+    } catch (err) {
+      showToast({
+        message: err instanceof Error ? err.message : "Failed to save scenario",
+        durationMs: 6000,
+      });
+    } finally {
+      setSavingScenario(false);
+    }
+  }, [exploreMutations, savingScenario, clientId, source, asOfLabel, router, showToast]);
 
   // Fetch PoS helper — aborts any in-flight request, then fires a new one.
   const fetchPos = useCallback(
@@ -189,6 +235,8 @@ export function RetirementAnalysisView({
             savingsAccountId={savingsAccountId}
             onExploreResult={onExploreResult}
             onMutationsChange={onMutationsChange}
+            onSaveScenario={handleSaveScenario}
+            savingScenario={savingScenario}
           />
           <AnalysisYearTable
             rows={effectiveYears}
@@ -215,6 +263,8 @@ export function RetirementAnalysisView({
             savingsAccountId={savingsAccountId}
             onExploreResult={onExploreResult}
             onMutationsChange={onMutationsChange}
+            onSaveScenario={handleSaveScenario}
+            savingScenario={savingScenario}
           />
           <AnalysisYearTable
             rows={effectiveYears}

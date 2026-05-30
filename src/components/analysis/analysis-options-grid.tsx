@@ -61,6 +61,8 @@ interface Props {
   ) => void;
   /** Phase-4 save handlers — wired later. Optional no-ops for now. */
   onSaveScenario?: () => void;
+  /** True while the save-scenario POST is in-flight — button shows pending state. */
+  savingScenario?: boolean;
   onSaveBaseFacts?: () => void;
   /** Lifted so the parent can re-use the current Explore mutations (e.g. PoS fetch). */
   onMutationsChange?: (mutations: SolverMutation[]) => void;
@@ -126,6 +128,7 @@ export function AnalysisOptionsGrid({
   savingsAccountId,
   onExploreResult,
   onSaveScenario,
+  savingScenario = false,
   onSaveBaseFacts,
   onMutationsChange,
 }: Props) {
@@ -384,10 +387,10 @@ export function AnalysisOptionsGrid({
           <button
             type="button"
             onClick={onSaveScenario}
-            disabled={!hasEdits || !onSaveScenario}
+            disabled={!hasEdits || !onSaveScenario || savingScenario}
             className="cursor-pointer rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-accent/60 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save to Analysis
+            {savingScenario ? "Saving…" : "Save to Analysis"}
           </button>
           <button
             type="button"
