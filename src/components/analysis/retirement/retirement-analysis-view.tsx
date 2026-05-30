@@ -127,6 +127,7 @@ export function RetirementAnalysisView({
           );
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = (await res.json()) as { successRate: number };
+          if (ac.signal.aborted) return;
           setPosRate(data.successRate);
           setPosStatus("ready");
           lastPosMutationsRef.current = key;
@@ -197,7 +198,13 @@ export function RetirementAnalysisView({
         </div>
       ) : (
         <div className="flex flex-col gap-[var(--gap-grid)] p-[var(--pad-card)]">
-          <AnalysisHeadline segments={buildProbabilityHeadline(posRate ?? 0)} />
+          <AnalysisHeadline
+            segments={
+              posStatus === "ready" && posRate != null
+                ? buildProbabilityHeadline(posRate)
+                : [{ text: "Calculating your probability of success…" }]
+            }
+          />
           <div className="flex justify-center py-6">
             <RetirementPosGauge successRate={posRate} status={posStatus} />
           </div>
