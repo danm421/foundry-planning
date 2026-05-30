@@ -64,6 +64,8 @@ interface Props {
   /** True while the save-scenario POST is in-flight — button shows pending state. */
   savingScenario?: boolean;
   onSaveBaseFacts?: () => void;
+  /** True while the save-to-base POST is in-flight — button shows pending state. */
+  savingBaseFacts?: boolean;
   /** Lifted so the parent can re-use the current Explore mutations (e.g. PoS fetch). */
   onMutationsChange?: (mutations: SolverMutation[]) => void;
 }
@@ -130,6 +132,7 @@ export function AnalysisOptionsGrid({
   onSaveScenario,
   savingScenario = false,
   onSaveBaseFacts,
+  savingBaseFacts = false,
   onMutationsChange,
 }: Props) {
   // --- Solved columns (streamed) ------------------------------------------
@@ -395,10 +398,10 @@ export function AnalysisOptionsGrid({
           <button
             type="button"
             onClick={onSaveBaseFacts}
-            disabled={!hasEdits || !onSaveBaseFacts}
+            disabled={!hasEdits || !onSaveBaseFacts || savingBaseFacts}
             className="cursor-pointer rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-on transition-colors hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save to Base Facts
+            {savingBaseFacts ? "Saving…" : "Save to Base Facts"}
           </button>
         </div>
       </footer>

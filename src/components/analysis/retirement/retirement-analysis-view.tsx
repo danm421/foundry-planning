@@ -69,6 +69,7 @@ export function RetirementAnalysisView({
     summary: RetirementSummary;
   } | null>(null);
   const [savingScenario, setSavingScenario] = useState(false);
+  const [savingBaseFacts, setSavingBaseFacts] = useState(false);
 
   // PoS state
   const [posRate, setPosRate] = useState<number | null>(null);
@@ -147,6 +148,56 @@ export function RetirementAnalysisView({
       setSavingScenario(false);
     }
   }, [exploreMutations, savingScenario, clientId, source, asOfLabel, router, showToast]);
+
+  const handleSaveBaseFacts = useCallback(async () => {
+    if (exploreMutations.length === 0) return; // guard: no edits to save
+    if (savingBaseFacts) return; // guard: already in-flight
+
+    if (
+      !window.confirm(
+        "This updates the client's base facts (plan of record), not a scenario. Continue?",
+      )
+    ) {
+      return;
+    }
+
+    setSavingBaseFacts(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/analysis/retirement/save-to-base`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ source, mutations: exploreMutations }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as {
+        appliedCount: number;
+        skipped: { kind: string; reason: string }[];
+      };
+      // Reflect the new base facts: server components reload the base tree.
+      router.refresh();
+      const suffix =
+        data.skipped.length > 0
+          ? " (retirement age changes can only be saved to a scenario)"
+          : "";
+      showToast({
+        message: `Saved ${data.appliedCount} change${data.appliedCount === 1 ? "" : "s"} to base facts${suffix}`,
+        durationMs: 6000,
+      });
+    } catch (err) {
+      showToast({
+        message: err instanceof Error ? err.message : "Failed to save base facts",
+        durationMs: 6000,
+      });
+    } finally {
+      setSavingBaseFacts(false);
+    }
+  }, [exploreMutations, savingBaseFacts, clientId, source, router, showToast]);
 
   // Fetch PoS helper — aborts any in-flight request, then fires a new one.
   const fetchPos = useCallback(
@@ -237,6 +288,8 @@ export function RetirementAnalysisView({
             onMutationsChange={onMutationsChange}
             onSaveScenario={handleSaveScenario}
             savingScenario={savingScenario}
+            onSaveBaseFacts={handleSaveBaseFacts}
+            savingBaseFacts={savingBaseFacts}
           />
           <AnalysisYearTable
             rows={effectiveYears}
@@ -265,6 +318,8 @@ export function RetirementAnalysisView({
             onMutationsChange={onMutationsChange}
             onSaveScenario={handleSaveScenario}
             savingScenario={savingScenario}
+            onSaveBaseFacts={handleSaveBaseFacts}
+            savingBaseFacts={savingBaseFacts}
           />
           <AnalysisYearTable
             rows={effectiveYears}
