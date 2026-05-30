@@ -76,7 +76,15 @@ function deathResult(opts: {
   order: 1 | 2;
   totalTaxesAndExpenses: number;
   irdTax?: number;
+  debtsPaid?: number;
 }): EstateTaxResult {
+  const drainAttributions: Array<{ drainKind: string; amount: number; recipient: string }> = [];
+  if (opts.irdTax) {
+    drainAttributions.push({ drainKind: "ird_tax", amount: opts.irdTax, recipient: "x" });
+  }
+  if (opts.debtsPaid) {
+    drainAttributions.push({ drainKind: "debts_paid", amount: opts.debtsPaid, recipient: "x" });
+  }
   return {
     deceased: opts.decedent,
     deathOrder: opts.order,
@@ -87,9 +95,7 @@ function deathResult(opts: {
     estateAdminExpenses: 0,
     federalEstateTax: 0,
     totalTaxesAndExpenses: opts.totalTaxesAndExpenses,
-    drainAttributions: opts.irdTax
-      ? [{ drainKind: "ird_tax", amount: opts.irdTax, recipient: "x" }]
-      : [],
+    drainAttributions,
   } as unknown as EstateTaxResult;
 }
 
@@ -110,6 +116,8 @@ function htMarried(opts: {
   finalTax: number;
   firstIrd?: number;
   finalIrd?: number;
+  firstDebts?: number;
+  finalDebts?: number;
 }): HypotheticalEstateTax {
   return {
     primaryFirst: {
@@ -119,12 +127,14 @@ function htMarried(opts: {
         order: 1,
         totalTaxesAndExpenses: opts.firstTax,
         irdTax: opts.firstIrd,
+        debtsPaid: opts.firstDebts,
       }),
       finalDeath: deathResult({
         decedent: "spouse",
         order: 2,
         totalTaxesAndExpenses: opts.finalTax,
         irdTax: opts.finalIrd,
+        debtsPaid: opts.finalDebts,
       }),
       firstDeathTransfers: [],
       finalDeathTransfers: [],
@@ -659,6 +669,38 @@ describe("buildYearlyLiquidityReport — invariants", () => {
     });
 
     expect(liquidity.rows[0].totalTransferCost).toBe(yearly.rows[0].taxesAndExpenses);
+  });
+
+  // F6 (2026-05-29 estate-report-suite audit): the engine drain
+  // (`final-death.ts`) drains liquid assets for BOTH creditor debt AND estate
+  // tax, but "Total Transfer Cost" counted only taxes + admin + IRD — so an
+  // estate with large unsecured debt showed a false-positive surplus. The
+  // transfer report already surfaces "Debts Paid" as a reduction; the two
+  // estate surfaces must agree on what a transfer cost is.
+  it("includes the creditor-debt drain in transfer cost, flipping a false surplus to a deficit (F6)", () => {
+    const data = emptyClientData();
+    data.accounts = [plainAccount({ id: "cash-1", category: "cash", value: 0 })];
+    const projection = {
+      years: [
+        projectionYear({
+          year: 2026,
+          // $400k estate tax + $300k unsecured debt; $500k cash portfolio.
+          hypothetical: htMarried({ firstTax: 400_000, firstDebts: 300_000, finalTax: 0 }),
+          ledgers: { "cash-1": { endingValue: 500_000 } },
+        }),
+      ],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    const r = report.rows[0];
+    // BEFORE FIX: $400k (taxes only) → false +$100k surplus.
+    expect(r.totalTransferCost).toBe(700_000);
+    expect(r.surplusDeficitWithPortfolio).toBe(-200_000);
   });
 
   it("single-life plan (no spouse) returns ageSpouse=null and uses only firstDeath", () => {
