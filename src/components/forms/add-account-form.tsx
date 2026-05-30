@@ -549,6 +549,28 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       ? Math.round(Number(categoryDefaults[category]) * 10000) / 100
       : null;
 
+  // Blended return implied by the current custom asset mix. Mirrors the
+  // computation in AssetMixTab (weighted geometric return + inflation for any
+  // unclassified remainder) so the dropdown can show the resolved rate instead
+  // of a bare "custom" label. Null until allocations are loaded/non-empty.
+  const assetMixBlendedPct = useMemo(() => {
+    if (!assetClasses || customAllocations.length === 0) return null;
+    const weightMap = new Map(customAllocations.map((a) => [a.assetClassId, a.weight]));
+    let blended = 0;
+    let totalAllocated = 0;
+    for (const ac of assetClasses) {
+      const w = weightMap.get(ac.id) ?? 0;
+      blended += w * ac.geometricReturn;
+      totalAllocated += w;
+    }
+    const unclassified = Math.max(0, 1 - totalAllocated);
+    const inflationClass = assetClasses.find((ac) => ac.slug === "inflation");
+    if (unclassified > 0 && inflationClass) {
+      blended += unclassified * inflationClass.geometricReturn;
+    }
+    return blended * 100;
+  }, [assetClasses, customAllocations]);
+
   const currentYear = new Date().getFullYear();
 
   // Savings (create-only) year state — enables MilestoneYearPicker fallback.
@@ -1321,7 +1343,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       </option>
                     ))}
                     {ASSET_MIX_CATEGORIES.includes(category) && (
-                      <option value="asset_mix">Asset mix (custom)</option>
+                      <option value="asset_mix">
+                        {assetMixBlendedPct !== null ? `${assetMixBlendedPct.toFixed(2)}% — ` : ""}Asset mix (custom)
+                      </option>
                     )}
                     {(category === "cash" || category === "taxable" || category === "retirement") && (
                       <option value="inflation">
