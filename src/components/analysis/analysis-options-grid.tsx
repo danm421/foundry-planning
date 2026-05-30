@@ -35,7 +35,12 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-type ColumnStatus = "pending" | "converged" | "not-achievable";
+type ColumnStatus =
+  | "pending"
+  | "converged"
+  | "not-achievable"
+  // The solve stream errored or closed before this column reported.
+  | "unavailable";
 
 interface ColumnState {
   status: ColumnStatus;
@@ -132,6 +137,21 @@ export function AnalysisOptionsGrid({
     if (!savingsAccountId) return; // nothing to solve against
     const ac = new AbortController();
 
+    // Flip any column still in the skeleton to "unavailable" so it can't spin
+    // forever after an error / early close. No-op for columns that reported.
+    const settleStillPending = () =>
+      setColumns((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of Object.keys(next) as SolvedColumnId[]) {
+          if (next[id].status === "pending") {
+            next[id] = { ...next[id], status: "unavailable" };
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+
     (async () => {
       let res: Response;
       try {
@@ -145,9 +165,13 @@ export function AnalysisOptionsGrid({
           },
         );
       } catch {
-        return; // aborted or network failure — leave columns pending
+        if (!ac.signal.aborted) settleStillPending();
+        return; // aborted (unmount) or network failure
       }
-      if (!res.ok || !res.body) return;
+      if (!res.ok || !res.body) {
+        settleStillPending();
+        return;
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -174,13 +198,21 @@ export function AnalysisOptionsGrid({
                   summary: payload.summary,
                 },
               }));
+            } else if (ev.event === "error") {
+              // Server reported a fatal solve error — stop spinning.
+              settleStillPending();
             }
             next = it.next();
           }
           buffer = next.value as string;
         }
+        // Stream closed (done or error event). Any column the server never
+        // reported on becomes "unavailable" rather than a perpetual skeleton.
+        settleStillPending();
       } catch {
-        // aborted on unmount — ignore
+        // Aborted on unmount — leave state as-is. A genuine read failure that
+        // isn't an unmount-abort should still settle the columns.
+        if (!ac.signal.aborted) settleStillPending();
       }
     })();
 
@@ -247,6 +279,11 @@ export function AnalysisOptionsGrid({
 
   const hasEdits = mutations.length > 0;
 
+  // A solved column is "applicable" only when the Explore row it highlights
+  // actually exists for this client — otherwise its solved value would render
+  // on no row (e.g. no editable pre-tax contribution → min-savings is N/A).
+  const rowKeys = useMemo(() => new Set(rows.map((r) => r.key)), [rows]);
+
   // --- Render --------------------------------------------------------------
   return (
     <section
@@ -278,6 +315,7 @@ export function AnalysisOptionsGrid({
                   key={col.id}
                   config={col}
                   state={columns[col.id]}
+                  applicable={rowKeys.has(col.highlightRow)}
                 />
               ))}
               <th
@@ -308,8 +346,10 @@ export function AnalysisOptionsGrid({
                   <SolvedCell
                     key={col.id}
                     row={row}
+                    rows={rows}
                     config={col}
                     state={columns[col.id]}
+                    applicable={rowKeys.has(col.highlightRow)}
                   />
                 ))}
                 <td className="border-b border-hair px-4 py-2.5">
@@ -361,9 +401,11 @@ export function AnalysisOptionsGrid({
 function SolvedColumnHeader({
   config,
   state,
+  applicable,
 }: {
   config: SolvedColumnConfig;
   state: ColumnState;
+  applicable: boolean;
 }) {
   return (
     <th
@@ -371,11 +413,15 @@ function SolvedColumnHeader({
       className="border-b border-hair px-4 py-3 text-left align-bottom"
     >
       <div className="text-[13px] font-semibold text-ink">{config.title}</div>
-      {state.status === "pending" ? (
+      {!applicable ? (
+        <div className="text-[11px] text-ink-4">Not applicable</div>
+      ) : state.status === "pending" ? (
         <div
           className="mt-1 h-3 w-24 animate-pulse rounded bg-card-2"
           aria-label="Solving"
         />
+      ) : state.status === "unavailable" ? (
+        <div className="text-[11px] text-ink-4">Unavailable</div>
       ) : state.status === "not-achievable" ? (
         <div className="text-[11px] text-[color:var(--color-crit)]">
           Not achievable
@@ -393,43 +439,66 @@ function SolvedColumnHeader({
 
 function SolvedCell({
   row,
+  rows,
   config,
   state,
+  applicable,
 }: {
   row: ExploreRow;
+  rows: ExploreRow[];
   config: SolvedColumnConfig;
   state: ColumnState;
+  applicable: boolean;
 }) {
-  const isHighlight = config.highlightRow === row.key;
+  // Only highlight when the column applies — otherwise the solved lever has no
+  // row to land on and every cell just shows its current value.
+  const isHighlight = applicable && config.highlightRow === row.key;
+  const currentDisplay =
+    row.currentValue === null ? "—" : fmtRowValue(row, row.currentValue);
+
+  // Non-applicable column, or skeleton/terminal states with nothing to show on
+  // the highlighted cell: render the current value (or "—" on the highlight).
+  if (!applicable) {
+    return (
+      <td className="border-b border-hair px-4 py-2.5 text-right tabular text-[13px] text-ink-3">
+        {currentDisplay}
+      </td>
+    );
+  }
 
   if (state.status === "pending") {
     return (
       <td className="border-b border-hair px-4 py-2.5">
-        <div
-          className="h-4 w-16 animate-pulse rounded bg-card-2"
-          aria-label="Solving"
-        />
+        {isHighlight ? (
+          <div
+            className="h-4 w-16 animate-pulse rounded bg-card-2"
+            aria-label="Solving"
+          />
+        ) : (
+          <div className="text-right tabular text-[13px] text-ink-3">
+            {currentDisplay}
+          </div>
+        )}
       </td>
     );
   }
 
-  if (state.status === "not-achievable") {
+  if (state.status === "not-achievable" || state.status === "unavailable") {
     return (
       <td className="border-b border-hair px-4 py-2.5 text-right tabular text-[13px] text-ink-4">
-        {isHighlight ? "—" : ""}
+        {isHighlight ? "—" : currentDisplay}
       </td>
     );
   }
 
-  // Converged: show the solved value only in the highlighted lever cell;
-  // other cells keep their current value (the column changes one lever only).
+  // Converged: show the solved value only in the highlighted lever cell, using
+  // the column's own formatter (e.g. multiplier → resulting spend). Other cells
+  // keep their current value (the column changes one lever only).
   const display = isHighlight
     ? state.solvedValue === null
       ? "—"
-      : fmtRowValue(row, state.solvedValue)
-    : row.currentValue === null
-      ? "—"
-      : fmtRowValue(row, row.currentValue);
+      : (config.formatSolved(state.solvedValue, rows) ?? "—")
+    : currentDisplay;
 
   return (
     <td

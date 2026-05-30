@@ -21,6 +21,7 @@ import { retirementYearColumns } from "./retirement-year-columns";
 import {
   buildExploreRows,
   defaultSavingsAccountId,
+  savingsColumnAccountId,
 } from "./retirement-options-config";
 
 const STEPS = [
@@ -63,7 +64,15 @@ export function RetirementAnalysisView({
   const hasSpouse = currentYears[0]?.ages.spouse != null;
 
   const rows = useMemo(() => buildExploreRows(tree), [tree]);
-  const savingsAccountId = useMemo(() => defaultSavingsAccountId(tree), [tree]);
+  // The min-savings column targets the SAME account its highlighted Pre-Tax
+  // Contributions row edits (one source of truth). When that row is absent the
+  // body still needs a valid account so max-spending / earliest-retirement can
+  // solve, so fall back to the largest retirement account; the grid renders
+  // min-savings as "Not applicable" in that case (no pre-tax row to show on).
+  const savingsAccountId = useMemo(
+    () => savingsColumnAccountId(rows) ?? defaultSavingsAccountId(tree),
+    [rows, tree],
+  );
 
   const onExploreResult = useCallback(
     (result: { years: ProjectionYear[]; summary: RetirementSummary } | null) => {

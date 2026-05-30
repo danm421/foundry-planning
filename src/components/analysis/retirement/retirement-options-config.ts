@@ -12,6 +12,7 @@
 
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import { formatCurrency } from "@/components/monte-carlo/lib/format";
 
 // ---------------------------------------------------------------------------
 // Explore rows
@@ -329,8 +330,29 @@ export type SolvedColumnId =
 export interface SolvedColumnConfig {
   id: SolvedColumnId;
   title: string;
-  /** The Explore row this column's solved lever maps onto — rendered green. */
+  /** The Explore row this column's solved lever maps onto — rendered green.
+   *  When this row is absent from the built rows, the column is "Not
+   *  applicable" (its solved lever can't be expressed for this client). */
   highlightRow: ExploreRowKey;
+  /**
+   * Turns the raw `solvedValue` the SSE returns into the display string for the
+   * highlighted cell. `rows` is the same source of truth the grid renders, so
+   * formatting (and any base value, e.g. the retirement-expense the multiplier
+   * scales) comes from one place. Returns null when it can't be formatted.
+   */
+  formatSolved: (solvedValue: number, rows: ExploreRow[]) => string | null;
+}
+
+/** Format a solved value the same way the named Explore row formats its own
+ *  current value, so the solved cell and the row's "Current:" sublabel match. */
+function formatLikeRow(
+  rows: ExploreRow[],
+  key: ExploreRowKey,
+  value: number,
+): string {
+  const row = rows.find((r) => r.key === key);
+  if (row?.inputKind === "currency") return formatCurrency(value);
+  return String(Math.round(value));
 }
 
 export const SOLVED_COLUMNS: SolvedColumnConfig[] = [
@@ -338,15 +360,43 @@ export const SOLVED_COLUMNS: SolvedColumnConfig[] = [
     id: "min-savings",
     title: "Minimum Additional Savings",
     highlightRow: "pre-tax-contributions",
+    // Solved lever is the annual contribution dollars — already in the row's
+    // unit (currency), so format it like the contributions row.
+    formatSolved: (v, rows) => formatLikeRow(rows, "pre-tax-contributions", v),
   },
   {
     id: "max-spending",
     title: "Maximum Retirement Spending",
     highlightRow: "retirement-expenses",
+    // Solved lever is a MULTIPLIER in [0.5, 1.5] (living-expense-scale), not a
+    // dollar figure. The displayed value is the resulting spend:
+    // currentRetirementExpense * multiplier, formatted like the expense row.
+    formatSolved: (multiplier, rows) => {
+      const base = rows.find((r) => r.key === "retirement-expenses")
+        ?.currentValue;
+      if (base == null) return null;
+      return formatLikeRow(rows, "retirement-expenses", base * multiplier);
+    },
   },
   {
     id: "earliest-retirement",
     title: "Earliest Retirement Age",
     highlightRow: "retirement-age-client",
+    // Solved lever is an age — render as an integer like the age row.
+    formatSolved: (v, rows) =>
+      formatLikeRow(rows, "retirement-age-client", v),
   },
 ];
+
+/**
+ * The account id the "Minimum Additional Savings" column acts on — the SAME
+ * account the highlighted Pre-Tax Contributions row targets, so the solved
+ * account and the highlighted row never diverge. Returns null when no editable
+ * pre-tax contribution row exists (the column is then "Not applicable").
+ */
+export function savingsColumnAccountId(rows: ExploreRow[]): string | null {
+  const minSavings = SOLVED_COLUMNS.find((c) => c.id === "min-savings");
+  if (!minSavings) return null;
+  const row = rows.find((r) => r.key === minSavings.highlightRow);
+  return row ? row.targetId : null;
+}
