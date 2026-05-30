@@ -39,7 +39,7 @@ import {
 } from "./drain-attribution";
 import { computeIrdAttributions } from "./ird-tax";
 import { beaForYear } from "@/lib/tax/estate";
-import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
+import { computeAdjustedTaxableGiftsByYear } from "@/lib/estate/adjusted-taxable-gifts";
 
 interface FinalDeathChainResult {
   accounts: Account[];
@@ -539,7 +539,11 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
             giftedPolicyIds.has(ev.accountId)
           ),
       );
-  const inPlanCumulative = computeAdjustedTaxableGifts(
+  // Per-gift-year breakdown so finite-window state gift-addback rules (ME/VT/MN/NY) can
+  // include only gifts within their statutory lookback. The pre-plan `priorTaxableGifts`
+  // lump has no per-gift year; it is historical, so it stays in the federal scalar but is
+  // outside any finite state window.
+  const adjustedGiftsByYear = computeAdjustedTaxableGiftsByYear(
     input.deceased,
     input.gifts,
     input.entities,
@@ -547,6 +551,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     accountValueAtYear,
     giftEventsForAtg,
   );
+  const inPlanCumulative = adjustedGiftsByYear.reduce((sum, g) => sum + g.amount, 0);
   const adjustedGifts = inPlanCumulative + input.priorTaxableGifts[input.deceased];
   const taxInflation =
     input.planSettings.taxInflationRate ?? input.planSettings.inflationRate ?? 0;
@@ -562,6 +567,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     gross,
     deductions: preliminaryDeductions,
     adjustedTaxableGifts: adjustedGifts,
+    adjustedTaxableGiftsByYear: adjustedGiftsByYear,
     beaAtDeathYear,
     dsueReceived: input.dsueReceived,
     residenceState: input.planSettings.residenceState ?? null,
@@ -706,6 +712,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     gross,
     deductions: finalDeductions,
     adjustedTaxableGifts: adjustedGifts,
+    adjustedTaxableGiftsByYear: adjustedGiftsByYear,
     beaAtDeathYear,
     dsueReceived: input.dsueReceived,
     residenceState: input.planSettings.residenceState ?? null,

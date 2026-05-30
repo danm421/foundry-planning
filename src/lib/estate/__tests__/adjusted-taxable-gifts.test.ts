@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeAdjustedTaxableGifts } from "../adjusted-taxable-gifts";
+import { computeAdjustedTaxableGifts, computeAdjustedTaxableGiftsByYear } from "../adjusted-taxable-gifts";
 import type { Gift, EntitySummary, GiftEvent } from "@/engine/types";
 
 const ann = { 2025: 19_000, 2026: 19_000, 2027: 19_500 };
@@ -211,5 +211,55 @@ describe("computeAdjustedTaxableGifts (Phase 3 — asset/liability giftEvents)",
     const accountValueAtYear = (id: string, _year: number) => (id === "acct-1" ? 1_000_000 : 0);
     expect(computeAdjustedTaxableGifts("client", [], [], ann, accountValueAtYear, giftEvents)).toBe(0);
     expect(computeAdjustedTaxableGifts("spouse", [], [], ann, accountValueAtYear, giftEvents)).toBeCloseTo(1_000_000, 2);
+  });
+});
+
+describe("computeAdjustedTaxableGiftsByYear", () => {
+  it("tags each gift's post-exclusion contribution with its gift year", () => {
+    const gifts = [
+      gift({ year: 2025, amount: 100_000 }), // 81,000 after exclusion
+      gift({ year: 2027, amount: 30_000 }),  // 10,500 after exclusion
+    ];
+    expect(computeAdjustedTaxableGiftsByYear("client", gifts, [], ann, noAccountValue)).toEqual([
+      { year: 2025, amount: 81_000 },
+      { year: 2027, amount: 10_500 },
+    ]);
+  });
+
+  it("omits fully-excluded gifts (zero net contribution)", () => {
+    const gifts = [
+      gift({ year: 2025, amount: 15_000 }),  // under the $19K exclusion → 0
+      gift({ year: 2026, amount: 119_000 }), // 100,000 after exclusion
+    ];
+    expect(computeAdjustedTaxableGiftsByYear("client", gifts, [], ann, noAccountValue)).toEqual([
+      { year: 2026, amount: 100_000 },
+    ]);
+  });
+
+  it("excludes other-grantor gifts and splits joint gifts, preserving years", () => {
+    const gifts = [
+      gift({ grantor: "client", year: 2025, amount: 100_000 }), // 81,000
+      gift({ grantor: "spouse", year: 2026, amount: 100_000 }), // excluded for client
+      gift({ grantor: "joint",  year: 2026, amount: 100_000 }), // 31,000 to client
+    ];
+    expect(computeAdjustedTaxableGiftsByYear("client", gifts, [], ann, noAccountValue)).toEqual([
+      { year: 2025, amount: 81_000 },
+      { year: 2026, amount: 31_000 },
+    ]);
+  });
+
+  it("sums to the same total as computeAdjustedTaxableGifts (incl. asset giftEvents)", () => {
+    const gifts = [gift({ grantor: "joint", year: 2026, amount: 100_000 })];
+    const giftEvents: GiftEvent[] = [
+      { kind: "asset", year: 2030, accountId: "acct-1", percent: 0.5, grantor: "client", recipientEntityId: "t1" },
+    ];
+    const accountValueAtYear = (id: string, _year: number) => (id === "acct-1" ? 1_000_000 : 0);
+    const byYear = computeAdjustedTaxableGiftsByYear("client", gifts, [], ann, accountValueAtYear, giftEvents);
+    const total = byYear.reduce((s, g) => s + g.amount, 0);
+    expect(total).toBeCloseTo(
+      computeAdjustedTaxableGifts("client", gifts, [], ann, accountValueAtYear, giftEvents),
+      2,
+    );
+    expect(byYear).toContainEqual({ year: 2030, amount: 500_000 });
   });
 });

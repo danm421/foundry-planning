@@ -11,6 +11,10 @@ export interface ComputeStateEstateTaxInput {
   taxableEstate: number;
   /** Federal Form 706 line: adjusted taxable gifts. Used as the basis for gift-addback states. */
   adjustedTaxableGifts: number;
+  /** Per-gift-year breakdown of adjusted taxable gifts (already net of annual exclusion).
+   *  Lets finite-window addback states (ME/VT/MN/NY) include only gifts within their
+   *  statutory lookback. When absent, finite-window states fall back to the full scalar. */
+  adjustedTaxableGiftsByYear?: Array<{ year: number; amount: number }>;
   /** Back-compat: when state is null and this is > 0, applied as a flat rate to taxableEstate. */
   fallbackFlatRate: number;
 }
@@ -36,7 +40,12 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   }
   const rule = STATE_ESTATE_TAX[input.state as StateCode];
 
-  const giftAddback = computeGiftAddback(rule.giftAddback, input.adjustedTaxableGifts);
+  const giftAddback = computeGiftAddback(
+    rule.giftAddback,
+    input.adjustedTaxableGifts,
+    input.adjustedTaxableGiftsByYear,
+    input.deathYear,
+  );
   const baseForTax = input.taxableEstate + giftAddback;
 
   const cliffApp = applyCliff(rule, baseForTax);
@@ -44,32 +53,62 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     ? { applied: cliffApp.applied, threshold: cliffApp.threshold }
     : undefined;
 
-  // For cliff states, brackets start at $0 and a credit zeros out tax below the
-  // exemption. Above the cliff the credit vanishes, so the whole estate is taxable.
+  // For cliff states (NY), brackets run from $0 on the whole estate; a credit
+  // zeros the tax below the exemption, then phases linearly to $0 across the band
+  // up to the 105% cliff, above which the whole estate is taxable with no credit.
   const isCliffState = rule.cliffPct != null;
   let bracketLines: BracketLine[];
   let amountOverExemption: number;
-  if (isCliffState && !cliffApp.applied) {
-    bracketLines = applyBrackets(
-      shiftBracketsAboveExemption(rule.brackets, rule.exemption),
-      baseForTax,
-    );
-    amountOverExemption = Math.max(0, baseForTax - rule.exemption);
-  } else if (isCliffState && cliffApp.applied) {
-    bracketLines = applyBrackets(rule.brackets, baseForTax);
-    amountOverExemption = baseForTax;
+  // Credit subtracted from the bracket tax to reach final tax:
+  //  - NY phase-out band: exemption credit phasing linearly across [exemption, 105%].
+  //  - MA: fixed §2011-table-at-$2M credit (rule.fixedCredit), added below.
+  let creditReduction = 0;
+  let phaseOutBandApplied = false;
+  if (isCliffState) {
+    const threshold = cliffApp.threshold; // exemption × cliffPct
+    if (baseForTax <= rule.exemption) {
+      // Below the exemption the phase-out credit fully absorbs the tax.
+      bracketLines = [];
+      amountOverExemption = 0;
+    } else {
+      // At/above the exemption the entire estate is the tax base (brackets from $0).
+      bracketLines = applyBrackets(rule.brackets, baseForTax);
+      amountOverExemption = baseForTax;
+      if (!cliffApp.applied) {
+        // Phase-out band (exemption < base ≤ 105% cliff): NY Tax Law §952(c)(2).
+        // Full-estate tax less a credit that phases linearly from `creditAtExemption`
+        // (which zeros the tax at the exemption) down to $0 at the cliff.
+        const creditAtExemption = sumBracketTax(applyBrackets(rule.brackets, rule.exemption));
+        creditReduction = creditAtExemption * (threshold - baseForTax) / (threshold - rule.exemption);
+        phaseOutBandApplied = true;
+      }
+      // base > threshold (cliff applied): no credit — entire estate taxable.
+    }
   } else {
     bracketLines = applyBrackets(rule.brackets, baseForTax);
     amountOverExemption = Math.max(0, baseForTax - rule.exemption);
   }
-  const preCapTax = bracketLines.reduce((s, l) => s + l.tax, 0);
+  // MA-style fixed credit (mutually exclusive with the NY band in practice).
+  if (rule.fixedCredit != null) {
+    creditReduction += rule.fixedCredit;
+  }
+  const preCapTax = sumBracketTax(bracketLines);
 
   const notes: string[] = [];
   notes.push(`Citation: ${rule.citation}`);
   if (rule.indexed) notes.push(`Exemption is indexed (Phase 1 hard-codes ${rule.effectiveYear} value).`);
-  const antiCliffCreditApplied = rule.antiCliff === true;
-  if (antiCliffCreditApplied) {
-    notes.push(`MA anti-cliff exclusion applied: first $${rule.exemption.toLocaleString()} not taxed.`);
+  if (rule.fixedCredit != null) {
+    notes.push(
+      `MA §2011 graduated table applied to the full estate; fixed credit of ` +
+      `$${rule.fixedCredit.toLocaleString()} subtracted (floor $0).`,
+    );
+  }
+  if (phaseOutBandApplied) {
+    notes.push(
+      `NY phase-out band: estate is between the exemption ($${rule.exemption.toLocaleString()}) and ` +
+      `${(rule.cliffPct! * 100).toFixed(0)}% of it ($${cliffApp.threshold.toLocaleString()}). Whole estate taxed, ` +
+      `less a credit of $${round2(creditReduction).toLocaleString()} phasing linearly to $0 at the cliff.`,
+    );
   }
   if (isCliffState && cliffApp.applied) {
     notes.push(
@@ -83,13 +122,13 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     } else {
       notes.push(
         `Gift addback: federal taxable gifts within ${rule.giftAddback.years} year(s) of death ` +
-        `(Phase 1 uses full $${giftAddback.toLocaleString()}; lookback narrowing is Phase 3).`,
+        `($${giftAddback.toLocaleString()}).`,
       );
     }
   }
 
   const capApp = applyMaxCombinedCap(rule, preCapTax);
-  const finalTax = capApp.finalTax;
+  const finalTax = Math.max(0, capApp.finalTax - creditReduction);
   const cap = rule.capCombined != null
     ? { applied: capApp.applied, cap: capApp.cap, reduction: capApp.reduction }
     : undefined;
@@ -113,7 +152,7 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     preCapTax,
     ...(cap !== undefined ? { cap } : {}),
     ...(cliff !== undefined ? { cliff } : {}),
-    ...(rule.antiCliff ? { antiCliffCreditApplied: true } : {}),
+    ...(creditReduction > 0 ? { creditReduction: round2(creditReduction) } : {}),
     stateEstateTax: Math.max(0, finalTax),
     notes,
   };
@@ -157,21 +196,28 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function computeGiftAddback(rule: GiftAddbackRule | null, adjustedTaxableGifts: number): number {
-  if (rule == null) return 0;
-  // Phase 1: no per-year gift ledger is threaded through, so years:Infinity and
-  // finite-year windows both apply the full adjustedTaxableGifts. Narrow-window
-  // resolution is Phase 3.
-  return Math.max(0, adjustedTaxableGifts);
+/** Sum the tax across a set of bracket lines. */
+function sumBracketTax(lines: BracketLine[]): number {
+  return lines.reduce((s, l) => s + l.tax, 0);
 }
 
-/** Shift bracket lower bounds up by the exemption to display only above-exemption bands. */
-function shiftBracketsAboveExemption(brackets: Bracket[], exemption: number): Bracket[] {
-  return brackets
-    .map((b) => ({
-      from: Math.max(b.from, exemption),
-      to: b.to,
-      rate: b.rate,
-    }))
-    .filter((b) => b.to == null || b.from < b.to);
+function computeGiftAddback(
+  rule: GiftAddbackRule | null,
+  adjustedTaxableGifts: number,
+  byYear: Array<{ year: number; amount: number }> | undefined,
+  deathYear: number,
+): number {
+  if (rule == null) return 0;
+  // Infinity-window states (CT, HI, IL) add back the full lifetime adjusted-taxable-gifts.
+  if (rule.years === Infinity) return Math.max(0, adjustedTaxableGifts);
+  // Finite-window states (ME 1yr / VT 2yr / MN,NY 3yr — NY Tax Law §954(a)(3),
+  // Minn. Stat. §291.016, 32 VSA §7442a, 36 MRSA §4102) add back only gifts made
+  // within `years` of death: deathYear − giftYear ≤ years (boundary inclusive).
+  // Without the per-gift-year breakdown we cannot window, so fall back to the full
+  // scalar (back-compat — the engine always threads `byYear`).
+  if (byYear == null) return Math.max(0, adjustedTaxableGifts);
+  const windowed = byYear
+    .filter((g) => deathYear - g.year <= rule.years)
+    .reduce((sum, g) => sum + g.amount, 0);
+  return Math.max(0, windowed);
 }

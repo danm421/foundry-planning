@@ -106,3 +106,57 @@ describe("computeStateEstateTax — gift addback", () => {
     expect(r.stateEstateTax).toBe(160_000);
   });
 });
+
+describe("computeStateEstateTax — gift addback lookback window (F5)", () => {
+  // NY narrows the addback to gifts made within 3 years of death (NY Tax Law §954(a)(3)).
+  const nyWithGift = (giftYear: number) =>
+    computeStateEstateTax({
+      state: "NY",
+      deathYear: 2030,
+      taxableEstate: 6_500_000,
+      adjustedTaxableGifts: 1_000_000,
+      adjustedTaxableGiftsByYear: [{ year: giftYear, amount: 1_000_000 }],
+      fallbackFlatRate: 0,
+    });
+
+  it("a gift 5 years before death is outside the 3-yr window → not added back", () => {
+    const r = nyWithGift(2025); // 2030 − 2025 = 5 > 3
+    expect(r.giftAddback).toBe(0);
+    expect(r.baseForTax).toBe(6_500_000); // stays below the $7.16M exemption
+    expect(r.stateEstateTax).toBe(0);     // not the $46,240 phantom tax the old code produced
+  });
+
+  it("a gift 2 years before death is inside the window → added back (crosses into the band)", () => {
+    const r = nyWithGift(2028); // 2030 − 2028 = 2 ≤ 3
+    expect(r.giftAddback).toBe(1_000_000);
+    expect(r.baseForTax).toBe(7_500_000);
+    expect(r.stateEstateTax).toBeCloseTo(672_068, 0); // matches the $7.5M phase-out-band case
+  });
+
+  it("a gift exactly 3 years before death is within the window (boundary inclusive)", () => {
+    expect(nyWithGift(2027).giftAddback).toBe(1_000_000); // 2030 − 2027 = 3 ≤ 3
+  });
+
+  it("Infinity-window states (CT) add back gifts regardless of age", () => {
+    const r = computeStateEstateTax({
+      state: "CT",
+      deathYear: 2030,
+      taxableEstate: 10_000_000,
+      adjustedTaxableGifts: 3_000_000,
+      adjustedTaxableGiftsByYear: [{ year: 1990, amount: 3_000_000 }], // 40 years before
+      fallbackFlatRate: 0,
+    });
+    expect(r.giftAddback).toBe(3_000_000);
+  });
+
+  it("falls back to the full scalar when no per-year breakdown is supplied (back-compat)", () => {
+    const r = computeStateEstateTax({
+      state: "NY",
+      deathYear: 2030,
+      taxableEstate: 6_500_000,
+      adjustedTaxableGifts: 1_000_000,
+      fallbackFlatRate: 0,
+    });
+    expect(r.giftAddback).toBe(1_000_000);
+  });
+});

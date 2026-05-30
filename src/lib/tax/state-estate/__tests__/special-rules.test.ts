@@ -33,20 +33,33 @@ describe("Connecticut — flat 12% above exemption + $15M combined cap", () => {
   });
 });
 
-describe("Massachusetts — anti-cliff credit", () => {
-  it("tax of $0 just below the $2M exemption", () => {
+describe("Massachusetts — §2011 table less fixed $99,600 credit (MGL c.65C, Oct 2023)", () => {
+  it("tax of $0 at/below the $1.94M credit-absorption point", () => {
     const r = computeStateEstateTax({
       state: "MA",
       deathYear: 2026,
-      taxableEstate: 1_999_999,
+      taxableEstate: 1_940_000,
       adjustedTaxableGifts: 0,
       fallbackFlatRate: 0,
     });
+    // §2011 table at $1.94M = $99,600 exactly; the fixed credit absorbs it entirely.
     expect(r.stateEstateTax).toBe(0);
-    expect(r.antiCliffCreditApplied).toBe(true);
+    expect(r.creditReduction).toBe(99_600);
   });
 
-  it("graduated brackets only apply to amount above $2M (not from $0)", () => {
+  it("even exactly $2M owes $4,320 (table is on the whole estate, not the excess)", () => {
+    const r = computeStateEstateTax({
+      state: "MA",
+      deathYear: 2026,
+      taxableEstate: 2_000_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    // §2011 table at $2M = $103,920; minus $99,600 credit = $4,320.
+    expect(r.stateEstateTax).toBeCloseTo(4_320, 0);
+  });
+
+  it("graduated table applies from $0 (not just the amount above $2M)", () => {
     const r = computeStateEstateTax({
       state: "MA",
       deathYear: 2026,
@@ -54,34 +67,49 @@ describe("Massachusetts — anti-cliff credit", () => {
       adjustedTaxableGifts: 0,
       fallbackFlatRate: 0,
     });
-    expect(r.antiCliffCreditApplied).toBe(true);
-    expect(r.stateEstateTax).toBeCloseTo(179_040, 0);
-    expect(r.bracketLines).toHaveLength(4);
+    expect(r.creditReduction).toBe(99_600);
+    // §2011 table at $4.25M = $314,320; minus $99,600 credit = $214,720.
+    expect(r.stateEstateTax).toBeCloseTo(214_720, 0);
   });
 });
 
-describe("New York — 105% cliff", () => {
-  it("just under 105% of exemption → only excess taxed (credit absorbs all tax below exemption)", () => {
-    const r = computeStateEstateTax({
-      state: "NY",
-      deathYear: 2026,
-      taxableEstate: 7_510_000,
-      adjustedTaxableGifts: 0,
-      fallbackFlatRate: 0,
-    });
+describe("New York — 105% cliff phase-out band (NY Tax Law §952(c)(2))", () => {
+  const ny = (taxableEstate: number) =>
+    computeStateEstateTax({ state: "NY", deathYear: 2026, taxableEstate, adjustedTaxableGifts: 0, fallbackFlatRate: 0 });
+
+  it("at the exemption → $0 (phase-out credit fully absorbs the tax)", () => {
+    const r = ny(7_160_000);
     expect(r.cliff?.applied).toBe(false);
+    expect(r.stateEstateTax).toBe(0);
   });
 
-  it("above 105% of exemption → entire estate taxed (no exemption credit)", () => {
-    const r = computeStateEstateTax({
-      state: "NY",
-      deathYear: 2026,
-      taxableEstate: 8_000_000,
-      adjustedTaxableGifts: 0,
-      fallbackFlatRate: 0,
-    });
+  it("inside the band → whole estate taxed less a linearly-phased credit", () => {
+    const r = ny(7_300_000);
+    expect(r.cliff?.applied).toBe(false);
+    // Whole estate is the tax base, not just the excess over the exemption.
+    expect(r.baseForTax).toBe(7_300_000);
+    expect(r.amountOverExemption).toBe(7_300_000);
+    // 678,000 full-table tax − 401,266 phased credit ≈ 276,734 (not the $19,040 the
+    // old "tax only the excess" code produced).
+    expect(r.stateEstateTax).toBeCloseTo(276_734, 0);
+  });
+
+  it("near the top of the band → credit nearly exhausted", () => {
+    expect(ny(7_500_000).stateEstateTax).toBeCloseTo(672_068, 0);
+  });
+
+  it("above 105% of exemption → entire estate taxed (no credit)", () => {
+    const r = ny(8_000_000);
     expect(r.cliff?.applied).toBe(true);
     expect(r.baseForTax).toBe(8_000_000);
     expect(r.stateEstateTax).toBeCloseTo(773_200, 0);
+  });
+
+  it("is continuous across the $7,518,000 cliff (no six-figure discontinuity)", () => {
+    const atCliff = ny(7_518_000).stateEstateTax;     // top of band, credit phased to $0
+    const justOver = ny(7_518_001).stateEstateTax;    // cliff applied, whole estate
+    expect(atCliff).toBeCloseTo(707_648, 0);
+    // The old code jumped ~$659k over $1 here; the corrected band ties out to within a dollar.
+    expect(Math.abs(justOver - atCliff)).toBeLessThan(1);
   });
 });

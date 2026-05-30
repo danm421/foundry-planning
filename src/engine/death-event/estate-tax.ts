@@ -485,6 +485,8 @@ export function buildEstateTaxResult(input: {
   gross: GrossEstateOutput;
   deductions: DeductionOutput;
   adjustedTaxableGifts: number;
+  /** Per-gift-year breakdown of `adjustedTaxableGifts`, for finite-window state gift addback. */
+  adjustedTaxableGiftsByYear?: Array<{ year: number; amount: number }>;
   beaAtDeathYear: number;
   dsueReceived: number;
   residenceState: USPSStateCode | null;
@@ -520,6 +522,7 @@ export function buildEstateTaxResult(input: {
     deathYear: input.year,
     taxableEstate,
     adjustedTaxableGifts: input.adjustedTaxableGifts,
+    adjustedTaxableGiftsByYear: input.adjustedTaxableGiftsByYear,
     fallbackFlatRate: input.stateEstateTaxFallbackRate,
   });
 

@@ -937,7 +937,7 @@ describe("4d integration — state estate tax", () => {
     expect(result.estateTax.totalEstateTax).toBeCloseTo(160_000, 0);
   });
 
-  it("residenceState=MA on $4.25M taxable: stateEstateTax=$179,040 (anti-cliff brackets)", () => {
+  it("residenceState=MA on $4.25M taxable: stateEstateTax=$214,720 (§2011 table − $99,600 credit)", () => {
     const accounts: Account[] = [
       {
         id: "brokerage", name: "Client Brokerage",
@@ -957,9 +957,50 @@ describe("4d integration — state estate tax", () => {
 
     expect(result.estateTax.taxableEstate).toBeCloseTo(4_250_000, 0);
     expect(result.estateTax.stateEstateTaxDetail.state).toBe("MA");
-    expect(result.estateTax.stateEstateTaxDetail.antiCliffCreditApplied).toBe(true);
-    expect(result.estateTax.stateEstateTaxDetail.bracketLines).toHaveLength(4);
-    expect(result.estateTax.stateEstateTax).toBeCloseTo(179_040, 0);
+    // §2011 graduated table on the full estate ($314,320) less the fixed $99,600 credit.
+    expect(result.estateTax.stateEstateTaxDetail.creditReduction).toBeCloseTo(99_600, 0);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(214_720, 0);
+  });
+
+  // F5: NY narrows the gift addback to gifts made within 3 years of death
+  // (NY Tax Law §954(a)(3)). A $6.5M estate sits below the $7.16M NY exemption; a
+  // $1M gift only crosses into the taxable phase-out band if it falls inside the window.
+  function mkNyGiftScenario(giftYear: number) {
+    const accounts: Account[] = [
+      {
+        id: "brokerage", name: "Client Brokerage",
+        category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
+        value: 6_500_000, basis: 5_000_000,
+        growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+    ];
+    return mkFinalDeathInput({
+      accounts,
+      familyMembers: [kidA],
+      planSettings: { ...basePlanSettings, residenceState: "NY" },
+      // death year defaults to 2052; no annual exclusion → full $1M lands in ATG.
+      gifts: [{ id: "g1", year: giftYear, amount: 1_000_000, grantor: "client", useCrummeyPowers: false }],
+    });
+  }
+
+  it("residenceState=NY: a gift 5 years before death is outside the 3-yr window → no state tax", () => {
+    const result = applyFinalDeath(mkNyGiftScenario(2047)); // 2052 − 2047 = 5 > 3
+    expect(result.estateTax.taxableEstate).toBeCloseTo(6_500_000, 0);
+    // Federal still sees the full lifetime gift…
+    expect(result.estateTax.adjustedTaxableGifts).toBeCloseTo(1_000_000, 0);
+    // …but NY does not add it back, so the base stays below the exemption → $0.
+    expect(result.estateTax.stateEstateTaxDetail.giftAddback).toBe(0);
+    expect(result.estateTax.stateEstateTaxDetail.baseForTax).toBeCloseTo(6_500_000, 0);
+    expect(result.estateTax.stateEstateTax).toBe(0);
+  });
+
+  it("residenceState=NY: a gift 2 years before death is inside the window → added back into the band", () => {
+    const result = applyFinalDeath(mkNyGiftScenario(2050)); // 2052 − 2050 = 2 ≤ 3
+    expect(result.estateTax.stateEstateTaxDetail.giftAddback).toBeCloseTo(1_000_000, 0);
+    expect(result.estateTax.stateEstateTaxDetail.baseForTax).toBeCloseTo(7_500_000, 0);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(672_068, 0);
   });
 
   it("back-compat: residenceState=null + flatStateEstateRate=0.08 still applies fallback", () => {
