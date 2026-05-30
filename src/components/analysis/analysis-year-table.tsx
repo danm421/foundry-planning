@@ -27,14 +27,14 @@ export function AnalysisYearTable<Row>({
         {caption && (
           <caption className="sr-only">{caption}</caption>
         )}
-        <thead className="sticky top-0 z-20 bg-gray-800">
+        <thead className="sticky top-0 z-20 bg-card">
           <tr>
             {columns.map((col) => (
               <th
                 key={col.key}
                 scope="col"
                 className={
-                  "max-w-[9rem] whitespace-normal border-b-2 border-gray-700 bg-gray-800 px-3 py-3.5 text-[13px] font-semibold uppercase leading-tight tracking-wider text-gray-200 first:pl-4 last:pr-4 " +
+                  "max-w-[9rem] whitespace-normal border-b-2 border-hair bg-card px-3 py-3.5 text-[13px] font-semibold uppercase leading-tight tracking-wider text-ink-2 first:pl-4 last:pr-4 " +
                   (col.align === "right" ? "text-right" : "text-left")
                 }
               >
@@ -47,7 +47,7 @@ export function AnalysisYearTable<Row>({
         </thead>
         <tbody>
           {rows.map((row, rowIdx) => (
-            <tr key={rowIdx} className="group">
+            <tr key={rowIdx} className="hover:bg-card-hover">
               {columns.map((col, colIdx) => {
                 const isCrit = col.tone?.(row) === "crit";
                 const isRight = col.align === "right";
@@ -55,13 +55,13 @@ export function AnalysisYearTable<Row>({
                   <td
                     key={col.key}
                     className={
-                      "whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] " +
+                      "whitespace-nowrap border-b border-hair bg-card px-3 py-2 " +
                       (colIdx === 0 ? "first:pl-4 " : "") +
                       (colIdx === columns.length - 1 ? "last:pr-4 " : "") +
-                      (isRight ? "text-right tabular-nums " : "") +
+                      (isRight ? "text-right tabular " : "") +
                       (isCrit
                         ? "text-[color:var(--color-crit)]"
-                        : "text-gray-100")
+                        : "text-ink")
                     }
                   >
                     {col.render(row)}
