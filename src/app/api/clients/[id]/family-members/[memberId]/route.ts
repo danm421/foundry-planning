@@ -4,6 +4,7 @@ import { clients, familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 
 export const dynamic = "force-dynamic";
 
@@ -81,9 +82,16 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    await db
-      .delete(familyMembers)
-      .where(and(eq(familyMembers.id, memberId), eq(familyMembers.clientId, id)));
+    // Remove any will-recipient rows that point at this family member before
+    // deleting it — recipient_id is a polymorphic FK-less column, so a plain
+    // delete would leave a dangling id and silently wrong estate projections
+    // (audit F13). Atomic with the member delete.
+    await db.transaction(async (tx) => {
+      await cleanupWillRecipientReferences(tx, "family_member", memberId);
+      await tx
+        .delete(familyMembers)
+        .where(and(eq(familyMembers.id, memberId), eq(familyMembers.clientId, id)));
+    });
 
     await recordAudit({
       action: "family_member.delete",

@@ -701,7 +701,14 @@ export const planSettings = pgTable("plan_settings", {
   ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  // One row per (client, scenario). This unique index stops a concurrent POST /
+  // retry from duplicating the row ("first row wins" silently) — audit F15.
+  // scenario_id is NOT NULL, so plain uniqueness (no NULLS NOT DISTINCT) suffices.
+  // The live dev DB does NOT yet have this index; the migration that adds it is
+  // 0137 (hand-authored with IF NOT EXISTS, same drift class as plaid_items/F14).
+  uniqueIndex("plan_settings_client_id_scenario_id_idx").on(t.clientId, t.scenarioId),
+]);
 
 export const entities = pgTable("entities", {
   id: uuid("id").defaultRandom().primaryKey(),
