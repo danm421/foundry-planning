@@ -1364,6 +1364,13 @@ export const accounts = pgTable("accounts", {
   parentAccountId: uuid("parent_account_id").references((): AnyPgColumn => accounts.id, {
     onDelete: "set null",
   }),
+  // Plaid linked-item this account was imported from (null = manual). FK with
+  // ON DELETE SET NULL so unlinking an institution doesn't delete the accounts.
+  // Dormant on `main` (Plaid linking lives on a feature branch) but already
+  // present on the live dev DB — declared here to prevent drizzle drift (F14).
+  plaidItemId: uuid("plaid_item_id").references(() => plaidItems.id, {
+    onDelete: "set null",
+  }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1372,6 +1379,29 @@ export const accounts = pgTable("accounts", {
   // accounts is the hottest table and was previously full-scanned (audit F7).
   clientScenarioIdx: index("accounts_client_scenario_idx").on(t.clientId, t.scenarioId),
 }));
+
+// Plaid linked-institution items. Dormant on `main` — the client-portal Plaid
+// linking flow lives on a feature branch — but the table + the
+// accounts.plaid_item_id FK (ON DELETE SET NULL) already exist on the live dev
+// DB. Re-declared here to match that live schema EXACTLY so a `drizzle-kit`
+// introspection / push won't treat the table as drift and drop it, and so the
+// in-flight Plaid branch doesn't have to re-create it (audit F14). Columns,
+// nullability, the clients-cascade FK and unique(plaid_item_id) all mirror
+// br-curly-cell-amew7wcr. Timestamps are tz-naive `timestamp` to match live.
+export const plaidItems = pgTable("plaid_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  // The Plaid-side item identifier (a Plaid string handle, not a DB FK).
+  plaidItemId: text("plaid_item_id").notNull().unique(),
+  accessToken: text("access_token").notNull(),
+  institutionId: text("institution_id"),
+  institutionName: text("institution_name"),
+  lastRefreshedAt: timestamp("last_refreshed_at"),
+  lastRefreshError: text("last_refresh_error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 export const accountOwners = pgTable(
   "account_owners",
