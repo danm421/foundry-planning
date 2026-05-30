@@ -218,11 +218,14 @@ export interface EstateTaxResult {
 
   // Tentative Tax Base
   adjustedTaxableGifts: number;
-  lifetimeGiftTaxAdjustment: number; // always 0 in v1; reserved
   tentativeTaxBase: number;
 
   // Federal Tax
   tentativeTax: number;
+  /** §2001(b)(2) gift tax payable on post-1976 gifts at date-of-death rates,
+   *  subtracted from the tentative tax. Zero unless cumulative taxable gifts
+   *  exceed the date-of-death basic exclusion. */
+  giftTaxPayable: number;
   beaAtDeathYear: number;
   dsueReceived: number;
   applicableExclusion: number;       // BEA + DSUE

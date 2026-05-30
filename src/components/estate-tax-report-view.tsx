@@ -419,8 +419,7 @@ function DecedentBreakdown({
   const headlineColor =
     totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200";
 
-  const showTentativeBase =
-    tax.adjustedTaxableGifts > 0 || tax.lifetimeGiftTaxAdjustment > 0;
+  const showTentativeBase = tax.adjustedTaxableGifts > 0;
   const unifiedCreditHint = `(${fmt.format(tax.beaAtDeathYear)} Basic Exclusion + ${fmt.format(tax.dsueReceived)} DSUE)`;
 
   return (
@@ -506,10 +505,6 @@ function DecedentBreakdown({
               label="Adjusted Taxable Gifts During Lifetime"
               amount={tax.adjustedTaxableGifts}
             />
-            <LineRow
-              label="Gift Tax Rolled Back"
-              amount={tax.lifetimeGiftTaxAdjustment}
-            />
           </Section>
         )}
 
@@ -521,6 +516,12 @@ function DecedentBreakdown({
           subtotalAccent="tax"
         >
           <LineRow label="Tentative Tax" amount={tax.tentativeTax} />
+          <LineRow
+            label="LESS: Gift Tax Payable on Prior Gifts"
+            amount={tax.giftTaxPayable}
+            showAsDeduction
+            hideIfZero
+          />
           <LineRow
             label="LESS: Unified Credit"
             hint={unifiedCreditHint}

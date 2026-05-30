@@ -23,14 +23,25 @@ export interface EstatePrep {
   asOfYear: number;
 }
 
-/** today/split → plan start year; explicit year → that year. Falls back to the
- *  current calendar year when the projection has no rows. */
+/** explicit year → that year; split → the final-death year so out-of-estate
+ *  assets are valued at the end state (mirrors the web chart-tab's
+ *  `secondDeathYear ?? firstDeathYear ?? today`, so the PDF ties out with the
+ *  on-screen chart — F7); today → plan start year. Falls back to the current
+ *  calendar year when the projection has no rows. */
 export function resolveAsOfYear(
   asOf: AsOfSelection,
   projection: ProjectionResult,
 ): number {
   if (asOf.kind === "year") return asOf.year;
-  return projection.years[0]?.year ?? new Date().getFullYear();
+  const planStartYear = projection.years[0]?.year ?? new Date().getFullYear();
+  if (asOf.kind === "split") {
+    return (
+      projection.secondDeathEvent?.year ??
+      projection.firstDeathEvent?.year ??
+      planStartYear
+    );
+  }
+  return planStartYear;
 }
 
 /**

@@ -14,7 +14,6 @@ describe("computeFederalEstateTax", () => {
     const r = computeFederalEstateTax({
       taxableEstate: 50_000,
       adjustedTaxableGifts: 14_000_000,
-      lifetimeGiftTaxAdjustment: 0,
       beaAtDeathYear: 15_000_000,
       dsueReceived: 0,
     });
@@ -29,7 +28,6 @@ describe("computeFederalEstateTax", () => {
     const r = computeFederalEstateTax({
       taxableEstate: 25_000_000,
       adjustedTaxableGifts: 0,
-      lifetimeGiftTaxAdjustment: 0,
       beaAtDeathYear: 15_000_000,
       dsueReceived: 5_000_000,
     });
@@ -40,7 +38,6 @@ describe("computeFederalEstateTax", () => {
     const r = computeFederalEstateTax({
       taxableEstate: 100_000,
       adjustedTaxableGifts: 0,
-      lifetimeGiftTaxAdjustment: 0,
       beaAtDeathYear: 15_000_000,
       dsueReceived: 0,
     });
@@ -51,12 +48,39 @@ describe("computeFederalEstateTax", () => {
     const r = computeFederalEstateTax({
       taxableEstate: 20_000_000,
       adjustedTaxableGifts: 0,
-      lifetimeGiftTaxAdjustment: 0,
       beaAtDeathYear: 15_000_000,
       dsueReceived: 10_000_000,
     });
     expect(r.applicableExclusion).toBe(25_000_000);
     expect(r.federalEstateTax).toBe(0);
+  });
+
+  // F1 — §2001(b)(2): the tax must back out gift tax payable on post-1976
+  // gifts (at date-of-death rates) so lifetime gifts that exceeded the
+  // exemption aren't taxed twice. Before the fix this returned $6,000,000.
+  it("subtracts §2001(b)(2) gift tax payable on over-exemption lifetime gifts", () => {
+    const r = computeFederalEstateTax({
+      taxableEstate: 10_000_000,
+      adjustedTaxableGifts: 20_000_000,
+      beaAtDeathYear: 15_000_000,
+      dsueReceived: 0,
+    });
+    // tentativeTax       = rate($30M)              = 11,945,800
+    // giftTaxPayable     = rate($20M) − rate($15M) =  2,000,000
+    // unifiedCredit      = rate($15M)              =  5,945,800
+    // federalEstateTax   = 11,945,800 − 2,000,000 − 5,945,800 = 4,000,000
+    expect(r.giftTaxPayable).toBeCloseTo(2_000_000, 2);
+    expect(r.federalEstateTax).toBeCloseTo(4_000_000, 2);
+  });
+
+  it("leaves gift tax payable at zero when cumulative gifts stay within the exemption", () => {
+    const r = computeFederalEstateTax({
+      taxableEstate: 10_000_000,
+      adjustedTaxableGifts: 5_000_000,
+      beaAtDeathYear: 15_000_000,
+      dsueReceived: 0,
+    });
+    expect(r.giftTaxPayable).toBe(0);
   });
 });
 

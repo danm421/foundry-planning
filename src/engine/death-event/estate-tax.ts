@@ -33,6 +33,10 @@ function isBusinessEntity(e: EntitySummary | undefined): boolean {
 export interface FederalEstateTaxOutput {
   tentativeTaxBase: number;
   tentativeTax: number;
+  /** §2001(b)(2): gift tax payable on post-1976 gifts at date-of-death rates,
+   *  backed out of the tax so over-exemption lifetime gifts aren't taxed
+   *  twice. Zero whenever cumulative taxable gifts ≤ the date-of-death BEA. */
+  giftTaxPayable: number;
   applicableExclusion: number;
   unifiedCredit: number;
   federalEstateTax: number;
@@ -41,17 +45,31 @@ export interface FederalEstateTaxOutput {
 export function computeFederalEstateTax(input: {
   taxableEstate: number;
   adjustedTaxableGifts: number;
-  lifetimeGiftTaxAdjustment: number;
   beaAtDeathYear: number;
   dsueReceived: number;
 }): FederalEstateTaxOutput {
-  const tentativeTaxBase =
-    input.taxableEstate + input.adjustedTaxableGifts + input.lifetimeGiftTaxAdjustment;
+  const tentativeTaxBase = input.taxableEstate + input.adjustedTaxableGifts;
   const tentativeTax = applyUnifiedRateSchedule(tentativeTaxBase);
+  // §2001(b)(2) / §2001(g): subtract the gift tax that would have been payable
+  // on the decedent's post-1976 taxable gifts using date-of-death rates. Only
+  // gifts above the BEA generate a payable, so this is the tax on cumulative
+  // gifts less the tax on the exclusion — clamped at zero.
+  const giftTaxPayable = Math.max(
+    0,
+    applyUnifiedRateSchedule(input.adjustedTaxableGifts)
+      - applyUnifiedRateSchedule(input.beaAtDeathYear),
+  );
   const applicableExclusion = input.beaAtDeathYear + input.dsueReceived;
   const unifiedCredit = applyUnifiedRateSchedule(applicableExclusion);
-  const federalEstateTax = Math.max(0, tentativeTax - unifiedCredit);
-  return { tentativeTaxBase, tentativeTax, applicableExclusion, unifiedCredit, federalEstateTax };
+  const federalEstateTax = Math.max(0, tentativeTax - giftTaxPayable - unifiedCredit);
+  return {
+    tentativeTaxBase,
+    tentativeTax,
+    giftTaxPayable,
+    applicableExclusion,
+    unifiedCredit,
+    federalEstateTax,
+  };
 }
 
 // ── Gross estate builder ────────────────────────────────────────────────────
@@ -467,7 +485,6 @@ export function buildEstateTaxResult(input: {
   gross: GrossEstateOutput;
   deductions: DeductionOutput;
   adjustedTaxableGifts: number;
-  lifetimeGiftTaxAdjustment: number;
   beaAtDeathYear: number;
   dsueReceived: number;
   residenceState: USPSStateCode | null;
@@ -494,7 +511,6 @@ export function buildEstateTaxResult(input: {
   const fed = computeFederalEstateTax({
     taxableEstate,
     adjustedTaxableGifts: input.adjustedTaxableGifts,
-    lifetimeGiftTaxAdjustment: input.lifetimeGiftTaxAdjustment,
     beaAtDeathYear: input.beaAtDeathYear,
     dsueReceived: input.dsueReceived,
   });
@@ -566,7 +582,7 @@ export function buildEstateTaxResult(input: {
     charitableDeduction: input.deductions.charitableDeduction,
     taxableEstate,
     adjustedTaxableGifts: input.adjustedTaxableGifts,
-    lifetimeGiftTaxAdjustment: input.lifetimeGiftTaxAdjustment,
+    giftTaxPayable: fed.giftTaxPayable,
     tentativeTaxBase: fed.tentativeTaxBase,
     tentativeTax: fed.tentativeTax,
     beaAtDeathYear: input.beaAtDeathYear,

@@ -27,7 +27,7 @@ const baseEstate: Partial<EstateTaxResult> = {
   charitableDeduction: 0,
   taxableEstate: 0,
   adjustedTaxableGifts: 0,
-  lifetimeGiftTaxAdjustment: 0,
+  giftTaxPayable: 0,
   tentativeTaxBase: 0,
   tentativeTax: 0,
   beaAtDeathYear: 0,
