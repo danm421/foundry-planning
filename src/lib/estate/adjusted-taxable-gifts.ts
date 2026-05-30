@@ -31,20 +31,51 @@ import type { Gift, GiftEvent, EntitySummary } from "@/engine/types";
 export function computeAdjustedTaxableGifts(
   decedent: "client" | "spouse",
   gifts: Gift[],
-  _entities: EntitySummary[],
+  entities: EntitySummary[],
   annualExclusionsByYear: Record<number, number>,
   accountValueAtYear: (accountId: string, year: number) => number,
   giftEvents: GiftEvent[] = [],
 ): number {
-  let total = 0;
+  return computeAdjustedTaxableGiftsByYear(
+    decedent,
+    gifts,
+    entities,
+    annualExclusionsByYear,
+    accountValueAtYear,
+    giftEvents,
+  ).reduce((sum, g) => sum + g.amount, 0);
+}
+
+/**
+ * Per-gift-year breakdown of {@link computeAdjustedTaxableGifts}: each entry is a single
+ * gift's post-annual-exclusion contribution tagged with the year it was made. The amounts
+ * sum to the scalar `computeAdjustedTaxableGifts` total. State estate-tax modules use the
+ * year tags to apply statutory gift-addback lookback windows (ME/VT/MN/NY); the federal
+ * Form 706 line always uses the full sum.
+ *
+ * Fully-excluded gifts (zero net contribution) are omitted. One entry per contributing
+ * gift/event in iteration order — years may repeat when multiple gifts share a year.
+ */
+export function computeAdjustedTaxableGiftsByYear(
+  decedent: "client" | "spouse",
+  gifts: Gift[],
+  _entities: EntitySummary[],
+  annualExclusionsByYear: Record<number, number>,
+  accountValueAtYear: (accountId: string, year: number) => number,
+  giftEvents: GiftEvent[] = [],
+): Array<{ year: number; amount: number }> {
+  const contributions: Array<{ year: number; amount: number }> = [];
+  const add = (year: number, amount: number) => {
+    if (amount > 0) contributions.push({ year, amount });
+  };
 
   // Legacy cash-gift array (cash-only rows from the loader).
   for (const g of gifts) {
     const exclusion = annualExclusionsByYear[g.year] ?? 0;
     if (g.grantor === decedent) {
-      total += Math.max(0, g.amount - exclusion);
+      add(g.year, Math.max(0, g.amount - exclusion));
     } else if (g.grantor === "joint") {
-      total += Math.max(0, g.amount / 2 - exclusion);
+      add(g.year, Math.max(0, g.amount / 2 - exclusion));
     }
     // Other-grantor gifts contribute 0 to the current decedent's total.
   }
@@ -58,17 +89,17 @@ export function computeAdjustedTaxableGifts(
       // Only series-fanned cash events (which have seriesId) need to be counted here.
       if (ev.seriesId == null) continue;
       const exclusion = annualExclusionsByYear[ev.year] ?? 0;
-      total += Math.max(0, ev.amount - exclusion);
+      add(ev.year, Math.max(0, ev.amount - exclusion));
     } else if (ev.kind === "asset") {
       // Asset transfer: advisor override takes precedence over engine-computed value.
       const contribution =
         ev.amountOverride != null
           ? ev.amountOverride
           : accountValueAtYear(ev.accountId, ev.year) * ev.percent;
-      total += contribution;
+      add(ev.year, contribution);
     }
     // Liability transfers: debt assumption is not a gift of value → $0.
   }
 
-  return total;
+  return contributions;
 }

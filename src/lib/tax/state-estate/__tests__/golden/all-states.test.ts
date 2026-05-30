@@ -30,20 +30,28 @@ const CASES: Array<[StateCode, number, number]> = [
   ["MD", 6_000_000,         160_000],
   ["MD", 20_000_000,        2_400_000],
 
-  ["MA", 2_000_000,         0],
-  ["MA", 4_250_000,         179_040],
-  // Full $20M ladder: 74,880 + 40K + 44K + 96K + 104K + 112K + 120K + 128K + 136K + 1,593,600
-  ["MA", 20_000_000,        2_448_480],
+  // MA (MGL c.65C as amended Oct 2023): pre-2002 §2011 state-death-credit table
+  // applied to the WHOLE taxable estate from $0, less a fixed $99,600 credit, floor 0.
+  ["MA", 1_940_000,         0],         // credit fully absorbs table tax at/below $1.94M
+  ["MA", 2_000_000,         4_320],     // 103,920 table − 99,600
+  ["MA", 3_000_000,         87_680],    // 187,280 table − 99,600
+  ["MA", 4_250_000,         214_720],   // 314,320 table − 99,600
+  ["MA", 5_000_000,         298_720],   // 398,320 table − 99,600
+  ["MA", 10_000_000,        977_120],   // 1,076,720 table − 99,600
+  ["MA", 20_000_000,        2_576_800], // 2,676,400 table − 99,600
 
   ["MN", 3_000_000,         0],
   ["MN", 5_000_000,         260_000],
   // 7.1M@13% (923K) + 1M@13.6% + 1M@14.4% + 1M@15.2% + 1.9M@16%
   ["MN", 15_000_000,        1_659_000],
 
-  ["NY", 7_160_000,         0],
-  // Below cliff (7.518M); tax = $340K × 13.6% in $7.1M-$8.1M band
-  ["NY", 7_500_000,         46_240],
-  ["NY", 8_000_000,         773_200],
+  // NY phase-out band (exemption $7.16M → 105% cliff $7.518M), NY Tax Law §952(c)(2):
+  // whole estate taxed from $0, less a credit phasing linearly from $658,960 (= table tax
+  // at the exemption) to $0 at the cliff. Continuous up to the cliff value (707,648).
+  ["NY", 7_160_000,         0],         // at the exemption → fully credited
+  ["NY", 7_300_000,         276_734],   // 678,000 table − 401,266 phased credit
+  ["NY", 7_500_000,         672_068],   // 705,200 table − 33,132 phased credit
+  ["NY", 8_000_000,         773_200],   // above the cliff → entire estate, no credit
 
   ["OR", 1_000_000,         0],
   ["OR", 2_000_000,         101_250],

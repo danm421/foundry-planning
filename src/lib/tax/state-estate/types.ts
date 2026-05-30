@@ -32,8 +32,8 @@ export interface StateEstateTaxRule {
   capCombined?: number;
   /** NY — when taxable / exemption > cliffPct, entire estate becomes taxable. */
   cliffPct?: number;
-  /** MA — first $exemption isn't fed into graduated brackets. */
-  antiCliff?: boolean;
+  /** MA — fixed credit subtracted from the full-estate graduated-table tax (floor 0). */
+  fixedCredit?: number;
   /** Annotation surfaced in the audit-report notes; no runtime effect in Phase 1. */
   outOfState: "proportional-credit" | "limited-credit" | "deduct-from-gross" | "no-credit" | "foreign-only";
   citation: string;
@@ -65,7 +65,8 @@ export interface StateEstateTaxResult {
   preCapTax: number;
   cap?: { applied: boolean; cap: number; reduction: number };
   cliff?: { applied: boolean; threshold: number };
-  antiCliffCreditApplied?: boolean;
+  /** NY phase-out band / MA fixed credit subtracted from the bracket tax to reach final tax. */
+  creditReduction?: number;
 
   stateEstateTax: number;
   /** Human-readable annotations for the audit report. */
