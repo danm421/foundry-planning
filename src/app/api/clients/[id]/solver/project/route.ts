@@ -12,6 +12,10 @@ import type { SolverMutation, SolverProjectResponse } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
+import {
+  checkProjectionRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
@@ -28,6 +32,15 @@ type RouteCtx = { params: Promise<{ id: string }> };
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
     const firmId = await requireOrgId();
+
+    const rl = await checkProjectionRateLimit(firmId);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "Too many projection requests. Please wait a moment and try again.",
+      );
+    }
+
     const { id: clientId } = await ctx.params;
 
     const inFirm = await findClientInFirm(clientId, firmId);

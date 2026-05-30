@@ -14,6 +14,10 @@ import type { SolverMutation } from "@/lib/solver/types";
 import type { SolveLeverKey, SolveSseEventName } from "@/lib/solver/solve-types";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
+import {
+  checkProjectionRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
@@ -59,6 +63,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       });
     }
     throw err;
+  }
+
+  // Rate-limit before opening the stream so a denial is a normal 429/503,
+  // not a mid-stream error event. Shares the projection budget (engine run).
+  const rl = await checkProjectionRateLimit(firmId);
+  if (!rl.allowed) {
+    return rateLimitErrorResponse(
+      rl,
+      "Too many solver requests. Please wait a moment and try again.",
+    );
   }
 
   const inFirm = await findClientInFirm(clientId, firmId);

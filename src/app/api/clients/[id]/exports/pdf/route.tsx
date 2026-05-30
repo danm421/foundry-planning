@@ -5,6 +5,10 @@ import { renderToStream } from "@react-pdf/renderer";
 import { db } from "@/db";
 import { firms } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import {
+  checkExportPdfRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { getArtifact } from "@/lib/report-artifacts/index";
 import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
 import { ArtifactDocument } from "@/components/pdf/artifact-document";
@@ -38,6 +42,15 @@ export async function POST(
 ) {
   try {
     const firmId = await requireOrgId();
+
+    const rl = await checkExportPdfRateLimit(firmId);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "Too many PDF exports. Please wait a moment and try again.",
+      );
+    }
+
     const { id: clientId } = await params;
 
     const json = await request.json().catch(() => null);

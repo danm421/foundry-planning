@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/db-helpers", () => ({
   requireOrgId: vi.fn(),
 }));
+// The route gained a projection rate-limit guard (audit F11); let it pass so
+// tests don't hit the real shared Upstash budget (nondeterministic once spent).
+vi.mock("@/lib/rate-limit", () => ({
+  checkProjectionRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  rateLimitErrorResponse: vi.fn(),
+}));
 vi.mock("@/lib/db-scoping", () => ({
   findClientInFirm: vi.fn(),
 }));
@@ -125,7 +131,10 @@ describe("POST /api/clients/[id]/solver/solve", () => {
     expect(res.status).toBe(200);
     const body = await readBody(res);
     expect(body).toContain("event: error");
-    expect(body).toContain("engine boom");
+    // Audit F4: the SSE error event is sanitized — the client gets a generic
+    // message, never the raw engine error string (which can embed internal IDs).
+    expect(body).toContain("Internal server error");
+    expect(body).not.toContain("engine boom");
   });
 
   it("clamps invalid targetPoS via Zod validation", async () => {

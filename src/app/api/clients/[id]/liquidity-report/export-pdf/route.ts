@@ -3,6 +3,10 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import {
+  checkExportPdfRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { renderToStream } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
@@ -20,6 +24,15 @@ export async function POST(
 ) {
   try {
     const firmId = await requireOrgId();
+
+    const rl = await checkExportPdfRateLimit(firmId);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "Too many PDF exports. Please wait a moment and try again.",
+      );
+    }
+
     const { id } = await params;
 
     const [client] = await db
