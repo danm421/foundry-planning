@@ -5,15 +5,38 @@ import type { ProjectionResult } from "@/engine/projection";
 import type { ClientData } from "@/engine/types";
 import type { BuildDataContext } from "@/components/presentations/registry";
 
-function fakeProjection(years: number[]): ProjectionResult {
-  return { years: years.map((year) => ({ year })) } as unknown as ProjectionResult;
+function fakeProjection(
+  years: number[],
+  deathEvents: { first?: number; second?: number } = {},
+): ProjectionResult {
+  return {
+    years: years.map((year) => ({ year })),
+    firstDeathEvent: deathEvents.first != null ? { year: deathEvents.first } : undefined,
+    secondDeathEvent: deathEvents.second != null ? { year: deathEvents.second } : undefined,
+  } as unknown as ProjectionResult;
 }
 
 describe("resolveAsOfYear", () => {
   const projection = fakeProjection([2026, 2027, 2028]);
 
-  it("maps today/split to the plan start year", () => {
+  it("maps today to the plan start year", () => {
     expect(resolveAsOfYear({ kind: "today" }, projection)).toBe(2026);
+  });
+
+  // F7 — split must value out-of-estate assets as of the final death (web
+  // chart-tab uses secondDeathYear ?? firstDeathYear ?? today), so the PDF
+  // export ties out with the on-screen chart.
+  it("maps split to the second-death year, mirroring the web chart", () => {
+    const withDeaths = fakeProjection([2026, 2027, 2028], { first: 2050, second: 2058 });
+    expect(resolveAsOfYear({ kind: "split" }, withDeaths)).toBe(2058);
+  });
+
+  it("falls back split to the first-death year when only one death fires", () => {
+    const oneDeath = fakeProjection([2026, 2027, 2028], { first: 2050 });
+    expect(resolveAsOfYear({ kind: "split" }, oneDeath)).toBe(2050);
+  });
+
+  it("falls back split to the plan start year when no death event fires", () => {
     expect(resolveAsOfYear({ kind: "split" }, projection)).toBe(2026);
   });
 
@@ -199,8 +222,10 @@ describe("prepEstate", () => {
     const years = projection.years;
     expect(prep.planStartYear).toBe(years[0].year);
     expect(prep.planEndYear).toBe(years[years.length - 1].year);
-    // split resolves to the plan start year.
-    expect(prep.asOfYear).toBe(prep.planStartYear);
-    expect(prep.asOfYear).toBe(2026);
+    // F7: split resolves to the second-death year (both spouses die in-window),
+    // matching the web chart-tab so the PDF export ties out with the screen.
+    expect(projection.secondDeathEvent).toBeDefined();
+    expect(prep.asOfYear).toBe(projection.secondDeathEvent!.year);
+    expect(prep.asOfYear).toBeGreaterThan(prep.planStartYear);
   });
 });
