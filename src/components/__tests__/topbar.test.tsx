@@ -97,6 +97,7 @@ describe("Topbar", () => {
       ]),
     );
     const menus = container.querySelectorAll("[role='menu']");
-    expect(menus.length).toBe(3);
+    // Assets, Cash Flow, Analysis, Estate Planning each render a sub-tab menu.
+    expect(menus.length).toBe(4);
   });
 });

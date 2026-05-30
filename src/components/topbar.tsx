@@ -36,6 +36,11 @@ const TABS: ReadonlyArray<{
   },
   { label: "Solver", href: "solver" },
   {
+    label: "Analysis",
+    href: "analysis",
+    subTabs: [{ label: "Retirement", path: "/retirement" }],
+  },
+  {
     label: "Estate Planning",
     href: "estate-planning",
     subTabs: [
