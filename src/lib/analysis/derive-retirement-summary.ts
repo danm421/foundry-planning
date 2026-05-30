@@ -40,9 +40,10 @@ export function deriveRetirementSummary(years: ProjectionYear[]): RetirementSumm
   const yearsFullyFunded = liquids.filter((v) => v >= 0).length;
 
   let ageAssetsLastUntil: RetirementSummary["ageAssetsLastUntil"] = null;
-  if (!fullyFunded) {
+  if (!fullyFunded && firstShortIdx > 0) {
     // The last funded year is the one immediately before the first short year.
-    const lastFundedYear = years[Math.max(0, firstShortIdx - 1)];
+    // firstShortIdx === 0 means the plan was never funded → leave null.
+    const lastFundedYear = years[firstShortIdx - 1];
     ageAssetsLastUntil = {
       client: lastFundedYear.ages.client,
       spouse: lastFundedYear.ages.spouse ?? null,

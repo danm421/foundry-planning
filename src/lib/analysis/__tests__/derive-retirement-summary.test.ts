@@ -58,6 +58,16 @@ describe("deriveRetirementSummary", () => {
     expect(s.avgPercentFunded).toBeNull();
   });
 
+  it("returns null ageAssetsLastUntil when plan is short from year 0", () => {
+    const years = [
+      yr({ year: 2040, client: 65, liquid: -10, income: 30, withdrawals: 0, expenses: 100 }),
+    ];
+    const s = deriveRetirementSummary(years);
+    expect(s.ageAssetsLastUntil).toBeNull();
+    expect(s.fullyFunded).toBe(false);
+    expect(s.yearsFullyFunded).toBe(0);
+  });
+
   it("omits spouse age for single-client plans", () => {
     const years = [
       yr({ year: 2040, client: 70, liquid: 10, income: 50, withdrawals: 50, expenses: 100 }),
