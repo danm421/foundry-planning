@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rollupHoldings, type HoldingInput } from "../holdings-rollup";
+import { rollupHoldings, firmSlugToAssetClassId, type HoldingInput } from "../holdings-rollup";
 
 const SLUG_TO_ID = new Map<string, string>([
   ["us_large_cap", "ac-large"],
@@ -107,5 +107,41 @@ describe("rollupHoldings", () => {
     ];
     const r = rollupHoldings(holdings, SLUG_TO_ID);
     expect(r.allocations).toEqual([{ assetClassId: "ac-large", weight: 1 }]);
+  });
+});
+
+describe("firmSlugToAssetClassId", () => {
+  // Multiple firms seed the same canonical slugs. The map MUST resolve each
+  // slug to the *target* firm's asset-class id — picking another firm's id is
+  // the cross-firm leak that makes rolled-up allocations read as 0% in the
+  // firm-scoped Asset Mix editor (the IDs don't match the firm's classes).
+  const rows = [
+    { id: "A-large", slug: "us_large_cap", firmId: "firmA" },
+    { id: "A-small", slug: "us_small_cap", firmId: "firmA" },
+    { id: "B-large", slug: "us_large_cap", firmId: "firmB" },
+    { id: "B-small", slug: "us_small_cap", firmId: "firmB" },
+  ];
+
+  it("resolves slugs to the target firm's ids only", () => {
+    const map = firmSlugToAssetClassId(rows, "firmA");
+    expect(Object.fromEntries(map)).toEqual({
+      us_large_cap: "A-large",
+      us_small_cap: "A-small",
+    });
+  });
+
+  it("never returns another firm's id even when that firm is listed last", () => {
+    // firmB rows come after firmA's — a naive last-write-wins map would pick them.
+    const map = firmSlugToAssetClassId(rows, "firmA");
+    expect([...map.values()]).not.toContain("B-large");
+    expect([...map.values()]).not.toContain("B-small");
+  });
+
+  it("skips rows with a null slug", () => {
+    const map = firmSlugToAssetClassId(
+      [{ id: "A-x", slug: null, firmId: "firmA" }, ...rows],
+      "firmA",
+    );
+    expect([...map.values()]).not.toContain("A-x");
   });
 });

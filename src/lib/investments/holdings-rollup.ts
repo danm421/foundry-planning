@@ -1,3 +1,25 @@
+/** Build a canonical-slug → asset-class-id map for ONE firm.
+ *
+ *  Asset-class slugs are unique *within* a firm (asset_classes_firm_slug_uniq)
+ *  but NOT globally — every firm seeds the same canonical slugs (us_large_cap,
+ *  reit, …) with its own ids. Resolving a security's slug blend therefore MUST
+ *  be scoped to the account's firm; mixing firms collapses the slugs into a
+ *  last-write-wins map that can hand back a foreign firm's asset-class id. When
+ *  that id is persisted into account_asset_allocations it reads as 0% in the
+ *  firm-scoped Asset Mix editor (the stored id matches no class in the firm),
+ *  even though the holdings-derived blend still renders. Pass only the target
+ *  firm's rows, or rely on this firmId filter as a defensive backstop. */
+export function firmSlugToAssetClassId(
+  rows: readonly { id: string; slug: string | null; firmId: string }[],
+  firmId: string,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const r of rows) {
+    if (r.slug && r.firmId === firmId) map.set(r.slug, r.id);
+  }
+  return map;
+}
+
 /** One position to roll up. `securityWeights` is the canonical-slug blend from
  *  the security; `overrides` is the firm-assetClassId blend that wins when
  *  non-empty. A fully-manual holding has securityId=null and an override blend. */
