@@ -34,4 +34,8 @@ describe("fundingScore", () => {
   it("returns 0 for an empty projection", () => {
     expect(fundingScore([])).toBe(0);
   });
+
+  it("treats exactly-zero liquid as fully funded (boundary the bisect relies on)", () => {
+    expect(fundingScore([yr(2040, 0), yr(2041, 0)])).toBe(1);
+  });
 });
