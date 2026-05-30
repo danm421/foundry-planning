@@ -59,7 +59,7 @@ interface Props {
   onExploreResult: (
     result: { years: ProjectionYear[]; summary: RetirementSummary } | null,
   ) => void;
-  /** Phase-4 save handlers — wired later. Optional no-ops for now. */
+  /** Save handlers provided by the orchestrator; buttons disabled until there are Explore edits / while a save is in flight. */
   onSaveScenario?: () => void;
   /** True while the save-scenario POST is in-flight — button shows pending state. */
   savingScenario?: boolean;

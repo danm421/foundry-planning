@@ -274,60 +274,48 @@ export function RetirementAnalysisView({
       view={view}
       onViewChange={setView}
     >
-      {view === "summary" ? (
-        <div className="flex flex-col gap-[var(--gap-grid)] p-[var(--pad-card)]">
-          <AnalysisHeadline segments={buildSummaryHeadline(effectiveSummary)} />
-          <RetirementHeroChart years={effectiveYears} />
-          <AnalysisKpiRow items={buildKpis(effectiveSummary)} />
-          <AnalysisOptionsGrid
-            clientId={clientId}
-            source={source}
-            rows={rows}
-            savingsAccountId={savingsAccountId}
-            onExploreResult={onExploreResult}
-            onMutationsChange={onMutationsChange}
-            onSaveScenario={handleSaveScenario}
-            savingScenario={savingScenario}
-            onSaveBaseFacts={handleSaveBaseFacts}
-            savingBaseFacts={savingBaseFacts}
-          />
-          <AnalysisYearTable
-            rows={effectiveYears}
-            columns={retirementYearColumns(hasSpouse)}
-            caption="Year-by-year breakdown"
-          />
-        </div>
-      ) : (
-        <div className="flex flex-col gap-[var(--gap-grid)] p-[var(--pad-card)]">
-          <AnalysisHeadline
-            segments={
-              posStatus === "ready" && posRate != null
-                ? buildProbabilityHeadline(posRate)
-                : [{ text: "Calculating your probability of success…" }]
-            }
-          />
-          <div className="flex justify-center py-6">
-            <RetirementPosGauge successRate={posRate} status={posStatus} />
-          </div>
-          <AnalysisOptionsGrid
-            clientId={clientId}
-            source={source}
-            rows={rows}
-            savingsAccountId={savingsAccountId}
-            onExploreResult={onExploreResult}
-            onMutationsChange={onMutationsChange}
-            onSaveScenario={handleSaveScenario}
-            savingScenario={savingScenario}
-            onSaveBaseFacts={handleSaveBaseFacts}
-            savingBaseFacts={savingBaseFacts}
-          />
-          <AnalysisYearTable
-            rows={effectiveYears}
-            columns={retirementYearColumns(hasSpouse)}
-            caption="Year-by-year breakdown"
-          />
-        </div>
-      )}
+      <div className="flex flex-col gap-[var(--gap-grid)] p-[var(--pad-card)]">
+        {/* View-specific hero */}
+        {view === "summary" ? (
+          <>
+            <AnalysisHeadline segments={buildSummaryHeadline(effectiveSummary)} />
+            <RetirementHeroChart years={effectiveYears} />
+            <AnalysisKpiRow items={buildKpis(effectiveSummary)} />
+          </>
+        ) : (
+          <>
+            <AnalysisHeadline
+              segments={
+                posStatus === "ready" && posRate != null
+                  ? buildProbabilityHeadline(posRate)
+                  : [{ text: "Calculating your probability of success…" }]
+              }
+            />
+            <div className="flex justify-center py-6">
+              <RetirementPosGauge successRate={posRate} status={posStatus} />
+            </div>
+          </>
+        )}
+
+        {/* Shared across both views */}
+        <AnalysisOptionsGrid
+          clientId={clientId}
+          source={source}
+          rows={rows}
+          savingsAccountId={savingsAccountId}
+          onExploreResult={onExploreResult}
+          onMutationsChange={onMutationsChange}
+          onSaveScenario={handleSaveScenario}
+          savingScenario={savingScenario}
+          onSaveBaseFacts={handleSaveBaseFacts}
+          savingBaseFacts={savingBaseFacts}
+        />
+        <AnalysisYearTable
+          rows={effectiveYears}
+          columns={retirementYearColumns(hasSpouse)}
+          caption="Year-by-year breakdown"
+        />
+      </div>
     </AnalysisShell>
   );
 }
