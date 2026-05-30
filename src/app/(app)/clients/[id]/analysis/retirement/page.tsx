@@ -67,6 +67,7 @@ export default async function RetirementAnalysisPage({
     <RetirementAnalysisContent
       clientId={clientId}
       source={source}
+      tree={effectiveTree}
       clientNames={clientNames}
       asOfLabel={asOfLabel}
       currentYears={currentYears}
