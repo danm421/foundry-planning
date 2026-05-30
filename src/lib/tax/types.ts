@@ -75,6 +75,14 @@ export interface TaxYearParameters {
     hsaCatchup55: number;
   };
 
+  /**
+   * §2503(b) annual gift-tax exclusion for the year. Null = not seeded.
+   * Consumed by the gift ledger / adjusted-taxable-gifts via
+   * `buildAnnualExclusionMap`, which forward-projects out-years from the latest
+   * seeded value (audit F2).
+   */
+  giftAnnualExclusion?: number | null;
+
   // ── Medicare (CMS-published; null until seeded for that year) ──────────────
   /** Annual standard Part B premium. Null = not seeded for this year. */
   standardPartBPremium?: number | null;

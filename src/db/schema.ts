@@ -1326,6 +1326,12 @@ export const accounts = pgTable("accounts", {
   // goes negative the engine pulls from the withdrawal strategy to top it up.
   isDefaultChecking: boolean("is_default_checking").notNull().default(false),
   growthSource: growthSourceEnum("growth_source").notNull().default("default"),
+  // When true (default) and the account has ≥1 holding, the holdings drive the
+  // account's value/basis and its asset mix (growthSource is forced to
+  // asset_mix and account_asset_allocations is auto-seeded by
+  // syncAccountFromHoldings). Set false to record holdings without driving the
+  // account (the advisor's chosen growthSource / mix / value apply instead).
+  deriveFromHoldings: boolean("derive_from_holdings").notNull().default(true),
   modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
     onDelete: "set null",
   }),

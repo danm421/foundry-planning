@@ -68,7 +68,6 @@ export function createGrowthSourceResolver(ctx: {
   modelPortfolios: ReadonlyArray<{ id: string }>;
   modelPortfolioAllocations: readonly ModelPortfolioAllocationRow[];
   accountAssetAllocations: readonly AccountAssetAllocationRow[];
-  accountHoldingsAllocations?: readonly AccountAssetAllocationRow[];
   clientCmaOverrides: readonly ClientCmaOverrideRow[];
 }) {
   const acMap = new Map(ctx.assetClasses.map((ac) => [ac.id, ac]));
@@ -88,13 +87,6 @@ export function createGrowthSourceResolver(ctx: {
     const list = allocsByAccount.get(a.accountId) ?? [];
     list.push(a);
     allocsByAccount.set(a.accountId, list);
-  }
-
-  const holdingsByAccount = new Map<string, AccountAssetAllocationRow[]>();
-  for (const a of ctx.accountHoldingsAllocations ?? []) {
-    const list = holdingsByAccount.get(a.accountId) ?? [];
-    list.push(a);
-    holdingsByAccount.set(a.accountId, list);
   }
 
   function acReturn(id: string): number {
@@ -161,10 +153,6 @@ export function createGrowthSourceResolver(ctx: {
 
   function resolveAccountMix(accountId: string): ResolvedGrowth {
     return foldWeighted(allocsByAccount.get(accountId) ?? []);
-  }
-
-  function resolveAccountHoldings(accountId: string): ResolvedGrowth {
-    return foldWeighted(holdingsByAccount.get(accountId) ?? []);
   }
 
   function resolveCategoryDefault(category: string): ResolvedCategoryDefault {
@@ -295,23 +283,15 @@ export function createGrowthSourceResolver(ctx: {
     return foldAllocs(allocsByAccount.get(accountId));
   }
 
-  /** Asset-class → fractional-weight map for an account's holdings rollup.
-   *  Returns undefined when the account has no holdings allocation rows. */
-  function holdingsAllocMap(accountId: string): Map<string, number> | undefined {
-    return foldAllocs(holdingsByAccount.get(accountId));
-  }
-
   return {
     resolveAccount,
     resolvePortfolio,
     resolveAccountMix,
-    resolveAccountHoldings,
     resolveCategoryDefault,
     resolveInflation,
     getCategoryGrowthSource,
     categoryDefaultPortfolioId,
     portfolioAllocMap,
     accountAllocMap,
-    holdingsAllocMap,
   };
 }

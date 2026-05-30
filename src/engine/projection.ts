@@ -43,6 +43,10 @@ import {
 import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import {
+  buildAnnualExclusionMap,
+  type AnnualExclusionRow,
+} from "../lib/gifts/resolve-annual-exclusion";
+import {
   deriveAboveLineFromSavings,
   deriveAboveLineFromExpenses,
   deriveItemizedFromExpenses,
@@ -262,20 +266,21 @@ export function appendProceedsToWithdrawalStrategy(
   }
 }
 
-// Build a per-year §2503(b) annual gift exclusion lookup from the loaded tax-year
-// rows. Drizzle returns pg-numeric columns as strings; we coerce to number once at
-// the engine boundary so the death-event module can keep its pure shape
-// `Record<number, number>`.
+// Build a dense per-year §2503(b) annual gift exclusion lookup from the loaded
+// tax-year rows. Seeded years keep their exact values; years past the latest
+// seeded row are forward-projected from it (audit F2 — without projection any
+// gift past the last seeded year silently got a $0 exclusion). pg-numeric
+// columns can arrive as strings at the engine boundary, so coerce once here.
 function buildAnnualExclusionsMap(
-  rows: Array<{ year: number; giftAnnualExclusion?: string | null }>,
+  rows: AnnualExclusionRow[],
+  planSettings: PlanSettings,
 ): Record<number, number> {
-  const map: Record<number, number> = {};
-  for (const r of rows) {
-    if (r.giftAnnualExclusion != null) {
-      map[r.year] = parseFloat(r.giftAnnualExclusion);
-    }
-  }
-  return map;
+  return buildAnnualExclusionMap(
+    rows,
+    planSettings.planStartYear,
+    planSettings.planEndYear,
+    planSettings.taxInflationRate ?? planSettings.inflationRate ?? 0,
+  );
 }
 
 export interface ProjectionOptions {
@@ -682,7 +687,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // cash-flow pass can read entity-tagged synthetic expenses.
   let lastAllExpenses: Expense[] = data.expenses;
 
-  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
+  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], planSettings);
   let charityCarryforward: CharityCarryforward = emptyCharityCarryforward();
 
   // Cap-gains realized by step 12c (entity gap-fill) liquidations of trust-owned
@@ -5136,7 +5141,7 @@ function computeTodayHypotheticalEstateTax(
     planSettings: data.planSettings,
     gifts: data.gifts ?? [],
     giftEvents: data.giftEvents,
-    annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? []),
+    annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? [], data.planSettings),
   });
 }
 
@@ -5153,7 +5158,7 @@ export function runProjectionWithEvents(
   const years = runProjection(data, options);
   const firstIdx = years.findIndex((y) => y.estateTax?.deathOrder === 1);
   const secondIdx = years.findIndex((y) => y.estateTax?.deathOrder === 2);
-  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
+  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], data.planSettings);
   const giftLedger = computeGiftLedger({
     planStartYear: data.planSettings.planStartYear,
     planEndYear: data.planSettings.planEndYear,

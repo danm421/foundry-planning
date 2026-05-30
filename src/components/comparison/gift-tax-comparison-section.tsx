@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { buildRecipientDrilldown } from "@/lib/gifts/build-recipient-drilldown";
 import type { RecipientGroup } from "@/lib/gifts/build-recipient-drilldown";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { GiftCumulativeTable } from "@/components/gift-cumulative-table";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { seriesColor } from "@/lib/comparison/series-palette";
@@ -56,16 +57,14 @@ function PlanCard({ plan, index }: { plan: ComparisonPlan; index: number }) {
         { name: eb.name, kind: eb.kind },
       ]),
     );
-    const annualExclusionsByYear: Record<number, number> = {};
-    const taxYearRows = (tree.taxYearRows ?? []) as Array<{
-      year: number;
-      giftAnnualExclusion?: string | null;
-    }>;
-    for (const r of taxYearRows) {
-      if (r.giftAnnualExclusion != null) {
-        annualExclusionsByYear[r.year] = parseFloat(r.giftAnnualExclusion);
-      }
-    }
+    // Dense map: seeded years exact, out-years projected forward (audit F2) —
+    // matches the engine so the drilldown agrees with the ledger.
+    const annualExclusionsByYear = buildAnnualExclusionMap(
+      tree.taxYearRows ?? [],
+      tree.planSettings.planStartYear,
+      tree.planSettings.planEndYear,
+      tree.planSettings.taxInflationRate ?? tree.planSettings.inflationRate ?? 0,
+    );
     const yearByYear = new Map(plan.result.years.map((y) => [y.year, y]));
     const accountValueAtYear = (accountId: string, year: number): number => {
       const ly = yearByYear.get(year)?.accountLedgers?.[accountId];

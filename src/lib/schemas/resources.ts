@@ -83,6 +83,7 @@ export const accountCreateSchema = z
     priorYearEndValue: money.optional().nullable(),
     ownerEntityId: uuidLike.optional().nullable(),
     growthSource: z.string().max(40).optional(),
+    deriveFromHoldings: z.boolean().optional(),
     modelPortfolioId: uuidLike.optional().nullable(),
     turnoverPct: money.optional(),
     overridePctOi: z.number().min(0).max(1).optional().nullable(),

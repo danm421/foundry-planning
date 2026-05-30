@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "derive_from_holdings" boolean DEFAULT true NOT NULL;

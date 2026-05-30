@@ -14,6 +14,7 @@ import { useState, useMemo, createContext, useContext, type ReactNode } from "re
 import { useRouter } from "next/navigation";
 import type { ClientData, Will } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
+import { resolveAnnualExclusion } from "@/lib/gifts/resolve-annual-exclusion";
 import { useToast } from "@/components/toast";
 import { DropPopup, type DropAction, type DropPopupProps } from "./drop/drop-popup";
 import {
@@ -158,9 +159,14 @@ export function CanvasDndProvider({
   const [editing, setEditing] = useState<EditingState | null>(null);
 
   const getAnnualExclusion = useMemo(() => {
-    const map = new Map(annualExclusions);
-    return (year: number) => map.get(year) ?? 0;
-  }, [annualExclusions]);
+    // Forward-project past the latest seeded year instead of returning $0
+    // (audit F2) — mirrors the engine's `buildAnnualExclusionMap`.
+    const rows = annualExclusions.map(([year, giftAnnualExclusion]) => ({
+      year,
+      giftAnnualExclusion,
+    }));
+    return (year: number) => resolveAnnualExclusion(year, rows, taxInflationRate);
+  }, [annualExclusions, taxInflationRate]);
 
   const router = useRouter();
   const { showToast } = useToast();

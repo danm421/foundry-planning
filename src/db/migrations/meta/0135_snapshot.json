@@ -1,5 +1,5 @@
 {
-  "id": "144948d2-3548-49ea-923b-56ef11c6b20f",
+  "id": "85c15f60-f2e8-4141-8838-7db2da94453d",
   "prevId": "f05648a3-c370-4449-a384-dc6f3b936635",
   "version": "7",
   "dialect": "postgresql",
@@ -812,6 +812,13 @@
           "notNull": true,
           "default": "'default'"
         },
+        "derive_from_holdings": {
+          "name": "derive_from_holdings",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
         "model_portfolio_id": {
           "name": "model_portfolio_id",
           "type": "uuid",
@@ -942,29 +949,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "accounts_client_scenario_idx": {
-          "name": "accounts_client_scenario_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "accounts_client_id_clients_id_fk": {
           "name": "accounts_client_id_clients_id_fk",
@@ -4685,23 +4670,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "entities_client_idx": {
-          "name": "entities_client_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "entities_client_id_clients_id_fk": {
           "name": "entities_client_id_clients_id_fk",
@@ -5184,29 +5153,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "expenses_client_scenario_idx": {
-          "name": "expenses_client_scenario_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "expenses_client_id_clients_id_fk": {
           "name": "expenses_client_id_clients_id_fk",
@@ -6569,29 +6516,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "incomes_client_scenario_idx": {
-          "name": "incomes_client_scenario_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "incomes_client_id_clients_id_fk": {
           "name": "incomes_client_id_clients_id_fk",
@@ -6955,29 +6880,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "liabilities_client_scenario_idx": {
-          "name": "liabilities_client_scenario_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "liabilities_client_id_clients_id_fk": {
           "name": "liabilities_client_id_clients_id_fk",
@@ -9595,29 +9498,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "savings_rules_client_scenario_idx": {
-          "name": "savings_rules_client_scenario_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "savings_rules_client_id_clients_id_fk": {
           "name": "savings_rules_client_id_clients_id_fk",
@@ -9965,23 +9846,7 @@
           "default": "'manual'"
         }
       },
-      "indexes": {
-        "scenario_snapshots_client_idx": {
-          "name": "scenario_snapshots_client_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "scenario_snapshots_client_id_clients_id_fk": {
           "name": "scenario_snapshots_client_id_clients_id_fk",
@@ -10061,23 +9926,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "scenario_toggle_groups_scenario_idx": {
-          "name": "scenario_toggle_groups_scenario_idx",
-          "columns": [
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "scenario_toggle_groups_scenario_id_scenarios_id_fk": {
           "name": "scenario_toggle_groups_scenario_id_scenarios_id_fk",
@@ -10150,23 +9999,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "scenarios_client_idx": {
-          "name": "scenarios_client_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "scenarios_client_id_clients_id_fk": {
           "name": "scenarios_client_id_clients_id_fk",
@@ -12105,29 +11938,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "withdrawal_strategies_client_scenario_idx": {
-          "name": "withdrawal_strategies_client_scenario_idx",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "withdrawal_strategies_client_id_clients_id_fk": {
           "name": "withdrawal_strategies_client_id_clients_id_fk",

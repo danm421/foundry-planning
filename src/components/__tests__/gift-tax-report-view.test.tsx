@@ -44,6 +44,14 @@ const treeFixture = {
     planEndAge: 95,
     filingStatus: "married_joint",
   },
+  // planSettings is required on ClientData; the drilldown reads its plan
+  // horizon + inflation to build the dense annual-exclusion map (audit F2).
+  planSettings: {
+    planStartYear: 2026,
+    planEndYear: 2060,
+    inflationRate: 0.03,
+    taxInflationRate: 0.025,
+  },
 } as unknown as Record<string, unknown>;
 
 describe("GiftTaxReportView", () => {

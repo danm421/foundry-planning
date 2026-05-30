@@ -6,6 +6,7 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { holdingUpdateSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
+import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,8 @@ export async function PUT(
       metadata: { holdingId },
     });
 
+    await syncAccountFromHoldings(accountId);
+
     return NextResponse.json(row);
   } catch (err) {
     if (err instanceof UnauthorizedError) {
@@ -105,6 +108,8 @@ export async function DELETE(
       firmId,
       metadata: { holdingId },
     });
+
+    await syncAccountFromHoldings(accountId);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

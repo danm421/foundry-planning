@@ -122,3 +122,11 @@ export async function setAccountGrowthSource(
     await fetch(`/api/clients/${clientId}/accounts/${accountId}`, jsonInit("PUT", { growthSource })),
   );
 }
+
+export async function setAccountDeriveFromHoldings(
+  clientId: string, accountId: string, deriveFromHoldings: boolean,
+): Promise<void> {
+  await json(
+    await fetch(`/api/clients/${clientId}/accounts/${accountId}`, jsonInit("PUT", { deriveFromHoldings })),
+  );
+}

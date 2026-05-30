@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import { HoldingsTab } from "./holdings-tab";
+import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab from "./beneficiaries-tab";
 import { CurrencyInput } from "@/components/currency-input";
@@ -69,6 +70,7 @@ export interface AccountFormInitial {
   propertyTaxGrowthRate?: string;
   propertyTaxGrowthSource?: string;
   growthSource?: string;
+  deriveFromHoldings?: boolean;
   modelPortfolioId?: string | null;
   turnoverPct?: string;
   overridePctOi?: string | null;
@@ -419,6 +421,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [customAllocations, setCustomAllocations] = useState<{ assetClassId: string; weight: number }[]>([]);
   const [allocationsLoaded, setAllocationsLoaded] = useState(false);
   const [holdingsTotals, setHoldingsTotals] = useState<{ value: number; basis: number } | null>(null);
+  const [deriveFromHoldings, setDeriveFromHoldings] = useState<boolean>(
+    (initial as { deriveFromHoldings?: boolean } | undefined)?.deriveFromHoldings ?? true,
+  );
+  // The account is actually driven by its holdings only when the opt-in flag is
+  // on AND there are holdings to derive from (totals reported by the Holdings tab).
+  const drivenByHoldings = deriveFromHoldings && holdingsTotals != null;
   // Controlled state for previously-uncontrolled fields. Conversion from
   // `defaultValue` is a prerequisite for tab-switch auto-save (the save path
   // needs to read these without scraping FormData) — and it also closes a
@@ -595,6 +603,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     : defaultPctForCategory ?? 7;
 
   function handleGrowthSourceChange(v: string) {
+    // Choosing any source other than the holdings-seeded asset mix opts out of
+    // holdings driving this account (value/basis/mix become editable again).
+    const picksAssetMix = v === "asset_mix";
+    if (deriveFromHoldings && holdingsTotals != null && !picksAssetMix && effectiveAccountId) {
+      setDeriveFromHoldings(false);
+      void setAccountDeriveFromHoldings(clientId, effectiveAccountId, false);
+    }
     if (v.startsWith("mp:")) {
       const newId = v.slice(3);
       setGrowthSource("model_portfolio");
@@ -610,9 +625,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       setModelPortfolioId("");
     } else if (v === "custom") {
       setGrowthSource("custom");
-      setModelPortfolioId("");
-    } else if (v === "holdings") {
-      setGrowthSource("holdings");
       setModelPortfolioId("");
     } else {
       setGrowthSource("default");
@@ -665,6 +677,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? realEstateGrowthSource
           : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
+      deriveFromHoldings,
       turnoverPct: toPctOrNull(turnoverPct) ?? "0",
       overridePctOi: toPctOrNull(overridePctOi),
       overridePctLtCg: toPctOrNull(overridePctLtCg),
@@ -759,7 +772,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   }, [
     canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
     isInvestable, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
-    rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId,
+    rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, deriveFromHoldings,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
@@ -1232,8 +1245,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               <CurrencyInput
                 id="value"
                 name="value"
-                value={growthSource === "holdings" && holdingsTotals ? holdingsTotals.value : accountValue}
-                disabled={growthSource === "holdings"}
+                value={drivenByHoldings ? holdingsTotals!.value : accountValue}
+                disabled={drivenByHoldings}
                 onChange={(raw) => {
                   setAccountValue(raw);
                   // Auto-mirror basis from value for plain non-retirement
@@ -1247,7 +1260,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 }}
                 className={inputClassName}
               />
-              {growthSource === "holdings" && (
+              {drivenByHoldings && (
                 <p className="mt-1 text-xs text-gray-400">
                   Value &amp; cost basis are derived from this account&apos;s holdings.
                 </p>
@@ -1279,8 +1292,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 <CurrencyInput
                   id="basis"
                   name="basis"
-                  value={growthSource === "holdings" && holdingsTotals ? holdingsTotals.basis : accountBasis}
-                  disabled={growthSource === "holdings"}
+                  value={drivenByHoldings ? holdingsTotals!.basis : accountBasis}
+                  disabled={drivenByHoldings}
                   onChange={(raw) => {
                     setAccountBasis(raw);
                     setUserEditedBasis(true);
@@ -1309,9 +1322,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     ))}
                     {ASSET_MIX_CATEGORIES.includes(category) && (
                       <option value="asset_mix">Asset mix (custom)</option>
-                    )}
-                    {ASSET_MIX_CATEGORIES.includes(category) && (
-                      <option value="holdings">Holdings (positions)</option>
                     )}
                     {(category === "cash" || category === "taxable" || category === "retirement") && (
                       <option value="inflation">
@@ -1649,8 +1659,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             accountId={isEdit ? (initial?.id ?? null) : null}
             scenarioActive={writer.scenarioActive}
             assetClasses={assetClasses}
-            growthSource={growthSource}
-            onGrowthSourceSynced={setGrowthSource}
+            deriveFromHoldings={deriveFromHoldings}
+            onDeriveFromHoldingsChange={setDeriveFromHoldings}
             onTotalsChange={setHoldingsTotals}
           />
         </div>
