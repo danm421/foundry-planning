@@ -132,6 +132,27 @@ export async function checkProjectionRateLimit(
   return safeLimit(limiter, key);
 }
 
+// PDF export (presentation decks + comparison / balance-sheet / liquidity
+// reports). A full @react-pdf render of a multi-page document is heavier and
+// rarer than an interactive projection, so it gets its own budget — a burst of
+// exports can't starve (or be starved by) the projection limiter. 10/min/firm.
+const getExportPdfLimiter = buildLimiter(10, "1 m", "rl:export-pdf");
+
+/**
+ * Check whether `key` (firm id) may invoke a PDF export endpoint.
+ * Budget: 10 req/min/firm.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
+ */
+export async function checkExportPdfRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getExportPdfLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit";
 
 /**

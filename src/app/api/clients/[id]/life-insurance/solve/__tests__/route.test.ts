@@ -10,6 +10,12 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => {
 vi.mock("@/lib/db-scoping", () => ({
   findClientInFirm: vi.fn(),
 }));
+// The route gained a projection rate-limit guard (audit F11); let it pass so
+// tests don't hit the real shared Upstash budget (nondeterministic once spent).
+vi.mock("@/lib/rate-limit", () => ({
+  checkProjectionRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  rateLimitErrorResponse: vi.fn(),
+}));
 vi.mock("@/lib/scenario/loader", () => ({
   loadEffectiveTree: vi.fn(),
 }));

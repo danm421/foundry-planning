@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { renderToStream } from "@react-pdf/renderer";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import {
+  checkExportPdfRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
 import { loadExportData } from "@/lib/comparison-pdf/load-export-data";
 import { buildCoverProps } from "@/lib/comparison-pdf/build-cover";
@@ -31,6 +35,15 @@ export async function POST(
 ) {
   try {
     const firmId = await requireOrgId();
+
+    const rl = await checkExportPdfRateLimit(firmId);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "Too many PDF exports. Please wait a moment and try again.",
+      );
+    }
+
     const { id, cid } = await params;
 
     let json: unknown;

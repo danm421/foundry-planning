@@ -7,6 +7,10 @@ import { db } from "@/db";
 import { firms } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
+  checkExportPdfRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
+import {
   loadClientData,
   ClientNotFoundError,
   ProjectionInputError,
@@ -83,6 +87,15 @@ export async function POST(
 ) {
   try {
     const firmId = await requireOrgId();
+
+    const rl = await checkExportPdfRateLimit(firmId);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "Too many PDF exports. Please wait a moment and try again.",
+      );
+    }
+
     const { id } = await params;
 
     let json: unknown;

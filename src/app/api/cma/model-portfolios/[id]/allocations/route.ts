@@ -1,12 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
+import { assertAssetClassesInFirm } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
+
+const allocationsBodySchema = z
+  .object({
+    allocations: z
+      .array(
+        z
+          .object({
+            assetClassId: z.string().uuid(),
+            // numeric(5,4) column — accept the string form the UI sends.
+            weight: z.coerce.number().min(0).max(1),
+          })
+          .strict(),
+      )
+      .default([]),
+  })
+  .strict();
 
 // PUT /api/cma/model-portfolios/[id]/allocations — replace all allocations
 export async function PUT(
@@ -28,11 +46,25 @@ export async function PUT(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const body = await request.json();
-    const allocations: { assetClassId: string; weight: string }[] = body.allocations ?? [];
+    const parsed = allocationsBodySchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid allocations payload" }, { status: 400 });
+    }
+    const { allocations } = parsed.data;
+
+    // F10 fix: every assetClassId must belong to the caller's firm before we
+    // write it — the schema FK is firm-blind, so without this an admin could
+    // reference another firm's asset class from their own portfolio.
+    const acCheck = await assertAssetClassesInFirm(
+      firmId,
+      allocations.map((a) => a.assetClassId),
+    );
+    if (!acCheck.ok) {
+      return NextResponse.json({ error: acCheck.reason }, { status: 400 });
+    }
 
     // Validate weights sum to ~1.0
-    const totalWeight = allocations.reduce((s, a) => s + Number(a.weight), 0);
+    const totalWeight = allocations.reduce((s, a) => s + a.weight, 0);
     if (allocations.length > 0 && Math.abs(totalWeight - 1.0) > 0.001) {
       return NextResponse.json(
         { error: `Weights must sum to 100% (got ${(totalWeight * 100).toFixed(1)}%)` },
@@ -50,7 +82,8 @@ export async function PUT(
         allocations.map((a) => ({
           modelPortfolioId: id,
           assetClassId: a.assetClassId,
-          weight: a.weight,
+          // numeric column → drizzle expects the string form.
+          weight: String(a.weight),
         }))
       );
     }

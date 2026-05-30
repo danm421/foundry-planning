@@ -10,6 +10,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
+import {
+  checkProjectionRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import {
@@ -68,6 +72,15 @@ function solveCase(
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
     const firmId = await requireOrgId();
+
+    const rl = await checkProjectionRateLimit(firmId);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "Too many solver requests. Please wait a moment and try again.",
+      );
+    }
+
     const { id: clientId } = await ctx.params;
 
     const inFirm = await findClientInFirm(clientId, firmId);

@@ -9,6 +9,13 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => {
   };
 });
 
+// The route gained a PDF-export rate-limit guard (audit F11); let it pass so
+// tests don't hit the real shared Upstash budget (nondeterministic once spent).
+vi.mock("@/lib/rate-limit", () => ({
+  checkExportPdfRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  rateLimitErrorResponse: vi.fn(),
+}));
+
 vi.mock("@/lib/projection/load-client-data", () => ({
   loadClientData: vi.fn().mockResolvedValue({
     client: { firstName: "Cooper", lastName: "Sample", spouseName: "Susan" },
