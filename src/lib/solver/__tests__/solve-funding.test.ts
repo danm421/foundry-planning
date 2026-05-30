@@ -34,4 +34,20 @@ describe("solveFunding", () => {
     expect(result.solvedValue).toBeLessThanOrEqual(31000);
     expect(result.finalProjection.length).toBe(1);
   });
+
+  it("narrows to the minimal funded lever value over multiple iterations", async () => {
+    const tree = {} as ClientData;
+    // Funded boundary at 21000 (odd, not a first-midpoint): liquid >= 0 iff value >= 21000.
+    const result = await solveFunding({
+      effectiveTree: tree,
+      baselineMutations: [],
+      target: { kind: "savings-contribution", accountId: "acct-1" },
+      project: (value) => [fakeYear(value - 21000)],
+      leverConfigOverride: { lo: 0, hi: 60000, step: 1000, direction: 1 },
+    });
+    expect(result.status).toBe("converged");
+    expect(result.solvedValue).toBe(21000); // minimal funded step
+    // The returned projection must actually be funded.
+    expect(result.finalProjection.every((y) => y.portfolioAssets.taxableTotal >= 0)).toBe(true);
+  });
 });

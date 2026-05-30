@@ -18,10 +18,6 @@ import { resolveTechniqueMutations } from "./resolve-technique-mutations";
 import type { SolveLeverKey } from "./solve-types";
 import type { SolverMutation } from "./types";
 
-// Target slightly below 1.0 so that the "just barely funded" boundary counts
-// as converged (fundingScore caps at exactly 1.0 when funded).
-const FUNDED_TARGET = 0.999;
-
 export interface SolveFundingResult {
   status: "converged" | "unreachable" | "max-iterations";
   solvedValue: number;
@@ -73,7 +69,11 @@ export async function solveFunding(args: SolveFundingArgs): Promise<SolveFunding
     hi: config.hi,
     step: config.step,
     direction: config.direction,
-    target: FUNDED_TARGET,
+    target: 1.0,        // fundingScore === 1.0 at the fully-funded boundary
+    tolerance: 0,       // no early-exit: converge via bracket-collapse to the
+                        // minimal funded lever (bisect always returns the
+                        // funded "tight" side, so the result is truly funded)
+    maxIterations: 24,  // enough to narrow the widest lever range by its step
     evaluate,
   });
 
