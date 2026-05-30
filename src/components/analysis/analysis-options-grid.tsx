@@ -62,6 +62,8 @@ interface Props {
   /** Phase-4 save handlers — wired later. Optional no-ops for now. */
   onSaveScenario?: () => void;
   onSaveBaseFacts?: () => void;
+  /** Lifted so the parent can re-use the current Explore mutations (e.g. PoS fetch). */
+  onMutationsChange?: (mutations: SolverMutation[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +127,7 @@ export function AnalysisOptionsGrid({
   onExploreResult,
   onSaveScenario,
   onSaveBaseFacts,
+  onMutationsChange,
 }: Props) {
   // --- Solved columns (streamed) ------------------------------------------
   const [columns, setColumns] = useState<Record<SolvedColumnId, ColumnState>>({
@@ -224,6 +227,12 @@ export function AnalysisOptionsGrid({
     Map<SolverMutationKey, SolverMutation>
   >(() => new Map());
   const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
+
+  // Lift mutations to parent (e.g. for PoS fetch) whenever they change.
+  useEffect(() => {
+    onMutationsChange?.(mutations);
+  }, [mutations, onMutationsChange]);
+
   const [exploreStatus, setExploreStatus] = useState<
     "fresh" | "computing" | "error"
   >("fresh");

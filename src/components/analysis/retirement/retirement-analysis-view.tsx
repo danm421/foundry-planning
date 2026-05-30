@@ -5,18 +5,24 @@
 // column, and the year-by-year table. The Explore column's recompute result
 // (when the advisor edits) becomes the effective projection driving every
 // other panel; otherwise the server-computed current projection is shown.
+//
+// The Probability view shows the Monte Carlo probability-of-success gauge.
+// PoS is fetched when switching to the probability view (if not already
+// fetched for the current mutations) and re-fetched (debounced 600 ms) when
+// Explore edits change while on the probability view.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { RetirementSummary } from "@/lib/analysis/derive-retirement-summary";
-import type { SolverSource } from "@/lib/solver/types";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { AnalysisShell } from "@/components/analysis/analysis-shell";
 import { AnalysisHeadline } from "@/components/analysis/analysis-headline";
 import { AnalysisKpiRow } from "@/components/analysis/analysis-kpi-row";
 import { AnalysisYearTable } from "@/components/analysis/analysis-year-table";
 import { AnalysisOptionsGrid } from "@/components/analysis/analysis-options-grid";
 import { RetirementHeroChart } from "./retirement-hero-chart";
-import { buildSummaryHeadline, buildKpis } from "./retirement-headline";
+import { RetirementPosGauge } from "./retirement-pos-gauge";
+import { buildSummaryHeadline, buildProbabilityHeadline, buildKpis } from "./retirement-headline";
 import { retirementYearColumns } from "./retirement-year-columns";
 import {
   buildExploreRows,
@@ -58,6 +64,17 @@ export function RetirementAnalysisView({
     summary: RetirementSummary;
   } | null>(null);
 
+  // PoS state
+  const [posRate, setPosRate] = useState<number | null>(null);
+  const [posStatus, setPosStatus] = useState<"idle" | "computing" | "ready">("idle");
+  // Mutations from the Explore grid, lifted so we can re-fetch PoS when they change.
+  const [exploreMutations, setExploreMutations] = useState<SolverMutation[]>([]);
+  // Track which mutations we last successfully fetched PoS for, so we don't
+  // re-fetch on a view switch when nothing changed.
+  const lastPosMutationsRef = useRef<string | null>(null);
+  const posAbortRef = useRef<AbortController | null>(null);
+  const posDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const effectiveYears = explored ? explored.years : currentYears;
   const effectiveSummary = explored ? explored.summary : currentSummary;
 
@@ -81,6 +98,75 @@ export function RetirementAnalysisView({
     [],
   );
 
+  const onMutationsChange = useCallback((mutations: SolverMutation[]) => {
+    setExploreMutations(mutations);
+  }, []);
+
+  // Fetch PoS helper — aborts any in-flight request, then fires a new one.
+  const fetchPos = useCallback(
+    (mutations: SolverMutation[]) => {
+      const key = JSON.stringify(mutations);
+      if (lastPosMutationsRef.current === key) return; // already fetched for these mutations
+
+      // Cancel in-flight request
+      if (posAbortRef.current) posAbortRef.current.abort();
+      const ac = new AbortController();
+      posAbortRef.current = ac;
+
+      setPosStatus("computing");
+      (async () => {
+        try {
+          const res = await fetch(
+            `/api/clients/${clientId}/analysis/retirement/pos`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ source, mutations }),
+              signal: ac.signal,
+            },
+          );
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = (await res.json()) as { successRate: number };
+          setPosRate(data.successRate);
+          setPosStatus("ready");
+          lastPosMutationsRef.current = key;
+        } catch (err) {
+          if (ac.signal.aborted) return;
+          console.error("PoS fetch error:", err);
+          setPosStatus("idle");
+        }
+      })();
+    },
+    [clientId, source],
+  );
+
+  // When switching to probability view: fetch immediately if needed.
+  useEffect(() => {
+    if (view !== "probability") return;
+    fetchPos(exploreMutations);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]); // intentionally runs only when view changes; fetchPos is stable
+
+  // When on probability view and Explore mutations change: debounced re-fetch.
+  useEffect(() => {
+    if (view !== "probability") return;
+    if (posDebounceRef.current) clearTimeout(posDebounceRef.current);
+    posDebounceRef.current = setTimeout(() => {
+      fetchPos(exploreMutations);
+    }, 600);
+    return () => {
+      if (posDebounceRef.current) clearTimeout(posDebounceRef.current);
+    };
+  }, [exploreMutations, view, fetchPos]);
+
+  // Abort in-flight PoS request on unmount.
+  useEffect(() => {
+    return () => {
+      posAbortRef.current?.abort();
+      if (posDebounceRef.current) clearTimeout(posDebounceRef.current);
+    };
+  }, []);
+
   return (
     <AnalysisShell
       title="Retirement Analysis"
@@ -101,6 +187,7 @@ export function RetirementAnalysisView({
             rows={rows}
             savingsAccountId={savingsAccountId}
             onExploreResult={onExploreResult}
+            onMutationsChange={onMutationsChange}
           />
           <AnalysisYearTable
             rows={effectiveYears}
@@ -109,8 +196,24 @@ export function RetirementAnalysisView({
           />
         </div>
       ) : (
-        <div className="flex min-h-[40vh] items-center justify-center p-[var(--pad-card)] text-center">
-          <p className="text-[15px] text-ink-3">Probability view coming soon</p>
+        <div className="flex flex-col gap-[var(--gap-grid)] p-[var(--pad-card)]">
+          <AnalysisHeadline segments={buildProbabilityHeadline(posRate ?? 0)} />
+          <div className="flex justify-center py-6">
+            <RetirementPosGauge successRate={posRate} status={posStatus} />
+          </div>
+          <AnalysisOptionsGrid
+            clientId={clientId}
+            source={source}
+            rows={rows}
+            savingsAccountId={savingsAccountId}
+            onExploreResult={onExploreResult}
+            onMutationsChange={onMutationsChange}
+          />
+          <AnalysisYearTable
+            rows={effectiveYears}
+            columns={retirementYearColumns(hasSpouse)}
+            caption="Year-by-year breakdown"
+          />
         </div>
       )}
     </AnalysisShell>
