@@ -130,6 +130,7 @@ export default function AddAccountDialog({
               : "Edit Account"
           }
           size="md"
+          bodyTopFlush={!isNoteCategory}
           primaryAction={{
             label: isEdit ? "Save Changes" : "Add Account",
             form: isNoteCategory ? "add-note-receivable-form" : "add-account-form",

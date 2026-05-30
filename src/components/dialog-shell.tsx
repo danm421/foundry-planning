@@ -27,6 +27,10 @@ interface DialogShellProps {
    *  show a "Saving…" indicator or inline error chip without restructuring
    *  the tabs row. */
   tabBarRight?: ReactNode;
+  /** Drops the scroll body's top padding so a `sticky top-0` element rendered
+   *  as the first child (e.g. an in-form tab strip) can pin flush against the
+   *  header with content scrolling cleanly behind it. */
+  bodyTopFlush?: boolean;
   primaryAction?: ActionConfig;
   secondaryAction?: ActionConfig;        // defaults to a Cancel button that closes the dialog
   destructiveAction?: ActionConfig;
@@ -49,6 +53,7 @@ export default function DialogShell({
   activeTab,
   onTabChange,
   tabBarRight,
+  bodyTopFlush,
   primaryAction,
   secondaryAction,
   destructiveAction,
@@ -102,7 +107,11 @@ export default function DialogShell({
         className={`relative z-10 w-full ${sizeClass[size]} max-h-[min(80vh,720px)] flex flex-col rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-hair">
+        <div
+          className={`flex items-center justify-between gap-3 px-6 pt-4 border-b border-hair ${
+            bodyTopFlush ? "pb-2" : "pb-4"
+          }`}
+        >
           <h2 className="text-[16px] font-semibold text-ink">{title}</h2>
           <button
             type="button"
@@ -131,7 +140,13 @@ export default function DialogShell({
         )}
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-6">{children}</div>
+        <div
+          className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 pb-6 ${
+            bodyTopFlush ? "pt-0" : "pt-6"
+          }`}
+        >
+          {children}
+        </div>
 
         {/* Footer */}
         {showFooter && (

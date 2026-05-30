@@ -1031,12 +1031,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   return (
     <>
     <form id="add-account-form" onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
-      )}
-
-      {/* Tab bar */}
-      <div className="flex items-center border-b border-gray-700">
+      {/* Tab bar — pinned flush to the top of the dialog's scroll region. The
+          dialog drops its body top-padding (bodyTopFlush) and we bleed full-width
+          (-mx-6 px-6) so content scrolls cleanly behind the strip. */}
+      <div className="sticky top-0 z-10 -mx-6 flex items-center border-b border-gray-700 bg-card px-6">
         <div className="flex flex-1">
           {!lockTab && (
             <button
@@ -1134,6 +1132,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           onDismissError={accountAutoSave.clearSaveError}
         />
       </div>
+
+      {error && (
+        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
+      )}
 
       {/* Account Details */}
       {!lockTab && (
