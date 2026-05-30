@@ -4,6 +4,7 @@ import { clients, externalBeneficiaries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { externalBeneficiaryUpdateSchema } from "@/lib/schemas/beneficiaries";
+import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 
 export const dynamic = "force-dynamic";
 
@@ -66,16 +67,24 @@ export async function DELETE(
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
-    const [row] = await db
-      .delete(externalBeneficiaries)
-      .where(
-        and(
-          eq(externalBeneficiaries.id, beneficiaryId),
-          eq(externalBeneficiaries.clientId, id),
-        ),
-      )
-      .returning();
-    if (!row) {
+    // Delete the beneficiary and, atomically, any will-recipient rows that point
+    // at it — recipient_id is a polymorphic FK-less column, so a plain delete
+    // would leave a dangling id and silently wrong estate projections (audit F13).
+    const deleted = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .delete(externalBeneficiaries)
+        .where(
+          and(
+            eq(externalBeneficiaries.id, beneficiaryId),
+            eq(externalBeneficiaries.clientId, id),
+          ),
+        )
+        .returning();
+      if (!row) return null;
+      await cleanupWillRecipientReferences(tx, "external_beneficiary", beneficiaryId);
+      return row;
+    });
+    if (!deleted) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     return NextResponse.json({ ok: true });

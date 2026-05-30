@@ -13,6 +13,7 @@ import {
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
@@ -595,26 +596,33 @@ export async function DELETE(
     // ownerEntityId; now find via account_owners junction table.
     // null would collide with the household's own default checking on the per-scenario
     // unique index.
-    const entityDefaultCheckingOwnerRows = await db
-      .select({ accountId: accountOwners.accountId })
-      .from(accountOwners)
-      .where(eq(accountOwners.entityId, entityId));
-    const entityAccountIds = entityDefaultCheckingOwnerRows.map((r) => r.accountId);
-    if (entityAccountIds.length > 0) {
-      await db
-        .delete(accounts)
-        .where(
-          and(
-            eq(accounts.clientId, id),
-            inArray(accounts.id, entityAccountIds),
-            eq(accounts.isDefaultChecking, true)
-          )
-        );
-    }
+    await db.transaction(async (tx) => {
+      const entityDefaultCheckingOwnerRows = await tx
+        .select({ accountId: accountOwners.accountId })
+        .from(accountOwners)
+        .where(eq(accountOwners.entityId, entityId));
+      const entityAccountIds = entityDefaultCheckingOwnerRows.map((r) => r.accountId);
+      if (entityAccountIds.length > 0) {
+        await tx
+          .delete(accounts)
+          .where(
+            and(
+              eq(accounts.clientId, id),
+              inArray(accounts.id, entityAccountIds),
+              eq(accounts.isDefaultChecking, true)
+            )
+          );
+      }
 
-    await db
-      .delete(entities)
-      .where(and(eq(entities.id, entityId), eq(entities.clientId, id)));
+      // Remove will-recipient rows that point at this entity before deleting it —
+      // recipient_id is a polymorphic FK-less column, so a plain delete would
+      // leave a dangling id and silently wrong estate projections (audit F13).
+      await cleanupWillRecipientReferences(tx, "entity", entityId);
+
+      await tx
+        .delete(entities)
+        .where(and(eq(entities.id, entityId), eq(entities.clientId, id)));
+    });
 
     await recordAudit({
       action: "entity.delete",

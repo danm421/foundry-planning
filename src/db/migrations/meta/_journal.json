@@ -960,6 +960,13 @@
       "when": 1780113661922,
       "tag": "0136_f7_client_scenario_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1780113661923,
+      "tag": "0137_f15_plan_settings_unique",
+      "breakpoints": true
     }
   ]
 }

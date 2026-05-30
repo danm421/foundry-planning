@@ -9,6 +9,7 @@ import BusinessDialog from "./business-dialog";
 import type { BusinessAccount } from "./business-dialog/types";
 import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
+import AccountDeleteDialog from "./account-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
@@ -1168,14 +1169,9 @@ export default function BalanceSheetView({
         }}
       />
 
-      <ConfirmDeleteDialog
-        open={!!deletingAccount}
-        title="Delete Account"
-        message={
-          deletingAccount
-            ? `Delete "${deletingAccount.name}"? This will also remove any savings rules or withdrawal strategies linked to it.`
-            : ""
-        }
+      <AccountDeleteDialog
+        clientId={clientId}
+        account={deletingAccount ? { id: deletingAccount.id, name: deletingAccount.name } : null}
         onCancel={() => setDeletingAccount(null)}
         onConfirm={async () => {
           if (deletingAccount) await performAccountDelete(deletingAccount.id);
