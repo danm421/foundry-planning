@@ -24,6 +24,7 @@ import { join } from "node:path";
 
 const API_ROOT = join(process.cwd(), "src/app/api/clients");
 const CMA_ROOT = join(process.cwd(), "src/app/api/cma");
+const CRM_ROOT = join(process.cwd(), "src/app/api/crm");
 // These endpoints don't touch tenant-owned data or are read-only listing
 // of firm-scoped-by-default data and are OK to skip.
 const EXPLICIT_ALLOWLIST = new Set<string>([
@@ -41,11 +42,19 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("tenant isolation contract", () => {
-  const routes = [...walk(API_ROOT), ...walk(CMA_ROOT)];
+  const routes = [...walk(API_ROOT), ...walk(CMA_ROOT), ...walk(CRM_ROOT)];
 
   it("discovers route files", () => {
     // Sanity: if this drops to zero the walker broke, not the audit.
     expect(routes.length).toBeGreaterThan(10);
+  });
+
+  it("includes CRM routes in the scan (F9)", () => {
+    // The CRM route group was previously unscanned — a blind spot. Assert the
+    // walker actually reaches it so this can't silently regress to "0 CRM
+    // routes found, all green".
+    const crmRoutes = routes.filter((f) => f.startsWith(CRM_ROOT));
+    expect(crmRoutes.length).toBeGreaterThan(10);
   });
 
   it.each(routes)("%s derives firmId from Clerk before mutating", (file) => {
