@@ -1,10 +1,10 @@
 import { db } from "@/db";
 import {
-  accounts, accountHoldings, accountAssetAllocations,
+  accounts, clients, accountHoldings, accountAssetAllocations,
   holdingAssetClassOverrides, securityAssetClassWeights, assetClasses,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { rollupHoldings, type HoldingInput } from "./holdings-rollup";
+import { rollupHoldings, firmSlugToAssetClassId, type HoldingInput } from "./holdings-rollup";
 
 /**
  * Roll an account's holdings into its asset mix. When the account is driven by
@@ -19,8 +19,12 @@ import { rollupHoldings, type HoldingInput } from "./holdings-rollup";
  */
 export async function syncAccountFromHoldings(accountId: string): Promise<void> {
   const [acct] = await db
-    .select({ deriveFromHoldings: accounts.deriveFromHoldings })
+    .select({
+      deriveFromHoldings: accounts.deriveFromHoldings,
+      firmId: clients.firmId,
+    })
     .from(accounts)
+    .innerJoin(clients, eq(clients.id, accounts.clientId))
     .where(eq(accounts.id, accountId));
   if (!acct || acct.deriveFromHoldings === false) return;
 
@@ -29,14 +33,16 @@ export async function syncAccountFromHoldings(accountId: string): Promise<void> 
     .from(accountHoldings)
     .where(eq(accountHoldings.accountId, accountId));
 
-  // Build the slug→assetClassId map. Asset classes are firm-scoped; load by
-  // slug is safe because the holdings classify/override routes already validate
-  // firm membership on every assetClassId before it can be stored.
+  // Build the slug→assetClassId map scoped to THIS account's firm. Slugs are
+  // unique per firm but shared across firms (every firm seeds us_large_cap,
+  // reit, …); loading every firm's classes would collapse the slugs and could
+  // resolve to a foreign firm's id, which then reads as 0% in the firm-scoped
+  // Asset Mix editor. firmSlugToAssetClassId filters by firmId as a backstop.
   const acRows = await db
-    .select({ id: assetClasses.id, slug: assetClasses.slug })
-    .from(assetClasses);
-  const slugToAssetClassId = new Map<string, string>();
-  for (const ac of acRows) if (ac.slug) slugToAssetClassId.set(ac.slug, ac.id);
+    .select({ id: assetClasses.id, slug: assetClasses.slug, firmId: assetClasses.firmId })
+    .from(assetClasses)
+    .where(eq(assetClasses.firmId, acct.firmId));
+  const slugToAssetClassId = firmSlugToAssetClassId(acRows, acct.firmId);
 
   const holdingIds = holdingRows.map((h) => h.id);
   const securityIds = Array.from(
