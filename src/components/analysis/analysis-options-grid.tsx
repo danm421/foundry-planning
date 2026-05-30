@@ -111,7 +111,17 @@ function fmtAgeLast(summary: RetirementSummary | null): string {
   if (summary === null) return "—";
   if (summary.fullyFunded || summary.ageAssetsLastUntil === null) return "Funded for life";
   const { client, spouse } = summary.ageAssetsLastUntil;
-  return spouse === null ? `${client}` : `${client}/${spouse}`;
+  return spouse === null ? `Age ${client}` : `Age ${client}/${spouse}`;
+}
+
+/** Compact currency for the dense column-header subtitles ($5,008,516 → $5.0M).
+ *  The exact figure is surfaced via a title tooltip on the subtitle. */
+function fmtCompactCurrency(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}K`;
+  return `${sign}$${Math.round(abs)}`;
 }
 
 function fmtRowValue(row: ExploreRow, value: number): string {
@@ -321,7 +331,7 @@ export function AnalysisOptionsGrid({
             <tr>
               <th
                 scope="col"
-                className="border-b border-hair px-[var(--pad-card)] py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-ink-2"
+                className="w-[200px] min-w-[200px] border-b border-hair px-[var(--pad-card)] py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-ink-2"
               >
                 Lever
               </th>
@@ -335,7 +345,7 @@ export function AnalysisOptionsGrid({
               ))}
               <th
                 scope="col"
-                className="border-b border-hair px-4 py-3 text-left align-bottom"
+                className="border-b border-l border-hair bg-card-2/30 px-4 py-3 text-left align-bottom"
               >
                 <div className="text-[13px] font-semibold text-ink">Explore</div>
                 <div className="text-[11px] text-ink-4">Model your own changes</div>
@@ -349,7 +359,7 @@ export function AnalysisOptionsGrid({
                   scope="row"
                   className="border-b border-hair px-[var(--pad-card)] py-2.5 text-left font-normal"
                 >
-                  <div className="text-[13px] text-ink">{row.label}</div>
+                  <div className="whitespace-nowrap text-[13px] text-ink">{row.label}</div>
                   <div className="text-[11px] text-ink-4">
                     Current:{" "}
                     {row.currentValue === null
@@ -367,7 +377,7 @@ export function AnalysisOptionsGrid({
                     applicable={rowKeys.has(col.highlightRow)}
                   />
                 ))}
-                <td className="border-b border-hair px-4 py-2.5">
+                <td className="border-b border-l border-hair bg-card-2/30 px-4 py-2.5">
                   <ExploreInput row={row} onCommit={(v) => pushEdit(row, v)} />
                 </td>
               </tr>
@@ -425,14 +435,14 @@ function SolvedColumnHeader({
   return (
     <th
       scope="col"
-      className="border-b border-hair px-4 py-3 text-left align-bottom"
+      className="border-b border-hair px-4 py-3 text-right align-bottom"
     >
       <div className="text-[13px] font-semibold text-ink">{config.title}</div>
       {!applicable ? (
         <div className="text-[11px] text-ink-4">Not applicable</div>
       ) : state.status === "pending" ? (
         <div
-          className="mt-1 h-3 w-24 animate-pulse rounded bg-card-2"
+          className="mt-1 ml-auto h-3 w-24 animate-pulse rounded bg-card-2"
           aria-label="Solving"
         />
       ) : state.status === "unavailable" ? (
@@ -442,10 +452,17 @@ function SolvedColumnHeader({
           Not achievable
         </div>
       ) : (
-        <div className="text-[11px] text-ink-4">
-          Assets last: {fmtAgeLast(state.summary)} ·{" "}
-          {state.summary ? formatCurrency(state.summary.assetsRemaining) : "—"}{" "}
-          remaining
+        <div
+          className="whitespace-nowrap text-[11px] tabular text-ink-4"
+          title={
+            state.summary
+              ? `Assets last: ${fmtAgeLast(state.summary)} · ${formatCurrency(state.summary.assetsRemaining)} remaining`
+              : undefined
+          }
+        >
+          {fmtAgeLast(state.summary)} ·{" "}
+          {state.summary ? fmtCompactCurrency(state.summary.assetsRemaining) : "—"}{" "}
+          left
         </div>
       )}
     </th>
@@ -466,34 +483,31 @@ function SolvedCell({
   applicable: boolean;
 }) {
   // Only highlight when the column applies — otherwise the solved lever has no
-  // row to land on and every cell just shows its current value.
+  // row to land on. Each column changes exactly ONE lever, so every other cell
+  // is unchanged from the row's current value; those are shown dimmed so the
+  // single solved value (the green chip) is the thing the eye lands on.
   const isHighlight = applicable && config.highlightRow === row.key;
   const currentDisplay =
     row.currentValue === null ? "—" : fmtRowValue(row, row.currentValue);
 
-  // Non-applicable column, or skeleton/terminal states with nothing to show on
-  // the highlighted cell: render the current value (or "—" on the highlight).
-  if (!applicable) {
+  // Unchanged cell (non-highlight, or a non-applicable column): the held value,
+  // dimmed.
+  if (!isHighlight) {
     return (
-      <td className="border-b border-hair px-4 py-2.5 text-right tabular text-[13px] text-ink-3">
+      <td className="border-b border-hair px-4 py-2.5 text-right tabular text-[13px] text-ink-4">
         {currentDisplay}
       </td>
     );
   }
 
+  // Highlighted lever cell — its content depends on the solve state.
   if (state.status === "pending") {
     return (
       <td className="border-b border-hair px-4 py-2.5">
-        {isHighlight ? (
-          <div
-            className="h-4 w-16 animate-pulse rounded bg-card-2"
-            aria-label="Solving"
-          />
-        ) : (
-          <div className="text-right tabular text-[13px] text-ink-3">
-            {currentDisplay}
-          </div>
-        )}
+        <div
+          className="ml-auto h-4 w-16 animate-pulse rounded bg-card-2"
+          aria-label="Solving"
+        />
       </td>
     );
   }
@@ -501,30 +515,23 @@ function SolvedCell({
   if (state.status === "not-achievable" || state.status === "unavailable") {
     return (
       <td className="border-b border-hair px-4 py-2.5 text-right tabular text-[13px] text-ink-4">
-        {isHighlight ? "—" : currentDisplay}
+        —
       </td>
     );
   }
 
-  // Converged: show the solved value only in the highlighted lever cell, using
-  // the column's own formatter (e.g. multiplier → resulting spend). Other cells
-  // keep their current value (the column changes one lever only).
-  const display = isHighlight
-    ? state.solvedValue === null
+  // Converged: the solved value as a compact green chip hugging the number,
+  // using the column's own formatter (e.g. multiplier → resulting spend).
+  const display =
+    state.solvedValue === null
       ? "—"
-      : (config.formatSolved(state.solvedValue, rows) ?? "—")
-    : currentDisplay;
+      : (config.formatSolved(state.solvedValue, rows) ?? "—");
 
   return (
-    <td
-      className={
-        "border-b border-hair px-4 py-2.5 text-right tabular text-[13px] " +
-        (isHighlight
-          ? "font-semibold text-[color:var(--color-good)] bg-[color:var(--color-good)]/10"
-          : "text-ink-3")
-      }
-    >
-      {display}
+    <td className="border-b border-hair px-4 py-2.5 text-right">
+      <span className="inline-block rounded bg-[color:var(--color-good)]/10 px-2 py-0.5 tabular text-[13px] font-semibold text-[color:var(--color-good)]">
+        {display}
+      </span>
     </td>
   );
 }

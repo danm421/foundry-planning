@@ -27,6 +27,10 @@ import { RetirementPosGauge } from "./retirement-pos-gauge";
 import { buildSummaryHeadline, buildProbabilityHeadline, buildKpis } from "./retirement-headline";
 import { retirementYearColumns } from "./retirement-year-columns";
 import {
+  earliestRetirementYear,
+  sliceFromRetirement,
+} from "@/lib/analysis/retirement-window";
+import {
   buildExploreRows,
   defaultSavingsAccountId,
   savingsColumnAccountId,
@@ -84,6 +88,18 @@ export function RetirementAnalysisView({
 
   const effectiveYears = explored ? explored.years : currentYears;
   const effectiveSummary = explored ? explored.summary : currentSummary;
+
+  // The table + hero chart start at the earliest retirement year (the headline +
+  // KPIs keep the full-plan horizon — funding is a whole-life question). The
+  // explore recompute returns the full projection, so we re-slice here too.
+  const retirementStart = useMemo(
+    () => earliestRetirementYear(tree.client),
+    [tree],
+  );
+  const displayYears = useMemo(
+    () => sliceFromRetirement(effectiveYears, retirementStart),
+    [effectiveYears, retirementStart],
+  );
 
   const hasSpouse = currentYears[0]?.ages.spouse != null;
 
@@ -279,7 +295,7 @@ export function RetirementAnalysisView({
         {view === "summary" ? (
           <>
             <AnalysisHeadline segments={buildSummaryHeadline(effectiveSummary)} />
-            <RetirementHeroChart years={effectiveYears} />
+            <RetirementHeroChart years={displayYears} />
             <AnalysisKpiRow items={buildKpis(effectiveSummary)} />
           </>
         ) : (
@@ -311,7 +327,7 @@ export function RetirementAnalysisView({
           savingBaseFacts={savingBaseFacts}
         />
         <AnalysisYearTable
-          rows={effectiveYears}
+          rows={displayYears}
           columns={retirementYearColumns(hasSpouse)}
           caption="Year-by-year breakdown"
         />

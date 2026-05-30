@@ -13,6 +13,7 @@ import {
 } from "chart.js";
 import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
+import { retirementInflows } from "@/lib/analysis/retirement-inflows";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 
 ChartJS.register(
@@ -25,15 +26,15 @@ ChartJS.register(
   Legend,
 );
 
-// Resolved from globals.css @theme tokens — Chart.js cannot read CSS variables directly.
-// --color-good: #34d399  (Social Security)
-// --color-accent: #f59e0b (Withdrawals from Assets)
-// --color-crit: #f87171  (Shortfall)
-// --color-ink-2: #c7cbd4  (Total Expenses line)
-const COLOR_SS = "#34d399";
-const COLOR_WITHDRAWALS = "#f59e0b";
-const COLOR_SHORTFALL = "#f87171";
-const COLOR_EXPENSES_LINE = "#c7cbd4";
+// Inflow palette mirrors the Cash Flow report's stacked chart so the two read
+// the same. Shortfall is retirement-specific (no Cash Flow equivalent) and uses
+// a distinct pink to separate it from the red Withdrawals band.
+const COLOR_SS = "#2563eb"; // Social Security (navy)
+const COLOR_SALARIES = "#16a34a"; // Salaries (green)
+const COLOR_OTHER = "#99f6e4"; // Other Inflows (teal)
+const COLOR_RMDS = "#f97316"; // RMDs (orange)
+const COLOR_WITHDRAWALS = "#ef4444"; // Withdrawals (red)
+const COLOR_EXPENSES_LINE = "#ffffff"; // Total Expenses line
 
 interface RetirementHeroChartProps {
   years: ProjectionYear[];
@@ -45,6 +46,7 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
     if (years.length === 0) return null;
 
     const labels = years.map((y) => String(y.year));
+    const inflows = years.map(retirementInflows);
 
     return {
       labels,
@@ -52,27 +54,36 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
         {
           type: "bar" as const,
           label: "Social Security",
-          data: years.map((y) => y.income.socialSecurity),
+          data: inflows.map((i) => i.socialSecurity),
           backgroundColor: COLOR_SS,
           stack: "income",
         },
         {
           type: "bar" as const,
-          label: "Withdrawals from Assets",
-          data: years.map((y) => y.withdrawals.total),
-          backgroundColor: COLOR_WITHDRAWALS,
+          label: "Salaries",
+          data: inflows.map((i) => i.salaries),
+          backgroundColor: COLOR_SALARIES,
           stack: "income",
         },
         {
           type: "bar" as const,
-          label: "Shortfall",
-          data: years.map((y) =>
-            Math.max(
-              0,
-              y.totalExpenses - y.income.total - y.withdrawals.total,
-            ),
-          ),
-          backgroundColor: COLOR_SHORTFALL,
+          label: "Other Inflows",
+          data: inflows.map((i) => i.otherInflows),
+          backgroundColor: COLOR_OTHER,
+          stack: "income",
+        },
+        {
+          type: "bar" as const,
+          label: "RMDs",
+          data: inflows.map((i) => i.rmds),
+          backgroundColor: COLOR_RMDS,
+          stack: "income",
+        },
+        {
+          type: "bar" as const,
+          label: "Withdrawals from Assets",
+          data: inflows.map((i) => i.withdrawals),
+          backgroundColor: COLOR_WITHDRAWALS,
           stack: "income",
         },
         {
