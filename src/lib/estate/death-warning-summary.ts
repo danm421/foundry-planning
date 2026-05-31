@@ -45,6 +45,8 @@ export function summarizeDeathWarnings(
   const trustIncomplete: string[] = [];
   let trustPourOutCount = 0;
   let liabilityBequestCount = 0;
+  let irdTaxRateUnset = false;
+  let spouseLifeExpectancyDefaulted = false;
   const unknown: string[] = [];
 
   const nameFor = (ref: string): string => nameById.get(ref) ?? ref;
@@ -72,6 +74,12 @@ export function summarizeDeathWarnings(
       case "liability_bequest_no_recipients":
       case "liability_bequest_unsupported_recipient_kind":
         liabilityBequestCount += 1;
+        break;
+      case "ird_tax_rate_unset":
+        irdTaxRateUnset = true;
+        break;
+      case "spouse_life_expectancy_defaulted":
+        spouseLifeExpectancyDefaulted = true;
         break;
       default:
         unknown.push(w);
@@ -128,6 +136,24 @@ export function summarizeDeathWarnings(
     notes.push({
       key: "liability_bequest",
       message: `${liabilityBequestCount} will liability ${plural(liabilityBequestCount, "bequest", "bequests")} could not be applied`,
+      items: [],
+    });
+  }
+
+  if (irdTaxRateUnset) {
+    notes.push({
+      key: "ird_tax_rate_unset",
+      message:
+        "Heir inherits pre-tax retirement assets but no IRD tax rate is set — projected income tax on those assets is $0. Set an IRD tax rate to model the tax drag.",
+      items: [],
+    });
+  }
+
+  if (spouseLifeExpectancyDefaulted) {
+    notes.push({
+      key: "spouse_life_expectancy_defaulted",
+      message:
+        "No spouse life expectancy entered — the projection assumed age 95, which sets the spouse's death year. Enter a life expectancy to refine the estate timeline.",
       items: [],
     });
   }

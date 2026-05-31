@@ -116,4 +116,31 @@ describe("summarizeDeathWarnings", () => {
       "over_allocation_in_will",
     ]);
   });
+
+  it("translates ird_tax_rate_unset to a friendly message (not the raw token)", () => {
+    const notes = summarizeDeathWarnings(["ird_tax_rate_unset"], names);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].key).toBe("ird_tax_rate_unset");
+    expect(notes[0].message).not.toBe("ird_tax_rate_unset");
+    expect(notes[0].message).toContain("IRD tax rate");
+    expect(notes[0].items).toEqual([]);
+  });
+
+  it("dedupes duplicate ird_tax_rate_unset (same-year double-death) into one note", () => {
+    const notes = summarizeDeathWarnings(
+      ["ird_tax_rate_unset", "ird_tax_rate_unset"],
+      names,
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0].key).toBe("ird_tax_rate_unset");
+  });
+
+  it("translates spouse_life_expectancy_defaulted to a friendly message (not the raw token)", () => {
+    const notes = summarizeDeathWarnings(["spouse_life_expectancy_defaulted"], names);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].key).toBe("spouse_life_expectancy_defaulted");
+    expect(notes[0].message).not.toBe("spouse_life_expectancy_defaulted");
+    expect(notes[0].message).toContain("life expectancy");
+    expect(notes[0].items).toEqual([]);
+  });
 });
