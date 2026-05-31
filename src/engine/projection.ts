@@ -115,12 +115,14 @@ import { type CharityBucket } from "./charitable-deduction";
 import {
   emptyCharityCarryforward,
   type CharityCarryforward,
+  type EntityFlowOverride,
 } from "./types";
 import { computeTaxForYear } from "./year-tax";
 import {
   buildNoteReceivableSchedules,
   computeNotesReceivable,
   type NoteScheduleMap,
+  type NoteScheduleRow,
 } from "./notes-receivable";
 
 // Map legacy income type to the new tax type categories.
@@ -632,6 +634,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // and consulted by the per-year notes-receivable compute step.
   const notesReceivable = data.notesReceivable ?? [];
   const noteSchedules: NoteScheduleMap = buildNoteReceivableSchedules(notesReceivable);
+  // F16: per-note, per-year ending-balance lookup — avoids a .find() per note
+  // per year in the projection loop. Built once from the schedules above.
+  const noteScheduleByYear = new Map<string, Map<number, NoteScheduleRow>>();
+  for (const [noteId, sched] of noteSchedules) {
+    const byYear = new Map<number, NoteScheduleRow>();
+    // First-wins to match the prior .find() semantics on any duplicate-year rows.
+    for (const r of sched) if (!byYear.has(r.year)) byYear.set(r.year, r);
+    noteScheduleByYear.set(noteId, byYear);
+  }
 
   const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
   const spouseBirthYear = client.spouseDob
@@ -724,6 +735,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // death-event pipeline alongside the entity carry but not yet populated —
   // computeGrossEstate doesn't consume the family-member side today.
   const lockedFamilyShareCarry = new Map<string, Map<string, number>>();
+
+  // F16: hoist per-year asset-transaction partitions out of the loop — the
+  // sell/buy split never changes year to year; applyAssetSales/Purchases still
+  // filter by year internally, so behavior is identical.
+  const allSales = (data.assetTransactions ?? []).filter((t) => t.type === "sell");
+  const allPurchases = (data.assetTransactions ?? []).filter((t) => t.type === "buy");
+
+  // F16: (entityId, year) → entity-flow override row; avoids a .find() per
+  // entity per year in the projection loop.
+  const entityFlowOverrideByKey = new Map<string, EntityFlowOverride>();
+  for (const o of data.entityFlowOverrides ?? []) {
+    // First-wins to match the prior .find() semantics on any duplicate keys.
+    const key = `${o.entityId}:${o.year}`;
+    if (!entityFlowOverrideByKey.has(key)) entityFlowOverrideByKey.set(key, o);
+  }
 
   for (
     let year = planSettings.planStartYear;
@@ -909,7 +935,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; homeSaleExclusionApplied: number; taxableCapitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
     };
     if (data.assetTransactions && data.assetTransactions.length > 0) {
-      const sales = data.assetTransactions.filter((t) => t.type === "sell");
+      const sales = allSales;
       if (sales.length > 0) {
         saleResult = applyAssetSales({
           sales,
@@ -946,7 +972,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // the cash account from the sale step above.
     let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string; liabilityId?: string; liabilityName?: string }[] = [];
     if (data.assetTransactions && data.assetTransactions.length > 0) {
-      const purchases = data.assetTransactions.filter((t) => t.type === "buy");
+      const purchases = allPurchases;
       if (purchases.length > 0) {
         const purchaseResult = applyAssetPurchases({
           purchases,
@@ -1547,7 +1573,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (schedule.length > 0) {
         if (year < schedule[0].year) endingBalance = schedule[0].beginningBalance;
         else if (year >= lastRow.year) endingBalance = lastRow.endingBalance;
-        else endingBalance = schedule.find((r) => r.year === year)?.endingBalance ?? 0;
+        else endingBalance = noteScheduleByYear.get(note.id)?.get(year)?.endingBalance ?? 0;
       }
       notesReceivableByNote[note.id] = {
         interest: yr?.interest ?? 0,
@@ -3303,9 +3329,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const entity of currentEntities) {
       if (entity.flowMode !== "schedule") continue;
       if (entity.entityType === "trust") continue;
-      const ovr = (data.entityFlowOverrides ?? []).find(
-        (o) => o.entityId === entity.id && o.year === year,
-      );
+      const ovr = entityFlowOverrideByKey.get(`${entity.id}:${year}`);
       if (!ovr) continue;
       const cashAccountId = resolveCashAccount(entity.id);
       if (ovr.incomeAmount != null && ovr.incomeAmount !== 0) {
