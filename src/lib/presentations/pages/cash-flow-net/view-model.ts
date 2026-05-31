@@ -91,9 +91,32 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
 
   function portfolioBoy(r: ProjectionYear): number {
     const prev = years.find((y) => y.year === r.year - 1);
-    if (prev) return prev.portfolioAssets.total;
-    return Object.values(r.accountLedgers).reduce((s, l) => s + l.beginningValue, 0);
+    // H1: roll the canonical liquid portfolio total forward so the withdrawal %
+    // is taken against the same base the chart/cell show.
+    if (prev) return prev.portfolioAssets.liquidTotal;
+    // Year-1 fallback: only liquid-category ledgers (mirrors the liquidTotal
+    // definition). Accessible-trust accounts won't carry a category in year 1,
+    // so this is best-effort for the first year only; the `prev` path is exact
+    // for every year thereafter.
+    const LIQUID = new Set(["taxable", "cash", "retirement", "life_insurance"]);
+    return Object.entries(r.accountLedgers).reduce(
+      (s, [id, l]) => s + (LIQUID.has(accountCategoryById[id] ?? "") ? l.beginningValue : 0),
+      0,
+    );
   }
+
+  // Supplemental withdrawals from accounts that never resolve to a category
+  // (absent from clientData.accounts and every portfolio bucket). They still
+  // count in withdrawals.total, so without an "Other" column the per-category
+  // columns wouldn't sum to Total Withdrawals (H4).
+  function uncategorizedWithdrawal(r: ProjectionYear): number {
+    let sum = 0;
+    for (const [accId, amount] of Object.entries(r.withdrawals.byAccount)) {
+      if (!accountCategoryById[accId]) sum += amount;
+    }
+    return sum;
+  }
+  const hasUncategorized = years.some((y) => uncategorizedWithdrawal(y) > 0.5);
 
   // Only show categories that had any supplemental withdrawal across the full
   // projection — keeps the column set stable.
@@ -114,6 +137,7 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
   }));
   const columns: DrillColumn[] = [
     ...dataColumns,
+    ...(hasUncategorized ? [{ key: "other", header: "Other", width: 44 } as DrillColumn] : []),
     { key: "total",   header: "Total\nWithdrawals", width: 56, strong: true },
     { key: "boy",     header: "Portfolio\n(BoY)",   width: 56 },
     { key: "wdPct",   header: "Withdrawal\n%",      width: 50, format: "percent" },
@@ -123,6 +147,7 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
   const rows: DrillRow[] = visibleYears.map((py) => {
     const cells: Record<string, number> = {};
     for (const c of activeCats) cells[c.key] = withdrawalByCategory(py, c.key);
+    if (hasUncategorized) cells.other = uncategorizedWithdrawal(py);
     cells.total = py.withdrawals.total;
     const boy = portfolioBoy(py);
     cells.boy = boy;
@@ -147,6 +172,14 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
     color: c.color,
     values: visibleYears.map((y) => withdrawalByCategory(y, c.key)),
   }));
+  if (hasUncategorized) {
+    stacks.push({
+      seriesId: "wd:other",
+      label: "Other",
+      color: "#6b7280", // gray-500, distinct from Cash (#9ca3af)
+      values: visibleYears.map((y) => uncategorizedWithdrawal(y)),
+    });
+  }
   const chartSpec = buildDrillChartSpec({
     years: visibleYears.map((y) => y.year),
     stacks,
