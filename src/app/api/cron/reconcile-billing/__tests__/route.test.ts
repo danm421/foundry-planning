@@ -94,6 +94,21 @@ describe("GET /api/cron/reconcile-billing", () => {
     expect(res.status).toBe(401);
   });
 
+  it("returns 401 when CRON_SECRET is unset even with a 'Bearer ' header", async () => {
+    const prev = process.env.CRON_SECRET;
+    delete process.env.CRON_SECRET;
+    try {
+      const res = await GET(
+        new Request("http://localhost/api/cron/reconcile-billing", {
+          headers: { authorization: "Bearer " },
+        }) as never,
+      );
+      expect(res.status).toBe(401);
+    } finally {
+      if (prev !== undefined) process.env.CRON_SECRET = prev;
+    }
+  });
+
   it("ok run with no firms writes status='ok' and skips Sentry", async () => {
     mockReconcileInsert.mockResolvedValue([{ id: "run_1" }]);
     mockSelectFirms.mockResolvedValue([]);

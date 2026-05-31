@@ -30,8 +30,9 @@ export const dynamic = "force-dynamic";
  * drift is recorded and Sentry-paged for ops review (CC7.1 detective control).
  */
 export async function GET(req: NextRequest): Promise<Response> {
+  const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.CRON_SECRET ?? ""}`) {
+  if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
