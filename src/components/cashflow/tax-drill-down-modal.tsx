@@ -7,7 +7,6 @@ import { resolveSourceLabel, formatCurrency } from "@/lib/tax/cell-drill/_shared
 interface TaxDrillDownModalProps {
   year: number;
   detail: NonNullable<ProjectionYear["taxDetail"]>;
-  totalTaxes: number;
   accountNames: Record<string, string>;
   incomes: ClientData["incomes"];
   entityNames?: Record<string, string>;
@@ -17,13 +16,21 @@ interface TaxDrillDownModalProps {
 export function TaxDrillDownModal({
   year,
   detail,
-  totalTaxes,
   accountNames,
   incomes,
   entityNames,
   onClose,
 }: TaxDrillDownModalProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const incomeRowTotal =
+    detail.earnedIncome +
+    detail.ordinaryIncome +
+    detail.dividends +
+    detail.capitalGains +
+    detail.stCapitalGains +
+    detail.qbi +
+    detail.taxExempt;
 
   return (
     <div
@@ -100,8 +107,8 @@ export function TaxDrillDownModal({
         </div>
 
         <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
-          <span>Total Taxes</span>
-          <span className="tabular-nums">{formatCurrency(totalTaxes)}</span>
+          <span>Total Income</span>
+          <span className="tabular-nums">{formatCurrency(incomeRowTotal)}</span>
         </div>
       </div>
     </div>

@@ -117,7 +117,6 @@ interface NoteLedgerModal {
 interface TaxDrillModal {
   year: number;
   detail: NonNullable<ProjectionYear["taxDetail"]>;
-  totalTaxes: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1697,7 +1696,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             <button
               className="text-right hover:text-accent hover:underline"
               title="View tax detail"
-              onClick={() => setTaxDrillModal({ year: row.year, detail: row.taxDetail!, totalTaxes: row.expenses.taxes })}
+              onClick={() => setTaxDrillModal({ year: row.year, detail: row.taxDetail! })}
             >
               {v}
             </button>
@@ -2645,7 +2644,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               setTaxDrillModal({
                 year: y.year,
                 detail: y.taxDetail,
-                totalTaxes: y.expenses.taxes,
               });
             }
           }}
@@ -2669,7 +2667,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         <TaxDrillDownModal
           year={taxDrillModal.year}
           detail={taxDrillModal.detail}
-          totalTaxes={taxDrillModal.totalTaxes}
           accountNames={accountNames}
           incomes={clientData?.incomes ?? []}
           entityNames={(clientData?.entities ?? []).reduce<Record<string, string>>(

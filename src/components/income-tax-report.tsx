@@ -28,7 +28,6 @@ import type {
 interface TaxDrillState {
   year: number;
   detail: NonNullable<ProjectionYear["taxDetail"]>;
-  totalTaxes: number;
 }
 
 type CellDrill =
@@ -273,7 +272,6 @@ export default function IncomeTaxReport({ clientId }: Props) {
                 setTaxDrill({
                   year: y.year,
                   detail: y.taxDetail,
-                  totalTaxes: y.expenses.taxes,
                 });
               }
             }}
@@ -303,7 +301,6 @@ export default function IncomeTaxReport({ clientId }: Props) {
         <TaxDrillDownModal
           year={taxDrill.year}
           detail={taxDrill.detail}
-          totalTaxes={taxDrill.totalTaxes}
           accountNames={accountNames}
           incomes={clientData?.incomes ?? []}
           entityNames={(clientData?.entities ?? []).reduce<Record<string, string>>(
