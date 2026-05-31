@@ -47,7 +47,6 @@ type ColumnStatus =
 interface FundingSource {
   /** Largest single-year reduction in living expenses across the horizon. */
   maxExpenseReduction: number;
-  growthRate: number;
   /** Pre-formatted growth-assumption label (e.g. "Balanced — 6.2%"). */
   growthLabel: string;
 }
