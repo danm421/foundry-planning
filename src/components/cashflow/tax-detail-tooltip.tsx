@@ -5,7 +5,10 @@ import { useState } from "react";
 
 interface TaxDetailTooltipProps {
   text: string;
-  label: ReactNode;
+  /** Optional inline label rendered before the icon. Omit for an icon-only tooltip. */
+  label?: ReactNode;
+  /** Accessible label for the info icon button. */
+  iconLabel?: string;
 }
 
 /**
@@ -13,12 +16,12 @@ interface TaxDetailTooltipProps {
  * that reveals an explanation on hover or focus. Icon is keyboard-accessible
  * via tab + focus.
  */
-export function TaxDetailTooltip({ text, label }: TaxDetailTooltipProps) {
+export function TaxDetailTooltip({ text, label, iconLabel = "Show column explanation" }: TaxDetailTooltipProps) {
   const [open, setOpen] = useState(false);
 
   return (
     <span className="inline-flex items-center gap-1">
-      <span>{label}</span>
+      {label != null && <span>{label}</span>}
       <span
         className="relative inline-flex"
         onMouseEnter={() => setOpen(true)}
@@ -26,7 +29,7 @@ export function TaxDetailTooltip({ text, label }: TaxDetailTooltipProps) {
       >
         <button
           type="button"
-          aria-label="Show column explanation"
+          aria-label={iconLabel}
           className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-700 text-xs text-gray-300 hover:bg-gray-600 focus:bg-gray-600 focus:outline-none"
           onFocus={() => setOpen(true)}
           onBlur={() => setOpen(false)}

@@ -21,9 +21,11 @@ import {
   type SolverSource,
 } from "@/lib/solver/types";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import { TaxDetailTooltip } from "@/components/cashflow/tax-detail-tooltip";
 import type { MinSavingsGrowth } from "@/lib/analysis/hypothetical-savings";
 import type {
   ExploreRow,
+  ModelPortfolioOption,
   SolvedColumnConfig,
   SolvedColumnId,
 } from "./retirement/retirement-options-config";
@@ -31,6 +33,14 @@ import {
   SOLVED_COLUMNS,
   exploreRowToMutation,
 } from "./retirement/retirement-options-config";
+
+const TAXABLE_DEFAULT_VALUE = "taxable-default";
+const CUSTOM_VALUE = "custom";
+
+/** The Explore row the Minimum Additional Savings column highlights — the row the
+ *  inline growth control renders on. */
+const MIN_SAVINGS_ROW_KEY =
+  SOLVED_COLUMNS.find((c) => c.id === "min-savings")?.highlightRow ?? "taxable-contributions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,7 +57,6 @@ type ColumnStatus =
 interface FundingSource {
   /** Largest single-year reduction in living expenses across the horizon. */
   maxExpenseReduction: number;
-  growthRate: number;
   /** Pre-formatted growth-assumption label (e.g. "Balanced — 6.2%"). */
   growthLabel: string;
 }
@@ -71,6 +80,10 @@ interface Props {
   /** Growth assumption for the hypothetical taxable savings the min-savings
    *  column solves. Changing it re-runs the solve. */
   minSavingsGrowth: MinSavingsGrowth;
+  /** Firm model portfolios for the in-cell growth picker. */
+  modelPortfolioOptions: ModelPortfolioOption[];
+  /** Updates the growth assumption when the advisor picks a portfolio inline. */
+  onMinSavingsGrowthChange: (next: MinSavingsGrowth) => void;
   /** Lifts the latest Explore recompute (or null when the user resets). */
   onExploreResult: (
     result: { years: ProjectionYear[]; summary: RetirementSummary } | null,
@@ -156,6 +169,8 @@ export function AnalysisOptionsGrid({
   rows,
   savingsAccountId,
   minSavingsGrowth,
+  onMinSavingsGrowthChange,
+  modelPortfolioOptions,
   onExploreResult,
   onSaveScenario,
   savingScenario = false,
@@ -305,7 +320,7 @@ export function AnalysisOptionsGrid({
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ source, mutations }),
+            body: JSON.stringify({ source, mutations, minSavingsGrowth }),
             signal: ac.signal,
           },
         );
@@ -325,7 +340,7 @@ export function AnalysisOptionsGrid({
       if (debounceRef.current) clearTimeout(debounceRef.current);
       ac.abort();
     };
-  }, [mutations, clientId, source, onExploreResult]);
+  }, [mutations, clientId, source, onExploreResult, minSavingsGrowth]);
 
   const hasEdits = mutations.length > 0;
 
@@ -340,14 +355,14 @@ export function AnalysisOptionsGrid({
       aria-label="What are your options?"
       className="rounded border border-hair bg-card"
     >
-      <header className="border-b border-hair px-[var(--pad-card)] py-3">
+      <header className="flex items-center gap-1.5 border-b border-hair px-[var(--pad-card)] py-3">
         <h3 className="text-[15px] font-semibold text-ink">
           What are your Options?
         </h3>
-        <p className="mt-0.5 text-[12px] text-ink-4">
-          Each column solves one lever so your plan is fully funded for life.
-          Edit the Explore column to model your own changes.
-        </p>
+        <TaxDetailTooltip
+          iconLabel="What these columns mean"
+          text="Each column solves one lever so your plan is fully funded for life. Edit the Explore column to model your own changes."
+        />
       </header>
 
       <div className="overflow-x-auto">
@@ -391,6 +406,13 @@ export function AnalysisOptionsGrid({
                       ? "—"
                       : fmtRowValue(row, row.currentValue)}
                   </div>
+                  {row.key === MIN_SAVINGS_ROW_KEY && (
+                    <MinSavingsGrowthControl
+                      options={modelPortfolioOptions}
+                      value={minSavingsGrowth}
+                      onChange={onMinSavingsGrowthChange}
+                    />
+                  )}
                 </th>
                 {SOLVED_COLUMNS.map((col) => (
                   <SolvedCell
@@ -555,20 +577,97 @@ function SolvedCell({
   const fundingSource =
     config.id === "min-savings" ? state.fundingSource : null;
 
+  const fundingText =
+    fundingSource === null
+      ? null
+      : (fundingSource.maxExpenseReduction > 0
+          ? `Funded from surplus cash flow; reduces living expenses by up to ${formatCurrency(fundingSource.maxExpenseReduction)}/yr`
+          : "Funded entirely from surplus cash flow") +
+        ` · growing at ${fundingSource.growthLabel}`;
+
   return (
     <td className="border-b border-hair px-4 py-2.5 text-right">
-      <span className="inline-block rounded bg-[color:var(--color-good)]/10 px-2 py-0.5 tabular text-[13px] font-semibold text-[color:var(--color-good)]">
-        {display}
+      <span className="inline-flex items-center justify-end gap-1">
+        <span className="inline-block rounded bg-[color:var(--color-good)]/10 px-2 py-0.5 tabular text-[13px] font-semibold text-[color:var(--color-good)]">
+          {display}
+        </span>
+        {fundingText && (
+          <TaxDetailTooltip iconLabel="Funding details" text={fundingText} />
+        )}
       </span>
-      {fundingSource && (
-        <div className="mt-1 text-[11px] leading-snug text-ink-4">
-          {fundingSource.maxExpenseReduction > 0
-            ? `Funded from surplus cash flow; reduces living expenses by up to ${formatCurrency(fundingSource.maxExpenseReduction)}/yr`
-            : "Funded entirely from surplus cash flow"}
-          {` · growing at ${fundingSource.growthLabel}`}
+    </td>
+  );
+}
+
+/** Compact in-cell growth-source control for the "Additional Taxable Savings"
+ *  lever: the client's taxable default, any firm model portfolio (with its
+ *  blended return), or a flat custom rate. Governs both the solved Minimum
+ *  Additional Savings column and the Explore recompute for that row. */
+function MinSavingsGrowthControl({
+  options,
+  value,
+  onChange,
+}: {
+  options: ModelPortfolioOption[];
+  value: MinSavingsGrowth;
+  onChange: (next: MinSavingsGrowth) => void;
+}) {
+  const selectValue =
+    value.kind === "model-portfolio"
+      ? value.portfolioId
+      : value.kind === "custom-rate"
+        ? CUSTOM_VALUE
+        : TAXABLE_DEFAULT_VALUE;
+
+  const handleSelect = (next: string) => {
+    if (next === TAXABLE_DEFAULT_VALUE) {
+      onChange({ kind: "taxable-default" });
+    } else if (next === CUSTOM_VALUE) {
+      onChange({ kind: "custom-rate", rate: value.kind === "custom-rate" ? value.rate : 0.06 });
+    } else {
+      onChange({ kind: "model-portfolio", portfolioId: next });
+    }
+  };
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-1">
+      <label htmlFor="min-savings-growth" className="text-[11px] text-ink-4">
+        Grows in:
+      </label>
+      <select
+        id="min-savings-growth"
+        value={selectValue}
+        onChange={(e) => handleSelect(e.target.value)}
+        className="h-7 w-full max-w-[200px] cursor-pointer rounded-[var(--radius-sm)] border border-hair bg-card-2 px-1.5 text-[12px] text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+      >
+        <option value={TAXABLE_DEFAULT_VALUE}>Taxable default (plan setting)</option>
+        {options.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name} — {(p.blendedReturn * 100).toFixed(1)}%
+          </option>
+        ))}
+        <option value={CUSTOM_VALUE}>Custom rate…</option>
+      </select>
+      {value.kind === "custom-rate" && (
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            step="0.1"
+            min={0}
+            max={20}
+            value={(value.rate * 100).toFixed(1)}
+            onChange={(e) => {
+              const pct = parseFloat(e.target.value);
+              if (Number.isNaN(pct)) return;
+              onChange({ kind: "custom-rate", rate: pct / 100 });
+            }}
+            aria-label="Custom growth rate (percent)"
+            className="h-7 w-16 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-1.5 text-[12px] text-ink tabular focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+          />
+          <span className="text-[11px] text-ink-3">%</span>
         </div>
       )}
-    </td>
+    </div>
   );
 }
 

@@ -15,6 +15,14 @@ import type { SolverMutation } from "@/lib/solver/types";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { SYNTHETIC_SAVINGS_ACCOUNT_ID } from "@/lib/analysis/hypothetical-savings";
 
+/** A firm model portfolio offered in the min-savings growth picker. */
+export interface ModelPortfolioOption {
+  id: string;
+  name: string;
+  /** Blended geometric return as a decimal (e.g. 0.062). */
+  blendedReturn: number;
+}
+
 // ---------------------------------------------------------------------------
 // Explore rows
 // ---------------------------------------------------------------------------

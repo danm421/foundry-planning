@@ -16,13 +16,13 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import {
-  buildHypotheticalSavings,
   SYNTHETIC_SAVINGS_ACCOUNT_ID,
-  type GrowthResolverLike,
   type MinSavingsGrowth,
 } from "@/lib/analysis/hypothetical-savings";
-import { earliestRetirementYear } from "@/lib/analysis/retirement-window";
-import { LEGACY_FM_CLIENT } from "@/engine/ownership";
+import {
+  MIN_SAVINGS_GROWTH_SCHEMA,
+  injectHypotheticalSavings,
+} from "@/lib/analysis/inject-hypothetical-savings";
 
 export const dynamic = "force-dynamic";
 
@@ -31,13 +31,7 @@ const BODY = z.object({
   mutations: z.array(SOLVER_MUTATION_SCHEMA),
   /** Growth assumption for the hypothetical taxable savings. Defaults to the
    *  client's taxable category default when omitted. */
-  minSavingsGrowth: z
-    .union([
-      z.object({ kind: z.literal("taxable-default") }),
-      z.object({ kind: z.literal("model-portfolio"), portfolioId: z.string().uuid() }),
-      z.object({ kind: z.literal("custom-rate"), rate: z.number().min(-1).max(2) }),
-    ])
-    .optional(),
+  minSavingsGrowth: MIN_SAVINGS_GROWTH_SCHEMA.optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -45,20 +39,6 @@ type EventName = "column" | "done" | "error";
 
 function sseChunk(event: EventName, payload: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-}
-
-/** Human-readable growth assumption for the funding-source sub-line. The UI
- *  renders this verbatim after "growing at". */
-function formatGrowthLabel(growth: MinSavingsGrowth, rate: number): string {
-  const pct = `${(rate * 100).toFixed(1)}%`;
-  switch (growth.kind) {
-    case "custom-rate":
-      return `Custom ${pct}`;
-    case "model-portfolio":
-      return `Model portfolio · ${pct}`;
-    case "taxable-default":
-      return `Taxable default ${pct}`;
-  }
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
@@ -125,20 +105,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         // the other two columns: their levers never raise its annualAmount above
         // 0, so the engine's funding waterfall skips it.
         const growth: MinSavingsGrowth = minSavingsGrowth ?? { kind: "taxable-default" };
-        const resolver: GrowthResolverLike = resolutionContext?.resolver ?? {
-          resolveCategoryDefault: () => ({ rate: 0.05 }),
-          resolvePortfolio: () => ({ geoReturn: 0.05, pctOi: 0, pctLtcg: 0, pctQdiv: 0, pctTaxEx: 0 }),
-        };
-        const ownerFamilyMemberId =
-          effectiveTree.familyMembers?.find((m) => m.role === "client")?.id ?? LEGACY_FM_CLIENT;
-        const { account: synthAccount, rule: synthRule } = buildHypotheticalSavings(growth, resolver, {
-          startYear: effectiveTree.planSettings.planStartYear,
-          endYear: earliestRetirementYear(effectiveTree.client),
-          ownerFamilyMemberId,
-        });
-        effectiveTree.accounts = [...effectiveTree.accounts, synthAccount];
-        effectiveTree.savingsRules = [...effectiveTree.savingsRules, synthRule];
-        const growthLabel = formatGrowthLabel(growth, synthAccount.growthRate);
+        const { growthLabel } = injectHypotheticalSavings(effectiveTree, growth, resolutionContext);
 
         for (const col of columns) {
           if (abortController.signal.aborted) break;
@@ -165,7 +132,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               ? {
                   fundingSource: {
                     maxExpenseReduction,
-                    growthRate: synthAccount.growthRate,
                     growthLabel,
                   },
                 }
