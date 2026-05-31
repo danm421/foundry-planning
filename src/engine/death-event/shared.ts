@@ -78,6 +78,16 @@ export function computeFinalDeathYear(
   return finalDeathYear;
 }
 
+/** A spouse death year is fabricated when a spouse DOB exists but no life
+ *  expectancy is set: `computeFirstDeathYear` / `computeFinalDeathYear` then
+ *  assume the spouse lives to age 95 (the `?? 95` defaults above). That silent
+ *  assumption shifts which BEA-year applies and the death ordering, so callers
+ *  that surface notices should warn when this returns true. Returns false when
+ *  there is no spouse (the fallback never applies). */
+export function isSpouseLifeExpectancyDefaulted(client: ClientInfo): boolean {
+  return client.spouseDob != null && client.spouseLifeExpectancy == null;
+}
+
 /** Given who died first (or null for single-filer), identify who the final
  *  deceased is. For a couple, it's whoever didn't die first. For a
  *  single-filer, always "client". */
