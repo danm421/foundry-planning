@@ -5162,6 +5162,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       year.portfolioAssets.realEstateTotal +
       year.portfolioAssets.businessTotal +
       year.portfolioAssets.lifeInsuranceTotal;
+    // H1: keep the canonical liquid total in sync after the re-bucket — it feeds
+    // the chart/cell/BoY and includes accessibleTrustAssetsTotal, which this pass
+    // can change. Mirrors computePortfolioSnapshot.
+    year.portfolioAssets.liquidTotal =
+      year.portfolioAssets.taxableTotal +
+      year.portfolioAssets.cashTotal +
+      year.portfolioAssets.retirementTotal +
+      year.portfolioAssets.lifeInsuranceTotal +
+      year.portfolioAssets.accessibleTrustAssetsTotal;
   }
 
   return years;

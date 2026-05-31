@@ -1,9 +1,10 @@
 // Portfolio Assets drill-down view-model. Mirrors the Level-1 "portfolio"
-// drill in cashflow-report.tsx ≈ line 2079: liquid columns (Taxable, Cash,
-// Retirement, Life Insurance) subtotal to Total Portfolio Assets, then
-// Trusts & Businesses, optional Accessible Trust Assets, Real Estate, then
-// the grand Total Assets. Chart mirrors the in-app portfolio chart — stacked
-// bars by category, same colors as components/cashflow/charts/portfolio-chart.tsx.
+// drill in cashflow-report.tsx: the liquid investable columns (Taxable, Cash,
+// Retirement, Life Insurance, and — when present — Accessible Trust Assets)
+// subtotal to the canonical Total Portfolio (= engine portfolioAssets.liquidTotal,
+// H1), then Trusts & Businesses and Real Estate add to the informational grand
+// Total Assets. Chart mirrors the in-app portfolio chart — stacked bars by
+// category, same colors as components/cashflow/charts/portfolio-chart.tsx.
 
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import type {
@@ -52,32 +53,32 @@ export function buildPortfolioAssetsDrillData(
     (y) => Math.abs(y.portfolioAssets.accessibleTrustAssetsTotal) >= 0.5,
   );
 
-  const liquidTotal = (y: ProjectionYear) =>
-    y.portfolioAssets.taxableTotal +
-    y.portfolioAssets.cashTotal +
-    y.portfolioAssets.retirementTotal +
-    y.portfolioAssets.lifeInsuranceTotal;
+  // H1: canonical Total Portfolio = engine liquidTotal (taxable + cash +
+  // retirement + lifeInsurance + accessibleTrustAssets). The accessible-trust
+  // column therefore sits *among* the liquid buckets and feeds this subtotal.
+  const liquidTotal = (y: ProjectionYear) => y.portfolioAssets.liquidTotal;
 
+  // Informational grand total. trustsAndBusinessesTotal already mirrors any
+  // household-owned business-category accounts, so we add it (not businessTotal)
+  // to avoid double-counting; this preserves the original Total Assets value.
   const grandTotal = (y: ProjectionYear) =>
     liquidTotal(y) +
     y.portfolioAssets.trustsAndBusinessesTotal +
-    y.portfolioAssets.accessibleTrustAssetsTotal +
     y.portfolioAssets.realEstateTotal;
 
   // ── Columns ──────────────────────────────────────────────────────────────
-  // Mirror the in-app column order so reconciliation is easy: 4 liquid →
-  // Total Portfolio (bold) → Trusts & Businesses → (optional) Accessible →
-  // Real Estate → Total Assets (bold).
+  // Liquid buckets (incl. optional Accessible Trusts) → Total Portfolio (bold,
+  // = liquidTotal) → Trusts & Businesses → Real Estate → Total Assets (bold).
   const columns: DrillColumn[] = [
     { key: "taxable",       header: "Taxable",       width: 38 },
     { key: "cash",          header: "Cash",          width: 38 },
     { key: "retirement",    header: "Retirement",    width: 42 },
     { key: "lifeInsurance", header: "Life\nInsurance", width: 42 },
-    { key: "liquidTotal",   header: "Total\nPortfolio", width: 50, strong: true },
-    { key: "trusts",        header: "Trusts &\nBusinesses", width: 50 },
     ...(hasAnyAccessible
       ? [{ key: "accessible", header: "Accessible\nTrusts", width: 48 } as DrillColumn]
       : []),
+    { key: "liquidTotal",   header: "Total\nPortfolio", width: 50, strong: true },
+    { key: "trusts",        header: "Trusts &\nBusinesses", width: 50 },
     { key: "realEstate",    header: "Real\nEstate",   width: 42 },
     { key: "grandTotal",    header: "Total\nAssets",  width: 54, strong: true },
   ];

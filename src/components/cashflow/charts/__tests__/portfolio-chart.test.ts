@@ -3,16 +3,13 @@ import { buildPortfolioDatasets } from "../portfolio-chart";
 import { makeYear } from "./fixtures";
 
 describe("buildPortfolioDatasets", () => {
-  it("returns one series per portfolio bucket", () => {
+  it("returns one series per liquid portfolio bucket (H1)", () => {
     const labels = buildPortfolioDatasets().map((s) => s.label);
     expect(labels).toEqual([
       "Cash",
       "Taxable",
       "Retirement",
       "Life Insurance",
-      "Real Estate",
-      "Business",
-      "Trusts & Businesses",
       "Accessible Trust Assets",
     ]);
   });
@@ -32,13 +29,27 @@ describe("buildPortfolioDatasets", () => {
         trustsAndBusinesses: {},
         trustsAndBusinessesTotal: 0,
         accessibleTrustAssets: {},
-        accessibleTrustAssetsTotal: 0,
+        accessibleTrustAssetsTotal: 10_000,
         total: 1_075_000,
+        liquidTotal: 1_085_000,
       },
     });
     expect(series.find((s) => s.label === "Cash")!.valueFor(y)).toBe(50_000);
     expect(series.find((s) => s.label === "Taxable")!.valueFor(y)).toBe(200_000);
     expect(series.find((s) => s.label === "Retirement")!.valueFor(y)).toBe(800_000);
     expect(series.find((s) => s.label === "Life Insurance")!.valueFor(y)).toBe(25_000);
+    expect(series.find((s) => s.label === "Accessible Trust Assets")!.valueFor(y)).toBe(10_000);
+  });
+
+  it("H1: portfolio chart segments sum to portfolioAssets.liquidTotal", () => {
+    const y = {
+      portfolioAssets: {
+        cashTotal: 10, taxableTotal: 20, retirementTotal: 30, lifeInsuranceTotal: 5,
+        accessibleTrustAssetsTotal: 7, realEstateTotal: 100, businessTotal: 50,
+        trustsAndBusinessesTotal: 40, liquidTotal: 72, total: 215,
+      },
+    } as never;
+    const segSum = buildPortfolioDatasets().reduce((s, d) => s + d.valueFor(y), 0);
+    expect(segSum).toBe((y as { portfolioAssets: { liquidTotal: number } }).portfolioAssets.liquidTotal); // 72
   });
 });

@@ -48,11 +48,9 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
         netCashFlow: py.netCashFlow,
         portfolioGrowth: portfolioGrowthTotal(py, ids),
         portfolioActivity: portfolioActivityTotal(py, ids),
-        portfolioAssets:
-          py.portfolioAssets.taxableTotal +
-          py.portfolioAssets.cashTotal +
-          py.portfolioAssets.retirementTotal +
-          py.portfolioAssets.lifeInsuranceTotal,
+        // H1: canonical liquid investable total (engine field) — ties to the
+        // portfolio chart bar height and the next-year BoY carry-forward.
+        portfolioAssets: py.portfolioAssets.liquidTotal,
       },
     };
   });
