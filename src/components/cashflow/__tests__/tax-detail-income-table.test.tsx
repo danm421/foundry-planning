@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ProjectionYear } from "@/engine/types";
-import { TaxDetailIncomeTable } from "../tax-detail-income-table";
+import { TaxDetailIncomeTable, INCOME_COLUMNS } from "../tax-detail-income-table";
 
 function makeYear(): ProjectionYear {
   return {
@@ -73,5 +73,20 @@ describe("TaxDetailIncomeTable", () => {
     );
     await user.click(screen.getByRole("button", { name: /earned income value 0/i }));
     expect(onCellClick).toHaveBeenCalledWith(year, "earnedIncome");
+  });
+
+  it("C1: income columns sum to Total Income with STCG present", () => {
+    const y = {
+      taxResult: { income: {
+        earnedIncome: 100_000, taxableSocialSecurity: 0, ordinaryIncome: 25_000,
+        dividends: 0, capitalGains: 10_000, shortCapitalGains: 5_000,
+        totalIncome: 135_000, nonTaxableIncome: 0, grossTotalIncome: 135_000,
+      } },
+      taxDetail: { qbi: 0 },
+    } as never;
+    const get = (k: string) => INCOME_COLUMNS.find((c) => c.key === k)!.value(y);
+    const sum = get("earnedIncome") + get("taxableSocialSecurity") + get("ordinaryIncome")
+      + get("dividends") + get("capitalGains") + get("shortCapitalGains") + get("qbi");
+    expect(sum).toBe(get("totalIncome"));
   });
 });

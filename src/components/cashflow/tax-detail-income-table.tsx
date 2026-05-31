@@ -49,7 +49,7 @@ interface Column {
   value: (y: ProjectionYear) => number;
 }
 
-const COLUMNS: Column[] = [
+export const INCOME_COLUMNS: Column[] = [
   {
     key: "earnedIncome",
     label: "Earned Income",
@@ -67,8 +67,9 @@ const COLUMNS: Column[] = [
     key: "ordinaryIncome",
     label: "Ordinary Income",
     tooltip:
-      "Taxable interest, non-qualified dividends, IRA distributions, RMDs. Taxed at bracket rates.",
-    value: (y) => y.taxResult?.income.ordinaryIncome ?? 0,
+      "Taxable interest, non-qualified dividends, IRA distributions, RMDs. Taxed at bracket rates. (Short-term cap gains are shown in their own column.)",
+    value: (y) =>
+      (y.taxResult?.income.ordinaryIncome ?? 0) - (y.taxResult?.income.shortCapitalGains ?? 0),
   },
   {
     key: "dividends",
@@ -137,8 +138,8 @@ export function TaxDetailIncomeTable({
             <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left">
               Age
             </th>
-            {COLUMNS.map((col, idx) => {
-              const isLast = idx === COLUMNS.length - 1;
+            {INCOME_COLUMNS.map((col, idx) => {
+              const isLast = idx === INCOME_COLUMNS.length - 1;
               return (
                 <th
                   key={col.key}
@@ -176,9 +177,9 @@ export function TaxDetailIncomeTable({
                 <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-300 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
-                {COLUMNS.map((col, idx) => {
+                {INCOME_COLUMNS.map((col, idx) => {
                   const v = col.value(y);
-                  const isLast = idx === COLUMNS.length - 1;
+                  const isLast = idx === INCOME_COLUMNS.length - 1;
                   return (
                     <td
                       key={col.key}
