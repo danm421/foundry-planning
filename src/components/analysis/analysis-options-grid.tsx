@@ -304,7 +304,7 @@ export function AnalysisOptionsGrid({
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ source, mutations }),
+            body: JSON.stringify({ source, mutations, minSavingsGrowth }),
             signal: ac.signal,
           },
         );
@@ -324,7 +324,7 @@ export function AnalysisOptionsGrid({
       if (debounceRef.current) clearTimeout(debounceRef.current);
       ac.abort();
     };
-  }, [mutations, clientId, source, onExploreResult]);
+  }, [mutations, clientId, source, onExploreResult, minSavingsGrowth]);
 
   const hasEdits = mutations.length > 0;
 
