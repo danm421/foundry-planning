@@ -67,6 +67,9 @@ scripts/*.local.ts
 scripts/.backfill-securities.checkpoint.json
 scripts/.backfill-securities.checkpoint.json.tmp
 
+# Generated report output (e.g. CMA recompute diff)
+scripts/output/
+
 # Sentry Config File
 .env.sentry-build-plugin
 .env*.local
