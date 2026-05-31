@@ -242,6 +242,21 @@ function buildDeathStage(
       0,
     );
 
+  // Net version of the above: each recipient's chargeable-share gross minus
+  // their share of the death-event drain. Mirrors transfer-report's
+  // `netTotal = total − drainTotal` (so the heir sub-box ties to the
+  // downstream net heir boxes), but stays on the scaled chargeable basis so
+  // it foots against the parent box and the tax sub-box. `g.total − g.netTotal`
+  // is the recipient's drain magnitude (sign-convention-independent).
+  const chargeableRecipientNet = (groups: RecipientGroup[]): number =>
+    groups.reduce((s, g) => {
+      const grossScaled = g.byMechanism.reduce(
+        (ms, m) => ms + m.assets.reduce((as, a) => as + scale(a), 0),
+        0,
+      );
+      return s + grossScaled - (g.total - g.netTotal);
+    }, 0);
+
   // taxes — only when there are reductions (federal/state estate, admin, debts, IRD).
   if (section.reductions.length > 0) {
     const taxLines: ReductionsLine[] = section.reductions.map((r) => ({
@@ -325,7 +340,10 @@ function buildDeathStage(
     subBoxes.push({
       kind: "heirs_outright",
       label: "Heirs",
-      total: chargeableRecipientTotal(outrightGroups),
+      // NET of each recipient's drain share so the sub-box ties to the
+      // downstream net heir boxes and (with the tax sub-box) foots to the
+      // estate value. The popover lines below stay at gross asset amounts.
+      total: chargeableRecipientNet(outrightGroups),
       lines: outrightAssets,
     });
   }

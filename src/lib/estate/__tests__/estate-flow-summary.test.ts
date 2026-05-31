@@ -202,6 +202,49 @@ describe("buildEstateFlowSummary — second death sub-boxes", () => {
     expect(subBoxes.find((b) => b.kind === "inheritance_spouse")).toBeUndefined();
     expect(subBoxes.find((b) => b.kind === "trusts")).toBeUndefined();
   });
+
+  it("F9: heirs_outright sub-box nets the per-recipient drain and ties to estate value", () => {
+    // Caroline inherits a $1.0M account that carries a $200k drain (estate tax
+    // attributed to her). The estate is reduced by that same $200k. Before the
+    // fix the heir sub-box showed the GROSS $1.0M while the tax box showed
+    // −$200k — summing to $1.2M from a $1.0M estate. The sub-box must be NET
+    // ($800k) so sub-box + tax box ties to the $1.0M estate value.
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2030,
+      recipients: [
+        group({
+          key: "caroline",
+          kind: "family_member",
+          label: "Caroline Sample",
+          byMechanism: [mech("will_residuary", [asset("Brokerage", 1_000_000)])],
+          // Signed-negative drain in this fixture (see `group` helper):
+          // netTotal = 1_000_000 + (−200_000) = 800_000.
+          drains: { federal_estate_tax: -200_000 },
+        }),
+      ],
+      reductions: [reduction("federal_estate_tax", -200_000)],
+    });
+
+    const input = baseInput({ secondDeath });
+    const summary = buildEstateFlowSummary(input)!;
+
+    const stage = summary.secondDeath!;
+    expect(stage.estateValue).toBe(1_000_000);
+
+    const subBoxes = stage.subBoxes;
+    const taxes = subBoxes.find((b) => b.kind === "taxes")!;
+    const heirs = subBoxes.find((b) => b.kind === "heirs_outright")!;
+
+    // Sub-box is NET of the drain, matching the downstream net heir boxes.
+    expect(heirs.total).toBe(800_000);
+
+    // Ties out: gross estate − tax drain = net to heirs. `taxes.total` is the
+    // signed reduction (−200k), so net heirs (800k) − tax (−200k) = 1.0M gross.
+    expect(taxes.total).toBe(-200_000);
+    expect(heirs.total - taxes.total).toBe(stage.estateValue);
+  });
 });
 
 describe("buildEstateFlowSummary — liability netting", () => {
