@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import Footer from "@/components/footer";
 import Sidebar from "@/components/sidebar";
 import Topbar from "@/components/topbar";
-import { countClientsForFirm } from "@/lib/client-search";
+import { countCrmHouseholdsForFirm } from "@/lib/crm/households";
 
 export default async function AppLayout({
   children,
@@ -13,7 +13,7 @@ export default async function AppLayout({
 }): Promise<ReactElement> {
   const [{ orgId }, jar] = await Promise.all([auth(), cookies()]);
   const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
-  const clientsCount = orgId ? await countClientsForFirm(orgId) : 0;
+  const clientsCount = orgId ? await countCrmHouseholdsForFirm(orgId) : 0;
 
   return (
     <div
