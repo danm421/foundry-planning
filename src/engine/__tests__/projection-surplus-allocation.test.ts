@@ -4,6 +4,7 @@ import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import type {
   Account,
+  AssetTransaction,
   ClientData,
   Expense,
   FamilyMember,
@@ -193,5 +194,120 @@ describe("surplus cash flow allocation (step 10c)", () => {
     const y = result[0];
 
     expect(y.expenses.discretionary).toBe(0);
+  });
+});
+
+// H5: the surplus split must be sized from the SAME resolved figures the
+// cash-flow report displays as Net Cash Flow — i.e. it must include technique
+// (asset-sale) proceeds, notes-receivable cash-in, synthetic property tax, and
+// the post-convergence final tax. The legacy split (step 10c) was computed from
+// `surplusBeforeSavings`, which omits all of those, so discretionary + saved did
+// NOT reconcile with the displayed surplus.
+describe("surplus cash flow allocation — sized from displayed net cash flow (H5)", () => {
+  const sellable: Account = {
+    id: "acct-sellable",
+    name: "Sellable Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value: 30_000,
+    basis: 30_000, // basis == value → no gain (and flat tax 0 anyway)
+    growthRate: 0,
+    rmdEnabled: false,
+    isDefaultChecking: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+
+  const sellTxn: AssetTransaction = {
+    id: "txn-sell",
+    name: "Sell brokerage",
+    type: "sell",
+    year: PLAN_YEAR,
+    accountId: "acct-sellable",
+    overrideSaleValue: 30_000,
+    overrideBasis: 30_000,
+    transactionCostPct: 0,
+    transactionCostFlat: 0,
+    proceedsAccountId: "acct-checking",
+  };
+
+  function techniqueFixture(): ClientData {
+    return buildClientData({
+      client: {
+        ...baseClient,
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+        spouseName: undefined,
+        spouseDob: undefined,
+        spouseRetirementAge: undefined,
+      },
+      familyMembers: soloFamily,
+      accounts: [checking, brokerage, sellable],
+      incomes: [salary],
+      expenses: [living],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy,
+      assetTransactions: [sellTxn],
+      planSettings: {
+        ...basePlanSettings,
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: PLAN_YEAR,
+        planEndYear: PLAN_YEAR,
+        surplusSpendPct: 0.5,
+        surplusSaveAccountId: "acct-brokerage",
+      },
+    });
+  }
+
+  it("technique (asset-sale) proceeds count toward the splittable surplus", () => {
+    const y = runProjection(techniqueFixture())[0];
+
+    // Displayed income: 100k salary + 30k net sale proceeds = 130k.
+    expect(y.totalIncome).toBeCloseTo(130_000, 0);
+
+    // Pre-discretionary surplus = totalIncome − (expenses excl. discretionary)
+    //                             − savings − hypothetical savings.
+    const hypo = y.hypotheticalSavings?.contribution ?? 0;
+    const expensesExclDiscretionary = y.expenses.total - y.expenses.discretionary;
+    const expectedSurplus =
+      y.totalIncome - expensesExclDiscretionary - y.savings.total - hypo;
+    // 130k income − 60k living = 70k surplus (NOT 40k from the legacy formula).
+    expect(expectedSurplus).toBeCloseTo(70_000, 0);
+
+    // 50% spent → discretionary = 35k; the legacy split produced 20k.
+    expect(y.expenses.discretionary).toBeCloseTo(35_000, 0);
+
+    // Saved 35k transferred to the brokerage destination (money conserved).
+    expect(y.accountLedgers["acct-brokerage"].endingValue).toBeCloseTo(35_000, 0);
+    const transferIn = y.accountLedgers["acct-brokerage"].entries.find(
+      (e) => e.category === "surplus_transfer" && e.amount > 0,
+    );
+    expect(transferIn?.amount).toBeCloseTo(35_000, 0);
+
+    // routed (discretionary + saved) reconciles with the displayed surplus.
+    const routed =
+      y.expenses.discretionary + y.accountLedgers["acct-brokerage"].endingValue;
+    expect(routed).toBeCloseTo(expectedSurplus, 0);
+
+    // After the split, displayed Net Cash Flow == the saved remainder.
+    expect(y.netCashFlow).toBeCloseTo(35_000, 0);
+  });
+
+  it("with no destination, the saved remainder is booked explicitly (not silently fed)", () => {
+    const data = techniqueFixture();
+    data.planSettings.surplusSaveAccountId = null;
+    const y = runProjection(data)[0];
+
+    // 70k surplus, 50% spent → 35k discretionary, 35k stays in checking.
+    expect(y.expenses.discretionary).toBeCloseTo(35_000, 0);
+    const retained = y.accountLedgers["acct-checking"].entries.find(
+      (e) => e.category === "surplus_retained",
+    );
+    expect(retained?.amount).toBeCloseTo(35_000, 0);
   });
 });
