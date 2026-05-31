@@ -237,6 +237,72 @@ function buildTrustFixture() {
   return { year, ctx };
 }
 
+// Split-owned (60% trust / 40% household) account where a household withdrawal
+// drew the account down. The trust's locked EoY share ignores that withdrawal
+// (accrues growth only), so ledger.endingValue × percent diverges from the
+// engine's locked share — exactly the H2 reconciliation bug.
+function buildSplitOwnedTrustFixture() {
+  const year = makeYear(2026);
+  year.accountLedgers["acct-trust"] = {
+    beginningValue: 500_000,
+    // 500k + 25k growth − 100k household withdrawal
+    endingValue: 425_000,
+    growth: 25_000,
+    contributions: 0,
+    distributions: 100_000,
+    internalContributions: 0,
+    internalDistributions: 0,
+    rmdAmount: 0,
+    fees: 0,
+    entries: [
+      { category: "withdrawal", amount: -100_000, label: "Household withdrawal", sourceId: "wd" },
+    ],
+  };
+
+  const entitiesById = new Map<string, EntityMetadata>([
+    [
+      "ent-trust",
+      {
+        id: "ent-trust",
+        name: "Family Trust",
+        entityType: "trust",
+        trustSubType: "irrevocable",
+        isGrantor: false,
+        initialValue: 0,
+        initialBasis: 0,
+        valueGrowthRate: 0,
+      },
+    ],
+  ]);
+
+  const accountEntityOwners = new Map<string, { entityId: string; percent: number }>([
+    ["acct-trust", { entityId: "ent-trust", percent: 0.6 }],
+  ]);
+
+  computeEntityCashFlow({
+    years: [year],
+    entitiesById,
+    accountEntityOwners,
+    giftsByEntityYear: new Map(),
+    incomes: [],
+    expenses: [],
+    entityFlowOverrides: [],
+  });
+
+  const ctx: EntityLedgerContext = {
+    year,
+    planStartYear: 2026,
+    entitiesById,
+    accountNamesById: new Map([["acct-trust", "Joint+Trust Brokerage"]]),
+    accountEntityOwners,
+    incomes: [],
+    expenses: [],
+    entityFlowOverrides: [],
+  };
+
+  return { year, ctx };
+}
+
 function buildBusinessFixture() {
   const year = makeYear(2026);
   year.accountLedgers["acct-biz"] = {
@@ -379,5 +445,24 @@ describe("getEntityLedger", () => {
     expect(sum(ledger.income)).toBeCloseTo(row.income, 2);
     expect(sum(ledger.expenses)).toBeCloseTo(row.expenses, 2);
     expect(sum(ledger.ending)).toBeCloseTo(row.endingBalance, 2);
+  });
+
+  it("H2: split-owned trust ending uses the locked EoY share so the modal reconciles to the cell", () => {
+    const { year, ctx } = buildSplitOwnedTrustFixture();
+    const row = year.entityCashFlow.get("ent-trust");
+    expect(row?.kind).toBe("trust");
+    if (row?.kind !== "trust") return;
+
+    // Engine locked EoY = (500k + 25k growth) × 0.6 = 315k — the trust-table
+    // cell. endingValue × share would be 425k × 0.6 = 255k (the old, divergent
+    // modal value).
+    const locked = year.entityAccountSharesEoY?.get("ent-trust")?.get("acct-trust");
+    expect(locked).toBeCloseTo(315_000, 2);
+    expect(row.endingBalance).toBeCloseTo(315_000, 2);
+
+    const ledger = getEntityLedger("ent-trust", ctx);
+    const sum = ledger.ending.reduce((a, r) => a + r.amount, 0);
+    expect(Math.abs(sum - row.endingBalance)).toBeLessThan(0.5);
+    expect(sum).toBeCloseTo(315_000, 2);
   });
 });
