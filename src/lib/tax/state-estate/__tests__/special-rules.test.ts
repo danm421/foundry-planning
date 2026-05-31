@@ -1,5 +1,43 @@
 import { describe, it, expect } from "vitest";
 import { computeStateEstateTax } from "../compute";
+import { applyMaxCombinedCap } from "../special-rules";
+import type { StateEstateTaxRule } from "../types";
+
+describe("applyMaxCombinedCap — CT §12-391(g) combined estate+gift cap (F13)", () => {
+  it("F13: CT cap applies to combined gift + estate tax", () => {
+    // cap 15M, estate tax 10M, prior CT gift tax 8M → combined 18M capped to 15M,
+    // so estate-tax reduction = 18M − 15M = 3M → finalTax 7M.
+    const app = applyMaxCombinedCap(
+      { capCombined: 15_000_000 } as StateEstateTaxRule,
+      10_000_000,
+      8_000_000,
+    );
+    expect(app.applied).toBe(true);
+    expect(app.reduction).toBe(3_000_000);
+    expect(app.finalTax).toBe(7_000_000);
+  });
+
+  it("backward compat: priorGiftTax defaults to 0 and combined ≤ cap → not applied", () => {
+    const app = applyMaxCombinedCap(
+      { capCombined: 15_000_000 } as StateEstateTaxRule,
+      10_000_000,
+    );
+    expect(app.applied).toBe(false);
+    expect(app.reduction).toBe(0);
+    expect(app.finalTax).toBe(10_000_000); // === preCapTax, unchanged
+  });
+
+  it("floors estate-tax reduction at $0 when prior gift tax alone exceeds the cap", () => {
+    // estate tax 2M, prior gift tax 20M → combined 22M, overage 7M > estate tax 2M.
+    const app = applyMaxCombinedCap(
+      { capCombined: 15_000_000 } as StateEstateTaxRule,
+      2_000_000,
+      20_000_000,
+    );
+    expect(app.applied).toBe(true);
+    expect(app.finalTax).toBe(0);
+  });
+});
 
 describe("Connecticut — flat 12% above exemption + $15M combined cap", () => {
   it("flat 12% bracket fires above $15M exemption", () => {

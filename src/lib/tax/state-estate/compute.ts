@@ -127,7 +127,11 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     }
   }
 
-  const capApp = applyMaxCombinedCap(rule, preCapTax);
+  // CT §12-391(g) caps combined lifetime CT gift tax + estate tax. The cumulative CT
+  // gift tax paid is not yet threaded into this engine, so we pass 0 for now (the cap
+  // still fires on estate-tax-only, unchanged from prior behavior). See future-work.
+  const priorCtGiftTax = 0;
+  const capApp = applyMaxCombinedCap(rule, preCapTax, priorCtGiftTax);
   const finalTax = Math.max(0, capApp.finalTax - creditReduction);
   const cap = rule.capCombined != null
     ? { applied: capApp.applied, cap: capApp.cap, reduction: capApp.reduction }
