@@ -95,7 +95,7 @@ export const INCOME_COLUMNS: Column[] = [
     label: "QBI",
     tooltip:
       "Sec 199A qualified business income from pass-through entities. Flows into Total Income; a separate QBI deduction is taken below the line.",
-    value: (y) => y.taxDetail?.qbi ?? 0,
+    value: (y) => y.taxResult?.income.qbi ?? 0,
   },
   {
     key: "totalIncome",

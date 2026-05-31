@@ -18,7 +18,7 @@ export function makeTaxResult(over: {
   return {
     income: {
       earnedIncome: 0, taxableSocialSecurity: 0, ordinaryIncome: 0, dividends: 0,
-      capitalGains: 0, shortCapitalGains: 0, totalIncome: 0, nonTaxableIncome: 0,
+      capitalGains: 0, shortCapitalGains: 0, qbi: 0, totalIncome: 0, nonTaxableIncome: 0,
       grossTotalIncome: 0, ...over.income,
     },
     flow: {

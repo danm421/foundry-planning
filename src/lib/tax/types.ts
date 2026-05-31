@@ -142,6 +142,7 @@ export interface TaxResult {
     dividends: number;
     capitalGains: number;
     shortCapitalGains: number;
+    qbi: number;
     totalIncome: number;
     nonTaxableIncome: number;
     grossTotalIncome: number;

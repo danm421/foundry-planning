@@ -43,6 +43,7 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       dividends: 0,
       capitalGains: 0,
       shortCapitalGains: 0,
+      qbi: 0,
       totalIncome: safeTaxable,
       nonTaxableIncome,
       grossTotalIncome: safeTaxable + nonTaxableIncome,

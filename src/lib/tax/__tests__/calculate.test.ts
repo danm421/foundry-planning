@@ -232,6 +232,10 @@ describe("calculateTaxYear — Scenario 5: MFJ small business with QBI", () => {
     // Taxable = 247800 - 40000 = 207800
     expect(result.flow.taxableIncome).toBeCloseTo(207800, 0);
   });
+
+  it("M5: echoes qbiIncome back on income.qbi", () => {
+    expect(result.income.qbi).toBe(200000);
+  });
 });
 
 describe("calculateTaxYear — Scenario 6: MFJ day trader with STCG (NIIT regression)", () => {
