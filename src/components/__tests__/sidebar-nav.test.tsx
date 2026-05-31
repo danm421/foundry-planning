@@ -73,6 +73,16 @@ describe("SidebarNav", () => {
     expect(clientsLink?.getAttribute("aria-current")).toBeNull();
   });
 
+  it("does not render a CRM nav item", () => {
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
+    const { container } = render(<SidebarNav clientsCount={0} />);
+    expect(container.querySelector('a[href="/crm"]')).toBeNull();
+    const labels = Array.from(container.querySelectorAll("a, button")).map(
+      (el) => el.textContent?.trim(),
+    );
+    expect(labels).not.toContain("CRM");
+  });
+
   it("renders placeholders (e.g. Tasks) as non-anchor items with Soon badge", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
     const { container } = render(<SidebarNav clientsCount={0} />);
