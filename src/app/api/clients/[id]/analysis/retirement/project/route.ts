@@ -14,12 +14,20 @@ import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import {
+  MIN_SAVINGS_GROWTH_SCHEMA,
+  injectHypotheticalSavings,
+} from "@/lib/analysis/inject-hypothetical-savings";
 
 export const dynamic = "force-dynamic";
 
 const BODY = z.object({
   source: z.union([z.literal("base"), z.string().uuid()]),
   mutations: z.array(SOLVER_MUTATION_SCHEMA),
+  /** Growth assumption for the hypothetical "Additional Taxable Savings" account.
+   *  Lets an Explore edit of that lever grow at the picked portfolio rate.
+   *  Defaults to the client's taxable category default when omitted. */
+  minSavingsGrowth: MIN_SAVINGS_GROWTH_SCHEMA.optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -41,13 +49,22 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations } = parsed.data;
+    const { source, mutations, minSavingsGrowth } = parsed.data;
 
     const { effectiveTree, resolutionContext } = await loadEffectiveTree(
       clientId,
       firmId,
       source,
       {},
+    );
+    // Inject the same synthetic "Additional Taxable Savings" account the /options
+    // solve uses, BEFORE applyMutations — so an Explore savings-contribution on it
+    // lands on a real rule and grows at the chosen rate. Inert (annualAmount 0)
+    // when the advisor hasn't edited that lever.
+    injectHypotheticalSavings(
+      effectiveTree,
+      minSavingsGrowth ?? { kind: "taxable-default" },
+      resolutionContext,
     );
     let tree = applyMutations(effectiveTree, mutations as SolverMutation[]);
     if (resolutionContext) {
