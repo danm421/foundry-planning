@@ -14,7 +14,17 @@ vi.mock("openai", () => {
   };
 });
 
-import { callAIExtraction } from "../azure-client";
+import { azureClientOptions, callAIExtraction } from "../azure-client";
+
+describe("azureClientOptions", () => {
+  it("bounds the request timeout inside the function budget and caps retries", () => {
+    const opts = azureClientOptions("test-key");
+    expect(opts.apiKey).toBe("test-key");
+    expect(opts.timeout).toBeLessThanOrEqual(55_000);
+    expect(opts.timeout).toBeGreaterThan(0);
+    expect(opts.maxRetries).toBeLessThanOrEqual(1);
+  });
+});
 
 describe("callAIExtraction", () => {
   beforeEach(() => {

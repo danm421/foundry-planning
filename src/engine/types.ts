@@ -889,6 +889,12 @@ export interface SavingsRule {
    *  base+catch-up for IRA-group accounts). Overrides annualAmount and
    *  annualPercent. Non-retirement subtypes resolve to 0. */
   contributeMax?: boolean;
+  /** Analysis-only. When true the projection funds this rule's contribution via
+   *  a waterfall — first the year's positive net cash flow, then by reducing
+   *  living expenses — and never by drawing the withdrawal strategy. Used by the
+   *  Retirement Analysis "Minimum Additional Savings" synthetic taxable account.
+   *  Real (persisted) savings rules never set this. */
+  fundFromExpenseReduction?: boolean;
   /** Fraction (0..1) of the resolved contribution designated Roth. Applies
    *  to 401(k)/403(b) accounts only; null/0 means fully pre-tax. The Roth
    *  slice feeds the account's rothValue and is excluded from the
@@ -1100,6 +1106,18 @@ export interface ProjectionYear {
   year: number;
   ages: { client: number; spouse?: number };
 
+  /** Present only when one or more `fundFromExpenseReduction` savings rules ran
+   *  this year (Retirement Analysis min-savings solve). Lets the UI surface the
+   *  funding split without re-deriving it. */
+  hypotheticalSavings?: {
+    /** Total deposited into the synthetic taxable account this year. */
+    contribution: number;
+    /** Portion funded from positive net cash flow. */
+    fromCashFlow: number;
+    /** Portion funded by reducing living expenses. */
+    fromExpenseReduction: number;
+  };
+
   income: {
     salaries: number;
     socialSecurity: number;
@@ -1221,6 +1239,12 @@ export interface ProjectionYear {
     accessibleTrustAssets: Record<string, number>;
     accessibleTrustAssetsTotal: number;
     total: number;
+    /** Canonical "Portfolio Assets" reconciling total = liquid investable only:
+     *  taxable + cash + retirement + lifeInsurance + accessibleTrustAssets.
+     *  Excludes real estate, business, and locked (non-accessible) trust assets,
+     *  which are net-worth not portfolio. Single source of truth for the chart,
+     *  the summary cell, and the next-year beginning-of-year carry-forward (H1). */
+    liquidTotal: number;
   };
 
   accountLedgers: Record<string, AccountLedger>;

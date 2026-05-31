@@ -34,6 +34,20 @@ export function leverSearchConfig(
       return { lo: 62, hi: 70, step: 1, direction: 1 };
     case "savings-contribution": {
       const rule = tree.savingsRules.find((r) => r.accountId === target.accountId);
+      if (rule?.fundFromExpenseReduction) {
+        // Self-funding (analysis) rule: the feasible ceiling is roughly the
+        // largest single year's living expense (all of which could be
+        // redirected) plus working-year surplus headroom. Use the max living
+        // expense as a robust upper bound, with a hard cap.
+        const maxLiving = tree.expenses
+          .filter((e) => e.type === "living")
+          .reduce((m, e) => Math.max(m, e.annualAmount), 0);
+        const hi = Math.min(
+          SAVINGS_HARD_CAP,
+          Math.max(SAVINGS_ZERO_DEFAULT_HI, maxLiving * 1.5),
+        );
+        return { lo: 0, hi, step: 1000, direction: 1 };
+      }
       const source = rule?.annualAmount ?? 0;
       const hi =
         source === 0

@@ -896,7 +896,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // BoY is always the actual prior-year ending balance, even when the slider
     // starts mid-projection.
     const prevYear = years.find((y) => y.year === r.year - 1);
-    if (prevYear) return prevYear.portfolioAssets.total;
+    // H1: roll forward the canonical liquid portfolio total so BoY ties to the
+    // chart bar height and the summary "Portfolio Assets" cell.
+    if (prevYear) return prevYear.portfolioAssets.liquidTotal;
     return Object.values(r.accountLedgers).reduce((s, l) => s + l.beginningValue, 0);
   }
 
@@ -2067,13 +2069,15 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
-      // Level 1: full asset breakdown — liquid columns subtotaled into "Total
-      // Portfolio Assets", then the entity / real estate columns, then the
-      // grand total. Mirrors an eMoney-style asset summary view.
+      // Level 1: full asset breakdown — liquid columns (incl. Accessible Trust
+      // Assets, H1) subtotaled into "Total Portfolio Assets" (= liquidTotal),
+      // then Trusts & Businesses + Real Estate add to the informational grand
+      // total. Mirrors an eMoney-style asset summary view. Accessible trust is
+      // already folded into liquidPortfolioTotal, so grandTotal does NOT add it
+      // again (avoids double-count).
       const grandTotal = (r: ProjectionYear) =>
         liquidPortfolioTotal(r) +
         r.portfolioAssets.trustsAndBusinessesTotal +
-        r.portfolioAssets.accessibleTrustAssetsTotal +
         r.portfolioAssets.realEstateTotal;
 
       return [
@@ -2082,11 +2086,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
         numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
-        numCol("portfolio_subtotal", "Total Portfolio Assets", liquidPortfolioTotal, true, true),
-        numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
         ...(hasAnyAccessible
           ? [numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal)]
           : []),
+        numCol("portfolio_subtotal", "Total Portfolio Assets", liquidPortfolioTotal, true, true),
+        numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
         numCol("portfolio_real_estate_total", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => r.portfolioAssets.realEstateTotal),
         numCol("portfolio_grand_total", "Total Assets", grandTotal, true),
       ];

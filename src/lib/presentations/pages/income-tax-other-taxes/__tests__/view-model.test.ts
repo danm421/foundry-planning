@@ -37,4 +37,21 @@ describe("buildTaxOtherTaxesDrillData", () => {
     const sum = d.chartSpec!.stacks.reduce((a, s) => a + s.values[i], 0);
     expect(sum).toBeCloseTo(r.cells.total);
   });
+
+  it("C2: Other-Taxes components (incl. penalty) sum to the total", () => {
+    const y = { year: 2030, ages: { client: 58 }, taxResult: { flow: {
+      regularFederalIncomeTax: 30_000, capitalGainsTax: 0, amtAdditional: 0, niit: 0,
+      additionalMedicare: 0, fica: 0, stateTax: 2_000, earlyWithdrawalPenalty: 1_000,
+      totalTax: 33_000,
+    } } } as never;
+    const data = buildTaxOtherTaxesDrillData({
+      years: [y], clientData: makeClientData(),
+      options: { range: "lifetime", showCallout: false } as never,
+      scenarioLabel: "B", clientName: "T", spouseName: null,
+    });
+    const r = data.table.rows[0].cells;
+    const componentSum = r.capitalGainsTax + r.amt + r.niit + r.additionalMedicare
+      + r.fica + r.stateTax + r.earlyWithdrawalPenalty;
+    expect(componentSum).toBe(r.total); // total = totalTax − regularFed = 3_000
+  });
 });

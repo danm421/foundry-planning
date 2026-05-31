@@ -277,9 +277,12 @@ describe("projection: iterative gap-fill (audit F5)", () => {
     expect(ordEntries).toBeCloseTo(year.taxDetail!.ordinaryIncome, 1);
   });
 
-  it("(g) expenses.taxes equals taxResult totalTax + supplemental early-withdrawal penalty", () => {
-    // Penalty-bearing scenario: pre-59.5 Trad deficit. Reconcile expenses.taxes
-    // with taxResult.flow.totalTax + the supplemental penalty surfaced via bySource.
+  it("(g) expenses.taxes equals taxResult totalTax with the gap-fill penalty folded in (C2)", () => {
+    // Penalty-bearing scenario: pre-59.5 Trad deficit. Post-C2 the supplemental
+    // early-withdrawal penalty is folded into flow.totalTax, so expenses.taxes
+    // (which reads flow.totalTax directly) equals it — no separate addition.
+    // The penalty is still surfaced via bySource for the drill-down and now
+    // also lives on flow.earlyWithdrawalPenalty.
     const data = buildScenario({
       birthYear: 1980,
       accounts: [checking(5000), tradIra(500_000)],
@@ -290,7 +293,9 @@ describe("projection: iterative gap-fill (audit F5)", () => {
 
     const totalTax = year.taxResult!.flow.totalTax;
     const penalty = year.expenses.bySource["withdrawal_penalty:acct-ira"] ?? 0;
-    expect(year.expenses.taxes).toBeCloseTo(totalTax + penalty, 1);
+    expect(penalty).toBeGreaterThan(0); // still surfaced for the drill-down
+    expect(year.taxResult!.flow.earlyWithdrawalPenalty).toBeCloseTo(penalty, 1);
+    expect(year.expenses.taxes).toBeCloseTo(totalTax, 1);
   });
 
   it("(h) convergence within 5 iterations on a synthetic worst case", () => {

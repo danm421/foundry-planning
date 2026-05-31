@@ -212,6 +212,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       stateTax,
       totalFederalTax,
       totalTax,
+      earlyWithdrawalPenalty: 0,
     },
     diag: {
       marginalFederalRate: calcMarginalRate(incomeTaxBase, brackets),

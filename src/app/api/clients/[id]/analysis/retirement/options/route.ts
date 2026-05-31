@@ -15,14 +15,29 @@ import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import {
+  buildHypotheticalSavings,
+  SYNTHETIC_SAVINGS_ACCOUNT_ID,
+  type GrowthResolverLike,
+  type MinSavingsGrowth,
+} from "@/lib/analysis/hypothetical-savings";
+import { earliestRetirementYear } from "@/lib/analysis/retirement-window";
+import { LEGACY_FM_CLIENT } from "@/engine/ownership";
 
 export const dynamic = "force-dynamic";
 
 const BODY = z.object({
   source: z.union([z.literal("base"), z.string().uuid()]),
   mutations: z.array(SOLVER_MUTATION_SCHEMA),
-  /** Account the "Minimum Additional Savings" column should target. */
-  savingsAccountId: z.string().min(1),
+  /** Growth assumption for the hypothetical taxable savings. Defaults to the
+   *  client's taxable category default when omitted. */
+  minSavingsGrowth: z
+    .union([
+      z.object({ kind: z.literal("taxable-default") }),
+      z.object({ kind: z.literal("model-portfolio"), portfolioId: z.string().uuid() }),
+      z.object({ kind: z.literal("custom-rate"), rate: z.number().min(-1).max(2) }),
+    ])
+    .optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -30,6 +45,20 @@ type EventName = "column" | "done" | "error";
 
 function sseChunk(event: EventName, payload: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
+/** Human-readable growth assumption for the funding-source sub-line. The UI
+ *  renders this verbatim after "growing at". */
+function formatGrowthLabel(growth: MinSavingsGrowth, rate: number): string {
+  const pct = `${(rate * 100).toFixed(1)}%`;
+  switch (growth.kind) {
+    case "custom-rate":
+      return `Custom ${pct}`;
+    case "model-portfolio":
+      return `Model portfolio · ${pct}`;
+    case "taxable-default":
+      return `Taxable default ${pct}`;
+  }
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
@@ -64,14 +93,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  const { source, mutations, savingsAccountId } = parsed.data;
+  const { source, mutations, minSavingsGrowth } = parsed.data;
 
   const encoder = new TextEncoder();
   const abortController = new AbortController();
   req.signal.addEventListener("abort", () => abortController.abort());
 
   const columns: { id: string; target: SolveLeverKey }[] = [
-    { id: "min-savings", target: { kind: "savings-contribution", accountId: savingsAccountId } },
+    {
+      id: "min-savings",
+      target: { kind: "savings-contribution", accountId: SYNTHETIC_SAVINGS_ACCOUNT_ID },
+    },
     { id: "max-spending", target: { kind: "living-expense-scale" } },
     { id: "earliest-retirement", target: { kind: "retirement-age", person: "client" } },
   ];
@@ -87,6 +119,27 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           source,
           {},
         );
+
+        // Inject a synthetic, analysis-only taxable account + self-funding rule
+        // that the "Minimum Additional Savings" column solves against. Inert for
+        // the other two columns: their levers never raise its annualAmount above
+        // 0, so the engine's funding waterfall skips it.
+        const growth: MinSavingsGrowth = minSavingsGrowth ?? { kind: "taxable-default" };
+        const resolver: GrowthResolverLike = resolutionContext?.resolver ?? {
+          resolveCategoryDefault: () => ({ rate: 0.05 }),
+          resolvePortfolio: () => ({ geoReturn: 0.05, pctOi: 0, pctLtcg: 0, pctQdiv: 0, pctTaxEx: 0 }),
+        };
+        const ownerFamilyMemberId =
+          effectiveTree.familyMembers?.find((m) => m.role === "client")?.id ?? LEGACY_FM_CLIENT;
+        const { account: synthAccount, rule: synthRule } = buildHypotheticalSavings(growth, resolver, {
+          startYear: effectiveTree.planSettings.planStartYear,
+          endYear: earliestRetirementYear(effectiveTree.client),
+          ownerFamilyMemberId,
+        });
+        effectiveTree.accounts = [...effectiveTree.accounts, synthAccount];
+        effectiveTree.savingsRules = [...effectiveTree.savingsRules, synthRule];
+        const growthLabel = formatGrowthLabel(growth, synthAccount.growthRate);
+
         for (const col of columns) {
           if (abortController.signal.aborted) break;
           const result = await solveFunding({
@@ -96,11 +149,27 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             resolutionContext,
             signal: abortController.signal,
           });
+          const isMinSavings = col.id === "min-savings";
+          const maxExpenseReduction = isMinSavings
+            ? result.finalProjection.reduce(
+                (m, y) => Math.max(m, y.hypotheticalSavings?.fromExpenseReduction ?? 0),
+                0,
+              )
+            : 0;
           emit("column", {
             column: col.id,
             status: result.status,
             solvedValue: result.solvedValue,
             summary: deriveRetirementSummary(result.finalProjection),
+            ...(isMinSavings
+              ? {
+                  fundingSource: {
+                    maxExpenseReduction,
+                    growthRate: synthAccount.growthRate,
+                    growthLabel,
+                  },
+                }
+              : {}),
           });
         }
         emit("done", {});

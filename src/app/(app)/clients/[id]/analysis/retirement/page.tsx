@@ -1,6 +1,12 @@
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { clients, crmHouseholdContacts } from "@/db/schema";
+import {
+  clients,
+  crmHouseholdContacts,
+  modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
+} from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -58,10 +64,32 @@ export default async function RetirementAnalysisPage({
   const now = new Date();
   const asOfLabel = `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
 
+  // Firm model portfolios + blended returns for the min-savings growth picker.
+  // Kicked off here so the DB round-trips overlap with the (independent)
+  // projection load below instead of sitting on the critical path after it.
+  const portfolioFetch = Promise.all([
+    db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+    db.select().from(modelPortfolioAllocations),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+  ]);
+
   // Load projection data.
   const { effectiveTree } = await loadEffectiveTree(clientId, firmId, source, {});
   const currentYears = runProjection(effectiveTree);
   const currentSummary = deriveRetirementSummary(currentYears);
+
+  const [portfolioRows, allocationRows, assetClassRows] = await portfolioFetch;
+  const acReturnById = new Map(
+    assetClassRows.map((ac) => [ac.id, parseFloat(ac.geometricReturn)]),
+  );
+  const modelPortfolioOptions = portfolioRows.map((p) => {
+    let blendedReturn = 0;
+    for (const alloc of allocationRows) {
+      if (alloc.modelPortfolioId !== p.id) continue;
+      blendedReturn += parseFloat(alloc.weight) * (acReturnById.get(alloc.assetClassId) ?? 0);
+    }
+    return { id: p.id, name: p.name, blendedReturn };
+  });
 
   return (
     <RetirementAnalysisContent
@@ -72,6 +100,7 @@ export default async function RetirementAnalysisPage({
       asOfLabel={asOfLabel}
       currentYears={currentYears}
       currentSummary={currentSummary}
+      modelPortfolioOptions={modelPortfolioOptions}
     />
   );
 }

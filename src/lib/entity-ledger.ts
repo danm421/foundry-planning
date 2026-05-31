@@ -248,7 +248,15 @@ export function getEntityLedger(
     for (const { accountId, share, name, suffix } of ownedAccounts) {
       const ledger = ctx.year.accountLedgers[accountId];
       if (!ledger) continue;
-      const contribution = ledger.endingValue * share;
+      // H2: for split-owned accounts the engine locks the entity's EoY share
+      // (BoY share + its share of growth, ignoring household withdrawals) into
+      // entityAccountSharesEoY and sums THAT into row.endingBalance. Mirror it
+      // here so the modal reconciles to the trust-table cell; fully-owned
+      // accounts (share === 1) keep ledger.endingValue. Fall back to the
+      // proportional value if the locked share is unavailable.
+      const lockedEoY = ctx.year.entityAccountSharesEoY?.get(entityId)?.get(accountId);
+      const contribution =
+        share < 1 ? lockedEoY ?? ledger.endingValue * share : ledger.endingValue;
       if (contribution === 0) continue;
       ending.push({
         label: `${name}${suffix} — ending`,

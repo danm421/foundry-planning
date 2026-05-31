@@ -53,6 +53,14 @@ export const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}(T.*)?$/, "Must be ISO 8601 date");
 
+/** Sanitize a ZodError to path+message pairs only — never echo received values
+ *  (they can embed internal IDs / PII) or internal Zod codes back to the client. */
+export function formatZodIssues(
+  error: z.ZodError
+): Array<{ path: string; message: string }> {
+  return error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
+}
+
 /**
  * Parse `req.json()` against `schema`. Returns either the validated data
  * or a 400 NextResponse that the handler should return immediately.
@@ -77,10 +85,7 @@ export async function parseBody<T extends z.ZodTypeAny>(
       response: NextResponse.json(
         {
           error: "Validation failed",
-          issues: parsed.error.issues.map((i) => ({
-            path: i.path.join("."),
-            message: i.message,
-          })),
+          issues: formatZodIssues(parsed.error),
         },
         { status: 400 }
       ),

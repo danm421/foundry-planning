@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildTaxIncomeDrillData } from "../view-model";
 import { makeTaxYears, makeClientData } from "@/lib/presentations/shared/__tests__/tax-fixtures";
+import type { ProjectionYear } from "@/engine/types";
 
 const base = {
   years: makeTaxYears(),
@@ -32,5 +33,44 @@ describe("buildTaxIncomeDrillData", () => {
     const d = buildTaxIncomeDrillData({ ...base, options: { range: "retirement", showCallout: false } });
     expect(d.table.rows.map((r) => r.year)).toEqual([2031, 2036]);
     expect(d.chartSpec).toBeDefined();
+  });
+});
+
+function yearWithStcg(): ProjectionYear {
+  // Only the fields the view-model reads need to be present.
+  return {
+    year: 2030,
+    ages: { client: 65 },
+    taxResult: {
+      income: {
+        earnedIncome: 100_000,
+        taxableSocialSecurity: 0,
+        ordinaryIncome: 25_000, // includes 5k STCG folded in
+        dividends: 0,
+        capitalGains: 10_000, // LTCG
+        shortCapitalGains: 5_000,
+        totalIncome: 135_000, // earned + ordinary(incl stcg) + LTCG
+        nonTaxableIncome: 0,
+        grossTotalIncome: 135_000,
+      },
+    },
+    taxDetail: { qbi: 0 },
+  } as unknown as ProjectionYear;
+}
+
+describe("income-tax-income view-model — C1 STCG reconciliation", () => {
+  it("income columns sum to Total Income (no STCG double-count)", () => {
+    const data = buildTaxIncomeDrillData({
+      years: [yearWithStcg()],
+      clientData: makeClientData(),
+      options: { range: "lifetime", showCallout: false } as never,
+      scenarioLabel: "Base",
+      clientName: "Test",
+      spouseName: null,
+    });
+    const r = data.table.rows[0].cells;
+    const sum =
+      r.earned + r.taxableSS + r.ordinary + r.dividends + r.ltcg + r.stcg + r.qbi;
+    expect(sum).toBe(r.totalIncome);
   });
 });

@@ -24,16 +24,20 @@ const fmt = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-/** Reuse the same Series shape as StackedBarChart so the tests look familiar. */
+/**
+ * Reuse the same Series shape as StackedBarChart so the tests look familiar.
+ * H1: stack only the five liquid investable buckets so the bar height ties to
+ * portfolioAssets.liquidTotal — the canonical "Portfolio Assets" total shared by
+ * the summary cell and next-year BoY. Real estate / business / locked trusts are
+ * net-worth, not portfolio; they belong on a separate balance-sheet view
+ * (follow-up — see future-work/reports).
+ */
 export function buildPortfolioDatasets(): StackedBarSeries[] {
   return [
     { label: "Cash",                    color: "#9ca3af", valueFor: (y) => y.portfolioAssets.cashTotal },
     { label: "Taxable",                 color: "#facc15", valueFor: (y) => y.portfolioAssets.taxableTotal },
-    { label: "Retirement",             color: "#f97316", valueFor: (y) => y.portfolioAssets.retirementTotal },
+    { label: "Retirement",              color: "#f97316", valueFor: (y) => y.portfolioAssets.retirementTotal },
     { label: "Life Insurance",          color: "#16a34a", valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
-    { label: "Real Estate",             color: "#0891b2", valueFor: (y) => y.portfolioAssets.realEstateTotal },
-    { label: "Business",               color: "#7c3aed", valueFor: (y) => y.portfolioAssets.businessTotal },
-    { label: "Trusts & Businesses",     color: "#2563eb", valueFor: (y) => y.portfolioAssets.trustsAndBusinessesTotal },
     { label: "Accessible Trust Assets", color: "#99f6e4", valueFor: (y) => y.portfolioAssets.accessibleTrustAssetsTotal },
   ];
 }
@@ -74,7 +78,7 @@ export function PortfolioChart({ years, dataVersion }: PortfolioChartProps) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: true, labels: { color: "#d1d5db", boxWidth: 12, padding: 16 } },
-        title: { display: true, text: "Portfolio assets by category", color: "#f3f4f6", font: { size: 14 } },
+        title: { display: true, text: "Liquid portfolio by category", color: "#f3f4f6", font: { size: 14 } },
         tooltip: {
           backgroundColor: "#1f2937",
           titleColor: "#f3f4f6",

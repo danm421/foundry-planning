@@ -43,4 +43,46 @@ describe("computeTaxForYear", () => {
     expect(out.taxes).toBe(0);
     expect(out.charityDeductionThisYear).toBe(0);
   });
+
+  it("records transfer early-withdrawal penalty into flow.earlyWithdrawalPenalty and totalTax", () => {
+    const inputWith = (penalty: number) => ({
+      taxDetail: {
+        earnedIncome: 80_000,
+        ordinaryIncome: 80_000,
+        dividends: 0,
+        capitalGains: 0,
+        stCapitalGains: 0,
+        qbi: 0,
+        taxExempt: 0,
+        taxExemptInterest: 0,
+        bySource: {},
+      },
+      socialSecurityGross: 0,
+      totalIncome: 80_000,
+      taxableIncome: 80_000,
+      filingStatus: "single" as const,
+      year: 2026,
+      planSettings: basePlanSettings,
+      resolved: null,
+      useBracket: false,
+      aboveLineDeductions: 0,
+      itemizedDeductions: 0,
+      charityCarryforwardIn: emptyCharityCarryforward(),
+      charityGiftsThisYear: [],
+      secaResult: { seTax: 0, deductibleHalf: 0 },
+      transferEarlyWithdrawalPenalty: penalty,
+      interestIncomeForTax: 0,
+      deductionBreakdownIn: null,
+    });
+
+    const base = computeTaxForYear(inputWith(0));
+    const withPenalty = computeTaxForYear(inputWith(1_000));
+
+    expect(base.taxResult.flow.earlyWithdrawalPenalty).toBe(0);
+    expect(withPenalty.taxResult.flow.earlyWithdrawalPenalty).toBe(1_000);
+    expect(withPenalty.taxResult.flow.totalTax).toBe(base.taxResult.flow.totalTax + 1_000);
+    expect(withPenalty.taxResult.flow.totalFederalTax).toBe(
+      base.taxResult.flow.totalFederalTax + 1_000,
+    );
+  });
 });

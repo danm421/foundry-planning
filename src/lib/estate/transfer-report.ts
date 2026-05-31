@@ -729,7 +729,7 @@ export function detectConflicts(
   transfers: DeathTransfer[],
   decedent: "client" | "spouse",
 ): ConflictEntry[] {
-  const wills = (clientData as unknown as { wills?: Will[] }).wills ?? [];
+  const wills = clientData.wills ?? [];
   const decedentWill = wills.find((w) => w.grantor === decedent);
 
   // Accounts where the will is already being honored on at least part of the

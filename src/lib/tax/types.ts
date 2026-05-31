@@ -165,6 +165,9 @@ export interface TaxResult {
     stateTax: number;
     totalFederalTax: number;
     totalTax: number;
+    /** Early-withdrawal penalty (10%) — transfer penalty + gap-fill supplemental
+     *  penalty. Included in totalTax/totalFederalTax. 0 when no pre-59½ draws. */
+    earlyWithdrawalPenalty: number;
   };
   diag: {
     marginalFederalRate: number;

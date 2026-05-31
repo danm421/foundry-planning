@@ -241,6 +241,66 @@ describe("portfolioAssets buckets — non-IIP entity routing", () => {
       year0.portfolioAssets.realEstateTotal;
     expect(grand).toBe(100 + 500 + 300 + 50); // 950
   });
+
+  it("H1: liquidTotal = taxable+cash+retirement+lifeInsurance+accessibleTrust (excludes RE/business/locked)", () => {
+    const accts: Account[] = [
+      {
+        id: "h1-taxable",
+        name: "Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        titlingType: "jtwros",
+        value: 100_000,
+        basis: 100_000,
+        growthRate: 0,
+        rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+      {
+        id: "h1-re",
+        name: "Home",
+        category: "real_estate",
+        subType: "primary_residence",
+        titlingType: "jtwros",
+        value: 500_000,
+        basis: 500_000,
+        growthRate: 0,
+        rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+      {
+        id: "h1-flp",
+        name: "FLP Rental",
+        category: "real_estate",
+        subType: "investment",
+        titlingType: "jtwros",
+        value: 300_000,
+        basis: 300_000,
+        growthRate: 0,
+        rmdEnabled: false,
+        owners: [{ kind: "entity", entityId: ENT_NON_IIP_LOCKED, percent: 1 }],
+      },
+      {
+        id: "h1-hems",
+        name: "HEMS Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        titlingType: "jtwros",
+        value: 50_000,
+        basis: 50_000,
+        growthRate: 0,
+        rmdEnabled: false,
+        owners: [{ kind: "entity", entityId: ENT_NON_IIP_ACCESSIBLE, percent: 1 }],
+      },
+    ];
+    const [year0] = projectWith(accts);
+    const pa = year0.portfolioAssets;
+    expect(pa.liquidTotal).toBe(
+      pa.taxableTotal + pa.cashTotal + pa.retirementTotal + pa.lifeInsuranceTotal + pa.accessibleTrustAssetsTotal,
+    );
+    expect(pa.liquidTotal).toBe(150_000); // 100k taxable + 50k accessible-trust; excludes RE 500k, locked FLP 300k
+    expect(pa.liquidTotal).not.toBe(pa.total); // .total includes real estate (and business), not accessible trust
+  });
 });
 
 // ── Mixed ownership + household withdrawal ───────────────────────────────────
@@ -340,6 +400,15 @@ describe("portfolioAssets — mixed ownership preserves entity share through hou
     const familyPool = ledger.endingValue - entityLocked;
     const drillFamily = year0.portfolioAssets.taxable["acct-mixed"] ?? 0;
     expect(drillFamily).toBeCloseTo(familyPool, 6);
+
+    // H1: the post-withdrawal entity-share re-bucket pass moves the entity slice
+    // to trustsAndBusinesses (out of liquid) and rewrites taxableTotal, so
+    // liquidTotal MUST be recomputed alongside .total — otherwise it goes stale.
+    const pa = year0.portfolioAssets;
+    expect(pa.liquidTotal).toBeCloseTo(
+      pa.taxableTotal + pa.cashTotal + pa.retirementTotal + pa.lifeInsuranceTotal + pa.accessibleTrustAssetsTotal,
+      6,
+    );
   });
 
   it("the same 70/30 split account routes the entity slice to accessibleTrustAssets when the trust is accessible", () => {

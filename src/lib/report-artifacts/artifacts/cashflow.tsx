@@ -89,12 +89,9 @@ function ageString(year: ProjectionYear, c: ClientData): string {
 }
 
 function liquidPortfolioTotal(y: ProjectionYear): number {
-  return (
-    y.portfolioAssets.taxableTotal +
-    y.portfolioAssets.cashTotal +
-    y.portfolioAssets.retirementTotal +
-    y.portfolioAssets.lifeInsuranceTotal
-  );
+  // H1: canonical liquid investable total (engine field) — keeps this artifact's
+  // Portfolio Assets summary in sync with the live report's chart/cell/BoY.
+  return y.portfolioAssets.liquidTotal;
 }
 
 function buildBaseSection(years: ProjectionYear[], c: ClientData): CashflowSection {
@@ -306,7 +303,8 @@ function buildAccountCategoryMap(
 
 function portfolioBoy(year: ProjectionYear, years: ProjectionYear[]): number {
   const prev = years.find((y) => y.year === year.year - 1);
-  if (prev) return prev.portfolioAssets.total;
+  // H1: roll forward the canonical liquid portfolio total so BoY ties to the cell.
+  if (prev) return prev.portfolioAssets.liquidTotal;
   return Object.values(year.accountLedgers).reduce(
     (s, l) => s + (l?.beginningValue ?? 0),
     0,

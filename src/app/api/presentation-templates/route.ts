@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { formatZodIssues } from "@/lib/schemas/common";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { authErrorResponse } from "@/lib/authz";
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
     }
     const parsed = PostBodySchema.safeParse(json);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid request body", issues: parsed.error.issues }, { status: 400 });
+      return NextResponse.json({ error: "Invalid request body", issues: formatZodIssues(parsed.error) }, { status: 400 });
     }
 
     let created;

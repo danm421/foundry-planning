@@ -109,11 +109,11 @@ export async function POST(
         grantor: data.grantor,
         recipientEntityId: data.recipientEntityId,
         startYear: data.startYear,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        startYearRef: (data.startYearRef ?? null) as any,
+        startYearRef: (data.startYearRef ??
+          null) as typeof giftSeries.$inferInsert["startYearRef"],
         endYear: data.endYear,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        endYearRef: (data.endYearRef ?? null) as any,
+        endYearRef: (data.endYearRef ??
+          null) as typeof giftSeries.$inferInsert["endYearRef"],
         annualAmount: data.annualAmount.toString(),
         inflationAdjust: data.inflationAdjust ?? false,
         useCrummeyPowers: data.useCrummeyPowers ?? false,
