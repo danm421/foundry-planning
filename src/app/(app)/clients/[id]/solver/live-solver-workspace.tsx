@@ -315,6 +315,38 @@ export function LiveSolverWorkspace({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [savingToBase, setSavingToBase] = useState(false);
+  const [saveToBaseError, setSaveToBaseError] = useState<string | null>(null);
+
+  async function handleSaveToBase() {
+    if (
+      !confirm(
+        "Save these changes to base facts? This will update the client's real data and cannot be undone.",
+      )
+    )
+      return;
+    setSavingToBase(true);
+    setSaveToBaseError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/solver/save-to-base`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: initialSource, mutations }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      setMutationMap(new Map());
+      setComputeStatus("fresh");
+      router.refresh();
+    } catch (err) {
+      setSaveToBaseError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingToBase(false);
+    }
+  }
+
   async function handleSaveSubmit(args: { name: string }) {
     setSaving(true);
     setSaveError(null);
@@ -760,9 +792,11 @@ export function LiveSolverWorkspace({
         hasMutations={mutations.length > 0}
         mcRunning={mcRunning}
         solveActive={activeSolve !== null}
+        savingToBase={savingToBase}
         onReset={handleReset}
         onGenerateMc={handleGenerateMc}
         onSave={() => setSaveOpen(true)}
+        onSaveToBase={handleSaveToBase}
       />
 
       <SaveAsScenarioDialog
@@ -774,6 +808,11 @@ export function LiveSolverWorkspace({
       {saveError ? (
         <div role="alert" className="text-[13px] text-crit">
           Save failed: {saveError}
+        </div>
+      ) : null}
+      {saveToBaseError ? (
+        <div role="alert" className="text-[13px] text-crit">
+          Save to base facts failed: {saveToBaseError}
         </div>
       ) : null}
     </div>

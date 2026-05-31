@@ -227,6 +227,47 @@ describe("LiveSolverWorkspace — save scenario", () => {
   });
 });
 
+describe("LiveSolverWorkspace — save to base facts", () => {
+  it("POSTs mutations+source to save-to-base and refreshes the router on success", async () => {
+    vi.stubGlobal("confirm", () => true);
+
+    fetchMock.mockImplementation((url: unknown) => {
+      if (typeof url === "string" && url.includes("/save-to-base")) {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true }) });
+      }
+      // debounced /project recompute
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          projection: [{ year: 2026, portfolioAssets: { total: 900_000 } }],
+        }),
+      });
+    });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Seed a mutation so the button becomes enabled.
+    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
+    fireEvent.change(cooper, { target: { value: "67" } });
+
+    const saveToBaseBtn = screen.getByRole("button", { name: /Save to base facts/i });
+    await waitFor(() => expect(saveToBaseBtn).not.toBeDisabled());
+    fireEvent.click(saveToBaseBtn);
+
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
+
+    const saveToBaseCall = fetchMock.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("/save-to-base"),
+    );
+    expect(saveToBaseCall).toBeDefined();
+    const body = JSON.parse(saveToBaseCall![1].body as string);
+    expect(body.source).toBe("base");
+    expect(body.mutations).toEqual([
+      { kind: "retirement-age", person: "client", age: 67 },
+    ]);
+  });
+});
+
 describe("LiveSolverWorkspace — editing-surface tabs", () => {
   it("switches between the Retirement and Techniques tabs", () => {
     render(<LiveSolverWorkspace {...baseProps} />);

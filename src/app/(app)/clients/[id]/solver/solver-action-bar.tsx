@@ -4,18 +4,22 @@ interface Props {
   hasMutations: boolean;
   mcRunning: boolean;
   solveActive?: boolean;
+  savingToBase?: boolean;
   onReset(): void;
   onGenerateMc(): void;
   onSave(): void;
+  onSaveToBase(): void;
 }
 
 export function SolverActionBar({
   hasMutations,
   mcRunning,
   solveActive,
+  savingToBase,
   onReset,
   onGenerateMc,
   onSave,
+  onSaveToBase,
 }: Props) {
   return (
     <div className="flex items-center justify-between gap-3 border-t border-hair pt-4">
@@ -47,14 +51,34 @@ export function SolverActionBar({
           )}
         </button>
       </div>
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={solveActive || !hasMutations}
-        className="h-9 px-4 text-[13px] font-semibold rounded-md bg-accent text-accent-on hover:bg-accent-ink disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-      >
-        Save as scenario…
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onSaveToBase}
+          disabled={solveActive || savingToBase || !hasMutations}
+          className="h-9 px-3 text-[13px] font-medium rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 inline-flex items-center gap-2"
+        >
+          {savingToBase ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="h-3 w-3 rounded-full border-2 border-ink-3 border-t-transparent animate-spin"
+              />
+              Saving…
+            </>
+          ) : (
+            "Save to base facts"
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={solveActive || !hasMutations}
+          className="h-9 px-4 text-[13px] font-semibold rounded-md bg-accent text-accent-on hover:bg-accent-ink disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+        >
+          Save as scenario…
+        </button>
+      </div>
     </div>
   );
 }
