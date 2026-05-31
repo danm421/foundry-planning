@@ -24,7 +24,9 @@ export interface StateEstateTaxRule {
   /** First death year these values apply to (most-recent rule with effectiveYear ≤ deathYear wins). */
   effectiveYear: number;
   exemption: number;
-  /** Annotation only; runtime indexing is Phase 3. */
+  /** When true, the exemption (and, for non-cliff states, the exemption-anchored
+   *  bracket schedule) is forward-projected from `effectiveYear` to the death year
+   *  at the plan inflation rate — see `projectIndexedRule` in compute.ts (F16). */
   indexed: boolean;
   brackets: Bracket[];
   giftAddback: GiftAddback | null;

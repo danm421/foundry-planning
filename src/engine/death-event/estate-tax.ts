@@ -498,6 +498,10 @@ export function buildEstateTaxResult(input: {
   dsueReceived: number;
   residenceState: USPSStateCode | null;
   stateEstateTaxFallbackRate: number;
+  /** Plan tax-inflation rate (decimal). Forward-projects indexed state-estate
+   *  exemptions (CT/DC/ME/NY/RI/WA) from their statutory base year to the death
+   *  year (F16). Optional — when omitted, indexed exemptions stay frozen. */
+  inflationRate?: number;
   estateTaxDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffResidual: number;
@@ -527,6 +531,7 @@ export function buildEstateTaxResult(input: {
   const stateEstateTaxDetail = computeStateEstateTax({
     state: input.residenceState,
     deathYear: input.year,
+    inflationRate: input.inflationRate,
     taxableEstate,
     adjustedTaxableGifts: input.adjustedTaxableGifts,
     adjustedTaxableGiftsByYear: input.adjustedTaxableGiftsByYear,
