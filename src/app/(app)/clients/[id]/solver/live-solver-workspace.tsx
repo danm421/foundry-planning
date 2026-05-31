@@ -673,7 +673,7 @@ export function LiveSolverWorkspace({
                   type="button"
                   onClick={() => handleSolveMinSavings(MIN_SAVINGS_TARGET_POS)}
                   disabled={activeSolve !== null || ownerOptions.length === 0}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-on-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Solve minimum additional savings
                 </button>
