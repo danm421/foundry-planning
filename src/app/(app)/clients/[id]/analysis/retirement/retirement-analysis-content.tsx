@@ -2,7 +2,10 @@
 
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { RetirementSummary } from "@/lib/analysis/derive-retirement-summary";
-import { RetirementAnalysisView } from "@/components/analysis/retirement/retirement-analysis-view";
+import {
+  RetirementAnalysisView,
+  type ModelPortfolioOption,
+} from "@/components/analysis/retirement/retirement-analysis-view";
 
 interface Props {
   clientId: string;
@@ -12,6 +15,7 @@ interface Props {
   asOfLabel: string;
   currentYears: ProjectionYear[];
   currentSummary: RetirementSummary;
+  modelPortfolioOptions: ModelPortfolioOption[];
 }
 
 export default function RetirementAnalysisContent(props: Props) {

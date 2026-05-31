@@ -884,6 +884,12 @@ export interface SavingsRule {
    *  base+catch-up for IRA-group accounts). Overrides annualAmount and
    *  annualPercent. Non-retirement subtypes resolve to 0. */
   contributeMax?: boolean;
+  /** Analysis-only. When true the projection funds this rule's contribution via
+   *  a waterfall — first the year's positive net cash flow, then by reducing
+   *  living expenses — and never by drawing the withdrawal strategy. Used by the
+   *  Retirement Analysis "Minimum Additional Savings" synthetic taxable account.
+   *  Real (persisted) savings rules never set this. */
+  fundFromExpenseReduction?: boolean;
   /** Fraction (0..1) of the resolved contribution designated Roth. Applies
    *  to 401(k)/403(b) accounts only; null/0 means fully pre-tax. The Roth
    *  slice feeds the account's rothValue and is excluded from the
@@ -1094,6 +1100,18 @@ export interface PlanSettings {
 export interface ProjectionYear {
   year: number;
   ages: { client: number; spouse?: number };
+
+  /** Present only when one or more `fundFromExpenseReduction` savings rules ran
+   *  this year (Retirement Analysis min-savings solve). Lets the UI surface the
+   *  funding split without re-deriving it. */
+  hypotheticalSavings?: {
+    /** Total deposited into the synthetic taxable account this year. */
+    contribution: number;
+    /** Portion funded from positive net cash flow. */
+    fromCashFlow: number;
+    /** Portion funded by reducing living expenses. */
+    fromExpenseReduction: number;
+  };
 
   income: {
     salaries: number;

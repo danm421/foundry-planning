@@ -751,6 +751,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (!entityFlowOverrideByKey.has(key)) entityFlowOverrideByKey.set(key, o);
   }
 
+  // Partition savings rules once (loop-invariant). Self-funding (analysis-only)
+  // rules are handled by the per-year waterfall, NOT the normal checking-debit
+  // path — they must never drive a supplemental withdrawal.
+  const normalSavingsRules = data.savingsRules.filter((r) => !r.fundFromExpenseReduction);
+  const selfFundingRules = data.savingsRules.filter((r) => r.fundFromExpenseReduction);
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -3493,7 +3499,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     const savings = hasChecking
       ? applySavingsRules(
-          data.savingsRules,
+          normalSavingsRules,
           year,
           income.salaries,
           data.client,
@@ -3502,7 +3508,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           cappedByRuleId
         )
       : applySavingsRules(
-          data.savingsRules,
+          normalSavingsRules,
           year,
           income.salaries,
           data.client,
@@ -3532,6 +3538,60 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       label: "Savings contributions",
     });
 
+    // Self-funding hypothetical savings (Retirement Analysis "Minimum Additional
+    // Savings"). For each self-funding rule, deposit the FULL prorated annual
+    // amount into its taxable account, funded first from this year's positive net
+    // cash flow (after normal savings) and then by reducing living expenses. Never
+    // touches the withdrawal strategy. See spec
+    // 2026-05-30-retirement-min-savings-redesign-design.
+    let hypoContribution = 0;
+    let hypoFromCashFlow = 0;
+    let hypoFromExpenseReduction = 0;
+    if (selfFundingRules.length > 0) {
+      // Cash flow available to the hypothetical = surplus before savings, minus
+      // what the normal (real) savings rules already consumed. Floored at 0.
+      let surplusAvailable = Math.max(0, surplusBeforeSavings - savings.total);
+      // Living expense pool still available to cut this year.
+      let livingAvailable = Math.max(0, expenseBreakdown.living);
+      for (const rule of selfFundingRules) {
+        const gate = itemProrationGate(rule, year, data.client);
+        if (!gate.include) continue;
+        const target = rule.annualAmount * gate.factor;
+        if (target <= 0) continue;
+        const fromCash = Math.min(target, surplusAvailable);
+        const fromCut = Math.min(target - fromCash, livingAvailable);
+        const actual = fromCash + fromCut;
+        if (actual <= 0) continue;
+        surplusAvailable -= fromCash;
+        livingAvailable -= fromCut;
+        hypoContribution += actual;
+        hypoFromCashFlow += fromCash;
+        hypoFromExpenseReduction += fromCut;
+
+        // Deposit into the taxable account; post-tax dollars → bump basis so
+        // contributions aren't re-taxed on withdrawal. Growth is taxed annually
+        // later via acct.realization.
+        accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + actual;
+        basisMap[rule.accountId] = (basisMap[rule.accountId] ?? 0) + actual;
+        if (accountLedgers[rule.accountId]) {
+          accountLedgers[rule.accountId].contributions += actual;
+          accountLedgers[rule.accountId].endingValue += actual;
+          accountLedgers[rule.accountId].entries.push({
+            category: "savings_contribution",
+            label: "Hypothetical additional savings",
+            amount: actual,
+            sourceId: rule.accountId,
+          });
+        }
+      }
+      // Net cash drain on checking is ONLY the cash-flow portion; the expense-cut
+      // portion represents money not spent, so it stays in checking.
+      creditCash(defaultChecking?.id, -hypoFromCashFlow, {
+        category: "savings_contribution",
+        label: "Hypothetical additional savings (cash flow)",
+      });
+    }
+
     // Roth-designated slice of employee 401(k)/403(b) contributions feeds the
     // account's Roth basis so it is tax-free on later withdrawal / conversion.
     // Gated on subtype — rothPercent is only meaningful for deferral accounts.
@@ -3547,7 +3607,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // the match must be computed against *only* the account owner's salary — a
     // spouse's salary can't ground the other spouse's 401k match. Joint-owned or
     // orphaned-rule accounts get no match (no individual salary to base it on).
-    for (const rule of data.savingsRules) {
+    for (const rule of normalSavingsRules) {
       const matchGate = itemProrationGate(rule, year, data.client);
       if (!matchGate.include) continue;
       const acct = data.accounts.find((a) => a.id === rule.accountId);
@@ -4431,7 +4491,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       .filter((s) => s.ownerEntityId == null)
       .reduce((sum, s) => sum + s.annualAmount, 0);
     const expenses = {
-      living: expenseBreakdown.living,
+      living: expenseBreakdown.living - hypoFromExpenseReduction,
       liabilities: liabResult.totalPayment,
       other: expenseBreakdown.other + techniqueExpenses + householdCashGiftsTotal,
       insurance: expenseBreakdown.insurance,
@@ -4440,7 +4500,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       cashGifts: householdCashGiftsTotal,
       discretionary: expenseBreakdown.discretionary,
       total:
-        expenseBreakdown.living +
+        (expenseBreakdown.living - hypoFromExpenseReduction) +
         expenseBreakdown.other +
         expenseBreakdown.insurance +
         expenseBreakdown.discretionary +
@@ -4550,7 +4610,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // (credited directly to checking, not through income.bySource) shows up in
     // both Total Income and Net Cash Flow on the cashflow report.
     const totalIncome = displayIncome.total + householdRmdIncome + householdNoteCashIn;
-    const totalExpenses = expenses.total + savings.total;
+    const totalExpenses = expenses.total + savings.total + hypoContribution;
     const netCashFlow = totalIncome - totalExpenses;
 
     // Build technique breakdown for drill-down UI
@@ -4645,6 +4705,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       entityWithdrawals,
       expenses,
       savings,
+      ...(hypoContribution > 0
+        ? {
+            hypotheticalSavings: {
+              contribution: hypoContribution,
+              fromCashFlow: hypoFromCashFlow,
+              fromExpenseReduction: hypoFromExpenseReduction,
+            },
+          }
+        : {}),
       totalIncome,
       totalExpenses,
       netCashFlow,

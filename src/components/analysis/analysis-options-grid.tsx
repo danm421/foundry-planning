@@ -21,6 +21,7 @@ import {
   type SolverSource,
 } from "@/lib/solver/types";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import type { MinSavingsGrowth } from "@/lib/analysis/hypothetical-savings";
 import type {
   ExploreRow,
   SolvedColumnConfig,
@@ -42,10 +43,20 @@ type ColumnStatus =
   // The solve stream errored or closed before this column reported.
   | "unavailable";
 
+/** Min-savings funding-source detail (present only on that column). */
+interface FundingSource {
+  /** Largest single-year reduction in living expenses across the horizon. */
+  maxExpenseReduction: number;
+  growthRate: number;
+  /** Pre-formatted growth-assumption label (e.g. "Balanced — 6.2%"). */
+  growthLabel: string;
+}
+
 interface ColumnState {
   status: ColumnStatus;
   solvedValue: number | null;
   summary: RetirementSummary | null;
+  fundingSource: FundingSource | null;
 }
 
 interface Props {
@@ -53,8 +64,13 @@ interface Props {
   source: SolverSource;
   /** Editable rows derived from the effective tree. */
   rows: ExploreRow[];
-  /** Account the min-savings column targets + the SSE body field. */
+  /** Non-empty when there is an account to anchor the min-savings row — used
+   *  only as a local "is there anything to solve" gate (the solve itself
+   *  targets a server-injected synthetic taxable account). */
   savingsAccountId: string;
+  /** Growth assumption for the hypothetical taxable savings the min-savings
+   *  column solves. Changing it re-runs the solve. */
+  minSavingsGrowth: MinSavingsGrowth;
   /** Lifts the latest Explore recompute (or null when the user resets). */
   onExploreResult: (
     result: { years: ProjectionYear[]; summary: RetirementSummary } | null,
@@ -101,6 +117,7 @@ interface ColumnEvent {
   status: string;
   solvedValue: number | null;
   summary: RetirementSummary;
+  fundingSource?: FundingSource;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +155,7 @@ export function AnalysisOptionsGrid({
   source,
   rows,
   savingsAccountId,
+  minSavingsGrowth,
   onExploreResult,
   onSaveScenario,
   savingScenario = false,
@@ -147,9 +165,9 @@ export function AnalysisOptionsGrid({
 }: Props) {
   // --- Solved columns (streamed) ------------------------------------------
   const [columns, setColumns] = useState<Record<SolvedColumnId, ColumnState>>({
-    "min-savings": { status: "pending", solvedValue: null, summary: null },
-    "max-spending": { status: "pending", solvedValue: null, summary: null },
-    "earliest-retirement": { status: "pending", solvedValue: null, summary: null },
+    "min-savings": { status: "pending", solvedValue: null, summary: null, fundingSource: null },
+    "max-spending": { status: "pending", solvedValue: null, summary: null, fundingSource: null },
+    "earliest-retirement": { status: "pending", solvedValue: null, summary: null, fundingSource: null },
   });
 
   useEffect(() => {
@@ -179,7 +197,11 @@ export function AnalysisOptionsGrid({
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ source, mutations: [], savingsAccountId }),
+            body: JSON.stringify({
+              source,
+              mutations: [],
+              minSavingsGrowth,
+            }),
             signal: ac.signal,
           },
         );
@@ -215,6 +237,7 @@ export function AnalysisOptionsGrid({
                       : "not-achievable",
                   solvedValue: payload.solvedValue,
                   summary: payload.summary,
+                  fundingSource: payload.fundingSource ?? null,
                 },
               }));
             } else if (ev.event === "error") {
@@ -236,7 +259,9 @@ export function AnalysisOptionsGrid({
     })();
 
     return () => ac.abort();
-  }, [clientId, source, savingsAccountId]);
+    // minSavingsGrowth is a stable state object from the parent; only a picker
+    // change gives it a new identity, which re-runs the solve.
+  }, [clientId, source, savingsAccountId, minSavingsGrowth]);
 
   // --- Explore column (live edits) ----------------------------------------
   const [mutationMap, setMutationMap] = useState<
@@ -527,11 +552,22 @@ function SolvedCell({
       ? "—"
       : (config.formatSolved(state.solvedValue, rows) ?? "—");
 
+  const fundingSource =
+    config.id === "min-savings" ? state.fundingSource : null;
+
   return (
     <td className="border-b border-hair px-4 py-2.5 text-right">
       <span className="inline-block rounded bg-[color:var(--color-good)]/10 px-2 py-0.5 tabular text-[13px] font-semibold text-[color:var(--color-good)]">
         {display}
       </span>
+      {fundingSource && (
+        <div className="mt-1 text-[11px] leading-snug text-ink-4">
+          {fundingSource.maxExpenseReduction > 0
+            ? `Funded from surplus cash flow; reduces living expenses by up to ${formatCurrency(fundingSource.maxExpenseReduction)}/yr`
+            : "Funded entirely from surplus cash flow"}
+          {` · growing at ${fundingSource.growthLabel}`}
+        </div>
+      )}
     </td>
   );
 }
