@@ -8,6 +8,7 @@ import {
 } from "@/lib/investments/asset-types";
 import { TrashIcon } from "@/components/icons";
 import CmaMigrationDialog from "@/components/cma-migration-dialog";
+import CmaValueRefreshDialog from "@/components/cma-value-refresh-dialog";
 import CmaSkeleton from "./loading-skeleton";
 
 interface AssetClass {
@@ -105,6 +106,7 @@ export default function CmaClient() {
   const [error, setError] = useState<string | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
   const [migrationOpen, setMigrationOpen] = useState(false);
+  const [valueRefreshOpen, setValueRefreshOpen] = useState(false);
   // Guard against React strict-mode double-mount re-firing the seed request.
   const fetchInFlight = useRef(false);
 
@@ -241,7 +243,14 @@ export default function CmaClient() {
       )}
       {error && <p className="mb-4 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setValueRefreshOpen(true)}
+          className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover"
+        >
+          Refresh standard values
+        </button>
         <button
           type="button"
           onClick={() => setMigrationOpen(true)}
@@ -255,6 +264,12 @@ export default function CmaClient() {
         open={migrationOpen}
         onOpenChange={setMigrationOpen}
         onMigrated={() => fetchData()}
+      />
+
+      <CmaValueRefreshDialog
+        open={valueRefreshOpen}
+        onOpenChange={setValueRefreshOpen}
+        onRefreshed={() => fetchData()}
       />
 
       {/* Tab toggle */}
