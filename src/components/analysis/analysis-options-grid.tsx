@@ -64,7 +64,9 @@ interface Props {
   source: SolverSource;
   /** Editable rows derived from the effective tree. */
   rows: ExploreRow[];
-  /** Account the min-savings column targets + the SSE body field. */
+  /** Non-empty when there is an account to anchor the min-savings row — used
+   *  only as a local "is there anything to solve" gate (the solve itself
+   *  targets a server-injected synthetic taxable account). */
   savingsAccountId: string;
   /** Growth assumption for the hypothetical taxable savings the min-savings
    *  column solves. Changing it re-runs the solve. */
@@ -198,7 +200,6 @@ export function AnalysisOptionsGrid({
             body: JSON.stringify({
               source,
               mutations: [],
-              savingsAccountId,
               minSavingsGrowth,
             }),
             signal: ac.signal,
@@ -258,11 +259,9 @@ export function AnalysisOptionsGrid({
     })();
 
     return () => ac.abort();
-    // minSavingsGrowth is a stable state object from the parent; a new identity
-    // (picker change) re-runs the solve. Serialized so an equal-but-new object
-    // doesn't needlessly re-solve.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, source, savingsAccountId, JSON.stringify(minSavingsGrowth)]);
+    // minSavingsGrowth is a stable state object from the parent; only a picker
+    // change gives it a new identity, which re-runs the solve.
+  }, [clientId, source, savingsAccountId, minSavingsGrowth]);
 
   // --- Explore column (live edits) ----------------------------------------
   const [mutationMap, setMutationMap] = useState<
@@ -566,9 +565,7 @@ function SolvedCell({
           {fundingSource.maxExpenseReduction > 0
             ? `Funded from surplus cash flow; reduces living expenses by up to ${formatCurrency(fundingSource.maxExpenseReduction)}/yr`
             : "Funded entirely from surplus cash flow"}
-          {fundingSource.growthLabel
-            ? ` · growing at ${fundingSource.growthLabel}`
-            : ""}
+          {` · growing at ${fundingSource.growthLabel}`}
         </div>
       )}
     </td>

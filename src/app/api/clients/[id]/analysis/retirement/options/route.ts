@@ -29,10 +29,6 @@ export const dynamic = "force-dynamic";
 const BODY = z.object({
   source: z.union([z.literal("base"), z.string().uuid()]),
   mutations: z.array(SOLVER_MUTATION_SCHEMA),
-  /** Account the "Minimum Additional Savings" column historically targeted.
-   *  No longer used for the solve (the synthetic taxable account is), but kept
-   *  optional for backward-compatible clients. */
-  savingsAccountId: z.string().min(1).optional(),
   /** Growth assumption for the hypothetical taxable savings. Defaults to the
    *  client's taxable category default when omitted. */
   minSavingsGrowth: z

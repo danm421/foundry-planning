@@ -64,17 +64,21 @@ export default async function RetirementAnalysisPage({
   const now = new Date();
   const asOfLabel = `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
 
+  // Firm model portfolios + blended returns for the min-savings growth picker.
+  // Kicked off here so the DB round-trips overlap with the (independent)
+  // projection load below instead of sitting on the critical path after it.
+  const portfolioFetch = Promise.all([
+    db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+    db.select().from(modelPortfolioAllocations),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+  ]);
+
   // Load projection data.
   const { effectiveTree } = await loadEffectiveTree(clientId, firmId, source, {});
   const currentYears = runProjection(effectiveTree);
   const currentSummary = deriveRetirementSummary(currentYears);
 
-  // Firm model portfolios + blended returns for the min-savings growth picker.
-  const [portfolioRows, allocationRows, assetClassRows] = await Promise.all([
-    db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
-    db.select().from(modelPortfolioAllocations),
-    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
-  ]);
+  const [portfolioRows, allocationRows, assetClassRows] = await portfolioFetch;
   const acReturnById = new Map(
     assetClassRows.map((ac) => [ac.id, parseFloat(ac.geometricReturn)]),
   );

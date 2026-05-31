@@ -725,6 +725,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // computeGrossEstate doesn't consume the family-member side today.
   const lockedFamilyShareCarry = new Map<string, Map<string, number>>();
 
+  // Partition savings rules once (loop-invariant). Self-funding (analysis-only)
+  // rules are handled by the per-year waterfall, NOT the normal checking-debit
+  // path — they must never drive a supplemental withdrawal.
+  const normalSavingsRules = data.savingsRules.filter((r) => !r.fundFromExpenseReduction);
+  const selfFundingRules = data.savingsRules.filter((r) => r.fundFromExpenseReduction);
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -3466,12 +3472,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       liabResult.totalPayment +
       taxes;
     const surplusBeforeSavings = householdInflows - householdNonSavingsOutflows;
-
-    // Self-funding (analysis-only) rules are handled by the waterfall below,
-    // NOT by the normal checking-debit path — they must never drive a
-    // supplemental withdrawal. Split them out here.
-    const normalSavingsRules = data.savingsRules.filter((r) => !r.fundFromExpenseReduction);
-    const selfFundingRules = data.savingsRules.filter((r) => r.fundFromExpenseReduction);
 
     const savings = hasChecking
       ? applySavingsRules(
