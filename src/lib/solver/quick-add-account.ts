@@ -66,3 +66,44 @@ export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; ru
   };
   return { account, rule };
 }
+
+export interface AdditionalSavingsArgs {
+  ownerFamilyMemberId: string;
+  ownerLabel: string;
+  startYear: number;
+  endYear: number;
+  growthRate: number;
+  accountId: string;
+  ruleId: string;
+}
+
+/**
+ * Builds the real, savable taxable account used by the "minimum additional
+ * savings" goal-seek. The paired rule sets fundFromExpenseReduction so the
+ * solver models "save more by spending less" — the same semantics as the
+ * Retirement Analysis min-savings column, but on a persistable account.
+ */
+export function buildAdditionalSavingsAccount(args: AdditionalSavingsArgs): { account: Account; rule: SavingsRule } {
+  const account: Account = {
+    id: args.accountId,
+    name: "Additional Savings",
+    category: "taxable",
+    subType: "brokerage",
+    value: 0,
+    basis: 0,
+    growthRate: args.growthRate,
+    rmdEnabled: false,
+    titlingType: "jtwros",
+    owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 100 }],
+  };
+  const rule: SavingsRule = {
+    id: args.ruleId,
+    accountId: args.accountId,
+    annualAmount: 0,
+    isDeductible: false,
+    startYear: args.startYear,
+    endYear: args.endYear,
+    fundFromExpenseReduction: true,
+  };
+  return { account, rule };
+}

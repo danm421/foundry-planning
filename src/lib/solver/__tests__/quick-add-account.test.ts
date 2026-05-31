@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildQuickAddAccount, defaultAccountName, QUICK_ADD_TYPE_MAP } from "../quick-add-account";
+import {
+  buildQuickAddAccount,
+  defaultAccountName,
+  QUICK_ADD_TYPE_MAP,
+  buildAdditionalSavingsAccount,
+} from "../quick-add-account";
 
 describe("quick-add account builder", () => {
   const args = {
@@ -42,5 +47,17 @@ describe("quick-add account builder", () => {
   it("sets rmdEnabled only for traditional IRA", () => {
     expect(buildQuickAddAccount({ ...args, type: "ira" }).account.rmdEnabled).toBe(true);
     expect(buildQuickAddAccount({ ...args, type: "taxable" }).account.rmdEnabled).toBe(false);
+  });
+});
+
+describe("additional-savings account (min-savings solve)", () => {
+  it("builds a real taxable account with a fundFromExpenseReduction rule at $0", () => {
+    const { account, rule } = buildAdditionalSavingsAccount({
+      ownerFamilyMemberId: "fm-1", ownerLabel: "John",
+      startYear: 2026, endYear: 2040, growthRate: 0.06,
+      accountId: "acct", ruleId: "rule",
+    });
+    expect(account).toMatchObject({ category: "taxable", subType: "brokerage", name: "Additional Savings", value: 0 });
+    expect(rule).toMatchObject({ accountId: "acct", annualAmount: 0, isDeductible: false, fundFromExpenseReduction: true });
   });
 });

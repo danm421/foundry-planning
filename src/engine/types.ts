@@ -889,11 +889,12 @@ export interface SavingsRule {
    *  base+catch-up for IRA-group accounts). Overrides annualAmount and
    *  annualPercent. Non-retirement subtypes resolve to 0. */
   contributeMax?: boolean;
-  /** Analysis-only. When true the projection funds this rule's contribution via
-   *  a waterfall — first the year's positive net cash flow, then by reducing
-   *  living expenses — and never by drawing the withdrawal strategy. Used by the
-   *  Retirement Analysis "Minimum Additional Savings" synthetic taxable account.
-   *  Real (persisted) savings rules never set this. */
+  /** When true the projection funds this rule's contribution via a waterfall —
+   *  first the year's positive net cash flow, then by reducing living expenses —
+   *  and never by drawing the withdrawal strategy. Used by the Retirement
+   *  Analysis "Minimum Additional Savings" synthetic account and by the Solver's
+   *  "minimum additional savings" goal-seek (which DOES persist this flag on a
+   *  real account). */
   fundFromExpenseReduction?: boolean;
   /** Fraction (0..1) of the resolved contribution designated Roth. Applies
    *  to 401(k)/403(b) accounts only; null/0 means fully pre-tax. The Roth
