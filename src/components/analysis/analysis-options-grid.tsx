@@ -21,6 +21,7 @@ import {
   type SolverSource,
 } from "@/lib/solver/types";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import type { MinSavingsGrowth } from "@/lib/analysis/hypothetical-savings";
 import type {
   ExploreRow,
   SolvedColumnConfig,
@@ -55,6 +56,9 @@ interface Props {
   rows: ExploreRow[];
   /** Account the min-savings column targets + the SSE body field. */
   savingsAccountId: string;
+  /** Growth assumption for the hypothetical taxable savings the min-savings
+   *  column solves. Changing it re-runs the solve. */
+  minSavingsGrowth: MinSavingsGrowth;
   /** Lifts the latest Explore recompute (or null when the user resets). */
   onExploreResult: (
     result: { years: ProjectionYear[]; summary: RetirementSummary } | null,
@@ -138,6 +142,7 @@ export function AnalysisOptionsGrid({
   source,
   rows,
   savingsAccountId,
+  minSavingsGrowth,
   onExploreResult,
   onSaveScenario,
   savingScenario = false,
@@ -179,7 +184,12 @@ export function AnalysisOptionsGrid({
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ source, mutations: [], savingsAccountId }),
+            body: JSON.stringify({
+              source,
+              mutations: [],
+              savingsAccountId,
+              minSavingsGrowth,
+            }),
             signal: ac.signal,
           },
         );
@@ -236,7 +246,11 @@ export function AnalysisOptionsGrid({
     })();
 
     return () => ac.abort();
-  }, [clientId, source, savingsAccountId]);
+    // minSavingsGrowth is a stable state object from the parent; a new identity
+    // (picker change) re-runs the solve. Serialized so an equal-but-new object
+    // doesn't needlessly re-solve.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, source, savingsAccountId, JSON.stringify(minSavingsGrowth)]);
 
   // --- Explore column (live edits) ----------------------------------------
   const [mutationMap, setMutationMap] = useState<
