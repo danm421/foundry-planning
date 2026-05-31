@@ -107,6 +107,46 @@ describe("computeStateEstateTax — gift addback", () => {
   });
 });
 
+describe("computeStateEstateTax — indexed exemption projection to death year (F16)", () => {
+  // NY exemption is statutorily indexed (NY Tax Law §952); the rule hard-codes the
+  // 2025 value of $7,160,000. A 2045 death is 20 years forward. At a 2.5% indexing
+  // rate the exemption projects to 7,160,000 × 1.025^20 = $11,732,494, rounded to the
+  // nearest $10k = $11,730,000. An $11,000,000 estate sits BELOW that projected
+  // exemption (→ $0 NY tax) but ABOVE the frozen 2025 cliff threshold of $7,518,000
+  // (= 7,160,000 × 1.05), which would otherwise fire the 105% cliff and tax the
+  // whole estate. Asserting $0 proves the projection ran.
+  it("F16: NY 2045 death, 2.5% indexing → estate under projected $11.73M exemption owes $0", () => {
+    const r = computeStateEstateTax({
+      state: "NY",
+      deathYear: 2045,
+      inflationRate: 0.025,
+      taxableEstate: 11_000_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.exemption).toBe(11_730_000);     // projected, not the frozen $7.16M
+    expect(r.exemptionYear).toBe(2045);        // reflects the death year, not 2025
+    expect(r.baseForTax).toBe(11_000_000);
+    expect(r.stateEstateTax).toBe(0);          // below projected exemption → no tax
+  });
+
+  it("F16: current-year NY death (no projection) is unchanged — frozen exemption still taxes $11M", () => {
+    // deathYear == effectiveYear → 0 years forward → projection is a no-op. The same
+    // $11M estate that owed $0 above now exceeds the frozen $7.16M exemption's 105%
+    // cliff and is fully taxed, exactly as before F16.
+    const r = computeStateEstateTax({
+      state: "NY",
+      deathYear: 2025,
+      inflationRate: 0.025,
+      taxableEstate: 11_000_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.exemption).toBe(7_160_000);
+    expect(r.stateEstateTax).toBeGreaterThan(0);
+  });
+});
+
 describe("computeStateEstateTax — gift addback lookback window (F5)", () => {
   // NY narrows the addback to gifts made within 3 years of death (NY Tax Law §954(a)(3)).
   const nyWithGift = (giftYear: number) =>

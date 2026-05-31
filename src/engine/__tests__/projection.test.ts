@@ -2012,8 +2012,13 @@ describe("first-death asset transfer (spec 4b)", () => {
 
   it("death event on the happy path emits no warnings", () => {
     const data = buildEstateScenario();
+    // john-ira ($500k traditional IRA) is beneficiary-designated to a non-spouse
+    // child, so it is inherited income-in-respect-of-a-decedent. Set an IRD tax
+    // rate so that drag is actually modeled — otherwise F15 correctly warns
+    // `ird_tax_rate_unset`. A true happy path taxes the IRD instead of hiding it.
+    data.planSettings = { ...data.planSettings, irdTaxRate: 0.3 };
     const years = runProjection(data);
-    // Happy path (all accounts disposed via titling / beneficiary / will):
+    // Happy path (all accounts disposed via titling / beneficiary / will, IRD taxed):
     // no fallback fires, so deathWarnings stays empty.
     const deathRow = years.find((y) => y.year === 2050)!;
     expect(deathRow.deathWarnings).toEqual([]);

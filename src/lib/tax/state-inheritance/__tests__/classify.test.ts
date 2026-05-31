@@ -34,6 +34,11 @@ describe("deriveInheritanceClass — PA", () => {
     expect(r).toEqual({ classLabel: "C", classSource: "derived-from-relationship" });
   });
 
+  it("F12: child-in-law → Class B (lineal 4.5%, 72 P.S. §9116(a)(1))", () => {
+    const r = deriveInheritanceClass("PA", base({ relationship: "child_in_law" }));
+    expect(r).toEqual({ classLabel: "B", classSource: "derived-from-relationship" });
+  });
+
   it("unrelated → Class D", () => {
     const r = deriveInheritanceClass("PA", base({ relationship: "other", isExternalIndividual: true }));
     expect(r).toEqual({ classLabel: "D", classSource: "external-individual" });

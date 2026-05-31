@@ -10,6 +10,7 @@ describe("estate page options", () => {
     expect(ESTATE_PAGE_OPTIONS_DEFAULT).toEqual({
       asOf: { kind: "split" },
       showHeirDetail: true,
+      ordering: "primaryFirst",
     });
     expect(estateOptionsSchema.parse(ESTATE_PAGE_OPTIONS_DEFAULT)).toEqual(
       ESTATE_PAGE_OPTIONS_DEFAULT,
@@ -32,10 +33,10 @@ describe("estate page options", () => {
 
   it("summarizes selections", () => {
     expect(
-      summarizeEstateOptions({ asOf: { kind: "split" }, showHeirDetail: true }),
+      summarizeEstateOptions({ asOf: { kind: "split" }, showHeirDetail: true, ordering: "primaryFirst" }),
     ).toBe("Each death · Full detail");
     expect(
-      summarizeEstateOptions({ asOf: { kind: "year", year: 2031 }, showHeirDetail: false }),
+      summarizeEstateOptions({ asOf: { kind: "year", year: 2031 }, showHeirDetail: false, ordering: "primaryFirst" }),
     ).toBe("2031 · Totals only");
   });
 });

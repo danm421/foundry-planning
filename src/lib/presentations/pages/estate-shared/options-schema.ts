@@ -12,6 +12,7 @@ export const estateAsOfSchema = z.discriminatedUnion("kind", [
 export const estateOptionsSchema = z.object({
   asOf: estateAsOfSchema,
   showHeirDetail: z.boolean(),
+  ordering: z.enum(["primaryFirst", "spouseFirst"]).default("primaryFirst"),
 });
 
 export type EstatePageOptions = z.infer<typeof estateOptionsSchema>;
@@ -19,4 +20,5 @@ export type EstatePageOptions = z.infer<typeof estateOptionsSchema>;
 export const ESTATE_PAGE_OPTIONS_DEFAULT: EstatePageOptions = {
   asOf: { kind: "split" },
   showHeirDetail: true,
+  ordering: "primaryFirst",
 };

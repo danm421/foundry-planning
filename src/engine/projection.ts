@@ -77,6 +77,7 @@ import {
   identifyDeceased,
   identifyFinalDeceased,
   effectiveFilingStatus,
+  isSpouseLifeExpectancyDefaulted,
   applyFirstDeath,
   applyFinalDeath,
 } from "./death-event";
@@ -4880,7 +4881,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         principalFmIds,
       });
       thisYear.deathTransfers = deathResult.transfers;
-      thisYear.deathWarnings = deathResult.warnings;
+      // F17: surface the silent age-95 default applied when a spouse DOB is
+      // present but no spouse life expectancy was provided. Emitted once, at
+      // the first-death attachment (this block runs only in the first-death
+      // year), so the warning never double-fires across years or with the
+      // final-death merge below.
+      thisYear.deathWarnings = isSpouseLifeExpectancyDefaulted(client)
+        ? [...deathResult.warnings, "spouse_life_expectancy_defaulted"]
+        : deathResult.warnings;
       thisYear.estateTax = deathResult.estateTax;
       foldLifeInsurancePayoutsIntoIncome(thisYear, deathResult.lifeInsurancePayouts);
 

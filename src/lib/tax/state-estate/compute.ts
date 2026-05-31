@@ -1,6 +1,6 @@
 import { STATE_ESTATE_TAX } from "./data";
 import { applyCliff, applyMaxCombinedCap } from "./special-rules";
-import type { Bracket, BracketLine, GiftAddback as GiftAddbackRule, StateCode, StateEstateTaxResult } from "./types";
+import type { Bracket, BracketLine, GiftAddback as GiftAddbackRule, StateCode, StateEstateTaxResult, StateEstateTaxRule } from "./types";
 
 export interface ComputeStateEstateTaxInput {
   /** USPS 2-letter code, or null. Codes outside the estate-tax jurisdictions
@@ -17,6 +17,11 @@ export interface ComputeStateEstateTaxInput {
   adjustedTaxableGiftsByYear?: Array<{ year: number; amount: number }>;
   /** Back-compat: when state is null and this is > 0, applied as a flat rate to taxableEstate. */
   fallbackFlatRate: number;
+  /** Plan tax-inflation rate (decimal). Used to forward-project indexed-exemption
+   *  states (CT/DC/ME/NY/RI/WA) from their `effectiveYear` to `deathYear` (F16).
+   *  When omitted or 0 — or for non-indexed states — projection is a no-op and the
+   *  hard-coded `effectiveYear` exemption is used unchanged (back-compat). */
+  inflationRate?: number;
 }
 
 const EMPTY: StateEstateTaxResult = {
@@ -38,7 +43,17 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   if (input.state == null || !(input.state in STATE_ESTATE_TAX)) {
     return computeFallback(input);
   }
-  const rule = STATE_ESTATE_TAX[input.state as StateCode];
+  const baseRule = STATE_ESTATE_TAX[input.state as StateCode];
+  // F16: indexed-exemption states (CT/DC/ME/NY/RI/WA) freeze the exemption at the
+  // statutory `effectiveYear` value in `data.ts`. Project it forward to the death
+  // year so out-year deaths use a true indexed exemption rather than a stale one
+  // (which would OVERSTATE state estate tax). No-op when the rule isn't indexed,
+  // no inflation rate is threaded, or the death is at/before the effective year.
+  const { rule, projectedExemption } = projectIndexedRule(
+    baseRule,
+    input.deathYear,
+    input.inflationRate ?? 0,
+  );
 
   const giftAddback = computeGiftAddback(
     rule.giftAddback,
@@ -96,7 +111,17 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
 
   const notes: string[] = [];
   notes.push(`Citation: ${rule.citation}`);
-  if (rule.indexed) notes.push(`Exemption is indexed (Phase 1 hard-codes ${rule.effectiveYear} value).`);
+  if (rule.indexed) {
+    if (projectedExemption != null) {
+      notes.push(
+        `Exemption is indexed; projected from the ${baseRule.effectiveYear} value ` +
+        `($${baseRule.exemption.toLocaleString()}) to ${input.deathYear} at ` +
+        `${(input.inflationRate! * 100).toFixed(1)}% → $${rule.exemption.toLocaleString()}.`,
+      );
+    } else {
+      notes.push(`Exemption is indexed; using the ${baseRule.effectiveYear} value (no projection).`);
+    }
+  }
   if (rule.fixedCredit != null) {
     notes.push(
       `MA §2011 graduated table applied to the full estate; fixed credit of ` +
@@ -127,7 +152,11 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     }
   }
 
-  const capApp = applyMaxCombinedCap(rule, preCapTax);
+  // CT §12-391(g) caps combined lifetime CT gift tax + estate tax. The cumulative CT
+  // gift tax paid is not yet threaded into this engine, so we pass 0 for now (the cap
+  // still fires on estate-tax-only, unchanged from prior behavior). See future-work.
+  const priorCtGiftTax = 0;
+  const capApp = applyMaxCombinedCap(rule, preCapTax, priorCtGiftTax);
   const finalTax = Math.max(0, capApp.finalTax - creditReduction);
   const cap = rule.capCombined != null
     ? { applied: capApp.applied, cap: capApp.cap, reduction: capApp.reduction }
@@ -144,7 +173,9 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     fallbackUsed: false,
     fallbackRate: 0,
     exemption: rule.exemption,
-    exemptionYear: rule.effectiveYear,
+    // When the exemption was projected, the value reflects the death year, not the
+    // statutory base year — surface the death year so the audit report is honest.
+    exemptionYear: projectedExemption != null ? input.deathYear : rule.effectiveYear,
     giftAddback,
     baseForTax,
     amountOverExemption,
@@ -194,6 +225,53 @@ export function applyBrackets(brackets: Bracket[], baseForTax: number): BracketL
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Indexed state-exemption rounding step. The indexed-exemption states round their
+ *  applicable exclusion to the nearest $10k (NY §952, CT §12-391, ME, RI, WA, DC). */
+const STATE_EXEMPTION_STEP = 10_000;
+
+/**
+ * F16: project an indexed-exemption rule's exclusion forward from its statutory
+ * `effectiveYear` to `deathYear`. Mirrors the forward-projection convention used by
+ * the gift annual-exclusion resolver (`resolveAnnualExclusion`): compound at the plan
+ * inflation rate, then round to the nearest step — here $10k, matching the statutory
+ * rounding for these states' exclusions (vs. the resolver's $1k gift-exclusion step).
+ *
+ * Returns the (possibly projected) rule plus the projected exemption value, or null
+ * when no projection occurred (non-indexed state, zero rate, or death at/before the
+ * effective year — a 0-year projection is a no-op). For non-cliff states the entire
+ * bracket schedule is anchored at the exemption (bottom bracket `from` == exemption),
+ * so it is shifted by the same delta to preserve the relative bracket structure. NY
+ * (the only cliff state) runs its brackets from $0 and keys the cliff/credit math off
+ * `rule.exemption` directly, so only the exemption is projected — its bracket bounds
+ * stay anchored at $0.
+ */
+function projectIndexedRule(
+  rule: StateEstateTaxRule,
+  deathYear: number,
+  inflationRate: number,
+): { rule: StateEstateTaxRule; projectedExemption: number | null } {
+  if (!rule.indexed || inflationRate <= 0) return { rule, projectedExemption: null };
+  const yearsForward = deathYear - rule.effectiveYear;
+  if (yearsForward <= 0) return { rule, projectedExemption: null };
+
+  const raw = rule.exemption * Math.pow(1 + inflationRate, yearsForward);
+  const projectedExemption = Math.round(raw / STATE_EXEMPTION_STEP) * STATE_EXEMPTION_STEP;
+  if (projectedExemption === rule.exemption) return { rule, projectedExemption: null };
+
+  // Cliff states (NY): brackets run from $0; only the exemption is indexed.
+  if (rule.cliffPct != null) {
+    return { rule: { ...rule, exemption: projectedExemption }, projectedExemption };
+  }
+  // Non-cliff states: shift the exemption-anchored bracket schedule by the same delta.
+  const delta = projectedExemption - rule.exemption;
+  const brackets = rule.brackets.map((b) => ({
+    from: b.from + delta,
+    to: b.to == null ? null : b.to + delta,
+    rate: b.rate,
+  }));
+  return { rule: { ...rule, exemption: projectedExemption, brackets }, projectedExemption };
 }
 
 /** Sum the tax across a set of bracket lines. */

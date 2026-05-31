@@ -48,7 +48,12 @@ export function YearlyLiquidityTable({ rows, showPortfolio }: Props) {
               <Th align="right" wrap>Total Insurance Benefit</Th>
               {showPortfolio && <Th align="right" wrap>Total Portfolio Assets</Th>}
               <Th align="right" wrap>Total Transfer Cost</Th>
-              <Th align="right" wrap>Surplus / Deficit</Th>
+              <Th align="right" wrap>
+                Surplus / Deficit
+                <span className="block text-[9px] font-normal normal-case tracking-normal text-gray-400">
+                  {showPortfolio ? "with portfolio" : "insurance only"}
+                </span>
+              </Th>
             </tr>
           </thead>
           <tbody>

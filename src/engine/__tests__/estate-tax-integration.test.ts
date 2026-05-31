@@ -979,7 +979,11 @@ describe("4d integration — state estate tax", () => {
     return mkFinalDeathInput({
       accounts,
       familyMembers: [kidA],
-      planSettings: { ...basePlanSettings, residenceState: "NY" },
+      // taxInflation 0 isolates the F5 gift-addback window from F16's indexed-exemption
+      // projection: with no indexing the frozen $7.16M NY exemption is the correct one,
+      // so this scenario tests windowing alone (a 2052 death with indexing would project
+      // the NY exemption past the base and zero the tax — covered by F16's own tests).
+      planSettings: { ...basePlanSettings, residenceState: "NY", inflationRate: 0, taxInflationRate: 0 },
       // death year defaults to 2052; no annual exclusion → full $1M lands in ATG.
       gifts: [{ id: "g1", year: giftYear, amount: 1_000_000, grantor: "client", useCrummeyPowers: false }],
     });

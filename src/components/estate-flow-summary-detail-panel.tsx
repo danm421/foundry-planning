@@ -131,18 +131,25 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
     case "bequestsToTrusts":
     case "transfersToSpouse":
     case "transfersToHeirs": {
-      // Sub-box total is net (assets minus assumed liabilities) to foot to the
-      // parent's net estate value. Split the lines here so the advisor sees
-      // gross assets and assumed debts separately — the headline at the bottom
-      // ("Net equity received") matches the parent sub-box total.
+      // Sub-box total is net (gross assets minus assumed liabilities and minus
+      // the recipients' share of the death-event drain — estate tax, admin,
+      // debts paid, IRD). Split the lines here so the advisor sees gross assets,
+      // assumed debts, and taxes/expenses separately, with a final headline that
+      // matches the parent sub-box total.
       const allLines = selected.payload.box
         .lines as import("@/lib/estate/transfer-report").AssetTransferLine[];
       const assetLines = allLines.filter(
         (l) => l.sourceLiabilityId == null && l.amount > 0,
       );
       const debtLines = allLines.filter((l) => l.sourceLiabilityId != null);
+      // Drain reconciliation rows (heirs popover): negative, no liability source.
+      const drainLines = allLines.filter(
+        (l) => l.sourceLiabilityId == null && l.amount < 0,
+      );
       const grossAssets = assetLines.reduce((s, l) => s + l.amount, 0);
       const totalDebt = debtLines.reduce((s, l) => s + l.amount, 0);
+      const totalDrain = drainLines.reduce((s, l) => s + l.amount, 0);
+      const netEquity = grossAssets + totalDebt;
       return (
         <div className="space-y-3">
           <LineList
@@ -163,9 +170,25 @@ function PanelBody({ selected }: { selected: SelectedPanel }) {
                 }))}
               />
               <div className="border-t border-white/10 pt-2">
+                <Stat label="Net equity received" amount={netEquity} bold />
+              </div>
+            </>
+          )}
+          {drainLines.length > 0 && (
+            <>
+              <div className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                Taxes &amp; Expenses
+              </div>
+              <LineList
+                lines={drainLines.map((l) => ({
+                  label: l.label,
+                  amount: l.amount,
+                }))}
+              />
+              <div className="border-t border-white/10 pt-2">
                 <Stat
-                  label="Net equity received"
-                  amount={grossAssets + totalDebt}
+                  label="Net after tax & expenses"
+                  amount={netEquity + totalDrain}
                   bold
                 />
               </div>

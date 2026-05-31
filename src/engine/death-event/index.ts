@@ -16,6 +16,7 @@ export {
   distributeFirstDeathUnlinkedLiabilities,
   distributeUnlinkedLiabilities,
   effectiveFilingStatus,
+  isSpouseLifeExpectancyDefaulted,
   firesAtDeath,
   runPourOut,
   type DeathEventInput,

@@ -1330,7 +1330,14 @@ describe("applyFirstDeath orchestrator", () => {
   };
 
   it("joint account titles to survivor; IRA beneficiary-designates; residual sweeps to spouse", () => {
-    const result = applyFirstDeath(input);
+    // client-ira ($600k traditional IRA) beneficiary-designates to a non-spouse
+    // child → inherited IRD. Set an IRD tax rate so that drag is modeled;
+    // otherwise F15 correctly warns `ird_tax_rate_unset`. A true happy path
+    // taxes the IRD rather than hiding it.
+    const result = applyFirstDeath({
+      ...input,
+      planSettings: { ...input.planSettings, irdTaxRate: 0.3 },
+    });
     // Joint → spouse via titling (in-place; id preserved)
     const titledJoint = result.accounts.find((a) => a.id === "joint-brok")!;
     expect(controllingFamilyMember(titledJoint)).toBe("fm-spouse");
@@ -1402,6 +1409,9 @@ describe("applyFirstDeath orchestrator", () => {
     const narrowAccounts: Account[] = [baseAccounts[0], baseAccounts[1]];
     const narrowInput: DeathEventInput = {
       ...input,
+      // IRA bene-designates to a non-spouse child → tax the IRD so this stays a
+      // true no-op (otherwise F15 correctly warns `ird_tax_rate_unset`).
+      planSettings: { ...input.planSettings, irdTaxRate: 0.3 },
       accounts: narrowAccounts,
       accountBalances: { "joint-brok": 400000, "client-ira": 600000 },
       basisMap: { "joint-brok": 250000, "client-ira": 0 },

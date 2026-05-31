@@ -26,11 +26,11 @@ export function buildEstateFlowReportData(
   ctx: BuildDataContext,
   options: EstatePageOptions,
 ): EstateFlowReportData {
-  const { reportData, ownership, asOfYear } = prepEstate(ctx, options.asOf);
+  const { reportData, ownership, asOfYear } = prepEstate(ctx, options.asOf, options.ordering ?? "primaryFirst");
   const [firstColumn, secondColumn] = pickDeathColumns(
     reportData,
     toAsOfValue(options.asOf),
-    "primaryFirst",
+    options.ordering ?? "primaryFirst",
   );
   return {
     title: "Estate Flow",
