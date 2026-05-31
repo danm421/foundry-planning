@@ -1,44 +1,90 @@
 export interface QuoteDeps {
-  /** Injectable fetcher returning raw EODHD /eod JSON. Defaults to the live call. */
-  fetchEod?: (symbol: string) => Promise<unknown>;
+  /** Injectable fetcher: takes the Stooq `s=` query value (one symbol or a
+   *  `+`-joined list) and returns the raw CSV. Defaults to the live call. */
+  fetchCsv?: (query: string) => Promise<string>;
 }
 
-const EODHD_EOD_BASE = "https://eodhd.com/api/eod";
+const STOOQ_QUOTE_BASE = "https://stooq.com/q/l/";
+const BATCH_SIZE = 50;
 
-/** A bare ticker (no exchange suffix) defaults to the US exchange — matches the
- *  classifier's symbol convention. Always upper-cased. */
-export function eodSymbol(ticker: string): string {
+/** Map a ticker to its Stooq symbol (lower-cased). Bare US ticker → `vti.us`;
+ *  US class share → `brk-b.us` (Stooq uses a dash, not a dot); an existing
+ *  exchange suffix (foreign) passes through lower-cased and generally won't
+ *  resolve on Stooq (fail-soft). */
+export function stooqSymbol(ticker: string): string {
   const t = ticker.trim().toUpperCase();
-  return t.includes(".") ? t : `${t}.US`;
+  if (/^[A-Z]+\.[A-Z]$/.test(t)) return `${t.replace(".", "-").toLowerCase()}.us`;
+  if (t.includes(".")) return t.toLowerCase();
+  return `${t.toLowerCase()}.us`;
 }
 
-/** Live EODHD /eod fetch: most recent close only. Throws on misconfig / HTTP
- *  error — the caller catches and fails soft. */
-async function fetchEodLive(symbol: string): Promise<unknown> {
-  const key = process.env.EODHD_API_KEY ?? "";
-  if (!key) throw new Error("EODHD_API_KEY is not configured.");
-  const url = `${EODHD_EOD_BASE}/${encodeURIComponent(symbol)}?api_token=${key}&fmt=json&order=d&limit=1`;
+/** Live Stooq quote fetch. `query` is the `s=` value; each symbol is encoded
+ *  individually so the `+` separator survives. Throws on HTTP error — callers
+ *  catch and fail soft. */
+async function fetchStooqCsv(query: string): Promise<string> {
+  const encoded = query.split("+").map(encodeURIComponent).join("+");
+  const url = `${STOOQ_QUOTE_BASE}?s=${encoded}&f=sd2t2ohlcv&h&e=csv`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`EODHD eod ${symbol}: HTTP ${res.status}`);
-  return res.json();
+  if (!res.ok) throw new Error(`Stooq quote ${query}: HTTP ${res.status}`);
+  return res.text();
 }
 
-/** Latest EOD close for a ticker, or null on ANY failure (unknown ticker,
- *  network/API error, malformed payload, missing key). Never throws. */
+/** Parse a Stooq /q/l CSV (header + N data rows) into a map keyed by the
+ *  upper-case Stooq symbol Stooq echoes back. Rows with `N/D` (unknown symbol)
+ *  or a malformed close/date are dropped. */
+function parseStooqRows(csv: string): Map<string, { price: number; asOf: string }> {
+  const out = new Map<string, { price: number; asOf: string }>();
+  const lines = csv.trim().split(/\r?\n/);
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",");
+    if (cols.length < 7) continue;
+    const sym = cols[0].trim().toUpperCase();
+    const asOf = cols[1];
+    const price = Number(cols[6]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !Number.isFinite(price)) continue;
+    out.set(sym, { price, asOf });
+  }
+  return out;
+}
+
+/** Latest daily close for one ticker, or null on ANY failure. Never throws. */
 export async function fetchEodClose(
   ticker: string,
   deps: QuoteDeps = {},
 ): Promise<{ price: number; asOf: string } | null> {
-  const fetchEod = deps.fetchEod ?? fetchEodLive;
+  const fetchCsv = deps.fetchCsv ?? fetchStooqCsv;
   try {
-    const raw = await fetchEod(eodSymbol(ticker));
-    if (!Array.isArray(raw) || raw.length === 0) return null;
-    const row = raw[0] as { date?: unknown; close?: unknown };
-    const price = typeof row.close === "number" ? row.close : NaN;
-    const asOf = typeof row.date === "string" ? row.date : "";
-    if (!Number.isFinite(price) || !asOf) return null;
-    return { price, asOf };
+    const rows = parseStooqRows(await fetchCsv(stooqSymbol(ticker)));
+    return rows.get(stooqSymbol(ticker).toUpperCase()) ?? null;
   } catch {
     return null;
   }
+}
+
+/** Latest daily close for many tickers in batched requests. Returns a map keyed
+ *  by upper-case Stooq symbol. Dedups symbols, chunks at BATCH_SIZE, retries a
+ *  failing chunk once, then skips it. Never throws. */
+export async function fetchEodCloses(
+  tickers: readonly string[],
+  deps: QuoteDeps = {},
+): Promise<Map<string, { price: number; asOf: string }>> {
+  const fetchCsv = deps.fetchCsv ?? fetchStooqCsv;
+  const symbols = [...new Set(tickers.map(stooqSymbol))];
+  const out = new Map<string, { price: number; asOf: string }>();
+
+  for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+    const chunk = symbols.slice(i, i + BATCH_SIZE);
+    const query = chunk.join("+");
+    let csv: string | null = null;
+    for (let attempt = 0; attempt < 2 && csv === null; attempt++) {
+      try {
+        csv = await fetchCsv(query);
+      } catch {
+        csv = null; // retry once, then give up on this chunk
+      }
+    }
+    if (csv === null) continue;
+    for (const [sym, quote] of parseStooqRows(csv)) out.set(sym, quote);
+  }
+  return out;
 }
