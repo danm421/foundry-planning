@@ -23,6 +23,11 @@ const OTHER_STACK: Array<{ key: string; label: string; color: string; pick: (f: 
   { key: "stateTax",           label: "State Tax",     color: "#9ca3af", pick: (f) => f?.stateTax ?? 0 },
 ];
 
+const PENALTY_STACK = {
+  key: "earlyWithdrawalPenalty", label: "Early Withdrawal Penalty", color: "#db2777",
+  pick: (f: TaxFlow | undefined) => f?.earlyWithdrawalPenalty ?? 0,
+};
+
 export interface BuildTaxOtherTaxesDrillInput {
   years: ProjectionYear[];
   clientData: ClientData;
@@ -36,6 +41,14 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
   const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
 
+  // Zero-suppress the early-withdrawal penalty: it only appears in years with a
+  // pre-59½ draw, so hide both the column and the chart series when no visible
+  // year has one. When present, it must be a component so the columns/stack sum
+  // to the Other total (= totalTax − regularFed, which already includes it).
+  const showPenalty = visibleYears.some(
+    (y) => (y.taxResult?.flow.earlyWithdrawalPenalty ?? 0) > 0,
+  );
+
   const columns: DrillColumn[] = [
     { key: "capitalGainsTax",    header: "Capital\nGains Tax",  width: 52 },
     { key: "amt",                header: "AMT",                 width: 40 },
@@ -43,6 +56,9 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
     { key: "additionalMedicare", header: "Add'l\nMedicare",     width: 50 },
     { key: "fica",               header: "FICA",                width: 44 },
     { key: "stateTax",           header: "State\nTax",          width: 48 },
+    ...(showPenalty
+      ? [{ key: "earlyWithdrawalPenalty", header: "Early\nWithdrawal", width: 52 }]
+      : []),
     { key: "total",              header: "Total",               width: 50, strong: true },
   ];
 
@@ -55,6 +71,7 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
       additionalMedicare: f?.additionalMedicare  ?? 0,
       fica:               f?.fica               ?? 0,
       stateTax:           f?.stateTax           ?? 0,
+      earlyWithdrawalPenalty: f?.earlyWithdrawalPenalty ?? 0,
       total: (f?.totalTax ?? 0) - (f?.regularFederalIncomeTax ?? 0),
     };
     return { year: py.year, ageClient: py.ages.client ?? null, ageSpouse: py.ages.spouse ?? null, cells };
@@ -62,9 +79,10 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
 
+  const stackDefs = showPenalty ? [...OTHER_STACK, PENALTY_STACK] : OTHER_STACK;
   const chartSpec = buildDrillChartSpec({
     years: visibleYears.map((y) => y.year),
-    stacks: OTHER_STACK.map((s) => ({
+    stacks: stackDefs.map((s) => ({
       seriesId: s.key, label: s.label, color: s.color,
       values: visibleYears.map((y) => s.pick(y.taxResult?.flow)),
     })),

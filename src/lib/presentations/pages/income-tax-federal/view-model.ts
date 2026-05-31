@@ -27,6 +27,14 @@ const TAX_STACK: Array<{ key: string; label: string; color: string; pick: (f: Ta
   { key: "stateTaxStack", label: "State Tax",       color: "#9ca3af", pick: (f) => f.stateTax },
 ];
 
+// Zero-suppressed chart series — appended to TAX_STACK only in years with a
+// pre-59½ draw so the stacked chart still sums to Total Tax. No table column:
+// the "Other" column already = totalTax − regularFed, which includes it.
+const PENALTY_STACK = {
+  key: "earlyWithdrawalPenalty", label: "Early Withdrawal Penalty", color: "#db2777",
+  pick: (f: TaxFlow) => f.earlyWithdrawalPenalty ?? 0,
+};
+
 export interface BuildTaxFederalDrillInput {
   years: ProjectionYear[];
   clientData: ClientData;
@@ -73,9 +81,13 @@ export function buildTaxFederalDrillData(input: BuildTaxFederalDrillInput): Dril
   });
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
+  const showPenalty = visibleYears.some(
+    (y) => (y.taxResult?.flow.earlyWithdrawalPenalty ?? 0) > 0,
+  );
+  const stackDefs = showPenalty ? [...TAX_STACK, PENALTY_STACK] : TAX_STACK;
   const chartSpec = buildDrillChartSpec({
     years: visibleYears.map((y) => y.year),
-    stacks: TAX_STACK.map((s) => ({
+    stacks: stackDefs.map((s) => ({
       seriesId: s.key, label: s.label, color: s.color,
       values: visibleYears.map((y) => (y.taxResult ? s.pick(y.taxResult.flow) : 0)),
     })),

@@ -246,6 +246,13 @@ function otherColumns(years: ProjectionYear[]): Column[] {
       value: (y) => y.taxResult?.flow.stateTax ?? 0,
     },
     {
+      key: "earlyWithdrawalPenalty",
+      label: "Early Withdrawal",
+      tooltip:
+        "10% penalty on pre-59½ withdrawals used to fund a cash-flow shortfall. Included in Total Tax.",
+      value: (y) => y.taxResult?.flow.earlyWithdrawalPenalty ?? 0,
+    },
+    {
       key: "other_total",
       label: "Other Total",
       tooltip: "Sum of the columns to the left.",
