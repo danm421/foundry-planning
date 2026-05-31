@@ -1305,6 +1305,21 @@ export const holdingAssetClassOverrides = pgTable(
   (t) => [uniqueIndex("holding_acw_override_uniq").on(t.holdingId, t.assetClassId)]
 );
 
+// Audit row for one daily holding-price refresh cron run (see
+// /api/cron/refresh-holding-prices). Mirrors the reconciliationRuns pattern.
+export const holdingPriceRefreshRuns = pgTable("holding_price_refresh_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  status: varchar("status", { length: 16 }).notNull().default("running"), // running|ok|partial|error
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  uniqueTickers: integer("unique_tickers").notNull().default(0),
+  tickersPriced: integer("tickers_priced").notNull().default(0),
+  tickersMissing: integer("tickers_missing").notNull().default(0),
+  holdingsUpdated: integer("holdings_updated").notNull().default(0),
+  accountsResynced: integer("accounts_resynced").notNull().default(0),
+  failures: jsonb("failures"), // [{ stage, ref, message }]
+});
+
 export const accounts = pgTable("accounts", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
