@@ -15,6 +15,26 @@ interface ComputeIrdArgs {
   irdTaxRate: number;
 }
 
+/** True if this transfer targets an eligible (non-spouse, non-charity) IRD recipient. */
+function isEligibleIrdTransfer(
+  t: DeathTransfer,
+  subtypeByAccountId: Map<string, Account["subType"]>,
+  charityIds: Set<string>,
+): boolean {
+  if (t.amount <= 0 || t.sourceAccountId == null) return false;
+  const subType = subtypeByAccountId.get(t.sourceAccountId);
+  if (subType == null || !IRD_ELIGIBLE_SUBTYPES.has(subType)) return false;
+  if (t.recipientKind === "spouse") return false;
+  if (
+    t.recipientKind === "external_beneficiary" &&
+    t.recipientId != null &&
+    charityIds.has(t.recipientId)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Pure: emit one `ird_tax` DrainAttribution per non-spouse, non-charity
  * recipient who inherited at least $1 of pre-tax retirement balance at this
@@ -41,20 +61,7 @@ export function computeIrdAttributions(args: ComputeIrdArgs): DrainAttribution[]
   >();
 
   for (const t of transfers) {
-    if (t.amount <= 0) continue;
-    if (t.sourceAccountId == null) continue;
-
-    const subType = subtypeByAccountId.get(t.sourceAccountId);
-    if (subType == null || !IRD_ELIGIBLE_SUBTYPES.has(subType)) continue;
-
-    if (t.recipientKind === "spouse") continue;
-    if (
-      t.recipientKind === "external_beneficiary" &&
-      t.recipientId != null &&
-      charityIds.has(t.recipientId)
-    ) {
-      continue;
-    }
+    if (!isEligibleIrdTransfer(t, subtypeByAccountId, charityIds)) continue;
 
     const key: Key = `${t.recipientKind}|${t.recipientId ?? ""}`;
     const existing = totalsByRecipient.get(key);
@@ -94,6 +101,7 @@ export function computeIrdAttributions(args: ComputeIrdArgs): DrainAttribution[]
 export function hasUntaxedInheritedIrd(args: Omit<ComputeIrdArgs, "deathOrder">): boolean {
   const { transfers, accounts, externalBeneficiaries, irdTaxRate } = args;
 
+  // Complement of computeIrdAttributions' `irdTaxRate <= 0` early-exit.
   if (irdTaxRate > 0) return false;
 
   const subtypeByAccountId = new Map<string, Account["subType"]>();
@@ -104,21 +112,5 @@ export function hasUntaxedInheritedIrd(args: Omit<ComputeIrdArgs, "deathOrder">)
     if (eb.kind === "charity") charityIds.add(eb.id);
   }
 
-  return transfers.some((t) => {
-    if (t.amount <= 0) return false;
-    if (t.sourceAccountId == null) return false;
-
-    const subType = subtypeByAccountId.get(t.sourceAccountId);
-    if (subType == null || !IRD_ELIGIBLE_SUBTYPES.has(subType)) return false;
-
-    if (t.recipientKind === "spouse") return false;
-    if (
-      t.recipientKind === "external_beneficiary" &&
-      t.recipientId != null &&
-      charityIds.has(t.recipientId)
-    ) {
-      return false;
-    }
-    return true;
-  });
+  return transfers.some((t) => isEligibleIrdTransfer(t, subtypeByAccountId, charityIds));
 }
