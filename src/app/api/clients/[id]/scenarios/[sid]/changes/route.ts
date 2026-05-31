@@ -14,11 +14,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { scenarios } from "@/db/schema";
+import { scenarioToggleGroups, scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { authErrorResponse } from "@/lib/authz";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { requireOrgId } from "@/lib/db-helpers";
+import {
+  TARGET_KIND_TO_FIELD,
+  SINGLETON_KIND_TO_FIELD,
+} from "@/engine/scenario/applyChanges";
 import {
   applyEntityAdd,
   applyEntityEdit,
@@ -27,19 +31,28 @@ import {
 } from "@/lib/scenario/changes-writer";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 
+// All writable TargetKind values, derived from the runtime lookup maps so the
+// route enum stays in sync with applyChanges automatically. Unknown strings are
+// rejected here with a 400 before they ever reach the writer (which would
+// otherwise throw and surface as a 500).
+const WRITABLE_TARGET_KINDS = [
+  ...Object.keys(TARGET_KIND_TO_FIELD),
+  ...Object.keys(SINGLETON_KIND_TO_FIELD),
+].filter((v, i, a) => a.indexOf(v) === i) as [TargetKind, ...TargetKind[]];
+
 export const dynamic = "force-dynamic";
 
 const POST_BODY = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("edit"),
-    targetKind: z.string(),
+    targetKind: z.enum(WRITABLE_TARGET_KINDS),
     targetId: z.string().uuid(),
     desiredFields: z.record(z.string(), z.unknown()),
     toggleGroupId: z.string().uuid().nullable().optional(),
   }),
   z.object({
     op: z.literal("add"),
-    targetKind: z.string(),
+    targetKind: z.enum(WRITABLE_TARGET_KINDS),
     // entity must carry an `id` (the writer treats it as the targetId).
     entity: z
       .record(z.string(), z.unknown())
@@ -50,7 +63,7 @@ const POST_BODY = z.discriminatedUnion("op", [
   }),
   z.object({
     op: z.literal("remove"),
-    targetKind: z.string(),
+    targetKind: z.enum(WRITABLE_TARGET_KINDS),
     targetId: z.string().uuid(),
     toggleGroupId: z.string().uuid().nullable().optional(),
   }),
@@ -104,6 +117,28 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       );
     }
     const body = parsed.data;
+
+    // When the change is assigned to a toggle group, verify the group belongs
+    // to this scenario. 400 (not 404) mirrors the [cid] PATCH posture — the
+    // request shape is valid, we just refuse a cross-scenario group id (which
+    // would otherwise satisfy the FK but be silently dropped at report time).
+    if (body.toggleGroupId != null) {
+      const [group] = await db
+        .select({ id: scenarioToggleGroups.id })
+        .from(scenarioToggleGroups)
+        .where(
+          and(
+            eq(scenarioToggleGroups.id, body.toggleGroupId),
+            eq(scenarioToggleGroups.scenarioId, scenarioId),
+          ),
+        );
+      if (!group) {
+        return NextResponse.json(
+          { error: "Target toggle group not found in this scenario" },
+          { status: 400 },
+        );
+      }
+    }
 
     switch (body.op) {
       case "edit": {
@@ -188,6 +223,12 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx) {
     if (!targetKind || !targetId || !opTypeRaw) {
       return NextResponse.json(
         { error: "missing kind/target/op" },
+        { status: 400 },
+      );
+    }
+    if (!(WRITABLE_TARGET_KINDS as readonly string[]).includes(targetKind)) {
+      return NextResponse.json(
+        { error: `kind must be one of: ${WRITABLE_TARGET_KINDS.join(", ")}` },
         { status: 400 },
       );
     }

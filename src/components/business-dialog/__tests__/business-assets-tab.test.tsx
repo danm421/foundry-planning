@@ -3,6 +3,15 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import BusinessAssetsTab from "../business-assets-tab";
 
+// The tab now routes owner mutations through useScenarioWriter (→ useScenarioState),
+// which reads the app-router context. Mock next/navigation so the hook resolves
+// to base mode (no ?scenario=) and passes through to the mocked global.fetch.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/clients/client-1/balance-sheet",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const fetchMock = vi.fn();
 
 beforeEach(() => {

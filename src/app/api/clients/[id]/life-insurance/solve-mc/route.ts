@@ -107,7 +107,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         // Inject the synthetic policy's model-portfolio mix so the §101
         // proceeds randomize through Monte Carlo. The transformed payout
         // account keeps id === SYNTHETIC_POLICY_ID.
-        const mcPayload = await loadMonteCarloData(clientId, firmId, [
+        // F16: scenarioId is now the 3rd positional arg; the LI solver always
+        // runs against the base seed, so pass "base" and keep the synthetic
+        // mixes in the 4th slot.
+        const mcPayload = await loadMonteCarloData(clientId, firmId, "base", [
           { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
         ]);
         // `coverEstateTaxes` is handled at the route level — the addend is computed

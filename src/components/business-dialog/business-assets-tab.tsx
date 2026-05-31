@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import MoneyText from "@/components/money-text";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import ReparentPickerDialog from "./reparent-picker-dialog";
@@ -66,6 +67,7 @@ export default function BusinessAssetsTab({
   onOpenAddAccount,
   onOpenAddLiability,
 }: BusinessAssetsTabProps) {
+  const writer = useScenarioWriter(clientId);
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -105,11 +107,15 @@ export default function BusinessAssetsTab({
         ? `/api/clients/${clientId}/accounts/${target.id}`
         : `/api/clients/${clientId}/liabilities/${target.id}`;
     try {
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parentAccountId: null }),
-      });
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: target.kind,
+          targetId: target.id,
+          desiredFields: { parentAccountId: null },
+        },
+        { url, method: "PUT", body: { parentAccountId: null } },
+      );
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         setError(json.error ?? "Failed to remove from business");
@@ -132,11 +138,15 @@ export default function BusinessAssetsTab({
         ? `/api/clients/${clientId}/accounts/${pendingReparent.id}`
         : `/api/clients/${clientId}/liabilities/${pendingReparent.id}`;
     try {
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parentAccountId: businessId }),
-      });
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: pendingReparent.kind,
+          targetId: pendingReparent.id,
+          desiredFields: { parentAccountId: businessId },
+        },
+        { url, method: "PUT", body: { parentAccountId: businessId } },
+      );
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         setError(json.error ?? "Failed to reassign");

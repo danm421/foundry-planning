@@ -21,6 +21,7 @@ import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
@@ -120,7 +121,10 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     loadNotesReceivable(id, scenario.id),
   ]);
 
-  const accountMetaById = new Map(accountMetaRows.map((r) => [r.id, r]));
+  // F11: the meta query above is scoped to the base-case scenario; overlay the
+  // scenario's account add/edit changes so scenario-edited accounts show their
+  // edited metadata and scenario-added accounts don't fall to defaults.
+  const accountMetaById = await loadOverlaidAccountMeta(id, accountMetaRows, scenarioParam);
   const liabilityMetaById = new Map(liabilityMetaRows.map((r) => [r.id, r]));
 
   // Compute blended returns for each model portfolio

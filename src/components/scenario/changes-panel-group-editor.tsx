@@ -45,6 +45,7 @@ export function GroupEditor({
   // changeId → effective toggleGroupId | null; absence = unchanged from DB
   const [stage, setStage] = useState<Map<string, string | null>>(new Map());
   const [busy, setBusy] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [creatingNew, setCreatingNew] = useState(sortedGroups.length === 0);
@@ -136,10 +137,9 @@ export function GroupEditor({
       return;
     }
     setBusy(true);
+    setCommitError(null);
     try {
-      // Fan out PATCHes in parallel. Partial failures are surfaced only via
-      // console.error — the panel still refreshes + closes so the user can
-      // see whatever did land and retry the rest.
+      // Fan out PATCHes in parallel, then inspect the results.
       const results = await Promise.all(
         Array.from(stage.entries()).map(async ([cid, gid]) => {
           const url = `/api/clients/${clientId}/scenarios/${scenarioId}/changes/${cid}`;
@@ -148,15 +148,19 @@ export function GroupEditor({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ toggleGroupId: gid }),
           });
-          return { cid, url, res };
+          return { cid, ok: res.ok, status: res.status };
         }),
       );
-      for (const { cid, url, res } of results) {
-        if (!res.ok) {
-          console.error(
-            `[GroupEditor] PATCH failed for change ${cid} (${url}): ${res.status}`,
-          );
-        }
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        const succeeded = results.length - failed.length;
+        const prefix = succeeded > 0 ? `${succeeded} of ${results.length} saved. ` : "";
+        const codes = failed.map((r) => r.status).join(", ");
+        setCommitError(`${prefix}${failed.length} save(s) failed (HTTP ${codes}). Please retry.`);
+        // Refresh so changes that DID land reload as the new baseline, but keep
+        // the panel open so the user sees the error and can retry the rest.
+        router.refresh();
+        return;
       }
       router.refresh();
       onClose();
@@ -299,23 +303,28 @@ export function GroupEditor({
           )),
         ]}
       </div>
-      <div className="sticky bottom-0 z-10 bg-[#101114] border-t border-[#1f2024] p-3 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={busy}
-          className="h-7 px-3 rounded border border-[#1f2024] text-[12px] text-[#a09c92]"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={commit}
-          disabled={busy}
-          className="h-7 px-3 rounded bg-[#d4a04a] text-[#0b0c0f] text-[12px] disabled:opacity-50"
-        >
-          {busy ? "Saving…" : "Done"}
-        </button>
+      <div className="sticky bottom-0 z-10 bg-[#101114] border-t border-[#1f2024] p-3 flex flex-col gap-2">
+        {commitError && (
+          <p className="text-xs text-red-400">{commitError}</p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="h-7 px-3 rounded border border-[#1f2024] text-[12px] text-[#a09c92]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={commit}
+            disabled={busy}
+            className="h-7 px-3 rounded bg-[#d4a04a] text-[#0b0c0f] text-[12px] disabled:opacity-50"
+          >
+            {busy ? "Saving…" : "Done"}
+          </button>
+        </div>
       </div>
     </div>
   );

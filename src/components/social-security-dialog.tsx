@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { Income, ClientInfo, PlanSettings, MedicareCoverage } from "@/engine/types";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
@@ -68,6 +69,8 @@ export function SocialSecurityDialog({
     if (existingRow?.growthRate != null) return String(existingRow.growthRate * 100);
     return "2";
   });
+
+  const writer = useScenarioWriter(clientId);
 
   const [activeTab, setActiveTab] = useState<"ss" | "medicare">("ss");
   const [existingMedicare, setExistingMedicare] = useState<MedicareCoverage | null>(null);
@@ -156,11 +159,18 @@ export function SocialSecurityDialog({
       : `/api/clients/${clientId}/incomes`;
     const method = existingRow ? "PUT" : "POST";
 
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    // Route through useScenarioWriter so that when ?scenario= is set the write
+    // records a scenario_change rather than mutating the base income row. In
+    // base mode the hook passes the baseFallback through unchanged.
+    const res = existingRow
+      ? await writer.submit(
+          { op: "edit", targetKind: "income", targetId: existingRow.id, desiredFields: payload },
+          { url, method, body: payload },
+        )
+      : await writer.submit(
+          { op: "add", targetKind: "income", entity: { id: crypto.randomUUID(), ...payload } },
+          { url, method, body: payload },
+        );
 
     if (!res.ok) {
       const text = await res.text();

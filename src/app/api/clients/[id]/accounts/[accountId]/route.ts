@@ -8,6 +8,7 @@ import {
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
 import { recordUpdate, recordDelete } from "@/lib/audit";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { toAccountSnapshot, ACCOUNT_FIELD_LABELS } from "@/lib/audit/snapshots/account";
 import {
   type ValidatedOwner,
@@ -345,9 +346,12 @@ export async function DELETE(
 
     const snapshot = await toAccountSnapshot(target);
 
-    await db
-      .delete(accounts)
-      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(accounts)
+        .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+      await pruneOrphanScenarioChanges(tx, accountId);
+    });
 
     await recordDelete({
       action: "account.delete",

@@ -68,7 +68,11 @@ export async function POST(
       v.length < 2_000_000;
     const chartPng: string | null = isSafePngDataUri(body.chartPng) ? body.chartPng : null;
 
-    const apiRes = await fetch(`${url.origin}/api/clients/${id}/projection-data`, {
+    const scenarioParam = url.searchParams.get("scenario");
+    const projectionUrl = scenarioParam
+      ? `${url.origin}/api/clients/${id}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
+      : `${url.origin}/api/clients/${id}/projection-data`;
+    const apiRes = await fetch(projectionUrl, {
       headers: { cookie: request.headers.get("cookie") ?? "" },
       signal: AbortSignal.timeout(30_000),
     });

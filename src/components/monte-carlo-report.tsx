@@ -236,6 +236,10 @@ export default function MonteCarloReport({ clientId }: Props) {
                 : `${clientData.client.firstName} ${clientData.client.lastName}`
             }
           />
+          {/* F16 disclosure: MC volatility/mixes are always base-case. */}
+          <p className="text-[12px] text-slate-400 -mt-3">
+            Monte Carlo uses base-case asset mixes and volatility.
+          </p>
           {summary ? (
             <KpiBand
               summary={summary}

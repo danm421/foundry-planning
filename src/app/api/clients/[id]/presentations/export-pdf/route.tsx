@@ -11,10 +11,13 @@ import {
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
 import {
-  loadClientData,
   ClientNotFoundError,
   ProjectionInputError,
 } from "@/lib/projection/load-client-data";
+import {
+  loadEffectiveTreeForRef,
+  type ScenarioRef,
+} from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import {
@@ -112,9 +115,20 @@ export async function POST(
       );
     }
 
+    // F15: resolve the scenarioId into a ScenarioRef so the effective tree
+    // carries real scenario changes instead of always projecting base-case data.
+    //   snap:<id> → frozen snapshot · <uuid> → live scenario · null|"base" → base
+    const rawScenarioId = parsed.data.scenarioId;
+    const scenarioRef: ScenarioRef = rawScenarioId?.startsWith("snap:")
+      ? { kind: "snapshot", id: rawScenarioId.slice("snap:".length), side: "left" }
+      : rawScenarioId && rawScenarioId !== "base"
+        ? { kind: "scenario", id: rawScenarioId, toggleState: {} }
+        : { kind: "scenario", id: "base", toggleState: {} };
+
     let clientData;
     try {
-      clientData = await loadClientData(id, firmId);
+      const { effectiveTree } = await loadEffectiveTreeForRef(id, firmId, scenarioRef);
+      clientData = effectiveTree;
     } catch (err) {
       if (err instanceof ClientNotFoundError) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -193,7 +207,10 @@ export async function POST(
     const spouseFirstName = ci.spouseName ?? null;
     const clientFullName = `${clientFirstName} ${clientLastName}`.trim();
 
-    const scenarioLabel = parsed.data.scenarioId ?? "Base Case";
+    // Human-readable label. Snapshot/UUID ids remain raw tokens here (V1);
+    // a future pass can join the scenarios table for the real name.
+    const scenarioLabel =
+      rawScenarioId && rawScenarioId !== "base" ? rawScenarioId : "Base Case";
 
     const [firmRow] = await db
       .select({ displayName: firms.displayName })

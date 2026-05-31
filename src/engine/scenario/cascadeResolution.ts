@@ -239,5 +239,102 @@ export function resolveCascades(
     }
   }
 
+  // external_beneficiary removal — drop dangling references on both sides of the
+  // estate calc. Leaving them dangling makes the death engine silently lose the
+  // federal charitable estate deduction and misclassify state inheritance tax.
+  // Mirrors the entity cascade above (BeneficiaryRef + will recipients) and
+  // gives the previously-unused `external_beneficiary_unreferenced` warning its
+  // first emit sites.
+  const removedExtBenIds = new Set(
+    removed.filter((r) => r.kind === "external_beneficiary").map((r) => r.id),
+  );
+  const removedExtBenToCause = new Map(
+    removed.filter((r) => r.kind === "external_beneficiary").map((r) => [r.id, r.causedByChangeId]),
+  );
+
+  if (removedExtBenIds.size > 0) {
+    // 1. BeneficiaryRefs (accounts + entities) whose externalBeneficiaryId was removed.
+    const dropExtBens = (
+      bens: BeneficiaryRef[] | undefined,
+      ownerLabel: string,
+    ): BeneficiaryRef[] | undefined => {
+      if (!bens || bens.length === 0) return bens;
+      const remaining: BeneficiaryRef[] = [];
+      for (const bene of bens) {
+        if (bene.externalBeneficiaryId && removedExtBenIds.has(bene.externalBeneficiaryId)) {
+          warnings.push({
+            kind: "external_beneficiary_unreferenced",
+            message: `Beneficiary ${bene.id} dropped (falls back to estate) — external beneficiary ${bene.externalBeneficiaryId} was removed`,
+            causedByChangeId: removedExtBenToCause.get(bene.externalBeneficiaryId)!,
+            affectedEntityId: bene.id,
+            affectedEntityLabel: `Beneficiary on ${ownerLabel}`,
+          });
+        } else {
+          remaining.push(bene);
+        }
+      }
+      return remaining;
+    };
+
+    if (tree.accounts) {
+      for (const acct of tree.accounts) {
+        acct.beneficiaries = dropExtBens(acct.beneficiaries, `account ${acct.id}`);
+      }
+    }
+    if (tree.entities) {
+      for (const ent of tree.entities) {
+        ent.beneficiaries = dropExtBens(ent.beneficiaries, `trust ${ent.id}`);
+      }
+    }
+
+    // 2. Will bequest + residuary recipients pointing at the removed external
+    //    beneficiary. Drop the bequest entirely when no recipients remain.
+    if (tree.wills) {
+      for (const will of tree.wills) {
+        const remainingBequests = [];
+        for (const bq of will.bequests) {
+          const remainingRecipients = [];
+          for (const rcp of bq.recipients) {
+            if (rcp.recipientKind === "external_beneficiary" && rcp.recipientId && removedExtBenIds.has(rcp.recipientId)) {
+              warnings.push({
+                kind: "external_beneficiary_unreferenced",
+                message: `Will bequest recipient dropped — external beneficiary ${rcp.recipientId} was removed`,
+                causedByChangeId: removedExtBenToCause.get(rcp.recipientId)!,
+                affectedEntityId: bq.id,
+                affectedEntityLabel: `Will bequest · ${bq.name}`,
+              });
+            } else {
+              remainingRecipients.push(rcp);
+            }
+          }
+          bq.recipients = remainingRecipients;
+          if (bq.recipients.length > 0) {
+            remainingBequests.push(bq);
+          }
+          // else: bequest dropped entirely (no recipients left). Already warned above.
+        }
+        will.bequests = remainingBequests;
+
+        if (will.residuaryRecipients && will.residuaryRecipients.length > 0) {
+          const remainingResiduary = [];
+          for (const rcp of will.residuaryRecipients) {
+            if (rcp.recipientKind === "external_beneficiary" && rcp.recipientId && removedExtBenIds.has(rcp.recipientId)) {
+              warnings.push({
+                kind: "external_beneficiary_unreferenced",
+                message: `Will residuary recipient dropped — external beneficiary ${rcp.recipientId} was removed`,
+                causedByChangeId: removedExtBenToCause.get(rcp.recipientId)!,
+                affectedEntityId: will.id,
+                affectedEntityLabel: `Will residuary · grantor ${will.grantor}`,
+              });
+            } else {
+              remainingResiduary.push(rcp);
+            }
+          }
+          will.residuaryRecipients = remainingResiduary;
+        }
+      }
+    }
+  }
+
   return warnings;
 }

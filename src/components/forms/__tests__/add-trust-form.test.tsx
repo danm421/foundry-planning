@@ -26,7 +26,20 @@ import type { Designation } from "../../family-view";
 // useScenarioWriter is a hook that calls router.refresh() — mock the whole module
 // so it doesn't fail in jsdom (Next.js router not available).
 vi.mock("@/hooks/use-scenario-writer", () => ({
-  useScenarioWriter: () => ({ submit: vi.fn() }),
+  useScenarioWriter: () => ({
+    // Base-mode passthrough: mirror the real hook so the entity edit still hits
+    // the mocked global.fetch (and the existing PUT/gift assertions hold).
+    submit: (
+      _edit: unknown,
+      baseFallback: { url: string; method: string; body?: unknown },
+    ) =>
+      fetch(baseFallback.url, {
+        method: baseFallback.method,
+        headers: { "Content-Type": "application/json" },
+        body: baseFallback.body !== undefined ? JSON.stringify(baseFallback.body) : undefined,
+      }),
+    scenarioActive: false,
+  }),
 }));
 
 // AddTrustForm imports useRouter for the entity-asset-op refresh path. jsdom

@@ -4,6 +4,7 @@ import { clients, liabilities, liabilityOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordUpdate, recordDelete } from "@/lib/audit";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { toLiabilitySnapshot, LIABILITY_FIELD_LABELS } from "@/lib/audit/snapshots/liability";
 import {
   type ValidatedOwner,
@@ -161,9 +162,12 @@ export async function DELETE(
 
     const snapshot = await toLiabilitySnapshot(existing);
 
-    await db
-      .delete(liabilities)
-      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(liabilities)
+        .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
+      await pruneOrphanScenarioChanges(tx, liabilityId);
+    });
 
     await recordDelete({
       action: "liability.delete",

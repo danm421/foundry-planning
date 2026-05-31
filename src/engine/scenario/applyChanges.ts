@@ -17,18 +17,38 @@ export function resolveEffectiveToggleState(
   const groupById = new Map(groups.map((g) => [g.id, g]));
   const effective: ToggleState = {};
 
-  for (const group of groups) {
+  // Resolve a group's effective state by walking the requiresGroupId chain
+  // transitively: a group is ON only if its own explicit state is on AND every
+  // ancestor up the chain is effectively on. Memoized into `effective` so each
+  // group is computed once (O(n)). `inFlight` guards against cycles — the write
+  // path forbids them, but the schema allows them structurally, so a defensive
+  // guard keeps a malformed row from spinning the engine.
+  const inFlight = new Set<string>();
+  const resolve = (group: ToggleGroup): boolean => {
+    if (group.id in effective) return effective[group.id];
     const explicit = toggleState[group.id] ?? group.defaultOn;
     if (group.requiresGroupId == null) {
       effective[group.id] = explicit;
-    } else {
-      const parent = groupById.get(group.requiresGroupId);
-      const parentEffective =
-        parent != null
-          ? (toggleState[parent.id] ?? parent.defaultOn)
-          : true;
-      effective[group.id] = explicit && parentEffective;
+      return explicit;
     }
+    const parent = groupById.get(group.requiresGroupId);
+    // Unknown parent (dangling ref) is treated as on, matching the prior
+    // single-level behavior. A cycle short-circuits to the explicit state to
+    // avoid infinite recursion.
+    if (parent == null || inFlight.has(group.id)) {
+      effective[group.id] = explicit;
+      return explicit;
+    }
+    inFlight.add(group.id);
+    const parentEffective = resolve(parent);
+    inFlight.delete(group.id);
+    const result = explicit && parentEffective;
+    effective[group.id] = result;
+    return result;
+  };
+
+  for (const group of groups) {
+    resolve(group);
   }
 
   return effective;
@@ -80,6 +100,12 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "customPctQualifiedDividends",
     "customPctTaxExempt",
   ],
+  // The withdrawal-strategy form posts startYear/endYear as strings
+  // (String(...) in withdrawal-strategy-section.tsx), so coerce them before the
+  // engine's year-window filter (year >= s.startYear && year <= s.endYear) and
+  // the priorityOrder sort run on string values. priorityOrder is already a
+  // number; listing it is a harmless safety no-op.
+  withdrawal_strategy: ["priorityOrder", "startYear", "endYear"],
 };
 
 function toNumberIfNumericString(v: unknown): unknown {

@@ -21,6 +21,8 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  accountFlowOverrides,
+  entityFlowOverrides,
   scenarioChanges,
   scenarioToggleGroups,
   scenarios,
@@ -148,6 +150,49 @@ export async function createScenarioWithClone(
             ? idMap.get(c.toggleGroupId) ?? null
             : null,
           orderIndex: c.orderIndex,
+        })),
+      );
+    }
+
+    // Clone scenario-scoped entity/account flow-override schedules. These rows
+    // are scoped by scenarioId (not modelled as scenario_changes), so they must
+    // be copied explicitly or a duplicated scenario silently loses its custom
+    // flow grids. entityId/accountId are shared across scenarios within the same
+    // client, so they carry over unchanged; only scenarioId is remapped to the
+    // clone. id/createdAt/updatedAt are omitted so the column defaults apply
+    // (fresh PK, avoiding unique-constraint collisions with the source rows).
+    const srcEntityOverrides = await tx
+      .select()
+      .from(entityFlowOverrides)
+      .where(eq(entityFlowOverrides.scenarioId, sourceId));
+
+    if (srcEntityOverrides.length > 0) {
+      await tx.insert(entityFlowOverrides).values(
+        srcEntityOverrides.map((o) => ({
+          entityId: o.entityId,
+          scenarioId: created.id,
+          year: o.year,
+          incomeAmount: o.incomeAmount,
+          expenseAmount: o.expenseAmount,
+          distributionPercent: o.distributionPercent,
+        })),
+      );
+    }
+
+    const srcAccountOverrides = await tx
+      .select()
+      .from(accountFlowOverrides)
+      .where(eq(accountFlowOverrides.scenarioId, sourceId));
+
+    if (srcAccountOverrides.length > 0) {
+      await tx.insert(accountFlowOverrides).values(
+        srcAccountOverrides.map((o) => ({
+          accountId: o.accountId,
+          scenarioId: created.id,
+          year: o.year,
+          incomeAmount: o.incomeAmount,
+          expenseAmount: o.expenseAmount,
+          distributionPercent: o.distributionPercent,
         })),
       );
     }

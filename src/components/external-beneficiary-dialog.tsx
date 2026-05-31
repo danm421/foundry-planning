@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import DialogShell from "@/components/dialog-shell";
 import {
   inputClassName,
@@ -25,6 +26,7 @@ export default function ExternalBeneficiaryDialog({
   onOpenChange,
   onSaved,
 }: Props) {
+  const writer = useScenarioWriter(clientId);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"charity" | "individual">("charity");
   const [notes, setNotes] = useState("");
@@ -39,20 +41,25 @@ export default function ExternalBeneficiaryDialog({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/clients/${clientId}/external-beneficiaries`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          kind,
-          notes: notes.trim() || null,
-        }),
-      });
+      const newId = crypto.randomUUID();
+      const body = {
+        name: name.trim(),
+        kind,
+        notes: notes.trim() || null,
+      };
+      const res = await writer.submit(
+        { op: "add", targetKind: "external_beneficiary", entity: { id: newId, ...body } },
+        { url: `/api/clients/${clientId}/external-beneficiaries`, method: "POST", body },
+      );
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error ?? `HTTP ${res.status}`);
       }
-      const saved = (await res.json()) as ExternalBeneficiary;
+      // In scenario mode /changes returns { ok, targetId }, not a full entity;
+      // synthesize the saved beneficiary from the client-minted id.
+      const saved: ExternalBeneficiary = writer.scenarioActive
+        ? { id: newId, ...body }
+        : ((await res.json()) as ExternalBeneficiary);
       onSaved(saved);
       onOpenChange(false);
       setName("");

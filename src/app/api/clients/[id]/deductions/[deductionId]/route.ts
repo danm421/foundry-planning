@@ -4,6 +4,7 @@ import { clients, clientDeductions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -96,9 +97,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await db
-      .delete(clientDeductions)
-      .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)));
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(clientDeductions)
+        .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)));
+      await pruneOrphanScenarioChanges(tx, deductionId);
+    });
 
     await recordAudit({
       action: "deduction.delete",

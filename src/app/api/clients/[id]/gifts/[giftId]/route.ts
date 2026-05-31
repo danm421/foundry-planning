@@ -11,6 +11,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { giftUpdateSchema } from "@/lib/schemas/gifts";
 
 export const dynamic = "force-dynamic";
@@ -197,10 +198,17 @@ export async function DELETE(
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
-    const [row] = await db
-      .delete(gifts)
-      .where(and(eq(gifts.id, giftId), eq(gifts.clientId, id)))
-      .returning();
+    let row: typeof gifts.$inferSelect | undefined;
+    await db.transaction(async (tx) => {
+      const [deleted] = await tx
+        .delete(gifts)
+        .where(and(eq(gifts.id, giftId), eq(gifts.clientId, id)))
+        .returning();
+      row = deleted;
+      if (deleted) {
+        await pruneOrphanScenarioChanges(tx, giftId);
+      }
+    });
     if (!row) {
       return NextResponse.json({ error: "Gift not found" }, { status: 404 });
     }

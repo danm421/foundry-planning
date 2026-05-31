@@ -245,3 +245,129 @@ describe("resolveCascades — accounts → rothConversions", () => {
     expect(warnings.filter((w) => w.kind === "roth_conversion_dropped")).toEqual([]);
   });
 });
+
+describe("resolveCascades — external_beneficiary → references (F8)", () => {
+  const removedExt = [{ kind: "external_beneficiary" as TargetKind, id: "ext-removed", causedByChangeId: "ch1" }];
+
+  it("drops an account BeneficiaryRef whose externalBeneficiaryId was removed", () => {
+    const t: ClientData = tree({
+      accounts: [
+        {
+          id: "a1",
+          beneficiaries: [
+            { id: "b1", tier: "primary", percentage: 100, externalBeneficiaryId: "ext-removed", sortOrder: 0 } as BeneficiaryRef,
+          ],
+        } as unknown as Account,
+      ],
+    });
+    const warnings = resolveCascades(t, removedExt);
+    expect(t.accounts[0].beneficiaries).toEqual([]);
+    const w = warnings.find((x) => x.kind === "external_beneficiary_unreferenced");
+    expect(w).toBeDefined();
+    expect(w!.causedByChangeId).toBe("ch1");
+  });
+
+  it("drops a trust (entity) BeneficiaryRef whose externalBeneficiaryId was removed", () => {
+    const t: ClientData = tree({
+      entities: [
+        {
+          id: "ent-1",
+          beneficiaries: [
+            { id: "b2", tier: "primary", percentage: 100, externalBeneficiaryId: "ext-removed", sortOrder: 0 } as BeneficiaryRef,
+          ],
+        },
+      ] as unknown as ClientData["entities"],
+    });
+    const warnings = resolveCascades(t, removedExt);
+    expect(t.entities![0].beneficiaries).toEqual([]);
+    expect(warnings.some((x) => x.kind === "external_beneficiary_unreferenced")).toBe(true);
+  });
+
+  it("drops a will bequest recipient pointing at the removed external beneficiary, keeps co-recipients", () => {
+    const t: ClientData = tree({
+      wills: [{
+        id: "w1",
+        grantor: "client",
+        bequests: [{
+          id: "bq1",
+          name: "charity bequest",
+          kind: "asset",
+          assetMode: "all_assets",
+          accountId: null,
+          liabilityId: null, entityId: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [
+            { recipientKind: "external_beneficiary", recipientId: "ext-removed", percentage: 50, sortOrder: 0 },
+            { recipientKind: "family_member", recipientId: "fm-keep", percentage: 50, sortOrder: 1 },
+          ],
+        }],
+      } as Will],
+    });
+    const warnings = resolveCascades(t, removedExt);
+    const bq = t.wills![0].bequests[0];
+    expect(bq.recipients).toHaveLength(1);
+    expect(bq.recipients[0].recipientKind).toBe("family_member");
+    expect(warnings.some((x) => x.kind === "external_beneficiary_unreferenced")).toBe(true);
+  });
+
+  it("drops the bequest entirely when its sole recipient was the removed external beneficiary", () => {
+    const t: ClientData = tree({
+      wills: [{
+        id: "w1",
+        grantor: "client",
+        bequests: [{
+          id: "bq1",
+          name: "sole charity",
+          kind: "asset",
+          assetMode: "all_assets",
+          accountId: null,
+          liabilityId: null, entityId: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [
+            { recipientKind: "external_beneficiary", recipientId: "ext-removed", percentage: 100, sortOrder: 0 },
+          ],
+        }],
+      } as Will],
+    });
+    resolveCascades(t, removedExt);
+    expect(t.wills![0].bequests).toHaveLength(0);
+  });
+
+  it("drops a will residuary recipient pointing at the removed external beneficiary", () => {
+    const t: ClientData = tree({
+      wills: [{
+        id: "w1",
+        grantor: "client",
+        bequests: [],
+        residuaryRecipients: [
+          { recipientKind: "external_beneficiary", recipientId: "ext-removed", percentage: 100, sortOrder: 0 },
+        ],
+      } as unknown as Will],
+    });
+    const warnings = resolveCascades(t, removedExt);
+    expect(t.wills![0].residuaryRecipients).toEqual([]);
+    const w = warnings.find((x) => x.kind === "external_beneficiary_unreferenced");
+    expect(w).toBeDefined();
+    expect(w!.affectedEntityId).toBe("w1");
+  });
+
+  it("preserves references to an external beneficiary that was NOT removed", () => {
+    const t: ClientData = tree({
+      accounts: [
+        {
+          id: "a1",
+          beneficiaries: [
+            { id: "b1", tier: "primary", percentage: 100, externalBeneficiaryId: "ext-keep", sortOrder: 0 } as BeneficiaryRef,
+          ],
+        } as unknown as Account,
+      ],
+    });
+    const warnings = resolveCascades(t, removedExt);
+    expect(t.accounts[0].beneficiaries).toHaveLength(1);
+    expect(warnings.some((x) => x.kind === "external_beneficiary_unreferenced")).toBe(false);
+  });
+});

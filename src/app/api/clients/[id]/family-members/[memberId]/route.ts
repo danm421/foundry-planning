@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,7 @@ export async function DELETE(
     // (audit F13). Atomic with the member delete.
     await db.transaction(async (tx) => {
       await cleanupWillRecipientReferences(tx, "family_member", memberId);
+      await pruneOrphanScenarioChanges(tx, memberId);
       await tx
         .delete(familyMembers)
         .where(and(eq(familyMembers.id, memberId), eq(familyMembers.clientId, id)));
