@@ -10,6 +10,17 @@ import type { MonteCarloResult } from "./run";
  * Empty input → NaN for every probability. Single value → that value. Out-of-
  * range probabilities are clamped to the sample endpoints.
  */
+/**
+ * Compound annual growth rate of `value` relative to `start` over the period
+ * whose annualization exponent is `exp` (= 1 / yearsElapsed). The ratio is
+ * floored at 0 so a wiped-out (negative) trial reports −100% instead of NaN
+ * from Math.pow(negative, fractional).
+ */
+export function cagr(value: number, start: number, exp: number): number {
+  const ratio = Math.max(0, value / start);
+  return Math.pow(ratio, exp) - 1;
+}
+
 export function percentiles(values: number[], probs: number[]): number[] {
   if (values.length === 0) return probs.map(() => NaN);
   const sorted = [...values].sort((a, b) => a - b);
@@ -133,7 +144,7 @@ export function summarizeMonteCarlo(
     let cagrFromStart: PercentileBundle | null = null;
     if (startingLiquidBalance > 0) {
       const exp = 1 / yearsElapsed;
-      const toCagr = (v: number) => Math.pow(v / startingLiquidBalance, exp) - 1;
+      const toCagr = (v: number) => cagr(v, startingLiquidBalance, exp);
       cagrFromStart = {
         p5: toCagr(bundle.p5),
         p20: toCagr(bundle.p20),
