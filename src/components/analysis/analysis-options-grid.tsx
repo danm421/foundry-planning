@@ -21,6 +21,7 @@ import {
   type SolverSource,
 } from "@/lib/solver/types";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import { TaxDetailTooltip } from "@/components/cashflow/tax-detail-tooltip";
 import type { MinSavingsGrowth } from "@/lib/analysis/hypothetical-savings";
 import type {
   ExploreRow,
@@ -354,14 +355,15 @@ export function AnalysisOptionsGrid({
       aria-label="What are your options?"
       className="rounded border border-hair bg-card"
     >
-      <header className="border-b border-hair px-[var(--pad-card)] py-3">
+      <header className="flex items-center gap-1.5 border-b border-hair px-[var(--pad-card)] py-3">
         <h3 className="text-[15px] font-semibold text-ink">
           What are your Options?
         </h3>
-        <p className="mt-0.5 text-[12px] text-ink-4">
-          Each column solves one lever so your plan is fully funded for life.
-          Edit the Explore column to model your own changes.
-        </p>
+        <TaxDetailTooltip
+          label={null}
+          iconLabel="What these columns mean"
+          text="Each column solves one lever so your plan is fully funded for life. Edit the Explore column to model your own changes."
+        />
       </header>
 
       <div className="overflow-x-auto">
@@ -576,19 +578,24 @@ function SolvedCell({
   const fundingSource =
     config.id === "min-savings" ? state.fundingSource : null;
 
+  const fundingText =
+    fundingSource === null
+      ? null
+      : (fundingSource.maxExpenseReduction > 0
+          ? `Funded from surplus cash flow; reduces living expenses by up to ${formatCurrency(fundingSource.maxExpenseReduction)}/yr`
+          : "Funded entirely from surplus cash flow") +
+        ` · growing at ${fundingSource.growthLabel}`;
+
   return (
     <td className="border-b border-hair px-4 py-2.5 text-right">
-      <span className="inline-block rounded bg-[color:var(--color-good)]/10 px-2 py-0.5 tabular text-[13px] font-semibold text-[color:var(--color-good)]">
-        {display}
+      <span className="inline-flex items-center justify-end gap-1">
+        <span className="inline-block rounded bg-[color:var(--color-good)]/10 px-2 py-0.5 tabular text-[13px] font-semibold text-[color:var(--color-good)]">
+          {display}
+        </span>
+        {fundingText && (
+          <TaxDetailTooltip label={null} iconLabel="Funding details" text={fundingText} />
+        )}
       </span>
-      {fundingSource && (
-        <div className="mt-1 text-[11px] leading-snug text-ink-4">
-          {fundingSource.maxExpenseReduction > 0
-            ? `Funded from surplus cash flow; reduces living expenses by up to ${formatCurrency(fundingSource.maxExpenseReduction)}/yr`
-            : "Funded entirely from surplus cash flow"}
-          {` · growing at ${fundingSource.growthLabel}`}
-        </div>
-      )}
     </td>
   );
 }
