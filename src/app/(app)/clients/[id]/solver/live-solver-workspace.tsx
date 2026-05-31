@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClientData, ProjectionYear } from "@/engine";
+import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
@@ -26,7 +27,14 @@ import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
 import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
+import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+
+function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
+  if (type === "cash") return d.cash;
+  if (type === "ira" || type === "roth_ira") return d.retirement;
+  return d.taxable;
+}
 
 interface Props {
   clientId: string;
@@ -57,10 +65,33 @@ export function LiveSolverWorkspace({
   lifeInsuranceSettings,
   clientName,
   spouseName,
-  categoryGrowthDefaults: _categoryGrowthDefaults,
+  categoryGrowthDefaults,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
+
+  const ownerOptions = useMemo(() => {
+    const fms = baseClientData.familyMembers ?? [];
+    const clientFm = fms.find((fm) => fm.role === "client");
+    const spouseFm = fms.find((fm) => fm.role === "spouse");
+    const opts: { familyMemberId: string; label: string }[] = [];
+    if (clientFm) opts.push({ familyMemberId: clientFm.id, label: clientName });
+    if (spouseFm) opts.push({ familyMemberId: spouseFm.id, label: spouseName });
+    return opts;
+  }, [baseClientData, clientName, spouseName]);
+
+  const retirementYearForOwner = useCallback((fmId: string): number => {
+    const fms = baseClientData.familyMembers ?? [];
+    const spouseFm = fms.find((fm) => fm.role === "spouse");
+    const isSpouse = spouseFm?.id === fmId;
+    const c = baseClientData.client;
+    const dob = isSpouse ? c.spouseDob : c.dateOfBirth;
+    const retAge = isSpouse ? (c.spouseRetirementAge ?? 65) : (c.retirementAge ?? 65);
+    const birthYear = dob ? Number(String(dob).slice(0, 4)) : null;
+    const curAge = birthYear != null && Number.isFinite(birthYear) ? currentYear - birthYear : 0;
+    return currentYear + Math.max(0, retAge - curAge);
+  }, [baseClientData, currentYear]);
+
   const [mutationMap, setMutationMap] = useState<Map<SolverMutationKey, SolverMutation>>(
     () => new Map(),
   );
@@ -536,6 +567,13 @@ export function LiveSolverWorkspace({
                 activeSolve={activeSolve}
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
+              />
+              <SolverQuickAddAccount
+                owners={ownerOptions}
+                currentYear={currentYear}
+                retirementYearForOwner={retirementYearForOwner}
+                growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
+                onChange={pushMutation}
               />
             </SolverSection>
 
