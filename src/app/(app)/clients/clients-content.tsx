@@ -25,7 +25,7 @@ export async function ClientsContent({
       spouseName: spouse ? `${spouse.firstName} ${spouse.lastName}`.trim() : null,
       hasPlanning: Boolean(h.planningClient),
       planningClientId: h.planningClient?.id ?? null,
-      updatedAt: h.updatedAt instanceof Date ? h.updatedAt.toISOString() : String(h.updatedAt),
+      updatedAt: h.updatedAt.toISOString(),
     };
   });
 

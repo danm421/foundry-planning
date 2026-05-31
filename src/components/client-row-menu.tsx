@@ -7,7 +7,7 @@ interface ClientRowMenuProps {
   householdId: string;
   /** Household display name — also the menu trigger label. */
   name: string;
-  hasPlanning: boolean;
+  /** The linked planning client, or null when no plan exists yet. */
   planningClientId: string | null;
 }
 
@@ -20,11 +20,11 @@ interface ClientRowMenuProps {
 export function ClientRowMenu({
   householdId,
   name,
-  hasPlanning,
   planningClientId,
 }: ClientRowMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const close = () => setOpen(false);
 
   useEffect(() => {
     if (!open) return;
@@ -67,16 +67,16 @@ export function ClientRowMenu({
             role="menuitem"
             href={`/crm/households/${householdId}`}
             className={itemClass}
-            onClick={() => setOpen(false)}
+            onClick={close}
           >
             Open CRM
           </Link>
-          {hasPlanning && planningClientId ? (
+          {planningClientId ? (
             <Link
               role="menuitem"
               href={`/clients/${planningClientId}/overview`}
               className={itemClass}
-              onClick={() => setOpen(false)}
+              onClick={close}
             >
               Open planning
             </Link>
@@ -85,7 +85,7 @@ export function ClientRowMenu({
               role="menuitem"
               href={`/clients/new?crmHouseholdId=${householdId}`}
               className={itemClass}
-              onClick={() => setOpen(false)}
+              onClick={close}
             >
               Start planning
             </Link>

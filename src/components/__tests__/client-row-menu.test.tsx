@@ -6,12 +6,7 @@ import { ClientRowMenu } from "../client-row-menu";
 describe("ClientRowMenu", () => {
   it("shows Open CRM + Open planning when a plan exists", () => {
     render(
-      <ClientRowMenu
-        householdId="H1"
-        name="Smith Household"
-        hasPlanning
-        planningClientId="C1"
-      />,
+      <ClientRowMenu householdId="H1" name="Smith Household" planningClientId="C1" />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Smith Household" }));
 
@@ -24,12 +19,7 @@ describe("ClientRowMenu", () => {
 
   it("shows Start planning when no plan exists", () => {
     render(
-      <ClientRowMenu
-        householdId="H2"
-        name="Jones Household"
-        hasPlanning={false}
-        planningClientId={null}
-      />,
+      <ClientRowMenu householdId="H2" name="Jones Household" planningClientId={null} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Jones Household" }));
 
@@ -44,7 +34,7 @@ describe("ClientRowMenu", () => {
 
   it("is closed until the trigger is clicked", () => {
     render(
-      <ClientRowMenu householdId="H3" name="Lee" hasPlanning={false} planningClientId={null} />,
+      <ClientRowMenu householdId="H3" name="Lee" planningClientId={null} />,
     );
     expect(screen.queryByRole("menu")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Lee" }));

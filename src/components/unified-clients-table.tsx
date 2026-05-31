@@ -57,14 +57,12 @@ export function UnifiedClientsTable({ rows }: UnifiedClientsTableProps) {
         </thead>
         <tbody className="divide-y divide-hair">
           {rows.map((r) => {
-            const updated = new Date(r.updatedAt);
             return (
               <tr key={r.householdId} className="hover:bg-card-2">
                 <td className="whitespace-nowrap px-6 py-4">
                   <ClientRowMenu
                     householdId={r.householdId}
                     name={r.name}
-                    hasPlanning={r.hasPlanning}
                     planningClientId={r.planningClientId}
                   />
                 </td>
@@ -87,7 +85,7 @@ export function UnifiedClientsTable({ rows }: UnifiedClientsTableProps) {
                   )}
                 </td>
                 <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-3">
-                  {updated.toLocaleDateString("en-US", {
+                  {new Date(r.updatedAt).toLocaleDateString("en-US", {
                     year: "numeric",
                     month: "short",
                     day: "numeric",
