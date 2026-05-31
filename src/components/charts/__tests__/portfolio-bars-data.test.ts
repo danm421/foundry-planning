@@ -6,7 +6,7 @@ import {
   liquidPortfolioTotal,
 } from "../portfolio-bars-data";
 
-/** Minimal ProjectionYear with a given liquid portfolio total in `taxableTotal`. */
+/** Minimal ProjectionYear with a given liquid portfolio total. */
 function yr(year: number, total: number): ProjectionYear {
   return {
     year,
@@ -15,21 +15,26 @@ function yr(year: number, total: number): ProjectionYear {
       cashTotal: 0,
       retirementTotal: 0,
       lifeInsuranceTotal: 0,
+      accessibleTrustAssetsTotal: 0,
+      liquidTotal: total,
     },
   } as unknown as ProjectionYear;
 }
 
 describe("liquidPortfolioTotal", () => {
-  it("sums taxable, cash, retirement, and life insurance buckets", () => {
+  it("returns the canonical engine liquidTotal (incl. accessible trust assets)", () => {
     const y = {
       portfolioAssets: {
         taxableTotal: 100,
         cashTotal: 50,
         retirementTotal: 200,
         lifeInsuranceTotal: 25,
+        accessibleTrustAssetsTotal: 30,
+        // engine field = 100+50+200+25+30; the consumer reads it as the source of truth
+        liquidTotal: 405,
       },
     } as unknown as ProjectionYear;
-    expect(liquidPortfolioTotal(y)).toBe(375);
+    expect(liquidPortfolioTotal(y)).toBe(405);
   });
 });
 

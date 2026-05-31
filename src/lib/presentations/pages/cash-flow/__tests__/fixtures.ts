@@ -88,6 +88,7 @@ export function makeProjectionYears(): ProjectionYear[] {
         accessibleTrustAssets: {},
         accessibleTrustAssetsTotal: 0,
         total: 0,
+        liquidTotal: 0,
       },
       accountLedgers: {},
       accountBasisBoY: {},
@@ -138,6 +139,7 @@ export function makeProjectionYears(): ProjectionYear[] {
         accessibleTrustAssets: {},
         accessibleTrustAssetsTotal: 0,
         total: 1_350_000,
+        liquidTotal: 1_350_000,
       },
       accountLedgers: {
         // Growth = 20k, contributions 50k (savings), no distributions
@@ -197,6 +199,7 @@ export function makeProjectionYears(): ProjectionYear[] {
         accessibleTrustAssets: {},
         accessibleTrustAssetsTotal: 0,
         total: 1_400_000,
+        liquidTotal: 1_400_000,
       },
       // Faithful to the engine: an RMD writes a `-rmd` distribution on the
       // source account (with `rmdAmount` set) AND a `+rmd` credit on checking.
@@ -257,6 +260,7 @@ export function makeProjectionYears(): ProjectionYear[] {
         accessibleTrustAssets: {},
         accessibleTrustAssetsTotal: 0,
         total: 1_310_000,
+        liquidTotal: 1_310_000,
       },
       accountLedgers: {
         ira: makeLedger(
@@ -317,6 +321,7 @@ export function makeProjectionYears(): ProjectionYear[] {
         accessibleTrustAssets: {},
         accessibleTrustAssetsTotal: 0,
         total: 670_000,
+        liquidTotal: 670_000,
       },
       accountLedgers: {
         ira: makeLedger(

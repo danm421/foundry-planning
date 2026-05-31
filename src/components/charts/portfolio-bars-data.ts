@@ -1,18 +1,15 @@
 import type { ProjectionYear } from "@/engine";
 
 /**
- * Liquid portfolio total for cash-flow framing: taxable + cash + retirement
- * + life insurance cash value. Excludes real estate and business assets —
- * advisors think of cash flow against the investable portfolio, not the
- * household's outside-the-estate holdings.
+ * Canonical liquid portfolio total for cash-flow framing — the single source of
+ * truth shared by the chart bar, the summary cell, and the next-year BoY (H1).
+ * = taxable + cash + retirement + life insurance + accessible trust assets
+ * (engine `portfolioAssets.liquidTotal`). Excludes real estate, business, and
+ * locked trusts — advisors frame cash flow against the investable portfolio,
+ * not the household's outside-the-estate / net-worth holdings.
  */
 export function liquidPortfolioTotal(y: ProjectionYear): number {
-  return (
-    y.portfolioAssets.taxableTotal +
-    y.portfolioAssets.cashTotal +
-    y.portfolioAssets.retirementTotal +
-    y.portfolioAssets.lifeInsuranceTotal
-  );
+  return y.portfolioAssets.liquidTotal;
 }
 
 /**

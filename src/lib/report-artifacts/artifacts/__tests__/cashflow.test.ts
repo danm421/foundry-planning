@@ -206,6 +206,7 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
           trustsAndBusinesses: {}, trustsAndBusinessesTotal: 0,
           accessibleTrustAssets: {}, accessibleTrustAssetsTotal: 0,
           total: 1_600_000,
+          liquidTotal: 800_000, // taxable 500k + retirement 300k (liquid investable)
         },
       }),
     ]);
