@@ -11,7 +11,7 @@ import type { ResolvedCategoryDefault } from "@/lib/projection/resolve-growth-so
 // (a structural subset of createGrowthSourceResolver's return value).
 function fakeResolver(taxableDefault?: ResolvedCategoryDefault): GrowthResolverLike {
   return {
-    resolveCategoryDefault: (_cat) =>
+    resolveCategoryDefault: () =>
       taxableDefault ?? {
         rate: 0.05,
         realization: {
@@ -22,7 +22,7 @@ function fakeResolver(taxableDefault?: ResolvedCategoryDefault): GrowthResolverL
           turnoverPct: 0,
         },
       },
-    resolvePortfolio: (_id) => ({
+    resolvePortfolio: () => ({
       geoReturn: 0.062,
       pctOi: 0.15,
       pctLtcg: 0.55,
