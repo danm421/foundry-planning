@@ -1,4 +1,4 @@
-import type { Account, Expense } from "@/engine/types";
+import type { Account, ClientData, Expense } from "@/engine/types";
 import { controllingEntity } from "@/engine/ownership";
 
 export interface SynthesizePremiumsInput {
@@ -97,6 +97,38 @@ export function synthesizePremiumExpenses(
     });
   }
   return out;
+}
+
+/**
+ * Strip any previously-synthesized policy premium expenses and re-derive them
+ * from the tree's CURRENT life-insurance accounts. Idempotent: running it on a
+ * tree whose premiums are already current reproduces the same set.
+ *
+ * `synthesizePremiumExpenses` runs at base-load time on the BASE accounts, so
+ * the scenario overlay (which can add / remove / edit life-insurance accounts)
+ * would otherwise sit on top of stale or missing premiums. This re-derivation
+ * runs on the EFFECTIVE tree after the overlay is applied; the synthesis inputs
+ * (birth years, retirement ages, life expectancies) come from the tree's
+ * (effective) client so scenario edits to those flow through too.
+ */
+export function withSynthesizedPremiums(tree: ClientData): ClientData {
+  const nonPolicyExpenses = tree.expenses.filter((e) => e.source !== "policy");
+  const { client } = tree;
+  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+  const spouseBirthYear = client.spouseDob
+    ? parseInt(client.spouseDob.slice(0, 4), 10)
+    : null;
+  const premiums = synthesizePremiumExpenses({
+    currentYear: new Date().getFullYear(),
+    accounts: tree.accounts,
+    clientBirthYear,
+    spouseBirthYear,
+    clientRetirementAge: client.retirementAge,
+    spouseRetirementAge: client.spouseRetirementAge ?? null,
+    lifeExpectancyClient: client.lifeExpectancy ?? 0,
+    lifeExpectancySpouse: client.spouseLifeExpectancy ?? null,
+  });
+  return { ...tree, expenses: [...nonPolicyExpenses, ...premiums] };
 }
 
 function resolvePermanentLifespanYear(

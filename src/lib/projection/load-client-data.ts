@@ -68,7 +68,7 @@ import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
-import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
+import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
 import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constants";
@@ -658,8 +658,19 @@ export const loadClientDataWithContext = cache(
     // asset-class breakdown. Built here (raw account rows in scope) and threaded
     // onto `ResolutionContext` so the scenario overlay can reuse it.
     const accountBaseAllocByAccountId = new Map<string, AllocationMap | undefined>();
+    // Account ids whose resolved growthRate / propertyTaxGrowthRate are driven
+    // by the inflation rate. The engine `Account` drops `growthSource`, so the
+    // scenario overlay needs these to re-resolve them under a scenario-edited
+    // inflation rate (see `reResolveInflationGrowth`). `resolveAccountFromRaw`
+    // pins growthRate to the inflation rate iff `growthSource === "inflation"`.
+    const accountGrowthFromInflation = new Set<string>();
+    const accountPropertyTaxFromInflation = new Set<string>();
     for (const account of accountRows) {
       const gs = account.growthSource ?? "default";
+      if (gs === "inflation") accountGrowthFromInflation.add(account.id);
+      if (account.propertyTaxGrowthSource === "inflation") {
+        accountPropertyTaxFromInflation.add(account.id);
+      }
       const categorySource = resolver.getCategoryGrowthSource(account.category);
       const effectiveSource = gs === "default" ? categorySource : gs;
       let baseAlloc: AllocationMap | undefined;
@@ -689,6 +700,15 @@ export const loadClientDataWithContext = cache(
       ownersByAccountId,
       accountBaseAllocByAccountId,
       holdingsTotalsByAccountId,
+      resolvedInflationInputs: {
+        inflationRateSource: settings.inflationRateSource,
+        inflationClass: inflationClass
+          ? { geometricReturn: inflationClass.geometricReturn }
+          : null,
+        clientOverride: clientInflationOverride,
+      },
+      accountGrowthFromInflation,
+      accountPropertyTaxFromInflation,
     };
 
     const mappedAccounts = accountRows.map((a) =>
@@ -782,22 +802,10 @@ export const loadClientDataWithContext = cache(
       ),
     );
 
-    // Synthesize life-insurance premium expenses and merge with the mapped list.
-    const clientBirthYear = parseInt(clientDob.slice(0, 4), 10);
-    const spouseBirthYear = spouseDob
-      ? parseInt(spouseDob.slice(0, 4), 10)
-      : null;
-    const syntheticPremiums = synthesizePremiumExpenses({
-      currentYear: new Date().getFullYear(),
-      accounts: mappedAccounts,
-      clientBirthYear,
-      spouseBirthYear,
-      clientRetirementAge: client.retirementAge,
-      spouseRetirementAge: client.spouseRetirementAge ?? null,
-      lifeExpectancyClient: client.lifeExpectancy,
-      lifeExpectancySpouse: client.spouseLifeExpectancy,
-    });
-    const allExpenses = [...mappedExpenses, ...syntheticPremiums];
+    // Life-insurance premium expenses are synthesized via `withSynthesizedPremiums`
+    // when the assembled tree is returned (below), so the same idempotent
+    // derivation runs on both the base tree here and the effective tree in
+    // `loadEffectiveTree` after the scenario overlay is applied.
 
     const mappedLiabilities = liabilityRows.map((l) => ({
       id: l.id,
@@ -1392,7 +1400,7 @@ export const loadClientDataWithContext = cache(
       client: clientInfo,
       accounts: mappedAccounts,
       incomes: mappedIncomes,
-      expenses: allExpenses,
+      expenses: mappedExpenses,
       liabilities: mappedLiabilities,
       savingsRules: mappedSavingsRules,
       withdrawalStrategy: mappedWithdrawalStrategy,
@@ -1419,7 +1427,10 @@ export const loadClientDataWithContext = cache(
       medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,
     };
 
-    return { clientData, resolutionContext: resolutionCtx };
+    return {
+      clientData: withSynthesizedPremiums(clientData),
+      resolutionContext: resolutionCtx,
+    };
   },
 );
 

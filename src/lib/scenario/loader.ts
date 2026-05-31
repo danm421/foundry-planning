@@ -23,6 +23,8 @@ import type {
   ToggleState,
 } from "@/engine/scenario/types";
 import { resolveReinvestments } from "@/lib/projection/resolve-reinvestments";
+import { reResolveInflationGrowth } from "@/lib/projection/resolve-inflation-growth";
+import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { resolveRefYears } from "@/lib/year-refs";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
@@ -89,6 +91,18 @@ export interface LoadEffectiveTreeResult {
  * When `resolutionContext` is omitted (e.g. unit tests that exercise only the
  * year-ref reshift), reinvestments are left as `applyScenarioChanges` produced
  * them.
+ *
+ * Inflation re-resolution: base accounts / incomes / expenses / savings rules
+ * had their growthRate resolved under the base inflation rate. If a scenario
+ * edits `plan_settings.inflationRate`, `reResolveInflationGrowth` recomputes the
+ * resolved rate from the effective plan settings and re-applies it to every
+ * inflation-sourced entity. No-ops (same tree) when the rate is unchanged.
+ *
+ * Premium re-synthesis: life-insurance premium expenses are re-derived from the
+ * effective accounts via `withSynthesizedPremiums`. Base-load synthesis runs on
+ * the BASE accounts, so without this a scenario that added / removed / edited a
+ * life-insurance account would carry missing / orphaned / stale premiums. The
+ * re-derivation is idempotent.
  */
 export function applyScenarioChangesWithRefs(
   treeForChanges: ClientData,
@@ -114,7 +128,23 @@ export function applyScenarioChangesWithRefs(
     });
   }
 
-  return { effectiveTree: refResolved, warnings };
+  // Re-resolve inflation-driven growth rates. Base entities were resolved under
+  // the base inflation rate; if the scenario edited `plan_settings.inflationRate`
+  // the resolved rate changes and every inflation-sourced account / income /
+  // expense / savings rule must follow. No-ops (returns the same tree) when the
+  // rate is unchanged, so non-inflation scenarios stay byte-identical.
+  const inflationResolved = resolutionContext
+    ? reResolveInflationGrowth(refResolved, resolutionContext)
+    : refResolved;
+
+  // Re-synthesize life-insurance premium expenses over the effective accounts.
+  // Base-load synthesis ran on the BASE accounts, so a scenario that added,
+  // removed, or edited a life-insurance account would otherwise leave the tree
+  // with missing / orphaned / stale premiums. Idempotent — unchanged policies
+  // re-derive to the same expense rows.
+  const withPremiums = withSynthesizedPremiums(inflationResolved);
+
+  return { effectiveTree: withPremiums, warnings };
 }
 
 export const loadEffectiveTree = cache(

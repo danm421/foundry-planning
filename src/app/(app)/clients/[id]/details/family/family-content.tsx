@@ -23,6 +23,7 @@ import FamilyView, {
 } from "@/components/family-view";
 import OpenItemsPanel from "@/components/open-items/open-items-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { buildFamilyPrimary } from "./family-primary";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
@@ -261,21 +262,13 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
       notes: g.notes ?? null,
     }));
 
-  const primary: PrimaryInfo = {
-    firstName: effectiveClient.firstName,
-    lastName: effectiveClient.lastName,
-    dateOfBirth: effectiveClient.dateOfBirth,
-    retirementAge: effectiveClient.retirementAge,
-    retirementMonth: client.retirementMonth ?? 1,
-    lifeExpectancy: effectiveClient.lifeExpectancy ?? client.lifeExpectancy,
-    filingStatus: effectiveClient.filingStatus,
-    spouseName: effectiveClient.spouseName ?? null,
-    spouseLastName: spouseContact?.lastName ?? null,
-    spouseDob: effectiveClient.spouseDob ?? null,
-    spouseRetirementAge: effectiveClient.spouseRetirementAge ?? null,
-    spouseRetirementMonth: client.spouseRetirementMonth ?? null,
-    spouseLifeExpectancy: effectiveClient.spouseLifeExpectancy ?? null,
-  };
+  // Every client field — including retirementMonth / spouseRetirementMonth —
+  // comes from the EFFECTIVE client so scenario overrides flow through. Only
+  // spouseLastName is sourced outside the tree (from the CRM contact).
+  const primary: PrimaryInfo = buildFamilyPrimary(
+    effectiveClient,
+    spouseContact?.lastName ?? null,
+  );
 
   return (
     <>
