@@ -21,6 +21,13 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       : loadEffectiveTree(clientId, firmId, source, {}),
   ]);
 
+  const growthResolver = baseLoaded.resolutionContext?.resolver;
+  const categoryGrowthDefaults = {
+    taxable: growthResolver?.resolveCategoryDefault("taxable").rate ?? 0.06,
+    retirement: growthResolver?.resolveCategoryDefault("retirement").rate ?? 0.06,
+    cash: growthResolver?.resolveCategoryDefault("cash").rate ?? 0.02,
+  };
+
   const baseProjection = runProjection(baseLoaded.effectiveTree);
   const sourceProjection = sourceLoaded
     ? runProjection(sourceLoaded.effectiveTree)
@@ -73,6 +80,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       lifeInsuranceSettings={lifeInsuranceSettings}
       clientName={clientName}
       spouseName={spouseName}
+      categoryGrowthDefaults={categoryGrowthDefaults}
     />
   );
 }

@@ -41,6 +41,7 @@ interface Props {
   lifeInsuranceSettings: LiAssumptions;
   clientName: string;
   spouseName: string;
+  categoryGrowthDefaults: { taxable: number; retirement: number; cash: number };
 }
 
 export function LiveSolverWorkspace({
@@ -56,6 +57,7 @@ export function LiveSolverWorkspace({
   lifeInsuranceSettings,
   clientName,
   spouseName,
+  categoryGrowthDefaults: _categoryGrowthDefaults,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
