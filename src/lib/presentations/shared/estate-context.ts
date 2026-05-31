@@ -52,6 +52,7 @@ export function resolveAsOfYear(
 export function prepEstate(
   ctx: BuildDataContext,
   asOf: AsOfSelection,
+  ordering: "primaryFirst" | "spouseFirst" = "primaryFirst",
 ): EstatePrep {
   const ownerNames = { clientName: ctx.clientName, spouseName: ctx.spouseName };
   const planStartYear =
@@ -63,7 +64,7 @@ export function prepEstate(
   const reportData = buildEstateTransferReportData({
     projection: ctx.projection,
     asOf,
-    ordering: "primaryFirst",
+    ordering,
     clientData: ctx.clientData,
     ownerNames,
   });
