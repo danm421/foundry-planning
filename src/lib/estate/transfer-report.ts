@@ -698,6 +698,7 @@ function buildAggregateTotals(
   const map = new Map<string, RecipientTotal>();
 
   function add(group: RecipientGroup, side: "fromFirstDeath" | "fromSecondDeath") {
+    if (group.recipientKind === "spouse") return; // F10: spouse is a pass-through, not a terminal recipient
     // Aggregate totals show net inheritance (post-drain) so the column reflects
     // what the recipient actually receives, not the gross asset row sum.
     const value = group.netTotal;

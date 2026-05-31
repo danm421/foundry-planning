@@ -526,6 +526,64 @@ describe("buildEstateTransferReportData", () => {
     expect(riley?.total).toBe(400_000);
   });
 
+  it("F10: aggregate totals exclude the surviving-spouse pass-through", () => {
+    // First death: $1M passes to spouse (intermediate pass-through).
+    // Second death: spouse routes the same $1M on to children ($600K + $400K).
+    // Pre-fix, the spouse row inflates the total to $2M; post-fix it must be $1M.
+    const firstTax = emptyEstateTaxResult("client", 2030);
+    Object.assign(firstTax, { grossEstate: 1_000_000 });
+    const secondTax = emptyEstateTaxResult("spouse", 2030);
+    Object.assign(secondTax, { grossEstate: 1_000_000 });
+
+    const firstTransfers = [
+      transfer({ amount: 1_000_000, recipientKind: "spouse", recipientLabel: "Sam" }),
+    ];
+    const secondTransfers = [
+      transfer({
+        deathOrder: 2,
+        deceased: "spouse",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+        amount: 600_000,
+      }),
+      transfer({
+        deathOrder: 2,
+        deceased: "spouse",
+        sourceAccountId: "acc-2",
+        recipientKind: "family_member",
+        recipientId: "fm-child-2",
+        recipientLabel: "Riley",
+        amount: 400_000,
+      }),
+    ];
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: firstTax,
+        finalDeath: secondTax,
+        firstDeathTransfers: firstTransfers,
+        finalDeathTransfers: secondTransfers,
+      }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    const totals = out.aggregateRecipientTotals;
+    // Spouse is a pass-through — must be absent from At-a-Glance totals.
+    expect(totals.some((t) => t.recipientKind === "spouse")).toBe(false);
+    // $1M of wealth, not $2M (no double-count).
+    expect(totals.reduce((s, t) => s + t.total, 0)).toBe(1_000_000);
+  });
+
   it("respects ordering=spouseFirst by reading the spouseFirst branch", () => {
     const tax = emptyEstateTaxResult("spouse", 2030);
     Object.assign(tax, { grossEstate: 1_000_000 });
