@@ -4571,6 +4571,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
       const checkingLedger = accountLedgers[checkingId];
+      // Debit checking and record the outflow. Runs after this year's
+      // cash-delta flush + tax debit, so it writes balances/ledger directly
+      // (mirrors the post-convergence tax-debit pattern above) rather than
+      // routing through the already-flushed `creditCash`.
+      const debitChecking = (amount: number, entry: AccountLedgerEntry): void => {
+        accountBalances[checkingId] = (accountBalances[checkingId] ?? 0) - amount;
+        if (checkingLedger) {
+          checkingLedger.endingValue -= amount;
+          checkingLedger.distributions += amount;
+          checkingLedger.entries.push(entry);
+        }
+      };
       const surplusForSplit = Math.max(
         0,
         totalIncome - expenses.total - savings.total - hypoContribution
@@ -4581,20 +4593,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const spendAmount = surplusForSplit * spendPct;
         const saveAmount = surplusForSplit - spendAmount;
 
-        // Discretionary spend leaves the household entirely. Booked directly
-        // (the cash-delta flush + tax debit already ran for this year) so it
-        // mirrors the post-convergence tax-debit pattern above.
+        // Discretionary spend leaves the household entirely.
         if (spendAmount > 0) {
-          accountBalances[checkingId] = (accountBalances[checkingId] ?? 0) - spendAmount;
-          if (checkingLedger) {
-            checkingLedger.endingValue -= spendAmount;
-            checkingLedger.distributions += spendAmount;
-            checkingLedger.entries.push({
-              category: "discretionary",
-              label: "Discretionary spend (surplus)",
-              amount: -spendAmount,
-            });
-          }
+          debitChecking(spendAmount, {
+            category: "discretionary",
+            label: "Discretionary spend (surplus)",
+            amount: -spendAmount,
+          });
           expenses.discretionary = spendAmount;
           expenses.total += spendAmount;
         }
@@ -4610,18 +4615,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // Quietly skip if the user picked an account that no longer exists.
           data.accounts.some((a) => a.id === saveDestId);
         if (canTransfer) {
-          accountBalances[checkingId] = (accountBalances[checkingId] ?? 0) - saveAmount;
+          debitChecking(saveAmount, {
+            category: "surplus_transfer",
+            label: "Surplus transferred out",
+            amount: -saveAmount,
+            sourceId: saveDestId!,
+          });
           accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
-          if (checkingLedger) {
-            checkingLedger.endingValue -= saveAmount;
-            checkingLedger.distributions += saveAmount;
-            checkingLedger.entries.push({
-              category: "surplus_transfer",
-              label: "Surplus transferred out",
-              amount: -saveAmount,
-              sourceId: saveDestId!,
-            });
-          }
           const destLedger = accountLedgers[saveDestId!];
           if (destLedger) {
             destLedger.endingValue += saveAmount;

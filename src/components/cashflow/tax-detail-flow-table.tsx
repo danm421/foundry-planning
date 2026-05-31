@@ -373,15 +373,15 @@ export function getSourcesForColumn(
 
 function filterBySource(
   bySource: Record<string, { label: string; amount: number }>,
-  category: string
+  category: "charitable" | "interest"
 ): Array<{ label: string; amount: number }> | null {
   // bySource entries carry only { label, amount } (no category discriminator),
   // so match on label keywords — same approach bl_other already uses for "charit".
   const matches = (label: string): boolean => {
     const l = label.toLowerCase();
-    if (category === "charitable") return l.includes("charit");
-    if (category === "interest") return l.includes("interest") || l.includes("mortgage");
-    return true;
+    return category === "charitable"
+      ? l.includes("charit")
+      : l.includes("interest") || l.includes("mortgage");
   };
   const entries = Object.values(bySource).filter((e) => matches(e.label));
   return entries.length > 0 ? entries : null;
