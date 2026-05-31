@@ -310,4 +310,25 @@ describe("surplus cash flow allocation — sized from displayed net cash flow (H
     );
     expect(retained?.amount).toBeCloseTo(35_000, 0);
   });
+
+  it("M7: excluding internal transfers makes checking activity reconcile to the balance change", () => {
+    const data = techniqueFixture();
+    data.planSettings.surplusSaveAccountId = null;
+    const y = runProjection(data)[0];
+    const ledger = y.accountLedgers["acct-checking"];
+
+    // A surplus_retained entry IS flagged internal (the reconciliation-breaker).
+    const internal = ledger.entries.filter((e) => e.isInternalTransfer);
+    expect(internal.some((e) => e.category === "surplus_retained")).toBe(true);
+
+    // Activity reconciles to the balance change ONLY when internal entries are excluded.
+    const externalSum = ledger.entries
+      .filter((e) => !e.isInternalTransfer)
+      .reduce((s, e) => s + e.amount, 0);
+    expect(ledger.beginningValue + externalSum).toBeCloseTo(ledger.endingValue, 0);
+
+    // Including the internal entries would NOT reconcile (proves the modal must exclude them).
+    const allSum = ledger.entries.reduce((s, e) => s + e.amount, 0);
+    expect(ledger.beginningValue + allSum).not.toBeCloseTo(ledger.endingValue, 0);
+  });
 });

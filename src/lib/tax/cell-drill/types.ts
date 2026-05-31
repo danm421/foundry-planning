@@ -53,6 +53,10 @@ export interface CellDrillProps {
   title: string;
   subtitle?: string;
   total: number;
+  /** Footer label for `total`. Adapters set this when `total` is NOT the sum
+   * of the rows (e.g. bracket-stacking, where it is the marginal-bracket amount).
+   * Defaults to "Total" in the modal. */
+  totalLabel?: string;
   groups: CellDrillGroup[];
   footnote?: string;
 }

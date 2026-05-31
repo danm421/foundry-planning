@@ -75,14 +75,26 @@ describe("TaxDetailIncomeTable", () => {
     expect(onCellClick).toHaveBeenCalledWith(year, "earnedIncome");
   });
 
+  it("M5: QBI column reads taxResult.income.qbi (not taxDetail)", () => {
+    const y = {
+      taxResult: { income: {
+        earnedIncome: 0, taxableSocialSecurity: 0, ordinaryIncome: 0, dividends: 0,
+        capitalGains: 0, shortCapitalGains: 0, qbi: 9_000,
+        totalIncome: 9_000, nonTaxableIncome: 0, grossTotalIncome: 9_000,
+      } },
+      // no taxDetail on purpose — the column must not depend on it
+    } as never;
+    const qbiCol = INCOME_COLUMNS.find((c) => c.key === "qbi")!;
+    expect(qbiCol.value(y)).toBe(9_000);
+  });
+
   it("C1: income columns sum to Total Income with STCG present", () => {
     const y = {
       taxResult: { income: {
         earnedIncome: 100_000, taxableSocialSecurity: 0, ordinaryIncome: 25_000,
-        dividends: 0, capitalGains: 10_000, shortCapitalGains: 5_000,
+        dividends: 0, capitalGains: 10_000, shortCapitalGains: 5_000, qbi: 0,
         totalIncome: 135_000, nonTaxableIncome: 0, grossTotalIncome: 135_000,
       } },
-      taxDetail: { qbi: 0 },
     } as never;
     const get = (k: string) => INCOME_COLUMNS.find((c) => c.key === k)!.value(y);
     const sum = get("earnedIncome") + get("taxableSocialSecurity") + get("ordinaryIncome")

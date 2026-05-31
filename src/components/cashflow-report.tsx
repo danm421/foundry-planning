@@ -117,7 +117,6 @@ interface NoteLedgerModal {
 interface TaxDrillModal {
   year: number;
   detail: NonNullable<ProjectionYear["taxDetail"]>;
-  totalTaxes: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1697,7 +1696,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             <button
               className="text-right hover:text-accent hover:underline"
               title="View tax detail"
-              onClick={() => setTaxDrillModal({ year: row.year, detail: row.taxDetail!, totalTaxes: row.expenses.taxes })}
+              onClick={() => setTaxDrillModal({ year: row.year, detail: row.taxDetail! })}
             >
               {v}
             </button>
@@ -2400,35 +2399,65 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
                   Activity
                 </p>
-                {ledgerModal.ledger.entries.length === 0 ? (
-                  <p className="px-1 py-2 text-sm text-gray-400 italic">
-                    No activity this year.
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-gray-800 rounded-md border border-gray-800">
-                    {ledgerModal.ledger.entries.map((entry, i) => {
-                      const positive = entry.amount >= 0;
-                      return (
-                        <li key={i} className="flex items-start justify-between gap-4 px-3 py-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm text-gray-200">{entry.label}</p>
-                            <p className="text-xs uppercase tracking-wider text-gray-400">
-                              {entry.category.replace(/_/g, " ")}
-                            </p>
-                          </div>
-                          <span
-                            className={`flex-shrink-0 tabular-nums text-sm font-medium ${
-                              positive ? "text-green-400" : "text-red-400"
-                            }`}
-                          >
-                            {positive ? "+" : ""}
-                            {fmtNum(entry.amount)}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                {(() => {
+                  const externalEntries = ledgerModal.ledger.entries.filter(
+                    (e) => !e.isInternalTransfer,
+                  );
+                  const internalEntries = ledgerModal.ledger.entries.filter(
+                    (e) => e.isInternalTransfer,
+                  );
+                  return (
+                    <>
+                      {externalEntries.length === 0 ? (
+                        <p className="px-1 py-2 text-sm text-gray-400 italic">
+                          No activity this year.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-gray-800 rounded-md border border-gray-800">
+                          {externalEntries.map((entry, i) => {
+                            const positive = entry.amount >= 0;
+                            return (
+                              <li key={i} className="flex items-start justify-between gap-4 px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm text-gray-200">{entry.label}</p>
+                                  <p className="text-xs uppercase tracking-wider text-gray-400">
+                                    {entry.category.replace(/_/g, " ")}
+                                  </p>
+                                </div>
+                                <span
+                                  className={`flex-shrink-0 tabular-nums text-sm font-medium ${
+                                    positive ? "text-green-400" : "text-red-400"
+                                  }`}
+                                >
+                                  {positive ? "+" : ""}
+                                  {fmtNum(entry.amount)}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      {internalEntries.length > 0 && (
+                        <div className="mt-3 opacity-60">
+                          <p className="mb-1 text-[11px] uppercase tracking-wider text-gray-500">
+                            Internal transfers (net $0)
+                          </p>
+                          <ul className="divide-y divide-gray-800/60 rounded-md border border-gray-800/60">
+                            {internalEntries.map((entry, i) => (
+                              <li key={i} className="flex items-start justify-between gap-4 px-3 py-1.5">
+                                <p className="min-w-0 truncate text-xs text-gray-400">{entry.label}</p>
+                                <span className="flex-shrink-0 tabular-nums text-xs text-gray-400">
+                                  {entry.amount >= 0 ? "+" : ""}
+                                  {fmtNum(entry.amount)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {ledgerModal.ledger.growthDetail && (
@@ -2645,7 +2674,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               setTaxDrillModal({
                 year: y.year,
                 detail: y.taxDetail,
-                totalTaxes: y.expenses.taxes,
               });
             }
           }}
@@ -2669,7 +2697,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         <TaxDrillDownModal
           year={taxDrillModal.year}
           detail={taxDrillModal.detail}
-          totalTaxes={taxDrillModal.totalTaxes}
           accountNames={accountNames}
           incomes={clientData?.incomes ?? []}
           entityNames={(clientData?.entities ?? []).reduce<Record<string, string>>(

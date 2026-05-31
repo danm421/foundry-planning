@@ -11,6 +11,7 @@ export function TaxCellDrillDownModal({
   title,
   subtitle,
   total,
+  totalLabel,
   groups,
   footnote,
   onClose,
@@ -65,7 +66,7 @@ export function TaxCellDrillDownModal({
         )}
 
         <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
-          <span>Total</span>
+          <span>{totalLabel ?? "Total"}</span>
           <span className="tabular-nums">{formatCurrency(total)}</span>
         </div>
 

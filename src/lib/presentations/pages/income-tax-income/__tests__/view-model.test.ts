@@ -49,6 +49,7 @@ function yearWithStcg(): ProjectionYear {
         dividends: 0,
         capitalGains: 10_000, // LTCG
         shortCapitalGains: 5_000,
+        qbi: 0,
         totalIncome: 135_000, // earned + ordinary(incl stcg) + LTCG
         nonTaxableIncome: 0,
         grossTotalIncome: 135_000,

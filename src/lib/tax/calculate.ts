@@ -189,6 +189,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       dividends,
       capitalGains,
       shortCapitalGains,
+      qbi: input.qbiIncome,
       totalIncome,
       nonTaxableIncome,
       grossTotalIncome,

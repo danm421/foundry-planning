@@ -226,6 +226,30 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     expect(sec.totals.total).toBe(1_600_000);
   });
 
+  it("M2: Other Inflows includes notes-receivable cash (matches on-screen noteTotal)", async () => {
+    const { runProjection } = (await import("@/engine")) as unknown as {
+      runProjection: ReturnType<typeof vi.fn>;
+    };
+    runProjection.mockReturnValue([
+      fixtureYear({
+        notesReceivableTotals: {
+          interest: 5_000,
+          principalLTCG: 10_000,
+          principalBasis: 3_000,
+          totalCashIn: 18_000,
+        },
+      }),
+    ]);
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const { data } = await art.fetchData({
+      clientId: "c1",
+      firmId: "f1",
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+    });
+    expect(data.sections.base.rows[0].cells.otherInflows).toBe(18_000);
+    expect(data.sections.base.totals.otherInflows).toBe(18_000);
+  });
+
   it("filters years to [yearStart, yearEnd] when both provided", async () => {
     const { runProjection } = await import("@/engine") as unknown as { runProjection: ReturnType<typeof vi.fn> };
     runProjection.mockReturnValue([
