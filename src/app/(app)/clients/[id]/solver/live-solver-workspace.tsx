@@ -25,6 +25,9 @@ import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { SolverPosGauge } from "./solver-pos-gauge";
 import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
+import { SolverYearsFundedKpi } from "./solver-years-funded-kpi";
+import { SolverLifetimeTaxKpi } from "./solver-lifetime-tax-kpi";
+import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
 import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
@@ -268,6 +271,11 @@ export function LiveSolverWorkspace({
     baseEndingAssets != null && workingEndingAssets != null
       ? workingEndingAssets - baseEndingAssets
       : null;
+
+  const baseYearsFunded = useMemo(() => yearsFullyFunded(baseProjection), [baseProjection]);
+  const workingYearsFunded = useMemo(() => yearsFullyFunded(currentProjection), [currentProjection]);
+  const baseLifetimeTax = useMemo(() => lifetimeTaxes(baseProjection), [baseProjection]);
+  const workingLifetimeTax = useMemo(() => lifetimeTaxes(currentProjection), [currentProjection]);
 
   const baseSuccess =
     mcReady
@@ -520,6 +528,8 @@ export function LiveSolverWorkspace({
               <div className="mt-3 flex items-start gap-6">
                 <SolverPosGauge state={baseState} successPct={baseSuccess} />
                 <SolverEndingAssetsKpi value={baseEndingAssets} />
+                <SolverYearsFundedKpi value={baseYearsFunded} />
+                <SolverLifetimeTaxKpi value={baseLifetimeTax} />
               </div>
             </div>
           </div>
@@ -564,6 +574,16 @@ export function LiveSolverWorkspace({
                 <SolverEndingAssetsKpi
                   value={workingEndingAssets}
                   delta={endingAssetsDelta}
+                  dimmed={computeStatus === "computing"}
+                />
+                <SolverYearsFundedKpi
+                  value={workingYearsFunded}
+                  delta={workingYearsFunded - baseYearsFunded}
+                  dimmed={computeStatus === "computing"}
+                />
+                <SolverLifetimeTaxKpi
+                  value={workingLifetimeTax}
+                  delta={workingLifetimeTax - baseLifetimeTax}
                   dimmed={computeStatus === "computing"}
                 />
               </div>
