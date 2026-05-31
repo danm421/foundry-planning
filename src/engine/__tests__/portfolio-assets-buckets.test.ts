@@ -400,6 +400,15 @@ describe("portfolioAssets — mixed ownership preserves entity share through hou
     const familyPool = ledger.endingValue - entityLocked;
     const drillFamily = year0.portfolioAssets.taxable["acct-mixed"] ?? 0;
     expect(drillFamily).toBeCloseTo(familyPool, 6);
+
+    // H1: the post-withdrawal entity-share re-bucket pass moves the entity slice
+    // to trustsAndBusinesses (out of liquid) and rewrites taxableTotal, so
+    // liquidTotal MUST be recomputed alongside .total — otherwise it goes stale.
+    const pa = year0.portfolioAssets;
+    expect(pa.liquidTotal).toBeCloseTo(
+      pa.taxableTotal + pa.cashTotal + pa.retirementTotal + pa.lifeInsuranceTotal + pa.accessibleTrustAssetsTotal,
+      6,
+    );
   });
 
   it("the same 70/30 split account routes the entity slice to accessibleTrustAssets when the trust is accessible", () => {
