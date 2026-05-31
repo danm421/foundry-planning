@@ -5,7 +5,8 @@ import { useState } from "react";
 
 interface TaxDetailTooltipProps {
   text: string;
-  label: ReactNode;
+  /** Optional inline label rendered before the icon. Omit for an icon-only tooltip. */
+  label?: ReactNode;
   /** Accessible label for the info icon button. */
   iconLabel?: string;
 }
@@ -20,7 +21,7 @@ export function TaxDetailTooltip({ text, label, iconLabel = "Show column explana
 
   return (
     <span className="inline-flex items-center gap-1">
-      <span>{label}</span>
+      {label != null && <span>{label}</span>}
       <span
         className="relative inline-flex"
         onMouseEnter={() => setOpen(true)}

@@ -360,7 +360,6 @@ export function AnalysisOptionsGrid({
           What are your Options?
         </h3>
         <TaxDetailTooltip
-          label={null}
           iconLabel="What these columns mean"
           text="Each column solves one lever so your plan is fully funded for life. Edit the Explore column to model your own changes."
         />
@@ -593,7 +592,7 @@ function SolvedCell({
           {display}
         </span>
         {fundingText && (
-          <TaxDetailTooltip label={null} iconLabel="Funding details" text={fundingText} />
+          <TaxDetailTooltip iconLabel="Funding details" text={fundingText} />
         )}
       </span>
     </td>

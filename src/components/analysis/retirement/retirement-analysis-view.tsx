@@ -326,23 +326,21 @@ export function RetirementAnalysisView({
         )}
 
         {/* Shared across both views */}
-        <div className="flex flex-col gap-[var(--gap-grid)]">
-          <AnalysisOptionsGrid
-            clientId={clientId}
-            source={source}
-            rows={rows}
-            savingsAccountId={savingsAccountId}
-            minSavingsGrowth={minSavingsGrowth}
-            onMinSavingsGrowthChange={setMinSavingsGrowth}
-            modelPortfolioOptions={modelPortfolioOptions}
-            onExploreResult={onExploreResult}
-            onMutationsChange={onMutationsChange}
-            onSaveScenario={handleSaveScenario}
-            savingScenario={savingScenario}
-            onSaveBaseFacts={handleSaveBaseFacts}
-            savingBaseFacts={savingBaseFacts}
-          />
-        </div>
+        <AnalysisOptionsGrid
+          clientId={clientId}
+          source={source}
+          rows={rows}
+          savingsAccountId={savingsAccountId}
+          minSavingsGrowth={minSavingsGrowth}
+          onMinSavingsGrowthChange={setMinSavingsGrowth}
+          modelPortfolioOptions={modelPortfolioOptions}
+          onExploreResult={onExploreResult}
+          onMutationsChange={onMutationsChange}
+          onSaveScenario={handleSaveScenario}
+          savingScenario={savingScenario}
+          onSaveBaseFacts={handleSaveBaseFacts}
+          savingBaseFacts={savingBaseFacts}
+        />
         <AnalysisYearTable
           rows={displayYears}
           columns={retirementYearColumns(hasSpouse)}
