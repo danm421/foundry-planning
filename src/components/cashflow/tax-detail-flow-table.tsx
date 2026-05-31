@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
+import { otherTaxFromFlow } from "@/lib/tax/other-tax";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -68,14 +69,11 @@ function trustTaxSum(y: ProjectionYear): number {
   return sum;
 }
 
-/** Household "Other" tax = everything in Total Tax beyond Regular Federal.
- *  Defined as totalTax − regularFederalIncomeTax so Regular + Other == Total Tax
- *  by construction (matches the PDF Federal/Other-Taxes view-models). Trust &
- *  beneficiary tax are NOT part of the household total and are excluded. */
+/** Household "Other" tax for a year — see {@link otherTaxFromFlow} for the
+ *  shared definition (= totalTax − regularFederalIncomeTax). Trust & beneficiary
+ *  tax are NOT part of the household total and are excluded. */
 export function computeOtherTaxes(y: ProjectionYear): number {
-  const flow = y.taxResult?.flow;
-  if (!flow) return 0;
-  return (flow.totalTax ?? 0) - (flow.regularFederalIncomeTax ?? 0);
+  return otherTaxFromFlow(y.taxResult?.flow);
 }
 
 export const FLOW_COLUMNS: Column[] = [

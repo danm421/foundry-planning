@@ -9,6 +9,8 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { otherTaxFromFlow } from "@/lib/tax/other-tax";
+import { PENALTY_STACK, hasPenaltyYear } from "../../shared/penalty";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -22,11 +24,6 @@ const OTHER_STACK: Array<{ key: string; label: string; color: string; pick: (f: 
   { key: "fica",               label: "FICA",          color: "#16a34a", pick: (f) => f?.fica ?? 0 },
   { key: "stateTax",           label: "State Tax",     color: "#9ca3af", pick: (f) => f?.stateTax ?? 0 },
 ];
-
-const PENALTY_STACK = {
-  key: "earlyWithdrawalPenalty", label: "Early Withdrawal Penalty", color: "#db2777",
-  pick: (f: TaxFlow | undefined) => f?.earlyWithdrawalPenalty ?? 0,
-};
 
 export interface BuildTaxOtherTaxesDrillInput {
   years: ProjectionYear[];
@@ -45,9 +42,7 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
   // pre-59½ draw, so hide both the column and the chart series when no visible
   // year has one. When present, it must be a component so the columns/stack sum
   // to the Other total (= totalTax − regularFed, which already includes it).
-  const showPenalty = visibleYears.some(
-    (y) => (y.taxResult?.flow.earlyWithdrawalPenalty ?? 0) > 0,
-  );
+  const showPenalty = hasPenaltyYear(visibleYears);
 
   const columns: DrillColumn[] = [
     { key: "capitalGainsTax",    header: "Capital\nGains Tax",  width: 52 },
@@ -72,7 +67,7 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
       fica:               f?.fica               ?? 0,
       stateTax:           f?.stateTax           ?? 0,
       earlyWithdrawalPenalty: f?.earlyWithdrawalPenalty ?? 0,
-      total: (f?.totalTax ?? 0) - (f?.regularFederalIncomeTax ?? 0),
+      total: otherTaxFromFlow(f),
     };
     return { year: py.year, ageClient: py.ages.client ?? null, ageSpouse: py.ages.spouse ?? null, cells };
   });

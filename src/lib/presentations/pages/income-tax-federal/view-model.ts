@@ -10,6 +10,8 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { otherTaxFromFlow } from "@/lib/tax/other-tax";
+import { PENALTY_STACK, hasPenaltyYear } from "../../shared/penalty";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -26,14 +28,9 @@ const TAX_STACK: Array<{ key: string; label: string; color: string; pick: (f: Ta
   { key: "fica",          label: "FICA",            color: "#16a34a", pick: (f) => f.fica },
   { key: "stateTaxStack", label: "State Tax",       color: "#9ca3af", pick: (f) => f.stateTax },
 ];
-
-// Zero-suppressed chart series — appended to TAX_STACK only in years with a
-// pre-59½ draw so the stacked chart still sums to Total Tax. No table column:
-// the "Other" column already = totalTax − regularFed, which includes it.
-const PENALTY_STACK = {
-  key: "earlyWithdrawalPenalty", label: "Early Withdrawal Penalty", color: "#db2777",
-  pick: (f: TaxFlow) => f.earlyWithdrawalPenalty ?? 0,
-};
+// PENALTY_STACK is appended (zero-suppressed) so the stacked chart still sums to
+// Total Tax in penalty years. No table column: "Other" already = totalTax −
+// regularFed, which includes it.
 
 export interface BuildTaxFederalDrillInput {
   years: ProjectionYear[];
@@ -73,7 +70,7 @@ export function buildTaxFederalDrillData(input: BuildTaxFederalDrillInput): Dril
       taxableIncome: f?.taxableIncome ?? 0,
       taxBase:       f?.incomeTaxBase ?? 0,
       regularFed:    f?.regularFederalIncomeTax ?? 0,
-      other:         (f?.totalTax ?? 0) - (f?.regularFederalIncomeTax ?? 0),
+      other:         otherTaxFromFlow(f),
       totalTax:      f?.totalTax ?? 0,
       marginalRate:  py.taxResult?.diag.marginalFederalRate ?? 0,
     };
@@ -81,10 +78,7 @@ export function buildTaxFederalDrillData(input: BuildTaxFederalDrillInput): Dril
   });
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
-  const showPenalty = visibleYears.some(
-    (y) => (y.taxResult?.flow.earlyWithdrawalPenalty ?? 0) > 0,
-  );
-  const stackDefs = showPenalty ? [...TAX_STACK, PENALTY_STACK] : TAX_STACK;
+  const stackDefs = hasPenaltyYear(visibleYears) ? [...TAX_STACK, PENALTY_STACK] : TAX_STACK;
   const chartSpec = buildDrillChartSpec({
     years: visibleYears.map((y) => y.year),
     stacks: stackDefs.map((s) => ({
