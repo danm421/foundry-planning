@@ -9,6 +9,8 @@ import type {
   RothConversion,
   AssetTransaction,
   Reinvestment,
+  Account,
+  SavingsRule,
 } from "@/engine/types";
 
 export type SolverPerson = "client" | "spouse";
@@ -64,7 +66,9 @@ export type SolverMutation =
   | { kind: "life-expectancy"; person: SolverPerson; age: number }
   | { kind: "roth-conversion-upsert"; id: string; value: RothConversion | null }
   | { kind: "asset-transaction-upsert"; id: string; value: AssetTransaction | null }
-  | { kind: "reinvestment-upsert"; id: string; value: Reinvestment | null };
+  | { kind: "reinvestment-upsert"; id: string; value: Reinvestment | null }
+  | { kind: "account-upsert"; id: string; value: Account | null }
+  | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =
@@ -99,7 +103,9 @@ export type SolverMutationKey =
   | `life-expectancy:${SolverPerson}`
   | `roth-conversion-upsert:${string}`
   | `asset-transaction-upsert:${string}`
-  | `reinvestment-upsert:${string}`;
+  | `reinvestment-upsert:${string}`
+  | `account-upsert:${string}`
+  | `savings-rule-upsert:${string}`;
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
   switch (m.kind) {
@@ -167,6 +173,10 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `asset-transaction-upsert:${m.id}`;
     case "reinvestment-upsert":
       return `reinvestment-upsert:${m.id}`;
+    case "account-upsert":
+      return `account-upsert:${m.id}`;
+    case "savings-rule-upsert":
+      return `savings-rule-upsert:${m.id}`;
   }
 }
 
@@ -203,7 +213,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment";
+  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;
