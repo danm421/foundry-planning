@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
   clients,
@@ -36,7 +37,7 @@ export async function PATCH(
     const parsed = giftUpdateSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invalid body", issues: parsed.error.issues },
+        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
         { status: 400 },
       );
     }

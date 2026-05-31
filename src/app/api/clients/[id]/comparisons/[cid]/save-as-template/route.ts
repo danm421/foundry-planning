@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
+import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { clients, clientComparisons, comparisonTemplates } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -84,7 +85,7 @@ export async function POST(
     return NextResponse.json({ template: row }, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
+      return NextResponse.json({ error: "Validation failed", issues: formatZodIssues(err) }, { status: 400 });
     }
     if (err instanceof Error && /at most 8 unique plans/.test(err.message)) {
       return NextResponse.json({ error: err.message }, { status: 400 });

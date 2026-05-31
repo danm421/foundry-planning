@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { clients, clientComparisons, comparisonTemplates } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -129,7 +130,7 @@ export async function POST(
     return NextResponse.json({ comparison: row }, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
+      return NextResponse.json({ error: "Validation failed", issues: formatZodIssues(err) }, { status: 400 });
     }
     if (err instanceof Error && /missing mapping for slot/.test(err.message)) {
       return NextResponse.json({ error: err.message }, { status: 400 });

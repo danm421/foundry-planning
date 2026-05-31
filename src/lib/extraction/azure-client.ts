@@ -3,10 +3,22 @@ import { AzureOpenAI } from "openai";
 let cachedClient: AzureOpenAI | null = null;
 let cachedKey = "";
 
+export function azureClientOptions(apiKey: string) {
+  return {
+    apiKey,
+    endpoint: process.env.AZURE_ENDPOINT ?? "",
+    apiVersion: process.env.AZURE_API_VERSION ?? "2024-12-01-preview",
+    // 55s keeps every call (and each multi-pass fan-out call) inside the 300s
+    // function budget; the SDK default is 10 minutes, which can outlive the
+    // function and strand a slot. maxRetries:1 stops a hung call retrying past
+    // the budget (SDK default is 2).
+    timeout: 55_000,
+    maxRetries: 1,
+  };
+}
+
 function getClient(): AzureOpenAI {
   const apiKey = process.env.AZURE_API_KEY ?? "";
-  const endpoint = process.env.AZURE_ENDPOINT ?? "";
-  const apiVersion = process.env.AZURE_API_VERSION ?? "2024-12-01-preview";
 
   if (!apiKey) {
     throw new Error(
@@ -16,11 +28,7 @@ function getClient(): AzureOpenAI {
 
   if (cachedClient && cachedKey === apiKey) return cachedClient;
 
-  cachedClient = new AzureOpenAI({
-    apiKey,
-    endpoint,
-    apiVersion,
-  });
+  cachedClient = new AzureOpenAI(azureClientOptions(apiKey));
   cachedKey = apiKey;
   return cachedClient;
 }

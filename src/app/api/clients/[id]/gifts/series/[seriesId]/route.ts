@@ -71,11 +71,13 @@ export async function PATCH(
           recipientEntityId: d.recipientEntityId,
         }),
         ...(d.startYear !== undefined && { startYear: d.startYear }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...(d.startYearRef !== undefined && { startYearRef: d.startYearRef as any }),
+        ...(d.startYearRef !== undefined && {
+          startYearRef: d.startYearRef as typeof giftSeries.$inferInsert["startYearRef"],
+        }),
         ...(d.endYear !== undefined && { endYear: d.endYear }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...(d.endYearRef !== undefined && { endYearRef: d.endYearRef as any }),
+        ...(d.endYearRef !== undefined && {
+          endYearRef: d.endYearRef as typeof giftSeries.$inferInsert["endYearRef"],
+        }),
         ...(d.annualAmount !== undefined && {
           annualAmount: d.annualAmount.toString(),
         }),

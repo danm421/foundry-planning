@@ -1,7 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { percentiles, summarizeMonteCarlo } from "../summarize";
+import { cagr, percentiles, summarizeMonteCarlo } from "../summarize";
 import type { MonteCarloResult } from "../run";
 import type { ClientInfo, PlanSettings } from "../../types";
+
+// ── cagr helper ─────────────────────────────────────────────────────────────
+describe("cagr (negative-balance clamp)", () => {
+  it("returns −100% (not NaN) for a wiped-out negative balance", () => {
+    expect(cagr(-50_000, 100_000, 1 / 3)).toBeCloseTo(-1);
+  });
+
+  it("returns −100% for a zero balance", () => {
+    expect(cagr(0, 100_000, 1 / 3)).toBeCloseTo(-1);
+  });
+
+  it("is unchanged for a normal gain", () => {
+    expect(cagr(200_000, 100_000, 1)).toBeCloseTo(1); // 100% gain
+  });
+});
 
 // ── percentiles helper ────────────────────────────────────────────────────
 describe("percentiles (linear interpolation)", () => {

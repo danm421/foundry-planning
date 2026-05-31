@@ -118,6 +118,61 @@ describe("DialogShell", () => {
     expect(surface.className).toContain("border-ink-3");
   });
 
+  it("returns focus to the previously-focused element on close", () => {
+    const trigger = document.createElement("button");
+    document.body.appendChild(trigger);
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    const { rerender } = render(
+      <DialogShell open title="T" onOpenChange={() => {}}>
+        x
+      </DialogShell>
+    );
+    // dialog surface takes focus while open
+    expect(document.activeElement).not.toBe(trigger);
+
+    rerender(
+      <DialogShell open={false} title="T" onOpenChange={() => {}}>
+        x
+      </DialogShell>
+    );
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
+  it("wraps Tab from the last focusable back to the first (focus trap)", () => {
+    render(
+      <DialogShell
+        open
+        title="T"
+        onOpenChange={() => {}}
+        primaryAction={{ label: "Save", onClick: () => {} }}
+      >
+        <button>inner</button>
+      </DialogShell>
+    );
+    const surface = screen.getByRole("dialog");
+    const focusables = Array.from(
+      surface.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    expect(focusables.length).toBeGreaterThan(1);
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+
+    // Forward Tab from the last element wraps to the first.
+    last.focus();
+    fireEvent.keyDown(surface, { key: "Tab" });
+    expect(document.activeElement).toBe(first);
+
+    // Shift+Tab from the first element wraps to the last.
+    first.focus();
+    fireEvent.keyDown(surface, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+
   it("renders a tab strip when tabs is provided and switches active tab", () => {
     const onTabChange = vi.fn();
     render(

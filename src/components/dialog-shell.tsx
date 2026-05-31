@@ -81,9 +81,44 @@ export default function DialogShell({
     };
   }, [open]);
 
-  // Focus the surface when opened (basic focus management; full focus trap not required for v1)
+  // Focus management: remember the opener, focus the surface, trap Tab inside,
+  // and restore focus to the opener on close (WCAG 2.1.2 No Keyboard Trap is
+  // satisfied because Esc closes; 2.4.3 Focus Order via return-focus).
   useEffect(() => {
-    if (open) surfaceRef.current?.focus();
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    surfaceRef.current?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const surface = surfaceRef.current;
+      if (!surface) return;
+      const focusables = surface.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) {
+        e.preventDefault();
+        surface.focus();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === surface)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    const surface = surfaceRef.current;
+    surface?.addEventListener("keydown", onKeyDown);
+    return () => {
+      surface?.removeEventListener("keydown", onKeyDown);
+      opener?.focus?.();
+    };
   }, [open]);
 
   if (!open) return null;
