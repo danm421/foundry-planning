@@ -324,7 +324,7 @@ function DrillHeader({ label, onClick }: { label: string; onClick: () => void })
 }
 
 /** Map drill-down column keys to a function that extracts the relevant bySource entries. */
-function getSourcesForColumn(
+export function getSourcesForColumn(
   y: ProjectionYear,
   colKey: string
 ): Array<{ label: string; amount: number }> | null {
@@ -339,10 +339,10 @@ function getSourcesForColumn(
 
   // Below-line: filter bySource by category
   if (colKey === "bl_charitable") {
-    return filterBySource(bd.belowLine.bySource, "charitable", y);
+    return filterBySource(bd.belowLine.bySource, "charitable");
   }
   if (colKey === "bl_interest_paid") {
-    return filterBySource(bd.belowLine.bySource, "interest", y);
+    return filterBySource(bd.belowLine.bySource, "interest");
   }
   if (colKey === "bl_taxes_paid") {
     const sources: Array<{ label: string; amount: number }> = [];
@@ -373,11 +373,17 @@ function getSourcesForColumn(
 
 function filterBySource(
   bySource: Record<string, { label: string; amount: number }>,
-  _category: string,
-  _y: ProjectionYear
+  category: string
 ): Array<{ label: string; amount: number }> | null {
-  // bySource contains all below-line entries; for now return all of them
-  const entries = Object.values(bySource);
+  // bySource entries carry only { label, amount } (no category discriminator),
+  // so match on label keywords — same approach bl_other already uses for "charit".
+  const matches = (label: string): boolean => {
+    const l = label.toLowerCase();
+    if (category === "charitable") return l.includes("charit");
+    if (category === "interest") return l.includes("interest") || l.includes("mortgage");
+    return true;
+  };
+  const entries = Object.values(bySource).filter((e) => matches(e.label));
   return entries.length > 0 ? entries : null;
 }
 
