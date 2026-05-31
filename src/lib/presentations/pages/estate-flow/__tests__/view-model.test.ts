@@ -85,6 +85,7 @@ describe("buildEstateFlowReportData", () => {
     const data = buildEstateFlowReportData(ctx, {
       asOf: { kind: "split" },
       showHeirDetail: true,
+      ordering: "primaryFirst",
     });
     expect(data.title).toBe("Estate Flow");
     expect(data.subtitle).toContain("As of 2026");

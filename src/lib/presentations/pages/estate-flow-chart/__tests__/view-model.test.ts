@@ -36,6 +36,7 @@ describe("buildEstateFlowChartData", () => {
     const data = buildEstateFlowChartData(ctx, {
       asOf: { kind: "split" },
       showHeirDetail: true,
+      ordering: "primaryFirst",
     });
     expect(data.title).toBe("Estate Flow");
     expect(data.subtitle).toContain("Base Case");
