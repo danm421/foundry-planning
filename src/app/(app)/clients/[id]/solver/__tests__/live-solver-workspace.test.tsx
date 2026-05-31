@@ -246,11 +246,16 @@ describe("LiveSolverWorkspace — save to base facts", () => {
 
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    // Seed a mutation so the button becomes enabled.
-    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
-    fireEvent.change(cooper, { target: { value: "67" } });
+    // Seed a base-saveable mutation via the quick-add account form. Only
+    // account / savings-rule upserts can be persisted to base facts, so the
+    // button stays disabled for lever-only edits (e.g. a retirement-age change).
+    fireEvent.click(screen.getAllByRole("button", { name: /add account/i })[0]);
+    fireEvent.change(screen.getAllByLabelText(/annual savings/i)[0], {
+      target: { value: "12000" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
 
-    const saveToBaseBtn = screen.getByRole("button", { name: /Save to base facts/i });
+    const saveToBaseBtn = screen.getAllByRole("button", { name: /Save to base facts/i })[0];
     await waitFor(() => expect(saveToBaseBtn).not.toBeDisabled());
     fireEvent.click(saveToBaseBtn);
 
@@ -262,9 +267,9 @@ describe("LiveSolverWorkspace — save to base facts", () => {
     expect(saveToBaseCall).toBeDefined();
     const body = JSON.parse(saveToBaseCall![1].body as string);
     expect(body.source).toBe("base");
-    expect(body.mutations).toEqual([
-      { kind: "retirement-age", person: "client", age: 67 },
-    ]);
+    const kinds = body.mutations.map((m: { kind: string }) => m.kind);
+    expect(kinds).toContain("account-upsert");
+    expect(kinds).toContain("savings-rule-upsert");
   });
 });
 

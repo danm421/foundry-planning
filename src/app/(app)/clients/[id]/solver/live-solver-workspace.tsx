@@ -272,10 +272,10 @@ export function LiveSolverWorkspace({
       ? workingEndingAssets - baseEndingAssets
       : null;
 
-  const baseYearsFunded = useMemo(() => yearsFullyFunded(baseProjection), [baseProjection]);
-  const workingYearsFunded = useMemo(() => yearsFullyFunded(currentProjection), [currentProjection]);
-  const baseLifetimeTax = useMemo(() => lifetimeTaxes(baseProjection), [baseProjection]);
-  const workingLifetimeTax = useMemo(() => lifetimeTaxes(currentProjection), [currentProjection]);
+  const baseYearsFunded = yearsFullyFunded(baseProjection);
+  const workingYearsFunded = yearsFullyFunded(currentProjection);
+  const baseLifetimeTax = lifetimeTaxes(baseProjection);
+  const workingLifetimeTax = lifetimeTaxes(currentProjection);
 
   const baseSuccess =
     mcReady
@@ -438,7 +438,6 @@ export function LiveSolverWorkspace({
       const ruleId = crypto.randomUUID();
       const { account, rule } = buildAdditionalSavingsAccount({
         ownerFamilyMemberId: owner.familyMemberId,
-        ownerLabel: owner.label,
         startYear: currentYear,
         endYear: retirementYearForOwner(owner.familyMemberId),
         growthRate: categoryGrowthDefaults.taxable,
@@ -790,6 +789,9 @@ export function LiveSolverWorkspace({
 
       <SolverActionBar
         hasMutations={mutations.length > 0}
+        canSaveToBase={mutations.some(
+          (m) => m.kind === "account-upsert" || m.kind === "savings-rule-upsert",
+        )}
         mcRunning={mcRunning}
         solveActive={activeSolve !== null}
         savingToBase={savingToBase}

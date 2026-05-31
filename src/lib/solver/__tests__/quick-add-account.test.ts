@@ -53,7 +53,7 @@ describe("quick-add account builder", () => {
 describe("additional-savings account (min-savings solve)", () => {
   it("builds a real taxable account with a fundFromExpenseReduction rule at $0", () => {
     const { account, rule } = buildAdditionalSavingsAccount({
-      ownerFamilyMemberId: "fm-1", ownerLabel: "John",
+      ownerFamilyMemberId: "fm-1",
       startYear: 2026, endYear: 2040, growthRate: 0.06,
       accountId: "acct", ruleId: "rule",
     });

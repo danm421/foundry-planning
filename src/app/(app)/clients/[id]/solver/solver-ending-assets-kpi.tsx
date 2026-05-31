@@ -29,7 +29,7 @@ export function SolverEndingAssetsKpi({ value, delta, dimmed }: Props) {
   );
 }
 
-function formatCurrency(n: number): string {
+export function formatCurrency(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 10_000_000) {
     return `$${(n / 1_000_000).toFixed(1)}M`;

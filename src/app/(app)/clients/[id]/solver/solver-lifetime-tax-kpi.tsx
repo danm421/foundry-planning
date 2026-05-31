@@ -1,5 +1,7 @@
 "use client";
 
+import { formatCurrency } from "./solver-ending-assets-kpi";
+
 interface Props {
   value: number | null;
   delta?: number | null;
@@ -28,15 +30,4 @@ export function SolverLifetimeTaxKpi({ value, delta, dimmed }: Props) {
       ) : null}
     </div>
   );
-}
-
-function formatCurrency(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 10_000_000) {
-    return `$${(n / 1_000_000).toFixed(1)}M`;
-  }
-  if (abs >= 1_000_000) {
-    return `$${(n / 1_000_000).toFixed(2)}M`;
-  }
-  return `$${Math.round(n).toLocaleString()}`;
 }

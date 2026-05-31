@@ -69,7 +69,6 @@ export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; ru
 
 export interface AdditionalSavingsArgs {
   ownerFamilyMemberId: string;
-  ownerLabel: string;
   startYear: number;
   endYear: number;
   growthRate: number;
