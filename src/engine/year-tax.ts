@@ -147,6 +147,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
 
   // Add transfer early-withdrawal penalty
   if (transferEarlyWithdrawalPenalty > 0) {
+    taxResult.flow.earlyWithdrawalPenalty += transferEarlyWithdrawalPenalty;
     taxResult.flow.totalTax += transferEarlyWithdrawalPenalty;
     taxResult.flow.totalFederalTax += transferEarlyWithdrawalPenalty;
   }

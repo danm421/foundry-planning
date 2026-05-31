@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
+import { otherTaxFromFlow } from "@/lib/tax/other-tax";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -68,7 +69,14 @@ function trustTaxSum(y: ProjectionYear): number {
   return sum;
 }
 
-const COLUMNS: Column[] = [
+/** Household "Other" tax for a year — see {@link otherTaxFromFlow} for the
+ *  shared definition (= totalTax − regularFederalIncomeTax). Trust & beneficiary
+ *  tax are NOT part of the household total and are excluded. */
+export function computeOtherTaxes(y: ProjectionYear): number {
+  return otherTaxFromFlow(y.taxResult?.flow);
+}
+
+export const FLOW_COLUMNS: Column[] = [
   {
     key: "totalIncome",
     label: "Total Income",
@@ -123,21 +131,8 @@ const COLUMNS: Column[] = [
     key: "otherTaxes",
     label: "Other",
     tooltip:
-      "Cap Gains, AMT, NIIT, Trust, Beneficiary, Addl Medicare, FICA, and State combined. Click to drill down.",
-    value: (y) => {
-      const flow = y.taxResult?.flow;
-      if (!flow) return trustTaxSum(y) + (y.estimatedBeneficiaryTax ?? 0);
-      return (
-        (flow.capitalGainsTax ?? 0) +
-        (flow.amtAdditional ?? 0) +
-        (flow.niit ?? 0) +
-        trustTaxSum(y) +
-        (y.estimatedBeneficiaryTax ?? 0) +
-        (flow.additionalMedicare ?? 0) +
-        (flow.fica ?? 0) +
-        (flow.stateTax ?? 0)
-      );
-    },
+      "Cap Gains, AMT, NIIT, Addl Medicare, FICA, State, and Early-Withdrawal Penalty — everything in Total Tax beyond Regular Federal. Click to drill down. (Trust & beneficiary tax are shown separately and are NOT in Total Tax.)",
+    value: (y) => computeOtherTaxes(y),
   },
   {
     key: "totalTax",
@@ -188,7 +183,7 @@ function aboveLineColumns(years: ProjectionYear[]): Column[] {
   );
 }
 
-function otherColumns(years: ProjectionYear[]): Column[] {
+export function otherColumns(years: ProjectionYear[]): Column[] {
   const cols: Column[] = [
     {
       key: "capitalGainsTax",
@@ -212,20 +207,6 @@ function otherColumns(years: ProjectionYear[]): Column[] {
       value: (y) => y.taxResult?.flow.niit ?? 0,
     },
     {
-      key: "trustTax",
-      label: "Trust Tax",
-      tooltip:
-        "Income tax owed by non-grantor trusts on retained income (1041 compressed brackets, NIIT, and state tax). Sums all non-grantor trusts in the household.",
-      value: (y) => trustTaxSum(y),
-    },
-    {
-      key: "beneficiaryTax",
-      label: "Beneficiary Tax (est)",
-      tooltip:
-        "Estimated tax owed by out-of-household beneficiaries on DNI distributed to them (rate × DNI). Informational — not paid by the household.",
-      value: (y) => y.estimatedBeneficiaryTax ?? 0,
-    },
-    {
       key: "additionalMedicare",
       label: "Addl Medicare",
       tooltip:
@@ -246,26 +227,38 @@ function otherColumns(years: ProjectionYear[]): Column[] {
       value: (y) => y.taxResult?.flow.stateTax ?? 0,
     },
     {
+      key: "earlyWithdrawalPenalty",
+      label: "Early Withdrawal",
+      tooltip:
+        "10% penalty on pre-59½ withdrawals used to fund a cash-flow shortfall. Included in Total Tax.",
+      value: (y) => y.taxResult?.flow.earlyWithdrawalPenalty ?? 0,
+    },
+    {
       key: "other_total",
       label: "Other Total",
-      tooltip: "Sum of the columns to the left.",
-      value: (y) => {
-        const flow = y.taxResult?.flow;
-        if (!flow) return trustTaxSum(y) + (y.estimatedBeneficiaryTax ?? 0);
-        return (
-          (flow.capitalGainsTax ?? 0) +
-          (flow.amtAdditional ?? 0) +
-          (flow.niit ?? 0) +
-          trustTaxSum(y) +
-          (y.estimatedBeneficiaryTax ?? 0) +
-          (flow.additionalMedicare ?? 0) +
-          (flow.fica ?? 0) +
-          (flow.stateTax ?? 0)
-        );
-      },
+      tooltip:
+        "Sum of the federal tax components (= Total Tax − Regular Federal). Excludes trust & beneficiary tax.",
+      value: (y) => computeOtherTaxes(y),
+    },
+    // Informational columns — NOT part of the household Total Tax. Placed after
+    // the Other Total so the components to its left still sum to it.
+    {
+      key: "trustTax",
+      label: "Trust Tax (info)",
+      tooltip:
+        "Income tax owed by non-grantor trusts on retained income. Informational — NOT included in Total Tax (paid from trust assets).",
+      value: (y) => trustTaxSum(y),
+    },
+    {
+      key: "beneficiaryTax",
+      label: "Beneficiary Tax (est, info)",
+      tooltip:
+        "Estimated tax owed by out-of-household beneficiaries on distributed DNI. Informational — NOT in Total Tax.",
+      value: (y) => y.estimatedBeneficiaryTax ?? 0,
     },
   ];
-  // Zero-suppress: hide columns where all years are $0, except the total
+  // Zero-suppress: hide columns where all years are $0, except the total.
+  // trust/beneficiary auto-hide when zero (no non-grantor trust present).
   return cols.filter(
     (col) => col.key === "other_total" || years.some((y) => col.value(y) !== 0),
   );
@@ -464,7 +457,7 @@ export function TaxDetailFlowTable({
       ? belowLineColumns()
       : drillLevel === "other"
         ? otherColumns(years)
-        : COLUMNS.filter(
+        : FLOW_COLUMNS.filter(
             (col) => !col.zeroSuppress || years.some((y) => col.value(y) !== 0)
           );
 

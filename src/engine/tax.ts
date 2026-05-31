@@ -66,6 +66,7 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       stateTax: state,
       totalFederalTax: federal,
       totalTax: total,
+      earlyWithdrawalPenalty: 0,
     },
     diag: {
       marginalFederalRate: input.flatFederalRate,

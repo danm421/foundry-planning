@@ -4413,7 +4413,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    const totalTaxes = hasChecking ? finalTaxes + supplementalEarlyPenalty : taxes;
+    // C2: fold the gap-fill (pre-59½ supplemental) early-withdrawal penalty into
+    // the converged tax result so the cash-flow "Taxes" line (expenses.taxes) and
+    // the income-tax report "Total Tax" (taxResult.flow.totalTax) read the same
+    // number. `finalTaxes`/`taxAndPenalty` above captured the pre-fold totalTax,
+    // so the actual checking debit is unaffected.
+    if (hasChecking && supplementalEarlyPenalty > 0) {
+      finalTaxResult.flow.earlyWithdrawalPenalty += supplementalEarlyPenalty;
+      finalTaxResult.flow.totalTax += supplementalEarlyPenalty;
+      finalTaxResult.flow.totalFederalTax += supplementalEarlyPenalty;
+    }
+    const totalTaxes = finalTaxResult.flow.totalTax;
     // Property tax only counts toward the household realEstate bucket for the
     // household-share synthetic rows. Entity-owned shares are tagged with
     // ownerEntityId and route to the entity's checking via resolveCashAccount.
