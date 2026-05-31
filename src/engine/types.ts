@@ -1,6 +1,6 @@
 import type { TaxResult, TaxYearParameters, IrmaaTier as TaxIrmaaTier } from "../lib/tax/types";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
-import type { TrustSubType } from "@/lib/entities/trust";
+import type { TrustSubType as LibTrustSubType } from "@/lib/entities/trust";
 import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
 import type { AccountOwner } from "./ownership";
 import type { EntityCashFlowRow } from "./entity-cashflow";
@@ -11,6 +11,11 @@ import type { NoteReceivable } from "./notes-receivable/types";
 /** Re-export from lib/tax/types where the canonical definition lives. Engine
  *  consumers (medicare.ts, projection.ts) keep importing IrmaaTier from here. */
 export type IrmaaTier = TaxIrmaaTier;
+
+/** Re-export from lib/entities/trust where the canonical definition lives.
+ *  Engine-internal consumers import TrustSubType from here, not from @/db.
+ *  The Drizzle pgEnum in db/schema.ts has a compile-time guard to stay in sync. */
+export type TrustSubType = LibTrustSubType;
 
 /** Per-person Medicare coverage configuration captured from the household.
  *  Null fields signal "use the engine default" so that households without

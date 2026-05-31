@@ -24,6 +24,7 @@ import { relations, sql, type InferSelectModel, type InferInsertModel } from "dr
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
 import type { IrmaaTier } from "@/engine/types";
+import type { TrustSubType } from "@/lib/entities/trust";
 import type { ComparisonLayout, ComparisonLayoutV4, ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 
 const inet = customType<{ data: string; driverData: string }>({
@@ -220,6 +221,13 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "idgt",
   "crt",
 ]);
+// Compile-time guard: trustSubTypeEnum and engine/types.ts TrustSubType (via lib/entities/trust)
+// must stay in sync. Adding/removing a member on either side breaks tsc.
+// See canonical union: src/lib/entities/trust.ts → TRUST_SUB_TYPES / TrustSubType.
+type _TrustSubTypeEnumValues = (typeof trustSubTypeEnum.enumValues)[number];
+const _assertTrustSubTypeInSync: TrustSubType = null as unknown as _TrustSubTypeEnumValues;
+const _assertTrustSubTypeInSyncReverse: _TrustSubTypeEnumValues = null as unknown as TrustSubType;
+void _assertTrustSubTypeInSync; void _assertTrustSubTypeInSyncReverse;
 
 export const trustTermTypeEnum = pgEnum("trust_term_type", [
   "years",

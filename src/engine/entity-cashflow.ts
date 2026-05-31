@@ -13,9 +13,7 @@ import { resolveEntityFlows } from "./entity-flows";
 import { accrueLockedEntityShare } from "./locked-shares";
 import { collectBusinessTree } from "./business/business-tree";
 import { computeBusinessYearFlow } from "./business/year-flow";
-import type { trustSubTypeEnum } from "@/db/schema";
-
-type TrustSubType = (typeof trustSubTypeEnum.enumValues)[number];
+import type { TrustSubType } from "./types";
 
 /** Business types accepted by the account-as-asset model. `sole_prop` is
  *  account-only — the legacy entity union has no equivalent and gets mapped to
