@@ -41,3 +41,36 @@ export function annualizedVolatility(returns: number[]): number {
     returns.reduce((s, r) => s + (r - m) ** 2, 0) / (returns.length - 1);
   return Math.sqrt(variance) * Math.sqrt(12);
 }
+
+/** Pearson correlation over months present in BOTH series. */
+export function pairwiseCorrelation(
+  a: MonthlyReturn[],
+  b: MonthlyReturn[],
+): { rho: number; overlapMonths: number } {
+  const bByMonth = new Map(b.map((x) => [x.date, x.r]));
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const { date, r } of a) {
+    const yr = bByMonth.get(date);
+    if (yr !== undefined) {
+      xs.push(r);
+      ys.push(yr);
+    }
+  }
+  const n = xs.length;
+  if (n < 2) return { rho: 0, overlapMonths: n };
+  const mx = xs.reduce((s, x) => s + x, 0) / n;
+  const my = ys.reduce((s, y) => s + y, 0) / n;
+  let num = 0;
+  let dx = 0;
+  let dy = 0;
+  for (let i = 0; i < n; i++) {
+    const a0 = xs[i] - mx;
+    const b0 = ys[i] - my;
+    num += a0 * b0;
+    dx += a0 * a0;
+    dy += b0 * b0;
+  }
+  const denom = Math.sqrt(dx * dy);
+  return { rho: denom === 0 ? 0 : num / denom, overlapMonths: n };
+}
