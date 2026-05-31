@@ -7,6 +7,7 @@ import {
   SAVINGS_ZERO_DEFAULT_HI,
   SAVINGS_SOURCE_MULTIPLIER,
 } from "../lever-search-config";
+import { SYNTHETIC_SAVINGS_ACCOUNT_ID } from "@/lib/analysis/hypothetical-savings";
 
 const emptyTree = {
   client: {},
@@ -95,6 +96,36 @@ describe("leverSearchConfig", () => {
       emptyTree,
     );
     expect(cfg.hi).toBe(SAVINGS_ZERO_DEFAULT_HI);
+  });
+
+  it("self-funding rule: widens hi off living expense rather than the zero default", () => {
+    const tree = {
+      ...emptyTree,
+      expenses: [
+        { id: "e1", type: "living", name: "Living", annualAmount: 80_000, startYear: 2026, endYear: 2055, growthRate: 0.03 },
+        { id: "e2", type: "insurance", name: "Ins", annualAmount: 200_000, startYear: 2026, endYear: 2055, growthRate: 0 },
+      ],
+      savingsRules: [
+        {
+          id: "r-synth",
+          accountId: SYNTHETIC_SAVINGS_ACCOUNT_ID,
+          annualAmount: 0,
+          fundFromExpenseReduction: true,
+          startYear: 2026,
+          endYear: 2040,
+        },
+      ],
+    } as unknown as ClientData;
+    const cfg = leverSearchConfig(
+      { kind: "savings-contribution", accountId: SYNTHETIC_SAVINGS_ACCOUNT_ID },
+      tree,
+    );
+    // Off the living expense (not the $200k insurance row), capped at the hard cap.
+    expect(cfg.hi).toBeGreaterThanOrEqual(80_000);
+    expect(cfg.hi).toBeLessThanOrEqual(SAVINGS_HARD_CAP);
+    expect(cfg.hi).toBeGreaterThan(SAVINGS_ZERO_DEFAULT_HI);
+    expect(cfg.lo).toBe(0);
+    expect(cfg.direction).toBe(1);
   });
 });
 
