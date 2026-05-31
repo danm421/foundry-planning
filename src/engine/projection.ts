@@ -3678,57 +3678,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // 10c. Surplus allocation — split the unaccounted-for leftover cash flow
-    // into a spent portion (recorded as a discretionary expense) and a saved
-    // portion (left in checking, or transferred to a user-chosen destination).
-    //
-    // surplusForSplit captures what would have silently accumulated in
-    // household checking this year, after every other explicit cash event
-    // has fired (income, expenses, taxes, savings, gifts). When the value is
-    // <= 0, this step is a no-op — deficits are handled by the withdrawal
-    // gap-fill in step 12.
-    let discretionarySpend = 0;
-    if (hasChecking) {
-      const surplusForSplit = Math.max(
-        0,
-        surplusBeforeSavings - savings.total - householdCashGiftsTotal
-      );
-      if (surplusForSplit > 0) {
-        const rawPct = data.planSettings.surplusSpendPct ?? 0;
-        const spendPct = Math.min(1, Math.max(0, rawPct));
-        const spendAmount = surplusForSplit * spendPct;
-        const saveAmount = surplusForSplit - spendAmount;
-
-        if (spendAmount > 0) {
-          creditCash(defaultChecking!.id, -spendAmount, {
-            category: "discretionary",
-            label: "Discretionary spend (surplus)",
-          });
-          discretionarySpend = spendAmount;
-        }
-
-        const saveDestId = data.planSettings.surplusSaveAccountId ?? null;
-        if (
-          saveAmount > 0 &&
-          saveDestId &&
-          saveDestId !== defaultChecking!.id &&
-          // Quietly skip if the user picked an account that no longer exists.
-          data.accounts.some((a) => a.id === saveDestId)
-        ) {
-          creditCash(defaultChecking!.id, -saveAmount, {
-            category: "surplus_transfer",
-            label: "Surplus transferred out",
-            sourceId: saveDestId,
-          });
-          creditCash(saveDestId, saveAmount, {
-            category: "surplus_transfer",
-            label: "Surplus transferred in",
-            sourceId: defaultChecking!.id,
-          });
-        }
-      }
-    }
-    expenseBreakdown.discretionary = discretionarySpend;
+    // 10c. Surplus allocation (H5) is deferred to phase 14 (after the
+    // supplemental-tax convergence loop and the technique fold) so the split is
+    // sized from the SAME resolved Net Cash Flow the cash-flow report displays —
+    // i.e. including notes-receivable cash-in, technique sale proceeds / purchase
+    // equity, synthetic property tax, and the final converged tax. The legacy
+    // step here sized it from `surplusBeforeSavings`, which omits all of those,
+    // so discretionary + saved did not reconcile with the displayed surplus.
+    // See the "Surplus allocation (H5)" block below.
 
     // Snapshot the checking balance *before* this year's inflows/outflows are applied
     // so we can attribute any drawdown of prior-year cash surplus as a "withdrawal
@@ -4383,20 +4340,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // 13. Portfolio snapshot. Extracted to a helper so the death-event blocks
-    // below can recompute it against post-death account state.
-    const portfolioAssets = computePortfolioSnapshot({
-      workingAccounts,
-      accountBalances,
-      giftEvents: data.giftEvents,
-      year,
-      planStartYear: planSettings.planStartYear,
-      entityMap,
-      principalFmIds,
-    });
-    // Note: `total` intentionally stays as the legacy IIP-only sum so existing
-    // consumers (BoY portfolio lookup, etc.) keep working. The cashflow drill
-    // computes its grand total locally from all the *Total fields.
+    // 13. Portfolio snapshot is taken AFTER the surplus allocation (phase 14
+    // below) so it reflects the discretionary spend leaving checking and any
+    // surplus transferred to a destination account. See the
+    // `computePortfolioSnapshot` call after Net Cash Flow is finalized.
 
     // 14. Assemble the year. P&L-style totals:
     //   Total Income   = earned income + household RMDs  (no withdrawals — those are
@@ -4611,8 +4558,114 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // (credited directly to checking, not through income.bySource) shows up in
     // both Total Income and Net Cash Flow on the cashflow report.
     const totalIncome = displayIncome.total + householdRmdIncome + householdNoteCashIn;
+
+    // ── 14. Surplus allocation (H5) ──
+    // Size the discretionary/saved split from the resolved Net Cash Flow, taken
+    // BEFORE any discretionary spend (`expenses.discretionary` is still 0 here).
+    // That pre-discretionary surplus is exactly what would otherwise silently
+    // accumulate in household checking, after every explicit flow has fired:
+    // income incl. notes-receivable cash-in, technique sale proceeds, and
+    // business distributions; expenses incl. the final converged tax, technique
+    // purchase equity, synthetic property tax, savings, and gifts. Deficit years
+    // (<= 0) are a no-op — phase 12's gap-fill already refilled checking.
+    if (hasChecking) {
+      const checkingId = defaultChecking!.id;
+      const checkingLedger = accountLedgers[checkingId];
+      const surplusForSplit = Math.max(
+        0,
+        totalIncome - expenses.total - savings.total - hypoContribution
+      );
+      if (surplusForSplit > 0) {
+        const rawPct = data.planSettings.surplusSpendPct ?? 0;
+        const spendPct = Math.min(1, Math.max(0, rawPct));
+        const spendAmount = surplusForSplit * spendPct;
+        const saveAmount = surplusForSplit - spendAmount;
+
+        // Discretionary spend leaves the household entirely. Booked directly
+        // (the cash-delta flush + tax debit already ran for this year) so it
+        // mirrors the post-convergence tax-debit pattern above.
+        if (spendAmount > 0) {
+          accountBalances[checkingId] = (accountBalances[checkingId] ?? 0) - spendAmount;
+          if (checkingLedger) {
+            checkingLedger.endingValue -= spendAmount;
+            checkingLedger.distributions += spendAmount;
+            checkingLedger.entries.push({
+              category: "discretionary",
+              label: "Discretionary spend (surplus)",
+              amount: -spendAmount,
+            });
+          }
+          expenses.discretionary = spendAmount;
+          expenses.total += spendAmount;
+        }
+
+        // Saved remainder: transfer to the chosen destination, else book an
+        // explicit retained-surplus marker so the cash isn't silently absorbed
+        // into Portfolio Activity (it stays in checking either way).
+        const saveDestId = data.planSettings.surplusSaveAccountId ?? null;
+        const canTransfer =
+          saveAmount > 0 &&
+          saveDestId != null &&
+          saveDestId !== checkingId &&
+          // Quietly skip if the user picked an account that no longer exists.
+          data.accounts.some((a) => a.id === saveDestId);
+        if (canTransfer) {
+          accountBalances[checkingId] = (accountBalances[checkingId] ?? 0) - saveAmount;
+          accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
+          if (checkingLedger) {
+            checkingLedger.endingValue -= saveAmount;
+            checkingLedger.distributions += saveAmount;
+            checkingLedger.entries.push({
+              category: "surplus_transfer",
+              label: "Surplus transferred out",
+              amount: -saveAmount,
+              sourceId: saveDestId!,
+            });
+          }
+          const destLedger = accountLedgers[saveDestId!];
+          if (destLedger) {
+            destLedger.endingValue += saveAmount;
+            destLedger.contributions += saveAmount;
+            destLedger.entries.push({
+              category: "surplus_transfer",
+              label: "Surplus transferred in",
+              amount: saveAmount,
+              sourceId: checkingId,
+            });
+          }
+        } else if (saveAmount > 0 && checkingLedger) {
+          // Already reflected in the balance + the net cash contribution above;
+          // flagged internal so it isn't double-counted in aggregate add/
+          // distribution reconciliation (mirrors the entity gap-fill refill).
+          checkingLedger.entries.push({
+            category: "surplus_retained",
+            label: "Surplus retained in cash",
+            amount: saveAmount,
+            isInternalTransfer: true,
+          });
+        }
+      }
+    }
+
     const totalExpenses = expenses.total + savings.total + hypoContribution;
     const netCashFlow = totalIncome - totalExpenses;
+
+    // 13 (deferred). Portfolio snapshot — taken here, after the surplus
+    // allocation, so it reflects the discretionary spend and any surplus
+    // transfer. Extracted to a helper so the death-event blocks below can
+    // recompute it against post-death account state.
+    // Note: `total` intentionally stays as the legacy IIP-only sum so existing
+    // consumers (BoY portfolio lookup, etc.) keep working. The cashflow drill
+    // computes its grand total locally from all the *Total fields.
+    const portfolioAssets = computePortfolioSnapshot({
+      workingAccounts,
+      accountBalances,
+      giftEvents: data.giftEvents,
+      year,
+      planStartYear: planSettings.planStartYear,
+      entityMap,
+      principalFmIds,
+    });
 
     // Build technique breakdown for drill-down UI
     const hasTechniques = saleResult.breakdown.length > 0 || purchaseBreakdown.length > 0;

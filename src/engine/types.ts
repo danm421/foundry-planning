@@ -1463,7 +1463,8 @@ export interface AccountLedgerEntry {
     | "gift"
     | "entity_distribution"
     | "discretionary"
-    | "surplus_transfer";
+    | "surplus_transfer"
+    | "surplus_retained";
   label: string;
   amount: number;
   sourceId?: string;
