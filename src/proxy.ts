@@ -9,6 +9,10 @@ const isPublicRoute = createRouteMatcher([
   "/checkout/(.*)",
   "/legal(.*)",
   "/api/checkout/(.*)",
+  // Vercel Cron hits these GET routes with no session cookie; each route
+  // self-protects via a Bearer CRON_SECRET check (see reconcile-billing,
+  // refresh-holding-prices). Without this, clerkMiddleware 307s the cron.
+  "/api/cron/(.*)",
   // Browsers POST CSP violation reports here with no session cookie.
   "/api/csp-report",
   "/api/webhooks/clerk",
