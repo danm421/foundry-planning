@@ -5,6 +5,8 @@ import {
   annualizedGeometric,
   annualizedVolatility,
   pairwiseCorrelation,
+  isPSD,
+  repairToPSD,
 } from "../cma-stats";
 
 describe("monthlyReturns", () => {
@@ -65,5 +67,37 @@ describe("pairwiseCorrelation", () => {
     const { rho, overlapMonths } = pairwiseCorrelation(a, b);
     expect(overlapMonths).toBe(2);
     expect(rho).toBeCloseTo(1, 10);
+  });
+});
+
+describe("PSD test + repair", () => {
+  const psd = [
+    [1, 0.5, 0.3],
+    [0.5, 1, 0.2],
+    [0.3, 0.2, 1],
+  ];
+  const nonPsd = [
+    [1, 0.9, -0.9],
+    [0.9, 1, 0.9],
+    [-0.9, 0.9, 1],
+  ];
+
+  it("isPSD true for a valid correlation matrix", () => {
+    expect(isPSD(psd)).toBe(true);
+  });
+  it("isPSD false for a non-PSD matrix", () => {
+    expect(isPSD(nonPsd)).toBe(false);
+  });
+  it("repairToPSD leaves a PSD matrix unchanged (alpha 0)", () => {
+    const { matrix, alpha } = repairToPSD(psd);
+    expect(alpha).toBe(0);
+    expect(matrix).toEqual(psd);
+  });
+  it("repairToPSD makes a non-PSD matrix PSD with a small positive alpha, diagonal stays 1", () => {
+    const { matrix, alpha } = repairToPSD(nonPsd);
+    expect(alpha).toBeGreaterThan(0);
+    expect(isPSD(matrix)).toBe(true);
+    for (let i = 0; i < matrix.length; i++)
+      expect(matrix[i][i]).toBeCloseTo(1, 12);
   });
 });

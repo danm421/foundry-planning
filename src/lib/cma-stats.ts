@@ -1,3 +1,5 @@
+import { cholesky } from "@/engine/monteCarlo/cholesky";
+
 export interface MonthlyBar {
   /** Month key "YYYY-MM" (or a full "YYYY-MM-DD" date — only YYYY-MM is used). */
   date: string;
@@ -73,4 +75,34 @@ export function pairwiseCorrelation(
   }
   const denom = Math.sqrt(dx * dy);
   return { rho: denom === 0 ? 0 : num / denom, overlapMonths: n };
+}
+
+/** True iff `M` is symmetric positive-definite (uses the engine's Cholesky as oracle). */
+export function isPSD(M: number[][]): boolean {
+  try {
+    cholesky(M);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Shrink off-diagonals toward 0 by factor (1−alpha); diagonal stays 1. */
+function shrinkToIdentity(M: number[][], alpha: number): number[][] {
+  return M.map((row, i) =>
+    row.map((v, j) => (i === j ? 1 : (1 - alpha) * v)),
+  );
+}
+
+/**
+ * Nearest-PSD via shrinkage toward the identity. Returns the smallest-alpha
+ * matrix (1% steps) that passes the Cholesky PSD test, or the identity at alpha=1.
+ */
+export function repairToPSD(M: number[][]): { matrix: number[][]; alpha: number } {
+  if (isPSD(M)) return { matrix: M, alpha: 0 };
+  for (let alpha = 0.01; alpha < 1; alpha += 0.01) {
+    const candidate = shrinkToIdentity(M, alpha);
+    if (isPSD(candidate)) return { matrix: candidate, alpha: Number(alpha.toFixed(2)) };
+  }
+  return { matrix: shrinkToIdentity(M, 1), alpha: 1 };
 }
