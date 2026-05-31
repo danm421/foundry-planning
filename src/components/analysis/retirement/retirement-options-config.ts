@@ -13,6 +13,7 @@
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import { SYNTHETIC_SAVINGS_ACCOUNT_ID } from "@/lib/analysis/hypothetical-savings";
 
 // ---------------------------------------------------------------------------
 // Explore rows
@@ -168,6 +169,19 @@ export function buildExploreRows(tree: ClientData): ExploreRow[] {
       inputKind: "currency",
       currentValue: taxable.amount,
       targetId: taxable.accountId,
+    });
+  } else {
+    // No real taxable savings rule. The "Minimum Additional Savings" column
+    // solves a synthetic taxable account, so the taxable-savings row must still
+    // exist for its solved value to land on. Points at the synthetic account id
+    // (injected server-side for the solve); editing it client-side is a no-op
+    // when there is no matching rule in the projected tree.
+    rows.push({
+      key: "taxable-contributions",
+      label: "Additional Taxable Savings",
+      inputKind: "currency",
+      currentValue: 0,
+      targetId: SYNTHETIC_SAVINGS_ACCOUNT_ID,
     });
   }
 
@@ -359,10 +373,12 @@ export const SOLVED_COLUMNS: SolvedColumnConfig[] = [
   {
     id: "min-savings",
     title: "Minimum Additional Savings",
-    highlightRow: "pre-tax-contributions",
+    // Now a flat annual contribution to a synthetic taxable account, so it
+    // highlights the taxable-savings row (always present — see buildExploreRows).
+    highlightRow: "taxable-contributions",
     // Solved lever is the annual contribution dollars — already in the row's
     // unit (currency), so format it like the contributions row.
-    formatSolved: (v, rows) => formatLikeRow(rows, "pre-tax-contributions", v),
+    formatSolved: (v, rows) => formatLikeRow(rows, "taxable-contributions", v),
   },
   {
     id: "max-spending",
