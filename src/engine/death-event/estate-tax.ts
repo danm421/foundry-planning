@@ -441,7 +441,14 @@ export function computeDeductions(input: {
       const encumbrance = t.resultingAccountId
         ? encumbranceByAssetId.get(t.resultingAccountId) ?? 0
         : 0;
-      maritalDeduction += Math.max(0, eligible - encumbrance);
+      // §2056(b)(4)(B): the encumbrance reduces the marital deduction only to
+      // the extent it burdens the INCLUDIBLE interest. Scale the full linked
+      // balance by the same fraction the transfer was capped to (the share of
+      // the routed asset in the decedent's gross estate). With no gross cap,
+      // eligible === t.amount → fraction 1 → full encumbrance (unchanged).
+      const includibleFraction = t.amount > 0 ? eligible / t.amount : 0;
+      const scaledEncumbrance = encumbrance * includibleFraction;
+      maritalDeduction += Math.max(0, eligible - scaledEncumbrance);
     } else if (t.recipientKind === "external_beneficiary" && t.recipientId) {
       if (externalKindById.get(t.recipientId) === "charity") {
         charitableDeduction += t.amount;

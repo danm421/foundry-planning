@@ -1113,6 +1113,57 @@ describe("computeDeductions", () => {
     expect(r.maritalDeduction).toBeCloseTo(1_100_000, 2);
   });
 
+  it("F8: scales encumbrance to the decedent's includible share (§2056(b)(4)(B))", () => {
+    // JTWROS home: $1M ledger amount routes 100% to survivor by right of
+    // survivorship, but only the decedent's 50% ($500k) is includible in the
+    // gross estate. A $600k mortgage follows the asset. §2056(b)(4)(B) reduces
+    // the marital deduction only to the extent the encumbrance burdens the
+    // INCLUDIBLE interest: 600k × (500k/1M) = 300k. Marital = 500k − 300k = 200k.
+    const ledger = [
+      transfer({
+        recipientKind: "spouse",
+        via: "titling",
+        sourceAccountId: "home-1",
+        amount: 1_000_000,
+        resultingAccountId: "home-1-to-spouse",
+      }),
+    ];
+    const grossEstateLines: GrossEstateLine[] = [
+      {
+        label: "JTWROS Home (50%)",
+        accountId: "home-1",
+        liabilityId: null,
+        percentage: 0.5,
+        amount: 500_000,
+      },
+    ];
+    const resultingLiabilities: Liability[] = [
+      {
+        id: "mortgage-1",
+        name: "Home Mortgage",
+        balance: 600_000,
+        interestRate: 0.04,
+        monthlyPayment: 0,
+        startYear: 2020,
+        startMonth: 1,
+        termMonths: 360,
+        extraPayments: [],
+        isInterestDeductible: true,
+        owners: [],
+        linkedPropertyId: "home-1-to-spouse",
+      },
+    ];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      grossEstateLines,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+      resultingLiabilities,
+    });
+    expect(r.maritalDeduction).toBe(200_000);
+  });
+
   it("marital deduction nets out unlinked debts assumed by spouse via default-order chain", () => {
     // Spouse inherits $1,125,000 of gross assets and assumes a $10,000
     // unlinked household debt via the default-order chain. Without netting,
