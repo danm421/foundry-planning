@@ -99,4 +99,19 @@ describe("buildBracketStackCellDrill", () => {
     expect(props.total).toBe(116_100); // 500k - 383.9k
     expect(props.groups[0].boundaryIndex).toBe(0); // first row already crosses
   });
+
+  it("M1: sets a footer label describing the marginal-bracket amount", () => {
+    const year = makeYear({
+      tier: tier22,
+      incomeTaxBase: 130_000,
+      bySource: {
+        inc_w: { type: "earned_income", amount: 80_000 },
+        "acc_1:oi": { type: "ordinary_income", amount: 30_000 },
+        "acc_1:stcg": { type: "stcg", amount: 20_000 },
+      },
+    });
+    const props = buildBracketStackCellDrill({ year, columnKey: "intoBracket", ctx });
+    expect(props.totalLabel).toBe("In Top Bracket");
+    expect(props.total).toBe(35_700); // value unchanged
+  });
 });

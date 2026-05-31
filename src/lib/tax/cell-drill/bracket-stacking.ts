@@ -53,6 +53,7 @@ export function buildBracketStackCellDrill(args: BracketCellDrillArgs): CellDril
     title,
     subtitle: `Marginal bracket: ${(tier.rate * 100).toFixed(0)}% (from ${formatCurrency(tier.from)}${tier.to == null ? "+" : ` to ${formatCurrency(tier.to)}`})`,
     total,
+    totalLabel: "In Top Bracket",
     groups: [{ rows, boundaryIndex }],
     footnote: "Stacking order is illustrative; bracket math applies to totals, not individual items.",
   };
