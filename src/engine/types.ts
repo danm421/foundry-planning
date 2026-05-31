@@ -926,6 +926,12 @@ export interface SavingsRule {
 }
 
 export interface WithdrawalPriority {
+  /** DB row uuid. Present on rows loaded from the database so scenario
+   *  edit/remove overlays can match them by id. Optional because the engine
+   *  also synthesizes withdrawal strategies on the fly
+   *  (buildDefaultWithdrawalStrategy / buildEntityWithdrawalStrategy) where
+   *  there is no row id, as do the engine test fixtures. */
+  id?: string;
   accountId: string;
   priorityOrder: number;
   startYear: number;

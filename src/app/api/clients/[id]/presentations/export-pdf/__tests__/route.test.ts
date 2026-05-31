@@ -17,9 +17,6 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 
 vi.mock("@/lib/projection/load-client-data", () => ({
-  loadClientData: vi.fn().mockResolvedValue({
-    client: { firstName: "Cooper", lastName: "Sample", spouseName: "Susan" },
-  }),
   ClientNotFoundError: class ClientNotFoundError extends Error {
     constructor(clientId: string) {
       super(`client ${clientId} not found`);
@@ -32,6 +29,15 @@ vi.mock("@/lib/projection/load-client-data", () => ({
       this.name = "ProjectionInputError";
     }
   },
+}));
+
+vi.mock("@/lib/scenario/loader", () => ({
+  loadEffectiveTreeForRef: vi.fn().mockResolvedValue({
+    effectiveTree: {
+      client: { firstName: "Cooper", lastName: "Sample", spouseName: "Susan" },
+    },
+    warnings: [],
+  }),
 }));
 
 vi.mock("@/engine/projection", () => ({
@@ -153,10 +159,11 @@ describe("POST /api/clients/[id]/presentations/export-pdf — request validation
   });
 
   it("returns 404 when the client is not in the firm", async () => {
-    const { loadClientData, ClientNotFoundError } = await import(
+    const { ClientNotFoundError } = await import(
       "@/lib/projection/load-client-data"
     );
-    vi.mocked(loadClientData).mockRejectedValueOnce(
+    const { loadEffectiveTreeForRef } = await import("@/lib/scenario/loader");
+    vi.mocked(loadEffectiveTreeForRef).mockRejectedValueOnce(
       new ClientNotFoundError("client-1"),
     );
     const { POST } = await import("../route");

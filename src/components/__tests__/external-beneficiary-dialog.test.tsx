@@ -4,6 +4,15 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ExternalBeneficiaryDialog from "@/components/external-beneficiary-dialog";
 
+// The dialog now routes writes through useScenarioWriter (→ useScenarioState),
+// which reads the app-router context. Mock next/navigation so the hook resolves
+// to base mode (no ?scenario=) and passes through to the mocked global.fetch.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/clients/c1/family",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const mockFetch = vi.fn();
 beforeEach(() => {
   global.fetch = mockFetch as unknown as typeof fetch;

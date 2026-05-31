@@ -528,4 +528,108 @@ d("gift_series CRUD", () => {
     expect(original?.annualAmount).toBe("18000.00");
     expect(original?.clientId).toBe(clientA);
   });
+
+  it("8. POST honors ?scenario= and writes to that partition (not base); GET isolates by partition", async () => {
+    const { clientId, entityId, scenarioId: baseScenarioId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries, scenarios } = schema;
+
+    // A second, non-base scenario for the same client.
+    const [alt] = await db
+      .insert(scenarios)
+      .values({ clientId, name: "What-if", isBaseCase: false })
+      .returning();
+
+    const giftBody = {
+      grantor: "client",
+      recipientEntityId: entityId,
+      startYear: 2026,
+      endYear: 2042,
+      annualAmount: 19000,
+      inflationAdjust: false,
+      useCrummeyPowers: false,
+    };
+
+    // POST into the alt scenario — regression: before the fix this landed in base.
+    const altRes = await POST(
+      new Request(
+        `http://localhost/api/clients/${clientId}/gifts/series?scenario=${alt.id}`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(giftBody) },
+      ) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(altRes.status).toBe(201);
+    const altBody = await altRes.json();
+    const [altRow] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, altBody.id));
+    expect(altRow.scenarioId).toBe(alt.id);
+    expect(altRow.scenarioId).not.toBe(baseScenarioId);
+
+    // POST with no scenario param still lands in base.
+    const baseRes = await POST(
+      makePostReq(clientId, giftBody) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(baseRes.status).toBe(201);
+    const baseBody = await baseRes.json();
+    const [baseRow] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, baseBody.id));
+    expect(baseRow.scenarioId).toBe(baseScenarioId);
+
+    // GET isolates by partition.
+    const getAlt = await GET(
+      new Request(`http://localhost/api/clients/${clientId}/gifts/series?scenario=${alt.id}`, { method: "GET" }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(getAlt.status).toBe(200);
+    const altList = await getAlt.json();
+    expect(altList).toHaveLength(1);
+    expect(altList[0].id).toBe(altBody.id);
+
+    const getBase = await GET(
+      makeGetReq(clientId) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    const baseList = await getBase.json();
+    expect(baseList).toHaveLength(1);
+    expect(baseList[0].id).toBe(baseBody.id);
+  });
+
+  it("9. POST with a scenario that doesn't belong to the client returns 404 and writes nothing", async () => {
+    const { clientId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    const bogusScenarioId = "00000000-0000-0000-0000-000000000000";
+    const res = await POST(
+      new Request(
+        `http://localhost/api/clients/${clientId}/gifts/series?scenario=${bogusScenarioId}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            grantor: "client",
+            recipientEntityId: entityId,
+            startYear: 2026,
+            endYear: 2042,
+            annualAmount: 19000,
+            inflationAdjust: false,
+            useCrummeyPowers: false,
+          }),
+        },
+      ) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(404);
+
+    const rows = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.clientId, clientId));
+    expect(rows).toHaveLength(0);
+  });
 });

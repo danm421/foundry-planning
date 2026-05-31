@@ -82,6 +82,7 @@ export async function POST(
     const year = Number(url.searchParams.get("year"));
     const viewParam = url.searchParams.get("view") ?? "consolidated";
     const asOfParam = url.searchParams.get("asOf") ?? "eoy";
+    const scenarioParam = url.searchParams.get("scenario");
     const asOfMode: "today" | "eoy" = asOfParam === "today" ? "today" : "eoy";
     if (!Number.isFinite(year)) return NextResponse.json({ error: "Invalid year" }, { status: 400 });
     if (!isOwnershipView(viewParam)) return NextResponse.json({ error: "Invalid view" }, { status: 400 });
@@ -94,7 +95,10 @@ export async function POST(
     // Using an internal fetch avoids duplicating the projection-data query.
     // 30s abort leaves headroom for the 25s render race below within the
     // 60s maxDuration cap.
-    const apiRes = await fetch(`${url.origin}/api/clients/${id}/projection-data`, {
+    const projectionUrl = scenarioParam
+      ? `${url.origin}/api/clients/${id}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
+      : `${url.origin}/api/clients/${id}/projection-data`;
+    const apiRes = await fetch(projectionUrl, {
       headers: { cookie: request.headers.get("cookie") ?? "" },
       signal: AbortSignal.timeout(30_000),
     });

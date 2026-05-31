@@ -28,6 +28,8 @@ interface Props {
   accounts: AccountOption[];
   milestones?: ClientMilestones;
   currentYear: number;
+  /** Active scenario id from the URL (?scenario=). null/undefined = base case. */
+  scenarioId?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -43,6 +45,7 @@ export default function TransferSeriesForm({
   accounts,
   milestones,
   currentYear,
+  scenarioId,
   onClose,
   onSaved,
 }: Props) {
@@ -102,7 +105,12 @@ export default function TransferSeriesForm({
         // NO accountId, liabilityId, percent, sourceAccountId
       };
 
-      const res = await fetch(`/api/clients/${clientId}/gifts/series`, {
+      // Forward the active scenario so the series lands in the partition the
+      // advisor is editing (the loader filters gift_series by scenario_id).
+      const seriesUrl = scenarioId
+        ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
+        : `/api/clients/${clientId}/gifts/series`;
+      const res = await fetch(seriesUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

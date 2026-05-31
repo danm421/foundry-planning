@@ -11,6 +11,7 @@ import {
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { willUpdateSchema } from "@/lib/schemas/wills";
 import {
   gatherCrossRefs,
@@ -256,7 +257,10 @@ export async function DELETE(
     if (!(await verifyWillBelongsToClient(willId, id))) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
     }
-    await db.delete(wills).where(eq(wills.id, willId));
+    await db.transaction(async (tx) => {
+      await tx.delete(wills).where(eq(wills.id, willId));
+      await pruneOrphanScenarioChanges(tx, willId);
+    });
     await recordAudit({
       action: "will.delete",
       resourceType: "will",

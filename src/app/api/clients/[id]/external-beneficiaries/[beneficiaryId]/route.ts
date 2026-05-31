@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { externalBeneficiaryUpdateSchema } from "@/lib/schemas/beneficiaries";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,7 @@ export async function DELETE(
         .returning();
       if (!row) return null;
       await cleanupWillRecipientReferences(tx, "external_beneficiary", beneficiaryId);
+      await pruneOrphanScenarioChanges(tx, beneficiaryId);
       return row;
     });
     if (!deleted) {

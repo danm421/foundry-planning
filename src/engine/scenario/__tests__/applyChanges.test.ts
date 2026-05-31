@@ -53,6 +53,46 @@ describe("resolveEffectiveToggleState", () => {
     );
     expect(result).toEqual({ g1: true, g2: false });
   });
+
+  // F22: g3 → g2 → g1 chain. The engine must walk the chain transitively so a
+  // grandparent's off-state forces the grandchild off.
+  const grandchildGroup: ToggleGroup = {
+    id: "g3",
+    scenarioId: "s1",
+    name: "g3",
+    defaultOn: true,
+    requiresGroupId: "g2",
+    orderIndex: 2,
+  };
+  const chain = [independentGroup, childGroup, grandchildGroup];
+
+  it("forces grandchild off when grandparent is off (transitive)", () => {
+    const result = resolveEffectiveToggleState({ g1: false, g2: true, g3: true }, chain);
+    expect(result).toEqual({ g1: false, g2: false, g3: false });
+  });
+
+  it("grandchild on when the whole chain is on", () => {
+    const result = resolveEffectiveToggleState({ g1: true, g2: true, g3: true }, chain);
+    expect(result).toEqual({ g1: true, g2: true, g3: true });
+  });
+
+  it("grandchild off on its own state even when chain is on", () => {
+    const result = resolveEffectiveToggleState({ g1: true, g2: true, g3: false }, chain);
+    expect(result).toEqual({ g1: true, g2: true, g3: false });
+  });
+
+  it("grandchild off when its immediate parent is off", () => {
+    const result = resolveEffectiveToggleState({ g1: true, g2: false, g3: true }, chain);
+    expect(result).toEqual({ g1: true, g2: false, g3: false });
+  });
+
+  it("resolves without hanging when groups form a cycle", () => {
+    const a: ToggleGroup = { id: "ca", scenarioId: "s1", name: "ca", defaultOn: true, requiresGroupId: "cb", orderIndex: 0 };
+    const b: ToggleGroup = { id: "cb", scenarioId: "s1", name: "cb", defaultOn: true, requiresGroupId: "ca", orderIndex: 1 };
+    const result = resolveEffectiveToggleState({ ca: true, cb: true }, [a, b]);
+    expect(result).toHaveProperty("ca");
+    expect(result).toHaveProperty("cb");
+  });
 });
 
 const minimalClientData = (): ClientData => ({
@@ -345,6 +385,65 @@ describe("applyScenarioChanges — remove", () => {
 
     const result = applyScenarioChanges(base, [change], {}, []);
     expect(result.effectiveTree.accounts).toHaveLength(1);
+  });
+});
+
+describe("applyScenarioChanges — withdrawal_strategy (F7)", () => {
+  // Base withdrawal-strategy rows must carry their DB id so edit/remove overlays
+  // can match them. Before the F7 fix the mapped rows had no id, so findIndex
+  // was always -1 and edit/remove silently no-opped.
+  const baseRow = () => ({
+    id: "wd-1",
+    accountId: "a1",
+    priorityOrder: 1,
+    startYear: 2026,
+    endYear: 2055,
+  });
+
+  it("matches a base withdrawal-strategy row by id and applies the edit", () => {
+    const base = minimalClientData();
+    base.withdrawalStrategy = [baseRow()];
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "edit", targetKind: "withdrawal_strategy",
+      targetId: "wd-1", payload: { priorityOrder: { from: 1, to: 3 } },
+      toggleGroupId: null, orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.withdrawalStrategy[0].priorityOrder).toBe(3);
+  });
+
+  it("coerces string startYear edit values to numbers", () => {
+    const base = minimalClientData();
+    base.withdrawalStrategy = [baseRow()];
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "edit", targetKind: "withdrawal_strategy",
+      targetId: "wd-1", payload: { startYear: { from: 2026, to: "2030" } },
+      toggleGroupId: null, orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(typeof result.effectiveTree.withdrawalStrategy[0].startYear).toBe("number");
+    expect(result.effectiveTree.withdrawalStrategy[0].startYear).toBe(2030);
+  });
+
+  it("removes a base withdrawal-strategy row matched by id", () => {
+    const base = minimalClientData();
+    base.withdrawalStrategy = [
+      baseRow(),
+      { id: "wd-2", accountId: "a2", priorityOrder: 2, startYear: 2026, endYear: 2055 },
+    ];
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "remove", targetKind: "withdrawal_strategy",
+      targetId: "wd-1", payload: null, toggleGroupId: null, orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.withdrawalStrategy).toHaveLength(1);
+    expect(result.effectiveTree.withdrawalStrategy[0].id).toBe("wd-2");
   });
 });
 

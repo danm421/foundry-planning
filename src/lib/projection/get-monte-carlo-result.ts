@@ -18,7 +18,9 @@ export const getMonteCarloResult = cache(
         loadEffectiveTree(clientId, firmId, scenarioId, toggleState).then(
           (r) => r.effectiveTree,
         ),
-        loadMonteCarloData(clientId, firmId),
+        // Thread scenarioId so the ACTIVE scenario's own MC seed is used (F16).
+        // Mixes/volatility stay base-sourced inside loadMonteCarloData.
+        loadMonteCarloData(clientId, firmId, scenarioId),
       ]);
       const returnEngine = createReturnEngine({
         indices: mcPayload.indices,

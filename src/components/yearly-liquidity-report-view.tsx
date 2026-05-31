@@ -40,14 +40,16 @@ export default function YearlyLiquidityReportView({
     setExporting(true);
     try {
       const chartPng = chartRef.current?.canvas?.toDataURL("image/png") ?? null;
-      const res = await fetch(
-        `/api/clients/${clientId}/liquidity-report/export-pdf`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chartPng }),
-        },
-      );
+      // Forward the active scenario so the exported PDF matches the on-screen view.
+      const scenarioParam = searchParams?.get("scenario");
+      const exportUrl = scenarioParam
+        ? `/api/clients/${clientId}/liquidity-report/export-pdf?scenario=${encodeURIComponent(scenarioParam)}`
+        : `/api/clients/${clientId}/liquidity-report/export-pdf`;
+      const res = await fetch(exportUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chartPng }),
+      });
       if (!res.ok) throw new Error(`PDF export failed: HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

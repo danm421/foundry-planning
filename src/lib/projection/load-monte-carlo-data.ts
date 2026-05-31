@@ -41,6 +41,14 @@ export const loadMonteCarloData = cache(
   async (
     clientId: string,
     firmId: string,
+    // Active scenario whose per-scenario MC seed should be used/persisted (F16).
+    // IMPORTANT: this affects ONLY the seed. All portfolio inputs below (account
+    // mixes, asset-class volatility, correlations, starting balance) stay
+    // base-sourced — non-base scenarios are an overlay diff and are NOT
+    // physically cloned, so querying accounts under a non-base scenarioId
+    // returns zero rows. "base", unknown, or the base id => base seed (today's
+    // behavior). See the seed block below.
+    scenarioId: string | "base" = "base",
     extraAccountMixes: ReadonlyArray<{ accountId: string; mix: AccountAssetMix[] }> = [],
   ): Promise<MonteCarloPayload> => {
     const [client] = await db
@@ -49,11 +57,30 @@ export const loadMonteCarloData = cache(
       .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
     if (!client) throw new ClientNotFoundError(clientId);
 
+    // Base scenario drives ALL portfolio data queries below (accounts, plan
+    // settings, mixes, correlations, starting balance). Non-base scenarios are
+    // overlay diffs, not physical clones, so these queries only have rows under
+    // the base scenario id — mixes & volatility intentionally stay base-sourced.
     const [scenario] = await db
       .select()
       .from(scenarios)
       .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
     if (!scenario) throw new ProjectionInputError(`Client ${clientId} has no base case scenario`);
+
+    // Seed scenario: the per-scenario MC seed lives on each scenario row (F16).
+    // When a distinct non-base scenario is active, read/persist the seed off ITS
+    // row so each scenario reproduces its own draws. Fall back to the base
+    // scenario when the active scenario is "base", is the base case itself, or
+    // can't be found. Scoped by clientId (scenarios has no firmId column;
+    // clientId was already validated against firmId via the client lookup above).
+    let seedScenario = scenario;
+    if (scenarioId && scenarioId !== "base" && scenarioId !== scenario.id) {
+      const [active] = await db
+        .select()
+        .from(scenarios)
+        .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, clientId)));
+      if (active) seedScenario = active;
+    }
 
     const id = clientId;
 
@@ -252,10 +279,14 @@ export const loadMonteCarloData = cache(
     }
 
     // ── Seed management ──────────────────────────────────────────────────
-    let seed = scenario.monteCarloSeed;
+    // Reads/persists the ACTIVE scenario's own seed (seedScenario), so each
+    // scenario reproduces its own Monte Carlo draws. Everything above this line
+    // is base-sourced (see the base-scenario comment near the top): mixes,
+    // volatility, correlations, and starting balance do NOT vary per scenario.
+    let seed = seedScenario.monteCarloSeed;
     if (seed == null) {
       seed = generateSeed();
-      await db.update(scenarios).set({ monteCarloSeed: seed }).where(eq(scenarios.id, scenario.id));
+      await db.update(scenarios).set({ monteCarloSeed: seed }).where(eq(scenarios.id, seedScenario.id));
     }
 
     return {

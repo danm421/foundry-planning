@@ -324,8 +324,13 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         return { ok: false, error: json.error ?? "Failed to save liability" };
       }
-      const json = (await res.json().catch(() => null)) as { id?: string } | null;
-      const recordId = json?.id;
+      // In scenario mode the /changes route returns { ok, targetId } (no `id` field);
+      // use the pre-minted uuid directly, same pattern as add-account-form.
+      const recordId = idForUpdate
+        ? idForUpdate
+        : writer.scenarioActive
+          ? newLiabilityId
+          : ((await res.json().catch(() => null)) as { id?: string } | null)?.id;
       // Snapshot what we just saved so isDirty resets.
       lastSavedSnapshotRef.current = JSON.stringify(body);
       // Flip into PUT-mode after a successful POST so subsequent saves update.

@@ -852,6 +852,10 @@ export const loadClientDataWithContext = cache(
     );
 
     const mappedWithdrawalStrategy = withdrawalRows.map((w) => ({
+      // Carry the real DB uuid so scenario edit/remove overlays can match base
+      // rows by id (applyEdit/applyRemove findIndex on e.id) and the writer's
+      // lookupBaseEntity can build a real field diff instead of a phantom one.
+      id: w.id,
       accountId: w.accountId,
       priorityOrder: w.priorityOrder,
       startYear: resolvedStart(w.startYearRef, w.startYear),

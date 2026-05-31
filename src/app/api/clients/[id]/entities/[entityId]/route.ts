@@ -15,6 +15,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
@@ -619,6 +620,7 @@ export async function DELETE(
       // recipient_id is a polymorphic FK-less column, so a plain delete would
       // leave a dangling id and silently wrong estate projections (audit F13).
       await cleanupWillRecipientReferences(tx, "entity", entityId);
+      await pruneOrphanScenarioChanges(tx, entityId);
 
       await tx
         .delete(entities)

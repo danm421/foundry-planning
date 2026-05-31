@@ -9,6 +9,7 @@ import {
   assertEntitiesInClient,
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -166,9 +167,12 @@ export async function DELETE(
       );
     }
 
-    await db
-      .delete(expenses)
-      .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)));
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(expenses)
+        .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)));
+      await pruneOrphanScenarioChanges(tx, expenseId);
+    });
 
     await recordAudit({
       action: "expense.delete",

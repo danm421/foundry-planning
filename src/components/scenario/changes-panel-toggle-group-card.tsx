@@ -55,8 +55,8 @@ export function ToggleGroupCard({
     (g) => g.id !== group.id && g.requiresGroupId == null,
   );
 
-  async function patchGroup(body: Record<string, unknown>) {
-    await fetch(
+  async function patchGroup(body: Record<string, unknown>): Promise<boolean> {
+    const res = await fetch(
       `/api/clients/${clientId}/scenarios/${group.scenarioId}/toggle-groups/${group.id}`,
       {
         method: "PATCH",
@@ -64,7 +64,10 @@ export function ToggleGroupCard({
         body: JSON.stringify(body),
       },
     );
-    router.refresh();
+    if (res.ok) {
+      router.refresh();
+    }
+    return res.ok;
   }
 
   async function deleteGroup(moveChangesTo: "ungrouped" | "delete") {
@@ -92,7 +95,9 @@ export function ToggleGroupCard({
           on={defaultOn}
           onChange={(v) => {
             setDefaultOn(v);
-            void patchGroup({ defaultOn: v });
+            void patchGroup({ defaultOn: v }).then((ok) => {
+              if (!ok) setDefaultOn(!v);
+            });
           }}
         />
         <button
@@ -174,9 +179,12 @@ export function ToggleGroupCard({
               <select
                 value={requiresGroupId}
                 onChange={(e) => {
+                  const prev = requiresGroupId;
                   const v = e.target.value || null;
                   setRequiresGroupId(e.target.value);
-                  void patchGroup({ requiresGroupId: v });
+                  void patchGroup({ requiresGroupId: v }).then((ok) => {
+                    if (!ok) setRequiresGroupId(prev);
+                  });
                 }}
                 className="bg-transparent border border-[#1f2024] text-[#c8c4ba] rounded px-2 py-0.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a]"
                 aria-label="Required parent group"

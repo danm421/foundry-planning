@@ -36,16 +36,49 @@ async function getBaseCaseScenarioId(
   return baseScenarios[0]?.id ?? null;
 }
 
+// Resolve the scenario partition a gift_series read/write should land in.
+// gift_series carries a real scenario_id (it is NOT an overlay TargetKind), so a
+// series created while a scenario is active must be written to THAT scenario or
+// the loader (which filters giftSeries.scenarioId = scenario.id) drops it.
+// `null`/`"base"` resolve to the base case; any other value must be a scenario
+// belonging to a client in THIS firm (the innerJoin enforces firm scope), so a
+// foreign or unknown id returns undefined and the caller 404s instead of
+// touching another firm's data.
+async function resolveScenarioId(
+  clientId: string,
+  firmId: string,
+  requested: string | null,
+): Promise<string | null | undefined> {
+  if (requested == null || requested === "base") {
+    return getBaseCaseScenarioId(clientId, firmId);
+  }
+  const [scenario] = await db
+    .select({ id: scenarios.id })
+    .from(scenarios)
+    .innerJoin(clients, eq(scenarios.clientId, clients.id))
+    .where(
+      and(
+        eq(scenarios.id, requested),
+        eq(scenarios.clientId, clientId),
+        eq(clients.firmId, firmId),
+      ),
+    );
+  return scenario?.id;
+}
+
 // GET /api/clients/[id]/gifts/series — list gift_series rows for base-case scenario
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    // List the active scenario's series when one is selected (?scenario=<sid>),
+    // else the base case — must match the partition POST just wrote to.
+    const requestedScenario = new URL(request.url).searchParams.get("scenario");
+    const scenarioId = await resolveScenarioId(id, firmId, requestedScenario);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -74,9 +107,18 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
-    if (!scenarioId) {
+    // gift_series is scenario-scoped: write into the active scenario when one is
+    // selected (?scenario=<sid>), not always base — otherwise the loader (which
+    // filters by scenario_id) never surfaces the row under that scenario and it
+    // silently pollutes base. baseId doubles as the firm-scoped client gate.
+    const baseId = await getBaseCaseScenarioId(id, firmId);
+    if (!baseId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    const requestedScenario = new URL(request.url).searchParams.get("scenario");
+    const scenarioId = await resolveScenarioId(id, firmId, requestedScenario);
+    if (!scenarioId) {
+      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
     }
 
     const parsed = await parseBody(giftSeriesSchema, request);

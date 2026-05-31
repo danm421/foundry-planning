@@ -318,8 +318,14 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     let alive = true;
     setTransferFetchError(null);
     Promise.all([
+      // One-time gifts are client-global (no scenario_id); series are
+      // scenario-scoped, so the series list must match the active scenario.
       fetchJson<GiftRow[]>(`/api/clients/${clientId}/gifts`),
-      fetchJson<GiftSeriesRow[]>(`/api/clients/${clientId}/gifts/series`),
+      fetchJson<GiftSeriesRow[]>(
+        scenarioId
+          ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
+          : `/api/clients/${clientId}/gifts/series`,
+      ),
     ]).then(([allGifts, allSeries]) => {
       if (!alive) return;
       setTransferEvents(toTransferEvents(allGifts, editing.id, accounts ?? [], liabilities ?? []));
@@ -331,7 +337,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     });
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities, trustSubType]);
+  }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities, trustSubType, scenarioId]);
 
   // Seed split-interest funding picks from transferEvents at the inception year.
   // Re-runs when the inception year changes or when transferEvents reload.
@@ -425,6 +431,17 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     // side via the dedicated route. Client just relays the op (translating
     // `type` → `op` to match the API schema) and refreshes after success.
     if (op.assetType === "entity") {
+      // F4: business-entity → trust assignment goes through the dedicated
+      // base-only, non-idempotent route which also emits §709 gift rows. There
+      // is no scenario-overlay equivalent yet, so block it in scenario mode
+      // rather than silently writing to base while the rest of the dialog's
+      // edits are scenario-scoped (split-brain).
+      if (scenarioWriter.scenarioActive) {
+        setError(
+          "Assigning a business interest to this trust isn't supported inside a scenario yet — open the base plan to record it.",
+        );
+        return;
+      }
       try {
         const apiBody: Record<string, unknown> = {
           op: op.type,
@@ -540,6 +557,25 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       }
     }
 
+    // F4: create-mode + split-interest persistence depend on server-side base
+    // writes with no scenario-overlay equivalent — the entities POST provisions
+    // a per-scenario default-checking account + account_owners, CLT/CRT trusts
+    // write trust_split_interest_details and auto-emit gift rows, and
+    // beneficiary designations are a nested kind applyChanges can't add. None
+    // are reproducible by an add/edit scenario_changes row. So in scenario mode
+    // we only support EDITING an existing, non-split-interest trust's scalar
+    // fields; everything else stays base-only.
+    const scenarioActive = scenarioWriter.scenarioActive;
+    const editTargetId = effectiveEntityId ?? editing?.id ?? null;
+    if (scenarioActive && (editTargetId == null || isSplitInterest)) {
+      return {
+        ok: false,
+        error: editTargetId == null
+          ? "Creating a new trust isn't supported inside a scenario yet — create it in the base plan, then adjust it here."
+          : "CLT/CRT split-interest details can't be edited inside a scenario yet — edit them in the base plan.",
+      };
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -575,21 +611,47 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         ...(isSplitInterest && { splitInterest }),
       };
 
-      // Choose POST vs PUT based on whether we have a persisted id yet.
+      // Choose POST vs PUT based on whether we have a persisted id yet. In
+      // scenario mode the gating above guarantees targetId != null (edit only),
+      // so the PUT routes through the scenario writer with targetKind:"entity"
+      // (mirrors flows-tab). Base mode passes straight through to the legacy
+      // per-entity route. We overlay only the SCALAR trust fields: the engine
+      // tree (EntitySummary) derives owner/beneficiaries/value/entityType from
+      // other sources, so overlaying those DB-write-shape fields would clobber
+      // loader-derived data.
       const targetId = effectiveEntityId ?? editing?.id ?? null;
       const url = targetId
         ? `/api/clients/${clientId}/entities/${targetId}`
         : `/api/clients/${clientId}/entities`;
-      const res = await fetch(url, {
-        method: targetId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entityBody),
-      });
+      const scenarioOmit = new Set(["owner", "beneficiaries", "value", "entityType"]);
+      const scenarioEntityFields = Object.fromEntries(
+        Object.entries(entityBody).filter(([k]) => !scenarioOmit.has(k)),
+      );
+      const res = targetId
+        ? await scenarioWriter.submit(
+            {
+              op: "edit",
+              targetKind: "entity",
+              targetId,
+              desiredFields: scenarioEntityFields,
+            },
+            { url, method: "PUT", body: entityBody },
+          )
+        : await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(entityBody),
+          });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
         return { ok: false, error: j.error ?? "Failed to save" };
       }
-      const saved = (await res.json()) as Entity;
+      // In scenario-edit mode the changes route returns { ok: true } with no
+      // entity echo; synthesize the saved row from the known id + submitted body
+      // so downstream callbacks keep working. Base mode parses the real entity.
+      const saved: Entity = scenarioActive
+        ? ({ ...editing, ...entityBody, id: targetId! } as unknown as Entity)
+        : ((await res.json()) as Entity);
 
       // Apply split-interest funding-pick changes as gift ops.
       if (isSplitInterest && splitInterest.origin === "new") {
@@ -633,19 +695,25 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         }
       }
 
-      // Save designations (income + remainder)
-      const designations = [
-        ...rowsToDesignationPayload(incomeRows, "income"),
-        ...rowsToDesignationPayload(remainderRows, "remainder"),
-      ];
-      const desigRes = await fetch(`/api/clients/${clientId}/entities/${saved.id}/beneficiaries`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(designations),
-      });
-      if (!desigRes.ok) {
-        const j = (await desigRes.json().catch(() => ({}))) as { error?: string };
-        return { ok: false, error: j.error ?? "Failed to save beneficiaries" };
+      // Save designations (income + remainder). beneficiary_designation is a
+      // nested kind (TARGET_KIND_TO_FIELD maps it to null → applyChanges throws
+      // on add/edit), so there is no scenario-overlay path. In scenario mode we
+      // skip the designations write — base designations stay in effect for the
+      // projection. (Tracked: scenario-aware beneficiary designations.)
+      if (!scenarioActive) {
+        const designations = [
+          ...rowsToDesignationPayload(incomeRows, "income"),
+          ...rowsToDesignationPayload(remainderRows, "remainder"),
+        ];
+        const desigRes = await fetch(`/api/clients/${clientId}/entities/${saved.id}/beneficiaries`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(designations),
+        });
+        if (!desigRes.ok) {
+          const j = (await desigRes.json().catch(() => ({}))) as { error?: string };
+          return { ok: false, error: j.error ?? "Failed to save beneficiaries" };
+        }
       }
 
       // Capture whether this was the first create BEFORE flipping effectiveEntityId.
@@ -1111,6 +1179,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             trustGrantor={(grantor as "client" | "spouse") || "client"}
             accounts={toBasicAccountOptions(accounts ?? [])}
             currentYear={new Date().getFullYear()}
+            scenarioId={scenarioId}
             onClose={() => setOpenModal(null)}
             onSaved={() => {
               setOpenModal(null);

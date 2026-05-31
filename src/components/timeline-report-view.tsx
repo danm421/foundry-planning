@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
@@ -18,6 +19,7 @@ interface Props {
 type SparklineMode = "netWorth" | "portfolio" | "netCashFlow";
 
 export default function TimelineReportView({ clientId }: Props) {
+  const searchParams = useSearchParams();
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [projection, setProjection] = useState<ProjectionYear[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +69,13 @@ export default function TimelineReportView({ clientId }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        // Forward the active scenario so the timeline matches the rest of the
+        // scenario-aware reports (mirrors cashflow-report.tsx).
+        const scenarioParam = searchParams?.get("scenario");
+        const url = scenarioParam
+          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
+          : `/api/clients/${clientId}/projection-data`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error(`projection-data: ${res.status}`);
         const data = (await res.json()) as ClientData;
         if (cancelled) return;
@@ -81,7 +89,7 @@ export default function TimelineReportView({ clientId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [clientId]);
+  }, [clientId, searchParams]);
 
   const events: TimelineEvent[] = useMemo(
     () => (clientData && projection ? buildTimeline(clientData, projection) : []),
