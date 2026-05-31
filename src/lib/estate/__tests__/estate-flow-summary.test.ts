@@ -245,6 +245,75 @@ describe("buildEstateFlowSummary — second death sub-boxes", () => {
     expect(taxes.total).toBe(-200_000);
     expect(heirs.total - taxes.total).toBe(stage.estateValue);
   });
+
+  it("F9: heirs_outright popover lines reconcile gross → net (drain line + foots to sub-box total)", () => {
+    // Follow-on to F9: the sub-box TOTAL is net ($800k), but the popover
+    // `lines` previously listed only the $1.0M gross asset — clicking an $800k
+    // box showed $1.0M with no reconciliation. The lines must now also carry
+    // the drain so Σ lines == sub-box total (mirrors the liability case, where
+    // a negative mortgage line sits in `lines` so they foot to the net total).
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2030,
+      recipients: [
+        group({
+          key: "caroline",
+          kind: "family_member",
+          label: "Caroline Sample",
+          byMechanism: [mech("will_residuary", [asset("Brokerage", 1_000_000)])],
+          drains: { federal_estate_tax: -200_000 },
+        }),
+      ],
+      reductions: [reduction("federal_estate_tax", -200_000)],
+    });
+
+    const summary = buildEstateFlowSummary(baseInput({ secondDeath }))!;
+    const heirs = summary.secondDeath!.subBoxes.find(
+      (b) => b.kind === "heirs_outright",
+    )! as { total: number; lines: AssetTransferLine[] };
+
+    // Gross asset line is preserved at $1.0M.
+    const grossLine = heirs.lines.find((l) => l.label === "Brokerage")!;
+    expect(grossLine.amount).toBe(1_000_000);
+
+    // A negative drain line is appended for the $200k federal estate tax.
+    const drainLine = heirs.lines.find((l) => l.amount < 0)!;
+    expect(drainLine).toBeDefined();
+    expect(drainLine.amount).toBe(-200_000);
+    expect(drainLine.label).toBe("Federal Estate Tax");
+
+    // The popover foots to the net sub-box total.
+    const sumLines = heirs.lines.reduce((s, l) => s + l.amount, 0);
+    expect(sumLines).toBe(800_000);
+    expect(sumLines).toBe(heirs.total);
+  });
+
+  it("F9: zero-drain heirs popover has no drain lines (unchanged)", () => {
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2030,
+      recipients: [
+        group({
+          key: "caroline",
+          kind: "family_member",
+          label: "Caroline Sample",
+          byMechanism: [mech("will_residuary", [asset("Brokerage", 1_000_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary(baseInput({ secondDeath }))!;
+    const heirs = summary.secondDeath!.subBoxes.find(
+      (b) => b.kind === "heirs_outright",
+    )! as { total: number; lines: AssetTransferLine[] };
+
+    expect(heirs.lines).toHaveLength(1);
+    expect(heirs.lines.every((l) => l.amount > 0)).toBe(true);
+    expect(heirs.total).toBe(1_000_000);
+  });
 });
 
 describe("buildEstateFlowSummary — liability netting", () => {

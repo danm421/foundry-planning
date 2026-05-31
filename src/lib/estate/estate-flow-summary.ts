@@ -342,9 +342,15 @@ function buildDeathStage(
       label: "Heirs",
       // NET of each recipient's drain share so the sub-box ties to the
       // downstream net heir boxes and (with the tax sub-box) foots to the
-      // estate value. The popover lines below stay at gross asset amounts.
+      // estate value. Gross asset rows stay at their full value; the drain
+      // reconciliation lines below carry the value back down to the net total.
       total: chargeableRecipientNet(outrightGroups),
-      lines: outrightAssets,
+      // Gross asset rows + per-kind drain reconciliation rows. The drain rows
+      // mirror how an assumed-liability transfer rides in `lines` as a negative
+      // row so the popover foots to the net sub-box total (gross − drain). The
+      // assumed-liability line and the `debts_paid` drain are distinct data
+      // (transfer ledger vs. estate-tax drain attribution), so no double-count.
+      lines: [...outrightAssets, ...heirDrainLines(outrightGroups)],
     });
   }
 
@@ -359,6 +365,50 @@ function buildDeathStage(
     estateLines,
     subBoxes,
   };
+}
+
+// Order drain kinds appear in the heirs popover — estate taxes, then admin,
+// then debts, then IRD. Matches the conceptual order of the taxes sub-box.
+const DRAIN_KIND_ORDER: ReadonlyArray<ReductionsLine["kind"]> = [
+  "federal_estate_tax",
+  "state_estate_tax",
+  "admin_expenses",
+  "debts_paid",
+  "ird_tax",
+];
+
+/**
+ * Per-kind drain reconciliation rows for the heirs popover. Each non-zero
+ * `drainsByKind` entry (summed across the outright recipients) becomes one
+ * negative `AssetTransferLine` so the popover foots from gross asset value
+ * down to the net sub-box total (`chargeableRecipientNet`). Magnitudes are
+ * normalised with `-Math.abs` so the rows always reduce the popover regardless
+ * of the upstream drain sign convention (the live engine stores positive drain
+ * magnitudes; some fixtures store signed-negative deductions). Returns an empty
+ * array when there is no drain, so zero-drain popovers are unchanged.
+ */
+function heirDrainLines(groups: RecipientGroup[]): AssetTransferLine[] {
+  const byKind = new Map<ReductionsLine["kind"], number>();
+  for (const g of groups) {
+    for (const kind of DRAIN_KIND_ORDER) {
+      const v = g.drainsByKind[kind];
+      if (v) byKind.set(kind, (byKind.get(kind) ?? 0) + v);
+    }
+  }
+  const lines: AssetTransferLine[] = [];
+  for (const kind of DRAIN_KIND_ORDER) {
+    const magnitude = byKind.get(kind);
+    if (!magnitude) continue;
+    lines.push({
+      sourceAccountId: null,
+      sourceLiabilityId: null,
+      label: fmtKindLabels[kind],
+      amount: -Math.abs(magnitude),
+      basis: 0,
+      conflictIds: [],
+    });
+  }
+  return lines;
 }
 
 /**
