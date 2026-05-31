@@ -62,9 +62,10 @@ function classFromRelationship(
   if (state === "PA") {
     switch (rel) {
       case "child": case "stepchild": case "grandchild": case "great_grandchild":
-      case "parent": case "grandparent":
+      case "parent": case "grandparent": case "child_in_law":
+        // child_in_law: a child's spouse takes the lineal 4.5% rate (72 P.S. §9116(a)(1)).
         return "B";
-      case "sibling": case "child_in_law":
+      case "sibling":
         return "C";
       default:
         return "D";
