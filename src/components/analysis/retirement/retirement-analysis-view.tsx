@@ -36,14 +36,8 @@ import {
   savingsColumnAccountId,
 } from "./retirement-options-config";
 import type { MinSavingsGrowth } from "@/lib/analysis/hypothetical-savings";
-
-/** A firm model portfolio offered in the min-savings growth picker. */
-export interface ModelPortfolioOption {
-  id: string;
-  name: string;
-  /** Blended geometric return as a decimal (e.g. 0.062). */
-  blendedReturn: number;
-}
+import type { ModelPortfolioOption } from "./retirement-options-config";
+export type { ModelPortfolioOption };
 
 const STEPS = [
   "Family Info",
@@ -333,17 +327,14 @@ export function RetirementAnalysisView({
 
         {/* Shared across both views */}
         <div className="flex flex-col gap-[var(--gap-grid)]">
-          <MinSavingsGrowthPicker
-            options={modelPortfolioOptions}
-            value={minSavingsGrowth}
-            onChange={setMinSavingsGrowth}
-          />
           <AnalysisOptionsGrid
             clientId={clientId}
             source={source}
             rows={rows}
             savingsAccountId={savingsAccountId}
             minSavingsGrowth={minSavingsGrowth}
+            onMinSavingsGrowthChange={setMinSavingsGrowth}
+            modelPortfolioOptions={modelPortfolioOptions}
             onExploreResult={onExploreResult}
             onMutationsChange={onMutationsChange}
             onSaveScenario={handleSaveScenario}
@@ -359,79 +350,5 @@ export function RetirementAnalysisView({
         />
       </div>
     </AnalysisShell>
-  );
-}
-
-const TAXABLE_DEFAULT_VALUE = "taxable-default";
-const CUSTOM_VALUE = "custom";
-
-/** Compact growth-source control for the "Minimum Additional Savings" column:
- *  the client's taxable default, any firm model portfolio (with its blended
- *  return), or a flat custom rate. Mirrors the growth-inflation form dropdown. */
-function MinSavingsGrowthPicker({
-  options,
-  value,
-  onChange,
-}: {
-  options: ModelPortfolioOption[];
-  value: MinSavingsGrowth;
-  onChange: (next: MinSavingsGrowth) => void;
-}) {
-  const selectValue =
-    value.kind === "model-portfolio"
-      ? value.portfolioId
-      : value.kind === "custom-rate"
-        ? CUSTOM_VALUE
-        : TAXABLE_DEFAULT_VALUE;
-
-  const handleSelect = (next: string) => {
-    if (next === TAXABLE_DEFAULT_VALUE) {
-      onChange({ kind: "taxable-default" });
-    } else if (next === CUSTOM_VALUE) {
-      onChange({ kind: "custom-rate", rate: value.kind === "custom-rate" ? value.rate : 0.06 });
-    } else {
-      onChange({ kind: "model-portfolio", portfolioId: next });
-    }
-  };
-
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-3">
-      <label htmlFor="min-savings-growth" className="font-medium text-ink-2">
-        Additional savings grows in:
-      </label>
-      <select
-        id="min-savings-growth"
-        value={selectValue}
-        onChange={(e) => handleSelect(e.target.value)}
-        className="h-8 cursor-pointer rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 text-[13px] text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-      >
-        <option value={TAXABLE_DEFAULT_VALUE}>Taxable default (plan setting)</option>
-        {options.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name} — {(p.blendedReturn * 100).toFixed(1)}%
-          </option>
-        ))}
-        <option value={CUSTOM_VALUE}>Custom rate…</option>
-      </select>
-      {value.kind === "custom-rate" && (
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            step="0.1"
-            min={0}
-            max={20}
-            value={(value.rate * 100).toFixed(1)}
-            onChange={(e) => {
-              const pct = parseFloat(e.target.value);
-              if (Number.isNaN(pct)) return;
-              onChange({ kind: "custom-rate", rate: pct / 100 });
-            }}
-            aria-label="Custom growth rate (percent)"
-            className="h-8 w-20 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 text-[13px] text-ink tabular focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-          />
-          <span className="text-ink-3">%</span>
-        </div>
-      )}
-    </div>
   );
 }
