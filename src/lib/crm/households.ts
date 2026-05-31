@@ -25,7 +25,10 @@ export async function listCrmHouseholds(opts?: {
 
   return db.query.crmHouseholds.findMany({
     where: and(...conditions),
-    with: { contacts: true },
+    with: {
+      contacts: true,
+      planningClient: { columns: { id: true } },
+    },
     limit,
     offset,
     orderBy: (t, { desc }) => [desc(t.updatedAt)],
@@ -179,4 +182,12 @@ export async function deleteCrmHousehold(id: string) {
     resourceId: id,
     firmId,
   });
+}
+
+export async function countCrmHouseholdsForFirm(firmId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(crmHouseholds)
+    .where(eq(crmHouseholds.firmId, firmId));
+  return row?.count ?? 0;
 }
