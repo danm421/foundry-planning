@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
+import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { comparisonTemplates } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -79,7 +80,7 @@ export async function PUT(
     return NextResponse.json({ template: { ...row, editable: true } });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
+      return NextResponse.json({ error: "Validation failed", issues: formatZodIssues(err) }, { status: 400 });
     }
     const a = authErrorResponse(err);
     if (a) return NextResponse.json(a.body, { status: a.status });

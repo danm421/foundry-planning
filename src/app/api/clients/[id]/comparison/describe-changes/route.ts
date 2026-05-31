@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { and, eq } from "drizzle-orm";
 import { clients } from "@/db/schema";
@@ -90,7 +91,7 @@ export async function POST(
 
     const parsed = BodySchema.safeParse(await request.json());
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
+      return NextResponse.json({ error: "Validation failed", issues: formatZodIssues(parsed.error) }, { status: 400 });
     }
     const body = parsed.data;
 
@@ -137,7 +138,7 @@ export async function POST(
     return NextResponse.json({ markdown, generatedAt, cached: false, hash });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
+      return NextResponse.json({ error: "Validation failed", issues: formatZodIssues(err) }, { status: 400 });
     }
     const authResp = authErrorResponse(err);
     if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
