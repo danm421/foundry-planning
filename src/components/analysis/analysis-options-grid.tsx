@@ -43,10 +43,20 @@ type ColumnStatus =
   // The solve stream errored or closed before this column reported.
   | "unavailable";
 
+/** Min-savings funding-source detail (present only on that column). */
+interface FundingSource {
+  /** Largest single-year reduction in living expenses across the horizon. */
+  maxExpenseReduction: number;
+  growthRate: number;
+  /** Pre-formatted growth-assumption label (e.g. "Balanced — 6.2%"). */
+  growthLabel: string;
+}
+
 interface ColumnState {
   status: ColumnStatus;
   solvedValue: number | null;
   summary: RetirementSummary | null;
+  fundingSource: FundingSource | null;
 }
 
 interface Props {
@@ -105,6 +115,7 @@ interface ColumnEvent {
   status: string;
   solvedValue: number | null;
   summary: RetirementSummary;
+  fundingSource?: FundingSource;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,9 +163,9 @@ export function AnalysisOptionsGrid({
 }: Props) {
   // --- Solved columns (streamed) ------------------------------------------
   const [columns, setColumns] = useState<Record<SolvedColumnId, ColumnState>>({
-    "min-savings": { status: "pending", solvedValue: null, summary: null },
-    "max-spending": { status: "pending", solvedValue: null, summary: null },
-    "earliest-retirement": { status: "pending", solvedValue: null, summary: null },
+    "min-savings": { status: "pending", solvedValue: null, summary: null, fundingSource: null },
+    "max-spending": { status: "pending", solvedValue: null, summary: null, fundingSource: null },
+    "earliest-retirement": { status: "pending", solvedValue: null, summary: null, fundingSource: null },
   });
 
   useEffect(() => {
@@ -225,6 +236,7 @@ export function AnalysisOptionsGrid({
                       : "not-achievable",
                   solvedValue: payload.solvedValue,
                   summary: payload.summary,
+                  fundingSource: payload.fundingSource ?? null,
                 },
               }));
             } else if (ev.event === "error") {
@@ -541,11 +553,24 @@ function SolvedCell({
       ? "—"
       : (config.formatSolved(state.solvedValue, rows) ?? "—");
 
+  const fundingSource =
+    config.id === "min-savings" ? state.fundingSource : null;
+
   return (
     <td className="border-b border-hair px-4 py-2.5 text-right">
       <span className="inline-block rounded bg-[color:var(--color-good)]/10 px-2 py-0.5 tabular text-[13px] font-semibold text-[color:var(--color-good)]">
         {display}
       </span>
+      {fundingSource && (
+        <div className="mt-1 text-[11px] leading-snug text-ink-4">
+          {fundingSource.maxExpenseReduction > 0
+            ? `Funded from surplus cash flow; reduces living expenses by up to ${formatCurrency(fundingSource.maxExpenseReduction)}/yr`
+            : "Funded entirely from surplus cash flow"}
+          {fundingSource.growthLabel
+            ? ` · growing at ${fundingSource.growthLabel}`
+            : ""}
+        </div>
+      )}
     </td>
   );
 }
