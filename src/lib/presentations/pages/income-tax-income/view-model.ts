@@ -48,7 +48,7 @@ export function buildTaxIncomeDrillData(input: BuildTaxIncomeDrillInput): DrillP
   const rows: DrillRow[] = visibleYears.map((py) => {
     const cells: Record<string, number> = {};
     for (const s of SERIES) cells[s.key] = s.pick(py);
-    cells.qbi = py.taxDetail?.qbi ?? 0;
+    cells.qbi = py.taxResult?.income.qbi ?? 0;
     cells.totalIncome = py.taxResult?.income.totalIncome ?? 0;
     cells.nonTaxable = py.taxResult?.income.nonTaxableIncome ?? 0;
     cells.gross = py.taxResult?.income.grossTotalIncome ?? 0;

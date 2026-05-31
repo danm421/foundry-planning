@@ -87,12 +87,14 @@ export function makeTaxYears(): ProjectionYear[] {
     baseYear({
       year: 2026,
       ages: { client: 60, spouse: 56 },
-      taxDetail: { qbi: 9_000 } as NonNullable<ProjectionYear["taxDetail"]>,
+      // QBI lives on taxResult.income (the source the income table reads); the
+      // differing taxDetail.qbi proves the view-model no longer reads taxDetail.
+      taxDetail: { qbi: 0 } as NonNullable<ProjectionYear["taxDetail"]>,
       rothConversions: [],
       taxResult: makeTaxResult({
         income: {
           earnedIncome: 400_000, ordinaryIncome: 40_000, dividends: 4_000,
-          capitalGains: 9_000, totalIncome: 453_000, grossTotalIncome: 453_000,
+          capitalGains: 9_000, qbi: 9_000, totalIncome: 453_000, grossTotalIncome: 453_000,
         },
         flow: {
           aboveLineDeductions: 24_000, adjustedGrossIncome: 429_000,
