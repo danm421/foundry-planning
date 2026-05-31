@@ -12,5 +12,9 @@ export const config: VercelConfig = {
       path: "/api/cron/reconcile-billing",
       schedule: "0 5 * * *",
     },
+    {
+      path: "/api/cron/refresh-holding-prices",
+      schedule: "0 9 * * *",
+    },
   ],
 };
