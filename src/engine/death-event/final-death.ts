@@ -37,7 +37,7 @@ import {
   assertDrainAttributionsReconcile,
   attributeDrainsToLedger,
 } from "./drain-attribution";
-import { computeIrdAttributions } from "./ird-tax";
+import { computeIrdAttributions, hasUntaxedInheritedIrd } from "./ird-tax";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGiftsByYear } from "@/lib/estate/adjusted-taxable-gifts";
 
@@ -741,13 +741,24 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     // source of truth, so distribution and drain attribution never desync.
     residuaryTier: chainResult.residuaryTier,
   });
+  const irdTaxRate = input.planSettings.irdTaxRate ?? 0;
   const irdAttributions = computeIrdAttributions({
     deathOrder: 2,
     transfers: ledger,
     accounts: input.accounts,
     externalBeneficiaries: input.externalBeneficiaries,
-    irdTaxRate: input.planSettings.irdTaxRate ?? 0,
+    irdTaxRate,
   });
+  if (
+    hasUntaxedInheritedIrd({
+      transfers: ledger,
+      accounts: input.accounts,
+      externalBeneficiaries: input.externalBeneficiaries,
+      irdTaxRate,
+    })
+  ) {
+    warnings.push("ird_tax_rate_unset");
+  }
   const estateTax: EstateTaxResult = {
     ...baseEstateTax,
     drainAttributions: [...drainAttributions, ...irdAttributions],

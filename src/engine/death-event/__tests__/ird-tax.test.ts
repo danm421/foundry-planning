@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeIrdAttributions } from "../ird-tax";
+import { computeIrdAttributions, hasUntaxedInheritedIrd } from "../ird-tax";
 import { applyFirstDeath, applyFinalDeath } from "../index";
 import type { DeathEventInput } from "../index";
 import type { Account, DeathTransfer, FamilyMember, PlanSettings } from "../../types";
@@ -214,6 +214,72 @@ describe("computeIrdAttributions", () => {
   });
 });
 
+describe("hasUntaxedInheritedIrd (F15)", () => {
+  it("F15: flags inherited pre-tax balance when irdTaxRate is 0", () => {
+    const flagged = hasUntaxedInheritedIrd({
+      transfers: [
+        transfer({ recipientKind: "family_member", recipientId: "kid", amount: 1_000_000, sourceAccountId: "ira-1" }),
+      ],
+      accounts: [acct("ira-1", "traditional_ira")],
+      externalBeneficiaries: [],
+      irdTaxRate: 0,
+    });
+    expect(flagged).toBe(true);
+  });
+
+  it("F15: does not flag when rate is set", () => {
+    expect(
+      hasUntaxedInheritedIrd({
+        transfers: [
+          transfer({ recipientKind: "family_member", recipientId: "kid", amount: 1_000_000, sourceAccountId: "ira-1" }),
+        ],
+        accounts: [acct("ira-1", "traditional_ira")],
+        externalBeneficiaries: [],
+        irdTaxRate: 0.3,
+      }),
+    ).toBe(false);
+  });
+
+  it("F15: does not flag a spouse recipient even when rate is 0", () => {
+    expect(
+      hasUntaxedInheritedIrd({
+        transfers: [
+          transfer({ recipientKind: "spouse", recipientId: null, amount: 1_000_000, sourceAccountId: "ira-1" }),
+        ],
+        accounts: [acct("ira-1", "traditional_ira")],
+        externalBeneficiaries: [],
+        irdTaxRate: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("F15: does not flag a non-IRD subtype (roth_ira) when rate is 0", () => {
+    expect(
+      hasUntaxedInheritedIrd({
+        transfers: [
+          transfer({ recipientKind: "family_member", recipientId: "kid", amount: 1_000_000, sourceAccountId: "roth-1" }),
+        ],
+        accounts: [acct("roth-1", "roth_ira")],
+        externalBeneficiaries: [],
+        irdTaxRate: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("F15: does not flag a charitable external beneficiary when rate is 0", () => {
+    expect(
+      hasUntaxedInheritedIrd({
+        transfers: [
+          transfer({ recipientKind: "external_beneficiary", recipientId: "ext-charity", amount: 1_000_000, sourceAccountId: "ira-1" }),
+        ],
+        accounts: [acct("ira-1", "traditional_ira")],
+        externalBeneficiaries: [{ id: "ext-charity", name: "Red Cross", kind: "charity" }],
+        irdTaxRate: 0,
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("applyFirstDeath integration — IRD applies to non-spouse IRA bequest", () => {
   const FM_CHILD_ID = "fm-child-ird";
   const FAMILY: FamilyMember[] = [
@@ -317,6 +383,48 @@ describe("applyFirstDeath integration — IRD applies to non-spouse IRA bequest"
     const result = applyFirstDeath(input);
     const ird = result.estateTax.drainAttributions.filter((a) => a.drainKind === "ird_tax");
     expect(ird).toEqual([]);
+    // F15: silent $0 IRD on a non-spouse heir must surface a warning.
+    expect(result.warnings).toContain("ird_tax_rate_unset");
+  });
+
+  it("F15: emits no ird_tax_rate_unset warning when irdTaxRate is set", () => {
+    const ira: Account = {
+      id: "ira-1",
+      name: "Client IRA",
+      category: "retirement",
+      subType: "traditional_ira",
+      value: 1_000_000,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, familyMemberId: FM_CHILD_ID, sortOrder: 0 },
+      ],
+    } as Account;
+
+    const input: DeathEventInput = {
+      year: 2030,
+      deceased: "client",
+      survivor: "spouse",
+      accounts: [ira],
+      accountBalances: { [ira.id]: ira.value },
+      basisMap: { [ira.id]: ira.basis },
+      will: null,
+      incomes: [],
+      liabilities: [],
+      familyMembers: FAMILY,
+      externalBeneficiaries: [],
+      entities: [],
+      planSettings: PLAN_SETTINGS,
+      gifts: [],
+      annualExclusionsByYear: {},
+      dsueReceived: 0,
+      priorTaxableGifts: { client: 0, spouse: 0 },
+    };
+
+    const result = applyFirstDeath(input);
+    expect(result.warnings).not.toContain("ird_tax_rate_unset");
   });
 });
 
