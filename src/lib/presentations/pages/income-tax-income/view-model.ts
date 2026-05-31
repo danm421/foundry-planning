@@ -18,7 +18,7 @@ const DISCLAIMER =
 const SERIES: Array<{ key: string; header: string; color: string; pick: (y: ProjectionYear) => number }> = [
   { key: "earned",     header: "Earned\nIncome",   color: "#16a34a", pick: (y) => y.taxResult?.income.earnedIncome ?? 0 },
   { key: "taxableSS",  header: "Taxable\nSS",      color: "#2563eb", pick: (y) => y.taxResult?.income.taxableSocialSecurity ?? 0 },
-  { key: "ordinary",   header: "Ordinary\nIncome",  color: "#0891b2", pick: (y) => y.taxResult?.income.ordinaryIncome ?? 0 },
+  { key: "ordinary",   header: "Ordinary\nIncome",  color: "#0891b2", pick: (y) => (y.taxResult?.income.ordinaryIncome ?? 0) - (y.taxResult?.income.shortCapitalGains ?? 0) },
   { key: "dividends",  header: "Dividends",         color: "#7c3aed", pick: (y) => y.taxResult?.income.dividends ?? 0 },
   { key: "ltcg",       header: "LT Cap\nGains",    color: "#facc15", pick: (y) => y.taxResult?.income.capitalGains ?? 0 },
   { key: "stcg",       header: "ST Cap\nGains",    color: "#ea580c", pick: (y) => y.taxResult?.income.shortCapitalGains ?? 0 },
