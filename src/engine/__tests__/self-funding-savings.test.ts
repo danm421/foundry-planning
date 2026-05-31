@@ -182,12 +182,26 @@ describe("self-funding (fundFromExpenseReduction) savings", () => {
   });
 
   it("never drives the withdrawal strategy to fund the contribution", () => {
+    // The funding waterfall runs during the working years. The invariant is that
+    // funding the synthetic contribution never liquidates another account in those
+    // years. We compare the (non-synthetic, non-checking) retirement account at the
+    // end of the last working year: with self-funding it should be untouched —
+    // identical to the no-savings baseline (pure growth, no contributions/draws).
+    // (Past retirement the runs legitimately diverge: redirected surplus sits in the
+    // synthetic instead of checking, changing the withdrawal-ordering buffer — that
+    // is not "liquidating to fund S".)
     const withS = runProjection(fixtureWithSelfFunding(20_000, { salary: 90_000 }));
     const baseline = runProjection(fixtureWithSelfFunding(0, { salary: 90_000 }));
-    // The retirement account's end balance must not be drained more than baseline.
-    const balWith = withS.at(-1)!.accountLedgers[RETIREMENT_ACCT]?.endingValue ?? 0;
-    const balBase = baseline.at(-1)!.accountLedgers[RETIREMENT_ACCT]?.endingValue ?? 0;
-    expect(balWith).toBeGreaterThanOrEqual(balBase - 1); // tolerance for fp
+    const lastWorkingIdx = withS.findIndex((y) => y.year === LAST_WORKING);
+    expect(lastWorkingIdx).toBeGreaterThan(0);
+    const balWith = withS[lastWorkingIdx].accountLedgers[RETIREMENT_ACCT]?.endingValue ?? 0;
+    const balBase = baseline[lastWorkingIdx].accountLedgers[RETIREMENT_ACCT]?.endingValue ?? 0;
+    expect(balWith).toBeCloseTo(balBase, 2); // identical: never liquidated to fund S
+    // And no household withdrawals were taken from the retirement account while funding.
+    const drawnDuringFunding = withS
+      .filter((y) => y.year <= LAST_WORKING)
+      .reduce((sum, y) => sum + (y.accountLedgers[RETIREMENT_ACCT]?.distributions ?? 0), 0);
+    expect(drawnDuringFunding).toBeCloseTo(0, 2);
   });
 
   it("stops contributing after retirement but keeps growing the balance", () => {
