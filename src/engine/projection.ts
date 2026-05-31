@@ -2878,6 +2878,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // to phase 12) and the rest (applied here).
     const pendingFillBracketTargets: Record<string, number> = {};
     const fillBracketCeilingsById: Record<string, number> = {};
+    // Per-conversion fundable source-pool balance. A fill_up_bracket conversion
+    // can never recognize more taxable income than its source accounts hold —
+    // applyRothConversions caps the gross at this pool. Sizing/taxing beyond it
+    // charges tax on a conversion that never happens (phantom income once the
+    // source IRA is drained). Captured here at size time; the source accounts
+    // are not debited again until the conversion is applied post-convergence.
+    const fillBracketSourceCapById: Record<string, number> = {};
     let fillBracketProbe: ReturnType<typeof buildIncomeTaxBaseProbe> | null = null;
     const convFilingStatus = effectiveFilingStatus(
       (client.filingStatus ?? "single") as FilingStatus,
@@ -2936,11 +2943,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (!tier || tier.to == null) continue;
           const ceiling = tier.to - 1;
           fillBracketCeilingsById[conv.id] = ceiling;
-          pendingFillBracketTargets[conv.id] = sizeFillBracketConversion(
-            ceiling,
-            fillBracketProbe,
+          const sourceCap = conv.sourceAccountIds.reduce(
+            (sum, sid) => sum + Math.max(0, accountBalances[sid] ?? 0),
             0,
-            0,
+          );
+          fillBracketSourceCapById[conv.id] = sourceCap;
+          pendingFillBracketTargets[conv.id] = Math.min(
+            sizeFillBracketConversion(ceiling, fillBracketProbe, 0, 0),
+            sourceCap,
           );
         }
       }
@@ -3802,6 +3812,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const MAX_ITER = 5;
     const TOLERANCE = 1;
 
+    // A fill-bracket conversion is "on target" when its post-conversion base
+    // hits the ceiling — OR when it has already converted its entire fundable
+    // source pool yet still sits at/under the ceiling. The latter is the
+    // depleted-IRA case: the bracket simply can't be filled further this year,
+    // so it's converged (not an unsolved residual). Without this, the loop
+    // would size a target larger than the source pool, tax the household on a
+    // conversion that never happens, and pin the bracket report at "$1 left".
+    const fillBracketOnTarget = (cid: string, baseAtTarget: number): boolean => {
+      const ceiling = fillBracketCeilingsById[cid];
+      if (Math.abs(baseAtTarget - ceiling) <= TOLERANCE) return true;
+      const cap = fillBracketSourceCapById[cid] ?? Infinity;
+      const poolExhausted = (pendingFillBracketTargets[cid] ?? 0) >= cap - TOLERANCE;
+      return poolExhausted && baseAtTarget <= ceiling + TOLERANCE;
+    };
+
     let cumulativeShortfall = 0;
     let supplementalPlan: ReturnType<typeof planSupplementalWithdrawal> = {
       byAccount: {},
@@ -3857,13 +3882,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Joint convergence test: bracket fillers must also be on-target.
         let bracketConverged = true;
         if (fillBracketProbe) {
-          for (const [cid, ceiling] of Object.entries(fillBracketCeilingsById)) {
+          for (const cid of Object.keys(fillBracketCeilingsById)) {
             const baseAtCurrent = fillBracketProbe(
               pendingFillBracketTargets[cid] ?? 0,
               supplementalPlan.recognizedIncome.ordinaryIncome,
               supplementalPlan.recognizedIncome.capitalGains,
             );
-            if (Math.abs(baseAtCurrent - ceiling) > TOLERANCE) {
+            if (!fillBracketOnTarget(cid, baseAtCurrent)) {
               bracketConverged = false;
               break;
             }
@@ -3933,11 +3958,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // jointly consistent inside this iter — step (c) below sees both.
         if (fillBracketProbe) {
           for (const cid of Object.keys(fillBracketCeilingsById)) {
-            pendingFillBracketTargets[cid] = sizeFillBracketConversion(
-              fillBracketCeilingsById[cid],
-              fillBracketProbe,
-              supplementalPlan.recognizedIncome.ordinaryIncome,
-              supplementalPlan.recognizedIncome.capitalGains,
+            pendingFillBracketTargets[cid] = Math.min(
+              sizeFillBracketConversion(
+                fillBracketCeilingsById[cid],
+                fillBracketProbe,
+                supplementalPlan.recognizedIncome.ordinaryIncome,
+                supplementalPlan.recognizedIncome.capitalGains,
+              ),
+              fillBracketSourceCapById[cid] ?? Infinity,
             );
           }
         }
@@ -3990,11 +4018,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           const bracketResiduals: Record<string, number> = {};
           if (fillBracketProbe) {
             for (const [cid, ceiling] of Object.entries(fillBracketCeilingsById)) {
-              bracketResiduals[cid] = fillBracketProbe(
+              const baseAtCurrent = fillBracketProbe(
                 pendingFillBracketTargets[cid] ?? 0,
                 supplementalPlan.recognizedIncome.ordinaryIncome,
                 supplementalPlan.recognizedIncome.capitalGains,
-              ) - ceiling;
+              );
+              // A conversion that exhausted its source pool below the ceiling is
+              // on-target, not an unconverged residual — don't warn for it.
+              bracketResiduals[cid] = fillBracketOnTarget(cid, baseAtCurrent)
+                ? 0
+                : baseAtCurrent - ceiling;
             }
           }
           const anyBracketResidual = Object.values(bracketResiduals).some(
