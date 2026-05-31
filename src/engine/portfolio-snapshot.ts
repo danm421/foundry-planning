@@ -53,6 +53,7 @@ export function computePortfolioSnapshot(args: {
     trustsAndBusinessesTotal: 0,
     accessibleTrustAssetsTotal: 0,
     total: 0,
+    liquidTotal: 0,
   };
   for (const acct of workingAccounts) {
     const val = accountBalances[acct.id] ?? 0;
@@ -130,6 +131,15 @@ export function computePortfolioSnapshot(args: {
     portfolioAssets.realEstateTotal +
     portfolioAssets.businessTotal +
     portfolioAssets.lifeInsuranceTotal;
+
+  // H1: canonical liquid investable total — the reconciling "Portfolio Assets"
+  // figure consumed by the chart, the summary cell, and next-year BoY.
+  portfolioAssets.liquidTotal =
+    portfolioAssets.taxableTotal +
+    portfolioAssets.cashTotal +
+    portfolioAssets.retirementTotal +
+    portfolioAssets.lifeInsuranceTotal +
+    portfolioAssets.accessibleTrustAssetsTotal;
 
   return portfolioAssets;
 }

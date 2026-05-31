@@ -1216,6 +1216,12 @@ export interface ProjectionYear {
     accessibleTrustAssets: Record<string, number>;
     accessibleTrustAssetsTotal: number;
     total: number;
+    /** Canonical "Portfolio Assets" reconciling total = liquid investable only:
+     *  taxable + cash + retirement + lifeInsurance + accessibleTrustAssets.
+     *  Excludes real estate, business, and locked (non-accessible) trust assets,
+     *  which are net-worth not portfolio. Single source of truth for the chart,
+     *  the summary cell, and the next-year beginning-of-year carry-forward (H1). */
+    liquidTotal: number;
   };
 
   accountLedgers: Record<string, AccountLedger>;
