@@ -103,8 +103,16 @@ function buildBaseSection(years: ProjectionYear[], c: ClientData): CashflowSecti
 
   const rmdsTotal = (y: ProjectionYear) =>
     Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
+  // Match the on-screen Other Inflows (cashflow-report.tsx noteTotal): technique
+  // proceeds PLUS notes-receivable cash (interest + LTCG principal + basis principal).
+  const noteTotal = (y: ProjectionYear) => {
+    const t = y.notesReceivableTotals;
+    if (!t) return 0;
+    return t.interest + t.principalLTCG + t.principalBasis;
+  };
   const otherInflowsTotal = (y: ProjectionYear) =>
-    techniqueIncomeIds.reduce((s, id) => s + (y.income.bySource[id] ?? 0), 0);
+    techniqueIncomeIds.reduce((s, id) => s + (y.income.bySource[id] ?? 0), 0) +
+    noteTotal(y);
 
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
