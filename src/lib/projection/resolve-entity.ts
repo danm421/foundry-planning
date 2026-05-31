@@ -29,6 +29,23 @@ export interface ResolutionContext {
    *  Present only for accounts in `holdings` growth-source mode. When set,
    *  the account's value/basis are derived from holdings, not the raw row. */
   holdingsTotalsByAccountId?: Map<string, { value: number; basis: number }>;
+  /** Inputs needed to recompute `resolvedInflationRate` when a scenario edits
+   *  `plan_settings.inflationRate`. Populated by `loadClientData`; absent in
+   *  unit tests that don't exercise inflation re-resolution. See
+   *  `reResolveInflationGrowth`. */
+  resolvedInflationInputs?: {
+    inflationRateSource: "asset_class" | "custom";
+    inflationClass: { geometricReturn: number | string } | null;
+    clientOverride: { geometricReturn: number | string } | null;
+  };
+  /** Account ids whose resolved `growthRate` came from the inflation rate
+   *  (growthSource === "inflation"). The engine `Account` drops `growthSource`,
+   *  so the scenario overlay reuses this set to re-resolve those accounts when
+   *  a scenario changes inflation. */
+  accountGrowthFromInflation?: Set<string>;
+  /** Account ids whose resolved `propertyTaxGrowthRate` came from the inflation
+   *  rate (propertyTaxGrowthSource === "inflation"). */
+  accountPropertyTaxFromInflation?: Set<string>;
 }
 
 type Numericish = string | number | null | undefined;
