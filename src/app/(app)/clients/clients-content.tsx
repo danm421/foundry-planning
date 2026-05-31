@@ -1,83 +1,55 @@
-import { db } from "@/db";
-import { clients, crmHouseholdContacts } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
-import ClientsTable from "@/components/clients-table";
+import Link from "next/link";
+import { listCrmHouseholds } from "@/lib/crm/households";
+import { CrmHouseholdSearch } from "@/components/crm-household-search";
+import { UnifiedClientsTable, type UnifiedClientRow } from "@/components/unified-clients-table";
 
-export async function ClientsContent({ firmId }: { firmId: string }) {
-  const rows = await db
-    .select()
-    .from(clients)
-    .where(eq(clients.firmId, firmId));
+export async function ClientsContent({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; status?: string }>;
+}) {
+  const params = await searchParams;
+  const households = await listCrmHouseholds({
+    search: params.search,
+    status: params.status,
+  });
 
-  // CRM contacts — sole identity source. Single query scoped to the households
-  // this firm's clients are linked to.
-  const householdIds = rows.map((c) => c.crmHouseholdId);
-  const contactRows = householdIds.length
-    ? await db
-        .select()
-        .from(crmHouseholdContacts)
-        .where(inArray(crmHouseholdContacts.householdId, householdIds))
-    : [];
-  const householdContacts = new Map<
-    string,
-    { primary: typeof contactRows[number] | null; spouse: typeof contactRows[number] | null }
-  >();
-  for (const contact of contactRows) {
-    const entry = householdContacts.get(contact.householdId) ?? { primary: null, spouse: null };
-    if (contact.role === "primary") entry.primary = contact;
-    else if (contact.role === "spouse") entry.spouse = contact;
-    householdContacts.set(contact.householdId, entry);
-  }
+  const rows: UnifiedClientRow[] = households.map((h) => {
+    const primary = h.contacts.find((c) => c.role === "primary");
+    const spouse = h.contacts.find((c) => c.role === "spouse");
+    return {
+      householdId: h.id,
+      name: h.name,
+      status: h.status,
+      primaryName: primary ? `${primary.firstName} ${primary.lastName}`.trim() : null,
+      spouseName: spouse ? `${spouse.firstName} ${spouse.lastName}`.trim() : null,
+      hasPlanning: Boolean(h.planningClient),
+      planningClientId: h.planningClient?.id ?? null,
+      updatedAt: h.updatedAt instanceof Date ? h.updatedAt.toISOString() : String(h.updatedAt),
+    };
+  });
 
-  // Serialize dates to strings so they pass cleanly to the client component.
-  // Drop rows missing a primary CRM contact — they're inactive/orphaned.
-  const serialized = rows
-    .map((c) => {
-      const ctx = householdContacts.get(c.crmHouseholdId);
-      const primary = ctx?.primary ?? null;
-      const spouse = ctx?.spouse ?? null;
-      if (!primary) return null;
-      return {
-        id: c.id,
-        firstName: primary.firstName,
-        lastName: primary.lastName,
-        dateOfBirth: primary.dateOfBirth ?? "",
-        retirementAge: c.retirementAge,
-        planEndAge: c.planEndAge,
-        filingStatus: c.filingStatus,
-        spouseName: spouse?.firstName ?? null,
-        spouseLastName: spouse?.lastName ?? null,
-        spouseDob: spouse?.dateOfBirth ?? null,
-        spouseRetirementAge: c.spouseRetirementAge ?? null,
-        email: primary.email ?? null,
-        phone: primary.phone ?? null,
-        mobile: primary.mobile ?? null,
-        addressLine1: primary.addressLine1 ?? null,
-        addressLine2: primary.addressLine2 ?? null,
-        city: primary.city ?? null,
-        state: primary.state ?? null,
-        postalCode: primary.postalCode ?? null,
-        country: primary.country ?? null,
-        spouseEmail: spouse?.email ?? null,
-        spousePhone: spouse?.phone ?? null,
-        spouseMobile: spouse?.mobile ?? null,
-        spouseAddressLine1: spouse?.addressLine1 ?? null,
-        spouseAddressLine2: spouse?.addressLine2 ?? null,
-        spouseCity: spouse?.city ?? null,
-        spouseState: spouse?.state ?? null,
-        spousePostalCode: spouse?.postalCode ?? null,
-        spouseCountry: spouse?.country ?? null,
-        createdAt:
-          c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt),
-        updatedAt:
-          c.updatedAt instanceof Date ? c.updatedAt.toISOString() : String(c.updatedAt),
-      };
-    })
-    .filter((c): c is NonNullable<typeof c> => c !== null)
-    .sort((a, b) => {
-      const last = a.lastName.localeCompare(b.lastName);
-      return last !== 0 ? last : a.firstName.localeCompare(b.firstName);
-    });
-
-  return <ClientsTable rows={serialized} />;
+  return (
+    <div className="p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-ink">Clients</h1>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/crm/import"
+            className="inline-flex h-10 items-center rounded-[var(--radius-sm)] border border-hair bg-card-2 px-4 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-card"
+          >
+            Bulk import
+          </Link>
+          <Link
+            href="/crm/new"
+            className="inline-flex h-10 items-center rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep"
+          >
+            New household
+          </Link>
+        </div>
+      </div>
+      <CrmHouseholdSearch />
+      <UnifiedClientsTable rows={rows} />
+    </div>
+  );
 }
