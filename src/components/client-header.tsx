@@ -15,7 +15,10 @@ interface ClientLike {
 
 interface ClientHeaderProps {
   client: ClientLike;
-  advisorName: string;
+  // Rendered inline after "Lead advisor:". A node (not just a string) so the
+  // layout can stream the name in under <Suspense> rather than blocking the
+  // shell on the Clerk lookup.
+  advisorName: ReactNode;
   rightSlot?: ReactNode;
 }
 
