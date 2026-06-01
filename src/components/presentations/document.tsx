@@ -1,6 +1,6 @@
 import { Document } from "@react-pdf/renderer";
 import { PRESENTATION_PAGES, type PresentationPageId } from "./registry";
-import type { ProjectionYear, ClientData } from "@/engine/types";
+import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { ensureFontsRegistered } from "./shared/fonts";
 import type { TocSection } from "./pages/toc/page-pdf";
@@ -8,11 +8,20 @@ import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-ca
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 
+export interface PageScenarioBundle {
+  clientData: ClientData;
+  projection: ProjectionResult;
+  scenarioLabel: string;
+  monteCarlo?: MonteCarloReportPayload | null;
+  scenarioChanges?: ScenarioChangesContext;
+}
+
 interface PresentationDocumentProps {
   pages: Array<{
     pageId: PresentationPageId;
     options?: Record<string, unknown> | undefined;
-    scenarioOverrideLabel?: string | null; // V1: label-only override
+    /** Key into `bundles` — which scenario this page renders. */
+    scenarioKey: string;
   }>;
   firmName: string;
   firmTagline: string | null;
@@ -21,16 +30,13 @@ interface PresentationDocumentProps {
   accentColor: string;
   clientName: string;
   reportDate: string;
-  scenarioLabel: string;
   spouseName: string | null;
-  years: ProjectionYear[];
-  projection: ProjectionResult;
-  clientData: ClientData;
-  monteCarlo?: MonteCarloReportPayload | null;
-  /** Present only when the deck includes an investment page. */
+  /** One bundle per distinct scenario in the deck, keyed by `keyForRef`. */
+  bundles: Record<string, PageScenarioBundle>;
+  /** Key of the top-level scenario; fallback for any unmatched page. */
+  topScenarioKey: string;
+  /** Present only when the deck includes an investment page; scenario-independent. */
   investments?: InvestmentsBundle;
-  /** Present only when the deck includes the Scenario Changes page. */
-  scenarioChanges?: ScenarioChangesContext;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {
@@ -63,13 +69,14 @@ export function PresentationDocument(props: PresentationDocumentProps) {
   return (
     <Document>
       {resolved.map(({ p, page, options }, idx) => {
-        const pageScenarioLabel = p.scenarioOverrideLabel ?? props.scenarioLabel;
+        const bundle =
+          props.bundles[p.scenarioKey] ?? props.bundles[props.topScenarioKey];
         const data = page.buildData(
           {
-            years: props.years,
-            projection: props.projection,
-            clientData: props.clientData,
-            scenarioLabel: pageScenarioLabel,
+            years: bundle.projection.years,
+            projection: bundle.projection,
+            clientData: bundle.clientData,
+            scenarioLabel: bundle.scenarioLabel,
             clientName: props.clientName,
             spouseName: props.spouseName,
             firmName: props.firmName,
@@ -77,9 +84,9 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             firmLogoDataUrl: props.firmLogoDataUrl,
             accentColor: props.accentColor,
             reportDate: props.reportDate,
-            monteCarlo: props.monteCarlo ?? null,
+            monteCarlo: bundle.monteCarlo ?? null,
             investments: props.investments,
-            scenarioChanges: props.scenarioChanges,
+            scenarioChanges: bundle.scenarioChanges,
           },
           options as never,
         );

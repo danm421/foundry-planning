@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { renderToStream } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
+import { inArray } from "drizzle-orm";
+import { db } from "@/db";
+import { scenarios, scenarioSnapshots } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { resolveBranding } from "@/lib/comparison-pdf/branding";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
@@ -13,10 +16,7 @@ import {
   ClientNotFoundError,
   ProjectionInputError,
 } from "@/lib/projection/load-client-data";
-import {
-  loadEffectiveTreeForRef,
-  type ScenarioRef,
-} from "@/lib/scenario/loader";
+import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import {
@@ -28,7 +28,10 @@ import {
 import { buildHistogramSeries } from "@/lib/monte-carlo/histogram-series";
 import { successByYear } from "@/lib/comparison/success-by-year";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
-import { PresentationDocument } from "@/components/presentations/document";
+import {
+  PresentationDocument,
+  type PageScenarioBundle,
+} from "@/components/presentations/document";
 import {
   PRESENTATION_PAGES,
   type PresentationPageId,
@@ -39,6 +42,11 @@ import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
+import {
+  planScenarioBundles,
+  labelForRef,
+  type PlannerPage,
+} from "@/lib/scenario/presentation-refs";
 import React from "react";
 
 export const dynamic = "force-dynamic";
@@ -80,6 +88,12 @@ const BodySchema = z.object({
   pages: z.array(pageDescriptorSchema).min(1),
 });
 
+// Guardrails: cap the work a single export can fan out to, so a deck with
+// many per-page scenario overrides can't blow the 25 s render / 60 s function
+// budget. Exceeding either returns 400 instead of timing out.
+const MAX_DISTINCT_SCENARIOS = 6;
+const MAX_MC_SCENARIOS = 3;
+
 const slugify = (s: string) =>
   s
     .toLowerCase()
@@ -117,83 +131,60 @@ export async function POST(
       );
     }
 
-    // F15: resolve the scenarioId into a ScenarioRef so the effective tree
-    // carries real scenario changes instead of always projecting base-case data.
-    //   snap:<id> → frozen snapshot · <uuid> → live scenario · null|"base" → base
-    const rawScenarioId = parsed.data.scenarioId;
-    const scenarioRef: ScenarioRef = rawScenarioId?.startsWith("snap:")
-      ? { kind: "snapshot", id: rawScenarioId.slice("snap:".length), side: "left" }
-      : rawScenarioId && rawScenarioId !== "base"
-        ? { kind: "scenario", id: rawScenarioId, toggleState: {} }
-        : { kind: "scenario", id: "base", toggleState: {} };
+    // Plan the distinct set of scenarios this deck needs. Pages that don't
+    // support an override, or whose override is undefined ("Default"), follow
+    // the top-level scenario.
+    const plannerPages: PlannerPage[] = parsed.data.pages.map((p) => ({
+      supportsScenarioOverride: PRESENTATION_PAGES[p.pageId].supportsScenarioOverride,
+      scenarioOverride: p.scenarioOverride,
+      isMonteCarlo: p.pageId === "monteCarlo",
+      isScenarioChanges: p.pageId === "scenarioChanges",
+    }));
+    const plan = planScenarioBundles(plannerPages, parsed.data.scenarioId);
 
-    let clientData;
-    try {
-      const { effectiveTree } = await loadEffectiveTreeForRef(id, firmId, scenarioRef);
-      clientData = effectiveTree;
-    } catch (err) {
-      if (err instanceof ClientNotFoundError) {
-        return NextResponse.json({ error: "Not found" }, { status: 404 });
-      }
-      if (err instanceof ProjectionInputError) {
-        // The raw message embeds internal client / CRM-household UUIDs (audit
-        // F4). Keep the detail server-side; return a generic message.
-        console.error(
-          "POST /clients/[id]/presentations/export-pdf projection input error",
-          err,
-        );
-        return NextResponse.json(
-          { error: "Client data is incomplete or invalid for this projection." },
-          { status: 422 },
-        );
-      }
-      throw err;
+    if (plan.distinct.size > MAX_DISTINCT_SCENARIOS) {
+      return NextResponse.json(
+        {
+          error: `Too many distinct scenarios in one deck (${plan.distinct.size}). Limit is ${MAX_DISTINCT_SCENARIOS}.`,
+        },
+        { status: 400 },
+      );
+    }
+    const mcCount = [...plan.distinct.values()].filter((d) => d.needsMonteCarlo).length;
+    if (mcCount > MAX_MC_SCENARIOS) {
+      return NextResponse.json(
+        {
+          error: `Too many scenarios with a Monte Carlo page (${mcCount}). Limit is ${MAX_MC_SCENARIOS}.`,
+        },
+        { status: 400 },
+      );
     }
 
-    const projection = runProjectionWithEvents(clientData);
-
-    // Monte Carlo runs server-side only when the deck includes the MC page.
-    // The engine is pure/Node-safe; we reuse the persisted base-case seed so
-    // the PDF is reproducible. Scenario override is label-only (V1), so a
-    // single payload covers the whole deck — mirrors the shared `projection`.
-    let monteCarlo: MonteCarloReportPayload | null = null;
-    if (parsed.data.pages.some((p) => p.pageId === "monteCarlo")) {
-      try {
-        const mc = await loadMonteCarloData(id, firmId);
-        const engine = createReturnEngine({
-          indices: mc.indices,
-          correlation: mc.correlation,
-          seed: mc.seed,
-        });
-        const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.mix]));
-        const result = await runMonteCarlo({
-          data: clientData,
-          returnEngine: engine,
-          accountMixes,
-          trials: 1000,
-          requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
-        });
-        const summary = summarizeMonteCarlo(result, {
-          client: clientData.client,
-          planSettings: clientData.planSettings,
-          startingLiquidBalance: mc.startingLiquidBalance,
-        });
-        monteCarlo = {
-          summary,
-          histogram: buildHistogramSeries(result.endingLiquidAssets),
-          successRates: successByYear(
-            result.byYearLiquidAssetsPerTrial,
-            mc.requiredMinimumAssetLevel,
-          ),
-          deterministic: projection.years.map(liquidPortfolioTotal),
-        };
-      } catch (mcErr) {
-        // Non-fatal: leave monteCarlo null so the page renders its graceful
-        // "data unavailable" frame instead of failing the whole export.
-        console.error("Monte Carlo server-side run failed for export", mcErr);
-      }
+    // Resolve human-readable names for every live scenario / snapshot id in the
+    // plan, in two batched queries. firmId scoping is enforced per-tree below by
+    // loadEffectiveTreeForRef (it throws on a cross-org id before we use names).
+    const liveScenarioIds: string[] = [];
+    const snapshotIds: string[] = [];
+    for (const { ref } of plan.distinct.values()) {
+      if (ref.kind === "snapshot") snapshotIds.push(ref.id);
+      else if (ref.id !== "base") liveScenarioIds.push(ref.id);
     }
 
+    const scenarioNames = new Map<string, string>();
+    if (liveScenarioIds.length > 0) {
+      const rows = await db
+        .select({ id: scenarios.id, name: scenarios.name })
+        .from(scenarios)
+        .where(inArray(scenarios.id, liveScenarioIds));
+      for (const r of rows) scenarioNames.set(r.id, r.name);
+    }
+    if (snapshotIds.length > 0) {
+      const rows = await db
+        .select({ id: scenarioSnapshots.id, name: scenarioSnapshots.name })
+        .from(scenarioSnapshots)
+        .where(inArray(scenarioSnapshots.id, snapshotIds));
+      for (const r of rows) scenarioNames.set(r.id, r.name);
+    }
     // Conditionally load the investments bundle — only when the deck includes
     // at least one investment page, to avoid unnecessary DB queries.
     const needsInvestments = parsed.data.pages.some(
@@ -203,48 +194,121 @@ export async function POST(
       ? (await loadInvestmentsBundle(id, firmId)) ?? undefined
       : undefined;
 
-    // Scenario Changes report: load the raw edits for the active scenario, but
-    // only when the deck includes that page AND the active ref is a live
-    // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
-    // only — matching what the overlaid clientData already reflects.
-    //
-    // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
-    // scenarioId alone. rawScenarioId is proven to belong to this firm/client by
-    // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
-    // clientId/firmId and throws on a cross-org id before we reach here). Do not
-    // remove or lazily defer that call without adding firm scoping to these reads.
-    let scenarioChanges: ScenarioChangesContext | undefined;
-    const needsScenarioChanges = parsed.data.pages.some((p) => p.pageId === "scenarioChanges");
-    const isLiveScenario =
-      !!rawScenarioId && rawScenarioId !== "base" && !rawScenarioId.startsWith("snap:");
-    if (needsScenarioChanges && isLiveScenario) {
+    // Build one bundle per distinct scenario. Projection always; Monte Carlo
+    // and scenario-changes only where the plan says a page needs them.
+    const bundles: Record<string, PageScenarioBundle> = {};
+    for (const [key, d] of plan.distinct) {
+      let clientData;
       try {
-        const [changes, toggleGroups] = await Promise.all([
-          loadScenarioChanges(rawScenarioId),
-          loadScenarioToggleGroups(rawScenarioId),
-        ]);
-        scenarioChanges = {
-          changes,
-          toggleGroups,
-          targetNames: buildTargetNames(clientData, id),
-          baseLabel: "your current plan",
-        };
-      } catch (scErr) {
-        // Non-fatal: leave undefined so the page renders its empty state.
-        console.error("Scenario changes load failed for export", scErr);
+        const { effectiveTree } = await loadEffectiveTreeForRef(id, firmId, d.ref);
+        clientData = effectiveTree;
+      } catch (err) {
+        if (err instanceof ClientNotFoundError) {
+          return NextResponse.json({ error: "Not found" }, { status: 404 });
+        }
+        if (err instanceof ProjectionInputError) {
+          // The raw message embeds internal client / CRM-household UUIDs (audit
+          // F4). Keep the detail server-side; return a generic message.
+          console.error(
+            "POST /clients/[id]/presentations/export-pdf projection input error",
+            err,
+          );
+          return NextResponse.json(
+            { error: "Client data is incomplete or invalid for this projection." },
+            { status: 422 },
+          );
+        }
+        throw err;
       }
+
+      const projection = runProjectionWithEvents(clientData);
+
+      // Monte Carlo runs server-side only when the deck includes the MC page.
+      // The engine is pure/Node-safe; we reuse the persisted base-case seed so
+      // the PDF is reproducible. Only runs for scenarios where a MC page exists.
+      let monteCarlo: MonteCarloReportPayload | null = null;
+      if (d.needsMonteCarlo) {
+        try {
+          const mc = await loadMonteCarloData(id, firmId);
+          const engine = createReturnEngine({
+            indices: mc.indices,
+            correlation: mc.correlation,
+            seed: mc.seed,
+          });
+          const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.mix]));
+          const result = await runMonteCarlo({
+            data: clientData,
+            returnEngine: engine,
+            accountMixes,
+            trials: 1000,
+            requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
+          });
+          const summary = summarizeMonteCarlo(result, {
+            client: clientData.client,
+            planSettings: clientData.planSettings,
+            startingLiquidBalance: mc.startingLiquidBalance,
+          });
+          monteCarlo = {
+            summary,
+            histogram: buildHistogramSeries(result.endingLiquidAssets),
+            successRates: successByYear(
+              result.byYearLiquidAssetsPerTrial,
+              mc.requiredMinimumAssetLevel,
+            ),
+            deterministic: projection.years.map(liquidPortfolioTotal),
+          };
+        } catch (mcErr) {
+          // Non-fatal: leave monteCarlo null so the page renders its graceful
+          // "data unavailable" frame instead of failing the whole export.
+          console.error("Monte Carlo server-side run failed for export", mcErr);
+        }
+      }
+
+      // Scenario Changes report: load the raw edits for the active scenario, but
+      // only when the deck includes that page AND the active ref is a live
+      // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
+      // only — matching what the overlaid clientData already reflects.
+      //
+      // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
+      // scenarioId alone. The scenarioId is proven to belong to this firm/client by
+      // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
+      // clientId/firmId and throws on a cross-org id before we reach here). Do not
+      // remove or lazily defer that call without adding firm scoping to these reads.
+      let scenarioChanges: ScenarioChangesContext | undefined;
+      if (d.needsScenarioChanges && d.ref.kind === "scenario") {
+        const scenarioId = d.ref.id;
+        try {
+          const [changes, toggleGroups] = await Promise.all([
+            loadScenarioChanges(scenarioId),
+            loadScenarioToggleGroups(scenarioId),
+          ]);
+          scenarioChanges = {
+            changes,
+            toggleGroups,
+            targetNames: buildTargetNames(clientData, id),
+            baseLabel: "your current plan",
+          };
+        } catch (scErr) {
+          // Non-fatal: leave undefined so the page renders its empty state.
+          console.error("Scenario changes load failed for export", scErr);
+        }
+      }
+
+      bundles[key] = {
+        clientData,
+        projection,
+        scenarioLabel: labelForRef(d.ref, scenarioNames),
+        monteCarlo,
+        scenarioChanges,
+      };
     }
 
-    const ci = clientData.client;
-    const clientFirstName = ci.firstName;
+    // The cover/client-name fields come from the top-level bundle.
+    const topBundle = bundles[plan.topKey];
+    const ci = topBundle.clientData.client;
     const clientLastName = ci.lastName ?? "";
     const spouseFirstName = ci.spouseName ?? null;
-    const clientFullName = `${clientFirstName} ${clientLastName}`.trim();
-
-    // Human-readable label. Snapshot/UUID ids remain raw tokens here (V1);
-    // a future pass can join the scenarios table for the real name.
-    const scenarioLabel =
-      rawScenarioId && rawScenarioId !== "base" ? rawScenarioId : "Base Case";
+    const clientFullName = `${ci.firstName} ${clientLastName}`.trim();
 
     // Firm branding for the cover: name, accent color, and logo. Falls back to
     // the Foundry mark + gold when the firm hasn't set their own.
@@ -256,13 +320,10 @@ export async function POST(
     // createElement infers ReactElement<PresentationDocumentProps>. The element
     // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
     const doc = React.createElement(PresentationDocument, {
-      pages: parsed.data.pages.map((p) => ({
+      pages: parsed.data.pages.map((p, idx) => ({
         pageId: p.pageId,
         options: p.options as unknown as Record<string, unknown>,
-        // V1 label-only override: a string becomes the per-page scenario
-        // label; null/undefined fall through to the top-level scenarioLabel.
-        scenarioOverrideLabel:
-          typeof p.scenarioOverride === "string" ? p.scenarioOverride : null,
+        scenarioKey: plan.pageKeys[idx],
       })),
       firmName,
       firmTagline: null,
@@ -270,14 +331,10 @@ export async function POST(
       accentColor: branding.primaryColor,
       clientName: clientFullName,
       reportDate: dateLong(new Date()),
-      scenarioLabel,
       spouseName: spouseFirstName,
-      years: projection.years,
-      projection,
-      clientData,
-      monteCarlo,
+      bundles,
+      topScenarioKey: plan.topKey,
       investments,
-      scenarioChanges,
     }) as unknown as React.ReactElement<DocumentProps>;
 
     // @react-pdf/renderer has a memory-leak history on large docs, and
@@ -309,6 +366,7 @@ export async function POST(
         hasOverrides: parsed.data.pages.some(
           (p) => p.scenarioOverride !== undefined,
         ),
+        distinctScenarioCount: plan.distinct.size,
       },
     });
 

@@ -62,7 +62,14 @@ vi.mock("@/lib/presentations/default-logo", () => ({
 }));
 
 // Keep a benign @/db mock so importing the route doesn't open a real connection.
-vi.mock("@/db", () => ({ db: {} }));
+// The route issues batched scenarios/scenarioSnapshots name lookups via
+// db.select(...).from(...).where(...); stub the chain to resolve to no rows
+// (labels then fall back to the scenario id, which these audit tests ignore).
+vi.mock("@/db", () => ({
+  db: {
+    select: () => ({ from: () => ({ where: async () => [] }) }),
+  },
+}));
 
 // Replace the document component and renderer so the schema-validation flow
 // can reach 200 without actually paginating a PDF in the test environment.
