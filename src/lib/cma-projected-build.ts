@@ -60,8 +60,36 @@ export const PROJECTED_MAPPING: Record<AssetClassSlug, MappingRule> = {
 const round4 = (x: number): number => Number(x.toFixed(4));
 
 export function buildProjectedAssetClasses(
-  _source: HorizonSource,
-  _historical: SeedAssetClass[],
+  source: HorizonSource,
+  historical: SeedAssetClass[],
 ): ProjectedAssetClass[] {
-  throw new Error("not implemented");
+  const horizonByKey = new Map(source.horizonClasses.map((h) => [h.key, h]));
+
+  return historical.map((hist): ProjectedAssetClass => {
+    const rule = hist.slug ? PROJECTED_MAPPING[hist.slug] : undefined;
+    if (!rule) {
+      throw new Error(`cma-projected: no mapping for slug "${hist.slug ?? "(none)"}"`);
+    }
+
+    if (rule.method === "carry") {
+      // geometric/arithmetic/volatility kept exactly as Historical.
+      return { ...hist, provenance: "carry:historical" };
+    }
+
+    const hz = horizonByKey.get(rule.horizonKey);
+    if (!hz) {
+      throw new Error(`cma-projected: Horizon source missing key "${rule.horizonKey}"`);
+    }
+
+    const geometricReturn = round4(hz.geom20);
+    const volatility =
+      rule.method === "hybrid" ? round4(hist.volatility) : round4(hz.std);
+    const arithmeticMean = round4(geometricReturn + (volatility * volatility) / 2);
+    const provenance =
+      rule.method === "hybrid"
+        ? `hybrid:${rule.horizonKey}+historical_vol`
+        : `direct:${rule.horizonKey}`;
+
+    return { ...hist, geometricReturn, arithmeticMean, volatility, provenance };
+  });
 }
