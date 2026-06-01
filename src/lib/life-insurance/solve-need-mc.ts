@@ -75,16 +75,21 @@ export async function solveNeedBracket(
 ): Promise<{ status: "solved" | "exceeds-cap"; faceValue: number; achievedScore: number }> {
   const { target, cap, tolerance, maxIterations } = opts;
 
-  // If the survivor already meets the target score at $0 face value, no
-  // insurance is needed.
+  // "Already funded": if the survivor meets target at $0 face, no insurance.
+  // Normal targets keep a ±tolerance comfort band; tiny targets (<= tolerance)
+  // clamp to strict >= target so the band can't dip below 0 (F16) and so the
+  // fall-through always satisfies atZero < target (preserving the bracket).
   const atZero = await evaluate(0);
-  if (atZero >= target - tolerance) {
+  const fundedThreshold = target > tolerance ? target - tolerance : target;
+  if (atZero >= fundedThreshold) {
     return { status: "solved", faceValue: 0, achievedScore: atZero };
   }
 
   // If even the CAP cannot reach the target score, the need exceeds our range.
+  // No tolerance offset here (F1/F7): any atCap genuinely below target declares
+  // exceeds-cap, guaranteeing the fall-through bracket has atCap >= target.
   const atCap = await evaluate(cap);
-  if (atCap < target - tolerance) {
+  if (atCap < target) {
     return { status: "exceeds-cap", faceValue: cap, achievedScore: atCap };
   }
 

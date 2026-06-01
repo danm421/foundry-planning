@@ -120,4 +120,37 @@ describe("solveNeedBracket (pure bracket orchestration)", () => {
     expect(r.faceValue).toBeLessThan(20_000_000);
     expect(Math.abs(r.achievedScore - 0.9)).toBeLessThanOrEqual(0.02);
   });
+
+  it("F1/F7: atCap within tolerance BELOW target → exceeds-cap, not solved≈$20M", async () => {
+    // Max achievable score (at cap) is 0.89 against a 0.90 target — i.e. inside
+    // [target - tolerance, target). The buggy guard let this fall through and
+    // returned a ~$20M policy labeled "solved".
+    const evaluate = async (f: number) => 0.5 + 0.39 * (f / 20_000_000); // $0→0.5, cap→0.89
+    const r = await solveNeedBracket(evaluate, opts);
+    expect(r.status).toBe("exceeds-cap");
+    expect(r.faceValue).toBe(20_000_000);
+    expect(r.achievedScore).toBeLessThan(0.9);
+  });
+
+  it("F16: tiny target with survivor below it does NOT return faceValue 0", async () => {
+    const tinyOpts = { ...opts, target: 0.01 };
+    // Survivor fails at $0 (score 0), but a positive face reaches 1%.
+    const evaluate = async (f: number) => Math.min(0.5, f / 20_000_000); // $0→0, rises
+    const r = await solveNeedBracket(evaluate, tinyOpts);
+    expect(r.status === "solved" && r.faceValue === 0).toBe(false);
+  });
+
+  it("F16: tiny target already met at $0 still returns faceValue 0", async () => {
+    const tinyOpts = { ...opts, target: 0.01 };
+    const evaluate = async () => 0.05; // 5% ≥ 1% target at $0
+    const r = await solveNeedBracket(evaluate, tinyOpts);
+    expect(r).toEqual({ status: "solved", faceValue: 0, achievedScore: 0.05 });
+  });
+
+  it("normal target funded within tolerance band still returns faceValue 0", async () => {
+    // target 0.90, atZero 0.89 — inside the comfort band, keep returning 0.
+    const evaluate = async () => 0.89;
+    const r = await solveNeedBracket(evaluate, opts);
+    expect(r).toEqual({ status: "solved", faceValue: 0, achievedScore: 0.89 });
+  });
 });
