@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "edition": "2025",
+    "asOf": "2025-08",
+    "horizon": "20yr",
+    "source": "Horizon Actuarial Survey of Capital Market Assumptions, 2025 Edition, Exhibit 17 (p.16)",
+    "respondents": 41
+  },
+  "horizonClasses": [
+    { "key": "us_eq_large_cap",        "label": "US Equity - Large Cap",        "geom10": 0.0639, "arith20": 0.0829, "geom20": 0.0700, "std": 0.1654 },
+    { "key": "us_eq_smid",             "label": "US Equity - Small/Mid Cap",    "geom10": 0.0692, "arith20": 0.0935, "geom20": 0.0738, "std": 0.2044 },
+    { "key": "non_us_eq_developed",    "label": "Non-US Equity - Developed",    "geom10": 0.0703, "arith20": 0.0896, "geom20": 0.0735, "std": 0.1820 },
+    { "key": "non_us_eq_emerging",     "label": "Non-US Equity - Emerging",     "geom10": 0.0738, "arith20": 0.1063, "geom20": 0.0791, "std": 0.2343 },
+    { "key": "us_corp_core",           "label": "US Corporate Bonds - Core",    "geom10": 0.0500, "arith20": 0.0528, "geom20": 0.0510, "std": 0.0622 },
+    { "key": "us_corp_long_duration",  "label": "US Corporate Bonds - Long Dur","geom10": 0.0504, "arith20": 0.0580, "geom20": 0.0528, "std": 0.1074 },
+    { "key": "us_corp_high_yield",     "label": "US Corporate Bonds - High Yield","geom10": 0.0597, "arith20": 0.0682, "geom20": 0.0633, "std": 0.0977 },
+    { "key": "non_us_debt_developed",  "label": "Non-US Debt - Developed",      "geom10": 0.0389, "arith20": 0.0429, "geom20": 0.0399, "std": 0.0748 },
+    { "key": "non_us_debt_emerging",   "label": "Non-US Debt - Emerging",       "geom10": 0.0603, "arith20": 0.0687, "geom20": 0.0630, "std": 0.1062 },
+    { "key": "us_treasuries_cash",     "label": "US Treasuries (Cash Equiv)",   "geom10": 0.0358, "arith20": 0.0361, "geom20": 0.0359, "std": 0.0147 },
+    { "key": "tips",                   "label": "TIPS (Inflation-Protected)",   "geom10": 0.0444, "arith20": 0.0461, "geom20": 0.0441, "std": 0.0604 },
+    { "key": "real_estate",            "label": "Real Estate",                  "geom10": 0.0621, "arith20": 0.0759, "geom20": 0.0638, "std": 0.1624 },
+    { "key": "hedge_funds",            "label": "Hedge Funds",                  "geom10": 0.0592, "arith20": 0.0657, "geom20": 0.0624, "std": 0.0797 },
+    { "key": "commodities",            "label": "Commodities",                  "geom10": 0.0467, "arith20": 0.0637, "geom20": 0.0476, "std": 0.1783 },
+    { "key": "infrastructure",         "label": "Infrastructure",               "geom10": 0.0722, "arith20": 0.0865, "geom20": 0.0752, "std": 0.1486 },
+    { "key": "private_equity",         "label": "Private Equity",               "geom10": 0.0913, "arith20": 0.1214, "geom20": 0.0963, "std": 0.2218 },
+    { "key": "private_debt",           "label": "Private Debt",                 "geom10": 0.0791, "arith20": 0.0871, "geom20": 0.0808, "std": 0.1175 },
+    { "key": "inflation",              "label": "Inflation",                    "geom10": 0.0238, "arith20": 0.0241, "geom20": 0.0240, "std": 0.0190 }
+  ]
+}
