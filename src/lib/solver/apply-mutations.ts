@@ -244,6 +244,18 @@ export function applyMutations(
         result.reinvestments = list;
         break;
       }
+      case "account-upsert": {
+        const list = result.accounts.filter((a) => a.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.accounts = list;
+        break;
+      }
+      case "savings-rule-upsert": {
+        const list = result.savingsRules.filter((r) => r.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.savingsRules = list;
+        break;
+      }
     }
   }
   // Reshift every milestone-anchored startYear/endYear so a retirement-age

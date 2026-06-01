@@ -90,6 +90,7 @@ const baseProps = {
   },
   clientName: "Client",
   spouseName: "Spouse",
+  categoryGrowthDefaults: { taxable: 0.06, retirement: 0.06, cash: 0.02 },
 };
 
 function makeSseStream(events: Array<{ event: string; data: unknown }>): Response {
@@ -223,6 +224,52 @@ describe("LiveSolverWorkspace — save scenario", () => {
     expect(routerPush).toHaveBeenCalledWith(
       "/clients/client-id/comparison?scenario=new-scenario-id",
     );
+  });
+});
+
+describe("LiveSolverWorkspace — save to base facts", () => {
+  it("POSTs mutations+source to save-to-base and refreshes the router on success", async () => {
+    vi.stubGlobal("confirm", () => true);
+
+    fetchMock.mockImplementation((url: unknown) => {
+      if (typeof url === "string" && url.includes("/save-to-base")) {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true }) });
+      }
+      // debounced /project recompute
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          projection: [{ year: 2026, portfolioAssets: { total: 900_000 } }],
+        }),
+      });
+    });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Seed a base-saveable mutation via the quick-add account form. Only
+    // account / savings-rule upserts can be persisted to base facts, so the
+    // button stays disabled for lever-only edits (e.g. a retirement-age change).
+    fireEvent.click(screen.getAllByRole("button", { name: /add account/i })[0]);
+    fireEvent.change(screen.getAllByLabelText(/annual savings/i)[0], {
+      target: { value: "12000" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
+
+    const saveToBaseBtn = screen.getAllByRole("button", { name: /Save to base facts/i })[0];
+    await waitFor(() => expect(saveToBaseBtn).not.toBeDisabled());
+    fireEvent.click(saveToBaseBtn);
+
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
+
+    const saveToBaseCall = fetchMock.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("/save-to-base"),
+    );
+    expect(saveToBaseCall).toBeDefined();
+    const body = JSON.parse(saveToBaseCall![1].body as string);
+    expect(body.source).toBe("base");
+    const kinds = body.mutations.map((m: { kind: string }) => m.kind);
+    expect(kinds).toContain("account-upsert");
+    expect(kinds).toContain("savings-rule-upsert");
   });
 });
 

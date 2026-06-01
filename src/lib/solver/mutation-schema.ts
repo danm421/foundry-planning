@@ -84,6 +84,38 @@ const REINVESTMENT_VALUE = z
   })
   .passthrough();
 
+const ACCOUNT_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    category: z.enum([
+      "taxable", "cash", "retirement", "real_estate",
+      "business", "life_insurance", "notes_receivable",
+    ]),
+    subType: z.string().min(1),
+    value: MONEY,
+    basis: MONEY,
+    growthRate: RATE,
+    rmdEnabled: z.boolean(),
+    titlingType: z.enum(["jtwros", "community_property"]),
+    owners: z.array(z.object({ kind: z.string(), percent: z.number() }).passthrough()).min(1),
+  })
+  .passthrough();
+
+const SAVINGS_RULE_VALUE = z
+  .object({
+    id: z.string().min(1),
+    accountId: z.string().min(1),
+    annualAmount: MONEY,
+    isDeductible: z.boolean(),
+    startYear: YEAR,
+    endYear: YEAR,
+    fundFromExpenseReduction: z.boolean().optional(),
+    rothPercent: z.number().min(0).max(1).nullable().optional(),
+    growthRate: RATE.optional(),
+  })
+  .passthrough();
+
 export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   // Goals
   z.object({
@@ -257,6 +289,16 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("reinvestment-upsert"),
     id: z.string().min(1),
     value: REINVESTMENT_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("account-upsert"),
+    id: z.string().min(1),
+    value: ACCOUNT_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("savings-rule-upsert"),
+    id: z.string().min(1),
+    value: SAVINGS_RULE_VALUE.nullable(),
   }),
 ]);
 

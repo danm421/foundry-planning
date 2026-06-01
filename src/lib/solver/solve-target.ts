@@ -45,7 +45,11 @@ export interface SolveTargetArgs {
 
 export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEvent> {
   const trials = args.trials ?? 250;
-  const config = leverSearchConfig(args.target, args.effectiveTree);
+  // The lever search range may depend on entities the workspace created via
+  // baseline mutations (e.g. a brand-new additional-savings account). Resolve
+  // the search config against the post-baseline tree so those are visible.
+  const searchTree = applyMutations(args.effectiveTree, args.baselineMutations);
+  const config = leverSearchConfig(args.target, searchTree);
   const accountMixes = new Map(args.mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
 
   let iteration = 0;

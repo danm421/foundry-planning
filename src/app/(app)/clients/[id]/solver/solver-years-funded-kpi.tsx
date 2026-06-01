@@ -6,14 +6,14 @@ interface Props {
   dimmed?: boolean;
 }
 
-export function SolverEndingAssetsKpi({ value, delta, dimmed }: Props) {
+export function SolverYearsFundedKpi({ value, delta, dimmed }: Props) {
   return (
     <div className={dimmed ? "opacity-70" : ""}>
       <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
-        Ending Portfolio Assets
+        Years Fully Funded
       </div>
       <div className="mt-1 text-[18px] font-semibold leading-none tabular tracking-tight text-ink">
-        {value == null ? "—" : formatCurrency(value)}
+        {value ?? "—"}
       </div>
       {delta != null && Math.abs(delta) >= 1 ? (
         <div
@@ -21,21 +21,9 @@ export function SolverEndingAssetsKpi({ value, delta, dimmed }: Props) {
             delta > 0 ? "text-good" : "text-crit"
           }`}
         >
-          {delta > 0 ? "+" : "−"}
-          {formatCurrency(Math.abs(delta))} vs Base
+          {delta > 0 ? `+${delta}` : delta} yrs vs Base
         </div>
       ) : null}
     </div>
   );
-}
-
-export function formatCurrency(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 10_000_000) {
-    return `$${(n / 1_000_000).toFixed(1)}M`;
-  }
-  if (abs >= 1_000_000) {
-    return `$${(n / 1_000_000).toFixed(2)}M`;
-  }
-  return `$${Math.round(n).toLocaleString()}`;
 }

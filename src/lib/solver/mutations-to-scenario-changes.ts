@@ -393,6 +393,28 @@ export function mutationsToScenarioChanges(
         accumulateSavings(m.accountId, "endYear", rule.endYear, m.year);
         break;
       }
+      case "account-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "account",
+          source.accounts.find((a) => a.id === m.id) as Record<string, unknown> | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
+      case "savings-rule-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "savings_rule",
+          (source.savingsRules ?? []).find((r) => r.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
       case "roth-conversion-upsert": {
         pushTechniqueUpsert(
           nonClientDrafts,
@@ -506,7 +528,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "roth_conversion" | "asset_transaction" | "reinvestment",
+  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,

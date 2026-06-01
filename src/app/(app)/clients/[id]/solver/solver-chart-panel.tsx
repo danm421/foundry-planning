@@ -10,6 +10,7 @@ import { YearlyLiquidityChart } from "@/components/yearly-liquidity-chart";
 import { LiNeedOverTimeView } from "./li-need-over-time-view";
 import { useNeedOverTime } from "./use-need-over-time";
 import { hasSpouse } from "@/lib/life-insurance/need-over-time";
+import { SolverYearTablePanel } from "./solver-year-table-panel";
 
 type ChartTab = "portfolio" | "cashflow" | "liquidity" | "lifeInsurance";
 
@@ -53,6 +54,7 @@ export function SolverChartPanel({
     showLifeInsuranceTab ? "lifeInsurance" : "portfolio",
   );
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
+  const [showTable, setShowTable] = useState(false);
 
   const overTime = useNeedOverTime(clientId);
   const { cancel: cancelOverTime } = overTime;
@@ -131,17 +133,27 @@ export function SolverChartPanel({
             </button>
           ))}
         </div>
-        {tab === "liquidity" ? (
-          <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
-            <input
-              type="checkbox"
-              checked={showPortfolioAssets}
-              onChange={(e) => setShowPortfolioAssets(e.target.checked)}
-              className="accent-accent"
-            />
-            Show portfolio assets
-          </label>
-        ) : null}
+        <div className="flex items-center gap-3">
+          {tab === "liquidity" ? (
+            <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
+              <input
+                type="checkbox"
+                checked={showPortfolioAssets}
+                onChange={(e) => setShowPortfolioAssets(e.target.checked)}
+                className="accent-accent"
+              />
+              Show portfolio assets
+            </label>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setShowTable((v) => !v)}
+            aria-expanded={showTable}
+            className="text-[12px] font-medium text-ink-3 hover:text-ink"
+          >
+            {showTable ? "Hide table" : "Expand table"}
+          </button>
+        </div>
       </div>
 
       {tab === "portfolio" ? (
@@ -174,6 +186,13 @@ export function SolverChartPanel({
           isMarried={isMarried}
           clientName={clientName}
           spouseName={spouseName}
+        />
+      ) : null}
+
+      {showTable ? (
+        <SolverYearTablePanel
+          years={currentProjection}
+          hasSpouse={isMarried}
         />
       ) : null}
 

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ClientData, ProjectionYear } from "@/engine";
+import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
+import type { QuickAddType } from "@/lib/solver/quick-add-account";
+import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
@@ -23,10 +25,24 @@ import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { SolverPosGauge } from "./solver-pos-gauge";
 import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
+import { SolverYearsFundedKpi } from "./solver-years-funded-kpi";
+import { SolverLifetimeTaxKpi } from "./solver-lifetime-tax-kpi";
+import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
 import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
+import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+
+// Matches the 85% default the per-lever Solve popovers offer (defaultTargetPct=85,
+// which the popover submits as value/100).
+const MIN_SAVINGS_TARGET_POS = 0.85;
+
+function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
+  if (type === "cash") return d.cash;
+  if (type === "ira" || type === "roth_ira") return d.retirement;
+  return d.taxable;
+}
 
 interface Props {
   clientId: string;
@@ -41,6 +57,7 @@ interface Props {
   lifeInsuranceSettings: LiAssumptions;
   clientName: string;
   spouseName: string;
+  categoryGrowthDefaults: { taxable: number; retirement: number; cash: number };
 }
 
 export function LiveSolverWorkspace({
@@ -56,9 +73,33 @@ export function LiveSolverWorkspace({
   lifeInsuranceSettings,
   clientName,
   spouseName,
+  categoryGrowthDefaults,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
+
+  const ownerOptions = useMemo(() => {
+    const fms = baseClientData.familyMembers ?? [];
+    const clientFm = fms.find((fm) => fm.role === "client");
+    const spouseFm = fms.find((fm) => fm.role === "spouse");
+    const opts: { familyMemberId: string; label: string }[] = [];
+    if (clientFm) opts.push({ familyMemberId: clientFm.id, label: clientName });
+    if (spouseFm) opts.push({ familyMemberId: spouseFm.id, label: spouseName });
+    return opts;
+  }, [baseClientData, clientName, spouseName]);
+
+  const retirementYearForOwner = useCallback((fmId: string): number => {
+    const fms = baseClientData.familyMembers ?? [];
+    const spouseFm = fms.find((fm) => fm.role === "spouse");
+    const isSpouse = spouseFm?.id === fmId;
+    const c = baseClientData.client;
+    const dob = isSpouse ? c.spouseDob : c.dateOfBirth;
+    const retAge = isSpouse ? (c.spouseRetirementAge ?? 65) : (c.retirementAge ?? 65);
+    const birthYear = dob ? Number(String(dob).slice(0, 4)) : null;
+    const curAge = birthYear != null && Number.isFinite(birthYear) ? currentYear - birthYear : 0;
+    return currentYear + Math.max(0, retAge - curAge);
+  }, [baseClientData, currentYear]);
+
   const [mutationMap, setMutationMap] = useState<Map<SolverMutationKey, SolverMutation>>(
     () => new Map(),
   );
@@ -97,6 +138,18 @@ export function LiveSolverWorkspace({
   const activeSolveRef = useRef<ActiveSolve | null>(null);
   activeSolveRef.current = activeSolve;
 
+  // Draft of the "minimum additional savings" goal-seek in flight. Kept in a
+  // ref-mirrored state so onResult can rebuild the write-back upsert (full rule
+  // + solved annualAmount) without re-deriving it. Cleared once written back so
+  // a later unrelated solve-result can't re-fire it.
+  const [minSavings, setMinSavings] = useState<{
+    accountId: string;
+    ruleId: string;
+    rule: SavingsRule;
+  } | null>(null);
+  const minSavingsRef = useRef<typeof minSavings>(null);
+  minSavingsRef.current = minSavings;
+
   const solveController = useSolverSolve({
     clientId,
     onProgress: (e: SolveProgressEvent) => {
@@ -112,15 +165,31 @@ export function LiveSolverWorkspace({
       // under StrictMode would otherwise call setMutationMap twice).
       const prev = activeSolveRef.current;
       if (!prev) return;
-      // Apply the solved value against the live working tree so lever
-      // mutations that depend on tree state (e.g. roth-conversion-amount,
-      // which needs the technique's other fields) resolve correctly.
-      const mutation = buildLeverMutation(prev.target, e.solvedValue, workingTree);
+      // Min-savings write-back: if this solve targeted the synthetic
+      // "Additional Savings" account, persist the solved value as a full
+      // savings-rule-upsert (carrying fundFromExpenseReduction) rather than the
+      // generic savings-contribution edit, so a saved scenario keeps the flag.
+      const ms = minSavingsRef.current;
+      const isMinSavings =
+        ms != null &&
+        prev.target.kind === "savings-contribution" &&
+        prev.target.accountId === ms.accountId;
+      const mutation: SolverMutation = isMinSavings
+        ? {
+            kind: "savings-rule-upsert",
+            id: ms!.ruleId,
+            value: { ...ms!.rule, annualAmount: e.solvedValue },
+          }
+        : // Apply the solved value against the live working tree so lever
+          // mutations that depend on tree state (e.g. roth-conversion-amount,
+          // which needs the technique's other fields) resolve correctly.
+          buildLeverMutation(prev.target, e.solvedValue, workingTree);
       setMutationMap((mm) => {
         const next = new Map(mm);
         next.set(mutationKey(mutation), mutation);
         return next;
       });
+      if (isMinSavings) setMinSavings(null);
       setCurrentProjection(e.finalProjection);
       setComputeStatus("fresh");
       setActiveSolve(null);
@@ -203,6 +272,11 @@ export function LiveSolverWorkspace({
       ? workingEndingAssets - baseEndingAssets
       : null;
 
+  const baseYearsFunded = yearsFullyFunded(baseProjection);
+  const workingYearsFunded = yearsFullyFunded(currentProjection);
+  const baseLifetimeTax = lifetimeTaxes(baseProjection);
+  const workingLifetimeTax = lifetimeTaxes(currentProjection);
+
   const baseSuccess =
     mcReady
       ? (mcController.result?.perPlan.find((p) => p.planId.startsWith("base:"))
@@ -240,6 +314,38 @@ export function LiveSolverWorkspace({
   const [saveOpen, setSaveOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [savingToBase, setSavingToBase] = useState(false);
+  const [saveToBaseError, setSaveToBaseError] = useState<string | null>(null);
+
+  async function handleSaveToBase() {
+    if (
+      !confirm(
+        "Save these changes to base facts? This will update the client's real data and cannot be undone.",
+      )
+    )
+      return;
+    setSavingToBase(true);
+    setSaveToBaseError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/solver/save-to-base`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: initialSource, mutations }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      setMutationMap(new Map());
+      setComputeStatus("fresh");
+      router.refresh();
+    } catch (err) {
+      setSaveToBaseError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingToBase(false);
+    }
+  }
 
   async function handleSaveSubmit(args: { name: string }) {
     setSaving(true);
@@ -282,7 +388,7 @@ export function LiveSolverWorkspace({
   }
 
   const handleSolveStart = useCallback(
-    (target: SolveLeverKey, targetPoS: number) => {
+    (target: SolveLeverKey, targetPoS: number, extraMutations: SolverMutation[] = []) => {
       if (activeSolve) return;
       setSolveError(null);
       setActiveSolve({
@@ -292,25 +398,84 @@ export function LiveSolverWorkspace({
         candidateValue: null,
         achievedPoS: null,
       });
+      // Merge any caller-supplied baseline mutations (e.g. the min-savings
+      // account + rule just created) ahead of the committed map. State updates
+      // from pushMutation haven't flushed yet when this runs synchronously, so
+      // the search would otherwise not see them. last-write-per-key wins.
+      const merged = new Map<SolverMutationKey, SolverMutation>();
+      for (const m of mutations) merged.set(mutationKey(m), m);
+      for (const m of extraMutations) merged.set(mutationKey(m), m);
       // Filter out any existing mutation for this lever; bisect iterates on it.
       // mutationKey() ignores the value, so we pass an arbitrary placeholder (0)
       // just to derive the key.
       const targetKey = mutationKey(buildLeverMutation(target, 0, initialSourceClientData));
-      const baselineMutations = mutations.filter((m) => mutationKey(m) !== targetKey);
+      merged.delete(targetKey);
       void solveController.start({
         source: initialSource,
-        mutations: baselineMutations,
+        mutations: Array.from(merged.values()),
         target,
         targetPoS,
       });
     },
-    [activeSolve, mutations, initialSource, solveController],
+    [activeSolve, mutations, initialSource, solveController, initialSourceClientData],
   );
 
   const handleSolveCancel = useCallback(() => {
     solveController.cancel();
     setActiveSolve(null);
   }, [solveController]);
+
+  // "Solve minimum additional savings": stand up a real, savable taxable
+  // account + a fundFromExpenseReduction rule at $0, push both into the
+  // baseline (so the search sees them), then goal-seek the rule's contribution
+  // toward the target PoS. onResult writes back the solved annualAmount.
+  const handleSolveMinSavings = useCallback(
+    (targetPoS: number) => {
+      if (activeSolve) return;
+      const owner = ownerOptions[0];
+      if (!owner) return; // no owner → nothing to solve against
+      const accountId = crypto.randomUUID();
+      const ruleId = crypto.randomUUID();
+      const { account, rule } = buildAdditionalSavingsAccount({
+        ownerFamilyMemberId: owner.familyMemberId,
+        startYear: currentYear,
+        endYear: retirementYearForOwner(owner.familyMemberId),
+        growthRate: categoryGrowthDefaults.taxable,
+        accountId,
+        ruleId,
+      });
+      const accountMutation: SolverMutation = {
+        kind: "account-upsert",
+        id: accountId,
+        value: account,
+      };
+      const ruleMutation: SolverMutation = {
+        kind: "savings-rule-upsert",
+        id: ruleId,
+        value: rule,
+      };
+      pushMutation(accountMutation);
+      pushMutation(ruleMutation);
+      setMinSavings({ accountId, ruleId, rule });
+      // Pass the account+rule as extra baseline mutations: pushMutation's state
+      // updates haven't flushed yet, so the solve must be told about them
+      // directly or the search range would resolve against a tree with no rule.
+      handleSolveStart({ kind: "savings-contribution", accountId }, targetPoS, [
+        accountMutation,
+        ruleMutation,
+      ]);
+    },
+    // pushMutation is a plain component-scope function; its identity is
+    // irrelevant here, so it's intentionally not a dependency.
+    [
+      activeSolve,
+      ownerOptions,
+      currentYear,
+      retirementYearForOwner,
+      categoryGrowthDefaults,
+      handleSolveStart,
+    ],
+  );
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -394,6 +559,8 @@ export function LiveSolverWorkspace({
               <div className="mt-3 flex items-start gap-6">
                 <SolverPosGauge state={baseState} successPct={baseSuccess} />
                 <SolverEndingAssetsKpi value={baseEndingAssets} />
+                <SolverYearsFundedKpi value={baseYearsFunded} />
+                <SolverLifetimeTaxKpi value={baseLifetimeTax} />
               </div>
             </div>
           </div>
@@ -438,6 +605,16 @@ export function LiveSolverWorkspace({
                 <SolverEndingAssetsKpi
                   value={workingEndingAssets}
                   delta={endingAssetsDelta}
+                  dimmed={computeStatus === "computing"}
+                />
+                <SolverYearsFundedKpi
+                  value={workingYearsFunded}
+                  delta={workingYearsFunded - baseYearsFunded}
+                  dimmed={computeStatus === "computing"}
+                />
+                <SolverLifetimeTaxKpi
+                  value={workingLifetimeTax}
+                  delta={workingLifetimeTax - baseLifetimeTax}
                   dimmed={computeStatus === "computing"}
                 />
               </div>
@@ -535,6 +712,23 @@ export function LiveSolverWorkspace({
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
               />
+              <SolverQuickAddAccount
+                owners={ownerOptions}
+                currentYear={currentYear}
+                retirementYearForOwner={retirementYearForOwner}
+                growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
+                onChange={pushMutation}
+              />
+              <div>
+                <button
+                  type="button"
+                  onClick={() => handleSolveMinSavings(MIN_SAVINGS_TARGET_POS)}
+                  disabled={activeSolve !== null || ownerOptions.length === 0}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Solve minimum additional savings
+                </button>
+              </div>
             </SolverSection>
 
             <SolverSection title="Expenses">
@@ -595,11 +789,16 @@ export function LiveSolverWorkspace({
 
       <SolverActionBar
         hasMutations={mutations.length > 0}
+        canSaveToBase={mutations.some(
+          (m) => m.kind === "account-upsert" || m.kind === "savings-rule-upsert",
+        )}
         mcRunning={mcRunning}
         solveActive={activeSolve !== null}
+        savingToBase={savingToBase}
         onReset={handleReset}
         onGenerateMc={handleGenerateMc}
         onSave={() => setSaveOpen(true)}
+        onSaveToBase={handleSaveToBase}
       />
 
       <SaveAsScenarioDialog
@@ -611,6 +810,11 @@ export function LiveSolverWorkspace({
       {saveError ? (
         <div role="alert" className="text-[13px] text-crit">
           Save failed: {saveError}
+        </div>
+      ) : null}
+      {saveToBaseError ? (
+        <div role="alert" className="text-[13px] text-crit">
+          Save to base facts failed: {saveToBaseError}
         </div>
       ) : null}
     </div>
