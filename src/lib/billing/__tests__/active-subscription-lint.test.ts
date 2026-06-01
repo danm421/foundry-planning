@@ -210,6 +210,11 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/api/cma/model-portfolios/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/cma/seed/route.ts": "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/cma/refresh-standard-values/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/cma/sets/[key]/values/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/cma/sets/active/route.ts": "pre-Phase-3 — wire in Phase 3.5",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;
