@@ -39,7 +39,7 @@ export function fmtValue(v: unknown): string {
   if (v == null || v === "") return "—";
   if (typeof v === "boolean") return v ? "Yes" : "No";
   if (typeof v === "number") {
-    if (Number.isInteger(v) && v > 1900 && v < 2200) return String(v); // year-shaped
+    if (Number.isInteger(v) && v >= 2001 && v < 2200) return String(v); // year-shaped
     if (Math.abs(v) >= 1000) return compactCurrency(v);
     return String(v);
   }
