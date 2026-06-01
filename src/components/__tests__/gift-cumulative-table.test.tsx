@@ -90,7 +90,7 @@ describe("GiftCumulativeTable", () => {
       '[data-testid="gift-tax-cell-2030-client"]',
     );
     expect(taxCell).not.toBeNull();
-    expect(taxCell!.className).toMatch(/text-red-/);
+    expect(taxCell!.className).toMatch(/text-crit/);
   });
 
   it("calls onToggleYear when a row is clicked", () => {
