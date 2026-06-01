@@ -714,6 +714,53 @@ describe("buildEstateTransferReportData", () => {
     expect(out.secondDeath!.recipients[0].recipientLabel).toBe("Alex");
   });
 
+  it("re-exports Form 706 grossEstate on DeathSectionData for each death event", () => {
+    // The per-death-event table needs each decedent's Form 706 gross estate
+    // (before deductions). buildDeathSection already has it in
+    // payload.estateTax.grossEstate — this test verifies it's re-exported on
+    // DeathSectionData so consumers don't need to re-resolve ordering.
+    const firstTax = emptyEstateTaxResult("client", 2030);
+    Object.assign(firstTax, { grossEstate: 3_000_000 });
+    const secondTax = emptyEstateTaxResult("spouse", 2030);
+    Object.assign(secondTax, { grossEstate: 5_500_000 });
+
+    const firstTransfers = [
+      transfer({ amount: 3_000_000, recipientKind: "spouse", recipientLabel: "Sam" }),
+    ];
+    const secondTransfers = [
+      transfer({
+        deathOrder: 2,
+        deceased: "spouse",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+        amount: 5_500_000,
+      }),
+    ];
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: firstTax,
+        finalDeath: secondTax,
+        firstDeathTransfers: firstTransfers,
+        finalDeathTransfers: secondTransfers,
+      }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    expect(out.firstDeath!.grossEstate).toBe(3_000_000);
+    expect(out.secondDeath!.grossEstate).toBe(5_500_000);
+  });
+
   // ── F1 — assetEstateValue + reconciliation flip ─────────────────────────
   //
   // The Form 706 amount (deceased's gross estate or taxable estate) is not
