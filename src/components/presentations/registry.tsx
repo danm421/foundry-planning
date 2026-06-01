@@ -140,9 +140,9 @@ export const CATEGORY_ORDER = [
   "Assets",
   "Estate",
   "Monte Carlo",
+  "Comparison",
   // Empty placeholders — reports for these ship later. Shown as filter chips
   // so the roadmap is visible; selecting one yields a "no reports yet" state.
-  "Comparison",
   "Retirement",
 ] as const;
 
