@@ -8,7 +8,10 @@ import {
 import type { AssetTypeId } from "@/lib/investments/asset-types";
 
 /** Minimal allocation shape the donut builder consumes. Both a group's
- *  HouseholdAllocation and a portfolio-derived NormalizedAllocation satisfy it. */
+ *  HouseholdAllocation and a portfolio-derived NormalizedAllocation satisfy it.
+ *  `value` is a proportional magnitude — dollars for a group, weights for a
+ *  portfolio. Only the ratio between entries is meaningful; never read it as a
+ *  dollar amount. */
 export interface AllocationDonutInput {
   byAssetClass: { id: string; name: string; sortOrder: number; value: number; assetType: AssetTypeId }[];
   byAssetType: { id: AssetTypeId; label: string; value: number }[];

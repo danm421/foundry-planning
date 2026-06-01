@@ -35,9 +35,8 @@ export function portfolioToNormalized(
   const typeTotals = new Map<AssetTypeId, number>();
   for (const c of byAssetClass) typeTotals.set(c.assetType, (typeTotals.get(c.assetType) ?? 0) + c.value);
   const byAssetType = Array.from(typeTotals.entries())
-    .map(([id, value]) => ({ id, label: ASSET_TYPE_LABELS[id], value, sortOrder: ASSET_TYPE_SORT_ORDER[id] }))
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map(({ id, label, value }) => ({ id, label, value }));
+    .sort((a, b) => ASSET_TYPE_SORT_ORDER[a[0]] - ASSET_TYPE_SORT_ORDER[b[0]])
+    .map(([id, value]) => ({ id, label: ASSET_TYPE_LABELS[id], value }));
 
   return { displayName, byAssetClass, byAssetType, unallocatedValue: 0, excludedNonInvestableValue: 0 };
 }

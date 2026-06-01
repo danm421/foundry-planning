@@ -30,7 +30,8 @@ export function AssetAllocationPagePdf({
       <SectionHead title="Asset Allocation" subtitle={data.subtitle} />
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 14 }}>
         <DonutPdf spec={data.leftDonut} title={data.leftName} />
-        {data.rightDonut && <DonutPdf spec={data.rightDonut} title={data.rightName ?? ""} />}
+        {/* rightName is non-null whenever rightDonut is (both derive from `right` in the view-model) */}
+        {data.rightDonut && <DonutPdf spec={data.rightDonut} title={data.rightName!} />}
       </View>
       {data.tableRows.length > 0 && (
         <View style={{ marginBottom: 12 }}>
