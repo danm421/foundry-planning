@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
 import { Inter, B612_Mono } from "next/font/google";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import { ToastProvider } from "@/components/toast";
+import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
 import "./globals.css";
 
 const inter = Inter({
@@ -36,15 +38,16 @@ export const viewport: Viewport = {
   themeColor: "#0b0c0f",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const theme = resolveTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
     <ClerkProvider
       appearance={{
-        baseTheme: dark,
+        baseTheme: theme === "dark" ? dark : undefined,
         variables: {
           colorBackground: "#17181c",
           colorForeground: "#f3f4f6",
@@ -61,7 +64,8 @@ export default function RootLayout({
     >
       <html
         lang="en"
-        className={`${inter.variable} ${b612Mono.variable} h-full antialiased dark`}
+        data-theme={theme}
+        className={`${inter.variable} ${b612Mono.variable} h-full antialiased ${theme}`}
         suppressHydrationWarning
       >
         <body className="min-h-full flex flex-col">
