@@ -14,7 +14,7 @@ export function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderTogg
     <div
       role="group"
       aria-label="Death order"
-      className="flex items-center gap-1 rounded border border-[#1f2024] p-0.5"
+      className="flex items-center gap-1 rounded border border-hair p-0.5"
     >
       <button
         type="button"
@@ -22,8 +22,8 @@ export function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderTogg
         onClick={() => onChange("primaryFirst")}
         className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
           value === "primaryFirst"
-            ? "bg-[#d4a04a] text-[#0b0c0f]"
-            : "text-[#7a7975] hover:text-[#e7e6e2]"
+            ? "bg-accent text-[var(--color-accent-on)]"
+            : "text-ink-4 hover:text-ink-2"
         }`}
       >
         {primaryLabel} dies first
@@ -34,8 +34,8 @@ export function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderTogg
         onClick={() => onChange("spouseFirst")}
         className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
           value === "spouseFirst"
-            ? "bg-[#d4a04a] text-[#0b0c0f]"
-            : "text-[#7a7975] hover:text-[#e7e6e2]"
+            ? "bg-accent text-[var(--color-accent-on)]"
+            : "text-ink-4 hover:text-ink-2"
         }`}
       >
         {spouseLabel} dies first

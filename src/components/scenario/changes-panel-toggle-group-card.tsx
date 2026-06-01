@@ -88,9 +88,9 @@ export function ToggleGroupCard({
   return (
     <div
       data-testid={`toggle-group-card-${group.id}`}
-      className="border-b border-[#1f2024]"
+      className="border-b border-hair"
     >
-      <div className="w-full px-4 py-3 flex items-center gap-2 hover:bg-[#0b0c0f]/50 group">
+      <div className="w-full px-4 py-3 flex items-center gap-2 hover:bg-paper/50 group">
         <ToggleSwitch
           on={defaultOn}
           onChange={(v) => {
@@ -103,16 +103,16 @@ export function ToggleGroupCard({
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
-          className="flex-1 min-w-0 flex items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded"
+          className="flex-1 min-w-0 flex items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
           aria-expanded={expanded}
         >
-          <span className="text-[14px] text-[#e7e6e2] flex-1 truncate">
+          <span className="text-[14px] text-ink flex-1 truncate">
             {group.name}
           </span>
-          <span className="text-xs text-[#a09c92] font-mono">
+          <span className="text-xs text-ink-3 font-mono tabular-nums">
             {changes.length}
           </span>
-          <span className="text-[#a09c92]" aria-hidden="true">
+          <span className="text-ink-3" aria-hidden="true">
             {expanded ? "▴" : "▾"}
           </span>
         </button>
@@ -121,7 +121,7 @@ export function ToggleGroupCard({
           onClick={() => setConfirmingDelete(true)}
           aria-label={`Delete technique ${group.name}`}
           title="Delete technique"
-          className="opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-white hover:text-white flex items-center justify-center rounded p-1 shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a]"
+          className="opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-ink hover:text-ink flex items-center justify-center rounded p-1 shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
           <TrashIcon width={16} height={16} aria-hidden="true" />
         </button>
@@ -129,12 +129,12 @@ export function ToggleGroupCard({
       {confirmingDelete && (
         <div
           data-testid={`toggle-group-confirm-delete-${group.id}`}
-          className="px-4 py-3 border-t border-[#1f2024] bg-[#1a0f0f]"
+          className="px-4 py-3 border-t border-hair bg-crit/10"
         >
-          <div className="text-sm text-[#e7e6e2] mb-2">
+          <div className="text-sm text-ink mb-2">
             Delete &ldquo;{group.name}&rdquo;?
             {changes.length > 0 ? (
-              <span className="text-[#c8c4ba]">
+              <span className="text-ink-2">
                 {" "}
                 {changes.length} change{changes.length === 1 ? "" : "s"} are tagged
                 with this technique.
@@ -146,7 +146,7 @@ export function ToggleGroupCard({
               type="button"
               onClick={() => void deleteGroup("ungrouped")}
               disabled={deleting}
-              className="h-7 px-3 rounded bg-[#d4a04a] text-[#0b0c0f] text-[12px] font-medium hover:bg-[#c69544] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              className="h-7 px-3 rounded bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-deep disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               {changes.length > 0 ? "Keep changes (ungroup)" : "Delete technique"}
             </button>
@@ -155,7 +155,7 @@ export function ToggleGroupCard({
                 type="button"
                 onClick={() => void deleteGroup("delete")}
                 disabled={deleting}
-                className="h-7 px-3 rounded bg-[#7a2929] text-white text-[12px] font-medium hover:bg-[#8e3232] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                className="h-7 px-3 rounded bg-crit/80 text-ink text-[12px] font-medium hover:bg-crit/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
                 Delete changes too
               </button>
@@ -164,7 +164,7 @@ export function ToggleGroupCard({
               type="button"
               onClick={() => setConfirmingDelete(false)}
               disabled={deleting}
-              className="h-7 px-3 rounded text-[12px] text-[#a09c92] hover:text-[#e7e6e2] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a]"
+              className="h-7 px-3 rounded text-[12px] text-ink-3 hover:text-ink disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             >
               Cancel
             </button>
@@ -173,7 +173,7 @@ export function ToggleGroupCard({
       )}
       {expanded && (
         <div data-testid={`toggle-group-card-body-${group.id}`}>
-          <div className="px-4 py-2 text-xs text-[#a09c92]">
+          <div className="px-4 py-2 text-xs text-ink-3">
             <label className="flex items-center gap-2">
               <span>Required:</span>
               <select
@@ -186,7 +186,7 @@ export function ToggleGroupCard({
                     if (!ok) setRequiresGroupId(prev);
                   });
                 }}
-                className="bg-transparent border border-[#1f2024] text-[#c8c4ba] rounded px-2 py-0.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a]"
+                className="bg-transparent border border-hair text-ink-2 rounded px-2 py-0.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                 aria-label="Required parent group"
               >
                 <option value="">(none)</option>
@@ -199,7 +199,7 @@ export function ToggleGroupCard({
             </label>
           </div>
           {changes.length === 0 ? (
-            <div className="px-4 py-2 text-xs text-[#a09c92] italic">
+            <div className="px-4 py-2 text-xs text-ink-3 italic">
               No changes recorded yet.
             </div>
           ) : (
@@ -236,13 +236,13 @@ function ToggleSwitch({
       }}
       aria-pressed={on}
       aria-label={on ? "Toggle group on" : "Toggle group off"}
-      className={`w-8 h-4 rounded-full border transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] ${
-        on ? "bg-[#d4a04a] border-[#d4a04a]" : "bg-transparent border-[#1f2024]"
+      className={`w-8 h-4 rounded-full border transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+        on ? "bg-accent border-accent" : "bg-transparent border-hair"
       }`}
     >
       <span
         className={`block w-3 h-3 rounded-full transition ${
-          on ? "bg-[#0b0c0f] ml-4" : "bg-[#6b6760] ml-0"
+          on ? "bg-paper ml-4" : "bg-ink-4 ml-0"
         }`}
         aria-hidden="true"
       />

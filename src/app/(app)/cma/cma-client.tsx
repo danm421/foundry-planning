@@ -415,11 +415,11 @@ export default function CmaClient() {
       />
 
       {/* Tab toggle */}
-      <div className="mb-6 flex gap-1 rounded-lg bg-gray-800/50 p-1">
+      <div className="mb-6 flex gap-1 rounded-lg bg-card-2 p-1">
         <button
           onClick={() => setTab("asset-classes")}
           className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            tab === "asset-classes" ? "bg-gray-700 text-white" : "text-gray-300 hover:text-gray-200"
+            tab === "asset-classes" ? "bg-card text-ink" : "text-ink-3 hover:text-ink"
           }`}
         >
           Asset Classes
@@ -427,7 +427,7 @@ export default function CmaClient() {
         <button
           onClick={() => setTab("model-portfolios")}
           className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            tab === "model-portfolios" ? "bg-gray-700 text-white" : "text-gray-300 hover:text-gray-200"
+            tab === "model-portfolios" ? "bg-card text-ink" : "text-ink-3 hover:text-ink"
           }`}
         >
           Model Portfolios
@@ -500,12 +500,12 @@ function AssetClassesTab({
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
-        <label htmlFor="cma-set-select" className="text-sm text-gray-300">
+        <label htmlFor="cma-set-select" className="text-sm text-ink-2">
           Set
         </label>
         <select
           id="cma-set-select"
-          className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100"
+          className="rounded border border-hair-2 bg-card-2 px-2 py-1 text-sm text-ink"
           value={selectedKey}
           onChange={(e) => onSelectKey(e.target.value as CmaSetKey)}
         >
@@ -517,11 +517,11 @@ function AssetClassesTab({
           ))}
         </select>
         {selectedIsActive ? (
-          <span className="rounded bg-emerald-700/40 px-2 py-0.5 text-xs text-emerald-300">● Active</span>
+          <span className="rounded bg-good/20 px-2 py-0.5 text-xs text-good">● Active</span>
         ) : (
           <button
             type="button"
-            className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-500"
+            className="rounded bg-accent px-2 py-1 text-xs text-accent-on hover:bg-accent/90"
             onClick={() => onMakeActive(selectedKey)}
           >
             Make active
@@ -529,10 +529,10 @@ function AssetClassesTab({
         )}
         <HelpTip text="Numbers below (Geo Return, Arith Mean, Volatility) belong to the selected set. The active set drives every client projection. Name, type and tax fields are shared across all sets." />
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-700">
+      <div className="overflow-x-auto rounded-lg border border-hair">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-300">
+            <tr className="border-b border-hair bg-card-2/60 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
               <th className="min-w-[14rem] px-3 py-2">Name</th>
               <th className="px-3 py-2">Type</th>
               <th className="px-3 py-2 text-right">Geo Return %</th>
@@ -545,7 +545,7 @@ function AssetClassesTab({
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-800">
+          <tbody className="divide-y divide-hair">
             {assetClasses.map((ac) => (
               <AssetClassRow
                 key={ac.id}
@@ -608,7 +608,7 @@ function AssetClassRow({
   ];
 
   return (
-    <tr className="hover:bg-gray-800/30">
+    <tr className="hover:bg-card-hover">
       <td className="px-3 py-2">
         <div className="flex items-center gap-1.5">
           <input
@@ -616,7 +616,7 @@ function AssetClassRow({
             value={ac.name}
             onChange={(e) => onUpdate(ac.id, "name", e.target.value)}
             onBlur={() => onSave(ac)}
-            className="w-full rounded border border-gray-700 bg-transparent px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
+            className="w-full rounded border border-hair bg-transparent px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
           />
           {benchmarkTooltip(ac.slug) && <HelpTip text={benchmarkTooltip(ac.slug)!} />}
         </div>
@@ -630,7 +630,7 @@ function AssetClassRow({
             // and the immediate onSave would read the stale row.
             onSave({ ...ac, assetType: e.target.value as AssetTypeId });
           }}
-          className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
+          className="rounded border border-hair bg-card px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
         >
           {ASSET_TYPE_IDS.map((id) => (
             <option key={id} value={id}>{ASSET_TYPE_LABELS[id]}</option>
@@ -644,7 +644,7 @@ function AssetClassRow({
               decimalValue={sv[field]}
               onChange={(next) => onUpdateSetValue(ac.id, field, next)}
               onBlur={() => onSaveSetValue(ac.id, sv)}
-              className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
+              className="w-16 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm text-ink focus:border-accent focus:outline-none"
             />
             {field === "arithmeticMean" && (
               <button
@@ -662,7 +662,7 @@ function AssetClassRow({
                   onSaveSetValue(ac.id, { ...sv, arithmeticMean: next });
                 }}
                 title="Estimate from Geometric Return and Standard Deviation (Arith ≈ Geo + SD²/2)"
-                className="rounded border border-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:border-accent hover:text-gray-100"
+                className="rounded border border-hair px-1.5 py-0.5 text-xs text-ink-2 hover:border-accent hover:text-ink"
               >
                 Est
               </button>
@@ -677,7 +677,7 @@ function AssetClassRow({
               decimalValue={ac[field] as string}
               onChange={(next) => onUpdate(ac.id, field, next)}
               onBlur={() => onSave(ac)}
-              className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
+              className="w-16 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm text-ink focus:border-accent focus:outline-none"
             />
           </div>
         </td>
@@ -789,7 +789,7 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
             className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${
               selectedId === p.id
                 ? "border-accent bg-accent/10 text-accent-ink"
-                : "border-gray-700 text-gray-300 hover:border-gray-600"
+                : "border-hair text-ink-2 hover:border-hair-2"
             }`}
           >
             <div className="flex items-center justify-between">
@@ -807,7 +807,7 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
         ))}
         <button
           onClick={addPortfolio}
-          className="w-full rounded-lg border border-dashed border-gray-600 px-3 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-gray-300"
+          className="w-full rounded-lg border border-dashed border-hair-2 px-3 py-2 text-sm text-ink-2 hover:border-hair hover:text-ink-2"
         >
           + New Portfolio
         </button>
@@ -820,22 +820,22 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
 
           {/* Blended summary */}
           {blended && totalWeight > 0 && (
-            <div className="grid grid-cols-4 gap-3 rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+            <div className="grid grid-cols-4 gap-3 rounded-lg border border-hair bg-card-2/40 p-4">
               <div>
-                <p className="text-xs text-gray-400">Blended Geo Return</p>
-                <p className="text-lg font-semibold text-gray-100">{(blended.geoReturn * 100).toFixed(2)}%</p>
+                <p className="text-xs text-ink-3">Blended Geo Return</p>
+                <p className="text-lg font-semibold text-ink tabular-nums">{(blended.geoReturn * 100).toFixed(2)}%</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400">Arith Mean</p>
-                <p className="text-lg font-semibold text-gray-100">{(blended.arithMean * 100).toFixed(2)}%</p>
+                <p className="text-xs text-ink-3">Arith Mean</p>
+                <p className="text-lg font-semibold text-ink tabular-nums">{(blended.arithMean * 100).toFixed(2)}%</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400">Volatility</p>
-                <p className="text-lg font-semibold text-gray-100">{(blended.vol * 100).toFixed(2)}%</p>
+                <p className="text-xs text-ink-3">Volatility</p>
+                <p className="text-lg font-semibold text-ink tabular-nums">{(blended.vol * 100).toFixed(2)}%</p>
               </div>
               <div>
-                <p className="text-xs text-gray-400">Realization</p>
-                <p className="text-xs text-gray-300">
+                <p className="text-xs text-ink-3">Realization</p>
+                <p className="text-xs text-ink-2 tabular-nums">
                   OI {(blended.oi * 100).toFixed(0)}% | CG {(blended.ltcg * 100).toFixed(0)}% | Div {(blended.qdiv * 100).toFixed(0)}% | Ex {(blended.taxEx * 100).toFixed(0)}%
                 </p>
               </div>
@@ -904,26 +904,26 @@ function PortfolioAllocationEditor({
 
   return (
     <div>
-      <div className="overflow-x-auto rounded-lg border border-gray-700">
+      <div className="overflow-x-auto rounded-lg border border-hair">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-300">
+            <tr className="border-b border-hair bg-card-2/60 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
               <th className="px-3 py-2">Asset Class</th>
               <th className="px-3 py-2 text-right">Growth Rate %</th>
               <th className="px-3 py-2 text-right">Weight %</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-800">
+          <tbody className="divide-y divide-hair">
             {allocs.map((a, idx) => {
               const ac = acMap.get(a.assetClassId);
               const growth = ac
                 ? parseFloat((Number(ac.geometricReturn) * 100).toFixed(4)).toString()
                 : "—";
               return (
-                <tr key={a.assetClassId} className="hover:bg-gray-800/30">
-                  <td className="px-3 py-2 text-gray-200">{ac?.name ?? "Unknown"}</td>
-                  <td className="px-3 py-2 text-right text-sm text-gray-300">{growth}</td>
+                <tr key={a.assetClassId} className="hover:bg-card-hover">
+                  <td className="px-3 py-2 text-ink">{ac?.name ?? "Unknown"}</td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-ink-2">{growth}</td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end">
                       <input
@@ -931,7 +931,7 @@ function PortfolioAllocationEditor({
                         step="0.01"
                         value={a.weight}
                         onChange={(e) => updateWeight(idx, e.target.value)}
-                        className="w-24 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
+                        className="w-24 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm tabular-nums text-ink focus:border-accent focus:outline-none"
                       />
                     </div>
                   </td>
@@ -957,7 +957,7 @@ function PortfolioAllocationEditor({
           {availableClasses.length > 0 && (
             <select
               onChange={(e) => { if (e.target.value) addRow(e.target.value); e.target.value = ""; }}
-              className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300"
+              className="rounded border border-hair bg-card-2 px-3 py-1.5 text-sm text-ink-2"
               defaultValue=""
             >
               <option value="" disabled>+ Add asset class...</option>
@@ -966,7 +966,7 @@ function PortfolioAllocationEditor({
               ))}
             </select>
           )}
-          <span className={`text-sm ${Math.abs(currentTotal - 100) < 0.1 ? "text-green-400" : "text-amber-400"}`}>
+          <span className={`text-sm tabular-nums ${Math.abs(currentTotal - 100) < 0.1 ? "text-good" : "text-warn"}`}>
             Total: {currentTotal.toFixed(2)}%
           </span>
         </div>

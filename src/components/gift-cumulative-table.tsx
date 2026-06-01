@@ -96,7 +96,7 @@ export function GiftCumulativeTable({
             <Fragment key={row.year}>
               <tr
                 data-testid={`gift-row-${row.year}`}
-                className={`border-b border-hair cursor-pointer hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${
+                className={`border-b border-hair cursor-pointer hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${
                   tinted ? "bg-card-2/40" : ""
                 }`}
                 onClick={() => onToggleYear(row.year)}
@@ -127,7 +127,7 @@ export function GiftCumulativeTable({
                 <td
                   data-testid={`gift-tax-cell-${row.year}-client`}
                   className={`py-1.5 px-2 text-right ${
-                    c.giftTaxThisYear > 0 ? "text-red-400" : ""
+                    c.giftTaxThisYear > 0 ? "text-crit" : ""
                   }`}
                 >
                   {fmt(c.giftTaxThisYear)}
@@ -146,7 +146,7 @@ export function GiftCumulativeTable({
                     <td
                       data-testid={`gift-tax-cell-${row.year}-spouse`}
                       className={`py-1.5 px-2 text-right ${
-                        (s?.giftTaxThisYear ?? 0) > 0 ? "text-red-400" : ""
+                        (s?.giftTaxThisYear ?? 0) > 0 ? "text-crit" : ""
                       }`}
                     >
                       {fmt(s?.giftTaxThisYear ?? 0)}
@@ -158,7 +158,7 @@ export function GiftCumulativeTable({
                 )}
                 <td
                   className={`py-1.5 px-2 text-right ${
-                    row.totalGiftTax > 0 ? "text-red-400" : ""
+                    row.totalGiftTax > 0 ? "text-crit" : ""
                   }`}
                 >
                   {fmt(row.totalGiftTax)}

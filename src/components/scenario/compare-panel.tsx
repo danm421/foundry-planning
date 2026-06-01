@@ -61,19 +61,19 @@ export function ComparePanel({
       <aside
         aria-label="Compare panel (collapsed)"
         data-testid="compare-panel-collapsed"
-        className="w-12 shrink-0 border-l border-[#1f2024] bg-[#101114] flex flex-col items-center py-4"
+        className="w-12 shrink-0 border-l border-hair bg-card flex flex-col items-center py-4"
       >
         <button
           type="button"
           onClick={() => setCollapsed(false)}
           aria-label="Expand compare panel"
-          className="text-[#6b6760] hover:text-[#e7e6e2] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded"
+          className="text-ink-4 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
         >
           ‹
         </button>
         <div
           data-testid="compare-panel-vertical-label"
-          className="mt-4 [writing-mode:vertical-rl] rotate-180 text-[11px] tracking-[0.18em] uppercase font-mono text-[#7a5b29]"
+          className="mt-4 [writing-mode:vertical-rl] rotate-180 text-[11px] tracking-[0.18em] uppercase font-mono text-accent"
         >
           {leftLabel} · vs · {rightLabel}
         </div>
@@ -85,17 +85,17 @@ export function ComparePanel({
     <aside
       aria-label="Compare panel"
       data-testid="compare-panel"
-      className="w-[360px] shrink-0 border-l border-[#1f2024] bg-[#101114] flex flex-col"
+      className="w-[360px] shrink-0 border-l border-hair bg-card flex flex-col"
     >
-      <div className="px-4 py-3 border-b border-[#1f2024] flex items-center justify-between">
-        <div className="text-[11px] tracking-[0.18em] uppercase font-mono text-[#7a5b29]">
+      <div className="px-4 py-3 border-b border-hair flex items-center justify-between">
+        <div className="text-[11px] tracking-[0.18em] uppercase font-mono text-accent">
           §.07 · COMPARE
         </div>
         <button
           type="button"
           onClick={() => setCollapsed(true)}
           aria-label="Collapse compare panel"
-          className="text-[#6b6760] hover:text-[#e7e6e2] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded"
+          className="text-ink-4 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
         >
           ›
         </button>

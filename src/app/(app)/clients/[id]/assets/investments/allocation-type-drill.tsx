@@ -33,26 +33,26 @@ export default function AllocationTypeDrill({
       <button
         type="button"
         onClick={onBack}
-        className="self-start text-xs text-gray-300 hover:text-gray-200"
+        className="self-start text-xs text-ink-2 hover:text-ink"
       >
         ← All asset types
       </button>
 
       <div>
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+        <div className="flex items-center gap-2 text-sm font-semibold text-ink">
           <span
             className="inline-block h-2 w-2 rounded-sm"
             style={{ backgroundColor: colorForAssetType(typeId) }}
           />
           {typeLabel}
         </div>
-        <div className="mt-1 text-xs text-gray-400">
+        <div className="mt-1 text-xs text-ink-3">
           {dollars(typeValue)} · {pct(typePctOfClassified)} of classified
         </div>
       </div>
 
       {classes.length === 0 ? (
-        <div className="text-xs text-gray-400">No classes contribute to this type.</div>
+        <div className="text-xs text-ink-3">No classes contribute to this type.</div>
       ) : (
         <div className="flex flex-col gap-4">
           {classes.map((cls, idx) => {
@@ -61,7 +61,7 @@ export default function AllocationTypeDrill({
               <ClassSection key={cls.assetClassId} cls={cls} color={color} />
             );
           })}
-          <div className="flex items-center justify-between border-t border-gray-700 pt-2 text-xs font-semibold text-gray-200">
+          <div className="flex items-center justify-between border-t border-hair-2 pt-2 text-xs font-semibold text-ink">
             <span>Grand Total</span>
             <span className="tabular-nums">
               {dollars(totalValue)}  ·  {pct(typePctOfClassified)}
@@ -76,19 +76,19 @@ export default function AllocationTypeDrill({
 function ClassSection({ cls, color }: { cls: import("@/lib/investments/allocation").TypeContribution; color: string }) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-xs font-semibold text-gray-200">
+      <div className="mb-1 flex items-center justify-between text-xs font-semibold text-ink">
         <span className="flex items-center gap-2">
           <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
           {cls.assetClassName}
         </span>
-        <span className="tabular-nums text-gray-300">{dollars(cls.subtotal)}</span>
+        <span className="tabular-nums text-ink-2">{dollars(cls.subtotal)}</span>
       </div>
       {cls.contributions.length === 0 ? (
-        <div className="ml-4 text-xs text-gray-400">No accounts.</div>
+        <div className="ml-4 text-xs text-ink-3">No accounts.</div>
       ) : (
         <table className="w-full text-left text-xs">
           <thead>
-            <tr className="border-b border-gray-800 text-gray-400">
+            <tr className="border-b border-hair text-ink-3">
               <th className="px-2 py-1 font-medium">Account</th>
               <th className="px-2 py-1 text-right font-medium">$ in class</th>
               <th className="px-2 py-1 text-right font-medium">% of class</th>
@@ -98,14 +98,14 @@ function ClassSection({ cls, color }: { cls: import("@/lib/investments/allocatio
             {cls.contributions.map((c) => {
               const pctOfClass = cls.subtotal > 0 ? c.valueInClass / cls.subtotal : 0;
               return (
-                <tr key={c.accountId} className="border-b border-gray-900">
-                  <td className="px-2 py-1 text-gray-200">{c.accountName}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-gray-200">{dollars(c.valueInClass)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-gray-200">{pct(pctOfClass)}</td>
+                <tr key={c.accountId} className="border-b border-hair">
+                  <td className="px-2 py-1 text-ink">{c.accountName}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{dollars(c.valueInClass)}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{pct(pctOfClass)}</td>
                 </tr>
               );
             })}
-            <tr className="border-t border-gray-800 text-xs text-gray-300">
+            <tr className="border-t border-hair text-xs text-ink-2">
               <td className="px-2 py-1">Subtotal</td>
               <td className="px-2 py-1 text-right tabular-nums">{dollars(cls.subtotal)}</td>
               <td className="px-2 py-1 text-right">—</td>

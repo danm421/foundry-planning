@@ -140,21 +140,21 @@ export default function TimelineReportView({ clientId }: Props) {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0B0F1A] p-6 text-sm text-red-400 font-[family-name:var(--font-body)]">
+      <div className="min-h-screen bg-paper p-6 text-sm text-crit font-[family-name:var(--font-body)]">
         Failed to load timeline: {error}
       </div>
     );
   }
   if (!clientData || !projection) {
     return (
-      <div className="min-h-screen bg-[#0B0F1A] p-6 text-sm text-gray-300 font-[family-name:var(--font-body)]">
+      <div className="min-h-screen bg-paper p-6 text-sm text-ink-2 font-[family-name:var(--font-body)]">
         Loading timeline…
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-screen bg-[#0B0F1A] font-[family-name:var(--font-body)]">
+    <div className="relative min-h-screen bg-paper font-[family-name:var(--font-body)]">
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(96,165,250,0.08),transparent_40%),radial-gradient(circle_at_80%_80%,rgba(232,121,249,0.06),transparent_40%)]"
@@ -163,7 +163,7 @@ export default function TimelineReportView({ clientId }: Props) {
         <h1 className="bg-gradient-to-r from-sky-300 via-white to-fuchsia-300 bg-clip-text text-4xl font-semibold tracking-tight text-transparent font-[family-name:var(--font-display)]">
           Timeline
         </h1>
-        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-gray-300 font-[family-name:var(--font-body)]">
+        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-ink-2 font-[family-name:var(--font-body)]">
           <span className="tabular-nums">{projection.length}</span> years ·{" "}
           <span className="tabular-nums">{events.length}</span> events
         </p>
@@ -209,10 +209,10 @@ export default function TimelineReportView({ clientId }: Props) {
           registerSegmentRef={registerSegmentRef}
         />
 
-        <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/[0.06] pt-4 text-xs text-gray-400">
+        <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-hair pt-4 text-xs text-ink-3">
           <span>
             Sparkline:{" "}
-            <span className="text-gray-300">
+            <span className="text-ink-2">
               {sparklineMode === "netWorth" ? "Net Worth" : sparklineMode === "portfolio" ? "Portfolio (investable)" : "Net Cash Flow"}
             </span>
           </span>

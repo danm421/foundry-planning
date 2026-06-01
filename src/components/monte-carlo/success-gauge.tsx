@@ -33,7 +33,7 @@ export function SuccessGauge({ value }: SuccessGaugeProps) {
         <path
           d={ARC_PATH}
           fill="none"
-          stroke="rgb(30, 41, 59)"
+          stroke="var(--color-hair-2)"
           strokeWidth={STROKE_WIDTH}
           strokeLinecap="round"
         />
@@ -50,7 +50,7 @@ export function SuccessGauge({ value }: SuccessGaugeProps) {
       </svg>
       <div
         data-testid="gauge-label"
-        className="absolute inset-x-0 flex justify-center text-lg font-semibold text-slate-100 tabular-nums"
+        className="absolute inset-x-0 flex justify-center text-lg font-semibold text-ink tabular-nums"
         style={{ top: CY - 14 }}
       >
         {Math.round(clamped * 100)}%

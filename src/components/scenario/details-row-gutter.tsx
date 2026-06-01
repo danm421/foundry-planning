@@ -16,15 +16,15 @@ export function DetailsRowGutter({
 
   const dot =
     diff.kind === "add" ? (
-      <span className="text-[#7fa97f]" aria-label="added">
+      <span className="text-good" aria-label="added">
         +
       </span>
     ) : diff.kind === "remove" ? (
-      <span className="text-[#c87a7a] line-through" aria-label="removed">
+      <span className="text-crit line-through" aria-label="removed">
         −
       </span>
     ) : (
-      <span className="text-[#d4a04a]" aria-label="edited">
+      <span className="text-accent-ink" aria-label="edited">
         Δ
       </span>
     );
@@ -42,16 +42,16 @@ export function DetailsRowGutter({
       {hovered && (
         <div
           role="tooltip"
-          className="absolute z-20 left-5 top-0 w-[280px] bg-[#101114] border border-ink-3 rounded p-3 text-[12px] shadow-lg"
+          className="absolute z-20 left-5 top-0 w-[280px] bg-card border border-hair rounded p-3 text-[12px] shadow-lg"
         >
           {diff.kind === "edit" && (
             <div className="space-y-1">
               {diff.fields.map((f) => (
-                <div key={f.field} className="text-[#a09c92]">
-                  <span className="text-[#6b6760]">{f.field}:</span>{" "}
+                <div key={f.field} className="text-ink-3">
+                  <span className="text-ink-4">{f.field}:</span>{" "}
                   <span>Base {String(f.from)}</span>
                   {" → "}
-                  <span className="text-[#e7e6e2]">Scenario {String(f.to)}</span>
+                  <span className="text-ink">Scenario {String(f.to)}</span>
                 </div>
               ))}
             </div>
@@ -59,7 +59,7 @@ export function DetailsRowGutter({
           <button
             type="button"
             onClick={onRevert}
-            className="mt-2 text-[11px] text-[#7a5b29] hover:text-[#d4a04a] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded px-1"
+            className="mt-2 text-[11px] text-accent hover:text-accent-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded px-1"
           >
             ↶ Revert
           </button>

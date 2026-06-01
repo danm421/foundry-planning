@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { LiquidAccount } from "@/components/account-groups/types";
+import { data as brandData } from "@/brand";
 
 export type GroupFormInitial = {
   id: string;
@@ -38,7 +39,7 @@ export default function AccountGroupForm({
 }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [color, setColor] = useState(initial?.color ?? "#6366f1");
+  const [color, setColor] = useState(initial?.color ?? brandData.indigo);
   const [selected, setSelected] = useState<Set<string>>(
     new Set(initial?.memberAccountIds ?? []),
   );
@@ -99,49 +100,49 @@ export default function AccountGroupForm({
   return (
     <form
       onSubmit={submit}
-      className="space-y-4 rounded-md border border-gray-800 bg-gray-900/50 p-4"
+      className="space-y-4 rounded-md border border-hair bg-card/50 p-4"
     >
       <div className="grid grid-cols-2 gap-4">
         <label className="block text-sm">
-          <span className="mb-1 block text-gray-300">Name</span>
+          <span className="mb-1 block text-ink-2">Name</span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={80}
             required
-            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-gray-100"
+            className="w-full rounded border border-hair bg-card-2 px-2 py-1 text-ink"
           />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block text-gray-300">Color</span>
+          <span className="mb-1 block text-ink-2">Color</span>
           <input
             type="color"
             value={color}
             onChange={(e) => setColor(e.target.value)}
-            className="h-8 w-16 rounded border border-gray-700 bg-gray-800"
+            className="h-8 w-16 rounded border border-hair bg-card-2"
           />
         </label>
       </div>
       <label className="block text-sm">
-        <span className="mb-1 block text-gray-300">Description (optional)</span>
+        <span className="mb-1 block text-ink-2">Description (optional)</span>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={500}
           rows={2}
-          className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-gray-100"
+          className="w-full rounded border border-hair bg-card-2 px-2 py-1 text-ink"
         />
       </label>
 
       <div>
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-300">
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-2">
           Accounts
         </h4>
-        <div className="max-h-96 space-y-3 overflow-auto rounded border border-gray-800 bg-gray-900/40 p-3">
+        <div className="max-h-96 space-y-3 overflow-auto rounded border border-hair bg-card/40 p-3">
           {groupedByCategory.map(({ cat, items }) =>
             items.length === 0 ? null : (
               <fieldset key={cat}>
-                <legend className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                <legend className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
                   {CATEGORY_LABEL[cat]}
                 </legend>
                 <ul className="mt-1 space-y-1">
@@ -154,8 +155,8 @@ export default function AccountGroupForm({
                           onChange={() => toggle(a.id)}
                           className="h-4 w-4 accent-accent"
                         />
-                        <span className="flex-1 text-gray-100">{a.name}</span>
-                        <span className="text-xs text-gray-400">
+                        <span className="flex-1 text-ink">{a.name}</span>
+                        <span className="text-xs text-ink-3">
                           ${formatDollars(a.value)}
                         </span>
                       </label>
@@ -166,7 +167,7 @@ export default function AccountGroupForm({
             ),
           )}
         </div>
-        <p className="mt-2 text-xs text-gray-400">
+        <p className="mt-2 text-xs text-ink-3">
           {selected.size} {selected.size === 1 ? "account" : "accounts"} selected · $
           {formatDollars(totalValue)}
         </p>
@@ -183,7 +184,7 @@ export default function AccountGroupForm({
           type="button"
           onClick={onCancel}
           disabled={submitting}
-          className="rounded px-3 py-1 text-sm text-gray-300 hover:text-white"
+          className="rounded px-3 py-1 text-sm text-ink-2 hover:text-ink"
         >
           Cancel
         </button>

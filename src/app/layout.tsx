@@ -49,13 +49,13 @@ export default async function RootLayout({
       appearance={{
         baseTheme: theme === "dark" ? dark : undefined,
         variables: {
-          colorBackground: "#17181c",
-          colorForeground: "#f3f4f6",
-          colorMutedForeground: "#c7cbd4",
-          colorNeutral: "#f3f4f6",
-          colorInput: "#0b0c0f",
-          colorInputForeground: "#f3f4f6",
-          colorPrimary: "#f59e0b",
+          colorBackground: "var(--color-card)",
+          colorForeground: "var(--color-ink)",
+          colorMutedForeground: "var(--color-ink-2)",
+          colorNeutral: "var(--color-ink)",
+          colorInput: "var(--color-card-2)",
+          colorInputForeground: "var(--color-ink)",
+          colorPrimary: "var(--color-accent)",
         },
         elements: {
           card: "border border-white/10 shadow-2xl",

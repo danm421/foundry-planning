@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { useThemeName, chartChrome } from "@/lib/chart-colors";
+import { colors, colorsLight } from "@/brand";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -32,6 +34,10 @@ interface Props {
 }
 
 export default function PortfolioGrowthChart({ years }: Props) {
+  const theme = useThemeName();
+  const chrome = chartChrome(theme);
+  const seriesColor = theme === "light" ? colorsLight.cat.portfolio : colors.cat.portfolio;
+
   const data = useMemo(
     () => ({
       labels: years.map((y) => String(y.year)),
@@ -39,12 +45,12 @@ export default function PortfolioGrowthChart({ years }: Props) {
         {
           label: "Portfolio assets",
           data: years.map((y) => y.portfolioAssets.total),
-          backgroundColor: "#2563eb",
+          backgroundColor: seriesColor,
           borderRadius: 2,
         },
       ],
     }),
-    [years],
+    [years, seriesColor],
   );
 
   const options = useMemo(
@@ -54,9 +60,9 @@ export default function PortfolioGrowthChart({ years }: Props) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: "#1f2937",
-          titleColor: "#f3f4f6",
-          bodyColor: "#d1d5db",
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             label: (ctx: { raw: unknown }) =>
               `Portfolio assets: ${fmtFull.format(Number(ctx.raw))}`,
@@ -65,19 +71,19 @@ export default function PortfolioGrowthChart({ years }: Props) {
       },
       scales: {
         x: {
-          ticks: { color: "#9ca3af", maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+          ticks: { color: chrome.tick, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
           grid: { display: false },
         },
         y: {
           ticks: {
-            color: "#9ca3af",
+            color: chrome.tick,
             callback: (value: unknown) => fmtCompact.format(Number(value)),
           },
-          grid: { color: "rgba(148, 163, 184, 0.12)" },
+          grid: { color: chrome.grid },
         },
       },
     }),
-    [],
+    [chrome],
   );
 
   if (years.length === 0) return null;

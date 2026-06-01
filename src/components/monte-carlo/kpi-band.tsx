@@ -42,7 +42,7 @@ export function KpiBand({ summary, clientData, planSettings }: KpiBandProps) {
       <div
         role="img"
         aria-label={`Success probability ${Math.round(successPct * 100)} percent`}
-        className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 flex items-center justify-center min-h-[96px] lg:col-span-2"
+        className="rounded-lg bg-card ring-1 ring-hair p-4 flex items-center justify-center min-h-[96px] lg:col-span-2"
       >
         <SuccessGauge value={successPct} />
       </div>

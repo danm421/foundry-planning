@@ -57,7 +57,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card p-6 text-center text-ink-2">
         No base case scenario found.
       </div>
     );
@@ -113,7 +113,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
   const settings = settingsRows[0];
   if (!settings) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card p-6 text-center text-ink-2">
         No plan settings found.
       </div>
     );
@@ -266,8 +266,8 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
-        <p className="mt-1 text-sm text-gray-300">
+        <h2 className="text-xl font-bold text-ink">Assumptions</h2>
+        <p className="mt-1 text-sm text-ink-2">
           Plan horizon, tax rates, growth assumptions, and withdrawal order.
         </p>
       </div>

@@ -48,7 +48,7 @@ export function ScenarioPickerDropdown({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       aria-label={ariaLabel ?? "Scenario"}
-      className="w-full bg-[#0b0c0f] border border-[#1f2024] rounded h-9 px-2 text-[13px] text-[#e7e6e2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a]"
+      className="w-full bg-paper border border-hair rounded h-9 px-2 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <option value="base">Base case</option>
       {liveScenarios.length > 0 && (

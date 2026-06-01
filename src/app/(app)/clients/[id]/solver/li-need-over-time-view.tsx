@@ -19,6 +19,7 @@ import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { roundUpTo50k } from "@/lib/life-insurance/round";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
 import type { OverTimeProgress } from "./use-need-over-time";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -102,12 +103,7 @@ export function LiNeedOverTimeView({
       ) : null}
 
       {rows && !isRunning ? (
-        <div className="mt-3" style={{ height: 300 }}>
-          <Bar
-            data={buildChartData(rows, activeDeathOf, clientName, spouseName)}
-            options={CHART_OPTIONS}
-          />
-        </div>
+        <ChartPanel rows={rows} activeDeathOf={activeDeathOf} clientName={clientName} spouseName={spouseName} />
       ) : !isRunning && !errorMessage ? (
         <p className="mt-3 text-[12px] text-ink-3">
           Run the solve to see life-insurance need by year of death.
@@ -117,69 +113,80 @@ export function LiNeedOverTimeView({
   );
 }
 
-/** Build the single-dataset chart payload for the selected decedent. */
-function buildChartData(
-  rows: NeedOverTimeRow[],
-  deathOf: "client" | "spouse",
-  clientName: string,
-  spouseName: string,
-) {
+/** Inner chart component so we can call hooks (useThemeName). */
+function ChartPanel({
+  rows,
+  activeDeathOf,
+  clientName,
+  spouseName,
+}: {
+  rows: NeedOverTimeRow[];
+  activeDeathOf: "client" | "spouse";
+  clientName: string;
+  spouseName: string;
+}) {
+  const theme = useThemeName();
+  const chrome = chartChrome(theme);
   const labels = rows.map((r) => String(r.year));
-  return {
+  const data = {
     labels,
     datasets: [
-      deathOf === "spouse"
+      activeDeathOf === "spouse"
         ? {
             label: `${spouseName} dies`,
             data: rows.map((r) => roundUpTo50k(r.spouseNeed ?? 0)),
-            backgroundColor: "#d97706",
-            borderColor: "#d97706",
+            backgroundColor: "var(--color-data-sage)",
+            borderColor: "var(--color-data-sage)",
             borderWidth: 1,
           }
         : {
             label: `${clientName} dies`,
             data: rows.map((r) => roundUpTo50k(r.clientNeed)),
-            backgroundColor: "#2563eb",
-            borderColor: "#2563eb",
+            backgroundColor: "var(--color-data-indigo)",
+            borderColor: "var(--color-data-indigo)",
             borderWidth: 1,
           },
     ],
   };
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "index" as const, intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        labels: { color: chrome.legend, boxWidth: 12, padding: 16 },
+      },
+      tooltip: {
+        backgroundColor: chrome.tooltipBg,
+        titleColor: chrome.tooltipTitle,
+        bodyColor: chrome.tooltipBody,
+        callbacks: {
+          label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
+            `${ctx.dataset.label}: ${formatCurrency(Number(ctx.raw))}`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { color: chrome.tick },
+        grid: { color: chrome.grid },
+      },
+      y: {
+        ticks: {
+          color: chrome.tick,
+          callback: (value: unknown) => formatCurrency(Number(value)),
+        },
+        grid: { color: chrome.grid },
+      },
+    },
+  };
+  return (
+    <div className="mt-3" style={{ height: 300 }}>
+      <Bar data={data} options={options} />
+    </div>
+  );
 }
-
-const CHART_OPTIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { mode: "index" as const, intersect: false },
-  plugins: {
-    legend: {
-      display: true,
-      labels: { color: "#d1d5db", boxWidth: 12, padding: 16 },
-    },
-    tooltip: {
-      backgroundColor: "#1f2937",
-      titleColor: "#f3f4f6",
-      bodyColor: "#d1d5db",
-      callbacks: {
-        label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
-          `${ctx.dataset.label}: ${formatCurrency(Number(ctx.raw))}`,
-      },
-    },
-  },
-  scales: {
-    x: {
-      ticks: { color: "#9ca3af" },
-      grid: { color: "#374151" },
-    },
-    y: {
-      ticks: {
-        color: "#9ca3af",
-        callback: (value: unknown) => formatCurrency(Number(value)),
-      },
-      grid: { color: "#374151" },
-    },
-  },
-};
 
 /** Progress bar driven by the route's per-year `done/total` count. */
 function OverTimeProgressBar({

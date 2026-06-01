@@ -6,10 +6,10 @@ export function ReportHeader({ clientDisplayName }: ReportHeaderProps) {
   return (
     <header className="flex items-start justify-between gap-4">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold text-slate-100">
+        <h1 className="text-2xl font-semibold text-ink">
           Monte Carlo Simulation: Retirement Forecast
         </h1>
-        <p className="text-sm text-slate-300">Client: {clientDisplayName}</p>
+        <p className="text-sm text-ink-2">Client: {clientDisplayName}</p>
       </div>
       <button
         type="button"

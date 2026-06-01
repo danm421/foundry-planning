@@ -2,6 +2,8 @@
 import { Fragment, useEffect, useRef } from "react";
 import { Doughnut } from "react-chartjs-2";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import { useThemeName } from "@/lib/chart-colors";
+import { colors, colorsLight } from "@/brand";
 import {
   colorForAssetClass,
   colorForAssetType,
@@ -44,12 +46,14 @@ export function AssetAllocationDonut({
   onChartReady,
 }: Props) {
   const chartRef = useRef<ChartJS<"doughnut"> | null>(null);
+  const theme = useThemeName();
+  const segmentBorder = theme === "light" ? colorsLight.card : colors.card;
 
   const unallocatedRow = household.unallocatedValue > 0
     ? { label: "Unallocated", value: household.unallocatedValue, color: UNALLOCATED_COLOR }
     : null;
 
-  const datasets = buildDatasets(household, mode, unallocatedRow);
+  const datasets = buildDatasets(household, mode, unallocatedRow, segmentBorder);
 
   useEffect(() => {
     if (!onChartReady) return;
@@ -61,8 +65,8 @@ export function AssetAllocationDonut({
     <div className="flex flex-col items-center gap-3">
       {showHeader && (
         <>
-          <div className="text-xs uppercase tracking-wide text-gray-400">Investable Total</div>
-          <div className="text-2xl font-bold text-gray-100">
+          <div className="text-xs uppercase tracking-wide text-ink-3">Investable Total</div>
+          <div className="text-2xl font-bold text-ink">
             ${household.totalInvestableValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </div>
         </>
@@ -83,6 +87,7 @@ function buildDatasets(
   household: HouseholdAllocation,
   mode: AssetAllocationDonutMode,
   unallocated: { label: string; value: number; color: string } | null,
+  segmentBorder: string,
 ) {
   if (mode === "high_level") {
     const rows = [
@@ -98,7 +103,7 @@ function buildDatasets(
       datasets: [{
         data: rows.map((r) => r.value),
         backgroundColor: rows.map((r) => r.color),
-        borderColor: "#111827",
+        borderColor: segmentBorder,
         borderWidth: 2,
       }],
     };
@@ -118,7 +123,7 @@ function buildDatasets(
       datasets: [{
         data: rows.map((r) => r.value),
         backgroundColor: rows.map((r) => r.color),
-        borderColor: "#111827",
+        borderColor: segmentBorder,
         borderWidth: 2,
       }],
     };
@@ -156,14 +161,14 @@ function buildDatasets(
         // Outer ring = classes
         data: outerWithUnalloc.map((r) => r.value),
         backgroundColor: outerWithUnalloc.map((r) => r.color),
-        borderColor: "#111827",
+        borderColor: segmentBorder,
         borderWidth: 2,
       },
       {
         // Inner ring = types
         data: innerWithUnalloc.map((r) => r.value),
         backgroundColor: innerWithUnalloc.map((r) => r.color),
-        borderColor: "#111827",
+        borderColor: segmentBorder,
         borderWidth: 2,
       },
     ],
@@ -180,8 +185,8 @@ export function LegendView({ household, mode }: { household: HouseholdAllocation
               className="inline-block h-2 w-2 rounded-sm"
               style={{ backgroundColor: colorForAssetType(t.id) }}
             />
-            <span className="text-gray-200">{t.label}</span>
-            <span className="ml-auto tabular-nums text-gray-400">
+            <span className="text-ink-2">{t.label}</span>
+            <span className="ml-auto tabular-nums text-ink-3">
               {(t.pctOfClassified * 100).toFixed(1)}%
             </span>
           </li>
@@ -199,8 +204,8 @@ export function LegendView({ household, mode }: { household: HouseholdAllocation
               className="inline-block h-2 w-2 rounded-sm"
               style={{ backgroundColor: colorForAssetClass({ sortOrder: b.sortOrder }) }}
             />
-            <span className="text-gray-200">{b.name}</span>
-            <span className="ml-auto tabular-nums text-gray-400">
+            <span className="text-ink-2">{b.name}</span>
+            <span className="ml-auto tabular-nums text-ink-3">
               {(b.pctOfClassified * 100).toFixed(1)}%
             </span>
           </li>
@@ -219,13 +224,13 @@ export function LegendView({ household, mode }: { household: HouseholdAllocation
         return (
           <Fragment key={t.id}>
             <div>
-              <div className="flex items-center gap-2 font-semibold text-gray-200">
+              <div className="flex items-center gap-2 font-semibold text-ink-2">
                 <span
                   className="inline-block h-2 w-2 rounded-sm"
                   style={{ backgroundColor: colorForAssetType(t.id) }}
                 />
                 <span>{t.label}</span>
-                <span className="ml-auto tabular-nums text-gray-400">
+                <span className="ml-auto tabular-nums text-ink-3">
                   {(t.pctOfClassified * 100).toFixed(1)}%
                 </span>
               </div>
@@ -236,8 +241,8 @@ export function LegendView({ household, mode }: { household: HouseholdAllocation
                       className="inline-block h-2 w-2 rounded-sm"
                       style={{ backgroundColor: shadeForClassInType(t.id, idx, classes.length) }}
                     />
-                    <span className="text-gray-300">{c.name}</span>
-                    <span className="ml-auto tabular-nums text-gray-400">
+                    <span className="text-ink-2">{c.name}</span>
+                    <span className="ml-auto tabular-nums text-ink-3">
                       {(c.pctOfClassified * 100).toFixed(1)}%
                     </span>
                   </li>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useThemeName, chartChrome } from "@/lib/chart-colors";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -45,6 +46,8 @@ export function LongevityChart({
   onPromote,
 }: LongevityChartProps) {
   const isMain = variant === "main";
+  const theme = useThemeName();
+  const chrome = chartChrome(theme);
   const data = useMemo<LongevityYear[]>(() => {
     const rates = successByYear(byYearLiquidAssetsPerTrial, requiredMinimumAssetLevel);
     if (rates.length === 0) return [];
@@ -60,9 +63,9 @@ export function LongevityChart({
 
   if (data.length === 0) {
     return (
-      <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
-        <h3 className="text-sm font-semibold text-slate-100 mb-3">Longevity</h3>
-        <p className="text-sm text-slate-400">No trial data available.</p>
+      <section className="rounded-lg bg-card ring-1 ring-hair p-4">
+        <h3 className="text-sm font-semibold text-ink mb-3">Longevity</h3>
+        <p className="text-sm text-ink-3">No trial data available.</p>
       </section>
     );
   }
@@ -92,9 +95,9 @@ export function LongevityChart({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: "rgba(2, 6, 23, 0.92)",
-        titleColor: "rgb(226, 232, 240)",
-        bodyColor: "rgb(203, 213, 225)",
+        backgroundColor: chrome.tooltipBg,
+        titleColor: chrome.tooltipTitle,
+        bodyColor: chrome.tooltipBody,
         callbacks: {
           title: (items: TooltipItem<"bar">[]) => {
             const row = data[items[0]?.dataIndex ?? 0];
@@ -113,7 +116,7 @@ export function LongevityChart({
       x: {
         grid: { display: false },
         ticks: {
-          color: "rgb(148, 163, 184)",
+          color: chrome.tick,
           maxRotation: 0,
           autoSkip: true,
           maxTicksLimit: 8,
@@ -123,9 +126,9 @@ export function LongevityChart({
       y: {
         beginAtZero: true,
         max: 100,
-        grid: { color: "rgba(148, 163, 184, 0.1)" },
+        grid: { color: chrome.grid },
         ticks: {
-          color: "rgb(148, 163, 184)",
+          color: chrome.tick,
           font: { size: 10 },
           callback: (value) => `${value}%`,
           stepSize: 25,
@@ -135,19 +138,19 @@ export function LongevityChart({
   };
 
   return (
-    <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
+    <section className="rounded-lg bg-card ring-1 ring-hair p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3
             className={
               isMain
-                ? "text-base font-semibold text-slate-100"
-                : "text-sm font-semibold text-slate-100"
+                ? "text-base font-semibold text-ink"
+                : "text-sm font-semibold text-ink"
             }
           >
             Longevity
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5 mb-3">
+          <p className="text-xs text-ink-3 mt-0.5 mb-3">
             Probability of having assets remaining at each {clientBirthYear != null ? "age" : "year"}
           </p>
         </div>

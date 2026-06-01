@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useThemeName } from "@/lib/chart-colors";
+import { colors, colorsLight } from "@/brand";
 import MonteCarloSkeleton from "@/app/(app)/clients/[id]/cashflow/monte-carlo/loading-skeleton";
 import { ReportHeader } from "./monte-carlo/report-header";
 import { KpiBand } from "./monte-carlo/kpi-band";
@@ -46,6 +48,8 @@ interface MonteCarloPayload {
 
 export default function MonteCarloReport({ clientId }: Props) {
   const searchParams = useSearchParams();
+  const theme = useThemeName();
+  const brandColors = theme === "light" ? colorsLight : colors;
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [mcPayload, setMcPayload] = useState<MonteCarloPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -193,17 +197,17 @@ export default function MonteCarloReport({ clientId }: Props) {
     if (!clientData) return [];
     const c = clientData.client;
     const markers: Array<{ age: number; label: string; color: string }> = [
-      { age: c.retirementAge, label: `Retire ${c.retirementAge}`, color: "rgb(110, 231, 183)" },
+      { age: c.retirementAge, label: `Retire ${c.retirementAge}`, color: brandColors.cat.income },
     ];
     if (c.spouseRetirementAge != null && c.spouseRetirementAge !== c.retirementAge) {
       markers.push({
         age: c.spouseRetirementAge,
         label: `Spouse ${c.spouseRetirementAge}`,
-        color: "rgb(125, 211, 252)", // sky-300 — Timeline's "life" color
+        color: brandColors.cat.life,
       });
     }
     return markers;
-  }, [clientData]);
+  }, [clientData, brandColors]);
 
   // byYearLiquidAssetsPerTrial is trial-major ([trial][year]), so map each
   // trial to its last year's value to get the per-trial terminal balance array.
@@ -216,7 +220,7 @@ export default function MonteCarloReport({ clientId }: Props) {
     return (
       <div className="p-8">
         <h1 className="text-xl font-semibold mb-2">Monte Carlo Simulation</h1>
-        <div className="text-red-600">Failed to load: {loadError}</div>
+        <div className="text-crit">Failed to load: {loadError}</div>
       </div>
     );
   }
@@ -237,7 +241,7 @@ export default function MonteCarloReport({ clientId }: Props) {
             }
           />
           {/* F16 disclosure: MC volatility/mixes are always base-case. */}
-          <p className="text-[12px] text-slate-400 -mt-3">
+          <p className="text-[12px] text-ink-3 -mt-3">
             Monte Carlo uses base-case asset mixes and volatility.
           </p>
           {summary ? (
@@ -251,7 +255,7 @@ export default function MonteCarloReport({ clientId }: Props) {
               {Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
-                  className={`rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 min-h-[96px] animate-pulse${i === 0 ? " lg:col-span-2" : ""}`}
+                  className={`rounded-lg bg-card ring-1 ring-hair p-4 min-h-[96px] animate-pulse${i === 0 ? " lg:col-span-2" : ""}`}
                 />
               ))}
             </div>
@@ -291,11 +295,11 @@ export default function MonteCarloReport({ clientId }: Props) {
               )}
             </>
           ) : (
-            <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[440px] animate-pulse" />
+            <div className="rounded-lg bg-card ring-1 ring-hair h-[440px] animate-pulse" />
           )}
 
           {runError && (
-            <div className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+            <div className="rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
               Run failed: {runError}
             </div>
           )}
@@ -303,7 +307,7 @@ export default function MonteCarloReport({ clientId }: Props) {
           {summary ? (
             <YearlyBreakdown summary={summary} />
           ) : (
-            <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[320px] animate-pulse" />
+            <div className="rounded-lg bg-card ring-1 ring-hair h-[320px] animate-pulse" />
           )}
 
           {summary ? (
@@ -311,7 +315,7 @@ export default function MonteCarloReport({ clientId }: Props) {
               <button
                 onClick={handleRestart}
                 disabled={running}
-                className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:border-emerald-400/60 hover:text-emerald-300 disabled:opacity-50"
+                className="rounded-lg border border-hair bg-card px-4 py-2 text-sm text-ink-2 hover:border-good/60 hover:text-good disabled:opacity-50"
               >
                 {running ? "Running…" : "Generate New Seed"}
               </button>
@@ -359,10 +363,10 @@ export default function MonteCarloReport({ clientId }: Props) {
             </>
           ) : (
             <>
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[120px] animate-pulse" />
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[260px] animate-pulse" />
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[280px] animate-pulse" />
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[140px] animate-pulse" />
+              <div className="rounded-lg bg-card ring-1 ring-hair h-[120px] animate-pulse" />
+              <div className="rounded-lg bg-card ring-1 ring-hair h-[260px] animate-pulse" />
+              <div className="rounded-lg bg-card ring-1 ring-hair h-[280px] animate-pulse" />
+              <div className="rounded-lg bg-card ring-1 ring-hair h-[140px] animate-pulse" />
             </>
           )}
         </aside>

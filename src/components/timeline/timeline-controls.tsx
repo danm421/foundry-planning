@@ -47,7 +47,7 @@ export default function TimelineControls({
   onToggleCategory,
 }: Props) {
   return (
-    <div className="flex flex-wrap items-center gap-4 border-b border-white/[0.06] pb-4 font-[family-name:var(--font-body)]">
+    <div className="flex flex-wrap items-center gap-4 border-b border-hair pb-4 font-[family-name:var(--font-body)]">
       <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/20 p-1 backdrop-blur-sm">
         {[
           { id: "netWorth", label: "Net Worth" },
@@ -63,7 +63,7 @@ export default function TimelineControls({
               className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
                 active
                   ? "bg-sky-400/15 text-sky-300 ring-1 ring-sky-400/40 shadow-[0_0_10px_rgba(56,189,248,0.2)]"
-                  : "text-gray-300 hover:text-gray-200"
+                  : "text-ink-2 hover:text-ink"
               }`}
             >
               {opt.label}
@@ -84,7 +84,7 @@ export default function TimelineControls({
               className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
                 active
                   ? CHIP_ACTIVE[c.id]
-                  : "border-white/10 text-gray-300 hover:border-white/25 hover:text-gray-300"
+                  : "border-white/10 text-ink-2 hover:border-white/25 hover:text-ink-2"
               }`}
             >
               {c.label}

@@ -12,6 +12,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import { useThemeName, chartChrome } from "@/lib/chart-colors";
 import {
   computeAmortizationSchedule,
   calcOriginalBalance,
@@ -24,24 +25,29 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
-const chartOptions = {
-  responsive: true,
-  plugins: {
-    legend: { position: "top" as const, labels: { color: "#9ca3af" } },
-    tooltip: {
-      callbacks: {
-        label: (ctx: any) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`,
+function buildChartOptions(chrome: ReturnType<typeof chartChrome>) {
+  return {
+    responsive: true,
+    plugins: {
+      legend: { position: "top" as const, labels: { color: chrome.legend } },
+      tooltip: {
+        backgroundColor: chrome.tooltipBg,
+        titleColor: chrome.tooltipTitle,
+        bodyColor: chrome.tooltipBody,
+        callbacks: {
+          label: (ctx: any) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`,
+        },
       },
     },
-  },
-  scales: {
-    x: { ticks: { color: "#9ca3af" }, grid: { color: "#374151" } },
-    y: {
-      ticks: { color: "#9ca3af", callback: (v: any) => fmt(v) },
-      grid: { color: "#374151" },
+    scales: {
+      x: { ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
+      y: {
+        ticks: { color: chrome.tick, callback: (v: any) => fmt(v) },
+        grid: { color: chrome.grid },
+      },
     },
-  },
-};
+  };
+}
 
 interface ExtraPaymentRecord {
   id: string;
@@ -76,6 +82,9 @@ export default function LiabilityAmortizationTab({
   balanceAsOfMonth,
   balanceAsOfYear,
 }: LiabilityAmortizationTabProps) {
+  const theme = useThemeName();
+  const chrome = chartChrome(theme);
+
   const [extraPaymentRecords, setExtraPaymentRecords] = useState<ExtraPaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingYear, setEditingYear] = useState<number | null>(null);
@@ -166,22 +175,22 @@ export default function LiabilityAmortizationTab({
         {
           label: "Balance",
           data: balanceData,
-          borderColor: "#3b82f6",
-          backgroundColor: "rgba(59, 130, 246, 0.1)",
+          borderColor: "var(--data-indigo)",
+          backgroundColor: "color-mix(in srgb, var(--data-indigo) 12%, transparent)",
           tension: 0.3,
         },
         {
           label: "Interest",
           data: interestData,
-          borderColor: "#84cc16",
-          backgroundColor: "rgba(132, 204, 22, 0.1)",
+          borderColor: "var(--data-emerald)",
+          backgroundColor: "color-mix(in srgb, var(--data-emerald) 12%, transparent)",
           tension: 0.3,
         },
         {
           label: "Payment",
           data: paymentData,
-          borderColor: "#991b1b",
-          backgroundColor: "rgba(153, 27, 27, 0.1)",
+          borderColor: "var(--color-crit)",
+          backgroundColor: "color-mix(in srgb, var(--color-crit) 12%, transparent)",
           tension: 0.3,
         },
       ],
@@ -270,7 +279,7 @@ export default function LiabilityAmortizationTab({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 text-gray-300">
+      <div className="flex items-center justify-center py-12 text-ink-2">
         Loading amortization data...
       </div>
     );
@@ -278,7 +287,7 @@ export default function LiabilityAmortizationTab({
 
   if (schedule.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12 text-gray-300">
+      <div className="flex items-center justify-center py-12 text-ink-2">
         Unable to generate amortization schedule. Ensure balance and monthly payment are set.
       </div>
     );
@@ -287,15 +296,15 @@ export default function LiabilityAmortizationTab({
   return (
     <div className="max-h-[70vh] overflow-y-auto space-y-6">
       {/* Chart */}
-      <div className="rounded-lg bg-gray-800 p-4">
-        <Line data={chartData} options={chartOptions} />
+      <div className="rounded-lg bg-card p-4">
+        <Line data={chartData} options={buildChartOptions(chrome)} />
       </div>
 
       {/* Schedule table */}
       <div className="w-full overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-700 text-left text-gray-300">
+            <tr className="border-b border-hair text-left text-ink-2">
               <th className="px-3 py-2 font-medium">Year</th>
               <th className="px-3 py-2 font-medium text-right">Payment</th>
               <th className="px-3 py-2 font-medium text-right">Interest</th>
@@ -314,12 +323,12 @@ export default function LiabilityAmortizationTab({
               return (
                 <tr
                   key={row.year}
-                  className={`border-b border-gray-800 ${
+                  className={`border-b border-hair ${
                     isCurrentYear
                       ? "bg-accent/10 border-l-2 border-l-accent"
                       : ""
                   } ${
-                    isPaidOff ? "text-green-400" : "text-gray-100"
+                    isPaidOff ? "text-good" : "text-ink"
                   }`}
                 >
                   <td className="px-3 py-2">{row.year}</td>
@@ -334,7 +343,7 @@ export default function LiabilityAmortizationTab({
                           onChange={(e) =>
                             setEpType(e.target.value as "per_payment" | "lump_sum")
                           }
-                          className="rounded border border-gray-600 bg-gray-800 px-1 py-0.5 text-xs text-gray-100 focus:border-accent focus:outline-none"
+                          className="rounded border border-hair-2 bg-card-2 px-1 py-0.5 text-xs text-ink focus:border-accent focus:outline-none"
                         >
                           <option value="lump_sum">Lump sum</option>
                           <option value="per_payment">Per payment</option>
@@ -344,7 +353,7 @@ export default function LiabilityAmortizationTab({
                           value={epAmount}
                           onChange={(e) => setEpAmount(e.target.value)}
                           placeholder="$"
-                          className="w-20 rounded border border-gray-600 bg-gray-800 px-1 py-0.5 text-xs text-gray-100 text-right focus:border-accent focus:outline-none"
+                          className="w-20 rounded border border-hair-2 bg-card-2 px-1 py-0.5 text-xs text-ink text-right focus:border-accent focus:outline-none"
                           autoFocus
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSaveExtra();
@@ -356,7 +365,7 @@ export default function LiabilityAmortizationTab({
                         />
                         <button
                           onClick={handleSaveExtra}
-                          className="text-green-400 hover:text-green-300"
+                          className="text-good hover:opacity-80"
                           title="Save"
                         >
                           &#x2713;
@@ -366,7 +375,7 @@ export default function LiabilityAmortizationTab({
                             setEditingYear(null);
                             setEpAmount("");
                           }}
-                          className="text-gray-300 hover:text-gray-200"
+                          className="text-ink-2 hover:text-ink"
                           title="Cancel"
                         >
                           &#x2717;
@@ -379,7 +388,7 @@ export default function LiabilityAmortizationTab({
                           <button
                             key={ep.id}
                             onClick={() => removeExtraPayment(ep.id)}
-                            className="ml-1 text-white hover:text-white"
+                            className="ml-1 text-ink hover:text-ink"
                             title="Remove extra payment"
                           >
                             &times;
@@ -398,7 +407,7 @@ export default function LiabilityAmortizationTab({
                         + add
                       </button>
                     ) : (
-                      <span className="text-gray-400">-</span>
+                      <span className="text-ink-3">-</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">{fmt(row.endingBalance)}</td>
@@ -407,7 +416,7 @@ export default function LiabilityAmortizationTab({
             })}
           </tbody>
           <tfoot>
-            <tr className="border-t border-gray-600 font-medium text-gray-200">
+            <tr className="border-t border-hair-2 font-medium text-ink-2">
               <td className="px-3 py-2">Total</td>
               <td className="px-3 py-2 text-right">{fmt(totals.payment)}</td>
               <td className="px-3 py-2 text-right">{fmt(totals.interest)}</td>

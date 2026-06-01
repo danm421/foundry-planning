@@ -55,7 +55,7 @@ export async function WillsContent({ clientId: id, scenarioParam }: WillsContent
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card p-6 text-center text-ink-2">
         No base case scenario found.
       </div>
     );

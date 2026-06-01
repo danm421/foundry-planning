@@ -43,13 +43,13 @@ export default function CommentDialog({ open, onClose, clientId, reportKey, init
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl">
-        <h3 className="mb-3 text-lg font-semibold text-gray-100">Advisor Comment</h3>
+      <div className="relative z-10 w-full max-w-lg rounded-lg border-2 border-hair-2 ring-1 ring-black/60 bg-card p-6 shadow-xl">
+        <h3 className="mb-3 text-lg font-semibold text-ink">Advisor Comment</h3>
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={6}
-          className="w-full rounded border border-gray-700 bg-gray-800 p-2 text-sm text-gray-100 focus:border-accent focus:outline-none"
+          className="w-full rounded border border-hair-2 bg-card-2 p-2 text-sm text-ink focus:border-accent focus:outline-none"
           placeholder="Notes for this report…"
         />
         {error && (
@@ -61,7 +61,7 @@ export default function CommentDialog({ open, onClose, clientId, reportKey, init
           <button
             onClick={onClose}
             disabled={saving}
-            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+            className="rounded border border-hair-2 bg-card-2 px-3 py-1.5 text-sm text-ink-2 hover:bg-card-hover"
           >
             Cancel
           </button>

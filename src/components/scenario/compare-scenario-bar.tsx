@@ -23,9 +23,9 @@ export function CompareScenarioBar({
   return (
     <div
       data-testid="compare-scenario-bar"
-      className="flex items-center gap-3 px-6 h-12 border-b border-[#1f2024] bg-[#0b0c0f]"
+      className="flex items-center gap-3 px-6 h-12 border-b border-hair bg-paper"
     >
-      <div className="text-[11px] tracking-[0.18em] uppercase font-mono text-[#7a5b29] shrink-0">
+      <div className="text-[11px] tracking-[0.18em] uppercase font-mono text-accent shrink-0">
         COMPARING
       </div>
       <div className="w-56">
@@ -37,7 +37,7 @@ export function CompareScenarioBar({
           ariaLabel="Left scenario"
         />
       </div>
-      <div className="italic text-[11px] text-[#6b6760] shrink-0">vs</div>
+      <div className="italic text-[11px] text-ink-4 shrink-0">vs</div>
       <div className="w-56">
         <ScenarioPickerDropdown
           value={right}

@@ -87,7 +87,7 @@ export function YearlyEstateTable({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card p-6 text-center text-ink-2">
         No yearly estate data available.
       </div>
     );
@@ -107,11 +107,11 @@ export function YearlyEstateTable({
           <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-indigo-300/80">
             Hypothetical · {orderingLabel}
           </span>
-          <h2 className="text-base font-semibold text-gray-50">
+          <h2 className="text-base font-semibold text-ink">
             Year-by-Year Estate Transfer
           </h2>
         </div>
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-ink-3">
           Click <span className="font-semibold text-indigo-300">Taxes &amp; Expenses</span>{" "}
           on any row to see the per-decedent breakdown.
         </p>
@@ -181,8 +181,8 @@ function SummaryRow({
     <>
       <tr
         className={
-          (isOpen ? "bg-indigo-900/20 text-gray-100" : "text-gray-200") +
-          " hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]"
+          (isOpen ? "bg-indigo-900/20 text-ink" : "text-ink-2") +
+          " hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]"
         }
       >
         <td className="px-3 py-1.5">
@@ -199,7 +199,7 @@ function SummaryRow({
             ))}
           </span>
         </td>
-        <td className="px-3 py-1.5 text-gray-400">{ageLabel}</td>
+        <td className="px-3 py-1.5 text-ink-3">{ageLabel}</td>
         {cols.map((c) => {
           const value = row[c.key] as number;
           if (c.clickable) {
@@ -232,7 +232,7 @@ function SummaryRow({
         })}
       </tr>
       {isOpen && (
-        <tr id={`yearly-detail-${row.year}`} className="bg-gray-950/40">
+        <tr id={`yearly-detail-${row.year}`} className="bg-paper/40">
           <td colSpan={detailColSpan} className="px-3 py-3">
             <DeathDetail deaths={row.deaths} ownerNames={ownerNames} />
           </td>
@@ -279,12 +279,12 @@ function DeathDetail({
                 ? (ownerNames.spouseName ?? "Spouse")
                 : ownerNames.clientName;
             return (
-              <tr key={d.deathOrder} className="text-gray-200 hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+              <tr key={d.deathOrder} className="text-ink-2 hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
                 <td className="px-3 py-1.5">
-                  <span className="font-medium text-gray-100">
+                  <span className="font-medium text-ink">
                     {d.decedentName}
                   </span>
-                  <span className="ml-2 text-xs text-gray-400">
+                  <span className="ml-2 text-xs text-ink-3">
                     {orderLabel} · survived by {altName}
                   </span>
                 </td>
@@ -342,7 +342,7 @@ function Td({
 }) {
   const className =
     "px-3 py-1.5 text-right tabular-nums " +
-    (bold ? "font-semibold text-gray-50" : "text-gray-300");
+    (bold ? "font-semibold text-ink" : "text-ink-2");
   return <td className={className}>{children}</td>;
 }
 

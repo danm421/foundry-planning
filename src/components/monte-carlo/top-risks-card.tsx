@@ -1,15 +1,15 @@
 import type { TopRisk } from "./lib/top-risks";
 
 const TONE_DOT: Record<TopRisk["tone"], string> = {
-  emerald: "bg-emerald-400",
-  amber: "bg-amber-400",
-  rose: "bg-rose-400",
+  emerald: "bg-good",
+  amber: "bg-warn",
+  rose: "bg-crit",
 };
 
 const TONE_TEXT: Record<TopRisk["tone"], string> = {
-  emerald: "text-emerald-300",
-  amber: "text-amber-300",
-  rose: "text-rose-300",
+  emerald: "text-good",
+  amber: "text-warn",
+  rose: "text-crit",
 };
 
 interface TopRisksCardProps {
@@ -18,10 +18,10 @@ interface TopRisksCardProps {
 
 export function TopRisksCard({ risks }: TopRisksCardProps) {
   return (
-    <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
-      <h3 className="text-sm font-semibold text-slate-100 mb-3">Top Risks</h3>
+    <section className="rounded-lg bg-card ring-1 ring-hair p-4">
+      <h3 className="text-sm font-semibold text-ink mb-3">Top Risks</h3>
       {risks.length === 0 ? (
-        <p className="text-[13px] text-slate-400">No elevated risks detected.</p>
+        <p className="text-[13px] text-ink-3">No elevated risks detected.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {risks.map((r) => (
