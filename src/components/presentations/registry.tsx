@@ -125,13 +125,14 @@ import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 export const CATEGORY_ORDER = [
   "Framing",
   "Cash Flow",
-  "Balance Sheet",
+  "Income Tax",
+  "Assets",
   "Estate",
   "Monte Carlo",
-  "Insurance",
-  "Tax",
-  "Net Worth",
-  "Investments",
+  // Empty placeholders — reports for these ship later. Shown as filter chips
+  // so the roadmap is visible; selecting one yields a "no reports yet" state.
+  "Comparison",
+  "Retirement",
 ] as const;
 
 export type PresentationCategory = (typeof CATEGORY_ORDER)[number];
@@ -275,12 +276,13 @@ function makeDrillPage(
     clientName: string;
     spouseName: string | null;
   }) => DrillPageData,
+  category: PresentationCategory = "Cash Flow",
 ): PresentationPage<DrillPageData, DrillPageOptions> {
   return {
     id,
     title,
     description,
-    category: "Cash Flow",
+    category,
     defaultOptions: DRILL_PAGE_OPTIONS_DEFAULT,
     optionsSchema: drillOptionsSchema,
     summarizeOptions: summarizeDrillOptions,
@@ -413,6 +415,7 @@ export const incomeTaxIncomePage = makeDrillPage(
   "Income Tax — Income",
   "Annual income breakdown: earned, taxable Social Security, ordinary, dividends, capital gains, QBI, and totals.",
   buildTaxIncomeDrillData,
+  "Income Tax",
 );
 
 export const incomeTaxFederalPage = makeDrillPage(
@@ -420,6 +423,7 @@ export const incomeTaxFederalPage = makeDrillPage(
   "Income Tax — Federal",
   "Federal tax waterfall: total income through AGI, deductions, taxable income, regular tax, other taxes, total tax, and marginal rate.",
   buildTaxFederalDrillData,
+  "Income Tax",
 );
 
 export const incomeTaxStatePage = makeDrillPage(
@@ -427,6 +431,7 @@ export const incomeTaxStatePage = makeDrillPage(
   "Income Tax — State",
   "State tax flow: federal base, add-backs, subtractions, state AGI, deductions, state taxable income, and state tax.",
   buildTaxStateDrillData,
+  "Income Tax",
 );
 
 export const incomeTaxAboveLinePage = makeDrillPage(
@@ -434,6 +439,7 @@ export const incomeTaxAboveLinePage = makeDrillPage(
   "Income Tax — Above-Line Deductions",
   "Above-the-line deduction components: retirement contributions, tagged expenses, and manual entries.",
   buildTaxAboveLineDrillData,
+  "Income Tax",
 );
 
 export const incomeTaxBelowLinePage = makeDrillPage(
@@ -441,6 +447,7 @@ export const incomeTaxBelowLinePage = makeDrillPage(
   "Income Tax — Below-Line Deductions",
   "Itemized deduction components, the itemized total, the standard deduction, and the deduction taken.",
   buildTaxBelowLineDrillData,
+  "Income Tax",
 );
 
 export const incomeTaxOtherTaxesPage = makeDrillPage(
@@ -448,6 +455,7 @@ export const incomeTaxOtherTaxesPage = makeDrillPage(
   "Income Tax — Other Taxes",
   "Taxes beyond regular federal income tax: capital gains tax, AMT, NIIT, additional Medicare, FICA, and state tax.",
   buildTaxOtherTaxesDrillData,
+  "Income Tax",
 );
 
 export const incomeTaxBracketFederalPage = makeDrillPage(
@@ -455,6 +463,7 @@ export const incomeTaxBracketFederalPage = makeDrillPage(
   "Income Tax — Tax Bracket (Federal)",
   "Federal bracket stacking: Roth conversions, income tax base, marginal rate, amount into and remaining in the marginal bracket.",
   buildTaxBracketFederalDrillData,
+  "Income Tax",
 );
 
 export const incomeTaxBracketStatePage = makeDrillPage(
@@ -462,6 +471,7 @@ export const incomeTaxBracketStatePage = makeDrillPage(
   "Income Tax — Tax Bracket (State)",
   "State bracket stacking: state taxable income, marginal rate, amount into and remaining in the marginal bracket, and state tax.",
   buildTaxBracketStateDrillData,
+  "Income Tax",
 );
 
 export const estateFlowChartPage: PresentationPage<EstateFlowChartData, EstatePageOptions> = {
@@ -530,7 +540,7 @@ export const assetAllocationPage: PresentationPage<AssetAllocationData, AssetAll
   id: "assetAllocation",
   title: "Asset Allocation",
   description: "Current allocation vs. the recommended portfolio, with drift.",
-  category: "Investments",
+  category: "Assets",
   defaultOptions: ASSET_ALLOCATION_OPTIONS_DEFAULT,
   optionsSchema: assetAllocationOptionsSchema,
   summarizeOptions: summarizeAssetAllocationOptions,
@@ -548,7 +558,7 @@ export const portfolioAnalysisPage: PresentationPage<PortfolioAnalysisData, Port
   id: "portfolioAnalysis",
   title: "Portfolio Analysis",
   description: "Risk/return scatter of selected entities with a detail table.",
-  category: "Investments",
+  category: "Assets",
   defaultOptions: PORTFOLIO_ANALYSIS_OPTIONS_DEFAULT,
   optionsSchema: portfolioAnalysisOptionsSchema,
   summarizeOptions: summarizePortfolioAnalysisOptions,

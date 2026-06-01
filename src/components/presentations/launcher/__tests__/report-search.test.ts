@@ -17,12 +17,35 @@ describe("searchReports", () => {
 
   it("ranks a title match above a description-only match", () => {
     const result = searchReports("income", {}, []);
-    // Title-prefix matches (rank 0) sort first, alphabetically by title. The
-    // Income Tax pages all begin "Income Tax —", so the first of them wins over
-    // "Cash Flow — Income" (a title-substring, rank 1) and any description-only hit.
-    expect(result.order[0]).toBe("incomeTaxAboveLine");
-    expect(result.order).toContain("cashFlowIncome");
-    expect(result.sections.every((s) => s.heading === "Cash Flow")).toBe(true);
+    // "Cash Flow — Income" matches in its title (rank 1); the plain "Cash Flow"
+    // page matches "income" only in its description (rank 2) — titled wins.
+    const titled = result.order.indexOf("cashFlowIncome");
+    const descOnly = result.order.indexOf("cashFlow");
+    expect(titled).toBeGreaterThanOrEqual(0);
+    expect(descOnly).toBeGreaterThan(titled);
+  });
+
+  it("groups income-tax pages under their own Income Tax category", () => {
+    const result = searchReports("income", {}, []);
+    const headings = result.sections.map((s) => s.heading);
+    expect(headings).toContain("Cash Flow");
+    expect(headings).toContain("Income Tax");
+    const incomeTax = result.sections.find((s) => s.heading === "Income Tax");
+    // All begin "Income Tax —" (rank-0 title prefix), sorted alphabetically.
+    expect(incomeTax?.rows[0].id).toBe("incomeTaxAboveLine");
+  });
+
+  it("activeCategory filter restricts results and drops recents", () => {
+    const result = searchReports("", {}, ["cashFlow"], "Income Tax");
+    expect(result.sections.every((s) => s.heading === "Income Tax")).toBe(true);
+    expect(result.sections.some((s) => s.heading === "Recently added")).toBe(false);
+    expect(result.order).toContain("incomeTaxIncome");
+    expect(result.order).not.toContain("cashFlow");
+  });
+
+  it("empty placeholder category yields no sections", () => {
+    expect(searchReports("", {}, [], "Retirement").sections).toHaveLength(0);
+    expect(searchReports("", {}, [], "Comparison").order).toHaveLength(0);
   });
 
   it("reflects deck counts on rows", () => {

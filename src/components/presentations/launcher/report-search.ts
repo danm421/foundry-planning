@@ -2,6 +2,7 @@ import {
   PRESENTATION_PAGES,
   CATEGORY_ORDER,
   type PresentationPageId,
+  type PresentationCategory,
 } from "@/components/presentations/registry";
 
 export interface ReportRow {
@@ -63,23 +64,29 @@ export function searchReports(
   query: string,
   counts: Record<string, number>,
   recents: PresentationPageId[],
+  activeCategory: PresentationCategory | null = null,
 ): SearchResult {
   const q = query.trim().toLowerCase();
+  // A category filter narrows the universe to that one category and suppresses
+  // the cross-category "Recently added" shortcut (it would span categories).
+  const categories = activeCategory ? [activeCategory] : CATEGORY_ORDER;
 
   if (q === "") {
     const sections: ReportSection[] = [];
 
-    const recentRows = recents
-      .filter((id) => id in PRESENTATION_PAGES)
-      .filter((id, i, arr) => arr.indexOf(id) === i)
-      .map((id) => toRow(id, counts));
+    const recentRows = activeCategory
+      ? []
+      : recents
+          .filter((id) => id in PRESENTATION_PAGES)
+          .filter((id, i, arr) => arr.indexOf(id) === i)
+          .map((id) => toRow(id, counts));
     if (recentRows.length > 0) {
       sections.push({ heading: "Recently added", rows: recentRows });
     }
 
     const recentIdSet = new Set(recentRows.map((r) => r.id));
 
-    for (const category of CATEGORY_ORDER) {
+    for (const category of categories) {
       const rows = ALL_IDS.filter(
           (id) => PRESENTATION_PAGES[id].category === category && !recentIdSet.has(id),
         )
@@ -96,7 +103,7 @@ export function searchReports(
     .filter((x): x is { id: PresentationPageId; rank: number } => x.rank !== null);
 
   const sections: ReportSection[] = [];
-  for (const category of CATEGORY_ORDER) {
+  for (const category of categories) {
     const rows = ranked
       .filter((x) => PRESENTATION_PAGES[x.id].category === category)
       .sort(

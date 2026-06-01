@@ -3,10 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   PRESENTATION_PAGES,
+  CATEGORY_ORDER,
   type PresentationPageId,
+  type PresentationCategory,
 } from "@/components/presentations/registry";
 import { searchReports } from "./report-search";
 import { useRecentReports } from "./use-recent-reports";
+
+/** Filter chips: "All" clears the filter, then one chip per category. */
+const CATEGORY_FILTERS: { label: string; value: PresentationCategory | null }[] = [
+  { label: "All", value: null },
+  ...CATEGORY_ORDER.map((c) => ({ label: c, value: c })),
+];
 
 interface PaletteProps {
   open: boolean;
@@ -25,13 +33,14 @@ export function ReportCommandPalette({
   onClose,
 }: PaletteProps) {
   const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<PresentationCategory | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [announce, setAnnounce] = useState("");
 
   const result = useMemo(
-    () => searchReports(query, counts, recents),
-    [query, counts, recents],
+    () => searchReports(query, counts, recents, activeCategory),
+    [query, counts, recents, activeCategory],
   );
 
   // Focus the input when the palette opens (side-effect only — no setState).
@@ -92,6 +101,33 @@ export function ReportCommandPalette({
         className="w-full max-w-xl overflow-hidden rounded-lg border border-hair bg-card-2 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
+        <div
+          role="group"
+          aria-label="Filter by category"
+          className="flex flex-wrap gap-1.5 border-b border-hair px-3 py-2.5"
+        >
+          {CATEGORY_FILTERS.map((chip) => {
+            const isActive = activeCategory === chip.value;
+            return (
+              <button
+                key={chip.label}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => {
+                  setActiveCategory(chip.value);
+                  setActiveIndex(0);
+                }}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide transition-colors ${
+                  isActive
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-hair text-ink-3 hover:border-hair-2 hover:text-ink"
+                }`}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
+        </div>
         <input
           ref={inputRef}
           type="text"
@@ -116,7 +152,9 @@ export function ReportCommandPalette({
         >
           {result.sections.length === 0 && (
             <li className="px-4 py-6 text-center text-xs italic text-ink-4">
-              No reports match &ldquo;{query}&rdquo;
+              {query.trim()
+                ? `No reports match “${query}”${activeCategory ? ` in ${activeCategory}` : ""}`
+                : `No ${activeCategory} reports yet.`}
             </li>
           )}
           {result.sections.map((section) => (
