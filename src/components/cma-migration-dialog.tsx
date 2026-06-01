@@ -115,7 +115,7 @@ export default function CmaMigrationDialog({
     <DialogShell
       open={open}
       onOpenChange={onOpenChange}
-      title="Update to standard CMAs"
+      title="Update to historical CMAs"
       size="lg"
       primaryAction={
         preview && !noChanges
@@ -143,7 +143,7 @@ export default function CmaMigrationDialog({
 
       {preview && noChanges && (
         <p className="text-sm text-ink-2">
-          Your CMAs already match the standard set — nothing to migrate.
+          Your CMAs already match the historical set — nothing to migrate.
         </p>
       )}
 
@@ -153,7 +153,7 @@ export default function CmaMigrationDialog({
             title={`Adding ${preview.assetClasses.added.length} new asset class${preview.assetClasses.added.length === 1 ? "" : "es"}`}
           >
             {preview.assetClasses.added.length === 0 ? (
-              <p className="text-sm text-ink-3">None — all standard classes are already present.</p>
+              <p className="text-sm text-ink-3">None — all historical classes are already present.</p>
             ) : (
               <ul className="list-disc pl-5 text-sm text-ink-2">
                 {preview.assetClasses.added.map((a) => (
@@ -164,7 +164,7 @@ export default function CmaMigrationDialog({
           </Section>
 
           <Section
-            title={`${preview.assetClasses.removed.length} legacy asset class${preview.assetClasses.removed.length === 1 ? "" : "es"} no longer in the standard set`}
+            title={`${preview.assetClasses.removed.length} legacy asset class${preview.assetClasses.removed.length === 1 ? "" : "es"} no longer in the historical set`}
           >
             {preview.assetClasses.removed.length === 0 ? (
               <p className="text-sm text-ink-3">None.</p>
@@ -186,8 +186,8 @@ export default function CmaMigrationDialog({
           <Section title="Correlations">
             <p className="text-sm text-ink-2">
               {preview.correlationPairsToAdd === 0
-                ? "All standard correlation pairs are already present."
-                : `Filling in ${preview.correlationPairsToAdd} missing correlation pair${preview.correlationPairsToAdd === 1 ? "" : "s"} from the standard matrix. Existing custom correlations are preserved.`}
+                ? "All historical correlation pairs are already present."
+                : `Filling in ${preview.correlationPairsToAdd} missing correlation pair${preview.correlationPairsToAdd === 1 ? "" : "s"} from the historical matrix. Existing custom correlations are preserved.`}
             </p>
           </Section>
         </div>

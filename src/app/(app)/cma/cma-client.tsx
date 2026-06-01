@@ -127,6 +127,11 @@ export default function CmaClient() {
   const [error, setError] = useState<string | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
   const [migrationOpen, setMigrationOpen] = useState(false);
+  // Whether this firm's asset-class structure differs from the standard set.
+  // The "Update to historical CMAs" button is remapping — hide it when the firm
+  // already matches the defaults (nothing to remap). Default true so the button
+  // stays visible if the preview fetch fails (preserves prior behavior).
+  const [migrationAvailable, setMigrationAvailable] = useState(true);
   const [valueRefreshOpen, setValueRefreshOpen] = useState(false);
   const [projectedRefreshOpen, setProjectedRefreshOpen] = useState(false);
   const [sets, setSets] = useState<CmaSet[]>([]);
@@ -161,13 +166,26 @@ export default function CmaClient() {
         // on top of a banner if data actually exists.
       }
 
-      const [acRes, mpRes, setsRes] = await Promise.all([
+      const [acRes, mpRes, setsRes, migRes] = await Promise.all([
         fetch("/api/cma/asset-classes"),
         fetch("/api/cma/model-portfolios"),
         fetch("/api/cma/sets"),
+        // Drives whether the remapping ("Update to historical CMAs") button shows.
+        fetch("/api/cma/migration-preview"),
       ]);
       if (acRes.ok) setAssetClasses(await acRes.json());
       if (mpRes.ok) setPortfolios(await mpRes.json());
+      if (migRes.ok) {
+        const mig = (await migRes.json()) as {
+          assetClasses: { added: unknown[]; removed: unknown[] };
+          correlationPairsToAdd: number;
+        };
+        const noChanges =
+          mig.assetClasses.added.length === 0 &&
+          mig.assetClasses.removed.length === 0 &&
+          mig.correlationPairsToAdd === 0;
+        setMigrationAvailable(!noChanges);
+      }
       if (setsRes.ok) {
         const rows: CmaSet[] = await setsRes.json();
         setSets(rows);
@@ -358,7 +376,7 @@ export default function CmaClient() {
           onClick={() => setValueRefreshOpen(true)}
           className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover"
         >
-          Refresh standard values
+          Refresh historical values
         </button>
         <button
           type="button"
@@ -367,13 +385,15 @@ export default function CmaClient() {
         >
           Refresh projected values
         </button>
-        <button
-          type="button"
-          onClick={() => setMigrationOpen(true)}
-          className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover"
-        >
-          Update to standard CMAs
-        </button>
+        {migrationAvailable && (
+          <button
+            type="button"
+            onClick={() => setMigrationOpen(true)}
+            className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover"
+          >
+            Update to historical CMAs
+          </button>
+        )}
       </div>
 
       <CmaMigrationDialog

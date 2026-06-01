@@ -123,7 +123,7 @@ export default function CmaValueRefreshDialog({ open, onOpenChange, onRefreshed 
     <DialogShell
       open={open}
       onOpenChange={onOpenChange}
-      title="Refresh standard assumptions"
+      title="Refresh historical assumptions"
       size="lg"
       primaryAction={
         preview && !nothingStale
@@ -145,11 +145,11 @@ export default function CmaValueRefreshDialog({ open, onOpenChange, onRefreshed 
       )}
 
       {preview && (
-        <p className="mb-4 text-xs text-ink-3">Standard set generated {preview.generatedAt}.</p>
+        <p className="mb-4 text-xs text-ink-3">Historical set generated {preview.generatedAt}.</p>
       )}
 
       {nothingStale && (
-        <p className="text-sm text-ink-2">Your standard assumptions are up to date.</p>
+        <p className="text-sm text-ink-2">Your historical assumptions are up to date.</p>
       )}
 
       {preview && !nothingStale && (
@@ -234,9 +234,9 @@ export default function CmaValueRefreshDialog({ open, onOpenChange, onRefreshed 
 
           {preview.missingStandardClasses.length > 0 && (
             <p className="text-xs text-ink-3">
-              {preview.missingStandardClasses.length} standard class
+              {preview.missingStandardClasses.length} historical class
               {preview.missingStandardClasses.length === 1 ? " isn't" : "es aren't"} present. Use
-              “Update to standard CMAs” to add{" "}
+              “Update to historical CMAs” to add{" "}
               {preview.missingStandardClasses.length === 1 ? "it" : "them"}.
             </p>
           )}
