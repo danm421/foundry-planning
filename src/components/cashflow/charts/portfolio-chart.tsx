@@ -15,7 +15,7 @@ import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
 import type { StackedBarSeries } from "./stacked-bar-chart";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend);
 
@@ -33,15 +33,15 @@ const fmt = new Intl.NumberFormat("en-US", {
  * net-worth, not portfolio; they belong on a separate balance-sheet view
  * (follow-up — see future-work/reports).
  */
-// Colors reference var(--color-data-*) tokens directly so they are
-// theme-aware without requiring hooks in this plain function.
+// Each series carries a Deep Jewel palette key; PortfolioChart resolves it to a
+// theme-aware hex (Chart.js paints to canvas, which can't read CSS vars).
 export function buildPortfolioDatasets(): StackedBarSeries[] {
   return [
-    { label: "Cash",                    color: "var(--color-data-slate)", valueFor: (y) => y.portfolioAssets.cashTotal },
-    { label: "Taxable",                 color: "var(--color-data-wheat)", valueFor: (y) => y.portfolioAssets.taxableTotal },
-    { label: "Retirement",              color: "var(--color-data-terra)", valueFor: (y) => y.portfolioAssets.retirementTotal },
-    { label: "Life Insurance",          color: "var(--color-data-emerald)", valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
-    { label: "Accessible Trust Assets", color: "var(--color-data-sage)", valueFor: (y) => y.portfolioAssets.accessibleTrustAssetsTotal },
+    { label: "Cash",                    colorKey: "teal",   valueFor: (y) => y.portfolioAssets.cashTotal },
+    { label: "Taxable",                 colorKey: "yellow", valueFor: (y) => y.portfolioAssets.taxableTotal },
+    { label: "Retirement",              colorKey: "orange", valueFor: (y) => y.portfolioAssets.retirementTotal },
+    { label: "Life Insurance",          colorKey: "green",  valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
+    { label: "Accessible Trust Assets", colorKey: "grey",   valueFor: (y) => y.portfolioAssets.accessibleTrustAssetsTotal },
   ];
 }
 
@@ -61,20 +61,24 @@ export function PortfolioChart({ years, dataVersion }: PortfolioChartProps) {
 
   const data = useMemo(() => {
     if (years.length === 0) return null;
+    const pal = dataPalette(theme);
     return {
       labels: years.map((y) => String(y.year)),
-      datasets: series.map((s, i) => ({
-        label: s.label,
-        data: years.map(s.valueFor),
-        backgroundColor: s.color,
-        borderColor: s.color,
-        borderWidth: 1,
-        pointRadius: 0,
-        fill: i === 0 ? "origin" : "-1",
-        tension: 0.2,
-      })),
+      datasets: series.map((s, i) => {
+        const color = s.colorKey ? pal[s.colorKey] : pal.grey;
+        return {
+          label: s.label,
+          data: years.map(s.valueFor),
+          backgroundColor: color,
+          borderColor: color,
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: i === 0 ? "origin" : "-1",
+          tension: 0.2,
+        };
+      }),
     };
-  }, [years, series]);
+  }, [years, series, theme]);
 
   const options = useMemo(
     () => {

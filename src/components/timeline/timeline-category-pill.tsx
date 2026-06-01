@@ -56,7 +56,7 @@ export const CATEGORY_HEX: Record<TimelineCategory, string> = {
   transaction: colors.cat.tax,     // transactions use the amber/tax hue
   portfolio: colors.cat.portfolio,
   insurance: colors.cat.insurance,
-  tax: brandData.rose,             // tax uses data-rose for contrast against transaction amber
-  estate: brandData.violet,        // estate uses data-violet
-  strategy: brandData.emerald,     // strategy uses data-emerald
+  tax: brandData.pink,             // tax uses data-pink for contrast against transaction amber
+  estate: brandData.purple,        // estate uses data-purple
+  strategy: brandData.green,       // strategy uses data-green
 };

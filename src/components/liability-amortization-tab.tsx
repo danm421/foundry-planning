@@ -12,7 +12,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { useThemeName, chartChrome } from "@/lib/chart-colors";
+import { useThemeName, chartChrome, dataPalette, statusColors } from "@/lib/chart-colors";
 import {
   computeAmortizationSchedule,
   calcOriginalBalance,
@@ -24,6 +24,15 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+// Translucent fill from a #rrggbb hex — Chart.js paints to canvas, which can't
+// read CSS vars or color-mix().
+function withAlpha(hex: string, alpha: number): string {
+  const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex);
+  if (!m) return hex;
+  const [r, g, b] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 function buildChartOptions(chrome: ReturnType<typeof chartChrome>) {
   return {
@@ -169,33 +178,35 @@ export default function LiabilityAmortizationTab({
       interestData.push(cumInterest);
     }
 
+    const pal = dataPalette(theme);
+    const crit = statusColors(theme).crit;
     return {
       labels,
       datasets: [
         {
           label: "Balance",
           data: balanceData,
-          borderColor: "var(--data-indigo)",
-          backgroundColor: "color-mix(in srgb, var(--data-indigo) 12%, transparent)",
+          borderColor: pal.blue,
+          backgroundColor: withAlpha(pal.blue, 0.12),
           tension: 0.3,
         },
         {
           label: "Interest",
           data: interestData,
-          borderColor: "var(--data-emerald)",
-          backgroundColor: "color-mix(in srgb, var(--data-emerald) 12%, transparent)",
+          borderColor: pal.green,
+          backgroundColor: withAlpha(pal.green, 0.12),
           tension: 0.3,
         },
         {
           label: "Payment",
           data: paymentData,
-          borderColor: "var(--color-crit)",
-          backgroundColor: "color-mix(in srgb, var(--color-crit) 12%, transparent)",
+          borderColor: crit,
+          backgroundColor: withAlpha(crit, 0.12),
           tension: 0.3,
         },
       ],
     };
-  }, [schedule]);
+  }, [schedule, theme]);
 
   // Extra payment handlers (only functional when liabilityId is present)
   const addExtraPayment = useCallback(

@@ -10,8 +10,8 @@ describe("StackedBarChart", () => {
       <StackedBarChart
         years={incomeFixture}
         series={[
-          { label: "Salaries", color: "#16a34a", valueFor: (y) => y.income.salaries },
-          { label: "Social Security", color: "#2563eb", valueFor: (y) => y.income.socialSecurity },
+          { label: "Salaries", colorKey: "green", valueFor: (y) => y.income.salaries },
+          { label: "Social Security", colorKey: "blue", valueFor: (y) => y.income.socialSecurity },
         ]}
         title="Test"
       />,

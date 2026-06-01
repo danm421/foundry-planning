@@ -28,9 +28,9 @@ describe("colorForAssetClass", () => {
     expect(UNALLOCATED_COLOR).toMatch(/^#/);
   });
 
-  it("sources the editorial palette from @/brand (adjacency order, ink-4 unallocated)", () => {
-    // First slot is the brand `terra` hue (adjacency order); unallocated is ink-4.
-    expect(colorForAssetClass({ id: "x", sortOrder: 0 })).toBe("#f0824e");
+  it("sources the Deep Jewel palette from @/brand (adjacency order, ink-4 unallocated)", () => {
+    // First slot is the brand `red` hue (adjacency order); unallocated is ink-4.
+    expect(colorForAssetClass({ id: "x", sortOrder: 0 })).toBe("#c0392b");
     expect(UNALLOCATED_COLOR).toBe("#848a98");
   });
 });

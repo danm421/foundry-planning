@@ -1,32 +1,32 @@
 import type { RecipientTotal } from "@/lib/estate/transfer-report";
 import { colors, data, dataLight } from "@/brand";
 
-// Per-recipient-kind categorical palettes, sourced from the editorial brand
+// Per-recipient-kind categorical palettes, sourced from the Deep Jewel brand
 // palette. This chart can show ~19 distinct recipients at once — more than the
 // nine named hues — so the deeper `dataLight` variants fill the extra slots:
 // every entry is a brand hue and the whole set is mutually distinct.
 // (Light-theme recoloring of this chart is deferred — see future-work/ui.md;
 // it renders on its dark report canvas today.)
 const PALETTES: Record<RecipientTotal["recipientKind"], readonly string[]> = {
-  spouse: [data.violet],
+  spouse: [data.purple],
   family_member: [
-    data.slate,
-    data.emerald,
-    data.indigo,
-    data.sage,
-    data.terra,
-    data.rose,
-    data.amber,
+    data.teal,
+    data.green,
+    data.blue,
+    data.grey,
+    data.orange,
+    data.pink,
+    data.red,
   ],
   external_beneficiary: [
-    dataLight.terra,
-    dataLight.rose,
-    dataLight.amber,
-    dataLight.wheat,
-    dataLight.slate,
-    dataLight.emerald,
+    dataLight.orange,
+    dataLight.pink,
+    dataLight.red,
+    dataLight.yellow,
+    dataLight.teal,
+    dataLight.green,
   ],
-  entity: [dataLight.violet, dataLight.indigo, dataLight.sage, data.wheat],
+  entity: [dataLight.purple, dataLight.blue, dataLight.grey, data.yellow],
   system_default: [colors.ink4],
 };
 

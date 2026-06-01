@@ -12,11 +12,11 @@ export interface SeriesDef {
 // Shared by the scatter chart and the selection controls so point colors and
 // selected-list dots stay in lockstep. Order also drives grouping in the picker.
 export const SERIES: SeriesDef[] = [
-  { type: "asset_class", label: "Asset Classes", pointStyle: "circle", color: data.slate },
-  { type: "account", label: "Accounts", pointStyle: "rect", color: data.emerald },
-  { type: "category", label: "Account Categories", pointStyle: "triangle", color: data.wheat },
-  { type: "custom_group", label: "Custom Groups", pointStyle: "rectRot", color: data.violet },
-  { type: "model_portfolio", label: "Model Portfolios", pointStyle: "star", color: data.rose },
+  { type: "asset_class", label: "Asset Classes", pointStyle: "circle", color: data.teal },
+  { type: "account", label: "Accounts", pointStyle: "rect", color: data.green },
+  { type: "category", label: "Account Categories", pointStyle: "triangle", color: data.yellow },
+  { type: "custom_group", label: "Custom Groups", pointStyle: "rectRot", color: data.purple },
+  { type: "model_portfolio", label: "Model Portfolios", pointStyle: "star", color: data.pink },
 ];
 
 export const SERIES_BY_TYPE = Object.fromEntries(
@@ -35,7 +35,7 @@ export function colorForRow(row: AnalysisRow): string {
   return SERIES_BY_TYPE[row.type].color;
 }
 
-/** A distinct hue per plotted item, evenly spread in the editorial data band. */
+/** A distinct hue per plotted item, evenly spread in the Deep Jewel data band. */
 export function colorForIndex(index: number, total: number): string {
   const scale = dataScale(Math.max(total, 1), "dark");
   return scale[index % scale.length]!;

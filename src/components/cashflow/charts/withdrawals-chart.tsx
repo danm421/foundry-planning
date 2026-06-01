@@ -2,6 +2,7 @@
 
 import { useCallback, useRef } from "react";
 import type { ProjectionYear } from "@/engine";
+import type { DataColorKey } from "@/lib/chart-colors";
 import { StackedBarChart, type StackedBarSeries } from "./stacked-bar-chart";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 
@@ -14,16 +15,16 @@ const CATEGORY_LABELS: Record<string, string> = {
   life_insurance: "Life Insurance",
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  retirement:    "var(--color-data-terra)",
-  taxable:       "var(--color-data-wheat)",
-  cash:          "var(--color-data-slate)",
-  real_estate:   "var(--color-data-indigo)",
-  business:      "var(--color-data-violet)",
-  life_insurance:"var(--color-data-emerald)",
+const CATEGORY_COLORS: Record<string, DataColorKey> = {
+  retirement:    "orange",
+  taxable:       "yellow",
+  cash:          "teal",
+  real_estate:   "blue",
+  business:      "purple",
+  life_insurance:"green",
 };
 
-const FALLBACK_COLOR = "var(--color-crit)";
+const FALLBACK_COLOR: DataColorKey = "grey";
 
 export function buildWithdrawalsDatasets(
   years: ProjectionYear[],
@@ -47,10 +48,10 @@ export function buildWithdrawalsDatasets(
   return labels.map((label) => {
     const arr = totals.get(label)!;
     const cat = Object.entries(CATEGORY_LABELS).find(([, l]) => l === label)?.[0];
-    const color = (cat && CATEGORY_COLORS[cat]) ?? FALLBACK_COLOR;
+    const colorKey: DataColorKey = (cat ? CATEGORY_COLORS[cat] : undefined) ?? FALLBACK_COLOR;
     return {
       label,
-      color,
+      colorKey,
       valueFor: (year) => {
         const idx = years.indexOf(year);
         return idx >= 0 ? arr[idx] : 0;

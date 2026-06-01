@@ -42,7 +42,7 @@ import { DrillChart } from "@/components/cashflow/charts/drill-chart";
 import { filterAllZeroColumns } from "@/components/cashflow/all-zero-columns";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 import { ExportButton } from "@/components/exports/export-button";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import type { PortfolioBarsTimelineMarker } from "@/components/charts/portfolio-bars-chart";
@@ -576,6 +576,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const rmdForYear = (y: ProjectionYear) =>
     Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
 
+  // Resolved to real hex (Chart.js paints to canvas, which can't read CSS vars).
+  // Mirrors the Retirement hero chart's inflow palette so the two read the same.
+  const cashflowPal = dataPalette(chartTheme);
   const cashflowChartData = {
     labels: chartLabels,
     datasets: [
@@ -583,7 +586,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Social Security",
         data: visibleYears.map((y) => y.income.socialSecurity),
-        backgroundColor: "var(--color-data-indigo)",
+        backgroundColor: cashflowPal.blue,
         stack: "inflows",
         order: 1,
       },
@@ -591,7 +594,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Salaries",
         data: visibleYears.map((y) => y.income.salaries),
-        backgroundColor: "var(--color-data-emerald)",
+        backgroundColor: cashflowPal.green,
         stack: "inflows",
         order: 1,
       },
@@ -599,7 +602,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Other Inflows",
         data: visibleYears.map(otherIncomeForYear),
-        backgroundColor: "var(--color-data-sage)",
+        backgroundColor: cashflowPal.grey,
         stack: "inflows",
         order: 1,
       },
@@ -607,7 +610,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "RMDs",
         data: visibleYears.map(rmdForYear),
-        backgroundColor: "var(--color-data-terra)",
+        backgroundColor: cashflowPal.orange,
         stack: "inflows",
         order: 1,
       },
@@ -615,7 +618,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Withdrawals",
         data: visibleYears.map((y) => y.withdrawals.total),
-        backgroundColor: "var(--color-crit)",
+        backgroundColor: cashflowPal.yellow,
         stack: "inflows",
         order: 1,
       },

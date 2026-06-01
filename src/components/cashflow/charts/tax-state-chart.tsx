@@ -11,7 +11,7 @@ export function buildTaxStateDatasets(): StackedBarSeries[] {
   return [
     {
       label: "State Income Tax",
-      color: "var(--color-data-slate)", // distinct from federal indigo/emerald palette
+      colorKey: "teal", // distinct from the federal chart's blue/green palette
       valueFor: (y: ProjectionYear) => y.taxResult?.state?.stateTax ?? 0,
     },
   ];

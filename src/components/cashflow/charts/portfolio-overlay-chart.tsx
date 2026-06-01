@@ -13,7 +13,7 @@ import {
 import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
 import { seriesColor, seriesDash } from "@/lib/comparison/series-palette";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(
   CategoryScale,
@@ -72,7 +72,7 @@ export function PortfolioOverlayChart({ plans }: Props) {
     const byYear = new Map<number, number>(
       p.years.map((y) => [y.year, portfolioTotalForYear(y)]),
     );
-    const color = seriesColor(i) ?? "var(--color-data-slate)";
+    const color = seriesColor(i) ?? dataPalette(theme).teal;
     return {
       label: p.label,
       data: allYears.map((yr) => byYear.get(yr) ?? null),

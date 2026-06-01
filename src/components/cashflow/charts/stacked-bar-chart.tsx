@@ -11,7 +11,8 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
-import { chartChrome, useChartColors, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, useChartColors, useThemeName } from "@/lib/chart-colors";
+import type { DataColorKey } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -23,8 +24,12 @@ const fmt = new Intl.NumberFormat("en-US", {
 
 export interface StackedBarSeries {
   label: string;
-  /** Optional fixed color. Omit to draw from the theme-aware brand palette. */
-  color?: string;
+  /**
+   * Stable Deep Jewel palette key, resolved to a theme-aware hex at render.
+   * Omit to draw from the brand palette in series order. (Never pass a raw
+   * `var(--…)` string — Chart.js paints to canvas, which can't read CSS vars.)
+   */
+  colorKey?: DataColorKey;
   valueFor: (year: ProjectionYear) => number;
 }
 
@@ -42,16 +47,17 @@ export function StackedBarChart({ years, series, title, height = 300 }: StackedB
   const data = useMemo(() => {
     if (years.length === 0 || series.length === 0) return null;
     const palette = seriesColors(series.length);
+    const themePalette = dataPalette(theme);
     return {
       labels: years.map((y) => String(y.year)),
       datasets: series.map((s, i) => ({
         label: s.label,
         data: years.map(s.valueFor),
-        backgroundColor: s.color ?? palette[i],
+        backgroundColor: s.colorKey ? themePalette[s.colorKey] : palette[i],
         stack: "main",
       })),
     };
-  }, [years, series, seriesColors]);
+  }, [years, series, seriesColors, theme]);
 
   const options = useMemo(() => {
     const chrome = chartChrome(theme);

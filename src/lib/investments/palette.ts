@@ -2,7 +2,7 @@ import { colors, data } from "@/brand";
 import { chartSeriesColors } from "@/lib/chart-palette";
 import type { AssetTypeId } from "./asset-types";
 
-// 12-color palette sourced from the editorial brand palette — the nine named
+// 12-color palette sourced from the Deep Jewel brand palette — the nine named
 // data hues (adjacency order) extended in-band to length 12. Keep length at
 // 12 — tests pin the wrap-around.
 const PALETTE: readonly string[] = chartSeriesColors(12, "dark");
@@ -15,13 +15,13 @@ export function colorForAssetClass(assetClass: { id?: string; sortOrder: number 
   return PALETTE[idx]!;
 }
 
-// Base hues per asset type, drawn from the editorial data palette for parity
-// with the class palette. Amber is reserved for action — `cash` uses `wheat`.
+// Base hues per asset type, drawn from the Deep Jewel data palette for parity
+// with the class palette. Amber is reserved for action — `cash` uses `yellow`.
 export const ASSET_TYPE_PALETTE: Record<AssetTypeId, string> = {
-  equities:         data.slate,   // cyan-blue
-  taxable_bonds:    data.emerald, // green
-  tax_exempt_bonds: data.violet,  // violet
-  cash:             data.wheat,   // gold (not the reserved accent amber)
+  equities:         data.teal,    // teal
+  taxable_bonds:    data.green,   // green
+  tax_exempt_bonds: data.purple,  // purple
+  cash:             data.yellow,  // gold (not the reserved accent amber)
   other:            colors.ink4,  // neutral
 };
 

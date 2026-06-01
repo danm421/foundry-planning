@@ -59,16 +59,16 @@
   --color-alloc-re: var(--color-cat-tax);
   --color-alloc-alt: var(--color-cat-insurance);
 
-  /* Editorial data palette — vivid, refined for mutual contrast on near-black. */
-  --data-emerald: #2fd498;
-  --data-sage: #9bcf5e;
-  --data-wheat: #ecc659;
-  --data-terra: #f0824e;
-  --data-rose: #f2688f;
-  --data-violet: #c182f0;
-  --data-indigo: #7d8cf9;
-  --data-slate: #5fb8de;
-  --data-amber: #f2a838;
+  /* Deep Jewel data palette — six anchors + three fills, dark theme. */
+  --data-red: #c0392b;
+  --data-blue: #2c5fa8;
+  --data-green: #2a8a5e;
+  --data-yellow: #c99a1e;
+  --data-grey: #6b7280;
+  --data-orange: #cf6a1f;
+  --data-purple: #6a3fa0;
+  --data-teal: #1f8a86;
+  --data-pink: #a83f6a;
 
   /* Aliases */
   --positive: var(--color-good);
@@ -137,16 +137,16 @@
   --color-inherit: #2c4a5e;
   --color-heirs: #4e5b38;
 
-  /* Editorial data palette — deeper, for cream. */
-  --data-emerald: #1f9d6b;
-  --data-sage: #6f9b32;
-  --data-wheat: #b8902f;
-  --data-terra: #cf6233;
-  --data-rose: #c8466b;
-  --data-violet: #8a44cf;
-  --data-indigo: #4453d4;
-  --data-slate: #2f86b0;
-  --data-amber: #c5860f;
+  /* Deep Jewel data palette — vibrant, cream-tuned to match dark vibrancy. */
+  --data-red: #c5392b;
+  --data-blue: #2d61aa;
+  --data-green: #1f8d5f;
+  --data-yellow: #c2941b;
+  --data-grey: #5e6573;
+  --data-orange: #cf671d;
+  --data-purple: #6c41a2;
+  --data-teal: #198b83;
+  --data-pink: #ab3f6b;
 
   color-scheme: light;
 }
@@ -196,15 +196,15 @@
   --color-alloc-re: var(--color-alloc-re);
   --color-alloc-alt: var(--color-alloc-alt);
 
-  --color-data-emerald: var(--data-emerald);
-  --color-data-sage: var(--data-sage);
-  --color-data-wheat: var(--data-wheat);
-  --color-data-terra: var(--data-terra);
-  --color-data-rose: var(--data-rose);
-  --color-data-violet: var(--data-violet);
-  --color-data-indigo: var(--data-indigo);
-  --color-data-slate: var(--data-slate);
-  --color-data-amber: var(--data-amber);
+  --color-data-red: var(--data-red);
+  --color-data-blue: var(--data-blue);
+  --color-data-green: var(--data-green);
+  --color-data-yellow: var(--data-yellow);
+  --color-data-grey: var(--data-grey);
+  --color-data-orange: var(--data-orange);
+  --color-data-purple: var(--data-purple);
+  --color-data-teal: var(--data-teal);
+  --color-data-pink: var(--data-pink);
 
   --color-positive: var(--positive);
   --color-negative: var(--negative);

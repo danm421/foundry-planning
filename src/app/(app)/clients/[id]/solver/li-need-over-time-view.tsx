@@ -19,7 +19,7 @@ import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { roundUpTo50k } from "@/lib/life-insurance/round";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
 import type { OverTimeProgress } from "./use-need-over-time";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -127,6 +127,7 @@ function ChartPanel({
 }) {
   const theme = useThemeName();
   const chrome = chartChrome(theme);
+  const pal = dataPalette(theme);
   const labels = rows.map((r) => String(r.year));
   const data = {
     labels,
@@ -135,15 +136,15 @@ function ChartPanel({
         ? {
             label: `${spouseName} dies`,
             data: rows.map((r) => roundUpTo50k(r.spouseNeed ?? 0)),
-            backgroundColor: "var(--color-data-sage)",
-            borderColor: "var(--color-data-sage)",
+            backgroundColor: pal.grey,
+            borderColor: pal.grey,
             borderWidth: 1,
           }
         : {
             label: `${clientName} dies`,
             data: rows.map((r) => roundUpTo50k(r.clientNeed)),
-            backgroundColor: "var(--color-data-indigo)",
-            borderColor: "var(--color-data-indigo)",
+            backgroundColor: pal.blue,
+            borderColor: pal.blue,
             borderWidth: 1,
           },
     ],

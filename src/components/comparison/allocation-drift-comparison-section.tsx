@@ -31,21 +31,21 @@ ChartJS.register(
   Legend,
 );
 
-// 7 asset categories — mapped to adjacency-ordered brand hues so look-alike
-// pairs (sage/emerald, slate/indigo, terra/wheat) are non-adjacent.
-// terra→emerald→wheat→slate→rose→indigo→sage covers 7 distinct hue families.
+// 7 asset categories — mapped to adjacency-ordered Deep Jewel hues so neighbors
+// stay in distinct hue families.
+// orange→green→yellow→teal→pink→blue→grey covers 7 distinct hue families.
 const CATEGORY_KEYS: Array<{
   key: keyof ProjectionYear["portfolioAssets"];
   label: string;
   hue: keyof typeof data;
 }> = [
-  { key: "taxableTotal",          label: "Taxable",             hue: "terra"   },
-  { key: "cashTotal",             label: "Cash",                hue: "emerald" },
-  { key: "retirementTotal",       label: "Retirement",          hue: "wheat"   },
-  { key: "realEstateTotal",       label: "Real Estate",         hue: "slate"   },
-  { key: "businessTotal",         label: "Business",            hue: "rose"    },
-  { key: "lifeInsuranceTotal",    label: "Life Insurance",      hue: "indigo"  },
-  { key: "trustsAndBusinessesTotal", label: "Trusts & Businesses", hue: "sage" },
+  { key: "taxableTotal",          label: "Taxable",             hue: "orange" },
+  { key: "cashTotal",             label: "Cash",                hue: "green"  },
+  { key: "retirementTotal",       label: "Retirement",          hue: "yellow" },
+  { key: "realEstateTotal",       label: "Real Estate",         hue: "teal"   },
+  { key: "businessTotal",         label: "Business",            hue: "pink"   },
+  { key: "lifeInsuranceTotal",    label: "Life Insurance",      hue: "blue"   },
+  { key: "trustsAndBusinessesTotal", label: "Trusts & Businesses", hue: "grey" },
 ];
 
 function clip(years: ProjectionYear[], range: YearRange | null): ProjectionYear[] {

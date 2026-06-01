@@ -28,10 +28,10 @@ export const SOURCE_LABELS: Record<WithdrawalSourceCategory, string> = {
 };
 
 /**
- * Theme-aware source colors, drawn from the editorial brand data palette so the
+ * Theme-aware source colors, drawn from the Deep Jewel brand data palette so the
  * stacked chart recolors on theme toggle. Ordered so neighbors in SOURCE_ORDER
- * cross hue families; "other" is the muted neutral ink. Roth keeps emerald
- * (tax-free), pension keeps a warm terra.
+ * cross hue families; "other" is the muted neutral ink. Roth keeps green
+ * (tax-free), pension keeps a warm orange.
  */
 export function sourceColors(
   theme: Theme,
@@ -39,11 +39,11 @@ export function sourceColors(
   const d = dataPalette(theme);
   const c = theme === "light" ? colorsLight : colors;
   return {
-    "social-security": d.indigo,
-    pension: d.terra,
-    "taxable-withdrawal": d.wheat,
-    "ira-rmd": d.rose,
-    "roth-withdrawal": d.emerald,
+    "social-security": d.blue,
+    pension: d.orange,
+    "taxable-withdrawal": d.yellow,
+    "ira-rmd": d.pink,
+    "roth-withdrawal": d.green,
     other: c.ink3,
   };
 }

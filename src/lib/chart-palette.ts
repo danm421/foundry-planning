@@ -1,28 +1,31 @@
 import { colors, colorsLight, data, dataLight, dataScale } from "@/brand";
+import type { DataColorKey } from "@/brand";
 import type { Theme } from "@/lib/theme";
+
+export type { DataColorKey };
 
 // Pure, framework-free chart color helpers — safe to import from server code
 // (PDF renderers, lib modules, API routes). The client-only theme hooks live
 // in `./chart-colors` (which re-exports everything here).
 
-// Series order so neighbors cross hue families (orange · green · gold · cyan ·
-// pink · blue …), keeping look-alike pairs (sage/emerald, slate/indigo,
-// terra/wheat) non-adjacent — see foundry-design SKILL.md "Series order".
-const ADJACENCY = [
-  "terra",
-  "emerald",
-  "wheat",
-  "slate",
-  "rose",
-  "indigo",
-  "sage",
-  "violet",
-  "amber",
+// Deep Jewel series order: lead with the six anchors (red · blue · green ·
+// yellow · grey · orange), then draw on the fills (purple · teal · pink) as
+// series grow — see foundry-design SKILL.md "Series order".
+const ADJACENCY: readonly DataColorKey[] = [
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "grey",
+  "orange",
+  "purple",
+  "teal",
+  "pink",
 ] as const;
 
 /**
  * The series colors for a chart with `n` series, in adjacency order. Uses the
- * nine named editorial hues while `n <= 9`; beyond that, appends in-band
+ * nine named Deep Jewel hues while `n <= 9`; beyond that, appends in-band
  * `dataScale` hues so the set still reads as one family.
  */
 export function chartSeriesColors(n: number, theme: Theme = "dark"): string[] {
@@ -32,9 +35,19 @@ export function chartSeriesColors(n: number, theme: Theme = "dark"): string[] {
   return [...named, ...dataScale(n - named.length, theme)];
 }
 
-/** The editorial data palette (nine named hues) for a theme. */
+/** The Deep Jewel data palette (nine named hues) for a theme. */
 export function dataPalette(theme: Theme) {
   return theme === "light" ? dataLight : data;
+}
+
+/**
+ * Theme-aware status colors (good / warn / crit) as real hex — for Chart.js
+ * series that signal status on canvas (e.g. a marginal-rate ceiling line),
+ * which can't read the CSS status vars.
+ */
+export function statusColors(theme: Theme) {
+  const c = theme === "light" ? colorsLight : colors;
+  return { good: c.good, warn: c.warn, crit: c.crit };
 }
 
 export interface ChartChrome {

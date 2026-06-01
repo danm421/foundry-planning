@@ -36,15 +36,15 @@ ChartJS.register(
 );
 
 // Maps each federal ordinary-income bracket rate to a brand hue.
-// Order runs emerald (lowest burden) → violet (highest), spanning 7 hue families.
+// Order runs green (lowest burden) → purple (highest), spanning 7 hue families.
 const RATE_HUES: Record<string, keyof typeof data> = {
-  "0.10": "emerald",
-  "0.12": "sage",
-  "0.22": "slate",
-  "0.24": "wheat",
-  "0.32": "terra",
-  "0.35": "rose",
-  "0.37": "violet",
+  "0.10": "green",
+  "0.12": "grey",
+  "0.22": "teal",
+  "0.24": "yellow",
+  "0.32": "orange",
+  "0.35": "pink",
+  "0.37": "purple",
 };
 
 function rateLabel(rate: number): string {

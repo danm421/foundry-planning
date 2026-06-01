@@ -33,8 +33,8 @@ interface Props {
 }
 
 /**
- * One bar per beneficiary, stacked into the outright portion (emerald) and
- * the in-trust portion (indigo). Bar height is the beneficiary's total receipt
+ * One bar per beneficiary, stacked into the outright portion (green) and
+ * the in-trust portion (blue). Bar height is the beneficiary's total receipt
  * across both deaths.
  */
 export function BeneficiaryDistributionFormChart({ beneficiaries }: Props) {
@@ -49,14 +49,14 @@ export function BeneficiaryDistributionFormChart({ beneficiaries }: Props) {
         {
           label: "Outright",
           data: beneficiaries.map((b) => b.outright),
-          backgroundColor: palette.emerald,
+          backgroundColor: palette.green,
           stack: "main",
           borderWidth: 0,
         },
         {
           label: "In Trust",
           data: beneficiaries.map((b) => b.inTrust),
-          backgroundColor: palette.indigo,
+          backgroundColor: palette.blue,
           stack: "main",
           borderWidth: 0,
         },

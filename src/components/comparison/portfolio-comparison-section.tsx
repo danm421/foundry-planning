@@ -26,10 +26,10 @@ const PORTFOLIO_SERIES: Array<{
   hue: keyof typeof data;
   valueFor: (y: ProjectionYear) => number;
 }> = [
-  { label: "Cash",          hue: "slate",   valueFor: (y) => y.portfolioAssets.cashTotal },
-  { label: "Taxable",       hue: "wheat",   valueFor: (y) => y.portfolioAssets.taxableTotal },
-  { label: "Retirement",    hue: "terra",   valueFor: (y) => y.portfolioAssets.retirementTotal },
-  { label: "Life Insurance", hue: "emerald", valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
+  { label: "Cash",          hue: "teal",   valueFor: (y) => y.portfolioAssets.cashTotal },
+  { label: "Taxable",       hue: "yellow", valueFor: (y) => y.portfolioAssets.taxableTotal },
+  { label: "Retirement",    hue: "orange", valueFor: (y) => y.portfolioAssets.retirementTotal },
+  { label: "Life Insurance", hue: "green", valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
 ];
 
 function portfolioTotalForYear(y: ProjectionYear): number {
@@ -131,7 +131,7 @@ function TwoPlanDeltaChart({ plans }: { plans: [ComparisonPlan, ComparisonPlan] 
             const s = scenarioByYear.get(yr) ?? baseByYear.get(yr) ?? 0;
             return Math.min(b, s);
           }),
-          backgroundColor: palette.indigo,
+          backgroundColor: palette.blue,
           stack: "portfolio",
         },
         {
@@ -141,7 +141,7 @@ function TwoPlanDeltaChart({ plans }: { plans: [ComparisonPlan, ComparisonPlan] 
             const s = scenarioByYear.get(yr) ?? baseByYear.get(yr) ?? 0;
             return Math.max(0, s - b);
           }),
-          backgroundColor: palette.emerald,
+          backgroundColor: palette.green,
           stack: "portfolio",
         },
         {
@@ -151,7 +151,7 @@ function TwoPlanDeltaChart({ plans }: { plans: [ComparisonPlan, ComparisonPlan] 
             const s = scenarioByYear.get(yr) ?? baseByYear.get(yr) ?? 0;
             return Math.max(0, b - s);
           }),
-          backgroundColor: palette.slate,
+          backgroundColor: palette.teal,
           stack: "portfolio",
         },
       ],

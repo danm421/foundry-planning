@@ -7,8 +7,8 @@ import { chartSeriesColors } from "./chart-palette";
 // Re-export the pure helpers so existing client imports keep working from one
 // place. Server/PDF/lib code must import these from `./chart-palette` directly
 // (this module is client-only because of the theme hooks below).
-export { chartChrome, chartSeriesColors, dataPalette } from "./chart-palette";
-export type { ChartChrome } from "./chart-palette";
+export { chartChrome, chartSeriesColors, dataPalette, statusColors } from "./chart-palette";
+export type { ChartChrome, DataColorKey } from "./chart-palette";
 
 /**
  * Client hook: tracks the live app theme by subscribing to the `data-theme`

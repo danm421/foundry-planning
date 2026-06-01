@@ -1,6 +1,7 @@
 "use client";
 
 import type { ProjectionYear } from "@/engine";
+import type { DataColorKey } from "@/lib/chart-colors";
 import { StackedBarChart, type StackedBarSeries } from "./stacked-bar-chart";
 
 const SUB_TYPE_LABELS: Record<string, string> = {
@@ -16,20 +17,20 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   "savings": "Cash",
 };
 
-const SUB_TYPE_COLORS: Record<string, string> = {
-  "401k":      "var(--color-data-emerald)",
-  "403b":      "var(--color-data-emerald)",
-  "ira":       "var(--color-data-indigo)",
-  "roth_ira":  "var(--color-data-violet)",
-  "roth_401k": "var(--color-data-violet)",
-  "brokerage": "var(--color-data-wheat)",
-  "hsa":       "var(--color-data-slate)",
-  "529":       "var(--color-data-terra)",
-  "checking":  "var(--color-data-rose)",
-  "savings":   "var(--color-data-rose)",
+const SUB_TYPE_COLORS: Record<string, DataColorKey> = {
+  "401k":      "green",
+  "403b":      "green",
+  "ira":       "blue",
+  "roth_ira":  "purple",
+  "roth_401k": "purple",
+  "brokerage": "yellow",
+  "hsa":       "teal",
+  "529":       "orange",
+  "checking":  "pink",
+  "savings":   "pink",
 };
 
-const FALLBACK_COLOR = "var(--color-data-sage)";
+const FALLBACK_COLOR: DataColorKey = "grey";
 
 export function buildSavingsDatasets(
   years: ProjectionYear[],
@@ -58,10 +59,10 @@ export function buildSavingsDatasets(
     const arr = totals.get(label)!;
     // Pick the color from the first sub-type that maps to this label.
     const subType = Object.entries(SUB_TYPE_LABELS).find(([, l]) => l === label)?.[0];
-    const color = (subType && SUB_TYPE_COLORS[subType]) ?? FALLBACK_COLOR;
+    const colorKey: DataColorKey = (subType ? SUB_TYPE_COLORS[subType] : undefined) ?? FALLBACK_COLOR;
     return {
       label,
-      color,
+      colorKey,
       valueFor: (year: ProjectionYear) => {
         const idx = years.indexOf(year);
         return idx >= 0 ? arr[idx] : 0;

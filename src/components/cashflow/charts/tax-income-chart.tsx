@@ -5,13 +5,13 @@ import { StackedBarChart, type StackedBarSeries } from "./stacked-bar-chart";
 
 export function buildTaxIncomeDatasets(): StackedBarSeries[] {
   return [
-    { label: "Earned",            color: "var(--color-data-emerald)", valueFor: (y) => y.taxDetail?.earnedIncome ?? 0 },
-    { label: "Ordinary",          color: "var(--color-data-indigo)",  valueFor: (y) => y.taxDetail?.ordinaryIncome ?? 0 },
-    { label: "Qualified Dividends",color: "var(--color-data-sage)",   valueFor: (y) => y.taxDetail?.dividends ?? 0 },
-    { label: "LT Capital Gains",  color: "var(--color-data-wheat)",   valueFor: (y) => y.taxDetail?.capitalGains ?? 0 },
-    { label: "ST Capital Gains",  color: "var(--color-data-terra)",   valueFor: (y) => y.taxDetail?.stCapitalGains ?? 0 },
-    { label: "QBI",               color: "var(--color-data-violet)",  valueFor: (y) => y.taxDetail?.qbi ?? 0 },
-    { label: "Tax-Exempt",        color: "var(--color-data-slate)",   valueFor: (y) => y.taxDetail?.taxExempt ?? 0 },
+    { label: "Earned",            colorKey: "green",  valueFor: (y) => y.taxDetail?.earnedIncome ?? 0 },
+    { label: "Ordinary",          colorKey: "blue",   valueFor: (y) => y.taxDetail?.ordinaryIncome ?? 0 },
+    { label: "Qualified Dividends",colorKey: "grey",  valueFor: (y) => y.taxDetail?.dividends ?? 0 },
+    { label: "LT Capital Gains",  colorKey: "yellow", valueFor: (y) => y.taxDetail?.capitalGains ?? 0 },
+    { label: "ST Capital Gains",  colorKey: "orange", valueFor: (y) => y.taxDetail?.stCapitalGains ?? 0 },
+    { label: "QBI",               colorKey: "purple", valueFor: (y) => y.taxDetail?.qbi ?? 0 },
+    { label: "Tax-Exempt",        colorKey: "teal",   valueFor: (y) => y.taxDetail?.taxExempt ?? 0 },
   ];
 }
 

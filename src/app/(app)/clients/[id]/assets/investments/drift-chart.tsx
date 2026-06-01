@@ -37,7 +37,7 @@ export default function DriftChart({ drift, assetClasses }: Props) {
                   style={{
                     left: isUnderweight ? "50%" : `${50 - widthPct}%`,
                     width: `${widthPct}%`,
-                    backgroundColor: isUnderweight ? "var(--color-data-emerald)" : "var(--color-ink-3)",
+                    backgroundColor: isUnderweight ? "var(--color-data-green)" : "var(--color-ink-3)",
                   }}
                 />
               </div>

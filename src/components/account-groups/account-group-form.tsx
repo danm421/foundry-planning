@@ -39,7 +39,7 @@ export default function AccountGroupForm({
 }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [color, setColor] = useState(initial?.color ?? brandData.indigo);
+  const [color, setColor] = useState(initial?.color ?? brandData.blue);
   const [selected, setSelected] = useState<Set<string>>(
     new Set(initial?.memberAccountIds ?? []),
   );

@@ -7,13 +7,13 @@ import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 
 export function buildIncomeDatasets(): StackedBarSeries[] {
   return [
-    { label: "Salaries",       color: "var(--color-data-emerald)", valueFor: (y) => y.income.salaries },
-    { label: "Social Security",color: "var(--color-data-indigo)",  valueFor: (y) => y.income.socialSecurity },
-    { label: "Business",       color: "var(--color-data-slate)",   valueFor: (y) => y.income.business },
-    { label: "Trust",          color: "var(--color-data-violet)",  valueFor: (y) => y.income.trust },
-    { label: "Deferred",       color: "var(--color-data-terra)",   valueFor: (y) => y.income.deferred },
-    { label: "Capital Gains",  color: "var(--color-data-wheat)",   valueFor: (y) => y.income.capitalGains },
-    { label: "Other",          color: "var(--color-data-sage)",    valueFor: (y) => y.income.other },
+    { label: "Salaries",       colorKey: "green",  valueFor: (y) => y.income.salaries },
+    { label: "Social Security",colorKey: "blue",   valueFor: (y) => y.income.socialSecurity },
+    { label: "Business",       colorKey: "teal",   valueFor: (y) => y.income.business },
+    { label: "Trust",          colorKey: "purple", valueFor: (y) => y.income.trust },
+    { label: "Deferred",       colorKey: "orange", valueFor: (y) => y.income.deferred },
+    { label: "Capital Gains",  colorKey: "yellow", valueFor: (y) => y.income.capitalGains },
+    { label: "Other",          colorKey: "grey",   valueFor: (y) => y.income.other },
   ];
 }
 

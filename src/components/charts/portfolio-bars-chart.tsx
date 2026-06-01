@@ -97,8 +97,8 @@ export interface PortfolioBarsChartProps {
   current: ProjectionYear[];
   /**
    * Base-case years used to compute delta overlay bars. When provided the
-   * chart renders three stacked datasets (indigo floor + good cap + slate cap).
-   * When absent (or null) the chart renders a single indigo bar series.
+   * chart renders three stacked datasets (blue floor + good cap + teal cap).
+   * When absent (or null) the chart renders a single blue bar series.
    */
   baseline?: ProjectionYear[] | null;
   /** Timeline event markers (retirement, life expectancy, etc.). */
@@ -155,7 +155,7 @@ export function PortfolioBarsChart({
             {
               label: "Common floor (vs base case)",
               data: seg.floor,
-              backgroundColor: palette.indigo,
+              backgroundColor: palette.blue,
               stack: "portfolio",
             },
             {
@@ -167,7 +167,7 @@ export function PortfolioBarsChart({
             {
               label: "Base case ahead of scenario",
               data: seg.baseAhead,
-              backgroundColor: palette.slate,
+              backgroundColor: palette.teal,
               stack: "portfolio",
             },
           ],
@@ -183,8 +183,8 @@ export function PortfolioBarsChart({
           {
             label: "Total Portfolio Assets",
             data: series.data,
-            backgroundColor: palette.indigo,
-            borderColor: palette.indigo,
+            backgroundColor: palette.blue,
+            borderColor: palette.blue,
             borderWidth: 1,
           },
         ],
@@ -228,7 +228,7 @@ export function PortfolioBarsChart({
               if (!showDelta) return [];
               const idx = items[0]?.dataIndex;
               const total = idx == null ? 0 : scenarioTotals[idx];
-              // Delta view: the flat indigo floor is filtered out — note the
+              // Delta view: the flat blue floor is filtered out — note the
               // depleted scenario beside the still-full-height base-case bar.
               return total < 0
                 ? [`Scenario portfolio depleted: ${fmtNum(total)}`]

@@ -15,7 +15,7 @@ import annotationPlugin from "chartjs-plugin-annotation";
 import { Line } from "react-chartjs-2";
 import type { ChartOptions, ChartData } from "chart.js";
 import type { ProjectionYear } from "@/engine";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(
   CategoryScale,
@@ -78,8 +78,8 @@ export function MedicareMagiTierChart({ years, yearRange }: Props) {
         data: filtered.map(
           y => y.medicare?.client?.sourceMagi ?? y.medicare?.spouse?.sourceMagi ?? null,
         ),
-        borderColor: "var(--color-data-indigo)",
-        backgroundColor: "rgba(99,102,241,0.10)",
+        borderColor: dataPalette(theme).blue,
+        backgroundColor: "rgba(44,95,168,0.10)",
         tension: 0.2,
         pointRadius: 3,
       },

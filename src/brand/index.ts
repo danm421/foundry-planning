@@ -83,30 +83,35 @@ export const colorsLight = {
   },
 } as const;
 
-// Editorial palette — vivid, refined for mutual contrast on near-black.
+// Deep Jewel data palette — six anchors (red·blue·green·yellow·grey·orange)
+// plus three fills (purple·teal·pink). Rich, darker-toned; reads as one premium
+// family. Lead charts with the anchors in order, add fills as series grow.
 export const data = {
-  emerald: "#2fd498",
-  sage:    "#9bcf5e",
-  wheat:   "#ecc659",
-  terra:   "#f0824e",
-  rose:    "#f2688f",
-  violet:  "#c182f0",
-  indigo:  "#7d8cf9",
-  slate:   "#5fb8de",
-  amber:   "#f2a838",
+  red:    "#c0392b",
+  blue:   "#2c5fa8",
+  green:  "#2a8a5e",
+  yellow: "#c99a1e",
+  grey:   "#6b7280",
+  orange: "#cf6a1f",
+  purple: "#6a3fa0",
+  teal:   "#1f8a86",
+  pink:   "#a83f6a",
 } as const;
 
 export const dataLight = {
-  emerald: "#1f9d6b",
-  sage:    "#6f9b32",
-  wheat:   "#b8902f",
-  terra:   "#cf6233",
-  rose:    "#c8466b",
-  violet:  "#8a44cf",
-  indigo:  "#4453d4",
-  slate:   "#2f86b0",
-  amber:   "#c5860f",
+  red:    "#c5392b",
+  blue:   "#2d61aa",
+  green:  "#1f8d5f",
+  yellow: "#c2941b",
+  grey:   "#5e6573",
+  orange: "#cf671d",
+  purple: "#6c41a2",
+  teal:   "#198b83",
+  pink:   "#ab3f6b",
 } as const;
+
+/** A Deep Jewel data palette key — the stable identity used to color a series. */
+export type DataColorKey = keyof typeof data;
 
 // Accent-wash (active/selected backgrounds) per theme.
 export const accentWash = {
@@ -114,7 +119,7 @@ export const accentWash = {
   light: "rgba(217, 119, 6, 0.16)",
 } as const;
 
-// Deterministic categorical scale, in the editorial palette's perceptual band.
+// Deterministic categorical scale, in the Deep Jewel palette's perceptual band.
 // Band per theme (OKLCH): dark L 0.78 · C 0.15, light L 0.58 · C 0.15.
 // The accent-amber hue band (~55–85°) is reserved so data never reads as a CTA.
 const DATA_BAND = { dark: { L: 0.78, C: 0.15 }, light: { L: 0.58, C: 0.15 } } as const;
@@ -123,7 +128,7 @@ export function dataScale(n: number, theme: "dark" | "light" = "dark"): string[]
   const { L, C } = DATA_BAND[theme];
   const out: string[] = [];
   for (let i = 0; i < n; i++) {
-    let h = (15 + (i * 360) / n) % 360; // even hue spacing, start ~terra
+    let h = (15 + (i * 360) / n) % 360; // even hue spacing, start ~red-orange
     if (h > 55 && h < 85) h = (h + 40) % 360; // reserve the accent-amber band
     out.push(`oklch(${L} ${C} ${h.toFixed(1)})`);
   }

@@ -53,7 +53,7 @@ export function YearlyEstateWhereChart({ rows }: Props) {
         {
           label: "Charitable Bequests",
           data: rows.map((r) => r.charitableBequests),
-          backgroundColor: palette.wheat,
+          backgroundColor: palette.yellow,
           stack: "main",
           borderWidth: 0,
         },

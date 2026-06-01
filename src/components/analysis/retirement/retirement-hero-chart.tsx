@@ -15,7 +15,7 @@ import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
 import { retirementInflows } from "@/lib/analysis/retirement-inflows";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(
   CategoryScale,
@@ -27,15 +27,6 @@ ChartJS.register(
   Legend,
 );
 
-// Inflow palette mirrors the Cash Flow report's stacked chart so the two read
-// the same. Withdrawals uses the semantic crit token (loss/danger).
-const COLOR_SS          = "var(--color-data-indigo)";
-const COLOR_SALARIES    = "var(--color-data-emerald)";
-const COLOR_OTHER       = "var(--color-data-slate)";
-const COLOR_RMDS        = "var(--color-data-terra)";
-const COLOR_WITHDRAWALS = "var(--color-crit)";
-const COLOR_EXPENSES_LINE = "var(--color-ink)";
-
 interface RetirementHeroChartProps {
   years: ProjectionYear[];
   height?: number;
@@ -46,6 +37,17 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
 
   const data = useMemo(() => {
     if (years.length === 0) return null;
+
+    // Inflow palette mirrors the Cash Flow report's stacked chart so the two
+    // read the same. Withdrawals uses the semantic crit token (loss/danger).
+    // Resolved to real hex — Chart.js paints to canvas (can't read CSS vars).
+    const pal = dataPalette(theme);
+    const COLOR_SS          = pal.blue;
+    const COLOR_SALARIES    = pal.green;
+    const COLOR_OTHER       = pal.teal;
+    const COLOR_RMDS        = pal.orange;
+    const COLOR_WITHDRAWALS = statusColors(theme).crit;
+    const COLOR_EXPENSES_LINE = chartChrome(theme).title;
 
     const labels = years.map((y) => String(y.year));
     const inflows = years.map(retirementInflows);
@@ -101,7 +103,7 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
         },
       ],
     };
-  }, [years]);
+  }, [years, theme]);
 
   const options = useMemo(() => {
     const chrome = chartChrome(theme);

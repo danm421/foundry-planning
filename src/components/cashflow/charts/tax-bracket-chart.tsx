@@ -12,7 +12,7 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend);
 
@@ -55,7 +55,7 @@ export function TaxBracketChart({ years }: TaxBracketChartProps) {
         {
           label: "Effective rate",
           data: effective,
-          borderColor: "var(--color-data-indigo)",
+          borderColor: dataPalette(theme).blue,
           backgroundColor: "transparent",
           borderWidth: 2,
           pointRadius: 0,
@@ -65,7 +65,7 @@ export function TaxBracketChart({ years }: TaxBracketChartProps) {
         {
           label: "Marginal rate",
           data: marginal,
-          borderColor: "var(--color-crit)",
+          borderColor: statusColors(theme).crit,
           backgroundColor: "transparent",
           borderWidth: 2,
           pointRadius: 0,
@@ -76,7 +76,7 @@ export function TaxBracketChart({ years }: TaxBracketChartProps) {
       ],
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [years],
+    [years, theme],
   );
 
   const options = useMemo(
