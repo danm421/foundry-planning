@@ -18,16 +18,14 @@ describe("PresentationDocument", () => {
     const projection = { years } as unknown as ProjectionResult;
     const buf = await renderToBuffer(
       <PresentationDocument
-        pages={[{ pageId: "cashFlow", options: undefined }]}
+        pages={[{ pageId: "cashFlow", options: undefined, scenarioKey: "base" }]}
         firmName="Foundry Planning"
         firmTagline={null}
         clientName="Cooper Sample"
         reportDate="May 28, 2026"
-        scenarioLabel="Base Case"
         spouseName="Susan Sample"
-        years={years}
-        projection={projection}
-        clientData={clientData}
+        bundles={{ base: { clientData, projection, years, scenarioLabel: "Base Case" } }}
+        topScenarioKey="base"
       />,
     );
     expect(buf.byteLength).toBeGreaterThan(0);
