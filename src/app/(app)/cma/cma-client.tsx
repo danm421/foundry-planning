@@ -264,11 +264,11 @@ export default function CmaClient() {
       const res = await fetch(`/api/cma/asset-classes/${ac.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        // geometric/arithmetic/volatility are owned by the selected CMA set and
+        // saved via /api/cma/sets/[key]/values; the asset_classes numeric columns
+        // are a mirror of the active set, so we never write them through here.
         body: JSON.stringify({
           name: ac.name,
-          geometricReturn: ac.geometricReturn,
-          arithmeticMean: ac.arithmeticMean,
-          volatility: ac.volatility,
           pctOrdinaryIncome: ac.pctOrdinaryIncome,
           pctLtCapitalGains: ac.pctLtCapitalGains,
           pctQualifiedDividends: ac.pctQualifiedDividends,
