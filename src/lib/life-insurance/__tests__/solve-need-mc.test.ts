@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { solveLifeInsuranceNeedMc } from "../solve-need-mc";
+import { solveLifeInsuranceNeedMc, solveNeedBracket } from "../solve-need-mc";
 import { marriedBase, assumptions } from "./test-helpers";
 
 // ── In-memory Monte Carlo payload ────────────────────────────────────────────
@@ -93,4 +93,31 @@ describe("solveLifeInsuranceNeedMc", () => {
     expect(r.status).toBe("exceeds-cap");
     expect(r.faceValue).toBe(20_000_000);
   }, 30_000);
+});
+
+describe("solveNeedBracket (pure bracket orchestration)", () => {
+  const opts = { target: 0.9, cap: 20_000_000, tolerance: 0.02, maxIterations: 24 };
+
+  it("returns faceValue 0 when atZero already meets target", async () => {
+    const evaluate = async () => 0.95; // funded at $0
+    const r = await solveNeedBracket(evaluate, opts);
+    expect(r).toEqual({ status: "solved", faceValue: 0, achievedScore: 0.95 });
+  });
+
+  it("returns exceeds-cap when even the cap falls far short", async () => {
+    const evaluate = async () => 0.4; // flat, never reaches target
+    const r = await solveNeedBracket(evaluate, opts);
+    expect(r.status).toBe("exceeds-cap");
+    expect(r.faceValue).toBe(20_000_000);
+  });
+
+  it("solves a positive face value on a valid bracket", async () => {
+    // Monotone in face: 0.5 at $0 rising to ~0.95 at cap; crosses 0.9 mid-range.
+    const evaluate = async (f: number) => 0.5 + 0.45 * (f / 20_000_000);
+    const r = await solveNeedBracket(evaluate, opts);
+    expect(r.status).toBe("solved");
+    expect(r.faceValue).toBeGreaterThan(0);
+    expect(r.faceValue).toBeLessThan(20_000_000);
+    expect(Math.abs(r.achievedScore - 0.9)).toBeLessThanOrEqual(0.02);
+  });
 });

@@ -63,6 +63,41 @@ export interface SolveLifeInsuranceNeedMcOptions {
 }
 
 /**
+ * Pure bracket orchestration for the MC need solver. Given an injected
+ * `evaluate(faceValue) => Promise<score>` (monotonic non-decreasing in face
+ * value) plus the target/cap/tolerance/iteration budget, returns either the
+ * solved face value or `exceeds-cap`. Extracted from `solveLifeInsuranceNeedMc`
+ * so the bracket guards are unit-testable with a deterministic `evaluate`.
+ */
+export async function solveNeedBracket(
+  evaluate: (faceValue: number) => Promise<number>,
+  opts: { target: number; cap: number; tolerance: number; maxIterations: number },
+): Promise<{ status: "solved" | "exceeds-cap"; faceValue: number; achievedScore: number }> {
+  const { target, cap, tolerance, maxIterations } = opts;
+
+  // If the survivor already meets the target score at $0 face value, no
+  // insurance is needed.
+  const atZero = await evaluate(0);
+  if (atZero >= target - tolerance) {
+    return { status: "solved", faceValue: 0, achievedScore: atZero };
+  }
+
+  // If even the CAP cannot reach the target score, the need exceeds our range.
+  const atCap = await evaluate(cap);
+  if (atCap < target - tolerance) {
+    return { status: "exceeds-cap", faceValue: cap, achievedScore: atCap };
+  }
+
+  // Bracket is valid: atZero < target <= atCap. Solve via Illinois-modified
+  // false position (success rate is monotonic in face value under a fixed seed).
+  const root = await findRootAsync(
+    { lo: 0, flo: atZero, hi: cap, fhi: atCap, target, tol: tolerance, maxIterations },
+    evaluate,
+  );
+  return { status: "solved", faceValue: Math.round(root.x), achievedScore: root.fx };
+}
+
+/**
  * Bisect on `faceValue` to find the minimum death benefit such that the
  * survivor's plan achieves a Monte Carlo success rate of at least
  * `assumptions.mcTargetScore`.
@@ -127,41 +162,14 @@ export async function solveLifeInsuranceNeedMc(
     return mc.successRate;
   };
 
-  // If the survivor already meets the target score at $0 face value, no
-  // insurance is needed.
-  const atZero = await evaluate(0);
-  if (atZero >= target - SCORE_TOLERANCE) {
-    return { status: "solved", faceValue: 0, achievedScore: atZero, iterations };
-  }
-
-  // If even the CAP cannot reach the target score, the need exceeds our range.
-  const atCap = await evaluate(CAP);
-  if (atCap < target - SCORE_TOLERANCE) {
-    return { status: "exceeds-cap", faceValue: CAP, achievedScore: atCap, iterations };
-  }
-
-  // Bracket is valid: atZero < target <= atCap. Solve via Illinois-modified
-  // false position. The success-rate objective is monotonic in face value
-  // (fixed seed every evaluation), so the same bracketing guarantees as the
-  // deterministic solver hold; `iterations` already counts the two endpoint
-  // probes plus every root-finder evaluation.
-  const root = await findRootAsync(
-    {
-      lo: 0,
-      flo: atZero,
-      hi: CAP,
-      fhi: atCap,
-      target,
-      tol: SCORE_TOLERANCE,
-      maxIterations: MAX_ITERATIONS,
-    },
-    evaluate,
-  );
-
-  return {
-    status: "solved",
-    faceValue: Math.round(root.x),
-    achievedScore: root.fx,
-    iterations,
-  };
+  // The bracket orchestration (atZero/atCap guards + Illinois root-find) lives
+  // in the pure `solveNeedBracket` helper; the `evaluate` closure above still
+  // owns the `iterations` counter and `onProgress` side effects.
+  const result = await solveNeedBracket(evaluate, {
+    target,
+    cap: CAP,
+    tolerance: SCORE_TOLERANCE,
+    maxIterations: MAX_ITERATIONS,
+  });
+  return { ...result, iterations };
 }
