@@ -20,6 +20,16 @@ export function compactCurrency(n: number): string {
   return neg ? `(${body})` : body;
 }
 
+// Precise whole-dollar currency — used by tabular reports (e.g. Client Profile)
+// where compactCurrency's k/M rounding would hide meaningful precision.
+export function exactCurrency(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
 export function jointAge(
   client: number | null,
   spouse: number | null,

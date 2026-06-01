@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compactCurrency, jointAge, dateLong } from "../format";
+import { compactCurrency, jointAge, dateLong, exactCurrency } from "../format";
 
 describe("compactCurrency", () => {
   it("formats values >= $1M with M suffix", () => {
@@ -56,5 +56,13 @@ describe("dateLong", () => {
   it("formats a date as 'Month D, YYYY'", () => {
     expect(dateLong(new Date(2026, 4, 27))).toBe("May 27, 2026");
     expect(dateLong(new Date(2026, 0, 1))).toBe("January 1, 2026");
+  });
+});
+
+describe("exactCurrency", () => {
+  it("formats whole-dollar amounts with separators", () => {
+    expect(exactCurrency(120000)).toBe("$120,000");
+    expect(exactCurrency(32400)).toBe("$32,400");
+    expect(exactCurrency(0)).toBe("$0");
   });
 });
