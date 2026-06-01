@@ -12,6 +12,7 @@ import {
   DEFAULT_CORRELATIONS,
 } from "@/lib/cma-seed";
 import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
+import { seedCmaSetsForFirm } from "@/lib/cma-sets";
 
 export type SeedResult = {
   assetClasses: number; // total rows for firm after seed
@@ -182,6 +183,10 @@ export async function seedCmaForFirm(firmId: string): Promise<SeedResult> {
       )
       .where(eq(assetClasses.firmId, firmId))
   ).length;
+
+  // Ensure the firm has the 3 named CMA sets, with value rows for every asset
+  // class just seeded. Idempotent; Historical seeded from the columns above.
+  await seedCmaSetsForFirm(firmId);
 
   return {
     assetClasses: allClasses.length,

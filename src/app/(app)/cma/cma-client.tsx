@@ -44,6 +44,23 @@ interface ModelPortfolio {
 
 type Tab = "asset-classes" | "model-portfolios";
 
+type CmaSetKey = "historical" | "projected" | "custom";
+interface CmaSet {
+  id: string;
+  key: CmaSetKey;
+  label: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+// Per-asset-class numbers for the selected set. The three numeric columns on the
+// asset-classes table are a mirror of the *active* set; this holds the *selected*
+// set's numbers (which may differ from what's mirrored).
+interface SetValue {
+  geometricReturn: string;
+  arithmeticMean: string;
+  volatility: string;
+}
+
 // Decimal (0.075) → display percentage ("7.5"). Round to 4dp to dodge IEEE-754
 // noise (0.075 * 100 → 7.500000000000001), then strip trailing zeros so the
 // displayed value matches what the user typed and `value` doesn't repaint
@@ -110,8 +127,13 @@ export default function CmaClient() {
   const [seedError, setSeedError] = useState<string | null>(null);
   const [migrationOpen, setMigrationOpen] = useState(false);
   const [valueRefreshOpen, setValueRefreshOpen] = useState(false);
+  const [sets, setSets] = useState<CmaSet[]>([]);
+  const [selectedKey, setSelectedKey] = useState<CmaSetKey>("historical");
+  const [setValues, setSetValues] = useState<Record<string, SetValue>>({});
   // Guard against React strict-mode double-mount re-firing the seed request.
   const fetchInFlight = useRef(false);
+  // Snap the selector to the active set only on the first load, not on refetch.
+  const didInitSelectedKey = useRef(false);
 
   const fetchData = useCallback(async () => {
     if (fetchInFlight.current) return;
@@ -137,12 +159,22 @@ export default function CmaClient() {
         // on top of a banner if data actually exists.
       }
 
-      const [acRes, mpRes] = await Promise.all([
+      const [acRes, mpRes, setsRes] = await Promise.all([
         fetch("/api/cma/asset-classes"),
         fetch("/api/cma/model-portfolios"),
+        fetch("/api/cma/sets"),
       ]);
       if (acRes.ok) setAssetClasses(await acRes.json());
       if (mpRes.ok) setPortfolios(await mpRes.json());
+      if (setsRes.ok) {
+        const rows: CmaSet[] = await setsRes.json();
+        setSets(rows);
+        if (!didInitSelectedKey.current && rows.length > 0) {
+          const active = rows.find((s) => s.isActive);
+          if (active) setSelectedKey(active.key);
+          didInitSelectedKey.current = true;
+        }
+      }
     } catch {
       setError("Failed to load CMA data");
     } finally {
@@ -153,6 +185,78 @@ export default function CmaClient() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const loadSetValues = useCallback(async (key: CmaSetKey) => {
+    const res = await fetch(`/api/cma/sets/${key}/values`);
+    if (!res.ok) return;
+    const rows: ({ assetClassId: string } & SetValue)[] = await res.json();
+    const map: Record<string, SetValue> = {};
+    for (const v of rows) {
+      map[v.assetClassId] = {
+        geometricReturn: v.geometricReturn,
+        arithmeticMean: v.arithmeticMean,
+        volatility: v.volatility,
+      };
+    }
+    setSetValues(map);
+  }, []);
+
+  // Reload the selected set's numbers whenever the selection or the set of asset
+  // classes changes (a newly added class needs its row populated).
+  useEffect(() => {
+    if (assetClasses.length === 0) return;
+    loadSetValues(selectedKey);
+  }, [selectedKey, assetClasses, loadSetValues]);
+
+  function updateSetValueField(id: string, field: keyof SetValue, value: string) {
+    setSetValues((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? { geometricReturn: "0", arithmeticMean: "0", volatility: "0" }), [field]: value },
+    }));
+  }
+
+  async function saveSetValue(assetClassId: string, sv: SetValue) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cma/sets/${selectedKey}/values`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values: [{ assetClassId, ...sv }] }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      // Editing the active set mirrors onto asset_classes; refetch so the
+      // numbers shown elsewhere (and the mirrored columns) stay consistent.
+      if (sets.find((s) => s.key === selectedKey)?.isActive) {
+        const acRes = await fetch("/api/cma/asset-classes");
+        if (acRes.ok) setAssetClasses(await acRes.json());
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function makeActive(key: CmaSetKey) {
+    setError(null);
+    try {
+      const res = await fetch("/api/cma/sets/active", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      if (!res.ok) throw new Error("Failed to set active set");
+      const [setsRes, acRes] = await Promise.all([
+        fetch("/api/cma/sets"),
+        fetch("/api/cma/asset-classes"),
+      ]);
+      if (setsRes.ok) setSets(await setsRes.json());
+      if (acRes.ok) setAssetClasses(await acRes.json());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set active set");
+    }
+  }
+
   async function saveAssetClass(ac: AssetClass) {
     setSaving(true);
     setError(null);
@@ -160,11 +264,11 @@ export default function CmaClient() {
       const res = await fetch(`/api/cma/asset-classes/${ac.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        // geometric/arithmetic/volatility are owned by the selected CMA set and
+        // saved via /api/cma/sets/[key]/values; the asset_classes numeric columns
+        // are a mirror of the active set, so we never write them through here.
         body: JSON.stringify({
           name: ac.name,
-          geometricReturn: ac.geometricReturn,
-          arithmeticMean: ac.arithmeticMean,
-          volatility: ac.volatility,
           pctOrdinaryIncome: ac.pctOrdinaryIncome,
           pctLtCapitalGains: ac.pctLtCapitalGains,
           pctQualifiedDividends: ac.pctQualifiedDividends,
@@ -303,6 +407,13 @@ export default function CmaClient() {
           onAdd={addAssetClass}
           onDelete={deleteAssetClass}
           saving={saving}
+          sets={sets}
+          selectedKey={selectedKey}
+          onSelectKey={setSelectedKey}
+          onMakeActive={makeActive}
+          setValues={setValues}
+          onUpdateSetValue={updateSetValueField}
+          onSaveSetValue={saveSetValue}
         />
       )}
 
@@ -326,11 +437,63 @@ interface AssetClassesTabProps {
   onAdd: () => void;
   onDelete: (id: string) => void;
   saving: boolean;
+  sets: CmaSet[];
+  selectedKey: CmaSetKey;
+  onSelectKey: (key: CmaSetKey) => void;
+  onMakeActive: (key: CmaSetKey) => void;
+  setValues: Record<string, SetValue>;
+  onUpdateSetValue: (id: string, field: keyof SetValue, value: string) => void;
+  onSaveSetValue: (assetClassId: string, sv: SetValue) => void;
 }
 
-function AssetClassesTab({ assetClasses, onUpdate, onSave, onAdd, onDelete, saving }: AssetClassesTabProps) {
+function AssetClassesTab({
+  assetClasses,
+  onUpdate,
+  onSave,
+  onAdd,
+  onDelete,
+  saving,
+  sets,
+  selectedKey,
+  onSelectKey,
+  onMakeActive,
+  setValues,
+  onUpdateSetValue,
+  onSaveSetValue,
+}: AssetClassesTabProps) {
+  const selectedIsActive = sets.find((s) => s.key === selectedKey)?.isActive ?? false;
   return (
     <div>
+      <div className="mb-4 flex items-center gap-3">
+        <label htmlFor="cma-set-select" className="text-sm text-gray-300">
+          Set
+        </label>
+        <select
+          id="cma-set-select"
+          className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100"
+          value={selectedKey}
+          onChange={(e) => onSelectKey(e.target.value as CmaSetKey)}
+        >
+          {sets.map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.label}
+              {s.isActive ? " (Active)" : ""}
+            </option>
+          ))}
+        </select>
+        {selectedIsActive ? (
+          <span className="rounded bg-emerald-700/40 px-2 py-0.5 text-xs text-emerald-300">● Active</span>
+        ) : (
+          <button
+            type="button"
+            className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-500"
+            onClick={() => onMakeActive(selectedKey)}
+          >
+            Make active
+          </button>
+        )}
+        <HelpTip text="Numbers below (Geo Return, Arith Mean, Volatility) belong to the selected set. The active set drives every client projection. Name, type and tax fields are shared across all sets." />
+      </div>
       <div className="overflow-x-auto rounded-lg border border-gray-700">
         <table className="w-full text-sm">
           <thead>
@@ -349,7 +512,17 @@ function AssetClassesTab({ assetClasses, onUpdate, onSave, onAdd, onDelete, savi
           </thead>
           <tbody className="divide-y divide-gray-800">
             {assetClasses.map((ac) => (
-              <AssetClassRow key={ac.id} ac={ac} onUpdate={onUpdate} onSave={onSave} onDelete={onDelete} saving={saving} />
+              <AssetClassRow
+                key={ac.id}
+                ac={ac}
+                onUpdate={onUpdate}
+                onSave={onSave}
+                onDelete={onDelete}
+                saving={saving}
+                setValue={setValues[ac.id]}
+                onUpdateSetValue={onUpdateSetValue}
+                onSaveSetValue={onSaveSetValue}
+              />
             ))}
           </tbody>
         </table>
@@ -370,17 +543,29 @@ function AssetClassRow({
   onUpdate,
   onSave,
   onDelete,
+  setValue,
+  onUpdateSetValue,
+  onSaveSetValue,
 }: {
   ac: AssetClass;
   onUpdate: (id: string, field: keyof AssetClass, value: string) => void;
   onSave: (ac: AssetClass) => Promise<void>;
   onDelete: (id: string) => void;
   saving: boolean;
+  setValue: SetValue | undefined;
+  onUpdateSetValue: (id: string, field: keyof SetValue, value: string) => void;
+  onSaveSetValue: (assetClassId: string, sv: SetValue) => void;
 }) {
-  const pctFields: (keyof AssetClass)[] = [
-    "geometricReturn",
-    "arithmeticMean",
-    "volatility",
+  // The three numeric columns belong to the selected set. Fall back to the
+  // asset-class (mirrored) columns until the set values have loaded.
+  const sv: SetValue = setValue ?? {
+    geometricReturn: ac.geometricReturn,
+    arithmeticMean: ac.arithmeticMean,
+    volatility: ac.volatility,
+  };
+  const setFields: (keyof SetValue)[] = ["geometricReturn", "arithmeticMean", "volatility"];
+  // Tax composition + sortOrder are shared identity on the asset class.
+  const taxFields: (keyof AssetClass)[] = [
     "pctOrdinaryIncome",
     "pctLtCapitalGains",
     "pctQualifiedDividends",
@@ -417,13 +602,13 @@ function AssetClassRow({
           ))}
         </select>
       </td>
-      {pctFields.map((field) => (
+      {setFields.map((field) => (
         <td key={field} className="px-3 py-2">
           <div className="flex items-center justify-end gap-1">
             <PercentInput
-              decimalValue={ac[field] as string}
-              onChange={(next) => onUpdate(ac.id, field, next)}
-              onBlur={() => onSave(ac)}
+              decimalValue={sv[field]}
+              onChange={(next) => onUpdateSetValue(ac.id, field, next)}
+              onBlur={() => onSaveSetValue(ac.id, sv)}
               className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
             />
             {field === "arithmeticMean" && (
@@ -433,13 +618,13 @@ function AssetClassRow({
                   // Lognormal approximation (eMoney whitepaper p.4):
                   //   Arith ≈ Geo + SD² / 2
                   // All values stored as decimals (0.07 = 7%).
-                  const gm = parseFloat(ac.geometricReturn);
-                  const sd = parseFloat(ac.volatility);
+                  const gm = parseFloat(sv.geometricReturn);
+                  const sd = parseFloat(sv.volatility);
                   if (!Number.isFinite(gm) || !Number.isFinite(sd)) return;
                   const estimated = gm + (sd * sd) / 2;
                   const next = estimated.toFixed(4);
-                  onUpdate(ac.id, "arithmeticMean", next);
-                  onSave({ ...ac, arithmeticMean: next });
+                  onUpdateSetValue(ac.id, "arithmeticMean", next);
+                  onSaveSetValue(ac.id, { ...sv, arithmeticMean: next });
                 }}
                 title="Estimate from Geometric Return and Standard Deviation (Arith ≈ Geo + SD²/2)"
                 className="rounded border border-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:border-accent hover:text-gray-100"
@@ -447,6 +632,18 @@ function AssetClassRow({
                 Est
               </button>
             )}
+          </div>
+        </td>
+      ))}
+      {taxFields.map((field) => (
+        <td key={field} className="px-3 py-2">
+          <div className="flex items-center justify-end gap-1">
+            <PercentInput
+              decimalValue={ac[field] as string}
+              onChange={(next) => onUpdate(ac.id, field, next)}
+              onBlur={() => onSave(ac)}
+              className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
+            />
           </div>
         </td>
       ))}

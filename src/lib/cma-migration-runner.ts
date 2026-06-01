@@ -17,6 +17,7 @@ import {
   validateMigrationRequest,
   type MigrationRequest,
 } from "./cma-migration";
+import { seedCmaSetsForFirm } from "./cma-sets";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -49,7 +50,7 @@ export async function migrateFirmToStandard(
   firmId: string,
   request: MigrationRequest
 ): Promise<MigrationResult> {
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // ── 1. Snapshot current state for the preview/validation pass ─────────
     const existing = await tx
       .select({ id: assetClasses.id, name: assetClasses.name })
@@ -216,6 +217,13 @@ export async function migrateFirmToStandard(
       keptLegacy,
     };
   });
+
+  // After the structural changes commit, ensure every CMA set has a value row
+  // for any newly added asset class (idempotent; only fills missing rows).
+  // Deletes need no action — cma_set_values cascades on asset-class delete.
+  await seedCmaSetsForFirm(firmId);
+
+  return result;
 }
 
 async function mergeAccountAllocations(

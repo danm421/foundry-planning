@@ -1219,6 +1219,51 @@ export const clientCmaOverrides = pgTable("client_cma_overrides", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Named CMA sets (Historical / Projected / Custom). Exactly three per firm; one
+// is active. The active set's numbers are mirrored onto asset_classes columns so
+// all existing readers are unchanged — cma_set_values is the durable store.
+export const cmaSets = pgTable(
+  "cma_sets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    key: varchar("key", { length: 16 }).notNull(), // 'historical' | 'projected' | 'custom'
+    label: text("label").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("cma_sets_firm_key_unique").on(t.firmId, t.key),
+    uniqueIndex("cma_sets_one_active_per_firm")
+      .on(t.firmId)
+      .where(sql`${t.isActive}`),
+  ],
+);
+
+// Per-set return/vol numbers, one row per (set, asset class). The three numeric
+// fields here are the only thing that varies between sets; identity, tax
+// composition, and correlations are shared on asset_classes.
+export const cmaSetValues = pgTable(
+  "cma_set_values",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    cmaSetId: uuid("cma_set_id")
+      .notNull()
+      .references(() => cmaSets.id, { onDelete: "cascade" }),
+    assetClassId: uuid("asset_class_id")
+      .notNull()
+      .references(() => assetClasses.id, { onDelete: "cascade" }),
+    geometricReturn: decimal("geometric_return", { precision: 7, scale: 4 }).notNull(),
+    arithmeticMean: decimal("arithmetic_mean", { precision: 7, scale: 4 }).notNull(),
+    volatility: decimal("volatility", { precision: 7, scale: 4 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("cma_set_values_set_class_uniq").on(t.cmaSetId, t.assetClassId)],
+);
+
 // Pairwise correlations between asset classes, used by the Monte Carlo
 // simulator. Stored canonically (assetClassIdA < assetClassIdB) so each pair
 // has a single row — callers reconstruct the symmetric matrix in memory.

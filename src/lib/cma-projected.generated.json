@@ -1,0 +1,188 @@
+{
+  "meta": {
+    "source": "PLACEHOLDER — clone of historical defaults; replace with Horizon Actuarial consensus numbers",
+    "generatedAt": "2026-06-01"
+  },
+  "assetClasses": [
+    {
+      "name": "US Large Cap",
+      "slug": "us_large_cap",
+      "geometricReturn": 0.104,
+      "arithmeticMean": 0.1112,
+      "volatility": 0.1534,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 0.85,
+      "pctQualifiedDividends": 0.15,
+      "pctTaxExempt": 0,
+      "assetType": "equities"
+    },
+    {
+      "name": "US Mid Cap",
+      "slug": "us_mid_cap",
+      "geometricReturn": 0.1024,
+      "arithmeticMean": 0.1139,
+      "volatility": 0.1773,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 0.85,
+      "pctQualifiedDividends": 0.15,
+      "pctTaxExempt": 0,
+      "assetType": "equities"
+    },
+    {
+      "name": "US Small Cap",
+      "slug": "us_small_cap",
+      "geometricReturn": 0.0998,
+      "arithmeticMean": 0.115,
+      "volatility": 0.1967,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 0.9,
+      "pctQualifiedDividends": 0.1,
+      "pctTaxExempt": 0,
+      "assetType": "equities"
+    },
+    {
+      "name": "Global ex-US Stock Market",
+      "slug": "global_ex_us",
+      "geometricReturn": 0.061,
+      "arithmeticMean": 0.0738,
+      "volatility": 0.1684,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 0.8,
+      "pctQualifiedDividends": 0.2,
+      "pctTaxExempt": 0,
+      "assetType": "equities"
+    },
+    {
+      "name": "Emerging Markets",
+      "slug": "emerging_markets",
+      "geometricReturn": 0.0697,
+      "arithmeticMean": 0.0915,
+      "volatility": 0.2165,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 0.85,
+      "pctQualifiedDividends": 0.15,
+      "pctTaxExempt": 0,
+      "assetType": "equities"
+    },
+    {
+      "name": "Short Term Treasury",
+      "slug": "short_term_treasury",
+      "geometricReturn": 0.0303,
+      "arithmeticMean": 0.0301,
+      "volatility": 0.0191,
+      "pctOrdinaryIncome": 1,
+      "pctLtCapitalGains": 0,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "taxable_bonds"
+    },
+    {
+      "name": "10-year Treasury",
+      "slug": "ten_year_treasury",
+      "geometricReturn": 0.0404,
+      "arithmeticMean": 0.0408,
+      "volatility": 0.0471,
+      "pctOrdinaryIncome": 1,
+      "pctLtCapitalGains": 0,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "taxable_bonds"
+    },
+    {
+      "name": "TIPS",
+      "slug": "tips",
+      "geometricReturn": 0.0447,
+      "arithmeticMean": 0.0455,
+      "volatility": 0.0575,
+      "pctOrdinaryIncome": 0.8,
+      "pctLtCapitalGains": 0.2,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "taxable_bonds"
+    },
+    {
+      "name": "High Yield Corporate Bonds",
+      "slug": "high_yield_corporate",
+      "geometricReturn": 0.0581,
+      "arithmeticMean": 0.0592,
+      "volatility": 0.0723,
+      "pctOrdinaryIncome": 0.85,
+      "pctLtCapitalGains": 0.15,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "taxable_bonds"
+    },
+    {
+      "name": "Intermediate-Term Tax-Exempt",
+      "slug": "tax_exempt_muni",
+      "geometricReturn": 0.0381,
+      "arithmeticMean": 0.0382,
+      "volatility": 0.0395,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 0,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 1,
+      "assetType": "tax_exempt_bonds"
+    },
+    {
+      "name": "Long Term Treasury",
+      "slug": "long_term_treasury",
+      "geometricReturn": 0.0437,
+      "arithmeticMean": 0.0491,
+      "volatility": 0.1118,
+      "pctOrdinaryIncome": 1,
+      "pctLtCapitalGains": 0,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "taxable_bonds"
+    },
+    {
+      "name": "REIT",
+      "slug": "reit",
+      "geometricReturn": 0.0895,
+      "arithmeticMean": 0.106,
+      "volatility": 0.1971,
+      "pctOrdinaryIncome": 0.6,
+      "pctLtCapitalGains": 0.15,
+      "pctQualifiedDividends": 0.25,
+      "pctTaxExempt": 0,
+      "assetType": "equities"
+    },
+    {
+      "name": "Gold",
+      "slug": "gold",
+      "geometricReturn": 0.0828,
+      "arithmeticMean": 0.0925,
+      "volatility": 0.1604,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 1,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "other"
+    },
+    {
+      "name": "Commodities",
+      "slug": "commodities",
+      "geometricReturn": -0.0233,
+      "arithmeticMean": 0.0039,
+      "volatility": 0.2303,
+      "pctOrdinaryIncome": 0,
+      "pctLtCapitalGains": 1,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "other"
+    },
+    {
+      "name": "Inflation",
+      "slug": "inflation",
+      "geometricReturn": 0.025,
+      "arithmeticMean": 0.0255,
+      "volatility": 0.005,
+      "pctOrdinaryIncome": 1,
+      "pctLtCapitalGains": 0,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "other"
+    }
+  ]
+}

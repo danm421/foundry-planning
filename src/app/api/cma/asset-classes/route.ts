@@ -6,6 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
 import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
+import { seedCmaSetsForFirm } from "@/lib/cma-sets";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,10 @@ export async function POST(request: NextRequest) {
         assetType: assetType ?? "other",
       })
       .returning();
+
+    // Backfill cma_set_values for the new class across all 3 sets (idempotent;
+    // Projected uses its mapping, others clone the new class's columns).
+    await seedCmaSetsForFirm(firmId);
 
     await recordAudit({
       action: "cma.asset_class.create",

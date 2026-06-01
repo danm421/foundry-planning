@@ -6,6 +6,8 @@ import {
   modelPortfolios,
   modelPortfolioAllocations,
   assetClassCorrelations,
+  cmaSets,
+  cmaSetValues,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { seedCmaForFirm } from "../cma-seed-runner";
@@ -35,7 +37,8 @@ afterEach(async () => {
         .where(inArray(assetClassCorrelations.assetClassIdA, ids));
     }
     await db.delete(modelPortfolios).where(eq(modelPortfolios.firmId, firmId));
-    await db.delete(assetClasses).where(eq(assetClasses.firmId, firmId));
+    await db.delete(assetClasses).where(eq(assetClasses.firmId, firmId)); // cascades cma_set_values
+    await db.delete(cmaSets).where(eq(cmaSets.firmId, firmId));
   }
 });
 
@@ -290,5 +293,30 @@ describe("migrateFirmToStandard", () => {
       .from(assetClasses)
       .where(eq(assetClasses.firmId, firmId));
     expect(all.find((c) => c.name === "Inflation")).toBeDefined();
+  });
+
+  it("fans out a cma_set_values row to all 3 sets for every added class", async () => {
+    const firmId = makeFirmId();
+    const legacy = await insertLegacyClass(firmId, "US Aggregate Bond");
+
+    await migrateFirmToStandard(firmId, {
+      remappings: { [legacy.id]: { kind: "keep" } },
+    });
+
+    const acs = await db
+      .select({ id: assetClasses.id })
+      .from(assetClasses)
+      .where(eq(assetClasses.firmId, firmId));
+    const sets = await db.select().from(cmaSets).where(eq(cmaSets.firmId, firmId));
+    expect(sets).toHaveLength(3);
+
+    // Every set has a value row for every asset class (the 15 added + 1 kept).
+    for (const set of sets) {
+      const vals = await db
+        .select()
+        .from(cmaSetValues)
+        .where(eq(cmaSetValues.cmaSetId, set.id));
+      expect(vals).toHaveLength(acs.length);
+    }
   });
 });
