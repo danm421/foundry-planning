@@ -7,6 +7,7 @@ import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { GiftCumulativeTable } from "@/components/gift-cumulative-table";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { deriveOwnerNames, deriveOwnerDobs } from "@/lib/comparison/owner-info";
 
 function ownerAgesFor(
@@ -86,17 +87,18 @@ function PlanCard({ plan, index }: { plan: ComparisonPlan; index: number }) {
     return out;
   }, [plan]);
 
+  const theme = useThemeName();
   const ownerAges = useMemo(() => ownerAgesFor(plan), [plan]);
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-2 flex items-center gap-2">
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs uppercase tracking-wide text-slate-400">
+        <span className="text-xs uppercase tracking-wide text-ink-3">
           {plan.label}
         </span>
       </div>
@@ -115,7 +117,7 @@ function PlanCard({ plan, index }: { plan: ComparisonPlan; index: number }) {
 export function GiftTaxComparisonSection({ plans }: { plans: ComparisonPlan[] }) {
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Gift Tax</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Gift Tax</h2>
       <div className="grid grid-cols-1 gap-4">
         {plans.map((p, i) => (
           <PlanCard key={p.id} plan={p} index={i} />

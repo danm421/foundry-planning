@@ -17,6 +17,8 @@ import type { ProjectionYear } from "@/engine";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { data, dataLight } from "@/brand";
 
 ChartJS.register(
   CategoryScale,
@@ -29,18 +31,21 @@ ChartJS.register(
   Legend,
 );
 
-const CATEGORIES: Array<{
+// 7 asset categories — mapped to adjacency-ordered brand hues so look-alike
+// pairs (sage/emerald, slate/indigo, terra/wheat) are non-adjacent.
+// terra→emerald→wheat→slate→rose→indigo→sage covers 7 distinct hue families.
+const CATEGORY_KEYS: Array<{
   key: keyof ProjectionYear["portfolioAssets"];
   label: string;
-  color: string;
+  hue: keyof typeof data;
 }> = [
-  { key: "taxableTotal", label: "Taxable", color: "#16a34a" },
-  { key: "cashTotal", label: "Cash", color: "#22d3ee" },
-  { key: "retirementTotal", label: "Retirement", color: "#2563eb" },
-  { key: "realEstateTotal", label: "Real Estate", color: "#a855f7" },
-  { key: "businessTotal", label: "Business", color: "#f97316" },
-  { key: "lifeInsuranceTotal", label: "Life Insurance", color: "#facc15" },
-  { key: "trustsAndBusinessesTotal", label: "Trusts & Businesses", color: "#94a3b8" },
+  { key: "taxableTotal",          label: "Taxable",             hue: "terra"   },
+  { key: "cashTotal",             label: "Cash",                hue: "emerald" },
+  { key: "retirementTotal",       label: "Retirement",          hue: "wheat"   },
+  { key: "realEstateTotal",       label: "Real Estate",         hue: "slate"   },
+  { key: "businessTotal",         label: "Business",            hue: "rose"    },
+  { key: "lifeInsuranceTotal",    label: "Life Insurance",      hue: "indigo"  },
+  { key: "trustsAndBusinessesTotal", label: "Trusts & Businesses", hue: "sage" },
 ];
 
 function clip(years: ProjectionYear[], range: YearRange | null): ProjectionYear[] {
@@ -64,31 +69,38 @@ interface Props {
   yearRange: YearRange | null;
 }
 
-function MultiYearChart({ years }: { years: ProjectionYear[] }) {
-  const data = useMemo(
+function MultiYearChart({ years, theme }: { years: ProjectionYear[]; theme: "dark" | "light" }) {
+  const palette = theme === "light" ? dataLight : data;
+  const data_ = useMemo(
     () => ({
       labels: years.map((y) => String(y.year)),
-      datasets: CATEGORIES.map((c) => ({
-        label: c.label,
-        data: pctSeries(years, c.key),
-        backgroundColor: c.color + "cc",
-        borderColor: c.color,
-        fill: true,
-        pointRadius: 0,
-        tension: 0.2,
-        stack: "alloc",
-      })),
+      datasets: CATEGORY_KEYS.map((c) => {
+        const hex = palette[c.hue];
+        return {
+          label: c.label,
+          data: pctSeries(years, c.key),
+          backgroundColor: hex + "cc",
+          borderColor: hex,
+          fill: true,
+          pointRadius: 0,
+          tension: 0.2,
+          stack: "alloc",
+        };
+      }),
     }),
-    [years],
+    [years, palette],
   );
-  const options = useMemo(
-    () => ({
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: "#d1d5db", boxWidth: 10, padding: 8, font: { size: 10 } } },
+        legend: { labels: { color: chrome.legend, boxWidth: 10, padding: 8, font: { size: 10 } } },
         tooltip: {
-          backgroundColor: "#1f2937",
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
               `${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toFixed(1)}%`,
@@ -96,52 +108,58 @@ function MultiYearChart({ years }: { years: ProjectionYear[] }) {
         },
       },
       scales: {
-        x: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+        x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
         y: {
           stacked: true,
           max: 100,
-          ticks: { color: "#9ca3af", callback: (v: number | string) => `${v}%` },
-          grid: { color: "#1f2937" },
+          ticks: { color: chrome.tick, callback: (v: number | string) => `${v}%` },
+          grid: { color: chrome.grid },
         },
       },
-    }),
-    [],
-  );
+    };
+  }, [theme]);
   return (
     <div data-test="allocation-drift-area" style={{ height: 240 }}>
-      <Line data={data} options={options} />
+      <Line data={data_} options={options} />
     </div>
   );
 }
 
-function SingleYearBar({ year }: { year: ProjectionYear }) {
-  const data = useMemo(() => {
+function SingleYearBar({ year, theme }: { year: ProjectionYear; theme: "dark" | "light" }) {
+  const palette = theme === "light" ? dataLight : data;
+  const data_ = useMemo(() => {
     const total = year.portfolioAssets.total;
     return {
       labels: [String(year.year)],
-      datasets: CATEGORIES.map((c) => ({
-        label: c.label,
-        data: [
-          total > 0
-            ? Number((((year.portfolioAssets[c.key] as number) ?? 0) / total) * 100)
-            : 0,
-        ],
-        backgroundColor: c.color + "cc",
-        borderColor: c.color,
-        borderWidth: 1,
-        stack: "alloc",
-      })),
+      datasets: CATEGORY_KEYS.map((c) => {
+        const hex = palette[c.hue];
+        return {
+          label: c.label,
+          data: [
+            total > 0
+              ? Number((((year.portfolioAssets[c.key] as number) ?? 0) / total) * 100)
+              : 0,
+          ],
+          backgroundColor: hex + "cc",
+          borderColor: hex,
+          borderWidth: 1,
+          stack: "alloc",
+        };
+      }),
     };
-  }, [year]);
-  const options = useMemo(
-    () => ({
+  }, [year, palette]);
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       indexAxis: "y" as const,
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: "#d1d5db", boxWidth: 10, padding: 8, font: { size: 10 } } },
+        legend: { labels: { color: chrome.legend, boxWidth: 10, padding: 8, font: { size: 10 } } },
         tooltip: {
-          backgroundColor: "#1f2937",
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             label: (ctx: { dataset: { label?: string }; parsed: { x: number | null } }) =>
               `${ctx.dataset.label}: ${(ctx.parsed.x ?? 0).toFixed(1)}%`,
@@ -152,17 +170,16 @@ function SingleYearBar({ year }: { year: ProjectionYear }) {
         x: {
           stacked: true,
           max: 100,
-          ticks: { color: "#9ca3af", callback: (v: number | string) => `${v}%` },
-          grid: { color: "#1f2937" },
+          ticks: { color: chrome.tick, callback: (v: number | string) => `${v}%` },
+          grid: { color: chrome.grid },
         },
-        y: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+        y: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
       },
-    }),
-    [],
-  );
+    };
+  }, [theme]);
   return (
     <div data-test="allocation-drift-bar" style={{ height: 96 }}>
-      <Bar data={data} options={options} />
+      <Bar data={data_} options={options} />
     </div>
   );
 }
@@ -182,21 +199,22 @@ function PlanCard({
   );
   const isSingleYear =
     (yearRange != null && yearRange.start === yearRange.end) || years.length === 1;
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const theme = useThemeName();
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-2 flex items-center gap-2">
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       {isSingleYear && years[0] ? (
-        <SingleYearBar year={years[0]} />
+        <SingleYearBar year={years[0]} theme={theme} />
       ) : (
-        <MultiYearChart years={years} />
+        <MultiYearChart years={years} theme={theme} />
       )}
     </div>
   );
@@ -216,9 +234,9 @@ export function AllocationDriftComparisonSection({ plans, yearRange }: Props) {
           : "grid-cols-1 md:grid-cols-2 xl:grid-cols-4";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Asset Allocation Drift</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Asset Allocation Drift</h2>
       {isEmpty ? (
-        <p className="rounded border border-slate-800 bg-slate-900/40 p-6 text-sm text-slate-400">
+        <p className="rounded border border-hair bg-card p-6 text-sm text-ink-3">
           No portfolio data in selected range.
         </p>
       ) : (

@@ -3,6 +3,7 @@
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { Account, EntitySummary, FamilyMember, Liability } from "@/engine/types";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import {
   buildColumns,
   distribute,
@@ -35,9 +36,9 @@ function OwnerMatrix({
   }
   return (
     <table className="mb-4 w-full text-xs">
-      <thead className="text-slate-400">
+      <thead className="text-ink-3">
         <tr>
-          <th className="text-left font-medium uppercase tracking-wide text-slate-300">
+          <th className="text-left font-medium uppercase tracking-wide text-ink-2">
             {heading}
           </th>
           {columns.map((c) => (
@@ -50,7 +51,7 @@ function OwnerMatrix({
       </thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.id} className="border-t border-slate-800/60 text-slate-200">
+          <tr key={r.id} className="border-t border-hair text-ink">
             <td className="py-1 pr-2">{r.name}</td>
             {columns.map((c) => (
               <td key={c.key} className={`text-right tabular-nums ${signClass ?? ""}`}>
@@ -60,7 +61,7 @@ function OwnerMatrix({
             <td className={`text-right tabular-nums ${signClass ?? ""}`}>{fmt(r.value)}</td>
           </tr>
         ))}
-        <tr className="border-t border-slate-700 text-slate-100">
+        <tr className="border-t border-hair-2 text-ink">
           <td className="py-1 pr-2 font-semibold">{totalsLabel}</td>
           {columns.map((c) => (
             <td key={c.key} className={`text-right font-semibold tabular-nums ${signClass ?? ""}`}>
@@ -113,20 +114,21 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
   const totalAssets = assetRows.reduce((s, r) => s + r.value, 0);
   const totalLiabs = liabilityRows.reduce((s, r) => s + r.value, 0);
   const netWorth = totalAssets - totalLiabs;
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const theme = useThemeName();
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       {assetRows.length === 0 ? (
-        <p className="mb-3 text-sm text-slate-400">No accounts.</p>
+        <p className="mb-3 text-sm text-ink-3">No accounts.</p>
       ) : (
         <OwnerMatrix
           heading="Assets"
@@ -141,10 +143,10 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
           rows={liabilityRows}
           columns={columns}
           totalsLabel="Total Liabilities"
-          signClass="text-rose-300"
+          signClass="text-crit"
         />
       )}
-      <div className="rounded border border-slate-700 bg-slate-950/30 px-3 py-2 text-sm font-semibold text-slate-100">
+      <div className="rounded border border-hair bg-card-2 px-3 py-2 text-sm font-semibold text-ink">
         Net Worth: <span className="tabular-nums">{fmt(netWorth)}</span>
       </div>
     </div>
@@ -160,7 +162,7 @@ export function BalanceSheetComparisonSection({ plans }: { plans: ComparisonPlan
         : "grid-cols-1 md:grid-cols-3";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Balance Sheet</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Balance Sheet</h2>
       <div className={`grid gap-4 ${cols}`}>
         {plans.map((p, i) => (
           <PlanColumn key={p.id} plan={p} index={i} />

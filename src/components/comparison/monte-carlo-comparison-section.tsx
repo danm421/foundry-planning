@@ -3,6 +3,7 @@
 import { FanChart } from "@/components/monte-carlo/fan-chart";
 import { SuccessGauge } from "@/components/monte-carlo/success-gauge";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import type { MonteCarloResult, MonteCarloSummary } from "@/engine";
 
 const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function MonteCarloComparisonSection({ plansMc }: Props) {
+  const theme = useThemeName();
   const base = plansMc[0];
   const colsClass =
     plansMc.length === 1
@@ -37,15 +39,15 @@ export function MonteCarloComparisonSection({ plansMc }: Props) {
 
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Monte Carlo</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Monte Carlo</h2>
       <div className={`grid gap-4 ${colsClass}`}>
         {plansMc.map((p, i) => {
           const delta = i === 0 ? 0 : p.successRate - base.successRate;
-          const color = seriesColor(i) ?? "#cbd5e1";
+          const color = seriesColor(i) ?? chartChrome(theme).tick;
           return (
             <div
               key={i}
-              className="rounded-lg border border-slate-800 bg-slate-900/40 p-4"
+              className="rounded-lg border border-hair bg-card p-4"
             >
               <div className="mb-2 flex items-center gap-2">
                 <span
@@ -53,11 +55,11 @@ export function MonteCarloComparisonSection({ plansMc }: Props) {
                   style={{ backgroundColor: color }}
                   aria-hidden
                 />
-                <span className="text-xs uppercase tracking-wide text-slate-400">
+                <span className="text-xs uppercase tracking-wide text-ink-3">
                   {p.label}
                 </span>
                 {i === 0 && (
-                  <span className="rounded border border-slate-700 px-1 text-[10px] uppercase text-slate-400">
+                  <span className="rounded border border-hair px-1 text-[10px] uppercase text-ink-3">
                     Baseline
                   </span>
                 )}
@@ -65,20 +67,20 @@ export function MonteCarloComparisonSection({ plansMc }: Props) {
               <div className="mb-3 flex items-end gap-3">
                 <SuccessGauge value={p.successRate} />
                 <div className="pb-2">
-                  <div className="text-2xl font-semibold text-slate-100">
+                  <div className="text-2xl font-semibold text-ink">
                     {pct(p.successRate)}
                   </div>
-                  <div className="text-xs text-slate-400">
+                  <div className="text-xs text-ink-3">
                     probability of success
                   </div>
                   {i !== 0 && (
                     <div
                       className={`mt-1 text-xs font-semibold ${
                         delta > 0
-                          ? "text-emerald-400"
+                          ? "text-good"
                           : delta < 0
-                            ? "text-rose-400"
-                            : "text-slate-400"
+                            ? "text-crit"
+                            : "text-ink-3"
                       }`}
                     >
                       {fmtPtsDelta(delta)} vs baseline

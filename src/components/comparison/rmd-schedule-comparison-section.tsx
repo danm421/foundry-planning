@@ -14,10 +14,9 @@ import type { ProjectionYear } from "@/engine";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, chartSeriesColors, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
-
-const STACK_COLORS = ["#2563eb", "#16a34a", "#a855f7", "#f97316", "#facc15", "#22d3ee", "#ef4444"];
 
 function clip(years: ProjectionYear[], range: YearRange | null): ProjectionYear[] {
   if (!range) return years;
@@ -43,44 +42,56 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
   const years = useMemo(() => clip(plan.result.years, yearRange), [plan.result.years, yearRange]);
   const accountIds = useMemo(() => accountIdsWithRmds(years), [years]);
 
+  const theme = useThemeName();
+
   const data = useMemo(
-    () => ({
-      labels: years.map((y) => String(y.year)),
-      datasets: accountIds.map((id, di) => ({
-        label: plan.tree.accounts?.find((a) => a.id === id)?.name ?? id,
-        data: years.map((y) => y.accountLedgers?.[id]?.rmdAmount ?? 0),
-        backgroundColor: STACK_COLORS[di % STACK_COLORS.length],
-        stack: "rmd",
-      })),
-    }),
-    [years, accountIds, plan.tree.accounts],
+    () => {
+      const palette = chartSeriesColors(accountIds.length, theme);
+      return {
+        labels: years.map((y) => String(y.year)),
+        datasets: accountIds.map((id, di) => ({
+          label: plan.tree.accounts?.find((a) => a.id === id)?.name ?? id,
+          data: years.map((y) => y.accountLedgers?.[id]?.rmdAmount ?? 0),
+          backgroundColor: palette[di % palette.length],
+          stack: "rmd",
+        })),
+      };
+    },
+    [years, accountIds, plan.tree.accounts, theme],
   );
 
   const options = useMemo(
-    () => ({
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: "#d1d5db", boxWidth: 10, padding: 8, font: { size: 10 } } },
-        tooltip: { backgroundColor: "#1f2937" },
-      },
-      scales: {
-        x: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
-        y: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
-      },
-    }),
-    [],
+    () => {
+      const chrome = chartChrome(theme);
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: chrome.legend, boxWidth: 10, padding: 8, font: { size: 10 } } },
+          tooltip: {
+            backgroundColor: chrome.tooltipBg,
+            titleColor: chrome.tooltipTitle,
+            bodyColor: chrome.tooltipBody,
+          },
+        },
+        scales: {
+          x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
+          y: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
+        },
+      };
+    },
+    [theme],
   );
 
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-2 flex items-center gap-2">
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       {accountIds.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-400">No RMDs in selected range.</p>
+        <p className="py-8 text-center text-sm text-ink-3">No RMDs in selected range.</p>
       ) : (
         <div style={{ height: 240 }}>
           <Bar data={data} options={options} />
@@ -101,7 +112,7 @@ export function RmdScheduleComparisonSection({ plans, yearRange }: Props) {
           : "grid-cols-1 md:grid-cols-2 xl:grid-cols-4";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">RMD Schedule</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">RMD Schedule</h2>
       <div className={`grid gap-4 ${colsClass}`}>
         {plans.map((p, i) => (
           <PlanCard key={p.id} plan={p} yearRange={yearRange} index={i} />

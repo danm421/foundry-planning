@@ -3,6 +3,7 @@
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { ClientData, FamilyMember } from "@/engine/types";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 
 function ageFromDob(dob: string | null | undefined, today = new Date()): number | null {
   if (!dob) return null;
@@ -35,37 +36,37 @@ function OwnerCard({
   const age = ageFromDob(dob);
   const retYear = retirementYearFromAge(dob, retirementAge);
   return (
-    <div className="rounded border border-slate-700 bg-slate-950/30 p-3 text-sm">
-      <div className="mb-2 font-semibold text-slate-100">{name}</div>
+    <div className="rounded border border-hair bg-card-2 p-3 text-sm">
+      <div className="mb-2 font-semibold text-ink">{name}</div>
       <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-xs">
         {age != null && (
           <>
-            <dt className="text-slate-400">Age</dt>
-            <dd className="text-right tabular-nums text-slate-200">{age}</dd>
+            <dt className="text-ink-3">Age</dt>
+            <dd className="text-right tabular-nums text-ink">{age}</dd>
           </>
         )}
         {dob && (
           <>
-            <dt className="text-slate-400">Date of Birth</dt>
-            <dd className="text-right tabular-nums text-slate-200">{dob}</dd>
+            <dt className="text-ink-3">Date of Birth</dt>
+            <dd className="text-right tabular-nums text-ink">{dob}</dd>
           </>
         )}
         {retirementAge != null && (
           <>
-            <dt className="text-slate-400">Retirement Age</dt>
-            <dd className="text-right tabular-nums text-slate-200">{retirementAge}</dd>
+            <dt className="text-ink-3">Retirement Age</dt>
+            <dd className="text-right tabular-nums text-ink">{retirementAge}</dd>
           </>
         )}
         {retYear != null && (
           <>
-            <dt className="text-slate-400">Retirement Year</dt>
-            <dd className="text-right tabular-nums text-slate-200">{retYear}</dd>
+            <dt className="text-ink-3">Retirement Year</dt>
+            <dd className="text-right tabular-nums text-ink">{retYear}</dd>
           </>
         )}
         {lifeExpectancy != null && (
           <>
-            <dt className="text-slate-400">Life Expectancy</dt>
-            <dd className="text-right tabular-nums text-slate-200">{lifeExpectancy}</dd>
+            <dt className="text-ink-3">Life Expectancy</dt>
+            <dd className="text-right tabular-nums text-ink">{lifeExpectancy}</dd>
           </>
         )}
       </dl>
@@ -82,16 +83,17 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
   const family: FamilyMember[] = (plan.tree.familyMembers ?? []).filter(
     (f) => f.role !== "client" && f.role !== "spouse",
   );
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const theme = useThemeName();
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <OwnerCard
@@ -111,17 +113,17 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
       </div>
       {family.length > 0 && (
         <div className="mt-3">
-          <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">Family</div>
+          <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">Family</div>
           <div className="flex flex-wrap gap-2">
             {family.map((f) => {
               const age = ageFromDob(f.dateOfBirth);
               return (
                 <div
                   key={f.id}
-                  className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-200"
+                  className="rounded border border-hair px-2 py-1 text-xs text-ink"
                 >
                   {familyMemberDisplayName(f)}
-                  <span className="ml-1 text-slate-400">
+                  <span className="ml-1 text-ink-3">
                     {age != null ? `· age ${age}` : ""} {f.relationship ? `· ${f.relationship}` : ""}
                   </span>
                 </div>
@@ -143,7 +145,7 @@ export function ClientProfileComparisonSection({ plans }: { plans: ComparisonPla
         : "grid-cols-1 md:grid-cols-3";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Client Profile</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Client Profile</h2>
       <div className={`grid gap-4 ${cols}`}>
         {plans.map((p, i) => (
           <PlanColumn key={p.id} plan={p} index={i} />
