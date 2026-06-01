@@ -1,6 +1,4 @@
 import type { DonutSpec, DonutSegment } from "./types";
-import type { HouseholdAllocation } from "@/lib/investments/allocation";
-import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import {
   colorForAssetClass,
   colorForAssetType,
@@ -8,6 +6,17 @@ import {
   UNALLOCATED_COLOR,
 } from "@/lib/investments/palette";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
+
+/** Minimal allocation shape the donut builder consumes. Both a group's
+ *  HouseholdAllocation and a portfolio-derived NormalizedAllocation satisfy it.
+ *  `value` is a proportional magnitude — dollars for a group, weights for a
+ *  portfolio. Only the ratio between entries is meaningful; never read it as a
+ *  dollar amount. */
+export interface AllocationDonutInput {
+  byAssetClass: { id: string; name: string; sortOrder: number; value: number; assetType: AssetTypeId }[];
+  byAssetType: { id: AssetTypeId; label: string; value: number }[];
+  unallocatedValue: number;
+}
 
 export type DonutView = "high_level" | "detailed" | "combined";
 
@@ -57,7 +66,7 @@ function withFractions(segs: Omit<DonutSegment, "fraction">[]): DonutSegment[] {
 
 const SIZE = 150;
 
-export function buildAllocationDonutSpec(h: HouseholdAllocation, view: DonutView): DonutSpec {
+export function buildAllocationDonutSpec(h: AllocationDonutInput, view: DonutView): DonutSpec {
   const unalloc: Omit<DonutSegment, "fraction">[] =
     h.unallocatedValue > 0
       ? [{ key: "__unallocated__", label: "Unallocated", value: h.unallocatedValue, color: UNALLOCATED_COLOR }]
@@ -130,27 +139,3 @@ export function buildAllocationDonutSpec(h: HouseholdAllocation, view: DonutView
   };
 }
 
-/** Benchmark donut from raw class weights (no values). Always a single class ring. */
-export function buildBenchmarkDonutSpec(
-  weights: AssetClassWeight[],
-  assetClassLites: { id: string; name: string; sortOrder: number }[],
-): DonutSpec {
-  const byId = new Map(assetClassLites.map((c) => [c.id, c]));
-  const segs = withFractions(
-    weights.map((w) => {
-      const c = byId.get(w.assetClassId);
-      return {
-        key: w.assetClassId,
-        label: c?.name ?? w.assetClassId,
-        value: w.weight,
-        color: colorForAssetClass({ sortOrder: c?.sortOrder ?? 0 }),
-      };
-    }),
-  );
-  return {
-    kind: "donut",
-    size: SIZE,
-    rings: [{ segments: segs }],
-    legend: segs.map((s) => ({ label: s.label, color: s.color, pct: s.fraction })),
-  };
-}

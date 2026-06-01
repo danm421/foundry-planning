@@ -8,7 +8,6 @@ import type { AssetAllocationData } from "@/lib/presentations/pages/asset-alloca
 import { DonutPdf } from "./donut-pdf";
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-const usd = (v: number) => `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 const S = StyleSheet.create({
   headCell: { fontSize: 7, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.5 },
@@ -17,13 +16,9 @@ const S = StyleSheet.create({
 });
 
 export function AssetAllocationPagePdf({
-  data,
-  firmName,
-  clientName,
-  reportDate,
-  pageIndex,
-  totalPages,
+  data, firmName, clientName, reportDate, pageIndex, totalPages,
 }: RenderPdfInput<AssetAllocationData>) {
+  const hasRight = data.rightDonut !== null;
   return (
     <PageFrame
       firmName={firmName}
@@ -34,32 +29,33 @@ export function AssetAllocationPagePdf({
     >
       <SectionHead title="Asset Allocation" subtitle={data.subtitle} />
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 14 }}>
-        <DonutPdf spec={data.currentDonut} title="Current allocation" />
-        {data.benchmarkDonut && <DonutPdf spec={data.benchmarkDonut} title="Recommended portfolio" />}
+        <DonutPdf spec={data.leftDonut} title={data.leftName} />
+        {/* rightName is non-null whenever rightDonut is (both derive from `right` in the view-model) */}
+        {data.rightDonut && <DonutPdf spec={data.rightDonut} title={data.rightName!} />}
       </View>
       {data.tableRows.length > 0 && (
         <View style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingBottom: 3 }}>
             <Text style={[S.headCell, { flex: 2 }]}>Asset class</Text>
-            <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Value</Text>
-            <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current</Text>
-            {data.benchmarkDonut && <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Target</Text>}
+            <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.leftName}</Text>
+            {hasRight && <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.rightName}</Text>}
           </View>
           {data.tableRows.map((r) => (
             <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
               <Text style={S.bodyName}>{r.name}</Text>
-              <Text style={S.bodyNum}>{usd(r.value)}</Text>
-              <Text style={S.bodyNum}>{pct(r.currentPct)}</Text>
-              {data.benchmarkDonut && <Text style={S.bodyNum}>{r.targetPct === null ? "—" : pct(r.targetPct)}</Text>}
+              <Text style={S.bodyNum}>{pct(r.leftPct)}</Text>
+              {hasRight && <Text style={S.bodyNum}>{pct(r.rightPct)}</Text>}
             </View>
           ))}
         </View>
       )}
-      {data.driftRows && data.driftRows.length > 0 && (
+      {data.diffRows && data.diffRows.length > 0 && (
         <View style={{ marginBottom: 10 }}>
-          <Text style={{ fontSize: 9, fontFamily: "Fraunces", color: T.ink, marginBottom: 4 }}>Drift vs. target</Text>
-          {data.driftRows.map((d) => (
-            <View key={d.assetClassId} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+          <Text style={{ fontSize: 9, fontFamily: "Fraunces", color: T.ink, marginBottom: 4 }}>
+            {`Difference: ${data.leftName} vs ${data.rightName}`}
+          </Text>
+          {data.diffRows.map((d) => (
+            <View key={d.id} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
               <Text style={{ flex: 2, fontSize: 8, color: T.ink2 }}>{d.name}</Text>
               <View style={{ flex: 3, height: 8, backgroundColor: T.card, position: "relative" }}>
                 <View style={{

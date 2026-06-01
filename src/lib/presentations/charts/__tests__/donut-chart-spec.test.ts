@@ -59,4 +59,21 @@ describe("buildAllocationDonutSpec", () => {
     const spec = buildAllocationDonutSpec({ ...household, unallocatedValue: 50 }, "high_level");
     expect(spec.rings[0].segments.some((s) => s.label === "Unallocated")).toBe(true);
   });
+
+  it("builds a donut from a minimal portfolio-like AllocationDonutInput", () => {
+    const input = {
+      byAssetClass: [
+        { id: "eq", name: "US Equity", sortOrder: 0, value: 0.6, assetType: "equities" as const },
+        { id: "bd", name: "Bonds", sortOrder: 1, value: 0.4, assetType: "taxable_bonds" as const },
+      ],
+      byAssetType: [
+        { id: "equities" as const, label: "Equities", value: 0.6 },
+        { id: "taxable_bonds" as const, label: "Taxable Bonds", value: 0.4 },
+      ],
+      unallocatedValue: 0,
+    };
+    const spec = buildAllocationDonutSpec(input, "detailed");
+    expect(spec.legend.map((l) => l.label)).toEqual(["US Equity", "Bonds"]);
+    expect(spec.legend[0]!.pct).toBeCloseTo(0.6);
+  });
 });
