@@ -11,6 +11,7 @@ import { HelpTip } from "@/components/help-tip";
 import { benchmarkTooltip } from "@/lib/investments/cma-benchmarks";
 import CmaMigrationDialog from "@/components/cma-migration-dialog";
 import CmaValueRefreshDialog from "@/components/cma-value-refresh-dialog";
+import CmaProjectedValueRefreshDialog from "@/components/cma-projected-value-refresh-dialog";
 import CmaSkeleton from "./loading-skeleton";
 
 interface AssetClass {
@@ -127,6 +128,7 @@ export default function CmaClient() {
   const [seedError, setSeedError] = useState<string | null>(null);
   const [migrationOpen, setMigrationOpen] = useState(false);
   const [valueRefreshOpen, setValueRefreshOpen] = useState(false);
+  const [projectedRefreshOpen, setProjectedRefreshOpen] = useState(false);
   const [sets, setSets] = useState<CmaSet[]>([]);
   const [selectedKey, setSelectedKey] = useState<CmaSetKey>("historical");
   const [setValues, setSetValues] = useState<Record<string, SetValue>>({});
@@ -360,6 +362,13 @@ export default function CmaClient() {
         </button>
         <button
           type="button"
+          onClick={() => setProjectedRefreshOpen(true)}
+          className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover"
+        >
+          Refresh projected values
+        </button>
+        <button
+          type="button"
           onClick={() => setMigrationOpen(true)}
           className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover"
         >
@@ -376,6 +385,12 @@ export default function CmaClient() {
       <CmaValueRefreshDialog
         open={valueRefreshOpen}
         onOpenChange={setValueRefreshOpen}
+        onRefreshed={() => fetchData()}
+      />
+
+      <CmaProjectedValueRefreshDialog
+        open={projectedRefreshOpen}
+        onOpenChange={setProjectedRefreshOpen}
         onRefreshed={() => fetchData()}
       />
 

@@ -137,6 +137,7 @@ export type AuditAction =
   | "cma.seed"
   | "cma.migrate-to-standard"
   | "cma.refresh-standard-values"
+  | "cma.refresh-projected-values"
   | "cma.set.values.update"
   | "cma.set.activate"
   // Open items (client-scoped to-do / data-gathering tracker)
