@@ -12,11 +12,15 @@ interface Props {
 
 export function SolverYearTablePanel({ years, hasSpouse }: Props) {
   return (
-    <div className="mt-3 max-h-[360px] overflow-auto rounded-md border border-hair-2">
+    // overflow-hidden (not -auto) keeps the rounded border from clipping while
+    // leaving the inner table div as the sole scroll container, so its sticky
+    // header locks on scroll.
+    <div className="mt-3 overflow-hidden rounded-md border border-hair-2">
       <AnalysisYearTable
         rows={years}
         columns={retirementYearColumns(hasSpouse)}
         caption="Year-by-year detail (all plan years)"
+        maxHeight={360}
       />
     </div>
   );

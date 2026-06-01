@@ -8,6 +8,7 @@ import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
+import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { buildSolverComparisonPlan } from "@/lib/solver/build-solver-comparison-plan";
@@ -338,7 +339,13 @@ export function LiveSolverWorkspace({
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
       }
-      setMutationMap(new Map());
+      // Keep any non-base-savable mutations (techniques) so they aren't lost —
+      // the user can still save them as a scenario. Savable ones are now in base.
+      setMutationMap((prev) => {
+        const next = new Map<SolverMutationKey, SolverMutation>();
+        for (const [k, m] of prev) if (!isBaseSavableMutation(m)) next.set(k, m);
+        return next;
+      });
       setComputeStatus("fresh");
       router.refresh();
     } catch (err) {
@@ -790,9 +797,7 @@ export function LiveSolverWorkspace({
 
       <SolverActionBar
         hasMutations={mutations.length > 0}
-        canSaveToBase={mutations.some(
-          (m) => m.kind === "account-upsert" || m.kind === "savings-rule-upsert",
-        )}
+        canSaveToBase={mutations.some(isBaseSavableMutation)}
         mcRunning={mcRunning}
         solveActive={activeSolve !== null}
         savingToBase={savingToBase}

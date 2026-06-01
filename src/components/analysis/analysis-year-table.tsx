@@ -14,15 +14,30 @@ export interface AnalysisYearTableProps<Row> {
   rows: Row[];
   columns: YearTableColumn<Row>[];
   caption?: string;
+  /** When set, this div becomes the sole (both-axis) scroll container and is
+   *  height-capped, so the sticky `thead` locks on vertical scroll. Without it,
+   *  a vertical-scrolling ancestor would scroll the header out of view because
+   *  `position: sticky` resolves against the nearest scroll container. */
+  maxHeight?: number | string;
 }
 
 export function AnalysisYearTable<Row>({
   rows,
   columns,
   caption,
+  maxHeight,
 }: AnalysisYearTableProps<Row>) {
+  const maxH =
+    maxHeight == null
+      ? undefined
+      : typeof maxHeight === "number"
+        ? `${maxHeight}px`
+        : maxHeight;
   return (
-    <div className="overflow-x-auto">
+    <div
+      className={maxHeight == null ? "overflow-x-auto" : "overflow-auto"}
+      style={maxH ? { maxHeight: maxH } : undefined}
+    >
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         {caption && (
           <caption className="sr-only">{caption}</caption>

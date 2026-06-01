@@ -154,4 +154,44 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     expect(updates).toHaveLength(1);
     expect(updates[0].set).toMatchObject({ name: "Renamed" });
   });
+
+  it("applies a client-singleton update for a retirement-age lever", async () => {
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "retirement-age", person: "client", age: 67 }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ clientUpdate: 1 });
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].set).toMatchObject({ retirementAge: 67 });
+  });
+
+  it("applies a string-coerced partial income update", async () => {
+    const incomeId = "00000000-0000-4000-8000-0000000000a1";
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        accounts: [],
+        savingsRules: [],
+        incomes: [{ id: incomeId, type: "salary", owner: "client", annualAmount: 200000 }],
+      },
+      warnings: [],
+    } as never);
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "income-annual-amount", incomeId, annualAmount: 250000 }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ incomeUpdates: 1 });
+    expect(updates).toHaveLength(1);
+    expect(updates[0].set).toMatchObject({ annualAmount: "250000" });
+  });
 });

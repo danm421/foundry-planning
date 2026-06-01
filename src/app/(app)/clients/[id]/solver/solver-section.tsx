@@ -9,6 +9,13 @@ export function useSolverSide(): SolverSide {
   return useContext(SolverSideContext);
 }
 
+/** Renders children only in the working (right) column. `SolverSection` paints
+ *  its children once per side, so editing-only controls (add account, solve)
+ *  must opt out of the read-only base column. */
+export function SolverWorkingOnly({ children }: { children: ReactNode }) {
+  return useSolverSide() === "working" ? <>{children}</> : null;
+}
+
 interface Props {
   title: string;
   defaultOpen?: boolean;

@@ -2,8 +2,8 @@
 
 interface Props {
   hasMutations: boolean;
-  /** Whether any working mutation is persistable to base facts (account /
-   *  savings-rule upserts). The base-facts route ignores other lever kinds, so
+  /** Whether any working mutation is persistable to base facts. Technique
+   *  upserts (roth / asset-transaction / reinvestment) aren't base-writable, so
    *  gating on this prevents a save that silently writes nothing. */
   canSaveToBase: boolean;
   mcRunning: boolean;
@@ -63,7 +63,7 @@ export function SolverActionBar({
           disabled={solveActive || savingToBase || !canSaveToBase}
           title={
             hasMutations && !canSaveToBase
-              ? "Only new accounts and savings rules can be saved to base facts"
+              ? "Roth conversions, asset sales, and reinvestments can't be saved to base facts — save as a scenario instead"
               : undefined
           }
           className="h-9 px-3 text-[13px] font-medium rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 inline-flex items-center gap-2"

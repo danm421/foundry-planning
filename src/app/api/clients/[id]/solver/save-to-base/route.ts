@@ -3,10 +3,14 @@
 // POST /api/clients/[id]/solver/save-to-base
 //
 // Commits a set of Solver working-state mutations into the client's BASE facts
-// (plan of record), rather than into a new scenario. Only the two base-writable
-// mutation kinds are applied here: `account-upsert` and `savings-rule-upsert`.
-// Every other mutation kind is ignored (see mutationsToBaseUpdates) — extend
-// later as needed.
+// (plan of record), rather than into a new scenario. Covers the client
+// singleton (retirement ages / life expectancy), incomes (incl. Social
+// Security), expenses (incl. living-expense scale), savings rules (field edits
+// + full upserts), and accounts. Field-edit levers apply PARTIAL column updates
+// (see mutationsToBaseUpdates), so engine-unknown columns are never clobbered.
+// Technique upserts (roth / asset-transaction / reinvestment) and the
+// engine-only `income-self-employment` flag are not base-writable and are left
+// in the working set for the user to save as a scenario instead.
 //
 // Insert vs update is classified against the loaded `source` tree: an account /
 // savings rule whose id is NOT present in the source is INSERTED (the DB
@@ -27,7 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, accountOwners, savingsRules, scenarios } from "@/db/schema";
+import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses } from "@/db/schema";
 import type { Account, SavingsRule } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
@@ -146,8 +150,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       );
     }
 
-    const { accountInserts, accountUpdates, savingsInserts, savingsUpdates } =
-      mutationsToBaseUpdates(sourceTree, mutations as SolverMutation[]);
+    const {
+      accountInserts,
+      accountUpdates,
+      accountRemoves,
+      savingsInserts,
+      savingsUpdates,
+      savingsRemoves,
+      savingsFieldUpdates,
+      clientUpdate,
+      incomeUpdates,
+      expenseUpdates,
+    } = mutationsToBaseUpdates(sourceTree, mutations as SolverMutation[]);
 
     // Validate any savings-rule accountId that is NOT satisfied by an account
     // inserted in this same batch — it must already belong to this client.
@@ -241,6 +255,81 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             ),
           );
       }
+
+      // Partial column updates to existing savings rules from field-edit levers.
+      for (const { id, set } of savingsFieldUpdates) {
+        await tx
+          .update(savingsRules)
+          .set({ ...(set as Partial<typeof savingsRules.$inferInsert>), updatedAt: new Date() })
+          .where(
+            and(
+              eq(savingsRules.id, id),
+              eq(savingsRules.clientId, clientId),
+              eq(savingsRules.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+
+      // Partial column updates to existing incomes (incl. Social Security rows).
+      for (const { id, set } of incomeUpdates) {
+        await tx
+          .update(incomes)
+          .set({ ...(set as Partial<typeof incomes.$inferInsert>), updatedAt: new Date() })
+          .where(
+            and(
+              eq(incomes.id, id),
+              eq(incomes.clientId, clientId),
+              eq(incomes.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+
+      // Partial column updates to existing expenses (incl. living-expense scale).
+      for (const { id, set } of expenseUpdates) {
+        await tx
+          .update(expenses)
+          .set({ ...(set as Partial<typeof expenses.$inferInsert>), updatedAt: new Date() })
+          .where(
+            and(
+              eq(expenses.id, id),
+              eq(expenses.clientId, clientId),
+              eq(expenses.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+
+      // Removes — savings rules before accounts (FK: rules reference accounts).
+      for (const id of savingsRemoves) {
+        await tx
+          .delete(savingsRules)
+          .where(
+            and(
+              eq(savingsRules.id, id),
+              eq(savingsRules.clientId, clientId),
+              eq(savingsRules.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+      for (const id of accountRemoves) {
+        await tx
+          .delete(accounts)
+          .where(
+            and(
+              eq(accounts.id, id),
+              eq(accounts.clientId, clientId),
+              eq(accounts.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+
+      // Client singleton update (retirement ages / life expectancy). The clients
+      // row is firm-scoped, not scenario-scoped.
+      if (clientUpdate) {
+        await tx
+          .update(clients)
+          .set({ ...(clientUpdate as Partial<typeof clients.$inferInsert>), updatedAt: new Date() })
+          .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
+      }
     });
 
     await recordAudit({
@@ -254,8 +343,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         requestSource: source,
         accountInserts: accountInserts.length,
         accountUpdates: accountUpdates.length,
+        accountRemoves: accountRemoves.length,
         savingsInserts: savingsInserts.length,
         savingsUpdates: savingsUpdates.length,
+        savingsRemoves: savingsRemoves.length,
+        savingsFieldUpdates: savingsFieldUpdates.length,
+        clientUpdate: clientUpdate ? 1 : 0,
+        incomeUpdates: incomeUpdates.length,
+        expenseUpdates: expenseUpdates.length,
       },
     });
 
@@ -263,8 +358,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       ok: true,
       accountInserts: accountInserts.length,
       accountUpdates: accountUpdates.length,
+      accountRemoves: accountRemoves.length,
       savingsInserts: savingsInserts.length,
       savingsUpdates: savingsUpdates.length,
+      savingsRemoves: savingsRemoves.length,
+      savingsFieldUpdates: savingsFieldUpdates.length,
+      clientUpdate: clientUpdate ? 1 : 0,
+      incomeUpdates: incomeUpdates.length,
+      expenseUpdates: expenseUpdates.length,
     });
   } catch (err) {
     const authResp = authErrorResponse(err);

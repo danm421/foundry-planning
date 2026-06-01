@@ -136,7 +136,7 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
             type="button"
             onClick={() => persist([...weights.entries()].map(([assetClassId, weight]) => ({ assetClassId, weight })))}
             disabled={saving || over}
-            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-ink hover:opacity-90 disabled:opacity-50"
+            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-black hover:opacity-90 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save override"}
           </button>

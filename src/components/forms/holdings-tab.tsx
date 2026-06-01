@@ -226,7 +226,7 @@ export function HoldingsTab({
           type="button"
           onClick={handleAdd}
           disabled={adding || ticker.trim() === ""}
-          className="h-9 rounded-md bg-accent px-4 text-sm font-medium text-accent-ink hover:opacity-90 disabled:opacity-50"
+          className="h-9 rounded-md bg-accent px-4 text-sm font-medium text-black hover:opacity-90 disabled:opacity-50"
         >
           {adding ? "Adding…" : "+ Add"}
         </button>
