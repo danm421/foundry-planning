@@ -1,36 +1,42 @@
 @import "tailwindcss";
 
 /* ------------------------------------------------------------------ */
-/* Tokens — Foundry brand system (dark only; no light theme in v1)     */
+/* Tokens — Foundry brand system (v2.1 + amendments, dark + light)     */
+/* Vendored from ~/Documents/brain/30-areas/foundry-brand/tokens/.     */
+/* Authoritative values: `foundry-design` SKILL.md (+ "Amendments      */
+/* since v2.1"). Raw values live in the :root blocks below; the         */
+/* @theme inline block maps each to a Tailwind utility token.           */
 /* ------------------------------------------------------------------ */
 
-@theme inline {
+:root,
+:root[data-theme="dark"] {
   /* Brand */
   --color-accent: #f59e0b;
   --color-accent-ink: #fbbf24;
   --color-accent-deep: #b45309;
   --color-accent-on: #1a1205;
+  --color-accent-wash: rgba(245, 158, 11, 0.16);
 
   /* Surfaces */
   --color-paper: #0b0c0f;
-  --color-card: #151820;
-  --color-card-2: #1b1f28;
+  --color-card: #15171f;
+  --color-card-2: #1a1d27;
   --color-card-hover: #1f2330;
 
-  /* Ink */
+  /* Ink — high-contrast on near-black */
   --color-ink: #f4f5f7;
-  --color-ink-2: #c7cbd4;
-  --color-ink-3: #aeb3bd;
-  --color-ink-4: #8b909c;
+  --color-ink-2: #d4d7de;
+  --color-ink-3: #aab0bc;
+  --color-ink-4: #848a98;
 
   /* Hairlines */
-  --color-hair: #252a34;
-  --color-hair-2: #303642;
+  --color-hair: #2b2f3a;
+  --color-hair-2: #3a4051;
 
   /* Status (solid hues; tinted backgrounds are color-mix at call site) */
-  --color-good: #34d399;
+  --color-good: #4ade80;
   --color-warn: #fbbf24;
-  --color-crit: #f87171;
+  --color-crit: #fb8d8d;
 
   /* Category taxonomy */
   --color-cat-income: #34d399;
@@ -41,40 +47,175 @@
   --color-cat-transactions: #22d3ee;
 
   /* Estate spine palette — death-sequence canvas */
-  --color-spouse: #3E5568;
-  --color-tax: #6B3D2E;
+  --color-spouse: #3e5568;
+  --color-tax: #6b3d2e;
   --color-inherit: #355267;
-  --color-heirs: #5D6A45;
+  --color-heirs: #5d6a45;
 
-  /* Allocation palette (semantic aliases for D — overview refit) */
+  /* Allocation palette (semantic aliases — follow the category theme) */
   --color-alloc-equities: var(--color-cat-income);
   --color-alloc-fi: var(--color-cat-portfolio);
   --color-alloc-cash: var(--color-cat-life);
   --color-alloc-re: var(--color-cat-tax);
   --color-alloc-alt: var(--color-cat-insurance);
 
-  /* Radii — Tailwind v4: --radius maps to `rounded`, --radius-sm to `rounded-sm` */
+  /* Editorial data palette — vivid, refined for mutual contrast on near-black. */
+  --data-emerald: #2fd498;
+  --data-sage: #9bcf5e;
+  --data-wheat: #ecc659;
+  --data-terra: #f0824e;
+  --data-rose: #f2688f;
+  --data-violet: #c182f0;
+  --data-indigo: #7d8cf9;
+  --data-slate: #5fb8de;
+  --data-amber: #f2a838;
+
+  /* Aliases */
+  --positive: var(--color-good);
+  --negative: var(--color-crit);
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
+
+  /* Spacing (theme-independent) */
+  --pad-card: 24px;
+  --pad-card-y: 22px;
+  --gap-grid: 16px;
+  --row-h: 36px;
+
+  /* Radii */
   --radius-sm: 6px;
   --radius: 10px;
 
   /* Fonts — wired to next/font vars set on <html> by layout.tsx */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-b612);
+
+  color-scheme: dark;
 }
 
-/* ------------------------------------------------------------------ */
-/* Raw spacing vars — semantic aliases, not Tailwind utilities         */
-/* ------------------------------------------------------------------ */
+:root[data-theme="light"] {
+  /* Brand — light mode shifts to amber-600 for contrast on cream */
+  --color-accent: #d97706;
+  --color-accent-ink: #b45309;
+  --color-accent-deep: #92400e;
+  --color-accent-on: #fffbeb;
+  --color-accent-wash: rgba(217, 119, 6, 0.16);
 
-:root {
-  --pad-card: 24px;
-  --pad-card-y: 22px;
-  --gap-grid: 16px;
-  --row-h: 36px;
+  /* Surfaces */
+  --color-paper: #fefdf8;
+  --color-card: #faf8ef;
+  --color-card-2: #f5f1e6;
+  --color-card-hover: #faf7ee;
 
-  /* Legacy aliases — keep until B/D migrate consumers away */
-  --background: var(--color-paper);
-  --foreground: var(--color-ink);
+  /* Ink */
+  --color-ink: #1a1d27;
+  --color-ink-2: #474c59;
+  --color-ink-3: #767a86;
+  --color-ink-4: #a8abb3;
+
+  /* Hairlines */
+  --color-hair: #e8e4d6;
+  --color-hair-2: #d9d2bd;
+
+  /* Status — deeper for legibility on cream */
+  --color-good: #047857;
+  --color-warn: #b45309;
+  --color-crit: #b91c1c;
+
+  /* Category taxonomy — deepened for cream surfaces */
+  --color-cat-income: #047857;
+  --color-cat-portfolio: #1d4ed8;
+  --color-cat-life: #6d28d9;
+  --color-cat-tax: #d97706;
+  --color-cat-insurance: #be185d;
+  --color-cat-transactions: #0e7490;
+
+  /* Estate spine palette — derived deeper tones for cream (SKILL.md does
+     not specify light values; Phase 3 estate report theming may refine). */
+  --color-spouse: #2f4456;
+  --color-tax: #5a3527;
+  --color-inherit: #2c4a5e;
+  --color-heirs: #4e5b38;
+
+  /* Editorial data palette — deeper, for cream. */
+  --data-emerald: #1f9d6b;
+  --data-sage: #6f9b32;
+  --data-wheat: #b8902f;
+  --data-terra: #cf6233;
+  --data-rose: #c8466b;
+  --data-violet: #8a44cf;
+  --data-indigo: #4453d4;
+  --data-slate: #2f86b0;
+  --data-amber: #c5860f;
+
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-paper: var(--color-paper);
+  --color-card: var(--color-card);
+  --color-card-2: var(--color-card-2);
+  --color-card-hover: var(--color-card-hover);
+
+  --color-ink: var(--color-ink);
+  --color-ink-2: var(--color-ink-2);
+  --color-ink-3: var(--color-ink-3);
+  --color-ink-4: var(--color-ink-4);
+
+  --color-accent: var(--color-accent);
+  --color-accent-ink: var(--color-accent-ink);
+  --color-accent-deep: var(--color-accent-deep);
+  --color-accent-on: var(--color-accent-on);
+  --color-accent-wash: var(--color-accent-wash);
+
+  --color-hair: var(--color-hair);
+  --color-hair-2: var(--color-hair-2);
+
+  --color-good: var(--color-good);
+  --color-warn: var(--color-warn);
+  --color-crit: var(--color-crit);
+
+  --color-cat-income: var(--color-cat-income);
+  --color-cat-portfolio: var(--color-cat-portfolio);
+  --color-cat-life: var(--color-cat-life);
+  --color-cat-tax: var(--color-cat-tax);
+  --color-cat-insurance: var(--color-cat-insurance);
+  --color-cat-transactions: var(--color-cat-transactions);
+
+  --color-spouse: var(--color-spouse);
+  --color-tax: var(--color-tax);
+  --color-inherit: var(--color-inherit);
+  --color-heirs: var(--color-heirs);
+
+  --color-alloc-equities: var(--color-alloc-equities);
+  --color-alloc-fi: var(--color-alloc-fi);
+  --color-alloc-cash: var(--color-alloc-cash);
+  --color-alloc-re: var(--color-alloc-re);
+  --color-alloc-alt: var(--color-alloc-alt);
+
+  --color-data-emerald: var(--data-emerald);
+  --color-data-sage: var(--data-sage);
+  --color-data-wheat: var(--data-wheat);
+  --color-data-terra: var(--data-terra);
+  --color-data-rose: var(--data-rose);
+  --color-data-violet: var(--data-violet);
+  --color-data-indigo: var(--data-indigo);
+  --color-data-slate: var(--data-slate);
+  --color-data-amber: var(--data-amber);
+
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+
+  /* Radii — Tailwind v4: --radius maps to `rounded`, --radius-sm to `rounded-sm` */
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+
+  /* Fonts */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,25 +236,104 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Smooth, brand-aware transition when toggling theme. */
+html {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
 /* ------------------------------------------------------------------ */
-/* Tabular numerics — used by MoneyText                                */
+/* Tabular numerics — used by MoneyText. B612 Mono (plain-ring zero).  */
 /* ------------------------------------------------------------------ */
 
 .tabular {
-  font-feature-settings: "tnum";
+  font-family: "B612 Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
   letter-spacing: -0.01em;
 }
 
 /* ------------------------------------------------------------------ */
-/* Brand utilities (canonical kit v2.1 — partial port)                 */
-/* Add classes here only as consuming surfaces need them.              */
+/* Brand kit utilities (canonical v2.1) — amber CTA, hairline cards,   */
+/* mono chips. color-mix + token vars → theme automatically.           */
 /* ------------------------------------------------------------------ */
 
-/* Amber period at the tail of a display headline.                     */
-/* Max one per visible section.                                        */
+/* Amber period at the tail of a display headline. Max one per section. */
 .dot {
   color: var(--color-accent);
+}
+
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--color-accent);
+  color: var(--color-accent-on);
+  font-weight: 600;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: background 160ms ease, transform 120ms ease;
+}
+.btn-primary:hover {
+  background: var(--color-accent-ink);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-hair-2);
+  color: var(--color-ink);
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  transition: all 160ms ease;
+}
+.btn-ghost:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
+}
+
+.card {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-ink) 2.5%, transparent),
+    color-mix(in oklab, var(--color-ink) 0.5%, transparent)
+  );
+  border: 1px solid var(--color-hair);
+  border-radius: 0.75rem;
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+.card:hover {
+  border-color: var(--color-hair-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-hair-2);
+  padding: 0.3rem 0.7rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-2);
+  background: color-mix(in oklab, var(--color-ink) 4%, transparent);
+  font-family: "B612 Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 500;
+}
+
+.chip-accent {
+  border-color: color-mix(in oklab, var(--color-accent) 32%, transparent);
+  color: var(--color-accent-ink);
+  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
 }
 
 /* Soft fade-and-rise on mount, used on auth + landing surfaces.       */
@@ -126,6 +346,7 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .rise-in { animation: none !important; }
+  html { transition: none; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -244,4 +465,3 @@ body {
     background-image: none;
   }
 }
-
