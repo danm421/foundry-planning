@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildAssetAllocationData } from "../view-model";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { ResolvedGroup } from "@/lib/account-groups/resolver";
+import type { AssetAllocationOptions } from "../options-schema";
 
 function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
   const resolved: ResolvedGroup = {
@@ -30,30 +31,52 @@ function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
     ...overrides,
   };
 }
+function opts(o: Partial<AssetAllocationOptions> = {}): AssetAllocationOptions {
+  return { left: { kind: "group", id: "all-liquid" }, right: null, view: "detailed", includeOutOfEstate: false, showTable: true, ...o };
+}
 
 describe("buildAssetAllocationData", () => {
-  it("builds donut + table with no benchmark", () => {
-    const data = buildAssetAllocationData(bundle(), { groupKey: "all-liquid", view: "detailed", includeOutOfEstate: false, showTable: true });
+  it("single donut when right is null", () => {
+    const data = buildAssetAllocationData(bundle(), opts());
     expect(data.subtitle).toBe("All Liquid Assets");
-    expect(data.currentDonut.rings).toHaveLength(1);
-    expect(data.benchmarkDonut).toBeNull();
-    expect(data.driftRows).toBeNull();
+    expect(data.leftName).toBe("All Liquid Assets");
+    expect(data.rightName).toBeNull();
+    expect(data.rightDonut).toBeNull();
+    expect(data.diffRows).toBeNull();
     expect(data.tableRows.length).toBeGreaterThan(0);
+    expect(data.tableRows[0]!.rightPct).toBe(0);
   });
-  it("adds a benchmark donut + drift when a benchmark is configured on a default non-all-liquid group", () => {
+  it("compares a group against the recommended portfolio", () => {
     const data = buildAssetAllocationData(
       bundle({ selectedBenchmarkPortfolioId: "mp1" }),
-      { groupKey: "taxable", view: "detailed", includeOutOfEstate: false, showTable: true },
+      opts({ left: { kind: "group", id: "all-liquid" }, right: { kind: "recommended" } }),
     );
-    expect(data.benchmarkDonut).not.toBeNull();
-    expect(data.driftRows).not.toBeNull();
+    expect(data.rightDonut).not.toBeNull();
+    expect(data.rightName).toBe("60/40");
+    expect(data.subtitle).toBe("All Liquid Assets vs 60/40");
+    expect(data.diffRows).not.toBeNull();
+    expect(data.diffRows!.length).toBeGreaterThan(0);
   });
-  it("falls back to all-liquid when the group key is unknown", () => {
-    const data = buildAssetAllocationData(bundle(), { groupKey: "deleted-uuid", view: "detailed", includeOutOfEstate: false, showTable: true });
-    expect(data.subtitle).toBe("All Liquid Assets");
+  it("compares a portfolio (left) against a group (right)", () => {
+    const data = buildAssetAllocationData(
+      bundle(),
+      opts({ left: { kind: "portfolio", id: "mp1" }, right: { kind: "group", id: "taxable" } }),
+    );
+    expect(data.leftName).toBe("60/40");
+    expect(data.rightName).toBe("Taxable");
+    expect(data.rightDonut).not.toBeNull();
+  });
+  it("drops the right side when recommended is unset", () => {
+    const data = buildAssetAllocationData(bundle(), opts({ right: { kind: "recommended" } }));
+    expect(data.rightDonut).toBeNull();
+    expect(data.rightName).toBeNull();
+  });
+  it("falls back to all-liquid for an unknown left group", () => {
+    const data = buildAssetAllocationData(bundle(), opts({ left: { kind: "group", id: "deleted-uuid" } }));
+    expect(data.leftName).toBe("All Liquid Assets");
   });
   it("returns empty tableRows when showTable is false", () => {
-    const data = buildAssetAllocationData(bundle(), { groupKey: "all-liquid", view: "detailed", includeOutOfEstate: false, showTable: false });
+    const data = buildAssetAllocationData(bundle(), opts({ showTable: false }));
     expect(data.tableRows).toHaveLength(0);
   });
 });
