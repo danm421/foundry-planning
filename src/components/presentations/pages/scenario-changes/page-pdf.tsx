@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { Style } from "@react-pdf/types";
 import type { ScenarioChangesPageData, ChangeRow, DisplayUnit } from "@/lib/presentations/pages/scenario-changes/types";
+import type { RenderPdfInput } from "@/components/presentations/registry";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
@@ -68,7 +69,7 @@ function Row({ row, showExplanations, indent }: { row: ChangeRow; showExplanatio
   return (
     <View style={styles.row} wrap={false}>
       <Text style={[styles.area, { width: COL.area }]}>{row.area}</Text>
-      <Text style={[styles.what, styles.flexWhat, indent ? styles.memberIndent : {}]}>
+      <Text style={[styles.what, styles.flexWhat, ...(indent ? [styles.memberIndent] : [])]}>
         {indent ? `↳ ${row.what}` : row.what}
       </Text>
       <Text style={[styles.before, { width: COL.before }]}>{row.before}</Text>
@@ -94,14 +95,7 @@ export function ScenarioChangesPagePdf({
   reportDate,
   pageIndex,
   totalPages,
-}: {
-  data: ScenarioChangesPageData;
-  firmName: string;
-  clientName: string;
-  reportDate: string;
-  pageIndex: number;
-  totalPages: number;
-}) {
+}: RenderPdfInput<ScenarioChangesPageData>) {
   return (
     <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages}>
       <SectionHead title={data.title} subtitle={data.subtitle || undefined} eyebrow="SCENARIO CHANGES" />

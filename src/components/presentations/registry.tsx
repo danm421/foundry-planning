@@ -599,7 +599,7 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
   estimatePageCount: estimateScenarioChangesPageCount,
   OptionsControl: ScenarioChangesOptionsControl,
   supportsScenarioOverride: true,
-  buildData: (ctx, options) => buildScenarioChangesData({ scenarioChanges: ctx.scenarioChanges }, options),
+  buildData: (ctx, options) => buildScenarioChangesData(ctx.scenarioChanges, options),
   renderPdf: (input) => <ScenarioChangesPagePdf {...input} />,
 };
 

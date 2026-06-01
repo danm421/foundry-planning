@@ -2,15 +2,11 @@ import type { ScenarioChangesContext, ScenarioChangesOptions, ScenarioChangesPag
 import { describeChange } from "./describe";
 import { groupUnits } from "./group";
 
-export interface ScenarioChangesBuildInput {
-  scenarioChanges?: ScenarioChangesContext;
-}
-
 export function buildScenarioChangesData(
-  input: ScenarioChangesBuildInput,
+  scenarioChanges: ScenarioChangesContext | undefined,
   options: ScenarioChangesOptions,
 ): ScenarioChangesPageData {
-  const sc = input.scenarioChanges;
+  const sc = scenarioChanges;
 
   if (!sc || sc.changes.length === 0) {
     return { title: options.title, subtitle: "", units: [], showExplanations: options.showExplanations, isEmpty: true };

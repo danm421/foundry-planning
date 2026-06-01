@@ -10,14 +10,14 @@ function ch(p: Partial<ScenarioChange>): ScenarioChange {
 
 describe("buildScenarioChangesData", () => {
   it("returns the empty state when no context is injected", () => {
-    const data = buildScenarioChangesData({}, SCENARIO_CHANGES_OPTIONS_DEFAULT);
+    const data = buildScenarioChangesData(undefined, SCENARIO_CHANGES_OPTIONS_DEFAULT);
     expect(data.isEmpty).toBe(true);
     expect(data.units).toEqual([]);
   });
 
   it("returns the empty state when the scenario has no changes", () => {
     const data = buildScenarioChangesData(
-      { scenarioChanges: { changes: [], toggleGroups: [], targetNames: {}, baseLabel: "your current plan" } },
+      { changes: [], toggleGroups: [], targetNames: {}, baseLabel: "your current plan" },
       SCENARIO_CHANGES_OPTIONS_DEFAULT,
     );
     expect(data.isEmpty).toBe(true);
@@ -26,15 +26,13 @@ describe("buildScenarioChangesData", () => {
   it("describes and groups changes", () => {
     const data = buildScenarioChangesData(
       {
-        scenarioChanges: {
-          changes: [
-            ch({ id: "a", targetKind: "income", targetId: "i1", opType: "add", payload: {}, orderIndex: 1 }),
-            ch({ id: "b", targetKind: "entity", targetId: "e1", opType: "add", payload: {}, toggleGroupId: "g1", orderIndex: 2 }),
-          ],
-          toggleGroups: [{ id: "g1", scenarioId: "s", name: "IDGT sale", defaultOn: true, requiresGroupId: null, orderIndex: 0 }],
-          targetNames: { "income:i1": "Rental income", "entity:e1": "IDGT" },
-          baseLabel: "your current plan",
-        },
+        changes: [
+          ch({ id: "a", targetKind: "income", targetId: "i1", opType: "add", payload: {}, orderIndex: 1 }),
+          ch({ id: "b", targetKind: "entity", targetId: "e1", opType: "add", payload: {}, toggleGroupId: "g1", orderIndex: 2 }),
+        ],
+        toggleGroups: [{ id: "g1", scenarioId: "s", name: "IDGT sale", defaultOn: true, requiresGroupId: null, orderIndex: 0 }],
+        targetNames: { "income:i1": "Rental income", "entity:e1": "IDGT" },
+        baseLabel: "your current plan",
       },
       SCENARIO_CHANGES_OPTIONS_DEFAULT,
     );
