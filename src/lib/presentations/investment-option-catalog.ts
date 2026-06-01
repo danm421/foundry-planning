@@ -5,12 +5,16 @@ import { buildInvestmentsResolver, loadInvestmentsBundle } from "./investments-b
 export interface InvestmentEntityOption { key: string; type: string; name: string; }
 export interface InvestmentOptionCatalog {
   groups: { key: string; name: string }[];
+  portfolios: { id: string; name: string }[];
+  recommendedPortfolioId: string | null;
   entities: InvestmentEntityOption[];
 }
 
 /** Fallback catalog when no investment data is available (also the context default). */
 export const EMPTY_INVESTMENT_OPTION_CATALOG: InvestmentOptionCatalog = {
   groups: [{ key: "all-liquid", name: "All Liquid Assets" }],
+  portfolios: [],
+  recommendedPortfolioId: null,
   entities: [],
 };
 
@@ -40,6 +44,8 @@ export async function listInvestmentOptionCatalog(
   });
   return {
     groups: bundle.groupOptions,
+    portfolios: bundle.portfolioLites.map((p) => ({ id: p.id, name: p.name })),
+    recommendedPortfolioId: bundle.selectedBenchmarkPortfolioId,
     entities: rows.map((r) => ({ key: r.key, type: r.type, name: r.name })),
   };
 }
