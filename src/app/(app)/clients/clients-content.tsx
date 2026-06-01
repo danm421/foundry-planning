@@ -13,7 +13,8 @@ export async function ClientsContent({
   searchParams: Promise<{ search?: string; status?: string; view?: string }>;
 }) {
   const params = await searchParams;
-  const recentView = params.view === "recent";
+  // Default to the "Recently opened" view; only an explicit ?view=all opts out.
+  const recentView = params.view !== "all";
   const { userId } = await auth();
 
   const households =

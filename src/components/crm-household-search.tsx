@@ -40,7 +40,7 @@ export function CrmHouseholdSearch() {
     }
   }
 
-  const view = searchParams.get("view") === "recent" ? "recent" : "all";
+  const view = searchParams.get("view") === "all" ? "all" : "recent";
   const segBase =
     "inline-flex h-10 items-center rounded-[var(--radius-sm)] px-3 text-[13px] font-medium transition-colors";
   const segActive = "bg-accent text-accent-on";
@@ -55,19 +55,19 @@ export function CrmHouseholdSearch() {
       >
         <button
           type="button"
-          aria-pressed={view === "all"}
-          onClick={() => updateParam("view", "", false)}
-          className={`${segBase} ${view === "all" ? segActive : segIdle}`}
-        >
-          All clients
-        </button>
-        <button
-          type="button"
           aria-pressed={view === "recent"}
-          onClick={() => updateParam("view", "recent", false)}
+          onClick={() => updateParam("view", "", false)}
           className={`${segBase} ${view === "recent" ? segActive : segIdle}`}
         >
           Recently opened
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "all"}
+          onClick={() => updateParam("view", "all", false)}
+          className={`${segBase} ${view === "all" ? segActive : segIdle}`}
+        >
+          All clients
         </button>
       </div>
       <input
