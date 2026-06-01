@@ -6,6 +6,7 @@ import { ensureFontsRegistered } from "./shared/fonts";
 import type { TocSection } from "./pages/toc/page-pdf";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
+import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 
 interface PresentationDocumentProps {
   pages: Array<{
@@ -25,6 +26,8 @@ interface PresentationDocumentProps {
   monteCarlo?: MonteCarloReportPayload | null;
   /** Present only when the deck includes an investment page. */
   investments?: InvestmentsBundle;
+  /** Present only when the deck includes the Scenario Changes page. */
+  scenarioChanges?: ScenarioChangesContext;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {
@@ -71,6 +74,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             reportDate: props.reportDate,
             monteCarlo: props.monteCarlo ?? null,
             investments: props.investments,
+            scenarioChanges: props.scenarioChanges,
           },
           options as never,
         );
