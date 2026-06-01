@@ -14,7 +14,7 @@ const histBySlug = new Map(HISTORICAL.map((c) => [c.slug, c]));
 function build(): ProjectedAssetClass[] {
   return buildProjectedAssetClasses(horizonSource as HorizonSource, HISTORICAL);
 }
-const bySlug = () => new Map(build().map((c) => [c.slug, c]));
+const bySlug = new Map(build().map((c) => [c.slug, c]));
 
 describe("buildProjectedAssetClasses", () => {
   it("returns all 15 classes in the same order as historical", () => {
@@ -24,7 +24,7 @@ describe("buildProjectedAssetClasses", () => {
   });
 
   it("maps a Direct class (US Large Cap) to Horizon 20yr geom, derives arithmetic", () => {
-    const c = bySlug().get("us_large_cap")!;
+    const c = bySlug.get("us_large_cap")!;
     expect(c.geometricReturn).toBe(0.07);
     expect(c.volatility).toBe(0.1654);
     expect(c.arithmeticMean).toBe(0.0837); // 0.07 + 0.1654^2/2
@@ -32,9 +32,8 @@ describe("buildProjectedAssetClasses", () => {
   });
 
   it("gives Mid and Small Cap the identical shared SMID figure", () => {
-    const m = bySlug();
-    const mid = m.get("us_mid_cap")!;
-    const small = m.get("us_small_cap")!;
+    const mid = bySlug.get("us_mid_cap")!;
+    const small = bySlug.get("us_small_cap")!;
     expect(mid.geometricReturn).toBe(0.0738);
     expect(mid.volatility).toBe(0.2044);
     expect(mid.arithmeticMean).toBe(0.0947); // 0.0738 + 0.2044^2/2
@@ -45,14 +44,14 @@ describe("buildProjectedAssetClasses", () => {
   });
 
   it("maps Global ex-US to Non-US Developed (not blended with EM)", () => {
-    const c = bySlug().get("global_ex_us")!;
+    const c = bySlug.get("global_ex_us")!;
     expect(c.geometricReturn).toBe(0.0735);
     expect(c.volatility).toBe(0.182);
     expect(c.arithmeticMean).toBe(0.0901);
   });
 
   it("Hybrid class (Short Term Treasury) takes Horizon return + historical vol", () => {
-    const c = bySlug().get("short_term_treasury")!;
+    const c = bySlug.get("short_term_treasury")!;
     const hist = histBySlug.get("short_term_treasury")!;
     expect(c.geometricReturn).toBe(0.0359); // Horizon cash-equiv geom20
     expect(c.volatility).toBe(hist.volatility); // historical vol preserved
@@ -63,7 +62,7 @@ describe("buildProjectedAssetClasses", () => {
   it.each(["ten_year_treasury", "tax_exempt_muni", "long_term_treasury", "gold"])(
     "Carried class %s copies historical geom/arith/vol verbatim",
     (slug) => {
-      const c = bySlug().get(slug)!;
+      const c = bySlug.get(slug)!;
       const hist = histBySlug.get(slug)!;
       expect(c.geometricReturn).toBe(hist.geometricReturn);
       expect(c.arithmeticMean).toBe(hist.arithmeticMean);

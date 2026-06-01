@@ -5,6 +5,8 @@ import type { SeedAssetClass } from "./cma-seed";
 export interface HorizonClass {
   key: string;
   label: string;
+  /** geom10/arith20 are preserved from the source table for provenance;
+   *  the transform consumes only geom20 (return) and std (volatility). */
   geom10: number;
   arith20: number;
   geom20: number;
