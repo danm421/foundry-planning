@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { renderToStream } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { firms } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { resolveBranding } from "@/lib/comparison-pdf/branding";
+import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
 import {
   checkExportPdfRateLimit,
   rateLimitErrorResponse,
@@ -247,11 +246,11 @@ export async function POST(
     const scenarioLabel =
       rawScenarioId && rawScenarioId !== "base" ? rawScenarioId : "Base Case";
 
-    const [firmRow] = await db
-      .select({ displayName: firms.displayName })
-      .from(firms)
-      .where(eq(firms.firmId, firmId));
-    const firmName = firmRow?.displayName ?? "Foundry Planning";
+    // Firm branding for the cover: name, accent color, and logo. Falls back to
+    // the Foundry mark + gold when the firm hasn't set their own.
+    const branding = await resolveBranding(firmId);
+    const firmName = branding.firmName;
+    const firmLogoDataUrl = branding.logoDataUrl ?? (await foundryDefaultLogoDataUrl());
 
     // Cast required: renderToStream expects ReactElement<DocumentProps> but
     // createElement infers ReactElement<PresentationDocumentProps>. The element
@@ -267,6 +266,8 @@ export async function POST(
       })),
       firmName,
       firmTagline: null,
+      firmLogoDataUrl,
+      accentColor: branding.primaryColor,
       clientName: clientFullName,
       reportDate: dateLong(new Date()),
       scenarioLabel,

@@ -48,16 +48,21 @@ vi.mock("@/lib/audit", () => ({
   recordAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Drizzle chain mock for the firms display-name lookup.
-vi.mock("@/db", () => ({
-  db: {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn().mockResolvedValue([{ displayName: "Acme Wealth Management" }]),
-      })),
-    })),
-  },
+// Firm branding + default cover logo (the route resolves these for the cover).
+vi.mock("@/lib/comparison-pdf/branding", () => ({
+  resolveBranding: vi.fn().mockResolvedValue({
+    primaryColor: "#b87f1f",
+    firmName: "Acme Wealth Management",
+    logoDataUrl: null,
+  }),
 }));
+
+vi.mock("@/lib/presentations/default-logo", () => ({
+  foundryDefaultLogoDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,AAAA"),
+}));
+
+// Keep a benign @/db mock so importing the route doesn't open a real connection.
+vi.mock("@/db", () => ({ db: {} }));
 
 // Replace the document component and renderer so the schema-validation flow
 // can reach 200 without actually paginating a PDF in the test environment.

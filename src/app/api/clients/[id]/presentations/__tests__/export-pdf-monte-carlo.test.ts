@@ -17,7 +17,8 @@ describe("monte carlo page registration", () => {
       {
         years: [], projection: {} as never, clientData: { client: { retirementAge: 65 } } as never,
         scenarioLabel: "Base Case", clientName: "X", spouseName: null, firmName: "F",
-        firmTagline: null, reportDate: "May 29, 2026", monteCarlo: null,
+        firmTagline: null, firmLogoDataUrl: null, accentColor: "#b87f1f",
+        reportDate: "May 29, 2026", monteCarlo: null,
       },
       page.defaultOptions,
     );

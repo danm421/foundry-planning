@@ -35,6 +35,10 @@ export interface CoverPageData {
   spouseName: string | null;
   scenarioLabel: string;
   reportDate: string;
+  /** Cream-panel logo data URL: firm logo, or the Foundry default. Null = wordmark fallback. */
+  logoDataUrl: string | null;
+  /** Diagonal stripes + rules; firm primaryColor or the report gold fallback. */
+  accentColor: string;
 }
 
 // ── Table of contents ──────────────────────────────────────────────────────
