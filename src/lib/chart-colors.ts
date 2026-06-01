@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { data, dataLight, dataScale } from "@/brand";
+import { colors, colorsLight, data, dataLight, dataScale } from "@/brand";
 import type { Theme } from "@/lib/theme";
 
 // Series order so neighbors cross hue families (orange · green · gold · cyan ·
@@ -30,11 +30,12 @@ export function chartSeriesColors(n: number, theme: Theme = "dark"): string[] {
 }
 
 /**
- * Client hook: returns a `chartSeriesColors`-bound accessor that re-derives
- * when the app theme toggles, so Chart.js configs recolor live (no reload).
- * Subscribes to the `data-theme` attribute on <html>.
+ * Client hook: tracks the live app theme by subscribing to the `data-theme`
+ * attribute on <html>, so Chart.js configs (which paint to canvas and can't
+ * read CSS vars) recolor on toggle without a reload. Initial render is "dark"
+ * to match SSR; corrected on mount.
  */
-export function useChartColors(): (n: number) => string[] {
+export function useThemeName(): Theme {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
@@ -46,5 +47,38 @@ export function useChartColors(): (n: number) => string[] {
     return () => observer.disconnect();
   }, []);
 
+  return theme;
+}
+
+/**
+ * Client hook: returns a `chartSeriesColors`-bound accessor that re-derives
+ * when the app theme toggles.
+ */
+export function useChartColors(): (n: number) => string[] {
+  const theme = useThemeName();
   return (n: number) => chartSeriesColors(n, theme);
+}
+
+export interface ChartChrome {
+  tick: string;
+  grid: string;
+  legend: string;
+  title: string;
+  tooltipBg: string;
+  tooltipTitle: string;
+  tooltipBody: string;
+}
+
+/** Theme-aware Chart.js chrome colors (axes, gridlines, legend, tooltip). */
+export function chartChrome(theme: Theme): ChartChrome {
+  const c = theme === "light" ? colorsLight : colors;
+  return {
+    tick: c.ink3,
+    grid: c.hair,
+    legend: c.ink2,
+    title: c.ink,
+    tooltipBg: c.card,
+    tooltipTitle: c.ink,
+    tooltipBody: c.ink2,
+  };
 }
