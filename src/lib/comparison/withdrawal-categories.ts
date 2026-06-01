@@ -1,4 +1,5 @@
-import { colors, colorsLight, data, dataLight } from "@/brand";
+import { colors, colorsLight } from "@/brand";
+import { dataPalette } from "@/lib/chart-palette";
 import type { Theme } from "@/lib/theme";
 import type { Account } from "@/engine/types";
 
@@ -35,7 +36,7 @@ export const SOURCE_LABELS: Record<WithdrawalSourceCategory, string> = {
 export function sourceColors(
   theme: Theme,
 ): Record<WithdrawalSourceCategory, string> {
-  const d = theme === "light" ? dataLight : data;
+  const d = dataPalette(theme);
   const c = theme === "light" ? colorsLight : colors;
   return {
     "social-security": d.indigo,

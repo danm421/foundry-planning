@@ -30,7 +30,7 @@ interface Props {
 
 function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange: YearRange | null; index: number }) {
   const theme = useThemeName();
-  const stackColors = chartSeriesColors(7, theme);
+  const stackColors = useMemo(() => chartSeriesColors(7, theme), [theme]);
 
   const conversionYears = useMemo(
     () =>

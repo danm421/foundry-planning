@@ -17,8 +17,8 @@ import type { ProjectionYear } from "@/engine";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
-import { data, dataLight } from "@/brand";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
+import { data } from "@/brand";
 
 ChartJS.register(
   CategoryScale,
@@ -70,7 +70,7 @@ interface Props {
 }
 
 function MultiYearChart({ years, theme }: { years: ProjectionYear[]; theme: "dark" | "light" }) {
-  const palette = theme === "light" ? dataLight : data;
+  const palette = dataPalette(theme);
   const data_ = useMemo(
     () => ({
       labels: years.map((y) => String(y.year)),
@@ -126,7 +126,7 @@ function MultiYearChart({ years, theme }: { years: ProjectionYear[]; theme: "dar
 }
 
 function SingleYearBar({ year, theme }: { year: ProjectionYear; theme: "dark" | "light" }) {
-  const palette = theme === "light" ? dataLight : data;
+  const palette = dataPalette(theme);
   const data_ = useMemo(() => {
     const total = year.portfolioAssets.total;
     return {

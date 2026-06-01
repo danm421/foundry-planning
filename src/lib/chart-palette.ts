@@ -32,6 +32,11 @@ export function chartSeriesColors(n: number, theme: Theme = "dark"): string[] {
   return [...named, ...dataScale(n - named.length, theme)];
 }
 
+/** The editorial data palette (nine named hues) for a theme. */
+export function dataPalette(theme: Theme) {
+  return theme === "light" ? dataLight : data;
+}
+
 export interface ChartChrome {
   tick: string;
   grid: string;

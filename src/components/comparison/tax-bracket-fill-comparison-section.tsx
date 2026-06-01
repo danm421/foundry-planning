@@ -16,8 +16,8 @@ import type { ProjectionYear } from "@/engine";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
-import { data, dataLight } from "@/brand";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
+import { data } from "@/brand";
 import { buildTaxBracketRows } from "@/lib/tax/bracket";
 import {
   bracketTopsByYear,
@@ -65,8 +65,8 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
   const years = useMemo(() => clip(plan.result.years, yearRange), [plan.result.years, yearRange]);
   const rows = useMemo(() => buildTaxBracketRows(years), [years]);
   const theme = useThemeName();
-  const palette = theme === "light" ? dataLight : data;
-  const chrome = chartChrome(theme);
+  const palette = dataPalette(theme);
+  const chrome = useMemo(() => chartChrome(theme), [theme]);
 
   const allRates = useMemo(() => {
     const set = new Set<number>();

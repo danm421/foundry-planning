@@ -23,7 +23,8 @@ const eslintConfig = defineConfig([
       "**/*.test.{ts,tsx}",
       "**/__tests__/**",
       "src/lib/presentations/**",
-      "src/lib/report-artifacts/**",
+      // react-pdf artifact renderers (print hex; generated PDFs stay byte-stable)
+      "src/lib/report-artifacts/artifacts/**",
       "src/components/pdf/**",
       "src/components/comparison-pdf/**",
       // Report PDF renderers (react-pdf print layer): print hex lives here and

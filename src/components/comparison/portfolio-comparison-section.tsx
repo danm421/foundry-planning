@@ -14,8 +14,8 @@ import type { ProjectionYear } from "@/engine";
 import { PortfolioOverlayChart } from "@/components/cashflow/charts/portfolio-overlay-chart";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { seriesColor } from "@/lib/comparison/series-palette";
-import { chartChrome, useThemeName } from "@/lib/chart-colors";
-import { data, dataLight } from "@/brand";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
+import { data } from "@/brand";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -54,7 +54,7 @@ interface Props {
 function PlanBarChart({ plan, index }: { plan: ComparisonPlan; index: number }) {
   const years = plan.result.years;
   const theme = useThemeName();
-  const palette = theme === "light" ? dataLight : data;
+  const palette = dataPalette(theme);
   const data_ = useMemo(
     () => ({
       labels: years.map((y) => String(y.year)),
@@ -110,7 +110,7 @@ function PlanBarChart({ plan, index }: { plan: ComparisonPlan; index: number }) 
 function TwoPlanDeltaChart({ plans }: { plans: [ComparisonPlan, ComparisonPlan] }) {
   const [base, scenario] = plans;
   const theme = useThemeName();
-  const palette = theme === "light" ? dataLight : data;
+  const palette = dataPalette(theme);
   const data_ = useMemo(() => {
     const baseByYear = new Map<number, number>(
       base.result.years.map((y) => [y.year, portfolioTotalForYear(y)]),
