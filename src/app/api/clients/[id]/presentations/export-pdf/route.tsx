@@ -14,10 +14,7 @@ import {
   ClientNotFoundError,
   ProjectionInputError,
 } from "@/lib/projection/load-client-data";
-import {
-  loadEffectiveTreeForRef,
-  type ScenarioRef,
-} from "@/lib/scenario/loader";
+import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import {
@@ -45,6 +42,7 @@ import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import {
   planScenarioBundles,
+  labelForRef,
   type PlannerPage,
 } from "@/lib/scenario/presentation-refs";
 import React from "react";
@@ -163,12 +161,12 @@ export async function POST(
     // Resolve human-readable names for every live scenario / snapshot id in the
     // plan, in two batched queries. firmId scoping is enforced per-tree below by
     // loadEffectiveTreeForRef (it throws on a cross-org id before we use names).
-    const liveScenarioIds = [...plan.distinct.values()]
-      .filter((d) => d.ref.kind === "scenario" && d.ref.id !== "base")
-      .map((d) => (d.ref as { id: string }).id);
-    const snapshotIds = [...plan.distinct.values()]
-      .filter((d) => d.ref.kind === "snapshot")
-      .map((d) => (d.ref as { id: string }).id);
+    const liveScenarioIds: string[] = [];
+    const snapshotIds: string[] = [];
+    for (const { ref } of plan.distinct.values()) {
+      if (ref.kind === "snapshot") snapshotIds.push(ref.id);
+      else if (ref.id !== "base") liveScenarioIds.push(ref.id);
+    }
 
     const scenarioNames = new Map<string, string>();
     if (liveScenarioIds.length > 0) {
@@ -185,13 +183,6 @@ export async function POST(
         .where(inArray(scenarioSnapshots.id, snapshotIds));
       for (const r of rows) scenarioNames.set(r.id, r.name);
     }
-    const labelForRef = (ref: ScenarioRef): string =>
-      ref.kind === "snapshot"
-        ? (scenarioNames.get(ref.id) ?? "Snapshot")
-        : ref.id === "base"
-          ? "Base Case"
-          : (scenarioNames.get(ref.id) ?? ref.id);
-
     // Conditionally load the investments bundle — only when the deck includes
     // at least one investment page, to avoid unnecessary DB queries.
     const needsInvestments = parsed.data.pages.some(
@@ -304,8 +295,7 @@ export async function POST(
       bundles[key] = {
         clientData,
         projection,
-        years: projection.years,
-        scenarioLabel: labelForRef(d.ref),
+        scenarioLabel: labelForRef(d.ref, scenarioNames),
         monteCarlo,
         scenarioChanges,
       };

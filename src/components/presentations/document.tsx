@@ -1,6 +1,6 @@
 import { Document } from "@react-pdf/renderer";
 import { PRESENTATION_PAGES, type PresentationPageId } from "./registry";
-import type { ProjectionYear, ClientData } from "@/engine/types";
+import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { ensureFontsRegistered } from "./shared/fonts";
 import type { TocSection } from "./pages/toc/page-pdf";
@@ -11,7 +11,6 @@ import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-
 export interface PageScenarioBundle {
   clientData: ClientData;
   projection: ProjectionResult;
-  years: ProjectionYear[];
   scenarioLabel: string;
   monteCarlo?: MonteCarloReportPayload | null;
   scenarioChanges?: ScenarioChangesContext;
@@ -71,7 +70,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
           props.bundles[p.scenarioKey] ?? props.bundles[props.topScenarioKey];
         const data = page.buildData(
           {
-            years: bundle.years,
+            years: bundle.projection.years,
             projection: bundle.projection,
             clientData: bundle.clientData,
             scenarioLabel: bundle.scenarioLabel,

@@ -14,7 +14,7 @@ function makeBundleFixture(scenarioLabel: string): PageScenarioBundle {
   // Stub projection rather than running the full estate engine on this
   // minimal cash-flow fixture (no accounts/planSettings).
   const projection = { years } as unknown as ProjectionResult;
-  return { clientData, projection, years, scenarioLabel };
+  return { clientData, projection, scenarioLabel };
 }
 
 describe("PresentationDocument — multi-scenario bundle selection", () => {

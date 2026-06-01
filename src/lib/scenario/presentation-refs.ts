@@ -23,6 +23,16 @@ export function keyForRef(ref: ScenarioRef): string {
   return ref.id === "base" ? "base" : `scenario:${ref.id}`;
 }
 
+/**
+ * Human-readable label for a ref, given a map of id → name resolved from the
+ * DB. Base is a fixed literal; live scenarios and snapshots fall back to their
+ * id / a generic label when the name isn't found.
+ */
+export function labelForRef(ref: ScenarioRef, names: Map<string, string>): string {
+  if (ref.kind === "snapshot") return names.get(ref.id) ?? "Snapshot";
+  return ref.id === "base" ? "Base Case" : (names.get(ref.id) ?? ref.id);
+}
+
 export interface PlannerPage {
   supportsScenarioOverride: boolean;
   scenarioOverride: string | null | undefined;

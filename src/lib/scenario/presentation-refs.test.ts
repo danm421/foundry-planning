@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveScenarioRef,
   keyForRef,
+  labelForRef,
   planScenarioBundles,
   type PlannerPage,
 } from "./presentation-refs";
@@ -36,6 +37,27 @@ describe("keyForRef", () => {
     expect(keyForRef({ kind: "scenario", id: "base", toggleState: {} })).toBe("base");
     expect(keyForRef({ kind: "scenario", id: "uuid-1", toggleState: {} })).toBe("scenario:uuid-1");
     expect(keyForRef({ kind: "snapshot", id: "abc", side: "left" })).toBe("snap:abc");
+  });
+});
+
+describe("labelForRef", () => {
+  const names = new Map([
+    ["uuid-1", "Retire at 67"],
+    ["snap-1", "Year-end snapshot"],
+  ]);
+
+  it("labels base as 'Base Case' regardless of the name map", () => {
+    expect(labelForRef({ kind: "scenario", id: "base", toggleState: {} }, names)).toBe("Base Case");
+  });
+
+  it("uses the resolved name for a live scenario, falling back to the id", () => {
+    expect(labelForRef({ kind: "scenario", id: "uuid-1", toggleState: {} }, names)).toBe("Retire at 67");
+    expect(labelForRef({ kind: "scenario", id: "unknown", toggleState: {} }, names)).toBe("unknown");
+  });
+
+  it("uses the resolved name for a snapshot, falling back to 'Snapshot'", () => {
+    expect(labelForRef({ kind: "snapshot", id: "snap-1", side: "left" }, names)).toBe("Year-end snapshot");
+    expect(labelForRef({ kind: "snapshot", id: "missing", side: "left" }, names)).toBe("Snapshot");
   });
 });
 

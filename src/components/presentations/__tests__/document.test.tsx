@@ -24,7 +24,7 @@ describe("PresentationDocument", () => {
         clientName="Cooper Sample"
         reportDate="May 28, 2026"
         spouseName="Susan Sample"
-        bundles={{ base: { clientData, projection, years, scenarioLabel: "Base Case" } }}
+        bundles={{ base: { clientData, projection, scenarioLabel: "Base Case" } }}
         topScenarioKey="base"
       />,
     );
