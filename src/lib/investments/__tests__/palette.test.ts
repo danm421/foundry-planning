@@ -27,6 +27,12 @@ describe("colorForAssetClass", () => {
     expect(UNALLOCATED_COLOR).not.toBe(c);
     expect(UNALLOCATED_COLOR).toMatch(/^#/);
   });
+
+  it("sources the editorial palette from @/brand (adjacency order, ink-4 unallocated)", () => {
+    // First slot is the brand `terra` hue (adjacency order); unallocated is ink-4.
+    expect(colorForAssetClass({ id: "x", sortOrder: 0 })).toBe("#f0824e");
+    expect(UNALLOCATED_COLOR).toBe("#848a98");
+  });
 });
 
 describe("ASSET_TYPE_PALETTE", () => {
