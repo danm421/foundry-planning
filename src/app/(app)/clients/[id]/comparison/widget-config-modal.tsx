@@ -222,7 +222,7 @@ export function WidgetConfigModal(props: Props) {
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-[640px] max-w-full flex-col gap-3 overflow-hidden rounded-[var(--radius)] border-2 border-ink-3 bg-card text-sm text-slate-200 shadow-2xl ring-1 ring-black/60"
+        className="flex max-h-[85vh] w-[640px] max-w-full flex-col gap-3 overflow-hidden rounded-[var(--radius)] border-2 border-ink-3 bg-card text-sm text-ink-2 shadow-2xl ring-1 ring-black/60"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-hair px-4 py-3">
@@ -275,7 +275,7 @@ export function WidgetConfigModal(props: Props) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search all widgets…"
-                className="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 placeholder:text-ink-3"
+                className="mb-2 w-full rounded border border-hair bg-card px-2 py-1 text-ink-2 placeholder:text-ink-3"
               />
               <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
                 {groupedKinds.length === 0 ? (
@@ -303,8 +303,8 @@ export function WidgetConfigModal(props: Props) {
                               aria-pressed={selected}
                               className={`rounded border px-2 py-1 text-left text-xs ${
                                 selected
-                                  ? "border-amber-400 bg-amber-400/10 text-amber-200"
-                                  : "border-slate-700 hover:bg-slate-800"
+                                  ? "border-accent bg-accent/10 text-accent-ink"
+                                  : "border-hair hover:bg-card-hover"
                               }`}
                             >
                               {entryDef.title}
@@ -354,7 +354,7 @@ export function WidgetConfigModal(props: Props) {
           )}
 
           {validationError && kind && (
-            <p className="text-[11px] italic text-amber-300">{validationError}</p>
+            <p className="text-[11px] italic text-ink-3">{validationError}</p>
           )}
         </div>
 
@@ -362,7 +362,7 @@ export function WidgetConfigModal(props: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:bg-slate-800"
+            className="rounded border border-hair px-3 py-1 text-ink-2 hover:bg-card-hover"
           >
             Cancel
           </button>
@@ -370,7 +370,7 @@ export function WidgetConfigModal(props: Props) {
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="rounded border border-amber-400 bg-amber-400/10 px-3 py-1 text-amber-200 disabled:opacity-40"
+            className="rounded bg-accent px-3 py-1 text-accent-on disabled:opacity-40"
           >
             Save
           </button>

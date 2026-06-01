@@ -92,7 +92,7 @@ export function PerWidgetYearRange({
           />
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-2">
         <label className="flex items-center gap-1">
           Start
           <input
@@ -102,7 +102,7 @@ export function PerWidgetYearRange({
             value={start}
             onChange={(e) => setStart(Number(e.target.value))}
             step={1}
-            className="w-16 rounded border border-slate-700 bg-slate-950 px-1 py-0.5 text-slate-100"
+            className="w-16 rounded border border-hair bg-card-2 px-1 py-0.5 text-ink"
           />
         </label>
         <label className="flex items-center gap-1">
@@ -114,7 +114,7 @@ export function PerWidgetYearRange({
             value={end}
             onChange={(e) => setEnd(Number(e.target.value))}
             step={1}
-            className="w-16 rounded border border-slate-700 bg-slate-950 px-1 py-0.5 text-slate-100"
+            className="w-16 rounded border border-hair bg-card-2 px-1 py-0.5 text-ink"
           />
         </label>
         {!fullActive && (
@@ -146,10 +146,10 @@ function PresetButton({
       title={disabled ? disabledReason : undefined}
       className={`rounded border px-2 py-0.5 text-[11px] transition-colors ${
         disabled
-          ? "cursor-not-allowed border-slate-800 text-ink-3"
+          ? "cursor-not-allowed border-hair text-ink-3"
           : active
-            ? "border-amber-400 bg-amber-400/10 text-amber-200"
-            : "border-slate-700 text-slate-300 hover:bg-slate-800"
+            ? "border-accent bg-accent/10 text-accent"
+            : "border-hair text-ink-2 hover:bg-card-hover"
       }`}
     >
       {label}

@@ -71,14 +71,14 @@ export function CanvasGroup({
       ref={setNodeRef}
       style={style}
       data-canvas-group={group.id}
-      className="group/group relative flex flex-col gap-2 rounded-lg border border-transparent p-2 hover:border-slate-800"
+      className="group/group relative flex flex-col gap-2 rounded-lg border border-transparent p-2 hover:border-hair"
     >
       <div className="flex items-center gap-2">
         <button
           type="button"
           aria-label="Drag group"
           data-drag-handle="group"
-          className="cursor-grab text-ink-3 hover:text-slate-200"
+          className="cursor-grab text-ink-3 hover:text-ink"
           {...attributes}
           {...listeners}
         >
@@ -91,13 +91,13 @@ export function CanvasGroup({
           value={group.title}
           onChange={(e) => onSetTitle(e.target.value)}
           placeholder="Untitled group"
-          className="flex-1 bg-transparent text-base font-medium text-slate-100 placeholder:text-slate-600 focus:outline-none"
+          className="flex-1 bg-transparent text-base font-medium text-ink placeholder:text-ink-4 focus:outline-none"
         />
         <button
           type="button"
           aria-label="Delete group"
           onClick={handleDelete}
-          className="rounded px-2 py-1 text-xs text-slate-400 opacity-0 transition-opacity hover:bg-slate-800 hover:text-slate-200 group-hover/group:opacity-100"
+          className="rounded px-2 py-1 text-xs text-ink-3 opacity-0 transition-opacity hover:bg-card-hover hover:text-ink group-hover/group:opacity-100"
         >
           Delete group
         </button>

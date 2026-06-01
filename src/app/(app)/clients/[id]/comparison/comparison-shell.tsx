@@ -214,13 +214,13 @@ export function ComparisonShell({
 
   return (
     <>
-      <header className="sticky top-[100px] z-20 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-6 py-3 backdrop-blur">
+      <header className="sticky top-[100px] z-20 flex flex-wrap items-center gap-3 border-b border-hair bg-paper/95 px-6 py-3 backdrop-blur">
         <div className="flex items-center gap-1.5">
           {activeCid && comparisons.length > 0 && (
             <select
               value={activeCid}
               onChange={(e) => onSelectComparison(e.target.value)}
-              className="max-w-[220px] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+              className="max-w-[220px] rounded-md border border-hair bg-card px-2.5 py-1.5 text-sm text-ink focus:border-hair-2 focus:outline-none"
               aria-label="Switch comparison"
             >
               {comparisons.map((c) => (
@@ -231,7 +231,7 @@ export function ComparisonShell({
           <button
             type="button"
             onClick={onOpenNewComparison}
-            className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+            className="rounded-md border border-hair bg-card px-2.5 py-1.5 text-sm text-ink-2 hover:bg-card-hover"
           >
             + New
           </button>
@@ -243,7 +243,7 @@ export function ComparisonShell({
                 aria-label="More actions"
                 aria-haspopup="menu"
                 aria-expanded={overflowOpen}
-                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+                className="rounded-md border border-hair bg-card px-2 py-1.5 text-sm text-ink-2 hover:bg-card-hover"
               >
                 ⋮
               </button>
@@ -258,13 +258,13 @@ export function ComparisonShell({
                   />
                   <div
                     role="menu"
-                    className="absolute right-0 top-full z-40 mt-1 w-48 overflow-hidden rounded-md border border-slate-700 bg-slate-900 shadow-lg"
+                    className="absolute right-0 top-full z-40 mt-1 w-48 overflow-hidden rounded-md border border-hair bg-card shadow-lg"
                   >
                     <button
                       type="button"
                       role="menuitem"
                       onClick={() => { setOverflowOpen(false); onRenameActive(); }}
-                      className="block w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
+                      className="block w-full px-3 py-2 text-left text-sm text-ink-2 hover:bg-card-hover"
                     >
                       Rename
                     </button>
@@ -272,7 +272,7 @@ export function ComparisonShell({
                       type="button"
                       role="menuitem"
                       onClick={() => { setOverflowOpen(false); onSaveActiveAsTemplate(); }}
-                      className="block w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
+                      className="block w-full px-3 py-2 text-left text-sm text-ink-2 hover:bg-card-hover"
                     >
                       Save as template…
                     </button>
@@ -280,7 +280,7 @@ export function ComparisonShell({
                       type="button"
                       role="menuitem"
                       onClick={() => { setOverflowOpen(false); onDeleteActive(); }}
-                      className="block w-full border-t border-slate-700 px-3 py-2 text-left text-sm text-red-400 hover:bg-slate-800"
+                      className="block w-full border-t border-hair px-3 py-2 text-left text-sm text-crit hover:bg-card-hover"
                     >
                       Delete
                     </button>
@@ -346,15 +346,15 @@ export function ComparisonShell({
                   const { groupId } = api.addGroup();
                   setFocusGroupTitleId(groupId);
                 }}
-                className="self-start rounded-full border border-dashed border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                className="self-start rounded-full border border-dashed border-hair px-4 py-2 text-sm text-ink-2 hover:bg-card-hover"
               >
                 + New group
               </button>
             </div>
           ) : preview.status === "loading" ? (
-            <div className="px-6 py-16 text-center text-slate-400">Loading plan data…</div>
+            <div className="px-6 py-16 text-center text-ink-3">Loading plan data…</div>
           ) : preview.status === "error" ? (
-            <div className="px-6 py-16 text-center text-red-400">
+            <div className="px-6 py-16 text-center text-crit">
               Couldn&apos;t load plan data: {preview.error}
             </div>
           ) : (

@@ -50,7 +50,7 @@ export function IncomeExpenseTable({
         className="min-w-full border-collapse text-xs"
       >
         <thead>
-          <tr className="bg-slate-900/60 text-slate-300">
+          <tr className="bg-card-2 text-ink-2">
             <th className="px-2 py-1 text-left">Year</th>
             {COLUMNS.map((c) => (
               <th key={c.label} className="px-2 py-1 text-right">
@@ -64,7 +64,7 @@ export function IncomeExpenseTable({
           {years.map((y) => {
             let net = 0;
             return (
-              <tr key={y.year} className="border-t border-slate-800 text-slate-200">
+              <tr key={y.year} className="border-t border-hair text-ink">
                 <td className="px-2 py-1">{y.year}</td>
                 {COLUMNS.map((c) => {
                   const v = c.value(y) * c.sign;
@@ -101,7 +101,7 @@ export function IncomeExpenseTableList({
     <div className="flex flex-col gap-4">
       {plans.map((plan) => (
         <div key={plan.id}>
-          <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">
+          <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">
             {plan.label}
           </div>
           <IncomeExpenseTable plan={plan} yearRange={yearRange} />

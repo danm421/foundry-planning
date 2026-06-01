@@ -39,8 +39,8 @@ export function ScenarioChipPicker({ cardinality, scenarios, planIds, onChange }
             onClick={() => toggle(s.id)}
             className={`rounded-full border px-2 py-0.5 text-[11px] ${
               selected
-                ? "border-amber-400 bg-amber-400/10 text-amber-200"
-                : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-hair text-ink-2 hover:bg-card-hover"
             }`}
           >
             {s.name}

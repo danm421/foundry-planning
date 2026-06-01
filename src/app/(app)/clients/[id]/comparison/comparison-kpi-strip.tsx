@@ -32,9 +32,9 @@ function fmtYearsDelta(v: number): string {
   return `${v < 0 ? "−" : "+"}${Math.abs(v)}`;
 }
 function deltaCls(v: number, better: "higher" | "lower"): string {
-  if (v === 0) return "text-slate-300";
+  if (v === 0) return "text-ink-2";
   const good = better === "higher" ? v > 0 : v < 0;
-  return good ? "text-emerald-400" : "text-rose-400";
+  return good ? "text-good" : "text-crit";
 }
 
 interface KpiRow {
@@ -130,18 +130,18 @@ export function ComparisonKpiStrip({ plans, mcSuccessByIndex }: Props) {
     <div
       role="table"
       aria-label="Plan comparison KPI strip"
-      className="sticky top-[64px] z-10 border-b border-slate-800 bg-slate-950"
+      className="sticky top-[64px] z-10 border-b border-hair bg-paper"
     >
       <div
         role="row"
-        className="grid border-b border-slate-800"
+        className="grid border-b border-hair"
         style={{ gridTemplateColumns: cols }}
       >
         {plans.map((p, i) => (
           <div
             key={p.index}
             role="columnheader"
-            className="border-l border-slate-800 px-4 py-2 first:border-l-0"
+            className="border-l border-hair px-4 py-2 first:border-l-0"
           >
             <div className="flex items-center gap-2">
               <span
@@ -149,11 +149,11 @@ export function ComparisonKpiStrip({ plans, mcSuccessByIndex }: Props) {
                 style={{ backgroundColor: seriesColor(i) }}
                 aria-hidden
               />
-              <span className="truncate text-sm font-semibold text-slate-100">
+              <span className="truncate text-sm font-semibold text-ink">
                 {p.label}
               </span>
               {p.isBaseline && (
-                <span className="rounded border border-slate-700 px-1 text-[10px] uppercase text-slate-400">
+                <span className="rounded border border-hair px-1 text-[10px] uppercase text-ink-3">
                   Baseline
                 </span>
               )}
@@ -166,17 +166,17 @@ export function ComparisonKpiStrip({ plans, mcSuccessByIndex }: Props) {
           <div
             key={p.index}
             data-testid={`kpi-col-${colIdx}`}
-            className="border-l border-slate-800 first:border-l-0"
+            className="border-l border-hair first:border-l-0"
           >
             {ROWS.map((row) => {
               const mc = mcSuccessByIndex[colIdx];
               if (p.isBaseline) {
                 return (
                   <div key={row.label} className="px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                    <div className="text-[11px] uppercase tracking-wide text-ink-3">
                       {row.label}
                     </div>
-                    <div className="text-xl font-semibold text-slate-100">
+                    <div className="text-xl font-semibold text-ink">
                       {row.baseline(p, mc)}
                     </div>
                   </div>
@@ -185,12 +185,12 @@ export function ComparisonKpiStrip({ plans, mcSuccessByIndex }: Props) {
               const d = row.delta(p, base, mc, mcBase);
               return (
                 <div key={row.label} className="px-4 py-3">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                  <div className="text-[11px] uppercase tracking-wide text-ink-3">
                     {row.label}
                   </div>
                   <div
                     className={`text-xl font-semibold ${
-                      d === null ? "text-slate-400" : deltaCls(d.raw, row.better)
+                      d === null ? "text-ink-3" : deltaCls(d.raw, row.better)
                     }`}
                   >
                     {d?.text ?? "…"}

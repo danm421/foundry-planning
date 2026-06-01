@@ -17,7 +17,7 @@ export const liquidityWidget: ComparisonWidgetDefinition<ViewModeConfig> = {
       mode={getViewMode(config)}
       chart={
         <section className="px-6 py-8">
-          <h2 className="mb-4 text-lg font-semibold text-slate-100">Liquidity</h2>
+          <h2 className="mb-4 text-lg font-semibold text-ink">Liquidity</h2>
           <LiquidityComparisonCharts plans={plans} />
         </section>
       }

@@ -39,37 +39,37 @@ export function SlotMappingModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-lg border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-slate-100">
+      <div className="w-full max-w-md rounded-lg border border-hair bg-card p-6 shadow-2xl">
+        <h2 className="text-lg font-semibold text-ink">
           Apply &ldquo;{templateName}&rdquo;
         </h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-ink-3">
           Pick which of this client&apos;s plans fills each slot.
         </p>
 
-        <label className="mt-5 block text-sm font-medium text-slate-200">
+        <label className="mt-5 block text-sm font-medium text-ink-2">
           Name your comparison
         </label>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+          className="mt-1 w-full rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
         />
 
         <div className="mt-5 space-y-3">
           {tokens.map((token, i) => (
             <div key={token} className="flex items-center gap-3">
-              <div className="w-32 text-sm font-medium text-slate-200">
+              <div className="w-32 text-sm font-medium text-ink-2">
                 Slot {token}{" "}
-                <span className="text-slate-500">— {slotLabels[i]}</span>
+                <span className="text-ink-4">— {slotLabels[i]}</span>
               </div>
               <select
                 value={mappings[token] ?? ""}
                 onChange={(e) =>
                   setMappings((m) => ({ ...m, [token]: e.target.value }))
                 }
-                className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+                className="flex-1 rounded-md border border-hair bg-card-2 px-2 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
               >
                 <option value="">Select a plan…</option>
                 {clientPlans.map((p) => (
@@ -80,13 +80,13 @@ export function SlotMappingModal({
           ))}
         </div>
 
-        {err && <p className="mt-4 text-sm text-red-400">{err}</p>}
+        {err && <p className="mt-4 text-sm text-crit">{err}</p>}
 
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            className="rounded-md border border-hair bg-card px-4 py-2 text-sm text-ink-2 hover:bg-card-hover"
           >
             Cancel
           </button>
@@ -104,7 +104,7 @@ export function SlotMappingModal({
                 setBusy(false);
               }
             }}
-            className="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? "Creating…" : "Create comparison"}
           </button>

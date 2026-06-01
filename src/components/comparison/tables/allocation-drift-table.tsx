@@ -25,11 +25,11 @@ export function AllocationDriftTableList({ plans, yearRange }: { plans: Comparis
     <div className="flex flex-col gap-4">
       {plans.map((plan) => (
         <div key={plan.id}>
-          <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">{plan.label}</div>
+          <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">{plan.label}</div>
           <div className="overflow-auto">
             <table aria-label={`Allocation drift — ${plan.label}`} className="min-w-full border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-900/60 text-slate-300">
+                <tr className="bg-card-2 text-ink-2">
                   <th className="px-2 py-1 text-left">Year</th>
                   {CATEGORIES.map((c) => (
                     <th key={c.key} className="px-2 py-1 text-right">{c.label}</th>
@@ -41,14 +41,14 @@ export function AllocationDriftTableList({ plans, yearRange }: { plans: Comparis
                 {clip(plan.result.years, yearRange).map((y) => {
                   const total = y.portfolioAssets.total;
                   return (
-                    <tr key={y.year} className="border-t border-slate-800 text-slate-200">
+                    <tr key={y.year} className="border-t border-hair text-ink">
                       <td className="px-2 py-1">{y.year}</td>
                       {CATEGORIES.map((c) => {
                         const v = (y.portfolioAssets[c.key] as number) ?? 0;
                         const p = total > 0 ? (v / total) * 100 : 0;
                         return (
                           <td key={c.key} className="px-2 py-1 text-right tabular-nums">
-                            {usd.format(v)} <span className="text-slate-500">({p.toFixed(1)}%)</span>
+                            {usd.format(v)} <span className="text-ink-3">({p.toFixed(1)}%)</span>
                           </td>
                         );
                       })}

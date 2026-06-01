@@ -20,12 +20,12 @@ export function LiquidityComparisonCharts({ plans }: Props) {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-base font-semibold text-slate-100">Estate Liquidity</h3>
+      <h3 className="text-base font-semibold text-ink">Estate Liquidity</h3>
       <div className={`grid gap-4 ${colsClass}`}>
         {plans.map((p, i) => (
           <div
             key={p.index}
-            className="rounded-lg border border-slate-800 bg-slate-900/40 p-4"
+            className="rounded-lg border border-hair bg-card p-4"
           >
             <div className="mb-2 flex items-center justify-center gap-2">
               <span
@@ -33,7 +33,7 @@ export function LiquidityComparisonCharts({ plans }: Props) {
                 style={{ backgroundColor: seriesColor(i) }}
                 aria-hidden
               />
-              <span className="text-sm font-semibold text-slate-100">{p.label}</span>
+              <span className="text-sm font-semibold text-ink">{p.label}</span>
             </div>
             <YearlyLiquidityChart rows={p.liquidityRows} showPortfolio />
           </div>

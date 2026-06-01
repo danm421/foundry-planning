@@ -42,10 +42,10 @@ export const kpiWidget: ComparisonWidgetDefinition<KpiConfig> = {
       ? (config as KpiConfig).metric
       : "endNetWorth";
     return (
-      <label className="flex items-center gap-2 text-xs text-slate-300">
+      <label className="flex items-center gap-2 text-xs text-ink-2">
         <span>Metric</span>
         <select
-          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100"
+          className="rounded border border-hair bg-paper px-2 py-1 text-sm text-ink"
           value={current}
           onChange={(e) => onChange({ metric: e.target.value as KpiMetric })}
         >

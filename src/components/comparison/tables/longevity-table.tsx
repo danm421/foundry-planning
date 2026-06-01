@@ -23,11 +23,11 @@ export function LongevityTableList({ mc }: { mc: McSharedResult }) {
         const cb = mc.clientBirthYear ?? mc.planStartYear;
         return (
           <div key={p.label}>
-            <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">{p.label}</div>
+            <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">{p.label}</div>
             <div className="overflow-auto">
               <table aria-label={`Longevity — ${p.label}`} className="min-w-full border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-900/60 text-slate-300">
+                  <tr className="bg-card-2 text-ink-2">
                     <th className="px-2 py-1 text-left">Percentile</th>
                     <th className="px-2 py-1 text-right">Last-funded year</th>
                     <th className="px-2 py-1 text-right">Last-funded age (client)</th>
@@ -43,7 +43,7 @@ export function LongevityTableList({ mc }: { mc: McSharedResult }) {
                     const year = mc.planStartYear + yi;
                     const age = year - cb;
                     return (
-                      <tr key={r.label} className="border-t border-slate-800 text-slate-200">
+                      <tr key={r.label} className="border-t border-hair text-ink">
                         <td className="px-2 py-1">{r.label}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{year}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{age}</td>

@@ -53,8 +53,8 @@ export function RichTextEditor({ value, onChange, editable = true, placeholder }
 }
 
 const BTN =
-  "rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 hover:border-amber-400 hover:text-amber-200 disabled:opacity-50";
-const BTN_ACTIVE = "border-amber-400 bg-slate-800 text-amber-200";
+  "rounded border border-hair bg-card px-2 py-1 text-xs text-ink-2 hover:border-accent hover:text-accent disabled:opacity-50";
+const BTN_ACTIVE = "border-accent bg-card-2 text-accent";
 
 function Toolbar({ editor }: { editor: Editor }) {
   const blockValue =
@@ -64,10 +64,10 @@ function Toolbar({ editor }: { editor: Editor }) {
     : "p";
 
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-slate-800 bg-slate-950 px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1 border-b border-hair bg-card px-3 py-2">
       <select
         aria-label="Block format"
-        className="rounded border border-slate-700 bg-slate-900 px-1 py-1 text-xs text-slate-200"
+        className="rounded border border-hair bg-card px-1 py-1 text-xs text-ink-2"
         value={blockValue}
         onChange={(e) => {
           const v = e.target.value;
@@ -84,7 +84,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       </select>
       <button type="button" className={`${BTN} ${editor.isActive("bulletList") ? BTN_ACTIVE : ""}`} onClick={() => editor.chain().focus().toggleBulletList().run()}>• List</button>
       <button type="button" className={`${BTN} ${editor.isActive("orderedList") ? BTN_ACTIVE : ""}`} onClick={() => editor.chain().focus().toggleOrderedList().run()}>1. List</button>
-      <span className="mx-1 h-4 w-px bg-slate-800" aria-hidden />
+      <span className="mx-1 h-4 w-px bg-hair" aria-hidden />
       <button type="button" className={`${BTN} font-semibold ${editor.isActive("bold") ? BTN_ACTIVE : ""}`} onClick={() => editor.chain().focus().toggleBold().run()}>B</button>
       <button type="button" className={`${BTN} italic ${editor.isActive("italic") ? BTN_ACTIVE : ""}`} onClick={() => editor.chain().focus().toggleItalic().run()}>I</button>
       <button type="button" className={`${BTN} ${editor.isActive("blockquote") ? BTN_ACTIVE : ""}`} onClick={() => editor.chain().focus().toggleBlockquote().run()}>❝</button>

@@ -33,7 +33,7 @@ export function LifetimeTaxTableList({ plans }: { plans: ComparisonPlan[] }) {
         });
         return (
           <div key={plan.id}>
-            <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">
+            <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">
               {plan.label}
             </div>
             <div className="overflow-auto">
@@ -42,7 +42,7 @@ export function LifetimeTaxTableList({ plans }: { plans: ComparisonPlan[] }) {
                 className="min-w-full border-collapse text-xs"
               >
                 <thead>
-                  <tr className="bg-slate-900/60 text-slate-300">
+                  <tr className="bg-card-2 text-ink-2">
                     <th className="px-2 py-1 text-left">Year</th>
                     {visibleColumns.map((col) => (
                       <th key={col.key} className="px-2 py-1 text-right">
@@ -59,7 +59,7 @@ export function LifetimeTaxTableList({ plans }: { plans: ComparisonPlan[] }) {
                     return (
                       <tr
                         key={y.year}
-                        className="border-t border-slate-800 text-slate-200"
+                        className="border-t border-hair text-ink"
                       >
                         <td className="px-2 py-1">{y.year}</td>
                         {visibleColumns.map((col) => (
@@ -76,7 +76,7 @@ export function LifetimeTaxTableList({ plans }: { plans: ComparisonPlan[] }) {
                       </tr>
                     );
                   })}
-                  <tr className="border-t-2 border-slate-700 bg-slate-900/40 text-slate-100">
+                  <tr className="border-t-2 border-hair-2 bg-card-2 text-ink">
                     <td className="px-2 py-1 font-semibold">Lifetime</td>
                     {visibleColumns.map((col) => (
                       <td

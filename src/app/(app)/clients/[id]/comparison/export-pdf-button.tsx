@@ -69,11 +69,11 @@ export function ExportPdfButton({ clientId, comparisonId, layout, mode, setMode,
         type="button"
         disabled={busy || !mcReady}
         onClick={onClick}
-        className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Exporting…" : "Export PDF"}
       </button>
-      {err && <span className="text-xs text-red-400">{err}</span>}
+      {err && <span className="text-xs text-crit">{err}</span>}
     </div>
   );
 }

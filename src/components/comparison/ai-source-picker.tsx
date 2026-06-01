@@ -40,7 +40,7 @@ export function AiSourcePicker({ layout, selfCellId, value, onChange }: Props) {
   };
 
   if (layout.groups.length === 0) {
-    return <p className="text-xs text-slate-400">No groups in this layout yet.</p>;
+    return <p className="text-xs text-ink-4">No groups in this layout yet.</p>;
   }
 
   return (
@@ -50,30 +50,30 @@ export function AiSourcePicker({ layout, selfCellId, value, onChange }: Props) {
         if (populated.length === 0) return null;
         const drill = showWidgets[g.id] ?? false;
         return (
-          <div key={g.id} className="rounded border border-slate-800 p-2">
-            <label className="flex items-center gap-2 text-sm text-slate-100">
+          <div key={g.id} className="rounded border border-hair p-2">
+            <label className="flex items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
                 checked={value.groupIds.includes(g.id)}
                 onChange={() => toggleGroup(g.id)}
               />
               <span className="flex-1 truncate font-medium">{g.title || "Untitled group"}</span>
-              <span className="text-[11px] text-slate-400">{populated.length} widget{populated.length === 1 ? "" : "s"}</span>
+              <span className="text-[11px] text-ink-4">{populated.length} widget{populated.length === 1 ? "" : "s"}</span>
             </label>
             <button
               type="button"
-              className="mt-1 text-[11px] text-amber-300 hover:underline"
+              className="mt-1 text-[11px] text-accent hover:underline"
               onClick={() => setShowWidgets((s) => ({ ...s, [g.id]: !drill }))}
             >
               {drill ? "Hide widgets" : "Show widgets"}
             </button>
             {drill && (
-              <ul className="mt-1 flex flex-col gap-1 border-l border-slate-800 pl-3">
+              <ul className="mt-1 flex flex-col gap-1 border-l border-hair pl-3">
                 {populated.map((c) => {
                   const def = COMPARISON_WIDGETS[c.widget!.kind];
                   return (
                     <li key={c.id}>
-                      <label className="flex items-center gap-2 text-xs text-slate-200">
+                      <label className="flex items-center gap-2 text-xs text-ink-2">
                         <input
                           type="checkbox"
                           checked={value.cellIds.includes(c.id)}

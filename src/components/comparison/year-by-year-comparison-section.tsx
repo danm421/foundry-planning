@@ -51,9 +51,9 @@ export function YearByYearComparisonSection({ plans, yearRange }: Props) {
 
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Year-by-year detail</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Year-by-year detail</h2>
 
-      <div className="mb-3 flex gap-1 border-b border-slate-800" role="tablist">
+      <div className="mb-3 flex gap-1 border-b border-hair" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -62,8 +62,8 @@ export function YearByYearComparisonSection({ plans, yearRange }: Props) {
             onClick={() => setActiveKey(t.key)}
             className={`px-3 py-2 text-sm ${
               t.key === activeKey
-                ? "border-b-2 border-emerald-500 text-slate-100"
-                : "text-slate-400 hover:text-slate-200"
+                ? "border-b-2 border-accent text-ink"
+                : "text-ink-4 hover:text-ink-2"
             }`}
           >
             {t.label}
@@ -71,15 +71,15 @@ export function YearByYearComparisonSection({ plans, yearRange }: Props) {
         ))}
       </div>
 
-      <div className="max-h-[60vh] overflow-auto rounded border border-slate-800">
+      <div className="max-h-[60vh] overflow-auto rounded border border-hair">
         <table className="min-w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur">
+          <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur">
             <tr>
-              <th className="sticky left-0 z-20 bg-slate-900/95 px-3 py-2 text-left font-medium text-slate-300">
+              <th className="sticky left-0 z-20 bg-card/95 px-3 py-2 text-left font-medium text-ink-2">
                 Year
               </th>
               {plans.map((p) => (
-                <th key={p.id} className="px-3 py-2 text-right font-medium text-slate-300">
+                <th key={p.id} className="px-3 py-2 text-right font-medium text-ink-2">
                   {p.label}
                 </th>
               ))}
@@ -87,7 +87,7 @@ export function YearByYearComparisonSection({ plans, yearRange }: Props) {
                 plans.slice(1).map((p) => (
                   <th
                     key={`d-${p.id}`}
-                    className="px-3 py-2 text-right font-medium text-slate-300"
+                    className="px-3 py-2 text-right font-medium text-ink-2"
                   >
                     Δ vs {plans[0].label}
                   </th>
@@ -98,8 +98,8 @@ export function YearByYearComparisonSection({ plans, yearRange }: Props) {
             {allYears.map((year) => {
               const baseV = valueAt(plans[0], year) ?? 0;
               return (
-                <tr key={year} className="border-t border-slate-800">
-                  <td className="sticky left-0 bg-slate-950 px-3 py-1.5 text-left text-slate-300">
+                <tr key={year} className="border-t border-hair">
+                  <td className="sticky left-0 bg-card px-3 py-1.5 text-left text-ink-2">
                     {year}
                   </td>
                   {plans.map((p) => {
@@ -107,7 +107,7 @@ export function YearByYearComparisonSection({ plans, yearRange }: Props) {
                     return (
                       <td
                         key={p.id}
-                        className="px-3 py-1.5 text-right tabular-nums text-slate-200"
+                        className="px-3 py-1.5 text-right tabular-nums text-ink-2"
                       >
                         {v === null ? "—" : fmtMoney.format(v)}
                       </td>
@@ -125,10 +125,10 @@ export function YearByYearComparisonSection({ plans, yearRange }: Props) {
                       const d = v - baseV;
                       const cls =
                         d > 0
-                          ? "text-emerald-400"
+                          ? "text-good"
                           : d < 0
-                            ? "text-rose-400"
-                            : "text-slate-400";
+                            ? "text-crit"
+                            : "text-ink-4";
                       return (
                         <td
                           key={`d-${p.id}`}

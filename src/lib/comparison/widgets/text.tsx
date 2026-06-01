@@ -29,7 +29,7 @@ export const textWidget: ComparisonWidgetDefinition<TextConfig> = {
           <button
             type="button"
             onClick={handleExpand}
-            className="w-full rounded border border-dashed border-slate-700 px-4 py-6 text-xs italic text-ink-3 hover:border-amber-400 hover:text-amber-200"
+            className="w-full rounded border border-dashed border-hair px-4 py-6 text-xs italic text-ink-3 hover:border-accent hover:text-accent"
           >
             Empty text block — click to add content
           </button>
@@ -58,7 +58,7 @@ export const textWidget: ComparisonWidgetDefinition<TextConfig> = {
             <button
               type="button"
               onClick={handleExpand}
-              className="absolute bottom-2 right-3 rounded border border-slate-700 bg-slate-900/90 px-2 py-1 text-[11px] text-slate-200 hover:border-amber-400 hover:text-amber-200"
+              className="absolute bottom-2 right-3 rounded border border-hair bg-card/90 px-2 py-1 text-[11px] text-ink-2 hover:border-accent hover:text-accent"
             >
               {editing ? "Expand to edit" : "Show full"}
             </button>
