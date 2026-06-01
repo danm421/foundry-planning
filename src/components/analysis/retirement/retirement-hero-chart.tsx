@@ -15,7 +15,7 @@ import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
 import { retirementInflows } from "@/lib/analysis/retirement-inflows";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
-import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(
   CategoryScale,
@@ -39,14 +39,14 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
     if (years.length === 0) return null;
 
     // Inflow palette mirrors the Cash Flow report's stacked chart so the two
-    // read the same. Withdrawals uses the semantic crit token (loss/danger).
+    // read the same — Withdrawals is yellow there, so it is yellow here too.
     // Resolved to real hex — Chart.js paints to canvas (can't read CSS vars).
     const pal = dataPalette(theme);
     const COLOR_SS          = pal.blue;
     const COLOR_SALARIES    = pal.green;
     const COLOR_OTHER       = pal.teal;
     const COLOR_RMDS        = pal.orange;
-    const COLOR_WITHDRAWALS = statusColors(theme).crit;
+    const COLOR_WITHDRAWALS = pal.yellow;
     const COLOR_EXPENSES_LINE = chartChrome(theme).title;
 
     const labels = years.map((y) => String(y.year));
