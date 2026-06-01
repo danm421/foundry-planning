@@ -79,3 +79,24 @@ describe("describeFromSpec", () => {
     expect(row.what).toBe("+ Income source");
   });
 });
+
+import { describeChange } from "../describe";
+
+describe("describeChange", () => {
+  it("dispatches a known kind via the spec table", () => {
+    const row = describeChange(
+      change({ targetKind: "roth_conversion", targetId: "r1", opType: "add", payload: {} }),
+      { targetNames: { "roth_conversion:r1": "Roth ladder 2026–2030" } },
+    );
+    expect(row).toMatchObject({ area: "Taxes", what: "+ Roth ladder 2026–2030", op: "add" });
+  });
+
+  it("falls back gracefully for an unknown kind", () => {
+    const row = describeChange(
+      change({ targetKind: "totally_new_kind" as never, targetId: "x", opType: "add", payload: {} }),
+      { targetNames: {} },
+    );
+    expect(row.op).toBe("add");
+    expect(row.what.length).toBeGreaterThan(0);
+  });
+});
