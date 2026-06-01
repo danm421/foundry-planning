@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { db } from "@/db";
 import { assetClasses, cmaSets, cmaSetValues } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { seedCmaForFirm } from "@/lib/cma-seed-runner";
 import { seedCmaSetsForFirm, mirrorActiveSetToAssetClasses, CMA_SET_KEYS } from "@/lib/cma-sets";
 
@@ -46,8 +46,8 @@ describe("mirrorActiveSetToAssetClasses", () => {
     await seedCmaSetsForFirm(firmId);
 
     // make 'custom' active with a distinct number, then mirror
-    const [custom] = await db.select().from(cmaSets).where(eq(cmaSets.key, "custom"));
-    const [hist] = await db.select().from(cmaSets).where(eq(cmaSets.key, "historical"));
+    const [custom] = await db.select().from(cmaSets).where(and(eq(cmaSets.firmId, firmId), eq(cmaSets.key, "custom")));
+    const [hist] = await db.select().from(cmaSets).where(and(eq(cmaSets.firmId, firmId), eq(cmaSets.key, "historical")));
     const [oneVal] = await db.select().from(cmaSetValues).where(eq(cmaSetValues.cmaSetId, custom.id)).limit(1);
     await db.update(cmaSetValues).set({ geometricReturn: "0.0123" }).where(eq(cmaSetValues.id, oneVal.id));
     await db.update(cmaSets).set({ isActive: false }).where(eq(cmaSets.id, hist.id));

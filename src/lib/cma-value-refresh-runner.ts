@@ -1,7 +1,8 @@
 import { db } from "@/db";
-import { assetClasses, assetClassCorrelations } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { assetClasses, assetClassCorrelations, cmaSets, cmaSetValues } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_CORRELATIONS } from "./cma-seed";
+import { mirrorActiveSetToAssetClasses } from "./cma-sets";
 import {
   buildCorrelationMatrix,
   canonicalPair,
@@ -91,20 +92,33 @@ export async function refreshFirmStandardValues(
     const err = validateRefreshRequest(preview, request);
     if (err) throw new ValueRefreshError(err);
 
-    // 1. Update opted-in classes to the standard values.
+    // 1. Update opted-in classes to the standard values. Tax composition and
+    //    assetType are shared identity columns (no per-set storage), so they're
+    //    always written to asset_classes here. The three numeric values are also
+    //    written to the Historical set below — that set is the durable store, and
+    //    the mirror reconciles the asset_classes numeric columns to the active set.
     const byId = new Map(existing.map((c) => [c.id, c]));
+    const refreshedValues: {
+      assetClassId: string;
+      geometricReturn: string;
+      arithmeticMean: string;
+      volatility: string;
+    }[] = [];
     let updatedClasses = 0;
     for (const classId of request.classIds) {
       const row = byId.get(classId);
       if (!row) continue; // validated above; defensive
       const def = STANDARD_BY_NAME.get(row.name);
       if (!def) continue;
+      const geometricReturn = String(def.geometricReturn);
+      const arithmeticMean = String(def.arithmeticMean);
+      const volatility = String(def.volatility);
       await tx
         .update(assetClasses)
         .set({
-          geometricReturn: String(def.geometricReturn),
-          arithmeticMean: String(def.arithmeticMean),
-          volatility: String(def.volatility),
+          geometricReturn,
+          arithmeticMean,
+          volatility,
           pctOrdinaryIncome: String(def.pctOrdinaryIncome),
           pctLtCapitalGains: String(def.pctLtCapitalGains),
           pctQualifiedDividends: String(def.pctQualifiedDividends),
@@ -113,7 +127,36 @@ export async function refreshFirmStandardValues(
           updatedAt: new Date(),
         })
         .where(eq(assetClasses.id, classId));
+      refreshedValues.push({ assetClassId: classId, geometricReturn, arithmeticMean, volatility });
       updatedClasses++;
+    }
+
+    // 1b. Write the refreshed numbers into the Historical set's cma_set_values
+    //     (the durable per-set store), then reconcile asset_classes' numeric
+    //     columns to whichever set is active. When Historical is active this is
+    //     the same numbers we just wrote; when another set is active it restores
+    //     that set's numbers over the direct write above.
+    const [historical] = await tx
+      .select()
+      .from(cmaSets)
+      .where(and(eq(cmaSets.firmId, firmId), eq(cmaSets.key, "historical")));
+    if (historical && refreshedValues.length > 0) {
+      for (const u of refreshedValues) {
+        await tx
+          .update(cmaSetValues)
+          .set({
+            geometricReturn: u.geometricReturn,
+            arithmeticMean: u.arithmeticMean,
+            volatility: u.volatility,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(cmaSetValues.cmaSetId, historical.id), eq(cmaSetValues.assetClassId, u.assetClassId)));
+      }
+      await mirrorActiveSetToAssetClasses(
+        tx,
+        firmId,
+        refreshedValues.map((u) => u.assetClassId),
+      );
     }
 
     // 2. Replace the standard↔standard correlation block (all-or-nothing).

@@ -28,8 +28,21 @@ type Executor = Pick<DbLike, "execute">;
 /**
  * Copy the firm's active CMA set's numbers onto the asset_classes columns.
  * Single UPDATE … FROM. Safe to run inside or outside a transaction (pass tx).
+ * Pass `assetClassIds` to limit the mirror to specific classes (e.g. a value
+ * refresh that touched only a subset); omit it to mirror the whole firm.
  */
-export async function mirrorActiveSetToAssetClasses(db: Executor, firmId: string): Promise<void> {
+export async function mirrorActiveSetToAssetClasses(
+  db: Executor,
+  firmId: string,
+  assetClassIds?: string[],
+): Promise<void> {
+  const idFilter =
+    assetClassIds && assetClassIds.length > 0
+      ? sql`AND ac.id IN (${sql.join(
+          assetClassIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`
+      : sql``;
   await db.execute(sql`
     UPDATE ${assetClasses} AS ac
     SET geometric_return = v.geometric_return,
@@ -42,6 +55,7 @@ export async function mirrorActiveSetToAssetClasses(db: Executor, firmId: string
       AND ac.firm_id = ${firmId}
       AND s.firm_id = ${firmId}
       AND s.is_active = true
+      ${idFilter}
   `);
 }
 
