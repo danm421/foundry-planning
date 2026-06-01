@@ -7,6 +7,8 @@ import {
   type AssetTypeId,
 } from "@/lib/investments/asset-types";
 import { TrashIcon } from "@/components/icons";
+import { HelpTip } from "@/components/help-tip";
+import { benchmarkTooltip } from "@/lib/investments/cma-benchmarks";
 import CmaMigrationDialog from "@/components/cma-migration-dialog";
 import CmaValueRefreshDialog from "@/components/cma-value-refresh-dialog";
 import CmaSkeleton from "./loading-skeleton";
@@ -14,6 +16,7 @@ import CmaSkeleton from "./loading-skeleton";
 interface AssetClass {
   id: string;
   name: string;
+  slug: string | null;
   geometricReturn: string;
   arithmeticMean: string;
   volatility: string;
@@ -387,13 +390,16 @@ function AssetClassRow({
   return (
     <tr className="hover:bg-gray-800/30">
       <td className="px-3 py-2">
-        <input
-          type="text"
-          value={ac.name}
-          onChange={(e) => onUpdate(ac.id, "name", e.target.value)}
-          onBlur={() => onSave(ac)}
-          className="w-full rounded border border-gray-700 bg-transparent px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
-        />
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={ac.name}
+            onChange={(e) => onUpdate(ac.id, "name", e.target.value)}
+            onBlur={() => onSave(ac)}
+            className="w-full rounded border border-gray-700 bg-transparent px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
+          />
+          {benchmarkTooltip(ac.slug) && <HelpTip text={benchmarkTooltip(ac.slug)!} />}
+        </div>
       </td>
       <td className="px-3 py-2">
         <select
