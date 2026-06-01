@@ -1,3 +1,8 @@
+import {
+  LIQUID_CATEGORIES,
+  type AccountCategory,
+} from "@/lib/account-groups/liquid-filter";
+
 /** Normalized account view for the Monte Carlo starting-liquid-balance sum. */
 export interface LiquidAccountInput {
   id: string;
@@ -6,11 +11,6 @@ export interface LiquidAccountInput {
   /** Owning entity id, or null for household-owned (always in-estate). */
   entityId: string | null;
 }
-
-/** Liquid (investable, estate-included) account categories. Real estate,
- *  business, and life insurance are excluded — they can't be liquidated to
- *  cover a shortfall (eMoney whitepaper p.11). */
-const LIQUID_CATEGORIES = new Set(["taxable", "cash", "retirement"]);
 
 /**
  * Sums the starting liquid portfolio value used as the Monte Carlo CAGR
@@ -31,7 +31,10 @@ export function computeStartingLiquidBalance(
 ): number {
   let total = 0;
   for (const a of accounts) {
-    if (!LIQUID_CATEGORIES.has(a.category)) continue;
+    // Liquid (investable, estate-included) only — real estate / business / life
+    // insurance can't be liquidated to cover a shortfall (eMoney whitepaper
+    // p.11). LIQUID_CATEGORIES is the canonical set in liquid-filter.ts.
+    if (!LIQUID_CATEGORIES.has(a.category as AccountCategory)) continue;
     const inEstate = a.entityId == null || entityInPortfolio.get(a.entityId) === true;
     if (!inEstate) continue;
     total += holdingsValueByAccountId.get(a.id) ?? a.value;
