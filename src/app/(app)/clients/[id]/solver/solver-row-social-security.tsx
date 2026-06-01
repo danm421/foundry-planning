@@ -18,6 +18,9 @@ type ActiveSolve = {
   achievedPoS: number | null;
 };
 
+const SS_CLAIM_AGE_SOLVE_DESCRIPTION =
+  "Finds the Social Security claiming age that reaches your target probability of success.";
+
 interface Props {
   baseIncomes: ClientData["incomes"];
   workingIncomes: ClientData["incomes"];
@@ -195,6 +198,7 @@ function EditableSummary({
         <div className="relative shrink-0">
           <SolverSolveIcon
             label={`Solve ${label} Claim Age`}
+            tooltip={SS_CLAIM_AGE_SOLVE_DESCRIPTION}
             disabled={otherSolveActive}
             onClick={() => setPopoverOpen(true)}
           />

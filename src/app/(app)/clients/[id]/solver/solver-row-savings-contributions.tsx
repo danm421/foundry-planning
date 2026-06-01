@@ -21,6 +21,9 @@ type ActiveSolve = {
   achievedPoS: number | null;
 };
 
+const SAVINGS_CONTRIBUTION_SOLVE_DESCRIPTION =
+  "Finds the annual contribution to this account that reaches your target probability of success.";
+
 interface Props {
   baseClientData: ClientData;
   workingClientData: ClientData;
@@ -271,6 +274,7 @@ function Editable({
           <div className="relative">
             <SolverSolveIcon
               label={`Solve ${label}`}
+              tooltip={SAVINGS_CONTRIBUTION_SOLVE_DESCRIPTION}
               disabled={otherSolveActive}
               onClick={() => setPopoverOpen(true)}
             />

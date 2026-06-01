@@ -17,6 +17,9 @@ type ActiveSolve = {
   achievedPoS: number | null;
 };
 
+const RETIREMENT_AGE_SOLVE_DESCRIPTION =
+  "Finds the retirement age that reaches your target probability of success, holding spending and savings fixed.";
+
 interface Props {
   baseClient: ClientData["client"];
   workingClient: ClientData["client"];
@@ -168,6 +171,7 @@ function EditableWithSolve({
         />
         <SolverSolveIcon
           label={`Solve ${label}`}
+          tooltip={RETIREMENT_AGE_SOLVE_DESCRIPTION}
           disabled={otherSolveActive}
           onClick={() => setPopoverOpen(true)}
         />

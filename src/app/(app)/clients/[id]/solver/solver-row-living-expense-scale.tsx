@@ -17,6 +17,9 @@ type ActiveSolve = {
   achievedPoS: number | null;
 };
 
+const LIVING_EXPENSE_SOLVE_DESCRIPTION =
+  "Scales retirement living expenses up or down to find the spending level that reaches your target probability of success.";
+
 interface Props {
   baseExpenses: ClientData["expenses"];
   workingExpenses: ClientData["expenses"];
@@ -53,6 +56,7 @@ export function SolverRowLivingExpenseScale({
           <div className="relative">
             <SolverSolveIcon
               label="Solve Living Expense Scale"
+              tooltip={LIVING_EXPENSE_SOLVE_DESCRIPTION}
               disabled={otherSolveActive}
               onClick={() => setPopoverOpen(true)}
             />

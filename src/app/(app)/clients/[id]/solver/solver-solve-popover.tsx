@@ -2,6 +2,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+
+const MIN_TARGET_PCT = 1;
+const MAX_TARGET_PCT = 100;
 
 interface Props {
   title: string;
@@ -47,7 +51,7 @@ export function SolverSolvePopover({
 
   if (!open) return null;
 
-  const isValid = value >= 1 && value <= 99;
+  const isValid = value >= MIN_TARGET_PCT && value <= MAX_TARGET_PCT;
 
   return (
     <div
@@ -57,23 +61,27 @@ export function SolverSolvePopover({
       className="absolute z-50 mt-1 w-64 rounded-md border border-hair-2 bg-card p-3 shadow-lg"
     >
       <div className="text-[12px] font-medium text-ink">{title}</div>
-      <div className="mt-2 text-[11px] text-ink-3">Target PoS</div>
+      <div className="mt-2 flex items-center gap-1 text-[11px] text-ink-3">
+        Target PoS
+        <FieldTooltip text="Probability of Success — the share of simulated scenarios in which the plan doesn't run out of money. The solver searches for the value that reaches this target." />
+      </div>
       <div className="mt-0.5 flex items-center gap-1">
         <input
           type="number"
-          min={1}
-          max={99}
+          min={MIN_TARGET_PCT}
+          max={MAX_TARGET_PCT}
           value={value}
           onChange={(e) => {
             const n = parseInt(e.target.value, 10);
-            if (!Number.isNaN(n)) setValue(n);
+            if (Number.isNaN(n)) return;
+            setValue(Math.min(MAX_TARGET_PCT, Math.max(MIN_TARGET_PCT, n)));
           }}
           className="h-8 w-20 rounded-md border border-hair-2 bg-card-2 px-2 text-[14px] text-ink tabular focus:outline-none focus:border-accent"
           aria-label="Target Probability of Success percent"
         />
         <span className="text-[12px] text-ink-3">%</span>
       </div>
-      <div className="mt-2 text-[11px] text-ink-3">Range: {rangeLabel}</div>
+      <div className="mt-2 text-[11px] text-ink-3">Search range: {rangeLabel}</div>
       <div className="mt-3 flex justify-end gap-2">
         <button
           type="button"
