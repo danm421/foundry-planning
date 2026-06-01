@@ -8,7 +8,7 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import { fundingScore } from "@/lib/analysis/retirement-funding-score";
 import { applyMutations } from "./apply-mutations";
-import { bisect } from "./bisect";
+import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
 import {
   buildLeverMutation,
   leverSearchConfig,
@@ -73,7 +73,7 @@ export async function solveFunding(args: SolveFundingArgs): Promise<SolveFunding
     tolerance: 0,       // no early-exit: converge via bracket-collapse to the
                         // minimal funded lever (bisect always returns the
                         // funded "tight" side, so the result is truly funded)
-    maxIterations: 24,  // enough to narrow the widest lever range by its step
+    maxIterations: WIDE_LEVER_MAX_ITERATIONS,  // narrow the widest lever range by its step
     evaluate,
   });
 

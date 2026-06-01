@@ -28,6 +28,12 @@ export interface BisectInput {
   evaluate: (value: number) => Promise<number>;
 }
 
+/** Iteration budget for bisecting a wide lever range (savings/roth) down to its
+ *  step: ~log2(range/step) bisections plus the two endpoint probes. The default
+ *  of 8 suits narrow age levers but exits short of the true minimum on wide
+ *  ranges, so the live PoS and funding solvers pass this instead. */
+export const WIDE_LEVER_MAX_ITERATIONS = 24;
+
 export type BisectStatus = "converged" | "unreachable" | "max-iterations";
 
 export interface BisectResult {

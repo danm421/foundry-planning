@@ -21,7 +21,7 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import { applyMutations } from "./apply-mutations";
-import { bisect } from "./bisect";
+import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
 import { buildLeverMutation, leverSearchConfig } from "./lever-search-config";
 import { resolveTechniqueMutations } from "./resolve-technique-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "./solve-types";
@@ -96,9 +96,9 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     step: config.step,
     direction: config.direction,
     target: args.targetPoS,
-    maxIterations: 24, // wide savings/roth levers need ~log2(range/step) bisections;
-                       // default 8 exits max-iterations short of the true minimum.
-                       // Matches solve-funding.ts. (F11/F13/F29)
+    // Wide savings/roth levers need ~log2(range/step) bisections; the default 8
+    // exits max-iterations short of the true minimum. (F11/F13/F29)
+    maxIterations: WIDE_LEVER_MAX_ITERATIONS,
     evaluate,
   });
 
