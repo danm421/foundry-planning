@@ -27,10 +27,12 @@ const ROWS: UnifiedClientRow[] = [
 ];
 
 describe("UnifiedClientsTable", () => {
-  it("renders a Planning pill for households with a plan", () => {
+  it("renders a Planning status pill for households with a plan", () => {
     render(<UnifiedClientsTable rows={ROWS} />);
     const planningRow = screen.getByText("Smith Household").closest("tr")!;
-    expect(within(planningRow).getByText("Planning")).toBeInTheDocument();
+    // The row also has a "Planning" quick-link <a>; the status pill is the <span>.
+    const planningEls = within(planningRow).getAllByText("Planning");
+    expect(planningEls.some((el) => el.tagName === "SPAN")).toBe(true);
   });
 
   it("shows an em dash for households with no plan and no primary contact", () => {
@@ -41,10 +43,15 @@ describe("UnifiedClientsTable", () => {
     expect(within(prospectRow).getAllByText("—").length).toBeGreaterThan(0);
   });
 
-  it("renders each name as a menu trigger button", () => {
+  it("renders CRM and planning quick links per household", () => {
     render(<UnifiedClientsTable rows={ROWS} />);
-    expect(screen.getByRole("button", { name: "Smith Household" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Jones Household" })).toBeInTheDocument();
+    const smithRow = screen.getByText("Smith Household").closest("tr")!;
+    expect(within(smithRow).getByRole("link", { name: "CRM" })).toBeInTheDocument();
+    expect(within(smithRow).getByRole("link", { name: "Planning" })).toBeInTheDocument();
+    // Households without a plan get a "Start planning" deep-link instead.
+    const jonesRow = screen.getByText("Jones Household").closest("tr")!;
+    expect(within(jonesRow).getByRole("link", { name: "CRM" })).toBeInTheDocument();
+    expect(within(jonesRow).getByRole("link", { name: "Start planning" })).toBeInTheDocument();
   });
 
   it("renders an empty state when there are no rows", () => {

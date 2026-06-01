@@ -17,6 +17,11 @@ export default defineConfig({
       // worktree tooling and carry their own copy of `src/`. Same race
       // hazard as the dotted `.worktrees/` siblings — exclude both.
       "**/.claude/worktrees/**",
+      // `.claire/worktrees/<slug>/` is a gitignored local mirror dir from an
+      // alternate worktree tool. Same hazard: vitest descends into a stale
+      // copy whose `@/` alias still resolves to the main `src/`, so in-flight
+      // feature modules fail to import and surface as spurious failures.
+      "**/.claire/worktrees/**",
     ],
     // Several test files clean up by toggling user triggers on shared tables
     // (e.g. account_owners_sum_check) via `ALTER TABLE ... DISABLE TRIGGER`,

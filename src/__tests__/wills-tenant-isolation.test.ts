@@ -31,7 +31,7 @@ const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
 
 vi.mock("@/lib/db-helpers", () => ({
-  getOrgId: vi.fn(),
+  requireOrgId: vi.fn(),
 }));
 
 const FIRM_A = "firm_wills_test_a";
@@ -141,12 +141,12 @@ d("wills tenant isolation", () => {
 
   beforeEach(async () => {
     await cleanup();
-    vi.mocked(helpers.getOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockReset();
   });
 
   it("Firm B cannot GET Firm A's wills list", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_B);
     const { GET } = await import("@/app/api/clients/[id]/wills/route");
     const res = await GET(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,7 +159,7 @@ d("wills tenant isolation", () => {
   it("Firm A cannot POST a will with Firm B's account as accountId", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { POST } = await import("@/app/api/clients/[id]/wills/route");
     const body = {
       grantor: "client",
@@ -187,7 +187,7 @@ d("wills tenant isolation", () => {
   it("Firm A cannot POST a will with Firm B's family member as recipient", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { POST } = await import("@/app/api/clients/[id]/wills/route");
     const body = {
       grantor: "client",
@@ -219,7 +219,7 @@ d("wills tenant isolation", () => {
 
   it("duplicate (client_id, grantor) on POST returns 409", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { POST } = await import("@/app/api/clients/[id]/wills/route");
     const body = { grantor: "client", bequests: [] };
     const first = await POST(
@@ -236,7 +236,7 @@ d("wills tenant isolation", () => {
 
   it("Firm B cannot PATCH Firm A's will", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { db } = dbMod;
     const { wills } = schema;
     const [seeded] = await db
@@ -244,7 +244,7 @@ d("wills tenant isolation", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values({ clientId: a.clientId, grantor: "client" } as any)
       .returning();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_B);
     const { PATCH } = await import("@/app/api/clients/[id]/wills/[willId]/route");
     const res = await PATCH(
       new Request("http://x", { method: "PATCH", body: JSON.stringify({ bequests: [] }) }) as unknown as Parameters<typeof PATCH>[0],
@@ -255,7 +255,7 @@ d("wills tenant isolation", () => {
 
   it("Firm B cannot DELETE Firm A's will", async () => {
     const a = await setupFirmWithClient(FIRM_A);
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { db } = dbMod;
     const { wills } = schema;
     const [seeded] = await db
@@ -263,7 +263,7 @@ d("wills tenant isolation", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values({ clientId: a.clientId, grantor: "client" } as any)
       .returning();
-    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_B);
     const { DELETE } = await import("@/app/api/clients/[id]/wills/[willId]/route");
     const res = await DELETE(
       new Request("http://x", { method: "DELETE" }) as unknown as Parameters<typeof DELETE>[0],

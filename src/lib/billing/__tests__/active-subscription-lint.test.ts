@@ -215,6 +215,91 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/api/cma/sets/[key]/values/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/cma/sets/active/route.ts": "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/route.ts": "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/open/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/accounts/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/accounts/[accountId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/activity/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/contacts/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/contacts/[contactId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/documents/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/documents/[docId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/import/preview/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/import/commit/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tags/route.ts": "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/route.ts": "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/[taskId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/[taskId]/status/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/[taskId]/comments/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/[taskId]/files/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/[taskId]/files/[fileId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/[taskId]/tags/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/tasks/[taskId]/tags/[tagId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/firms/comparison-templates/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/firms/comparison-templates/[tid]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/account-groups/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/account-groups/[groupId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/accounts/[accountId]/holdings/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/accounts/[accountId]/holdings/[holdingId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/accounts/[accountId]/holdings/[holdingId]/override/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/accounts/[accountId]/holdings/classify/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/analysis/retirement/options/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/analysis/retirement/pos/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/analysis/retirement/project/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/analysis/retirement/save-to-base/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/comparison/ai-analysis/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/comparisons/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/comparisons/[cid]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/comparisons/[cid]/save-as-template/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/medicare-coverage/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/notes-receivable/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/notes-receivable/[noteId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/notes-receivable/[noteId]/extra-payments/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/solver/project/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/solver/save-scenario/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/solver/save-to-base/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;
