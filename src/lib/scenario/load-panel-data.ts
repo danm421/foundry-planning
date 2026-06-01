@@ -98,7 +98,7 @@ export async function loadPanelData(
   };
 }
 
-function buildTargetNames(
+export function buildTargetNames(
   tree: Awaited<ReturnType<typeof loadEffectiveTree>>["effectiveTree"],
   clientId: string,
 ): Record<string, string> {

@@ -45,7 +45,11 @@ describe("searchReports", () => {
 
   it("empty placeholder category yields no sections", () => {
     expect(searchReports("", {}, [], "Retirement").sections).toHaveLength(0);
-    expect(searchReports("", {}, [], "Comparison").order).toHaveLength(0);
+    expect(searchReports("", {}, [], "Retirement").order).toHaveLength(0);
+  });
+
+  it("the Comparison category surfaces the scenario-changes report", () => {
+    expect(searchReports("", {}, [], "Comparison").order).toContain("scenarioChanges");
   });
 
   it("reflects deck counts on rows", () => {

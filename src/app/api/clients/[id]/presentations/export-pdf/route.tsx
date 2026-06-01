@@ -37,6 +37,9 @@ import {
 import { dateLong } from "@/lib/presentations/format";
 import { recordAudit } from "@/lib/audit";
 import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
+import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
+import { buildTargetNames } from "@/lib/scenario/load-panel-data";
+import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import React from "react";
 
 export const dynamic = "force-dynamic";
@@ -201,6 +204,38 @@ export async function POST(
       ? (await loadInvestmentsBundle(id, firmId)) ?? undefined
       : undefined;
 
+    // Scenario Changes report: load the raw edits for the active scenario, but
+    // only when the deck includes that page AND the active ref is a live
+    // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
+    // only — matching what the overlaid clientData already reflects.
+    //
+    // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
+    // scenarioId alone. rawScenarioId is proven to belong to this firm/client by
+    // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
+    // clientId/firmId and throws on a cross-org id before we reach here). Do not
+    // remove or lazily defer that call without adding firm scoping to these reads.
+    let scenarioChanges: ScenarioChangesContext | undefined;
+    const needsScenarioChanges = parsed.data.pages.some((p) => p.pageId === "scenarioChanges");
+    const isLiveScenario =
+      !!rawScenarioId && rawScenarioId !== "base" && !rawScenarioId.startsWith("snap:");
+    if (needsScenarioChanges && isLiveScenario) {
+      try {
+        const [changes, toggleGroups] = await Promise.all([
+          loadScenarioChanges(rawScenarioId),
+          loadScenarioToggleGroups(rawScenarioId),
+        ]);
+        scenarioChanges = {
+          changes,
+          toggleGroups,
+          targetNames: buildTargetNames(clientData, id),
+          baseLabel: "your current plan",
+        };
+      } catch (scErr) {
+        // Non-fatal: leave undefined so the page renders its empty state.
+        console.error("Scenario changes load failed for export", scErr);
+      }
+    }
+
     const ci = clientData.client;
     const clientFirstName = ci.firstName;
     const clientLastName = ci.lastName ?? "";
@@ -241,6 +276,7 @@ export async function POST(
       clientData,
       monteCarlo,
       investments,
+      scenarioChanges,
     }) as unknown as React.ReactElement<DocumentProps>;
 
     // @react-pdf/renderer has a memory-leak history on large docs, and
