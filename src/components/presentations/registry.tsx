@@ -170,6 +170,11 @@ export interface BuildDataContext {
   firmName: string;
   firmTagline: string | null;
   reportDate: string;
+  /** Cover branding: cream-panel logo data URL (firm logo or Foundry default;
+   *  null falls back to a firm-name wordmark) and the accent color for the
+   *  diagonal stripes/rules (firm primaryColor or the report gold fallback). */
+  firmLogoDataUrl: string | null;
+  accentColor: string;
   /** Present only when the deck includes a Monte Carlo page; the export route
    *  runs the sim server-side and injects the compact payload. Null/undefined
    *  for every other deck — non-MC pages ignore it. */
@@ -252,6 +257,8 @@ export const coverPage: PresentationPage<CoverPageData, CoverPageOptions> = {
     spouseName: ctx.spouseName,
     scenarioLabel: ctx.scenarioLabel,
     reportDate: ctx.reportDate,
+    logoDataUrl: ctx.firmLogoDataUrl,
+    accentColor: ctx.accentColor,
   }),
   renderPdf: ({ data }) => (
     <CoverPdf
@@ -262,6 +269,8 @@ export const coverPage: PresentationPage<CoverPageData, CoverPageOptions> = {
       spouseName={data.spouseName}
       scenarioLabel={data.scenarioLabel}
       reportDate={data.reportDate}
+      logoDataUrl={data.logoDataUrl}
+      accentColor={data.accentColor}
     />
   ),
 };

@@ -33,6 +33,8 @@ function ctx(extra: Partial<BuildDataContext>): BuildDataContext {
     spouseName: null,
     firmName: "Acme",
     firmTagline: null,
+    firmLogoDataUrl: null,
+    accentColor: "#b87f1f",
     reportDate: "May 29, 2026",
     monteCarlo: payload,
     ...extra,

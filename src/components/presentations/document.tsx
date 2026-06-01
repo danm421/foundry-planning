@@ -16,6 +16,9 @@ interface PresentationDocumentProps {
   }>;
   firmName: string;
   firmTagline: string | null;
+  /** Cover branding: cream-panel logo (firm logo or Foundry default) + accent color. */
+  firmLogoDataUrl: string | null;
+  accentColor: string;
   clientName: string;
   reportDate: string;
   scenarioLabel: string;
@@ -71,6 +74,8 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             spouseName: props.spouseName,
             firmName: props.firmName,
             firmTagline: props.firmTagline,
+            firmLogoDataUrl: props.firmLogoDataUrl,
+            accentColor: props.accentColor,
             reportDate: props.reportDate,
             monteCarlo: props.monteCarlo ?? null,
             investments: props.investments,
