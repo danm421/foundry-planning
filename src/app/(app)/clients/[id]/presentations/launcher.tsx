@@ -25,6 +25,7 @@ import {
   type PresentationPageId,
 } from "@/components/presentations/registry";
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
+import { PdfPreviewDialog, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
@@ -78,6 +79,7 @@ export function PresentationsLauncher(props: Props) {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -201,27 +203,30 @@ export function PresentationsLauncher(props: Props) {
     if (t) dispatch({ type: "loadTemplate", template: t });
   }
 
+  const resolvedScenarioId =
+    state.topScenarioPickerValue === "base" ? null : state.topScenarioPickerValue;
+
+  function descriptorsFor(pages: LauncherState["pages"]) {
+    return pages.map((p) => ({
+      pageId: p.pageId,
+      options: p.options,
+      scenarioOverride: p.scenarioOverride,
+    }));
+  }
+
   async function handleGenerate() {
     setError(null);
     setGenerating(true);
     try {
-      const scenarioId =
-        state.topScenarioPickerValue === "base"
-          ? null
-          : state.topScenarioPickerValue;
       const res = await fetch(
         `/api/clients/${props.clientId}/presentations/export-pdf`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            scenarioId,
+            scenarioId: resolvedScenarioId,
             filename: state.filename || undefined,
-            pages: state.pages.map((p) => ({
-              pageId: p.pageId,
-              options: p.options,
-              scenarioOverride: p.scenarioOverride,
-            })),
+            pages: descriptorsFor(state.pages),
           }),
         },
       );
@@ -302,6 +307,20 @@ export function PresentationsLauncher(props: Props) {
           </button>
           <button
             type="button"
+            disabled={state.pages.length === 0}
+            onClick={() =>
+              setPreviewRequest({
+                title: "Full presentation",
+                scenarioId: resolvedScenarioId,
+                pages: descriptorsFor(state.pages),
+              })
+            }
+            className="rounded border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-card-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Preview full
+          </button>
+          <button
+            type="button"
             disabled={generateDisabled}
             onClick={handleGenerate}
             className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
@@ -350,6 +369,13 @@ export function PresentationsLauncher(props: Props) {
                       }
                       onRemove={() =>
                         dispatch({ type: "removePage", index: i })
+                      }
+                      onPreview={() =>
+                        setPreviewRequest({
+                          title: PRESENTATION_PAGES[p.pageId].title,
+                          scenarioId: resolvedScenarioId,
+                          pages: descriptorsFor([p]),
+                        })
                       }
                       scenarios={props.scenarios}
                       snapshots={props.snapshots}
@@ -401,6 +427,11 @@ export function PresentationsLauncher(props: Props) {
         initialVisibility={state.loadedTemplate?.visibility ?? "private"}
         onSave={handleSaveAsNew}
         onCancel={() => setShowSaveModal(false)}
+      />
+      <PdfPreviewDialog
+        request={previewRequest}
+        clientId={props.clientId}
+        onClose={() => setPreviewRequest(null)}
       />
     </div>
     </PresentationOptionsProvider>

@@ -19,6 +19,7 @@ interface Props {
   onOptionsChange: (next: unknown) => void;
   onScenarioOverrideChange: (next: string | null | undefined) => void;
   onRemove: () => void;
+  onPreview: () => void;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
 }
@@ -53,6 +54,14 @@ export function SelectedPageRow(props: Props) {
           <div className="text-sm font-medium text-ink">{page.title}</div>
           <div className="text-xs text-ink-2">{summary}</div>
         </div>
+        <button
+          type="button"
+          aria-label={`Preview ${page.title}`}
+          className="rounded px-2 py-1 text-xs text-ink-3 transition-colors hover:bg-card-hover hover:text-ink"
+          onClick={props.onPreview}
+        >
+          Preview
+        </button>
         {Options && (
           <button
             type="button"
