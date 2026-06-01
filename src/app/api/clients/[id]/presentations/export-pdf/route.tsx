@@ -224,12 +224,23 @@ export async function POST(
       const projection = runProjectionWithEvents(clientData);
 
       // Monte Carlo runs server-side only when the deck includes the MC page.
-      // The engine is pure/Node-safe; we reuse the persisted base-case seed so
-      // the PDF is reproducible. Only runs for scenarios where a MC page exists.
+      // The engine is pure/Node-safe. Each scenario uses its own persisted seed
+      // (snapshots fall back to the base seed) so the PDF is reproducible per
+      // scenario. The effective tree for this bundle drives startingLiquidBalance.
       let monteCarlo: MonteCarloReportPayload | null = null;
       if (d.needsMonteCarlo) {
         try {
-          const mc = await loadMonteCarloData(id, firmId);
+          const mc = await loadMonteCarloData(
+            id,
+            firmId,
+            // Layer 1: per-scenario MC seed + per-scenario cache() key. Snapshots
+            // have no live scenario row, so they fall back to the base seed.
+            d.ref.kind === "scenario" ? d.ref.id : "base",
+            [],
+            // Layer 2 (Depth 1): per-scenario startingLiquidBalance from this
+            // bundle's effective tree.
+            clientData,
+          );
           const engine = createReturnEngine({
             indices: mc.indices,
             correlation: mc.correlation,
