@@ -340,7 +340,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — preview mode", () 
     );
     const { recordAudit } = await import("@/lib/audit");
     const { POST } = await import("../route");
-    const rlResult = { allowed: false as const, reason: "exceeded" };
+    const rlResult = { allowed: false as const, reason: "exceeded" as const };
     vi.mocked(checkPreviewPdfRateLimit).mockResolvedValueOnce(rlResult);
     await POST(makeReq(previewBody) as never, {
       params: Promise.resolve({ id: "client-1" }),

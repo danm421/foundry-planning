@@ -377,7 +377,7 @@ export async function POST(
       },
     });
 
-    const safeFilename = filename.replace(/["\\\r\n]/g, "");
+    const safeFilename = filename.replace(/["\\\r\n;]/g, "");
     return new NextResponse(stream as unknown as ReadableStream, {
       status: 200,
       headers: {
