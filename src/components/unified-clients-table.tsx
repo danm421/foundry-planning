@@ -1,6 +1,6 @@
 "use client";
 
-import { ClientRowMenu } from "./client-row-menu";
+import { ClientRowActions } from "./client-row-actions";
 
 export interface UnifiedClientRow {
   householdId: string;
@@ -15,6 +15,8 @@ export interface UnifiedClientRow {
 
 interface UnifiedClientsTableProps {
   rows: UnifiedClientRow[];
+  /** Shown when `rows` is empty. Defaults to the "no clients yet" message. */
+  emptyMessage?: string;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,12 +33,14 @@ function dash(value: string | null) {
   return value && value.trim() ? value : <span className="text-ink-3">—</span>;
 }
 
-export function UnifiedClientsTable({ rows }: UnifiedClientsTableProps) {
+export function UnifiedClientsTable({ rows, emptyMessage }: UnifiedClientsTableProps) {
   if (rows.length === 0) {
     return (
       <div className="mt-4 overflow-hidden rounded-lg border border-hair bg-card shadow-sm">
         <div className="px-6 py-12 text-center">
-          <p className="text-ink-3">No clients yet. Click &quot;New household&quot; to add one.</p>
+          <p className="text-ink-3">
+            {emptyMessage ?? 'No clients yet. Click "New household" to add one.'}
+          </p>
         </div>
       </div>
     );
@@ -48,6 +52,9 @@ export function UnifiedClientsTable({ rows }: UnifiedClientsTableProps) {
         <thead className="bg-card-2">
           <tr>
             <th className={TH}>Name</th>
+            <th className={TH}>
+              <span className="sr-only">Quick links</span>
+            </th>
             <th className={TH}>Status</th>
             <th className={TH}>Primary contact</th>
             <th className={TH}>Spouse</th>
@@ -60,9 +67,11 @@ export function UnifiedClientsTable({ rows }: UnifiedClientsTableProps) {
             return (
               <tr key={r.householdId} className="hover:bg-card-2">
                 <td className="whitespace-nowrap px-6 py-4">
-                  <ClientRowMenu
+                  <span className="font-medium text-ink">{r.name}</span>
+                </td>
+                <td className="whitespace-nowrap px-6 py-4">
+                  <ClientRowActions
                     householdId={r.householdId}
-                    name={r.name}
                     planningClientId={r.planningClientId}
                   />
                 </td>

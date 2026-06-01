@@ -974,6 +974,13 @@
       "when": 1780250824381,
       "tag": "0138_panoramic_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1780328753920,
+      "tag": "0139_crm_household_views",
+      "breakpoints": true
     }
   ]
 }

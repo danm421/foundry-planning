@@ -476,6 +476,26 @@ export const crmActivity = pgTable("crm_activity", {
   index("crm_activity_household_occurred_idx").on(t.householdId, t.occurredAt.desc()),
 ]);
 
+// Per-user "recently opened" tracking. One row per (user, household); the
+// open timestamp is upserted each time the advisor clicks into CRM/Planning
+// from the clients list. Powers the "Recently opened" filter.
+export const crmHouseholdViews = pgTable("crm_household_views", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  firmId: text("firm_id").notNull(),
+  userId: text("user_id").notNull(),
+  openedAt: timestamp("opened_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("crm_household_views_user_household_uq").on(t.userId, t.householdId),
+  index("crm_household_views_firm_user_opened_idx").on(
+    t.firmId,
+    t.userId,
+    t.openedAt.desc(),
+  ),
+]);
+
 export const crmHouseholdDocuments = pgTable("crm_household_documents", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")

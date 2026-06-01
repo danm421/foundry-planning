@@ -40,8 +40,36 @@ export function CrmHouseholdSearch() {
     }
   }
 
+  const view = searchParams.get("view") === "recent" ? "recent" : "all";
+  const segBase =
+    "inline-flex h-10 items-center rounded-[var(--radius-sm)] px-3 text-[13px] font-medium transition-colors";
+  const segActive = "bg-accent text-accent-on";
+  const segIdle = "text-ink-2 hover:bg-card";
+
   return (
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div
+        role="group"
+        aria-label="Filter clients"
+        className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-1"
+      >
+        <button
+          type="button"
+          aria-pressed={view === "all"}
+          onClick={() => updateParam("view", "", false)}
+          className={`${segBase} ${view === "all" ? segActive : segIdle}`}
+        >
+          All clients
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "recent"}
+          onClick={() => updateParam("view", "recent", false)}
+          className={`${segBase} ${view === "recent" ? segActive : segIdle}`}
+        >
+          Recently opened
+        </button>
+      </div>
       <input
         type="search"
         placeholder="Search households by name"

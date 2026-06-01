@@ -1,7 +1,13 @@
 import { db } from "@/db";
-import { accounts, crmHouseholds, scenarios } from "@/db/schema";
-import { and, eq, ilike, sql } from "drizzle-orm";
+import {
+  accounts,
+  crmHouseholds,
+  crmHouseholdViews,
+  scenarios,
+} from "@/db/schema";
+import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import type { CreateCrmHouseholdInput } from "./schemas";
@@ -33,6 +39,82 @@ export async function listCrmHouseholds(opts?: {
     offset,
     orderBy: (t, { desc }) => [desc(t.updatedAt)],
   });
+}
+
+/**
+ * Households the given user has opened (clicked CRM/Planning) from the
+ * clients list, newest-open first. Optionally narrowed by status/search.
+ * Each row carries `lastOpenedAt` for display. Returns [] when the user has
+ * opened nothing yet.
+ */
+export async function listRecentlyOpenedHouseholds(opts: {
+  userId: string;
+  search?: string;
+  status?: string;
+  limit?: number;
+}) {
+  const firmId = await requireOrgId();
+  const limit = opts.limit ?? 50;
+
+  const views = await db
+    .select({
+      householdId: crmHouseholdViews.householdId,
+      openedAt: crmHouseholdViews.openedAt,
+    })
+    .from(crmHouseholdViews)
+    .where(
+      and(
+        eq(crmHouseholdViews.firmId, firmId),
+        eq(crmHouseholdViews.userId, opts.userId),
+      ),
+    )
+    .orderBy(desc(crmHouseholdViews.openedAt))
+    .limit(limit);
+
+  if (views.length === 0) return [];
+
+  const ids = views.map((v) => v.householdId);
+  const conditions = [
+    eq(crmHouseholds.firmId, firmId),
+    inArray(crmHouseholds.id, ids),
+  ];
+  if (opts.status) {
+    conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
+  }
+  if (opts.search) {
+    conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
+  }
+
+  const rows = await db.query.crmHouseholds.findMany({
+    where: and(...conditions),
+    with: {
+      contacts: true,
+      planningClient: { columns: { id: true } },
+    },
+  });
+
+  // Preserve the opened-at ordering and attach the timestamp.
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  const openedAt = new Map(views.map((v) => [v.householdId, v.openedAt]));
+  return rows
+    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
+    .map((h) => ({ ...h, lastOpenedAt: openedAt.get(h.id) ?? null }));
+}
+
+/**
+ * Upsert the current user's "opened" timestamp for a household. Access-checked
+ * and firm-scoped via {@link requireCrmHouseholdAccess}. Fire-and-forget from
+ * the UI — failures are non-fatal to navigation.
+ */
+export async function recordHouseholdOpen(householdId: string, userId: string) {
+  const { orgId } = await requireCrmHouseholdAccess(householdId);
+  await db
+    .insert(crmHouseholdViews)
+    .values({ householdId, firmId: orgId, userId })
+    .onConflictDoUpdate({
+      target: [crmHouseholdViews.userId, crmHouseholdViews.householdId],
+      set: { openedAt: sql`now()` },
+    });
 }
 
 export async function getCrmHousehold(id: string) {

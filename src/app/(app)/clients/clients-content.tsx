@@ -1,18 +1,32 @@
 import Link from "next/link";
-import { listCrmHouseholds } from "@/lib/crm/households";
+import { auth } from "@clerk/nextjs/server";
+import {
+  listCrmHouseholds,
+  listRecentlyOpenedHouseholds,
+} from "@/lib/crm/households";
 import { CrmHouseholdSearch } from "@/components/crm-household-search";
 import { UnifiedClientsTable, type UnifiedClientRow } from "@/components/unified-clients-table";
 
 export async function ClientsContent({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; status?: string }>;
+  searchParams: Promise<{ search?: string; status?: string; view?: string }>;
 }) {
   const params = await searchParams;
-  const households = await listCrmHouseholds({
-    search: params.search,
-    status: params.status,
-  });
+  const recentView = params.view === "recent";
+  const { userId } = await auth();
+
+  const households =
+    recentView && userId
+      ? await listRecentlyOpenedHouseholds({
+          userId,
+          search: params.search,
+          status: params.status,
+        })
+      : await listCrmHouseholds({
+          search: params.search,
+          status: params.status,
+        });
 
   const rows: UnifiedClientRow[] = households.map((h) => {
     const primary = h.contacts.find((c) => c.role === "primary");
@@ -49,7 +63,14 @@ export async function ClientsContent({
         </div>
       </div>
       <CrmHouseholdSearch />
-      <UnifiedClientsTable rows={rows} />
+      <UnifiedClientsTable
+        rows={rows}
+        emptyMessage={
+          recentView
+            ? "No recently opened clients yet. Open a client's CRM or Planning to see it here."
+            : undefined
+        }
+      />
     </div>
   );
 }
