@@ -1,5 +1,5 @@
 import { colors, data } from "@/brand";
-import { chartSeriesColors } from "@/lib/chart-colors";
+import { chartSeriesColors } from "@/lib/chart-palette";
 import type { AssetTypeId } from "./asset-types";
 
 // 12-color palette sourced from the editorial brand palette — the nine named

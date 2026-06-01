@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chartSeriesColors } from "./chart-colors";
+import { chartSeriesColors } from "./chart-palette";
 
 describe("chartSeriesColors", () => {
   it("returns named-palette hex for n<=9, ordered for adjacency", () => {

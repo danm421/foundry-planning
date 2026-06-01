@@ -1,33 +1,14 @@
+"use client";
+
 import { useEffect, useState } from "react";
-import { colors, colorsLight, data, dataLight, dataScale } from "@/brand";
 import type { Theme } from "@/lib/theme";
+import { chartSeriesColors } from "./chart-palette";
 
-// Series order so neighbors cross hue families (orange · green · gold · cyan ·
-// pink · blue …), keeping look-alike pairs (sage/emerald, slate/indigo,
-// terra/wheat) non-adjacent — see foundry-design SKILL.md "Series order".
-const ADJACENCY = [
-  "terra",
-  "emerald",
-  "wheat",
-  "slate",
-  "rose",
-  "indigo",
-  "sage",
-  "violet",
-  "amber",
-] as const;
-
-/**
- * The series colors for a chart with `n` series, in adjacency order. Uses the
- * nine named editorial hues while `n <= 9`; beyond that, appends in-band
- * `dataScale` hues so the set still reads as one family.
- */
-export function chartSeriesColors(n: number, theme: Theme = "dark"): string[] {
-  const palette = theme === "light" ? dataLight : data;
-  const named = ADJACENCY.map((key) => palette[key]);
-  if (n <= named.length) return named.slice(0, n);
-  return [...named, ...dataScale(n - named.length, theme)];
-}
+// Re-export the pure helpers so existing client imports keep working from one
+// place. Server/PDF/lib code must import these from `./chart-palette` directly
+// (this module is client-only because of the theme hooks below).
+export { chartChrome, chartSeriesColors } from "./chart-palette";
+export type { ChartChrome } from "./chart-palette";
 
 /**
  * Client hook: tracks the live app theme by subscribing to the `data-theme`
@@ -57,28 +38,4 @@ export function useThemeName(): Theme {
 export function useChartColors(): (n: number) => string[] {
   const theme = useThemeName();
   return (n: number) => chartSeriesColors(n, theme);
-}
-
-export interface ChartChrome {
-  tick: string;
-  grid: string;
-  legend: string;
-  title: string;
-  tooltipBg: string;
-  tooltipTitle: string;
-  tooltipBody: string;
-}
-
-/** Theme-aware Chart.js chrome colors (axes, gridlines, legend, tooltip). */
-export function chartChrome(theme: Theme): ChartChrome {
-  const c = theme === "light" ? colorsLight : colors;
-  return {
-    tick: c.ink3,
-    grid: c.hair,
-    legend: c.ink2,
-    title: c.ink,
-    tooltipBg: c.card,
-    tooltipTitle: c.ink,
-    tooltipBody: c.ink2,
-  };
 }
