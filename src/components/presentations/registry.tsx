@@ -121,6 +121,17 @@ import {
 } from "@/lib/presentations/pages/portfolio-analysis/view-model";
 import { buildScatterSpec } from "@/lib/presentations/charts/scatter-chart-spec";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
+import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
+import type {
+  ScenarioChangesPageData,
+  ScenarioChangesOptions,
+} from "@/lib/presentations/pages/scenario-changes/types";
+import { scenarioChangesOptionsSchema, SCENARIO_CHANGES_OPTIONS_DEFAULT } from "@/lib/presentations/pages/scenario-changes/options-schema";
+import { summarizeScenarioChangesOptions } from "@/lib/presentations/pages/scenario-changes/summarize-options";
+import { estimateScenarioChangesPageCount } from "@/lib/presentations/pages/scenario-changes/estimate-page-count";
+import { buildScenarioChangesData } from "@/lib/presentations/pages/scenario-changes/view-model";
+import { ScenarioChangesPagePdf } from "./pages/scenario-changes/page-pdf";
+import { ScenarioChangesOptionsControl } from "./pages/scenario-changes/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -155,6 +166,9 @@ export interface BuildDataContext {
   monteCarlo?: MonteCarloReportPayload | null;
   /** Present only when a deck includes an investment page; loaded conditionally. */
   investments?: InvestmentsBundle;
+  /** Present only when the deck includes the Scenario Changes page and the
+   *  active ref is a live scenario; absent for base/snapshot decks. */
+  scenarioChanges?: ScenarioChangesContext;
 }
 
 export interface RenderPdfInput<TData> {
@@ -574,6 +588,21 @@ export const portfolioAnalysisPage: PresentationPage<PortfolioAnalysisData, Port
   renderPdf: (input) => <PortfolioAnalysisPagePdf {...input} />,
 };
 
+export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, ScenarioChangesOptions> = {
+  id: "scenarioChanges",
+  title: "Scenario Changes",
+  description: "Plain-English table of the edits made in this scenario vs the base plan.",
+  category: "Comparison",
+  defaultOptions: SCENARIO_CHANGES_OPTIONS_DEFAULT,
+  optionsSchema: scenarioChangesOptionsSchema,
+  summarizeOptions: summarizeScenarioChangesOptions,
+  estimatePageCount: estimateScenarioChangesPageCount,
+  OptionsControl: ScenarioChangesOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildScenarioChangesData({ scenarioChanges: ctx.scenarioChanges }, options),
+  renderPdf: (input) => <ScenarioChangesPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -601,6 +630,7 @@ export const PRESENTATION_PAGES = {
   monteCarlo: monteCarloPage,
   assetAllocation: assetAllocationPage,
   portfolioAnalysis: portfolioAnalysisPage,
+  scenarioChanges: scenarioChangesPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
