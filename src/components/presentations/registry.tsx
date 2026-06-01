@@ -121,8 +121,8 @@ import {
 } from "@/lib/presentations/pages/portfolio-analysis/view-model";
 import { buildScatterSpec } from "@/lib/presentations/charts/scatter-chart-spec";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
-import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import type {
+  ScenarioChangesContext,
   ScenarioChangesPageData,
   ScenarioChangesOptions,
 } from "@/lib/presentations/pages/scenario-changes/types";

@@ -208,6 +208,12 @@ export async function POST(
     // only when the deck includes that page AND the active ref is a live
     // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
     // only — matching what the overlaid clientData already reflects.
+    //
+    // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
+    // scenarioId alone. rawScenarioId is proven to belong to this firm/client by
+    // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
+    // clientId/firmId and throws on a cross-org id before we reach here). Do not
+    // remove or lazily defer that call without adding firm scoping to these reads.
     let scenarioChanges: ScenarioChangesContext | undefined;
     const needsScenarioChanges = parsed.data.pages.some((p) => p.pageId === "scenarioChanges");
     const isLiveScenario =
