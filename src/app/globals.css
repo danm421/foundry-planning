@@ -59,7 +59,7 @@
 
   /* Fonts — wired to next/font vars set on <html> by layout.tsx */
   --font-sans: var(--font-inter);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-b612);
 }
 
 /* ------------------------------------------------------------------ */

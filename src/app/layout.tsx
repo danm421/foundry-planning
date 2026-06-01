@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Inter, B612_Mono } from "next/font/google";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import { ToastProvider } from "@/components/toast";
 import "./globals.css";
@@ -12,10 +12,10 @@ const inter = Inter({
   weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const b612Mono = B612_Mono({
+  variable: "--font-b612",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -61,7 +61,7 @@ export default function RootLayout({
     >
       <html
         lang="en"
-        className={`${inter.variable} ${geistMono.variable} h-full antialiased dark`}
+        className={`${inter.variable} ${b612Mono.variable} h-full antialiased dark`}
         suppressHydrationWarning
       >
         <body className="min-h-full flex flex-col">
