@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
+import { controllingFamilyMember } from "@/engine/ownership";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
@@ -15,7 +16,7 @@ import { useSharedMcRun } from "@/app/(app)/clients/[id]/comparison/use-shared-m
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverCompareGrid } from "./solver-compare-grid";
-import { SolverSection } from "./solver-section";
+import { SolverSection, SolverWorkingOnly } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
@@ -684,6 +685,15 @@ export function LiveSolverWorkspace({
                 workingClient={workingTree.client}
                 onChange={pushMutation}
               />
+              <SolverRowLivingExpenseScale
+                baseExpenses={baseClientData.expenses}
+                workingExpenses={workingTree.expenses}
+                currentYear={currentYear}
+                onChange={pushMutation}
+                activeSolve={activeSolve}
+                onSolveStart={handleSolveStart}
+                onSolveCancel={handleSolveCancel}
+              />
               <SolverRowSocialSecurity
                 baseIncomes={baseClientData.incomes}
                 workingIncomes={workingTree.incomes}
@@ -712,35 +722,25 @@ export function LiveSolverWorkspace({
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
               />
-              <SolverQuickAddAccount
-                owners={ownerOptions}
-                currentYear={currentYear}
-                retirementYearForOwner={retirementYearForOwner}
-                growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
-                onChange={pushMutation}
-              />
-              <div>
-                <button
-                  type="button"
-                  onClick={() => handleSolveMinSavings(MIN_SAVINGS_TARGET_POS)}
-                  disabled={activeSolve !== null || ownerOptions.length === 0}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Solve minimum additional savings
-                </button>
-              </div>
-            </SolverSection>
-
-            <SolverSection title="Expenses">
-              <SolverRowLivingExpenseScale
-                baseExpenses={baseClientData.expenses}
-                workingExpenses={workingTree.expenses}
-                currentYear={currentYear}
-                onChange={pushMutation}
-                activeSolve={activeSolve}
-                onSolveStart={handleSolveStart}
-                onSolveCancel={handleSolveCancel}
-              />
+              <SolverWorkingOnly>
+                <SolverQuickAddAccount
+                  owners={ownerOptions}
+                  currentYear={currentYear}
+                  retirementYearForOwner={retirementYearForOwner}
+                  growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
+                  onChange={pushMutation}
+                />
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => handleSolveMinSavings(MIN_SAVINGS_TARGET_POS)}
+                    disabled={activeSolve !== null || ownerOptions.length === 0}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Solve minimum additional savings
+                  </button>
+                </div>
+              </SolverWorkingOnly>
             </SolverSection>
           </>
         )}
@@ -755,6 +755,7 @@ export function LiveSolverWorkspace({
               name: a.name,
               category: a.category,
               subType: a.subType ?? "",
+              ownerFamilyMemberId: controllingFamilyMember(a),
             }))}
             liabilities={(baseClientData.liabilities ?? []).map((l) => ({
               id: l.id,

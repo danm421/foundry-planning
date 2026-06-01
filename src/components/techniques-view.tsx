@@ -73,6 +73,9 @@ export interface AccountOption {
   name: string;
   category: string;
   subType: string;
+  /** Controlling family-member id when 100% owned by a single person.
+   *  Used to restrict Roth-conversion sources to the destination's owner. */
+  ownerFamilyMemberId?: string | null;
 }
 
 export interface LiabilityOption {

@@ -14,6 +14,7 @@ import TechniquesView from "@/components/techniques-view";
 import type { BusinessSaleOption } from "@/components/forms/add-asset-transaction-form";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingFamilyMember } from "@/engine/ownership";
 
 interface TechniquesContentProps {
   clientId: string;
@@ -176,6 +177,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     name: a.name,
     category: a.category,
     subType: a.subType,
+    ownerFamilyMemberId: controllingFamilyMember(a),
   }));
 
   const liabilityOptions = liabilityRows.map((l) => ({

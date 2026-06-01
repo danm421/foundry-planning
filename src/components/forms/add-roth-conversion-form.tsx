@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, FormEvent } from "react";
+import { useState, useMemo, useEffect, FormEvent } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
@@ -48,7 +48,16 @@ export interface RothConversionInitialData {
 
 interface Props {
   clientId: string;
-  accounts: { id: string; name: string; category: string; subType: string }[];
+  accounts: {
+    id: string;
+    name: string;
+    category: string;
+    subType: string;
+    /** Controlling family-member id when the account is 100% owned by a single
+     *  person (else null/undefined). Used to restrict conversion sources to
+     *  accounts owned by the same person as the destination Roth IRA. */
+    ownerFamilyMemberId?: string | null;
+  }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -77,7 +86,7 @@ export default function AddRothConversionForm({
     () => accounts.filter((a) => a.category === "retirement" && ROTH_SUBTYPES.has(a.subType)),
     [accounts],
   );
-  const eligibleSources = useMemo(
+  const taxDeferredAccounts = useMemo(
     () => accounts.filter((a) => a.category === "retirement" && TAX_DEFERRED_SUBTYPES.has(a.subType)),
     [accounts],
   );
@@ -122,6 +131,34 @@ export default function AddRothConversionForm({
   const showIndexing = conversionType === "fixed_amount";
 
   const accountMap = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+
+  // A Roth IRA is owned by a single person, so a conversion may only draw from
+  // tax-deferred accounts owned by that same person. Filter the source list to
+  // the destination's owner — the spouse's (or anyone else's) accounts don't
+  // even appear as options. Falls back to showing everything when owner data
+  // is unavailable (e.g. legacy accounts whose owner can't be determined).
+  const destOwner = useMemo(
+    () => accountMap.get(destinationAccountId)?.ownerFamilyMemberId ?? null,
+    [accountMap, destinationAccountId],
+  );
+  const eligibleSources = useMemo(
+    () =>
+      taxDeferredAccounts.filter((a) => {
+        const srcOwner = a.ownerFamilyMemberId ?? null;
+        return destOwner == null || srcOwner == null || srcOwner === destOwner;
+      }),
+    [taxDeferredAccounts, destOwner],
+  );
+
+  // Drop any already-selected sources that the destination change just made
+  // ineligible, so a hidden mismatched source can't be silently submitted.
+  useEffect(() => {
+    const eligibleIds = new Set(eligibleSources.map((a) => a.id));
+    setSourceAccountIds((curr) => {
+      const next = curr.filter((id) => eligibleIds.has(id));
+      return next.length === curr.length ? curr : next;
+    });
+  }, [eligibleSources]);
 
   function toggleSource(id: string) {
     setSourceAccountIds((curr) =>

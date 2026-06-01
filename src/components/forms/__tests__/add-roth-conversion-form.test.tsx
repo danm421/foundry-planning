@@ -72,6 +72,53 @@ describe("AddRothConversionForm — base mode", () => {
   });
 });
 
+describe("AddRothConversionForm — source owner filtering", () => {
+  const OWNED_ACCOUNTS = [
+    { id: "roth-client", name: "Client Roth", category: "retirement", subType: "roth_ira", ownerFamilyMemberId: "fm-client" },
+    { id: "roth-spouse", name: "Spouse Roth", category: "retirement", subType: "roth_ira", ownerFamilyMemberId: "fm-spouse" },
+    { id: "trad-client", name: "Client Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-client" },
+    { id: "trad-spouse", name: "Spouse Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-spouse" },
+  ];
+
+  it("only offers source accounts owned by the destination Roth's owner", () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={OWNED_ACCOUNTS}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    // Destination defaults to the first Roth (client-owned).
+    expect(screen.getByText("Client Trad IRA")).toBeInTheDocument();
+    expect(screen.queryByText("Spouse Trad IRA")).not.toBeInTheDocument();
+  });
+
+  it("re-filters and prunes selected sources when the destination owner changes", () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={OWNED_ACCOUNTS}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    // Select the client-owned source.
+    fireEvent.click(screen.getByRole("button", { name: /\+ Add/i }));
+    expect(screen.getByText("1.")).toBeInTheDocument();
+
+    // Switch destination to the spouse-owned Roth.
+    fireEvent.change(screen.getByLabelText(/Destination Account/i), {
+      target: { value: "roth-spouse" },
+    });
+
+    // Client source is pruned; spouse source is now the only option.
+    expect(screen.queryByText("1.")).not.toBeInTheDocument();
+    expect(screen.getByText("Spouse Trad IRA")).toBeInTheDocument();
+    expect(screen.queryByText("Client Trad IRA")).not.toBeInTheDocument();
+  });
+});
+
 describe("AddRothConversionForm — scenario mode", () => {
   it("posts an `add` change to /scenarios/<sid>/changes", async () => {
     searchParamsMock = new URLSearchParams("scenario=sid-1");

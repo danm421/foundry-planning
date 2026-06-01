@@ -41,7 +41,13 @@ interface Props {
   clientId: string;
   baseClientData: ClientData;
   workingTree: ClientData;
-  accounts: { id: string; name: string; category: string; subType: string }[];
+  accounts: {
+    id: string;
+    name: string;
+    category: string;
+    subType: string;
+    ownerFamilyMemberId?: string | null;
+  }[];
   liabilities: {
     id: string;
     name: string;
