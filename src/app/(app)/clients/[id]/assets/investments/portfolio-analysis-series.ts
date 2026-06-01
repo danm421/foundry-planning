@@ -1,5 +1,6 @@
 import type { AnalysisRow, EntityType } from "@/lib/investments/portfolio-analysis";
 import { colorForAssetClass } from "@/lib/investments/palette";
+import { data, dataScale } from "@/brand";
 
 export interface SeriesDef {
   type: EntityType;
@@ -11,11 +12,11 @@ export interface SeriesDef {
 // Shared by the scatter chart and the selection controls so point colors and
 // selected-list dots stay in lockstep. Order also drives grouping in the picker.
 export const SERIES: SeriesDef[] = [
-  { type: "asset_class", label: "Asset Classes", pointStyle: "circle", color: "#3b82f6" },
-  { type: "account", label: "Accounts", pointStyle: "rect", color: "#10b981" },
-  { type: "category", label: "Account Categories", pointStyle: "triangle", color: "#f59e0b" },
-  { type: "custom_group", label: "Custom Groups", pointStyle: "rectRot", color: "#8b5cf6" },
-  { type: "model_portfolio", label: "Model Portfolios", pointStyle: "star", color: "#ec4899" },
+  { type: "asset_class", label: "Asset Classes", pointStyle: "circle", color: data.slate },
+  { type: "account", label: "Accounts", pointStyle: "rect", color: data.emerald },
+  { type: "category", label: "Account Categories", pointStyle: "triangle", color: data.wheat },
+  { type: "custom_group", label: "Custom Groups", pointStyle: "rectRot", color: data.violet },
+  { type: "model_portfolio", label: "Model Portfolios", pointStyle: "star", color: data.rose },
 ];
 
 export const SERIES_BY_TYPE = Object.fromEntries(
@@ -34,10 +35,10 @@ export function colorForRow(row: AnalysisRow): string {
   return SERIES_BY_TYPE[row.type].color;
 }
 
-/** A distinct hue per plotted item, evenly spread for maximum separation. */
+/** A distinct hue per plotted item, evenly spread in the editorial data band. */
 export function colorForIndex(index: number, total: number): string {
-  const hue = total > 1 ? Math.round((index / total) * 360) : 210;
-  return `hsl(${hue}, 70%, 60%)`;
+  const scale = dataScale(Math.max(total, 1), "dark");
+  return scale[index % scale.length]!;
 }
 
 /**
