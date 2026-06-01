@@ -64,7 +64,12 @@ export function leverSearchConfig(
         current === 0
           ? 200_000
           : Math.min(ROTH_AMOUNT_HARD_CAP, current * 4);
-      return { lo: 0, hi, step: 1000, direction: -1 };
+      // roth-conversion-amount: more conversion → higher long-run PoS (reduces
+      // future taxable RMDs), so the lever is positively directional and lo: 0
+      // is the cheaper endpoint when both ends already beat target. `direction`
+      // only gates bisect's both-beat shortcut, so this is the whole fix for
+      // F2/F9/F12/F10 — no per-lever flag needed.
+      return { lo: 0, hi, step: 1000, direction: 1 };
     }
   }
 }

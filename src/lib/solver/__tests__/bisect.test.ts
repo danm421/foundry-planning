@@ -144,4 +144,19 @@ describe("bisect", () => {
     expect(result.iterations).toBeGreaterThanOrEqual(2);
     expect(result.iterations).toBeLessThanOrEqual(8);
   });
+
+  it("roth lever (d=+1): both endpoints beat target → returns lo=0 (no conversion)", async () => {
+    const evaluate = vi.fn(async () => 0.95);
+    const result = await bisect({
+      lo: 0,
+      hi: 200_000,
+      step: 1000,
+      direction: 1,
+      target: 0.85,
+      evaluate,
+    });
+    expect(result.status).toBe("converged");
+    expect(result.solvedValue).toBe(0);
+    expect(evaluate).toHaveBeenCalledTimes(2);
+  });
 });

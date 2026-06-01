@@ -198,4 +198,10 @@ describe("roth-conversion-amount target", () => {
       expect(m.value?.fixedAmount).toBe(75000);
     }
   });
+
+  it("is positively directional (more conversion → higher PoS)", () => {
+    const tree = { rothConversions: [rc] } as unknown as import("@/engine/types").ClientData;
+    const cfg = leverSearchConfig({ kind: "roth-conversion-amount", techniqueId: "rc-1" }, tree);
+    expect(cfg.direction).toBe(1);
+  });
 });
