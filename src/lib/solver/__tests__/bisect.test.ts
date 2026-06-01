@@ -159,4 +159,25 @@ describe("bisect", () => {
     expect(result.solvedValue).toBe(0);
     expect(evaluate).toHaveBeenCalledTimes(2);
   });
+
+  it("wide bracket converges to true minimum with 24 iters where default 8 falls short", async () => {
+    // True minimum lever value where PoS first reaches target is 73_000 on a
+    // [0, 100_000] step-1000 grid (~100 grid points). log2(100) ≈ 7 bisections
+    // after 2 endpoint probes need >8 total iterations.
+    const evaluate = vi.fn(async (v: number) => (v >= 73_000 ? 0.9 : 0.5));
+
+    const shallow = await bisect({
+      lo: 0, hi: 100_000, step: 1000, direction: 1, target: 0.85, evaluate,
+      maxIterations: 8,
+    });
+    expect(shallow.status).toBe("max-iterations");
+
+    evaluate.mockClear();
+    const deep = await bisect({
+      lo: 0, hi: 100_000, step: 1000, direction: 1, target: 0.85, evaluate,
+      maxIterations: 24,
+    });
+    expect(deep.status).toBe("converged");
+    expect(deep.solvedValue).toBe(73_000);
+  });
 });

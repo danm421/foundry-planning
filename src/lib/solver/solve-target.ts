@@ -96,6 +96,9 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     step: config.step,
     direction: config.direction,
     target: args.targetPoS,
+    maxIterations: 24, // wide savings/roth levers need ~log2(range/step) bisections;
+                       // default 8 exits max-iterations short of the true minimum.
+                       // Matches solve-funding.ts. (F11/F13/F29)
     evaluate,
   });
 
