@@ -6,6 +6,7 @@ import { Inter, B612_Mono } from "next/font/google";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import { ToastProvider } from "@/components/toast";
 import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
+import { colors } from "@/brand";
 import "./globals.css";
 
 const inter = Inter({
@@ -35,7 +36,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0b0c0f",
+  // Browser chrome color (static metadata, can't read CSS vars) — dark paper.
+  themeColor: colors.paper,
 };
 
 export default async function RootLayout({

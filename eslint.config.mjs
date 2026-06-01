@@ -23,6 +23,7 @@ const eslintConfig = defineConfig([
       "**/*.test.{ts,tsx}",
       "**/__tests__/**",
       "src/lib/presentations/**",
+      "src/lib/report-artifacts/**",
       "src/components/pdf/**",
       "src/components/comparison-pdf/**",
       "src/components/**/*-pdf.tsx",
