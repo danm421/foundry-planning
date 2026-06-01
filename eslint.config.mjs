@@ -8,13 +8,17 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     // Ban raw hex so the brand token system can't drift back. Ignores the
-    // token sources (brand mirror, chart-colors band helper), report token
-    // modules (**/tokens.ts), tests (hex fixtures/assertions), and the
-    // white-label PDF/print layers, where print hex legitimately lives.
+    // token sources (brand mirror, chart-colors band helper, the comparison
+    // scenario-identity palette), report token modules (**/tokens.ts), tests
+    // (hex fixtures/assertions), and the white-label PDF/print layers, where
+    // print hex legitimately lives.
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
       "src/brand/**",
       "src/lib/chart-colors.ts",
+      // Position-stable plan-identity palette shared by the comparison screen
+      // and the byte-locked comparison PDFs — a palette source, like tokens.ts.
+      "src/lib/comparison/series-palette.ts",
       "**/tokens.ts",
       "**/*.test.{ts,tsx}",
       "**/__tests__/**",

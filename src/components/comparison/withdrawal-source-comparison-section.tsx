@@ -14,10 +14,11 @@ import type { ProjectionYear } from "@/engine";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import {
   buildAccountSourceMap,
   SOURCE_LABELS,
-  SOURCE_COLORS,
+  sourceColors,
   SOURCE_ORDER,
   type WithdrawalSourceCategory,
 } from "@/lib/comparison/withdrawal-categories";
@@ -75,47 +76,53 @@ function PlanChart({
     [years, sourceMap],
   );
 
-  const data = useMemo(
-    () => ({
+  const theme = useThemeName();
+
+  const data = useMemo(() => {
+    const palette = sourceColors(theme);
+    return {
       labels: years.map((y) => String(y.year)),
       datasets: SOURCE_ORDER.map((cat) => ({
         label: SOURCE_LABELS[cat],
         data: totals[cat],
-        backgroundColor: SOURCE_COLORS[cat],
+        backgroundColor: palette[cat],
         stack: "src",
       })),
-    }),
-    [years, totals],
-  );
+    };
+  }, [years, totals, theme]);
 
-  const options = useMemo(
-    () => ({
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: {
           display: true,
-          labels: { color: "#d1d5db", boxWidth: 10, padding: 8, font: { size: 10 } },
+          labels: { color: chrome.legend, boxWidth: 10, padding: 8, font: { size: 10 } },
         },
-        tooltip: { backgroundColor: "#1f2937" },
+        tooltip: {
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
+        },
       },
       scales: {
-        x: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
-        y: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+        x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
+        y: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
       },
-    }),
-    [],
-  );
-  const color = seriesColor(index) ?? "#cbd5e1";
+    };
+  }, [theme]);
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-2 flex items-center gap-2">
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       <div style={{ height: 240 }}>
         <Bar data={data} options={options} />
@@ -135,7 +142,7 @@ export function WithdrawalSourceComparisonSection({ plans, yearRange }: Props) {
           : "grid-cols-1 md:grid-cols-2 xl:grid-cols-4";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Withdrawal Source</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Withdrawal Source</h2>
       <div className={`grid gap-4 ${colsClass}`}>
         {plans.map((p, i) => (
           <PlanChart key={p.id} plan={p} yearRange={yearRange} index={i} />
