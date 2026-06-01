@@ -203,7 +203,7 @@ export default function PortfolioAnalysisClient({
         </thead>
         <tbody>
           {sorted.map((r) => (
-            <tr key={r.key} className="border-b border-gray-800">
+            <tr key={r.key} className="border-b border-hair">
               <td className="py-2">
                 <span className="inline-flex items-center gap-2">
                   <span

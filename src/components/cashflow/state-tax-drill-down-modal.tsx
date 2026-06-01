@@ -172,49 +172,49 @@ export function StateTaxDrillDownModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
+        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl border-2 border-hair-2 ring-1 ring-black/60 bg-card p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-base font-semibold text-gray-100">
+            <h3 className="text-base font-semibold text-ink">
               {year} · {stateName} State Tax Trace
             </h3>
-            <p className="mt-0.5 text-xs text-gray-400">
+            <p className="mt-0.5 text-xs text-ink-3">
               Filing status: {filingStatusLabel} · Effective rate {pctFmt.format(effectiveRate(state))}
             </p>
           </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-gray-300 hover:text-gray-200"
+            className="text-ink-2 hover:text-ink"
           >
             ✕
           </button>
         </div>
 
         {state.hasIncomeTax === false ? (
-          <p className="rounded-md bg-gray-800/40 p-4 text-sm text-gray-300">
+          <p className="rounded-md bg-card-2 p-4 text-sm text-ink-2">
             {stateName} does not levy a personal income tax for {year}.
           </p>
         ) : (
           <>
-            <div className="mb-1 text-xs uppercase tracking-wide text-gray-400">
+            <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">
               Compute trace
             </div>
-            <ul className="divide-y divide-gray-800 rounded-md bg-gray-800/40 text-sm">
+            <ul className="divide-y divide-hair rounded-md bg-card-2 text-sm">
               {rows.map((r, i) => (
                 <li
                   key={i}
                   className={`flex items-center justify-between px-3 py-2 ${
-                    r.kind === "total" ? "font-semibold text-gray-100" : "text-gray-300"
-                  } ${r.kind === "sub" ? "text-red-300" : ""} ${
-                    r.kind === "add" ? "text-emerald-300" : ""
+                    r.kind === "total" ? "font-semibold text-ink" : "text-ink-2"
+                  } ${r.kind === "sub" ? "text-crit" : ""} ${
+                    r.kind === "add" ? "text-good" : ""
                   }`}
                 >
                   <span className="flex flex-col">
                     <span className="whitespace-pre">{r.label}</span>
-                    {r.hint && <span className="text-[11px] text-gray-500">{r.hint}</span>}
+                    {r.hint && <span className="text-[11px] text-ink-4">{r.hint}</span>}
                   </span>
                   <span className="tabular-nums">{fmt.format(r.amount)}</span>
                 </li>
@@ -223,10 +223,10 @@ export function StateTaxDrillDownModal({
 
             {state.specialRulesApplied.length > 0 && (
               <div className="mt-4">
-                <div className="mb-1 text-xs uppercase tracking-wide text-gray-400">
+                <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">
                   Special rules applied
                 </div>
-                <ul className="space-y-1 rounded-md bg-gray-800/40 px-3 py-2 text-xs text-gray-300">
+                <ul className="space-y-1 rounded-md bg-card-2 px-3 py-2 text-xs text-ink-2">
                   {state.specialRulesApplied.map((rule, i) => (
                     <li key={i}>• {rule}</li>
                   ))}
@@ -236,10 +236,10 @@ export function StateTaxDrillDownModal({
 
             {state.diag.notes.length > 0 && (
               <div className="mt-4">
-                <div className="mb-1 text-xs uppercase tracking-wide text-gray-400">
+                <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">
                   Diagnostic notes
                 </div>
-                <ul className="space-y-1 rounded-md bg-gray-800/40 px-3 py-2 text-[11px] italic text-gray-400">
+                <ul className="space-y-1 rounded-md bg-card-2 px-3 py-2 text-[11px] italic text-ink-3">
                   {state.diag.notes.map((note, i) => (
                     <li key={i}>{note}</li>
                   ))}
@@ -249,7 +249,7 @@ export function StateTaxDrillDownModal({
           </>
         )}
 
-        <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
+        <div className="mt-4 flex justify-between border-t border-hair pt-3 text-sm font-semibold text-ink">
           <span>State tax owed</span>
           <span className="tabular-nums">{fmt.format(state.stateTax)}</span>
         </div>

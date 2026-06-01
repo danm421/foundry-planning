@@ -39,7 +39,7 @@ export function SnapshotBanner({
   return (
     <div
       data-testid={`snapshot-banner-${side}`}
-      className="px-6 py-2 border-b border-[#7a5b29] bg-[#0b0c0f] text-[11px] tracking-[0.18em] uppercase font-mono text-[#7a5b29] flex items-center justify-between"
+      className="px-6 py-2 border-b border-accent bg-paper text-[11px] tracking-[0.18em] uppercase font-mono text-accent flex items-center justify-between"
     >
       <span>
         VIEWING SNAPSHOT ({side.toUpperCase()}) · {snapshotName} · FROZEN BY{" "}
@@ -48,7 +48,7 @@ export function SnapshotBanner({
       <button
         type="button"
         onClick={() => setSide(side, null)}
-        className="text-[11px] text-[#a09c92] hover:text-[#e7e6e2] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded normal-case tracking-normal"
+        className="text-[11px] text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded normal-case tracking-normal"
       >
         [Return to live]
       </button>

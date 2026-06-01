@@ -131,7 +131,7 @@ export default function AssumptionsClient({
     <div className="space-y-6">
       <AssumptionsSubtabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
+      <div className="rounded-lg border border-hair bg-card p-6">
         {activeTab === "tax-rates" && (
           <TaxRatesForm
             clientId={clientId}

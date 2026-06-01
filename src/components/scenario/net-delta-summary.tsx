@@ -29,20 +29,20 @@ export function NetDeltaSummary({
   return (
     <div
       data-testid="net-delta-summary"
-      className="px-4 py-3 border-b border-[#1f2024]"
+      className="px-4 py-3 border-b border-hair"
     >
-      <div className="text-xs tracking-[0.18em] uppercase font-mono text-[#7a5b29] mb-2">
+      <div className="text-xs tracking-[0.18em] uppercase font-mono text-accent mb-2">
         NET DELTA
       </div>
       <div
         className={`font-mono text-[32px] tabular-nums ${
-          positive ? "text-[#7fa97f]" : "text-[#c87a7a]"
+          positive ? "text-good" : "text-crit"
         }`}
         data-testid="net-delta-value"
       >
         {sign}${abs}
       </div>
-      <div className="text-xs text-[#a09c92]">{metricLabel}</div>
+      <div className="text-xs text-ink-3">{metricLabel}</div>
       {sparklineData.length > 1 && (
         <Sparkline data={sparklineData} positive={positive} />
       )}
@@ -74,7 +74,7 @@ function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
       <polyline
         points={points}
         fill="none"
-        stroke={positive ? "#7fa97f" : "#c87a7a"}
+        stroke={positive ? "var(--color-good)" : "var(--color-crit)"}
         strokeWidth="1"
       />
     </svg>

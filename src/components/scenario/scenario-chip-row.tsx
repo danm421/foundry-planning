@@ -87,10 +87,10 @@ export function ScenarioChipRow({
               aria-pressed={isActive}
               onClick={() => setScenario(s.isBaseCase ? null : s.id)}
               disabled={isDeleting}
-              className={`px-3 h-8 rounded-full text-[13px] font-medium border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0c0f] disabled:opacity-50 ${
+              className={`px-3 h-8 rounded-full text-[13px] font-medium border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:opacity-50 ${
                 isActive
-                  ? "bg-[#d4a04a] text-[#0b0c0f] border-[#d4a04a]"
-                  : "border-[#1f2024] text-[#a09c92] hover:border-[#7a5b29] hover:text-[#e7e6e2]"
+                  ? "bg-accent text-accent-on border-accent"
+                  : "border-hair text-ink-3 hover:border-accent hover:text-ink"
               }`}
             >
               <span aria-hidden="true">{isActive ? "● " : "○ "}</span>
@@ -106,7 +106,7 @@ export function ScenarioChipRow({
                 disabled={isDeleting}
                 aria-label={`Delete scenario ${s.name}`}
                 title="Delete scenario"
-                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#1f2024] text-[#a09c92] text-[11px] leading-none flex items-center justify-center border border-[#0b0c0f] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-[#7a5b29] hover:text-white focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a]"
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-hair text-ink-3 text-[11px] leading-none flex items-center justify-center border border-paper opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-accent hover:text-accent-on focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 ×
               </button>
@@ -117,7 +117,7 @@ export function ScenarioChipRow({
       <button
         type="button"
         onClick={openCreate}
-        className="px-3 h-8 rounded-full text-[13px] border border-dashed border-[#1f2024] text-[#6b6760] hover:border-[#7a5b29] hover:text-[#a09c92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0c0f]"
+        className="px-3 h-8 rounded-full text-[13px] border border-dashed border-hair text-ink-4 hover:border-accent hover:text-ink-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
       >
         + New scenario
       </button>

@@ -55,7 +55,7 @@ export default function TimelineMinimap({
     <div
       ref={ref}
       onClick={handleClick}
-      className="sticky top-[64px] z-20 w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-900/70 p-2 backdrop-blur-md font-[family-name:var(--font-body)]"
+      className="sticky top-[64px] z-20 w-full cursor-pointer rounded-lg border border-hair bg-card/70 p-2 backdrop-blur-md font-[family-name:var(--font-body)]"
     >
       <div className="relative" style={{ height }}>
         <div className="absolute inset-0">
@@ -98,7 +98,7 @@ export default function TimelineMinimap({
           })}
         </div>
       </div>
-      <div className="mt-1 flex justify-between text-xs tabular-nums text-gray-400">
+      <div className="mt-1 flex justify-between text-xs tabular-nums text-ink-3">
         <span>{firstYear}</span>
         <span>{lastYear}</span>
       </div>

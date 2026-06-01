@@ -1,21 +1,13 @@
-// 12-color palette drawn from Tailwind 500-range hues, chosen for high
-// distinguishability on a dark surface. Keep length at 12 — tests pin this.
-const PALETTE = [
-  "#3b82f6", // blue
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#14b8a6", // teal
-  "#f43f5e", // rose
-  "#84cc16", // lime
-  "#6366f1", // indigo
-  "#f97316", // orange
-  "#06b6d4", // cyan
-  "#a855f7", // purple
-] as const;
+import { colors, data } from "@/brand";
+import { chartSeriesColors } from "@/lib/chart-palette";
+import type { AssetTypeId } from "./asset-types";
 
-export const UNALLOCATED_COLOR = "#6b7280"; // gray-500
+// 12-color palette sourced from the Deep Jewel brand palette — the nine named
+// data hues (adjacency order) extended in-band to length 12. Keep length at
+// 12 — tests pin the wrap-around.
+const PALETTE: readonly string[] = chartSeriesColors(12, "dark");
+
+export const UNALLOCATED_COLOR = colors.ink4; // neutral ink-4 gray
 
 export function colorForAssetClass(assetClass: { id?: string; sortOrder: number }): string {
   const n = PALETTE.length;
@@ -23,16 +15,14 @@ export function colorForAssetClass(assetClass: { id?: string; sortOrder: number 
   return PALETTE[idx]!;
 }
 
-import type { AssetTypeId } from "./asset-types";
-
-// Base hues for each asset type. Picked from Tailwind 500-range for parity
-// with the existing 12-color class palette.
+// Base hues per asset type, drawn from the Deep Jewel data palette for parity
+// with the class palette. Amber is reserved for action — `cash` uses `yellow`.
 export const ASSET_TYPE_PALETTE: Record<AssetTypeId, string> = {
-  equities:         "#3b82f6", // blue-500
-  taxable_bonds:    "#10b981", // emerald-500
-  tax_exempt_bonds: "#8b5cf6", // violet-500
-  cash:             "#f59e0b", // amber-500
-  other:            "#6b7280", // gray-500
+  equities:         data.teal,    // teal
+  taxable_bonds:    data.green,   // green
+  tax_exempt_bonds: data.purple,  // purple
+  cash:             data.yellow,  // gold (not the reserved accent amber)
+  other:            colors.ink4,  // neutral
 };
 
 export function colorForAssetType(typeId: AssetTypeId): string {

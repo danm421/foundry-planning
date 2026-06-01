@@ -16,18 +16,18 @@ export function SsIncomeTableList({ plans, yearRange }: { plans: ComparisonPlan[
     <div className="flex flex-col gap-4">
       {plans.map((plan) => (
         <div key={plan.id}>
-          <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">{plan.label}</div>
+          <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">{plan.label}</div>
           <div className="overflow-auto">
             <table aria-label={`Social Security — ${plan.label}`} className="min-w-full border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-900/60 text-slate-300">
+                <tr className="bg-card text-ink-2">
                   <th className="px-2 py-1 text-left">Year</th>
                   <th className="px-2 py-1 text-right">Social Security</th>
                 </tr>
               </thead>
               <tbody>
                 {clip(plan.result.years, yearRange).map((y) => (
-                  <tr key={y.year} className="border-t border-slate-800 text-slate-200">
+                  <tr key={y.year} className="border-t border-hair text-ink-2">
                     <td className="px-2 py-1">{y.year}</td>
                     <td className="px-2 py-1 text-right tabular-nums">{usd.format(y.income.socialSecurity ?? 0)}</td>
                   </tr>

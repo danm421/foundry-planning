@@ -37,7 +37,7 @@ const SPAN_TO_CLASS: Record<CellSpan, string> = {
 const GRID_GAP_PX = 8; // tailwind gap-2 = 0.5rem
 
 const ACTION_BTN =
-  "rounded border border-slate-500 bg-slate-800 px-1.5 py-1 text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400";
+  "rounded border border-hair-2 bg-card px-1.5 py-1 text-ink shadow-sm hover:border-accent hover:bg-card-hover hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 function lookup(scenarios: ScenarioLookup[], id: string): string {
   if (id === "base") return "Base";
@@ -124,8 +124,8 @@ export function CanvasCell({
   const widget = cell.widget;
   const def = widget ? COMPARISON_WIDGETS[widget.kind] : null;
 
-  const selectedRingPopulated = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-ink-3";
-  const selectedRingEmpty = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-ink-3";
+  const selectedRingPopulated = selected ? "border-accent ring-1 ring-accent/40" : "border-ink-3";
+  const selectedRingEmpty = selected ? "border-accent ring-1 ring-accent/40" : "border-ink-3";
 
   const ResizeHandle = (
     <button
@@ -136,13 +136,13 @@ export function CanvasCell({
       onClick={(e) => e.stopPropagation()}
       data-resize-handle
       className={`absolute right-0 top-1/2 z-20 h-12 w-1.5 -translate-y-1/2 cursor-ew-resize rounded-full transition-colors ${
-        resizing ? "bg-amber-400" : "bg-slate-600 hover:bg-amber-400"
+        resizing ? "bg-accent" : "bg-hair-2 hover:bg-accent"
       }`}
     />
   );
 
   const SpanBadge = (
-    <span className="rounded border border-slate-600 bg-slate-800 px-1 py-0.5 text-[10px] uppercase tracking-wider text-slate-300">
+    <span className="rounded border border-hair bg-card px-1 py-0.5 text-[10px] uppercase tracking-wider text-ink-2">
       {cell.span}/5
     </span>
   );
@@ -164,7 +164,7 @@ export function CanvasCell({
       {selected && (
         <div
           data-testid="cell-toolbar"
-          className="absolute bottom-full left-0 z-30 mb-1 flex w-max items-center gap-1 whitespace-nowrap rounded-lg border border-amber-400/60 bg-slate-900/95 p-1 shadow-xl backdrop-blur"
+          className="absolute bottom-full left-0 z-30 mb-1 flex w-max items-center gap-1 whitespace-nowrap rounded-lg border border-accent/60 bg-card/95 p-1 shadow-xl backdrop-blur"
         >
           {widget ? (
             <>
@@ -185,13 +185,13 @@ export function CanvasCell({
       )}
 
       {widget && def ? (
-        <div className={`flex h-full flex-col gap-2 rounded-lg border ${selectedRingPopulated} bg-slate-900 p-3 pr-4 text-sm text-slate-200`}>
+        <div className={`flex h-full flex-col gap-2 rounded-lg border ${selectedRingPopulated} bg-card p-3 pr-4 text-sm text-ink-2`}>
           <div className="flex items-center gap-2">
             <button
               type="button"
               aria-label="Drag widget"
               title="Drag to reorder"
-              className="cursor-grab text-slate-400 hover:text-slate-200"
+              className="cursor-grab text-ink-3 hover:text-ink"
               {...attributes}
               {...listeners}
             >
@@ -218,7 +218,7 @@ export function CanvasCell({
             def.scenarios !== "none" && (
               <div className="flex flex-wrap gap-1">
                 {widget.planIds.map((pid) => (
-                  <span key={pid} data-testid="plan-chip" className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+                  <span key={pid} data-testid="plan-chip" className="rounded-full border border-hair px-2 py-0.5 text-[11px] text-ink-2">
                     {lookup(scenarios, pid)}
                   </span>
                 ))}
@@ -233,7 +233,7 @@ export function CanvasCell({
             aria-label="Add widget"
             title="Add widget"
             onClick={onAddWidget}
-            className="rounded-full border border-slate-500 bg-slate-800 px-3 py-1 text-2xl text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400"
+            className="rounded-full border border-hair-2 bg-card px-3 py-1 text-2xl text-ink shadow-sm hover:border-accent hover:bg-card-hover hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent"
           >
             +
           </button>

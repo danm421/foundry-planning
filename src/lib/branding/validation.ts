@@ -70,6 +70,7 @@ export function validatePrimaryColor(
 ): { ok: true; value: string | null } | ValidationFailure {
   if (value === null) return { ok: true, value: null };
   if (!HEX_RE.test(value)) {
+    // eslint-disable-next-line brand/no-raw-hex -- illustrative hex in user-facing validation copy
     return { ok: false, error: "Color must be a hex like #0a2bff" };
   }
   return { ok: true, value: value.toLowerCase() };

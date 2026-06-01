@@ -107,10 +107,10 @@ export function ComparisonChangesDrawer({
                 aria-controls={`drawer-tabpanel-${i}`}
                 id={`drawer-tab-${i}`}
                 onClick={() => onTabChange(i)}
-                className={`flex items-center gap-2 px-3 h-7 rounded-full text-[12px] font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a] ${
+                className={`flex items-center gap-2 px-3 h-7 rounded-full text-[12px] font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                   i === safeTab
-                    ? "bg-[#d4a04a] text-[#0b0c0f]"
-                    : "text-[#a09c92] hover:text-[#e7e6e2]"
+                    ? "bg-accent text-accent-on"
+                    : "text-ink-3 hover:text-ink"
                 }`}
               >
                 <span
@@ -127,7 +127,7 @@ export function ComparisonChangesDrawer({
             type="button"
             onClick={onClose}
             aria-label="Close changes drawer"
-            className="text-[#a09c92] hover:text-[#e7e6e2] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded px-2 py-1"
+            className="text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded px-2 py-1"
           >
             ✕
           </button>

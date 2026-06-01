@@ -148,7 +148,7 @@ export function TaxDetailStateTable({
 
   if (!first) {
     return (
-      <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-6 text-sm text-gray-400">
+      <div className="rounded-lg border border-hair bg-card p-6 text-sm text-ink-3">
         No state-tax detail available for the selected year range.
       </div>
     );
@@ -157,11 +157,11 @@ export function TaxDetailStateTable({
   if (first.hasIncomeTax === false) {
     const stateName = first.state ? USPS_STATE_NAMES[first.state] : "This state";
     return (
-      <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-6">
-        <p className="text-sm font-medium text-gray-100">
+      <div className="rounded-lg border border-hair bg-card p-6">
+        <p className="text-sm font-medium text-ink">
           {stateName} does not levy a personal income tax.
         </p>
-        <p className="mt-2 text-xs text-gray-400">
+        <p className="mt-2 text-xs text-ink-3">
           No state-tax breakdown is calculated for years in this residence state. If the residence state
           changes within the projection (e.g., relocation), the breakdown for those years will appear here.
         </p>
@@ -170,14 +170,14 @@ export function TaxDetailStateTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
+    <div className="overflow-x-auto rounded-lg border border-hair bg-card">
       <table className="min-w-full border-separate border-spacing-0 text-sm">
-        <thead className="bg-gray-900 text-xs uppercase text-gray-300">
+        <thead className="bg-card text-xs uppercase text-ink-3">
           <tr>
-            <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-gray-800 bg-gray-900 px-3 py-2 text-left">
+            <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-hair bg-card px-3 py-2 text-left">
               Year
             </th>
-            <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left">
+            <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-hair bg-card px-3 py-2 text-left">
               Age
             </th>
             {COLUMNS.map((col, idx) => {
@@ -185,7 +185,7 @@ export function TaxDetailStateTable({
               return (
                 <th
                   key={col.key}
-                  className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right font-medium ${isLast ? "sticky right-0 z-20 border-l" : ""}`}
+                  className={`border-b border-hair bg-card px-3 py-2 text-right font-medium ${isLast ? "sticky right-0 z-20 border-l" : ""}`}
                 >
                   {col.tooltip ? (
                     <TaxDetailTooltip label={col.label} text={col.tooltip} />
@@ -197,7 +197,7 @@ export function TaxDetailStateTable({
             })}
           </tr>
         </thead>
-        <tbody className="text-gray-200">
+        <tbody className="text-ink">
           {years.map((y) => {
             const state = y.taxResult?.state;
             const yearTransitions = transitions[y.year];
@@ -211,13 +211,13 @@ export function TaxDetailStateTable({
             return (
               <tr key={y.year} className="group">
                 <td
-                  className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-accent group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${borderClass}`}
+                  className={`sticky left-0 z-10 cursor-pointer border-b border-hair bg-card px-3 py-2 text-left hover:text-accent group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)] ${borderClass}`}
                   onClick={() => onYearClick(y)}
                   title={tooltip ?? `View state-tax compute trace for ${y.year}`}
                 >
                   {y.year}
                 </td>
-                <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-300 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+                <td className="sticky left-20 z-10 border-b border-r border-hair bg-card px-3 py-2 text-left text-ink-2 group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
                 {COLUMNS.map((col, idx) => {
@@ -227,7 +227,7 @@ export function TaxDetailStateTable({
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
+                      className={`border-b border-hair bg-card px-3 py-2 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
                     >
                       {state ? formatter(v) : "—"}
                     </td>

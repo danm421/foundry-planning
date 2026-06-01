@@ -71,7 +71,7 @@ export function ChangesPanel({
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
 
   return (
-    <aside className="w-[360px] shrink-0 border-l border-[#1f2024] bg-[#101114] flex flex-col">
+    <aside className="w-[360px] shrink-0 border-l border-hair bg-card flex flex-col">
       <PanelHeader
         scenarioName={scenarioName}
         changesCount={changes.length}
@@ -125,19 +125,19 @@ function PanelHeader({
   onOpenEditor: () => void;
 }) {
   return (
-    <div className="px-4 py-3 border-b border-[#1f2024]">
-      <div className="text-xs tracking-[0.18em] text-[#7a5b29] uppercase font-mono mb-1">
+    <div className="px-4 py-3 border-b border-hair">
+      <div className="text-xs tracking-[0.18em] text-accent uppercase font-mono mb-1">
         §.06 · CHANGES
       </div>
-      <div className="text-[16px] text-[#e7e6e2] mb-1">{scenarioName}</div>
-      <div className="text-xs text-[#a09c92]">
+      <div className="text-[16px] text-ink mb-1">{scenarioName}</div>
+      <div className="text-xs text-ink-3">
         {changesCount} change{changesCount === 1 ? "" : "s"} · {groupsCount} toggle
         group{groupsCount === 1 ? "" : "s"}
       </div>
       <button
         type="button"
         onClick={onOpenEditor}
-        className="mt-3 px-3 h-7 rounded-full bg-[#d4a04a] text-[#0b0c0f] text-[12px] font-medium hover:bg-[#c69544] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        className="mt-3 px-3 h-7 rounded-full bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
       >
         Group
       </button>
@@ -160,8 +160,8 @@ function ToggleGroupsSection({
   // Sort by orderIndex asc for stable rendering (matches API GET order).
   const sortedGroups = [...groups].sort((a, b) => a.orderIndex - b.orderIndex);
   return (
-    <div className="border-b border-[#1f2024]">
-      <div className="px-4 py-2 text-xs tracking-[0.18em] text-[#7a5b29] uppercase font-mono">
+    <div className="border-b border-hair">
+      <div className="px-4 py-2 text-xs tracking-[0.18em] text-accent uppercase font-mono">
         TOGGLE GROUPS — {sortedGroups.length}
       </div>
       {sortedGroups.map((g) => (
@@ -191,14 +191,14 @@ function UngroupedSection({
 }) {
   if (changes.length === 0) {
     return (
-      <div className="px-4 py-6 text-xs text-[#a09c92] text-center">
+      <div className="px-4 py-6 text-xs text-ink-3 text-center">
         No changes yet. Edits in scenario mode will appear here.
       </div>
     );
   }
   return (
-    <div className="border-b border-[#1f2024]">
-      <div className="px-4 py-2 text-xs tracking-[0.18em] text-[#7a5b29] uppercase font-mono">
+    <div className="border-b border-hair">
+      <div className="px-4 py-2 text-xs tracking-[0.18em] text-accent uppercase font-mono">
         UNGROUPED — {changes.length}
       </div>
       {changes.map((c) => (

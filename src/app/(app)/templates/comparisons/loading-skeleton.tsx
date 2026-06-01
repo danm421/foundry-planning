@@ -8,7 +8,7 @@ export default function ComparisonTemplatesSkeleton() {
       {/* Built-in section */}
       <div className="mt-10">
         <Skeleton height="0.6875rem" width="4rem" className="mb-2" />
-        <div className="divide-y divide-slate-800 overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+        <div className="divide-y divide-hair overflow-hidden rounded-lg border border-hair bg-card/40">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="flex items-center justify-between px-4 py-4">
               <div className="flex flex-col gap-1.5">
@@ -24,7 +24,7 @@ export default function ComparisonTemplatesSkeleton() {
       {/* Firm templates section */}
       <div className="mt-10">
         <Skeleton height="0.6875rem" width="9rem" className="mb-2" />
-        <div className="divide-y divide-slate-800 overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+        <div className="divide-y divide-hair overflow-hidden rounded-lg border border-hair bg-card/40">
           {[...Array(2)].map((_, i) => (
             <div key={i} className="flex items-center justify-between px-4 py-4">
               <div className="flex flex-col gap-1.5">

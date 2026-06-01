@@ -23,17 +23,17 @@ export function TaxCellDrillDownModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
+        className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-xl border-2 border-hair-2 ring-1 ring-black/60 bg-card p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">{title}</h3>
-          <button onClick={onClose} aria-label="Close" className="text-gray-300 hover:text-gray-200">✕</button>
+          <h3 className="text-base font-semibold text-ink">{title}</h3>
+          <button onClick={onClose} aria-label="Close" className="text-ink-2 hover:text-ink">✕</button>
         </div>
-        {subtitle && <p className="mb-3 text-xs text-gray-400">{subtitle}</p>}
+        {subtitle && <p className="mb-3 text-xs text-ink-3">{subtitle}</p>}
 
         {!hasRows ? (
-          <p className="py-8 text-center text-sm text-gray-400">
+          <p className="py-8 text-center text-sm text-ink-3">
             No contributing items for this year.
           </p>
         ) : (
@@ -41,21 +41,21 @@ export function TaxCellDrillDownModal({
             {groups.map((g, gi) => (
               <div key={g.label ?? gi}>
                 {g.label && (
-                  <div className="mb-1 text-xs uppercase tracking-wide text-gray-400">{g.label}</div>
+                  <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">{g.label}</div>
                 )}
-                <ul className="divide-y divide-gray-800 rounded-md bg-gray-800/40 text-sm">
+                <ul className="divide-y divide-hair rounded-md bg-card-2 text-sm">
                   {g.rows.map((r, ri) => {
                     const showBoundary = g.boundaryIndex != null && ri === g.boundaryIndex && ri > 0;
                     return (
                       <li
                         key={r.id}
-                        className={`flex flex-col gap-0.5 px-3 py-2 ${showBoundary ? "border-t-2 border-amber-400/60" : ""}`}
+                        className={`flex flex-col gap-0.5 px-3 py-2 ${showBoundary ? "border-t-2 border-accent/60" : ""}`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="truncate text-gray-200">{r.label}</span>
-                          <span className="tabular-nums text-gray-200">{formatCurrency(r.amount)}</span>
+                          <span className="truncate text-ink-2">{r.label}</span>
+                          <span className="tabular-nums text-ink-2">{formatCurrency(r.amount)}</span>
                         </div>
-                        {r.meta && <span className="text-xs text-gray-400">{r.meta}</span>}
+                        {r.meta && <span className="text-xs text-ink-3">{r.meta}</span>}
                       </li>
                     );
                   })}
@@ -65,12 +65,12 @@ export function TaxCellDrillDownModal({
           </div>
         )}
 
-        <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
+        <div className="mt-4 flex justify-between border-t border-hair pt-3 text-sm font-semibold text-ink">
           <span>{totalLabel ?? "Total"}</span>
           <span className="tabular-nums">{formatCurrency(total)}</span>
         </div>
 
-        {footnote && <p className="mt-3 text-[11px] italic text-gray-500">{footnote}</p>}
+        {footnote && <p className="mt-3 text-[11px] italic text-ink-4">{footnote}</p>}
       </div>
     </div>
   );

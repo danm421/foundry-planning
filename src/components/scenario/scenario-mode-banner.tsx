@@ -25,7 +25,7 @@ export function ScenarioModeBanner({
   if (!active || active.isBaseCase) return null;
 
   return (
-    <div className="px-6 py-2 border-b border-[#7a5b29] bg-[#0b0c0f] text-[11px] tracking-[0.18em] text-[#7a5b29] uppercase font-mono">
+    <div className="px-6 py-2 border-b border-accent bg-paper text-[11px] tracking-[0.18em] text-accent uppercase font-mono">
       EDITING SCENARIO · {active.name} · CHANGES TRACKED IN PANEL
     </div>
   );

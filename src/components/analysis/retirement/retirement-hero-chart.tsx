@@ -15,6 +15,7 @@ import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
 import { retirementInflows } from "@/lib/analysis/retirement-inflows";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
+import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(
   CategoryScale,
@@ -26,24 +27,27 @@ ChartJS.register(
   Legend,
 );
 
-// Inflow palette mirrors the Cash Flow report's stacked chart so the two read
-// the same. Shortfall is retirement-specific (no Cash Flow equivalent) and uses
-// a distinct pink to separate it from the red Withdrawals band.
-const COLOR_SS = "#2563eb"; // Social Security (navy)
-const COLOR_SALARIES = "#16a34a"; // Salaries (green)
-const COLOR_OTHER = "#99f6e4"; // Other Inflows (teal)
-const COLOR_RMDS = "#f97316"; // RMDs (orange)
-const COLOR_WITHDRAWALS = "#ef4444"; // Withdrawals (red)
-const COLOR_EXPENSES_LINE = "#ffffff"; // Total Expenses line
-
 interface RetirementHeroChartProps {
   years: ProjectionYear[];
   height?: number;
 }
 
 export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChartProps) {
+  const theme = useThemeName();
+
   const data = useMemo(() => {
     if (years.length === 0) return null;
+
+    // Inflow palette mirrors the Cash Flow report's stacked chart so the two
+    // read the same. Withdrawals uses the semantic crit token (loss/danger).
+    // Resolved to real hex — Chart.js paints to canvas (can't read CSS vars).
+    const pal = dataPalette(theme);
+    const COLOR_SS          = pal.blue;
+    const COLOR_SALARIES    = pal.green;
+    const COLOR_OTHER       = pal.teal;
+    const COLOR_RMDS        = pal.orange;
+    const COLOR_WITHDRAWALS = statusColors(theme).crit;
+    const COLOR_EXPENSES_LINE = chartChrome(theme).title;
 
     const labels = years.map((y) => String(y.year));
     const inflows = years.map(retirementInflows);
@@ -99,10 +103,11 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
         },
       ],
     };
-  }, [years]);
+  }, [years, theme]);
 
-  const options = useMemo(
-    () => ({
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       responsive: true,
       maintainAspectRatio: false,
       animation: {
@@ -118,12 +123,12 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
       plugins: {
         legend: {
           display: true,
-          labels: { color: "#d1d5db", boxWidth: 12, padding: 16 },
+          labels: { color: chrome.legend, boxWidth: 12, padding: 16 },
         },
         tooltip: {
-          backgroundColor: "#1f2937",
-          titleColor: "#f3f4f6",
-          bodyColor: "#d1d5db",
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
               `${ctx.dataset.label}: ${formatCurrency(Number(ctx.raw))}`,
@@ -134,26 +139,25 @@ export function RetirementHeroChart({ years, height = 320 }: RetirementHeroChart
         x: {
           stacked: true,
           ticks: {
-            color: "#9ca3af",
+            color: chrome.tick,
             // Let Chart.js autoskip so dense tick labels don't overlap;
             // mirrors the behaviour of the existing StackedBarChart.
             maxRotation: 0,
             autoSkip: true,
           },
-          grid: { color: "#374151" },
+          grid: { color: chrome.grid },
         },
         y: {
           stacked: true,
           ticks: {
-            color: "#9ca3af",
+            color: chrome.tick,
             callback: (value: unknown) => formatCurrency(Number(value)),
           },
-          grid: { color: "#374151" },
+          grid: { color: chrome.grid },
         },
       },
-    }),
-    [],
-  );
+    };
+  }, [theme]);
 
   if (!data) return null;
 

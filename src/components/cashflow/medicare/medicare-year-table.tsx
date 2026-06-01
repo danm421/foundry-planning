@@ -64,22 +64,22 @@ export function MedicareYearTable({ years, yearRange, onRowClick }: Props) {
               d.headroomToNextTier === Infinity
                 ? "text-ink-3"
                 : d.headroomToNextTier === 0
-                  ? "text-red-600"
+                  ? "text-crit"
                   : d.headroomToNextTier < 10_000
-                    ? "text-amber-600"
-                    : "text-emerald-600";
+                    ? "text-warn"
+                    : "text-good";
 
             const tierColor =
               d.irmaaTier >= 3
-                ? "text-red-700"
+                ? "text-crit"
                 : d.irmaaTier >= 1
-                  ? "text-amber-700"
-                  : "text-emerald-700";
+                  ? "text-warn"
+                  : "text-good";
 
             return (
               <tr
                 key={y.year}
-                className={`border-t border-line-2 cursor-pointer hover:bg-surface-2 ${tierChanged ? "bg-amber-50/40" : ""}`}
+                className={`border-t border-line-2 cursor-pointer hover:bg-surface-2 ${tierChanged ? "bg-warn/10" : ""}`}
                 onClick={() => onRowClick?.(y)}
                 title={tierChanged ? "Tier change vs prior year" : undefined}
               >

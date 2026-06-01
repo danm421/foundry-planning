@@ -44,7 +44,7 @@ export default function AccountGroupPillBar({
     <div
       role="group"
       aria-label="Account group"
-      className="flex items-center gap-1 overflow-x-auto rounded-md border border-gray-800 bg-gray-900/40 p-1"
+      className="flex items-center gap-1 overflow-x-auto rounded-md border border-hair bg-card/40 p-1"
     >
       {DEFAULTS.map((g) => {
         const active = selected === g.key;
@@ -55,14 +55,14 @@ export default function AccountGroupPillBar({
             aria-current={active ? "true" : undefined}
             onClick={() => selectGroup(g.key)}
             className={`whitespace-nowrap rounded px-3 py-1 text-xs font-medium transition-colors ${
-              active ? "bg-gray-700 text-white" : "text-gray-300 hover:text-gray-100"
+              active ? "bg-card-2 text-ink" : "text-ink-2 hover:text-ink"
             }`}
           >
             {g.label}
           </button>
         );
       })}
-      {customGroups.length > 0 && <span className="mx-1 h-4 w-px bg-gray-700" />}
+      {customGroups.length > 0 && <span className="mx-1 h-4 w-px bg-hair-2" />}
       {customGroups.map((g) => {
         const active = selected === g.id;
         return (
@@ -72,7 +72,7 @@ export default function AccountGroupPillBar({
             aria-current={active ? "true" : undefined}
             onClick={() => selectGroup(g.id)}
             className={`whitespace-nowrap rounded px-3 py-1 text-xs font-medium transition-colors ${
-              active ? "bg-gray-700 text-white" : "text-gray-300 hover:text-gray-100"
+              active ? "bg-card-2 text-ink" : "text-ink-2 hover:text-ink"
             }`}
             style={!active && g.color ? { boxShadow: `inset 0 -2px 0 0 ${g.color}` } : undefined}
           >
@@ -83,7 +83,7 @@ export default function AccountGroupPillBar({
       <span className="ml-auto">
         <Link
           href={`/clients/${clientId}/details/assumptions?tab=account-groups`}
-          className="whitespace-nowrap rounded px-3 py-1 text-xs text-gray-400 hover:text-gray-200"
+          className="whitespace-nowrap rounded px-3 py-1 text-xs text-ink-3 hover:text-ink-2"
         >
           Edit groups →
         </Link>

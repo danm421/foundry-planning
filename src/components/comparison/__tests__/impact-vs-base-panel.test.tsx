@@ -55,7 +55,7 @@ describe("ImpactVsBasePanel", () => {
         plans={[plan("Base", 100, 100, 100), plan("Proposed", 200, 50, 200)]}
       />,
     );
-    const greens = container.querySelectorAll(".text-emerald-400");
+    const greens = container.querySelectorAll(".text-good");
     expect(greens.length).toBe(3);
   });
 
@@ -66,7 +66,7 @@ describe("ImpactVsBasePanel", () => {
         plans={[plan("Base", 200, 50, 200), plan("Proposed", 100, 100, 100)]}
       />,
     );
-    const reds = container.querySelectorAll(".text-rose-400");
+    const reds = container.querySelectorAll(".text-crit");
     expect(reds.length).toBe(3);
   });
 

@@ -3,16 +3,11 @@
 import { Chart as ChartJS, LinearScale, PointElement, Tooltip, Legend } from "chart.js";
 import { Scatter } from "react-chartjs-2";
 import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
-
-// High-contrast axis styling (chart sits on a dark surface — push labels/grid
-// light so they read clearly against the dark background).
-const AXIS_INK = "#e5e7eb"; // gray-200 — tick + title labels
-const GRID_COLOR = "#6b7280"; // gray-500 — grid lines (vs near-invisible default)
-const AXIS_BORDER = "#9ca3af"; // gray-400 — axis lines
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -35,6 +30,9 @@ export function PortfolioAnalysisScatter({
   rows: AnalysisRow[];
   colorMap: Map<string, string>;
 }) {
+  const theme = useThemeName();
+  const chrome = chartChrome(theme);
+
   const xBounds = axisBounds(rows.map((r) => r.stats.stdDev));
   const yBounds = axisBounds(rows.map((r) => r.stats.arithmeticMean));
 
@@ -45,8 +43,8 @@ export function PortfolioAnalysisScatter({
     pointStyle: "circle" as const,
     pointRadius: 7,
     pointHoverRadius: 9,
-    backgroundColor: colorMap.get(r.key) ?? "#3b82f6",
-    borderColor: "#111827",
+    backgroundColor: colorMap.get(r.key) ?? "var(--color-accent)",
+    borderColor: "var(--color-card)",
     borderWidth: 1.5,
     data: [{ x: r.stats.stdDev, y: r.stats.arithmeticMean, _row: r }],
   }));
@@ -61,23 +59,26 @@ export function PortfolioAnalysisScatter({
           x: {
             min: xBounds.min,
             max: xBounds.max,
-            title: { display: true, text: "Standard Deviation", color: AXIS_INK, font: { size: 13, weight: "bold" } },
-            ticks: { color: AXIS_INK, stepSize: 0.01, callback: (v) => pct(Number(v)) },
-            grid: { color: GRID_COLOR },
-            border: { color: AXIS_BORDER, width: 2 },
+            title: { display: true, text: "Standard Deviation", color: chrome.title, font: { size: 13, weight: "bold" } },
+            ticks: { color: chrome.tick, stepSize: 0.01, callback: (v) => pct(Number(v)) },
+            grid: { color: chrome.grid },
+            border: { color: chrome.legend, width: 2 },
           },
           y: {
             min: yBounds.min,
             max: yBounds.max,
-            title: { display: true, text: "Arithmetic Mean Return", color: AXIS_INK, font: { size: 13, weight: "bold" } },
-            ticks: { color: AXIS_INK, stepSize: 0.01, callback: (v) => pct(Number(v)) },
-            grid: { color: GRID_COLOR },
-            border: { color: AXIS_BORDER, width: 2 },
+            title: { display: true, text: "Arithmetic Mean Return", color: chrome.title, font: { size: 13, weight: "bold" } },
+            ticks: { color: chrome.tick, stepSize: 0.01, callback: (v) => pct(Number(v)) },
+            grid: { color: chrome.grid },
+            border: { color: chrome.legend, width: 2 },
           },
         },
         plugins: {
-          legend: { position: "bottom", labels: { color: AXIS_INK, usePointStyle: true } },
+          legend: { position: "bottom", labels: { color: chrome.legend, usePointStyle: true } },
           tooltip: {
+            backgroundColor: chrome.tooltipBg,
+            titleColor: chrome.tooltipTitle,
+            bodyColor: chrome.tooltipBody,
             callbacks: {
               label: (item) => {
                 const r = (item.raw as { _row: AnalysisRow })._row;

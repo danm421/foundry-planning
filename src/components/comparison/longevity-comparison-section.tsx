@@ -45,9 +45,9 @@ export function LongevityComparisonSection({
 
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-2 text-lg font-semibold text-slate-100">Longevity</h2>
+      <h2 className="mb-2 text-lg font-semibold text-ink">Longevity</h2>
       <div
-        className="mb-4 grid gap-2 text-sm text-slate-400"
+        className="mb-4 grid gap-2 text-sm text-ink-4"
         style={{
           gridTemplateColumns: `repeat(${plans.length}, minmax(0, 1fr))`,
         }}
@@ -60,7 +60,7 @@ export function LongevityComparisonSection({
               aria-hidden
             />
             <span>
-              <span className="text-slate-200">{p.label}</span> stays ≥ 90%
+              <span className="text-ink-2">{p.label}</span> stays ≥ 90%
               through {p.last90 ?? "—"}
             </span>
           </div>
@@ -74,7 +74,7 @@ export function LongevityComparisonSection({
       >
         {perPlan.map((p, i) => (
           <div key={i}>
-            <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
+            <div className="mb-2 text-xs uppercase tracking-wide text-ink-4">
               {p.label}
             </div>
             <LongevityChart

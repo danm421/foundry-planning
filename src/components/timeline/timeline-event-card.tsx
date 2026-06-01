@@ -85,26 +85,26 @@ export default function TimelineEventCard({
       >
         <div className="flex items-center justify-between gap-2">
           <TimelineCategoryPill category={event.category} />
-          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-xs tabular-nums text-gray-300 font-[family-name:var(--font-display)]">
+          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-xs tabular-nums text-ink-2 font-[family-name:var(--font-display)]">
             {event.year}
             {event.age != null ? ` · age ${event.age}` : ""}
           </span>
         </div>
         <div className="mt-2 flex items-baseline justify-between gap-2">
           <div
-            className="text-base font-semibold text-gray-50 font-[family-name:var(--font-display)]"
+            className="text-base font-semibold text-ink font-[family-name:var(--font-display)]"
             style={{ fontOpticalSizing: "auto" }}
           >
             {event.title}
           </div>
           {subjectLabel && (
-            <div className="text-xs uppercase tracking-[0.08em] text-gray-400">
+            <div className="text-xs uppercase tracking-[0.08em] text-ink-3">
               {subjectLabel}
             </div>
           )}
         </div>
         {event.supportingFigure && (
-          <div className="mt-1 text-xs tabular-nums text-gray-300">{event.supportingFigure}</div>
+          <div className="mt-1 text-xs tabular-nums text-ink-2">{event.supportingFigure}</div>
         )}
       </button>
 
@@ -113,8 +113,8 @@ export default function TimelineEventCard({
           <dl className="grid grid-cols-2 gap-y-1.5 gap-x-3">
             {event.details.map((d) => (
               <div key={d.label} className="contents">
-                <dt className="text-gray-400">{d.label}</dt>
-                <dd className="tabular-nums text-gray-200">{d.value}</dd>
+                <dt className="text-ink-3">{d.label}</dt>
+                <dd className="tabular-nums text-ink-2">{d.value}</dd>
               </div>
             ))}
           </dl>
@@ -124,7 +124,7 @@ export default function TimelineEventCard({
                 <Link
                   key={l.href}
                   href={l.href}
-                  className="text-xs text-sky-300 hover:text-sky-200"
+                  className="text-xs text-ink-2 hover:text-ink"
                 >
                   {l.label} →
                 </Link>

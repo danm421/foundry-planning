@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useThemeName, chartChrome } from "@/lib/chart-colors";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -178,6 +179,8 @@ export function TerminalHistogram({
   onPromote,
 }: TerminalHistogramProps) {
   const isMain = variant === "main";
+  const theme = useThemeName();
+  const chrome = chartChrome(theme);
   const series = useMemo(() => buildHistogramSeries(endingValues), [endingValues]);
 
   const failedCount = useMemo(
@@ -187,9 +190,9 @@ export function TerminalHistogram({
 
   if (series.bins.length === 0) {
     return (
-      <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
-        <h3 className="text-sm font-semibold text-slate-100 mb-3">Ending Portfolio Distribution</h3>
-        <p className="text-sm text-slate-400">No trial data available.</p>
+      <section className="rounded-lg bg-card ring-1 ring-hair p-4">
+        <h3 className="text-sm font-semibold text-ink mb-3">Ending Portfolio Distribution</h3>
+        <p className="text-sm text-ink-3">No trial data available.</p>
       </section>
     );
   }
@@ -224,9 +227,9 @@ export function TerminalHistogram({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: "rgba(2, 6, 23, 0.92)",
-        titleColor: "rgb(226, 232, 240)",
-        bodyColor: "rgb(203, 213, 225)",
+        backgroundColor: chrome.tooltipBg,
+        titleColor: chrome.tooltipTitle,
+        bodyColor: chrome.tooltipBody,
         callbacks: {
           title: (items: Array<{ dataIndex: number }>) => {
             const b = series.bins[items[0]?.dataIndex ?? 0];
@@ -244,7 +247,7 @@ export function TerminalHistogram({
       x: {
         grid: { display: false },
         ticks: {
-          color: "rgb(148, 163, 184)",
+          color: chrome.tick,
           maxRotation: 0,
           autoSkip: true,
           maxTicksLimit: isMain ? 8 : 5,
@@ -253,9 +256,9 @@ export function TerminalHistogram({
       },
       y: {
         beginAtZero: true,
-        grid: { color: "rgba(148, 163, 184, 0.08)" },
+        grid: { color: chrome.grid },
         ticks: {
-          color: "rgb(148, 163, 184)",
+          color: chrome.tick,
           font: { size: 10 },
           maxTicksLimit: 4,
           callback: (v: number | string) => {
@@ -264,7 +267,7 @@ export function TerminalHistogram({
           },
         },
         title: isMain
-          ? { display: true, text: "Trials", color: "rgb(148, 163, 184)", font: { size: 10 } }
+          ? { display: true, text: "Trials", color: chrome.title, font: { size: 10 } }
           : { display: false },
       },
     },
@@ -289,19 +292,19 @@ export function TerminalHistogram({
     startingLiquidBalance != null && startingLiquidBalance > requiredMinimumAssetLevel;
 
   return (
-    <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
+    <section className="rounded-lg bg-card ring-1 ring-hair p-4">
       <div className="flex items-baseline justify-between mb-3 gap-3">
         <h3
           className={
             isMain
-              ? "text-base font-semibold text-slate-100"
-              : "text-sm font-semibold text-slate-100"
+              ? "text-base font-semibold text-ink"
+              : "text-sm font-semibold text-ink"
           }
         >
           Ending Portfolio Distribution
         </h3>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">N = {formatInteger(trialsRun)}</span>
+          <span className="text-xs text-ink-3">N = {formatInteger(trialsRun)}</span>
           {!isMain && onPromote && <PromoteButton onPromote={onPromote} />}
         </div>
       </div>
@@ -331,14 +334,14 @@ export function TerminalHistogram({
           </div>
           <div className="text-[11px] text-ink-3 mb-1 tabular-nums">
             Mean {formatShortCurrency(sd.mean)}
-            <span className="mx-1.5 text-slate-700">·</span>
+            <span className="mx-1.5 text-hair-2">·</span>
             σ {formatShortCurrency(sd.stdDev)}
           </div>
         </>
       ) : (
-        <p className="text-xs text-slate-400 mb-2 tabular-nums">
-          <span className="text-slate-200">Median {formatShortCurrency(series.p50)}</span>
-          <span className="mx-1.5 text-slate-600">·</span>
+        <p className="text-xs text-ink-3 mb-2 tabular-nums">
+          <span className="text-ink-2">Median {formatShortCurrency(series.p50)}</span>
+          <span className="mx-1.5 text-hair-2">·</span>
           <span>
             P25–P75 {formatShortCurrency(series.p25)}–{formatShortCurrency(series.p75)}
           </span>
@@ -370,7 +373,7 @@ export function TerminalHistogram({
       )}
 
       {isMain && showZoneLegend && (
-        <div className="flex items-center justify-center gap-4 mt-3 text-xs text-slate-400">
+        <div className="flex items-center justify-center gap-4 mt-3 text-xs text-ink-3">
           <LegendChip color={ZONE_FAILED} label={`Below minimum (${formatShortCurrency(requiredMinimumAssetLevel)})`} />
           <LegendChip color={ZONE_DEPLETED} label={`Below starting (${formatShortCurrency(startingLiquidBalance!)})`} />
           <LegendChip color={ZONE_PRESERVED} label="Preserved or grown" />
@@ -389,14 +392,14 @@ interface StatProps {
 
 function Stat({ label, value, sub, tone }: StatProps) {
   const toneClass = {
-    rose: "text-rose-300",
-    amber: "text-amber-300",
-    slate: "text-slate-100",
-    emerald: "text-emerald-300",
+    rose: "text-crit",
+    amber: "text-warn",
+    slate: "text-ink",
+    emerald: "text-good",
   }[tone];
   return (
-    <div className="rounded-md bg-slate-950/40 ring-1 ring-slate-800 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
+    <div className="rounded-md bg-paper/40 ring-1 ring-hair px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-ink-3">{label}</div>
       <div className={`text-base font-semibold tabular-nums ${toneClass}`}>{value}</div>
       {sub && <div className="text-[10px] text-ink-3 tabular-nums">{sub}</div>}
     </div>

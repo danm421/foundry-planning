@@ -16,9 +16,9 @@ function fmtDelta(n: number | undefined): string {
   return `${n < 0 ? "−" : "+"}${usd.format(Math.abs(n))}`;
 }
 function deltaClass(n: number | undefined, betterDirection: "lower" | "higher"): string {
-  if (n === undefined || n === 0) return "text-slate-400";
+  if (n === undefined || n === 0) return "text-ink-4";
   const isBetter = betterDirection === "lower" ? n < 0 : n > 0;
-  return isBetter ? "text-emerald-400" : "text-rose-400";
+  return isBetter ? "text-good" : "text-crit";
 }
 
 // IRD = sum of drainAttributions where drainKind === "ird_tax". Mirrors the
@@ -127,7 +127,7 @@ export function EstateTaxComparisonTable({ plans }: Props) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[640px]">
         <thead>
-          <tr className="border-b border-slate-700 text-slate-300">
+          <tr className="border-b border-hair-2 text-ink-2">
             <th role="columnheader" className="text-left py-2 font-medium" />
             {plans.map((p, i) => (
               <th
@@ -151,10 +151,10 @@ export function EstateTaxComparisonTable({ plans }: Props) {
           {visible.map((row, ri) => {
             if (row.kind === "header") {
               return (
-                <tr key={ri} className="border-t border-slate-800">
+                <tr key={ri} className="border-t border-hair">
                   <td
                     colSpan={colCount}
-                    className="pt-4 pb-1 text-slate-400 text-xs uppercase tracking-wide"
+                    className="pt-4 pb-1 text-ink-4 text-xs uppercase tracking-wide"
                   >
                     {row.label}
                     {row.year !== undefined ? ` (${row.year})` : ""}
@@ -167,14 +167,14 @@ export function EstateTaxComparisonTable({ plans }: Props) {
               <tr key={ri}>
                 <td
                   className={`py-1 ${
-                    row.bold ? "font-semibold text-slate-100" : "text-slate-300"
+                    row.bold ? "font-semibold text-ink" : "text-ink-2"
                   }`}
                 >
                   {row.label}
                 </td>
                 {row.values.map((v, i) => {
                   const cellCls = `text-right py-1 ${
-                    row.bold ? "font-semibold text-slate-100" : "text-slate-200"
+                    row.bold ? "font-semibold text-ink" : "text-ink-2"
                   }`;
                   if (i === 0) {
                     return (

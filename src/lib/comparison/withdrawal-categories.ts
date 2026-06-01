@@ -1,3 +1,6 @@
+import { colors, colorsLight } from "@/brand";
+import { dataPalette } from "@/lib/chart-palette";
+import type { Theme } from "@/lib/theme";
 import type { Account } from "@/engine/types";
 
 export type WithdrawalSourceCategory =
@@ -24,14 +27,26 @@ export const SOURCE_LABELS: Record<WithdrawalSourceCategory, string> = {
   other: "Other",
 };
 
-export const SOURCE_COLORS: Record<WithdrawalSourceCategory, string> = {
-  "social-security": "#2563eb",
-  pension: "#ea580c",
-  "taxable-withdrawal": "#facc15",
-  "ira-rmd": "#f97316",
-  "roth-withdrawal": "#16a34a",
-  other: "#94a3b8",
-};
+/**
+ * Theme-aware source colors, drawn from the Deep Jewel brand data palette so the
+ * stacked chart recolors on theme toggle. Ordered so neighbors in SOURCE_ORDER
+ * cross hue families; "other" is the muted neutral ink. Roth keeps green
+ * (tax-free), pension keeps a warm orange.
+ */
+export function sourceColors(
+  theme: Theme,
+): Record<WithdrawalSourceCategory, string> {
+  const d = dataPalette(theme);
+  const c = theme === "light" ? colorsLight : colors;
+  return {
+    "social-security": d.blue,
+    pension: d.orange,
+    "taxable-withdrawal": d.yellow,
+    "ira-rmd": d.pink,
+    "roth-withdrawal": d.green,
+    other: c.ink3,
+  };
+}
 
 /** Stable display order (left → right in legend, bottom → top in stack). */
 export const SOURCE_ORDER: WithdrawalSourceCategory[] = [

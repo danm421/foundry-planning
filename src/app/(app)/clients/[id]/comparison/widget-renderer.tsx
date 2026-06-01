@@ -24,7 +24,7 @@ interface Props {
 
 export function WidgetRenderer({ layout, clientId, plans, mc, mcRun, onExpandTextCell }: Props) {
   if (layout.groups.length === 0) {
-    return <div className="px-6 py-16 text-center text-slate-400">No widgets yet.</div>;
+    return <div className="px-6 py-16 text-center text-ink-3">No widgets yet.</div>;
   }
 
   const planById = new Map(plans.map((p) => [p.id, p]));
@@ -34,7 +34,7 @@ export function WidgetRenderer({ layout, clientId, plans, mc, mcRun, onExpandTex
       {layout.groups.map((group) => (
         <section key={group.id} data-render-group={group.id} className="flex flex-col gap-2">
           {group.title.trim() !== "" && (
-            <h2 className="text-base font-semibold text-slate-100">{group.title}</h2>
+            <h2 className="text-base font-semibold text-ink">{group.title}</h2>
           )}
           <div className="grid grid-cols-5 gap-2">
             {group.cells.map((cell) => {
@@ -45,7 +45,7 @@ export function WidgetRenderer({ layout, clientId, plans, mc, mcRun, onExpandTex
                   <div
                     key={cell.id}
                     data-render-cell={cell.id}
-                    className={`${SPAN_TO_CLASS[cell.span]} min-w-0 rounded border border-dashed border-slate-700 p-4 text-sm text-slate-400`}
+                    className={`${SPAN_TO_CLASS[cell.span]} min-w-0 rounded border border-dashed border-hair p-4 text-sm text-ink-3`}
                   >
                     Unknown widget: {cell.widget.kind}
                   </div>

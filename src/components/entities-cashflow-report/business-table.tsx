@@ -13,8 +13,8 @@ export default function BusinessTable({ rows, currentYear, onCellClick }: Props)
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="text-gray-400">
-          <tr className="border-b border-gray-800">
+        <thead className="text-ink-3">
+          <tr className="border-b border-hair">
             {BUSINESS_COLUMNS.map((c) => (
               <th
                 key={c.key}
@@ -29,14 +29,14 @@ export default function BusinessTable({ rows, currentYear, onCellClick }: Props)
             ))}
           </tr>
         </thead>
-        <tbody className="text-gray-100">
+        <tbody className="text-ink">
           {rows.map((r) => {
             const isCurrent = r.year === currentYear;
             return (
               <tr
                 key={r.year}
-                className={`border-b border-gray-800/60 last:border-b-0 hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${
-                  isCurrent ? "bg-gray-800/40 font-semibold" : ""
+                className={`border-b border-hair last:border-b-0 hover:[&>td]:shadow-[inset_0_1px_0_var(--color-hair-2),inset_0_-1px_0_var(--color-hair-2)] ${
+                  isCurrent ? "bg-card-2 font-semibold" : ""
                 }`}
               >
                 <td className="px-2 py-1.5 text-left tabular-nums">{r.year}</td>

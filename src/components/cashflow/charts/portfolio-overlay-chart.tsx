@@ -13,6 +13,7 @@ import {
 import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
 import { seriesColor, seriesDash } from "@/lib/comparison/series-palette";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(
   CategoryScale,
@@ -58,6 +59,8 @@ interface Props {
 }
 
 export function PortfolioOverlayChart({ plans }: Props) {
+  const theme = useThemeName();
+
   // Union of all years across plans (sorted). Plans may diverge in horizon
   // (different retirement ages, longevity assumptions); span the union so each
   // series shows its own end-state instead of being truncated to the shortest.
@@ -69,7 +72,7 @@ export function PortfolioOverlayChart({ plans }: Props) {
     const byYear = new Map<number, number>(
       p.years.map((y) => [y.year, portfolioTotalForYear(y)]),
     );
-    const color = seriesColor(i) ?? "#cbd5e1";
+    const color = seriesColor(i) ?? dataPalette(theme).teal;
     return {
       label: p.label,
       data: allYears.map((yr) => byYear.get(yr) ?? null),
@@ -84,6 +87,8 @@ export function PortfolioOverlayChart({ plans }: Props) {
     };
   });
 
+  const chrome = chartChrome(theme);
+
   return (
     <div className="h-72 w-full">
       <Line
@@ -93,8 +98,11 @@ export function PortfolioOverlayChart({ plans }: Props) {
           maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
           plugins: {
-            legend: { position: "top", labels: { color: "#cbd5e1" } },
+            legend: { position: "top", labels: { color: chrome.legend } },
             tooltip: {
+              backgroundColor: chrome.tooltipBg,
+              titleColor: chrome.tooltipTitle,
+              bodyColor: chrome.tooltipBody,
               callbacks: {
                 label: (ctx) =>
                   `${ctx.dataset.label}: ${usd.format((ctx.parsed.y as number) ?? 0)}`,
@@ -103,15 +111,15 @@ export function PortfolioOverlayChart({ plans }: Props) {
           },
           scales: {
             x: {
-              ticks: { color: "#94a3b8" },
-              grid: { color: "rgba(148,163,184,0.15)" },
+              ticks: { color: chrome.tick },
+              grid: { color: chrome.grid },
             },
             y: {
               ticks: {
-                color: "#94a3b8",
+                color: chrome.tick,
                 callback: (v) => usd.format(Number(v)),
               },
-              grid: { color: "rgba(148,163,184,0.15)" },
+              grid: { color: chrome.grid },
             },
           },
         }}

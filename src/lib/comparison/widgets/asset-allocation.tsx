@@ -35,7 +35,7 @@ function renderConfig(ctx: ComparisonWidgetConfigContext<AssetAllocationConfig>)
             aria-checked={active}
             onClick={() => ctx.onChange({ mode: b.value })}
             className={`rounded border px-2 py-1 text-xs ${
-              active ? "border-amber-400 bg-amber-400/10 text-amber-200" : "border-slate-700 text-slate-300 hover:bg-slate-800"
+              active ? "border-accent bg-accent/10 text-accent" : "border-hair text-ink-2 hover:bg-card-hover"
             }`}
           >
             {b.label}

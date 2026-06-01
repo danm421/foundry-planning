@@ -47,9 +47,9 @@ export function KpiComparisonSection({ metric, value }: KpiComparisonSectionProp
   else display = formatCurrencyCompact(value);
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="text-3xl font-semibold tabular-nums">{display}</div>
-      <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">
+      <div className="mt-1 text-xs uppercase tracking-wide text-ink-4">
         {METRIC_LABELS[metric]}
       </div>
     </div>

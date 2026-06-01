@@ -3,7 +3,7 @@ import { LoadingLabel, Skeleton, SkeletonCard } from "@/components/skeleton";
 export default function TimelineSkeleton() {
   return (
     <div
-      className="relative min-h-screen bg-[#0B0F1A]"
+      className="relative min-h-screen bg-paper"
       aria-busy="true"
     >
       <LoadingLabel>Loading timeline…</LoadingLabel>

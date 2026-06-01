@@ -24,7 +24,7 @@ export function CharitableImpactTableList({
         className="min-w-full border-collapse text-xs"
       >
         <thead>
-          <tr className="bg-slate-900/60 text-slate-300">
+          <tr className="bg-card-2 text-ink-2">
             <th className="px-2 py-1 text-left">Scenario</th>
             <th className="px-2 py-1 text-right">Lifetime charity</th>
             <th className="px-2 py-1 text-right">Bequests to charity</th>
@@ -39,7 +39,7 @@ export function CharitableImpactTableList({
             );
             const bequests = plan.finalEstate?.charity ?? 0;
             return (
-              <tr key={plan.id} className="border-t border-slate-800 text-slate-200">
+              <tr key={plan.id} className="border-t border-hair text-ink">
                 <td className="px-2 py-1">{plan.label}</td>
                 <td className="px-2 py-1 text-right tabular-nums">
                   {usd.format(lifetime)}

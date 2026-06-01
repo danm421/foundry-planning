@@ -13,10 +13,10 @@ export const successGaugeWidget: ComparisonWidgetDefinition = {
     if (!mc) {
       return (
         <section className="px-6 py-8">
-          <h2 className="mb-4 text-lg font-semibold text-slate-100">
+          <h2 className="mb-4 text-lg font-semibold text-ink">
             Success Probability
           </h2>
-          <div className="h-32 animate-pulse rounded border border-slate-800 bg-slate-900" />
+          <div className="h-32 animate-pulse rounded border border-hair bg-card" />
         </section>
       );
     }
@@ -26,15 +26,15 @@ export const successGaugeWidget: ComparisonWidgetDefinition = {
     const probability = mc.successByIndex[idx >= 0 ? idx : 0] ?? 0;
     return (
       <section className="px-6 py-8">
-        <h2 className="mb-4 text-lg font-semibold text-slate-100">
+        <h2 className="mb-4 text-lg font-semibold text-ink">
           Success Probability
         </h2>
         <div className="flex flex-col items-center gap-2">
           <SuccessGauge value={probability} />
-          <div className="text-xs uppercase tracking-wide text-slate-400">
+          <div className="text-xs uppercase tracking-wide text-ink-3">
             {plan?.label}
           </div>
-          <div className="text-[10px] text-slate-500">
+          <div className="text-[10px] text-ink-3">
             Threshold {Math.round(mc.threshold * 100)}%
           </div>
         </div>

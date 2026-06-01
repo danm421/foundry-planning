@@ -183,24 +183,24 @@ export function GroupEditor({
             onKeyDown={(e) => {
               if (e.key === "Enter") createNewGroup();
             }}
-            className="flex-1 bg-transparent border border-[#1f2024] rounded px-2 h-7 text-[13px] text-[#e7e6e2]"
+            className="flex-1 bg-transparent border border-hair rounded px-2 h-7 text-[13px] text-ink"
           />
           <button
             type="button"
             onClick={createNewGroup}
             disabled={busy || !newName.trim()}
-            className="h-7 px-3 rounded bg-[#d4a04a] text-[#0b0c0f] text-[12px] disabled:opacity-50"
+            className="h-7 px-3 rounded bg-accent text-accent-on text-[12px] disabled:opacity-50"
           >
             Create
           </button>
         </div>
         <div className="flex-1" />
-        <div className="sticky bottom-0 z-10 bg-[#101114] border-t border-[#1f2024] p-3 flex justify-end">
+        <div className="sticky bottom-0 z-10 bg-card border-t border-hair p-3 flex justify-end">
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="h-7 px-3 rounded border border-[#1f2024] text-[12px] text-[#a09c92] disabled:opacity-50"
+            className="h-7 px-3 rounded border border-hair text-[12px] text-ink-3 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -211,7 +211,7 @@ export function GroupEditor({
 
   return (
     <div data-testid="group-editor" className="flex flex-col flex-1">
-      <div className="px-4 py-3 border-b border-[#1f2024] flex items-center gap-2">
+      <div className="px-4 py-3 border-b border-hair flex items-center gap-2">
         {renaming ? (
           <input
             autoFocus
@@ -224,7 +224,7 @@ export function GroupEditor({
               if (e.key === "Escape") setRenaming(false);
             }}
             onBlur={() => setRenaming(false)}
-            className="flex-1 bg-transparent border border-[#1f2024] rounded px-2 h-7 text-[13px] text-[#e7e6e2] disabled:opacity-50"
+            className="flex-1 bg-transparent border border-hair rounded px-2 h-7 text-[13px] text-ink disabled:opacity-50"
           />
         ) : (
           <>
@@ -239,7 +239,7 @@ export function GroupEditor({
                 }
                 setSelectedGroupId(e.target.value);
               }}
-              className="flex-1 bg-transparent border border-[#1f2024] rounded px-2 h-7 text-[13px] text-[#e7e6e2]"
+              className="flex-1 bg-transparent border border-hair rounded px-2 h-7 text-[13px] text-ink"
             >
               {sortedGroups.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -253,7 +253,7 @@ export function GroupEditor({
               onClick={startRename}
               aria-label="Rename group"
               disabled={busy}
-              className="h-7 px-2 rounded border border-[#1f2024] text-[12px] text-[#a09c92] disabled:opacity-50"
+              className="h-7 px-2 rounded border border-hair text-[12px] text-ink-3 disabled:opacity-50"
               title="Rename"
             >
               ✎
@@ -268,12 +268,12 @@ export function GroupEditor({
         {[
           <div
             key="__members-header"
-            className="px-4 py-2 text-xs tracking-[0.18em] text-[#7a5b29] uppercase font-mono"
+            className="px-4 py-2 text-xs tracking-[0.18em] text-accent uppercase font-mono"
           >
             MEMBERS
           </div>,
           members.length === 0 ? (
-            <div key="__members-empty" className="px-4 py-3 text-xs text-[#a09c92]">
+            <div key="__members-empty" className="px-4 py-3 text-xs text-ink-3">
               No changes in this group yet.
             </div>
           ) : null,
@@ -288,7 +288,7 @@ export function GroupEditor({
           )),
           <div
             key="__individuals-header"
-            className="px-4 py-2 text-xs tracking-[0.18em] text-[#7a5b29] uppercase font-mono border-t border-[#1f2024]"
+            className="px-4 py-2 text-xs tracking-[0.18em] text-accent uppercase font-mono border-t border-hair"
           >
             INDIVIDUALS — {individuals.length}
           </div>,
@@ -303,7 +303,7 @@ export function GroupEditor({
           )),
         ]}
       </div>
-      <div className="sticky bottom-0 z-10 bg-[#101114] border-t border-[#1f2024] p-3 flex flex-col gap-2">
+      <div className="sticky bottom-0 z-10 bg-card border-t border-hair p-3 flex flex-col gap-2">
         {commitError && (
           <p className="text-xs text-red-400">{commitError}</p>
         )}
@@ -312,7 +312,7 @@ export function GroupEditor({
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="h-7 px-3 rounded border border-[#1f2024] text-[12px] text-[#a09c92]"
+            className="h-7 px-3 rounded border border-hair text-[12px] text-ink-3"
           >
             Cancel
           </button>
@@ -320,7 +320,7 @@ export function GroupEditor({
             type="button"
             onClick={commit}
             disabled={busy}
-            className="h-7 px-3 rounded bg-[#d4a04a] text-[#0b0c0f] text-[12px] disabled:opacity-50"
+            className="h-7 px-3 rounded bg-accent text-accent-on text-[12px] disabled:opacity-50"
           >
             {busy ? "Saving…" : "Done"}
           </button>
@@ -347,7 +347,7 @@ function EditorRow({
   return (
     <label
       data-testid={`editor-row-${change.id}`}
-      className="flex items-center gap-3 px-4 py-2 text-[13px] text-[#e7e6e2] hover:bg-[#16171a] cursor-pointer"
+      className="flex items-center gap-3 px-4 py-2 text-[13px] text-ink hover:bg-card-hover cursor-pointer"
     >
       <input type="checkbox" checked={checked} onChange={onToggle} />
       <span>{name}</span>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { describeChangeUnit, type ChangeUnit } from "@/lib/comparison/scenario-change-describe";
 
 interface Props {
@@ -13,9 +14,9 @@ interface Props {
 type Panel = NonNullable<ComparisonPlan["panelData"]>;
 
 function opBadge(opType: "add" | "edit" | "remove"): { sign: string; cls: string } {
-  if (opType === "add") return { sign: "+", cls: "text-emerald-300 border-emerald-700" };
-  if (opType === "remove") return { sign: "−", cls: "text-red-300 border-red-700" };
-  return { sign: "~", cls: "text-amber-300 border-amber-700" };
+  if (opType === "add") return { sign: "+", cls: "text-good border-good/40" };
+  if (opType === "remove") return { sign: "−", cls: "text-crit border-crit/40" };
+  return { sign: "~", cls: "text-accent border-accent/40" };
 }
 
 function unitOp(unit: ChangeUnit): "add" | "edit" | "remove" {
@@ -51,30 +52,30 @@ function ChangeBox({ unit, targetNames, clientId, scenarioId }: { unit: ChangeUn
   }
 
   return (
-    <div className="rounded border border-slate-700 bg-slate-950/30 p-3 text-sm">
+    <div className="rounded border border-hair bg-card-2 p-3 text-sm">
       <div className="mb-1 flex items-center gap-2">
         <span className={`inline-flex h-4 w-4 items-center justify-center rounded border text-[10px] font-bold ${badge.cls}`} aria-hidden>
           {badge.sign}
         </span>
-        <span className="font-semibold text-slate-100">{title}</span>
+        <span className="font-semibold text-ink">{title}</span>
       </div>
-      <p className="text-xs text-slate-300">{text}</p>
+      <p className="text-xs text-ink-2">{text}</p>
       <div className="mt-2 flex items-center justify-end gap-2 text-[11px]">
         {ai.status === "ready" && (
-          <button type="button" className="text-slate-400 underline" onClick={() => setAi({ status: "idle" })}>
+          <button type="button" className="text-ink-3 underline" onClick={() => setAi({ status: "idle" })}>
             Reset
           </button>
         )}
         <button
           type="button"
           disabled={ai.status === "loading"}
-          className="text-amber-300 hover:underline disabled:opacity-50"
+          className="text-accent hover:underline disabled:opacity-50"
           onClick={() => describeWithAI(ai.status === "ready")}
         >
           {ai.status === "loading" ? "Describing…" : ai.status === "ready" ? "Regenerate" : "Describe with AI"}
         </button>
       </div>
-      {ai.status === "error" && <p className="mt-1 text-[11px] text-red-400">{ai.error}</p>}
+      {ai.status === "error" && <p className="mt-1 text-[11px] text-crit">{ai.error}</p>}
     </div>
   );
 }
@@ -104,20 +105,21 @@ function unitsFromPanel(panel: Panel): ChangeUnit[] {
 }
 
 function PlanSection({ plan, clientId, index }: { plan: ComparisonPlan; clientId: string; index: number }) {
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const theme = useThemeName();
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       {plan.panelData == null ? (
-        <p className="text-sm text-slate-400">No changes — this is the base plan.</p>
+        <p className="text-sm text-ink-3">No changes — this is the base plan.</p>
       ) : (
         (() => {
           const units = unitsFromPanel(plan.panelData);
           if (units.length === 0) {
-            return <p className="text-sm text-slate-400">No changes recorded for this scenario.</p>;
+            return <p className="text-sm text-ink-3">No changes recorded for this scenario.</p>;
           }
           return (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -141,7 +143,7 @@ function PlanSection({ plan, clientId, index }: { plan: ComparisonPlan; clientId
 export function ScenarioChangesComparisonSection({ plans, clientId }: Props) {
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Scenario Changes</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Scenario Changes</h2>
       <div className="flex flex-col gap-4">
         {plans.map((p, i) => <PlanSection key={p.id} plan={p} clientId={clientId} index={i} />)}
       </div>

@@ -47,15 +47,15 @@ export function TemplateRow(props: Props) {
       <div className="flex items-center justify-between px-4 py-3">
         <div>
           <div className="flex items-center gap-2">
-            <div className="text-sm font-medium text-slate-100">{preset.name}</div>
-            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+            <div className="text-sm font-medium text-ink">{preset.name}</div>
+            <span className="rounded-full bg-card-2 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">
               Built-in
             </span>
-            <span className="text-xs text-slate-500">{preset.slotCount} slots</span>
+            <span className="text-xs text-ink-4">{preset.slotCount} slots</span>
           </div>
-          <div className="mt-0.5 text-xs text-slate-400">{preset.description}</div>
+          <div className="mt-0.5 text-xs text-ink-3">{preset.description}</div>
         </div>
-        <div className="text-xs text-slate-500">Apply from a client&apos;s comparison page</div>
+        <div className="text-xs text-ink-4">Apply from a client&apos;s comparison page</div>
       </div>
     );
   }
@@ -66,22 +66,22 @@ export function TemplateRow(props: Props) {
     <div className="flex items-center justify-between px-4 py-3">
       <div className="min-w-0 flex-1 pr-4">
         <div className="flex items-center gap-2">
-          <div className="truncate text-sm font-medium text-slate-100">{template.name}</div>
+          <div className="truncate text-sm font-medium text-ink">{template.name}</div>
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
               template.visibility === "firm"
-                ? "bg-emerald-900/60 text-emerald-300"
-                : "bg-slate-800 text-slate-400"
+                ? "bg-good/20 text-good"
+                : "bg-card-2 text-ink-3"
             }`}
           >
             {template.visibility}
           </span>
-          <span className="text-xs text-slate-500">{template.slotCount} slots</span>
+          <span className="text-xs text-ink-4">{template.slotCount} slots</span>
         </div>
         {template.description && (
-          <div className="mt-0.5 text-xs text-slate-400">{template.description}</div>
+          <div className="mt-0.5 text-xs text-ink-3">{template.description}</div>
         )}
-        <div className="mt-0.5 text-[11px] text-slate-500">
+        <div className="mt-0.5 text-[11px] text-ink-4">
           Updated {new Date(template.updatedAt).toLocaleDateString()}
         </div>
       </div>
@@ -105,7 +105,7 @@ export function TemplateRow(props: Props) {
                 setBusy(false);
               }
             }}
-            className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-md border border-hair bg-card px-2.5 py-1 text-xs text-ink hover:bg-card-hover disabled:opacity-50"
           >
             Rename
           </button>
@@ -127,7 +127,7 @@ export function TemplateRow(props: Props) {
                 setBusy(false);
               }
             }}
-            className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-md border border-hair bg-card px-2.5 py-1 text-xs text-ink hover:bg-card-hover disabled:opacity-50"
           >
             {template.visibility === "firm" ? "Make private" : "Share with firm"}
           </button>

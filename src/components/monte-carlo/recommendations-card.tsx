@@ -22,14 +22,14 @@ function SparkleIcon() {
 
 export function RecommendationsCard() {
   return (
-    <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 relative min-h-[140px]">
-      <h3 className="text-sm font-semibold text-slate-100 mb-2">Recommendations</h3>
+    <section className="rounded-lg bg-card ring-1 ring-hair p-4 relative min-h-[140px]">
+      <h3 className="text-sm font-semibold text-ink mb-2">Recommendations</h3>
       {/* TODO: advisor-generated content */}
-      <p className="text-sm text-slate-300">AI-generated recommendations coming soon.</p>
-      <p className="text-[12px] text-slate-400 mt-1">
+      <p className="text-sm text-ink-2">AI-generated recommendations coming soon.</p>
+      <p className="text-[12px] text-ink-3 mt-1">
         Advisor insights will appear here based on your plan&apos;s risk profile.
       </p>
-      <div className="absolute bottom-3 right-3 text-emerald-300/70">
+      <div className="absolute bottom-3 right-3 text-good/70">
         <SparkleIcon />
       </div>
     </section>

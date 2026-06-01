@@ -16,6 +16,8 @@ import type { ProjectionYear } from "@/engine";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
+import { data } from "@/brand";
 import { buildTaxBracketRows } from "@/lib/tax/bracket";
 import {
   bracketTopsByYear,
@@ -33,18 +35,18 @@ ChartJS.register(
   Legend,
 );
 
-const RATE_COLOR: Record<string, string> = {
-  "0.10": "#16a34a",
-  "0.12": "#2563eb",
-  "0.22": "#22d3ee",
-  "0.24": "#facc15",
-  "0.32": "#f97316",
-  "0.35": "#ef4444",
-  "0.37": "#a855f7",
+// Maps each federal ordinary-income bracket rate to a brand hue.
+// Order runs green (lowest burden) → purple (highest), spanning 7 hue families.
+const RATE_HUES: Record<string, keyof typeof data> = {
+  "0.10": "green",
+  "0.12": "grey",
+  "0.22": "teal",
+  "0.24": "yellow",
+  "0.32": "orange",
+  "0.35": "pink",
+  "0.37": "purple",
 };
-function rateColor(rate: number): string {
-  return RATE_COLOR[rate.toFixed(2)] ?? "#94a3b8";
-}
+
 function rateLabel(rate: number): string {
   return `${Math.round(rate * 100)}%`;
 }
@@ -62,6 +64,9 @@ interface Props {
 function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange: YearRange | null; index: number }) {
   const years = useMemo(() => clip(plan.result.years, yearRange), [plan.result.years, yearRange]);
   const rows = useMemo(() => buildTaxBracketRows(years), [years]);
+  const theme = useThemeName();
+  const palette = dataPalette(theme);
+  const chrome = useMemo(() => chartChrome(theme), [theme]);
 
   const allRates = useMemo(() => {
     const set = new Set<number>();
@@ -76,7 +81,7 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
 
   const bracketTops = useMemo(() => bracketTopsByYear(years), [years]);
 
-  const data = useMemo(() => {
+  const data_ = useMemo(() => {
     const labels = rows.map((r) => String(r.year));
     const yearMeta = years.map((y) => {
       const tr = y.taxResult;
@@ -85,6 +90,10 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
       const slices = sliceIntoBrackets(tr.flow.incomeTaxBase, brackets);
       return { brackets, slices };
     });
+    const rateColor = (rate: number) => {
+      const hue = RATE_HUES[rate.toFixed(2)];
+      return hue ? palette[hue] : chrome.tick;
+    };
     const barDatasets = allRates.map((rate) => ({
       label: rateLabel(rate),
       data: yearMeta.map((m) => m.slices.find((s) => s.rate === rate)?.amount ?? 0),
@@ -108,33 +117,36 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
       stack: `bracket-top-${rate}`,
     }));
     return { labels, datasets: [...barDatasets, ...lineDatasets] };
-  }, [years, rows, allRates, bracketTops]);
+  }, [years, rows, allRates, bracketTops, palette, chrome]);
 
-  const options = useMemo(
-    () => ({
+  const options = useMemo(() => {
+    return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: "#d1d5db", boxWidth: 10, padding: 8, font: { size: 10 } } },
-        tooltip: { backgroundColor: "#1f2937" },
+        legend: { labels: { color: chrome.legend, boxWidth: 10, padding: 8, font: { size: 10 } } },
+        tooltip: {
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
+        },
       },
       scales: {
-        x: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
-        y: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+        x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
+        y: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
       },
-    }),
-    [],
-  );
+    };
+  }, [chrome]);
 
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const color = seriesColor(index) ?? chrome.tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-2 flex items-center gap-2">
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       <div style={{ height: 240 }}>
-        <Bar data={data} options={options} />
+        <Bar data={data_} options={options} />
       </div>
     </div>
   );
@@ -154,9 +166,9 @@ export function TaxBracketFillComparisonSection({ plans, yearRange }: Props) {
           : "grid-cols-1 md:grid-cols-2 xl:grid-cols-4";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Tax Bracket Fill</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Tax Bracket Fill</h2>
       {isEmpty ? (
-        <p className="rounded border border-slate-800 bg-slate-900/40 p-6 text-sm text-slate-400">
+        <p className="rounded border border-hair bg-card p-6 text-sm text-ink-3">
           No taxable income in selected range.
         </p>
       ) : (

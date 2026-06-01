@@ -7,22 +7,22 @@ export function buildTaxFederalDatasets(): StackedBarSeries[] {
   return [
     {
       label: "Ordinary (Bracket)",
-      color: "#2563eb",
+      colorKey: "blue",
       valueFor: (y: ProjectionYear) => y.taxResult?.flow.regularFederalIncomeTax ?? 0,
     },
     {
       label: "Cap Gains / QDIV",
-      color: "#16a34a",
+      colorKey: "green",
       valueFor: (y: ProjectionYear) => y.taxResult?.flow.capitalGainsTax ?? 0,
     },
     {
       label: "NIIT",
-      color: "#ea580c",
+      colorKey: "orange",
       valueFor: (y: ProjectionYear) => y.taxResult?.flow.niit ?? 0,
     },
     {
       label: "AMT",
-      color: "#7c3aed",
+      colorKey: "purple",
       valueFor: (y: ProjectionYear) => y.taxResult?.flow.amtAdditional ?? 0,
     },
   ];

@@ -18,17 +18,17 @@ export function LifetimeTaxComparisonSection({ plans }: Props) {
   const base = plans[0];
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Total Income Taxes Paid</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Total Income Taxes Paid</h2>
       <div
-        className="mb-6 grid gap-4 rounded border border-slate-800 bg-slate-950 p-4"
+        className="mb-6 grid gap-4 rounded border border-hair bg-card p-4"
         style={{ gridTemplateColumns: `repeat(${plans.length}, minmax(0, 1fr))` }}
       >
         {plans.map((p, i) => {
           const delta = i === 0 ? 0 : p.lifetime.total - base.lifetime.total;
           const cls = i === 0
-            ? "text-slate-100"
-            : delta < 0 ? "text-emerald-400"
-            : delta > 0 ? "text-rose-400" : "text-slate-300";
+            ? "text-ink"
+            : delta < 0 ? "text-good"
+            : delta > 0 ? "text-crit" : "text-ink-2";
           return (
             <div key={i}>
               <div className="flex items-center gap-2">
@@ -37,9 +37,9 @@ export function LifetimeTaxComparisonSection({ plans }: Props) {
                   style={{ backgroundColor: seriesColor(i) }}
                   aria-hidden
                 />
-                <span className="text-xs uppercase tracking-wide text-slate-400">{p.label}</span>
+                <span className="text-xs uppercase tracking-wide text-ink-4">{p.label}</span>
               </div>
-              <div className="mt-1 text-2xl font-semibold text-slate-100">
+              <div className="mt-1 text-2xl font-semibold text-ink">
                 {usd.format(p.lifetime.total)}
               </div>
               {i !== 0 && (

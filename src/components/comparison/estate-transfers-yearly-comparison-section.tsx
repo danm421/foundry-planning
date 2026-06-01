@@ -6,6 +6,7 @@ import { YearlyEstateWhereChart } from "@/components/yearly-estate-where-chart";
 import { YearlyEstateTable } from "@/components/yearly-estate-table";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { deriveOwnerNames, deriveOwnerDobs } from "@/lib/comparison/owner-info";
 
 function buildReport(plan: ComparisonPlan) {
@@ -19,6 +20,7 @@ function buildReport(plan: ComparisonPlan) {
 }
 
 export function EstateTransfersYearlyChart({ plans }: { plans: ComparisonPlan[] }) {
+  const theme = useThemeName();
   const colsClass =
     plans.length === 1
       ? "grid-cols-1"
@@ -28,12 +30,12 @@ export function EstateTransfersYearlyChart({ plans }: { plans: ComparisonPlan[] 
   return (
     <div className={`grid gap-4 ${colsClass}`}>
       {plans.map((plan, i) => {
-        const color = seriesColor(i) ?? "#cbd5e1";
+        const color = seriesColor(i) ?? chartChrome(theme).tick;
         const report = buildReport(plan);
         return (
           <div
             key={plan.id}
-            className="rounded-lg border border-slate-800 bg-slate-900/40 p-4"
+            className="rounded-lg border border-hair bg-card p-4"
           >
             <div className="mb-2 flex items-center gap-2">
               <span
@@ -41,7 +43,7 @@ export function EstateTransfersYearlyChart({ plans }: { plans: ComparisonPlan[] 
                 style={{ backgroundColor: color }}
                 aria-hidden
               />
-              <span className="text-xs uppercase tracking-wide text-slate-400">
+              <span className="text-xs uppercase tracking-wide text-ink-3">
                 {plan.label}
               </span>
             </div>
@@ -61,7 +63,7 @@ export function EstateTransfersYearlyTable({ plans }: { plans: ComparisonPlan[] 
         const ownerNames = deriveOwnerNames(plan.tree);
         return (
           <div key={plan.id}>
-            <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
+            <div className="mb-2 text-xs uppercase tracking-wide text-ink-3">
               {plan.label}
             </div>
             <YearlyEstateTable
@@ -88,7 +90,7 @@ export function EstateTransfersYearlyComparisonSection({
   const table = useMemo(() => <EstateTransfersYearlyTable plans={plans} />, [plans]);
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">
+      <h2 className="mb-4 text-lg font-semibold text-ink">
         Estate Transfers — Year by Year
       </h2>
       {mode === "chart" ? (

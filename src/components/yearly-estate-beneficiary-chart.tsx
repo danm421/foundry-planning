@@ -11,6 +11,7 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type { RecipientTotal } from "@/lib/estate/transfer-report";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -51,8 +52,13 @@ export function YearlyEstateBeneficiaryChart({
   firstDeathYear,
   secondDeathYear,
 }: Props) {
-  const data = useMemo(() => {
+  const theme = useThemeName();
+
+  const chartData = useMemo(() => {
     if (recipients.length === 0) return null;
+    const chrome = chartChrome(theme);
+    // Fallback to tick color when a recipient key has no assigned color
+    const fallback = chrome.tick;
     return {
       labels: recipients.map((r) => truncate(r.recipientLabel, 14)),
       datasets: [
@@ -60,7 +66,7 @@ export function YearlyEstateBeneficiaryChart({
           label: "From 1st Death",
           data: recipients.map((r) => r.fromFirstDeath),
           backgroundColor: recipients.map((r) =>
-            withAlpha(colors[r.key] ?? "#6b7280", "a6"),
+            withAlpha(colors[r.key] ?? fallback, "a6"),
           ),
           stack: "main",
           borderWidth: 0,
@@ -69,29 +75,30 @@ export function YearlyEstateBeneficiaryChart({
           label: "From 2nd Death",
           data: recipients.map((r) => r.fromSecondDeath),
           backgroundColor: recipients.map(
-            (r) => colors[r.key] ?? "#6b7280",
+            (r) => colors[r.key] ?? fallback,
           ),
           stack: "main",
           borderWidth: 0,
         },
       ],
     };
-  }, [recipients, colors]);
+  }, [recipients, colors, theme]);
 
-  const options = useMemo(
-    () => ({
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: {
           display: true,
           position: "bottom" as const,
-          labels: { color: "#d1d5db", boxWidth: 12, padding: 12 },
+          labels: { color: chrome.legend, boxWidth: 12, padding: 12 },
         },
         tooltip: {
-          backgroundColor: "#1f2937",
-          titleColor: "#f3f4f6",
-          bodyColor: "#d1d5db",
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             title: (items: Array<{ dataIndex: number }>) =>
               recipients[items[0]?.dataIndex]?.recipientLabel ?? "",
@@ -103,31 +110,30 @@ export function YearlyEstateBeneficiaryChart({
       scales: {
         x: {
           stacked: true,
-          ticks: { color: "#9ca3af", maxRotation: 0, autoSkip: false },
-          grid: { color: "#374151" },
+          ticks: { color: chrome.tick, maxRotation: 0, autoSkip: false },
+          grid: { color: chrome.grid },
         },
         y: {
           stacked: true,
           ticks: {
-            color: "#9ca3af",
+            color: chrome.tick,
             callback: (value: unknown) => fmt.format(Number(value)),
           },
-          grid: { color: "#374151" },
+          grid: { color: chrome.grid },
         },
       },
-    }),
-    [recipients],
-  );
+    };
+  }, [recipients, theme]);
 
-  if (!data) return null;
+  if (!chartData) return null;
 
   const caption = buildCaption(firstDeathYear, secondDeathYear);
 
   return (
     <div className="space-y-2">
-      {caption && <p className="text-[11px] text-gray-400">{caption}</p>}
+      {caption && <p className="text-[11px] text-ink-3">{caption}</p>}
       <div style={{ height: 280 }}>
-        <Bar data={data} options={options} />
+        <Bar data={chartData} options={options} />
       </div>
     </div>
   );

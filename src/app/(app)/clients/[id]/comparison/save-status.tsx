@@ -26,13 +26,13 @@ export function SaveStatus({ dirty, saving, error, onSave }: Props) {
   let pillClass: string;
   if (saving) {
     pill = "Saving…";
-    pillClass = "text-slate-400";
+    pillClass = "text-ink-3";
   } else if (error) {
     pill = "Save failed — retry";
-    pillClass = "text-red-400";
+    pillClass = "text-crit";
   } else if (dirty) {
     pill = "● Unsaved changes";
-    pillClass = "text-amber-300";
+    pillClass = "text-warn";
   } else {
     pill = "Saved";
     pillClass = "text-ink-3";
@@ -47,7 +47,7 @@ export function SaveStatus({ dirty, saving, error, onSave }: Props) {
         type="button"
         onClick={onSave}
         disabled={disabled}
-        className="rounded bg-amber-400 px-3 py-1 text-xs font-medium text-slate-950 disabled:bg-slate-700 disabled:text-slate-400"
+        className="rounded bg-accent px-3 py-1 text-xs font-medium text-accent-on disabled:bg-card disabled:text-ink-3"
       >
         Save
       </button>

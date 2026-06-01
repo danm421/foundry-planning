@@ -1,4 +1,5 @@
 import type { ClientInfo } from "@/engine/types";
+import { colors } from "@/brand";
 
 export interface LifeEvent {
   label: string;
@@ -8,8 +9,8 @@ export interface LifeEvent {
 export type LifeEventsByYear = Record<number, LifeEvent[]>;
 
 const DEFAULT_LIFE_EXPECTANCY = 95;
-const CLIENT_COLOR = "#60a5fa";
-const SPOUSE_COLOR = "#f472b6";
+const CLIENT_COLOR = colors.cat.portfolio; // #60a5fa dark, resolved at module init
+const SPOUSE_COLOR = colors.cat.insurance; // #e879f9 dark
 
 export function buildLifeEventsByYear(client: ClientInfo): LifeEventsByYear {
   const events: LifeEventsByYear = {};

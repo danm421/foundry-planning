@@ -188,7 +188,7 @@ export function TrajectoryChart({
                   y={yTop}
                   width={barW}
                   height={capH}
-                  fill={plan2Ahead ? "#059669" : "var(--color-ink-3)"}
+                  fill={plan2Ahead ? "var(--color-good)" : "var(--color-ink-3)"}
                   fillOpacity={plan2Ahead ? 0.9 : 0.55}
                   data-cap={plan2Ahead ? "gain" : "loss"}
                 />
@@ -341,7 +341,7 @@ export function TrajectoryChart({
         <li className="flex items-center gap-1.5">
           <span
             aria-hidden="true"
-            className="inline-block h-2 w-3 rounded-sm bg-[#059669]/90"
+            className="inline-block h-2 w-3 rounded-sm bg-good/90"
           />
           Plan 2 ahead
         </li>

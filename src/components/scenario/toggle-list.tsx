@@ -47,7 +47,7 @@ export function ToggleList({
   if (groups.length === 0) return null;
   return (
     <div data-testid="toggle-list">
-      <div className="px-4 py-2 text-[11px] tracking-[0.18em] uppercase font-mono text-[#7a5b29]">
+      <div className="px-4 py-2 text-[11px] tracking-[0.18em] uppercase font-mono text-accent">
         TOGGLES
       </div>
       {groups.map((g) => (
@@ -117,7 +117,7 @@ function ToggleRow({
     <div
       ref={ref}
       data-testid={`toggle-row-${group.id}`}
-      className={`px-4 py-3 border-b border-[#1f2024] flex items-center gap-3 ${
+      className={`px-4 py-3 border-b border-hair flex items-center gap-3 ${
         parentOff ? "opacity-40" : !interactive ? "opacity-60" : ""
       }`}
     >
@@ -127,12 +127,12 @@ function ToggleRow({
         disabled={parentOff || !interactive}
       />
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] text-[#e7e6e2] truncate">{group.name}</div>
+        <div className="text-[14px] text-ink truncate">{group.name}</div>
         {pill && !error && (
           <div
             data-testid={`toggle-row-pill-${group.id}`}
             className={`text-[11px] mt-1 font-mono tabular-nums ${
-              pill.delta >= 0 ? "text-[#7fa97f]" : "text-[#c87a7a]"
+              pill.delta >= 0 ? "text-good" : "text-crit"
             }`}
           >
             {pill.delta >= 0 ? "+" : "−"}${shortNum(Math.abs(pill.delta))}{" "}
@@ -162,13 +162,13 @@ function ToggleSwitch({
       disabled={disabled}
       aria-pressed={on}
       aria-label={on ? "Toggle off" : "Toggle on"}
-      className={`w-8 h-4 rounded-full border transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] disabled:cursor-not-allowed ${
-        on ? "bg-[#d4a04a] border-[#d4a04a]" : "bg-transparent border-[#1f2024]"
+      className={`w-8 h-4 rounded-full border transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed ${
+        on ? "bg-accent border-accent" : "bg-transparent border-hair"
       }`}
     >
       <span
         className={`block w-3 h-3 rounded-full transition ${
-          on ? "bg-[#0b0c0f] ml-4" : "bg-[#6b6760] ml-0"
+          on ? "bg-paper ml-4" : "bg-ink-4 ml-0"
         }`}
         aria-hidden="true"
       />

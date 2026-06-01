@@ -19,11 +19,11 @@ export function MonteCarloTableList({ mc }: { mc: McSharedResult }) {
         }
         return (
           <div key={p.label}>
-            <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">{p.label}</div>
+            <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">{p.label}</div>
             <div className="overflow-auto">
               <table aria-label={`Monte Carlo — ${p.label}`} className="min-w-full border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-900/60 text-slate-300">
+                  <tr className="bg-card text-ink-2">
                     <th className="px-2 py-1 text-left">Year</th>
                     <th className="px-2 py-1 text-right">10th %ile</th>
                     <th className="px-2 py-1 text-right">50th %ile</th>
@@ -34,7 +34,7 @@ export function MonteCarloTableList({ mc }: { mc: McSharedResult }) {
                   {Array.from({ length: years }, (_, yi) => {
                     const yearValues = matrix.map((trial) => trial[yi]);
                     return (
-                      <tr key={yi} className="border-t border-slate-800 text-slate-200">
+                      <tr key={yi} className="border-t border-hair text-ink-2">
                         <td className="px-2 py-1">{startYear + yi}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{usd.format(percentile(yearValues, 0.10))}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{usd.format(percentile(yearValues, 0.50))}</td>

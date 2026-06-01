@@ -42,6 +42,7 @@ import { DrillChart } from "@/components/cashflow/charts/drill-chart";
 import { filterAllZeroColumns } from "@/components/cashflow/all-zero-columns";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 import { ExportButton } from "@/components/exports/export-button";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import type { PortfolioBarsTimelineMarker } from "@/components/charts/portfolio-bars-chart";
@@ -145,7 +146,7 @@ function fmtNum(v: number) {
  */
 function groupBorderClass(colId: string): string {
   if (colId === "totalIncome" || colId === "totalExpenses" || colId === "netCashFlow") {
-    return "border-r-2 border-gray-500";
+    return "border-r-2 border-hair-2";
   }
   return "";
 }
@@ -161,10 +162,10 @@ function stickyCellClasses(
     return `sticky left-0 ${zLeft} w-20 min-w-[5rem]`;
   }
   if (idx === 1) {
-    return `sticky left-20 ${zLeft} w-28 min-w-[7rem] border-r border-gray-800`;
+    return `sticky left-20 ${zLeft} w-28 min-w-[7rem] border-r border-hair`;
   }
   if (idx === total - 1) {
-    return `sticky right-0 ${zRight} border-l border-gray-800`;
+    return `sticky right-0 ${zRight} border-l border-hair`;
   }
   return "";
 }
@@ -195,7 +196,7 @@ function numCol(
     const v = fmtNum(raw);
     const inner = bold ? <strong>{v}</strong> : v;
     if (negativeRed && raw < 0) {
-      return <span className="text-red-400">{inner}</span>;
+      return <span className="text-crit">{inner}</span>;
     }
     return inner;
   });
@@ -360,6 +361,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const scenarioId = searchParams?.get("scenario") ?? null;
   const dataVersion = `${scenarioId ?? "base"}|${yearRange[0]}-${yearRange[1]}`;
 
+  const chartTheme = useThemeName();
   const portfolioChartRef = useRef<HTMLDivElement | null>(null);
   const cashflowChartRef = useRef<HTMLDivElement | null>(null);
 
@@ -491,6 +493,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     }
   }
 
+  const chrome = chartChrome(chartTheme);
   const baseChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -503,11 +506,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     },
     layout: { padding: { top: 20 } },
     plugins: {
-      legend: { display: true, labels: { color: "#d1d5db", boxWidth: 12, padding: 16 } },
+      legend: { display: true, labels: { color: chrome.legend, boxWidth: 12, padding: 16 } },
       tooltip: {
-        backgroundColor: "#1f2937",
-        titleColor: "#f3f4f6",
-        bodyColor: "#d1d5db",
+        backgroundColor: chrome.tooltipBg,
+        titleColor: chrome.tooltipTitle,
+        bodyColor: chrome.tooltipBody,
         callbacks: {
           label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
             `${ctx.dataset.label}: ${fmtNum(Number(ctx.raw))}`,
@@ -517,16 +520,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     scales: {
       x: {
         stacked: true,
-        ticks: { color: "#9ca3af" },
-        grid: { color: "#374151" },
+        ticks: { color: chrome.tick },
+        grid: { color: chrome.grid },
       },
       y: {
         stacked: true,
         ticks: {
-          color: "#9ca3af",
+          color: chrome.tick,
           callback: (value: unknown) => fmtNum(Number(value)),
         },
-        grid: { color: "#374151" },
+        grid: { color: chrome.grid },
       },
     },
   };
@@ -573,6 +576,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const rmdForYear = (y: ProjectionYear) =>
     Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
 
+  // Resolved to real hex (Chart.js paints to canvas, which can't read CSS vars).
+  // Mirrors the Retirement hero chart's inflow palette so the two read the same.
+  const cashflowPal = dataPalette(chartTheme);
   const cashflowChartData = {
     labels: chartLabels,
     datasets: [
@@ -580,7 +586,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Social Security",
         data: visibleYears.map((y) => y.income.socialSecurity),
-        backgroundColor: "#2563eb",
+        backgroundColor: cashflowPal.blue,
         stack: "inflows",
         order: 1,
       },
@@ -588,7 +594,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Salaries",
         data: visibleYears.map((y) => y.income.salaries),
-        backgroundColor: "#16a34a",
+        backgroundColor: cashflowPal.green,
         stack: "inflows",
         order: 1,
       },
@@ -596,7 +602,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Other Inflows",
         data: visibleYears.map(otherIncomeForYear),
-        backgroundColor: "#99f6e4",
+        backgroundColor: cashflowPal.grey,
         stack: "inflows",
         order: 1,
       },
@@ -604,7 +610,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "RMDs",
         data: visibleYears.map(rmdForYear),
-        backgroundColor: "#f97316",
+        backgroundColor: cashflowPal.orange,
         stack: "inflows",
         order: 1,
       },
@@ -612,7 +618,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Withdrawals",
         data: visibleYears.map((y) => y.withdrawals.total),
-        backgroundColor: "#ef4444",
+        backgroundColor: cashflowPal.yellow,
         stack: "inflows",
         order: 1,
       },
@@ -620,7 +626,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "line" as const,
         label: "Total Expenses",
         data: visibleYears.map((y) => y.totalExpenses),
-        borderColor: "#ffffff",
+        borderColor: chrome.title,
         backgroundColor: "transparent",
         borderWidth: 2,
         pointRadius: 0,
@@ -1249,7 +1255,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           (info) => {
             const v = info.getValue() as number;
             return (
-              <span className={v < 0 ? "text-red-400 font-semibold" : "text-green-400 font-semibold"}>
+              <span className={v < 0 ? "text-crit font-semibold" : "text-good font-semibold"}>
                 {fmtNum(v)}
               </span>
             );
@@ -1292,7 +1298,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               (r) => noteByNoteCash(r, note.id),
               (info) => {
                 const v = info.getValue() as number;
-                if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
+                if (v === 0) return <span className="tabular-nums text-ink-3">&mdash;</span>;
                 const row = info.row.original;
                 const detail = row.notesReceivableByNote?.[note.id];
                 return (
@@ -1338,7 +1344,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           yearTotal,
           (info) => {
             const v = info.getValue() as number;
-            if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
+            if (v === 0) return <span className="tabular-nums text-ink-3">&mdash;</span>;
             const row = info.row.original;
             return (
               <button
@@ -1398,7 +1404,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           (y) => y.socialSecurityDetail?.spouse != null
         );
         const fmtSS = (v: number) =>
-          v === 0 ? <span className="tabular-nums text-gray-400">&mdash;</span> : fmtNum(v);
+          v === 0 ? <span className="tabular-nums text-ink-3">&mdash;</span> : fmtNum(v);
         const ssDetailColsActive = {
           clientRetirement: visibleYears.some((y) => (y.socialSecurityDetail?.client.retirement ?? 0) > 0),
           clientSpousal:    visibleYears.some((y) => (y.socialSecurityDetail?.client.spousal    ?? 0) > 0),
@@ -1486,7 +1492,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 (r) => r.income.bySource[id] ?? 0,
                 (info) => {
                   const v = info.getValue() as number;
-                  if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
+                  if (v === 0) return <span className="tabular-nums text-ink-3">&mdash;</span>;
                   const row = info.row.original;
                   return (
                     <button
@@ -1602,7 +1608,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   techniqueYearTotal,
                   (info) => {
                     const v = info.getValue() as number;
-                    if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
+                    if (v === 0) return <span className="tabular-nums text-ink-3">&mdash;</span>;
                     const row = info.row.original;
                     return (
                       <button
@@ -1634,7 +1640,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   (info) => {
                     const v = info.getValue() as number;
                     if (v === 0)
-                      return <span className="tabular-nums text-gray-400">&mdash;</span>;
+                      return <span className="tabular-nums text-ink-3">&mdash;</span>;
                     const row = info.row.original;
                     return (
                       <button
@@ -1960,7 +1966,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           (info) => {
             const v = info.getValue() as number;
             return (
-              <strong className={v < 0 ? "text-red-400" : "text-green-400"}>{fmtNum(v)}</strong>
+              <strong className={v < 0 ? "text-crit" : "text-good"}>{fmtNum(v)}</strong>
             );
           }
         ),
@@ -2118,7 +2124,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-800 bg-red-900/50 p-6 text-red-400">
+      <div className="rounded-lg border border-crit bg-crit/10 p-6 text-crit">
         Error: {error}
       </div>
     );
@@ -2126,7 +2132,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   if (years.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card p-6 text-center text-ink-2">
         No projection data available. Ensure plan settings and base case scenario are configured.
       </div>
     );
@@ -2135,20 +2141,20 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   return (
     <div>
       {/* Chart selector + chart */}
-      <div className="mb-4 rounded-lg border border-gray-700 bg-gray-900 p-4">
+      <div className="mb-4 rounded-lg border border-hair bg-card p-4">
         {drillPath.length === 0 ? (
           <>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-300">
+              <h2 className="text-sm font-semibold text-ink-2">
                 {chartView === "portfolio" ? "Total Portfolio Assets" : "Cash Flow Analysis"}
               </h2>
-              <div className="flex rounded-md border border-gray-600 bg-gray-800 text-xs">
+              <div className="flex rounded-md border border-hair bg-card-2 text-xs">
                 <button
                   onClick={() => setChartView("portfolio")}
                   className={`px-3 py-1.5 rounded-l-md ${
                     chartView === "portfolio"
                       ? "bg-accent text-accent-on"
-                      : "text-gray-300 hover:text-gray-200"
+                      : "text-ink-2 hover:text-ink"
                   }`}
                 >
                   Portfolio
@@ -2158,7 +2164,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   className={`px-3 py-1.5 rounded-r-md ${
                     chartView === "cashflow"
                       ? "bg-accent text-accent-on"
-                      : "text-gray-300 hover:text-gray-200"
+                      : "text-ink-2 hover:text-ink"
                   }`}
                 >
                   Cash Flow
@@ -2223,7 +2229,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             </button>
             {drillPath.map((segment, i) => (
               <span key={i} className="flex items-center gap-1">
-                <span className="text-gray-400">/</span>
+                <span className="text-ink-3">/</span>
                 {i < drillPath.length - 1 ? (
                   <button
                     onClick={() => drillTo(i + 1)}
@@ -2232,7 +2238,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     {DRILL_LABELS[segment] ?? segment}
                   </button>
                 ) : (
-                  <span className="text-gray-100 font-medium">
+                  <span className="text-ink font-medium">
                     {DRILL_LABELS[segment] ?? segment}
                   </span>
                 )}
@@ -2245,10 +2251,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       {/* Table */}
       <div
         ref={tableRef}
-        className="overflow-x-auto rounded-lg border border-gray-700 bg-gray-900"
+        className="overflow-x-auto rounded-lg border border-hair bg-card"
       >
         <table className="min-w-full border-separate border-spacing-0 text-sm">
-          <thead className="sticky top-0 z-20 bg-gray-800">
+          <thead className="sticky top-0 z-20 bg-card-2">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, idx, arr) => {
@@ -2257,7 +2263,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   return (
                     <th
                       key={header.id}
-                      className={`max-w-[9rem] whitespace-normal border-b-2 border-gray-700 bg-gray-800 px-3 py-3.5 text-left text-[13px] font-semibold uppercase leading-tight tracking-wider text-gray-200 first:pl-4 last:pr-4 ${sticky} ${groupBorder}`}
+                      className={`max-w-[9rem] whitespace-normal border-b-2 border-hair bg-card-2 px-3 py-3.5 text-left text-[13px] font-semibold uppercase leading-tight tracking-wider text-ink first:pl-4 last:pr-4 ${sticky} ${groupBorder}`}
                     >
                       {header.isPlaceholder
                         ? null
@@ -2273,13 +2279,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               const isNegative = row.original.netCashFlow < 0;
               // Per-cell bg is required because position:sticky cells create
               // their own stacking context and won't inherit the row bg.
-              const baseBg = isNegative ? "bg-red-950/40" : "bg-gray-900";
+              const baseBg = isNegative ? "bg-crit/10" : "bg-card";
               // Inset top + bottom white lines render per-cell but butt up to
               // form a continuous horizontal stroke across the row. Layout-
               // stable (no border-width shift) and visible over any base bg,
               // including sticky cells.
               const hoverHighlight =
-                "group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]";
+                "group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]";
               return (
                 <tr
                   key={row.id}
@@ -2294,7 +2300,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     return (
                       <td
                         key={cell.id}
-                        className={`whitespace-nowrap border-b border-gray-800 px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-gray-100 ${baseBg} ${hoverHighlight} ${sticky} ${groupBorder}`}
+                        className={`whitespace-nowrap border-b border-hair px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-ink ${baseBg} ${hoverHighlight} ${sticky} ${groupBorder}`}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
@@ -2325,19 +2331,19 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           onClick={() => setLedgerModal(null)}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 shadow-xl"
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border-2 border-hair-2 ring-1 ring-black/60 bg-card shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between border-b border-gray-800 p-6 pb-4">
+            <div className="flex items-start justify-between border-b border-hair p-6 pb-4">
               <div>
-                <h3 className="text-base font-semibold text-gray-100">
+                <h3 className="text-base font-semibold text-ink">
                   {ledgerModal.accountName}
                 </h3>
-                <p className="text-sm text-gray-300">Year {ledgerModal.year} Ledger</p>
+                <p className="text-sm text-ink-2">Year {ledgerModal.year} Ledger</p>
               </div>
               <button
                 onClick={() => setLedgerModal(null)}
-                className="ml-4 text-gray-300 hover:text-gray-200 focus:outline-none"
+                className="ml-4 text-ink-2 hover:text-ink focus:outline-none"
                 aria-label="Close"
               >
                 ✕
@@ -2357,36 +2363,36 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 const showBasisEoY =
                   !isMixedDeferral && (ledgerModal.ledger.basisEoY ?? 0) > 0;
                 return (
-                  <div className="flex items-center justify-between rounded-md bg-gray-800/60 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-md bg-card-2 px-4 py-3">
                     <div>
-                      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Beginning</p>
-                      <p className="text-sm font-semibold tabular-nums text-gray-200">
+                      <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Beginning</p>
+                      <p className="text-sm font-semibold tabular-nums text-ink">
                         {fmtNum(ledgerModal.ledger.beginningValue)}
                       </p>
                       {showBasisBoY && (
-                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
                           Basis {fmtNum(ledgerModal.ledger.basisBoY!)}
                         </p>
                       )}
                       {showRothValueBoY && (
-                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
                           Roth {fmtNum(ledgerModal.ledger.rothValueBoY!)}
                         </p>
                       )}
                     </div>
-                    <div className="text-gray-600">→</div>
+                    <div className="text-ink-4">→</div>
                     <div className="text-right">
-                      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Ending</p>
-                      <p className="text-sm font-semibold tabular-nums text-gray-100">
+                      <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Ending</p>
+                      <p className="text-sm font-semibold tabular-nums text-ink">
                         {fmtNum(ledgerModal.ledger.endingValue)}
                       </p>
                       {showBasisEoY && (
-                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
                           Basis {fmtNum(ledgerModal.ledger.basisEoY!)}
                         </p>
                       )}
                       {showRothValueEoY && (
-                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
                           Roth {fmtNum(ledgerModal.ledger.rothValueEoY!)}
                         </p>
                       )}
@@ -2396,7 +2402,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               })()}
 
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-3">
                   Activity
                 </p>
                 {(() => {
@@ -2409,24 +2415,24 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   return (
                     <>
                       {externalEntries.length === 0 ? (
-                        <p className="px-1 py-2 text-sm text-gray-400 italic">
+                        <p className="px-1 py-2 text-sm text-ink-3 italic">
                           No activity this year.
                         </p>
                       ) : (
-                        <ul className="divide-y divide-gray-800 rounded-md border border-gray-800">
+                        <ul className="divide-y divide-hair rounded-md border border-hair">
                           {externalEntries.map((entry, i) => {
                             const positive = entry.amount >= 0;
                             return (
                               <li key={i} className="flex items-start justify-between gap-4 px-3 py-2">
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm text-gray-200">{entry.label}</p>
-                                  <p className="text-xs uppercase tracking-wider text-gray-400">
+                                  <p className="truncate text-sm text-ink">{entry.label}</p>
+                                  <p className="text-xs uppercase tracking-wider text-ink-3">
                                     {entry.category.replace(/_/g, " ")}
                                   </p>
                                 </div>
                                 <span
                                   className={`flex-shrink-0 tabular-nums text-sm font-medium ${
-                                    positive ? "text-green-400" : "text-red-400"
+                                    positive ? "text-good" : "text-crit"
                                   }`}
                                 >
                                   {positive ? "+" : ""}
@@ -2439,14 +2445,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                       )}
                       {internalEntries.length > 0 && (
                         <div className="mt-3 opacity-60">
-                          <p className="mb-1 text-[11px] uppercase tracking-wider text-gray-500">
+                          <p className="mb-1 text-[11px] uppercase tracking-wider text-ink-4">
                             Internal transfers (net $0)
                           </p>
-                          <ul className="divide-y divide-gray-800/60 rounded-md border border-gray-800/60">
+                          <ul className="divide-y divide-hair rounded-md border border-hair">
                             {internalEntries.map((entry, i) => (
                               <li key={i} className="flex items-start justify-between gap-4 px-3 py-1.5">
-                                <p className="min-w-0 truncate text-xs text-gray-400">{entry.label}</p>
-                                <span className="flex-shrink-0 tabular-nums text-xs text-gray-400">
+                                <p className="min-w-0 truncate text-xs text-ink-3">{entry.label}</p>
+                                <span className="flex-shrink-0 tabular-nums text-xs text-ink-3">
                                   {entry.amount >= 0 ? "+" : ""}
                                   {fmtNum(entry.amount)}
                                 </span>
@@ -2461,8 +2467,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               </div>
 
               {ledgerModal.ledger.growthDetail && (
-                <div className="rounded-md border border-gray-800 bg-gray-800/30 px-3 py-2">
-                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">Growth Realization</p>
+                <div className="rounded-md border border-hair bg-card-2 px-3 py-2">
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-3">Growth Realization</p>
                   <div className="space-y-1 text-sm">
                     {[
                       { label: "Ordinary Income", amount: ledgerModal.ledger.growthDetail.ordinaryIncome, note: "taxed, +basis" },
@@ -2472,13 +2478,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                       { label: "Tax-Exempt", amount: ledgerModal.ledger.growthDetail.taxExempt, note: "+basis" },
                     ].filter((r) => r.amount > 0).map((r) => (
                       <div key={r.label} className="flex justify-between">
-                        <span className="text-gray-300">{r.label} <span className="text-gray-600 text-xs">({r.note})</span></span>
-                        <span className="tabular-nums text-gray-300">{fmtNum(r.amount)}</span>
+                        <span className="text-ink-2">{r.label} <span className="text-ink-4 text-xs">({r.note})</span></span>
+                        <span className="tabular-nums text-ink-2">{fmtNum(r.amount)}</span>
                       </div>
                     ))}
-                    <div className="flex justify-between border-t border-gray-700 pt-1">
-                      <span className="text-gray-300">Basis increase</span>
-                      <span className="tabular-nums font-medium text-gray-200">{fmtNum(ledgerModal.ledger.growthDetail.basisIncrease)}</span>
+                    <div className="flex justify-between border-t border-hair pt-1">
+                      <span className="text-ink-2">Basis increase</span>
+                      <span className="tabular-nums font-medium text-ink">{fmtNum(ledgerModal.ledger.growthDetail.basisIncrease)}</span>
                     </div>
                   </div>
                 </div>
@@ -2486,22 +2492,22 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
               {ledgerModal.ledger.withdrawalDetail &&
                 (ledgerModal.ledger.withdrawalDetail.realizedLtcg + ledgerModal.ledger.withdrawalDetail.basisReturn) > 0 && (
-                <div className="rounded-md border border-gray-800 bg-gray-800/30 px-3 py-2">
-                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                <div className="rounded-md border border-hair bg-card-2 px-3 py-2">
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-3">
                     Withdrawal Tax Treatment
                   </p>
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gray-300">
-                        Return of basis <span className="text-gray-600 text-xs">(high-basis lots first)</span>
+                      <span className="text-ink-2">
+                        Return of basis <span className="text-ink-4 text-xs">(high-basis lots first)</span>
                       </span>
-                      <span className="tabular-nums text-gray-300">
+                      <span className="tabular-nums text-ink-2">
                         {fmtNum(ledgerModal.ledger.withdrawalDetail.basisReturn)}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-300">Realized LT Capital Gains</span>
-                      <span className="tabular-nums text-gray-300">
+                      <span className="text-ink-2">Realized LT Capital Gains</span>
+                      <span className="tabular-nums text-ink-2">
                         {fmtNum(ledgerModal.ledger.withdrawalDetail.realizedLtcg)}
                       </span>
                     </div>
@@ -2509,13 +2515,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 </div>
               )}
 
-              <div className="flex justify-between border-t border-gray-800 pt-3 text-sm">
-                <span className="text-gray-300">Net change</span>
+              <div className="flex justify-between border-t border-hair pt-3 text-sm">
+                <span className="text-ink-2">Net change</span>
                 <span
                   className={`tabular-nums font-semibold ${
                     ledgerModal.ledger.endingValue - ledgerModal.ledger.beginningValue >= 0
-                      ? "text-green-400"
-                      : "text-red-400"
+                      ? "text-good"
+                      : "text-crit"
                   }`}
                 >
                   {fmtNum(ledgerModal.ledger.endingValue - ledgerModal.ledger.beginningValue)}
@@ -2523,10 +2529,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               </div>
             </div>
 
-            <div className="flex justify-end border-t border-gray-800 p-4">
+            <div className="flex justify-end border-t border-hair p-4">
               <button
                 onClick={() => setLedgerModal(null)}
-                className="rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 focus:outline-none"
+                className="rounded-md bg-card-2 px-4 py-2 text-sm font-medium text-ink-2 hover:bg-card-hover focus:outline-none"
               >
                 Close
               </button>
@@ -2542,46 +2548,46 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           onClick={() => setNoteLedgerModal(null)}
         >
           <div
-            className="w-full max-w-md rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
+            className="w-full max-w-md rounded-lg border-2 border-hair-2 ring-1 ring-black/60 bg-card p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-100">{noteLedgerModal.noteName}</h3>
+              <h3 className="text-lg font-semibold text-ink">{noteLedgerModal.noteName}</h3>
               <button
                 onClick={() => setNoteLedgerModal(null)}
-                className="text-gray-300 hover:text-gray-200 focus:outline-none"
+                className="text-ink-2 hover:text-ink focus:outline-none"
                 aria-label="Close"
               >
                 ✕
               </button>
             </div>
-            <p className="text-sm text-gray-300 mb-3">Year {noteLedgerModal.year} Ledger</p>
+            <p className="text-sm text-ink-2 mb-3">Year {noteLedgerModal.year} Ledger</p>
             <div className="space-y-1.5">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-300">Beginning Balance</span>
-                <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.beginningBalance)}</span>
+                <span className="text-ink-2">Beginning Balance</span>
+                <span className="tabular-nums text-ink">{fmtNum(noteLedgerModal.beginningBalance)}</span>
               </div>
             </div>
-            <div className="mt-4 pt-3 border-t border-gray-800">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
+            <div className="mt-4 pt-3 border-t border-hair">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">
                 Year Payment Breakdown
               </div>
               <div className="space-y-1.5">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-300">Interest Income</span>
-                  <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.interest)}</span>
+                  <span className="text-ink-2">Interest Income</span>
+                  <span className="tabular-nums text-ink">{fmtNum(noteLedgerModal.interest)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-300">Principal — Gain</span>
-                  <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.principalLTCG)}</span>
+                  <span className="text-ink-2">Principal — Gain</span>
+                  <span className="tabular-nums text-ink">{fmtNum(noteLedgerModal.principalLTCG)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-300">Principal — Return of Basis</span>
-                  <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.principalBasis)}</span>
+                  <span className="text-ink-2">Principal — Return of Basis</span>
+                  <span className="tabular-nums text-ink">{fmtNum(noteLedgerModal.principalBasis)}</span>
                 </div>
-                <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-gray-800 font-medium">
-                  <span className="text-gray-200">Total Payment</span>
-                  <span className="tabular-nums text-gray-100">
+                <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-hair font-medium">
+                  <span className="text-ink">Total Payment</span>
+                  <span className="tabular-nums text-ink">
                     {fmtNum(
                       noteLedgerModal.interest +
                         noteLedgerModal.principalLTCG +
@@ -2591,10 +2597,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 </div>
               </div>
             </div>
-            <div className="mt-4 pt-3 border-t border-gray-700 space-y-1.5">
+            <div className="mt-4 pt-3 border-t border-hair space-y-1.5">
               <div className="flex justify-between text-sm font-semibold">
-                <span className="text-gray-200">Ending Balance</span>
-                <span className="tabular-nums text-gray-100">{fmtNum(noteLedgerModal.endingBalance)}</span>
+                <span className="text-ink">Ending Balance</span>
+                <span className="tabular-nums text-ink">{fmtNum(noteLedgerModal.endingBalance)}</span>
               </div>
             </div>
           </div>
@@ -2604,30 +2610,30 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       {/* Source Detail Modal */}
       {sourceDetailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSourceDetailModal(null)}>
-          <div className="w-full max-w-md rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-lg border-2 border-hair-2 ring-1 ring-black/60 bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-100">{sourceDetailModal.name}</h3>
-              <button onClick={() => setSourceDetailModal(null)} className="text-gray-300 hover:text-gray-200 focus:outline-none" aria-label="Close">
+              <h3 className="text-lg font-semibold text-ink">{sourceDetailModal.name}</h3>
+              <button onClick={() => setSourceDetailModal(null)} className="text-ink-2 hover:text-ink focus:outline-none" aria-label="Close">
                 ✕
               </button>
             </div>
-            <p className="text-sm text-gray-300 mb-3">Year: {sourceDetailModal.year}</p>
+            <p className="text-sm text-ink-2 mb-3">Year: {sourceDetailModal.year}</p>
             {sourceDetailModal.groups && sourceDetailModal.groups.length > 0 ? (
               <div className="space-y-4">
                 {sourceDetailModal.groups.map((g, gi) => (
                   <div key={gi}>
-                    <div className="text-sm font-semibold text-gray-200 mb-1.5">{g.name}</div>
-                    <div className="space-y-1.5 pl-2 border-l border-gray-800">
+                    <div className="text-sm font-semibold text-ink mb-1.5">{g.name}</div>
+                    <div className="space-y-1.5 pl-2 border-l border-hair">
                       {g.details.map((d, i) => (
                         <div key={i} className="flex justify-between text-sm">
-                          <span className="text-gray-300">{d.label}</span>
-                          <span className={`tabular-nums ${d.amount < 0 ? "text-red-400" : "text-gray-200"}`}>
+                          <span className="text-ink-2">{d.label}</span>
+                          <span className={`tabular-nums ${d.amount < 0 ? "text-crit" : "text-ink"}`}>
                             {fmtNum(d.amount)}
                           </span>
                         </div>
                       ))}
-                      <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-gray-800">
-                        <span className="text-gray-300 font-medium">
+                      <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-hair">
+                        <span className="text-ink-2 font-medium">
                           {g.subtotalLabel
                             ?? (g.kind === "purchase"
                               ? "Net Equity Out"
@@ -2635,7 +2641,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                                 ? "Net Shortfall"
                                 : "Net Proceeds")}
                         </span>
-                        <span className={`tabular-nums font-medium ${g.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
+                        <span className={`tabular-nums font-medium ${g.amount < 0 ? "text-crit" : "text-ink"}`}>
                           {fmtNum(g.amount)}
                         </span>
                       </div>
@@ -2647,17 +2653,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               <div className="space-y-2">
                 {sourceDetailModal.details.map((d, i) => (
                   <div key={i} className="flex justify-between text-sm">
-                    <span className="text-gray-300">{d.label}</span>
-                    <span className={`tabular-nums ${d.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
+                    <span className="text-ink-2">{d.label}</span>
+                    <span className={`tabular-nums ${d.amount < 0 ? "text-crit" : "text-ink"}`}>
                       {fmtNum(d.amount)}
                     </span>
                   </div>
                 ))}
               </div>
             )}
-            <div className="mt-4 pt-3 border-t border-gray-700 flex justify-between text-sm font-semibold">
-              <span className="text-gray-200">Total</span>
-              <span className="text-gray-100 tabular-nums">
+            <div className="mt-4 pt-3 border-t border-hair flex justify-between text-sm font-semibold">
+              <span className="text-ink">Total</span>
+              <span className="text-ink tabular-nums">
                 {fmtNum(sourceDetailModal.amount)}
               </span>
             </div>

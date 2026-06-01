@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactElement } from "react";
 import Breadcrumb from "./breadcrumb";
+import { ThemeToggle } from "./theme-toggle";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 
 type SubTab = { label: string; path: string };
@@ -150,7 +151,8 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
       ) : (
         <div />
       )}
-      <div className="justify-self-end">
+      <div className="flex items-center gap-2 justify-self-end">
+        <ThemeToggle />
         <button
           type="button"
           disabled

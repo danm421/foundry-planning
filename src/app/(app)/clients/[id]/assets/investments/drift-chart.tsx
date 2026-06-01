@@ -15,7 +15,7 @@ function pct(v: number) {
 
 export default function DriftChart({ drift, assetClasses }: Props) {
   if (drift.length === 0) {
-    return <div className="text-xs text-gray-400">Select a target portfolio to see drift.</div>;
+    return <div className="text-xs text-ink-3">Select a target portfolio to see drift.</div>;
   }
 
   const sortOrderById = new Map(assetClasses.map((c) => [c.id, c.sortOrder]));
@@ -29,30 +29,30 @@ export default function DriftChart({ drift, assetClasses }: Props) {
           const isUnderweight = r.diffPct >= 0;
           return (
             <div key={r.assetClassId} className="grid grid-cols-[120px_1fr_60px] items-center gap-2 text-xs">
-              <span className="truncate text-gray-300">{r.name}</span>
-              <div className="relative h-4 rounded bg-gray-800/60">
-                <div className="absolute inset-y-0 left-1/2 w-px bg-gray-700" />
+              <span className="truncate text-ink-2">{r.name}</span>
+              <div className="relative h-4 rounded bg-card-2">
+                <div className="absolute inset-y-0 left-1/2 w-px bg-hair-2" />
                 <div
                   className="absolute inset-y-0 rounded"
                   style={{
                     left: isUnderweight ? "50%" : `${50 - widthPct}%`,
                     width: `${widthPct}%`,
-                    backgroundColor: isUnderweight ? "#14b8a6" : "#f59e0b", // teal = need to buy, amber = reduce
+                    backgroundColor: isUnderweight ? "var(--color-data-green)" : "var(--color-ink-3)",
                   }}
                 />
               </div>
-              <span className={`tabular-nums text-right ${isUnderweight ? "text-teal-400" : "text-amber-400"}`}>{pct(r.diffPct)}</span>
+              <span className={`tabular-nums text-right ${isUnderweight ? "text-data-emerald" : "text-ink-3"}`}>{pct(r.diffPct)}</span>
             </div>
           );
         })}
       </div>
 
-      <div className="mt-2 flex flex-col gap-1 border-t border-gray-800 pt-3">
+      <div className="mt-2 flex flex-col gap-1 border-t border-hair pt-3">
         {drift.map((r) => {
           const sortOrder = sortOrderById.get(r.assetClassId) ?? 0;
           const color = colorForAssetClass({ sortOrder });
           return (
-            <div key={`legend-${r.assetClassId}`} className="flex items-center justify-between text-xs text-gray-300">
+            <div key={`legend-${r.assetClassId}`} className="flex items-center justify-between text-xs text-ink-2">
               <span className="flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
                 {r.name}

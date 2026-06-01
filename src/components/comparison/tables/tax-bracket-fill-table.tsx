@@ -34,11 +34,11 @@ export function TaxBracketFillTableList({ plans, yearRange }: { plans: Compariso
         const rates = [...rateSet].sort((a, b) => a - b);
         return (
           <div key={plan.id}>
-            <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">{plan.label}</div>
+            <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">{plan.label}</div>
             <div className="overflow-auto">
               <table aria-label={`Tax brackets — ${plan.label}`} className="min-w-full border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-900/60 text-slate-300">
+                  <tr className="bg-card text-ink-2">
                     <th className="px-2 py-1 text-left">Year</th>
                     {rates.map((r) => (
                       <th key={r} className="px-2 py-1 text-right">{pct(r)}</th>
@@ -47,7 +47,7 @@ export function TaxBracketFillTableList({ plans, yearRange }: { plans: Compariso
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.year} className="border-t border-slate-800 text-slate-200">
+                    <tr key={row.year} className="border-t border-hair text-ink-2">
                       <td className="px-2 py-1">{row.year}</td>
                       {rates.map((r) => (
                         <td key={r} className="px-2 py-1 text-right tabular-nums">

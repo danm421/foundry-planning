@@ -17,6 +17,8 @@ import {
   buildPortfolioSingleSeries,
   liquidPortfolioTotal,
 } from "./portfolio-bars-data";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 
 // Re-exported for existing importers (solver, monte-carlo report, etc.).
 export { liquidPortfolioTotal };
@@ -95,7 +97,7 @@ export interface PortfolioBarsChartProps {
   current: ProjectionYear[];
   /**
    * Base-case years used to compute delta overlay bars. When provided the
-   * chart renders three stacked datasets (blue floor + green cap + gray cap).
+   * chart renders three stacked datasets (blue floor + good cap + teal cap).
    * When absent (or null) the chart renders a single blue bar series.
    */
   baseline?: ProjectionYear[] | null;
@@ -111,6 +113,8 @@ export function PortfolioBarsChart({
   timelineMarkers = [],
   yearRange,
 }: PortfolioBarsChartProps) {
+  const theme = useThemeName();
+
   // Apply yearRange filter when provided.
   const visibleYears = useMemo(() => {
     if (!yearRange) return current;
@@ -138,6 +142,9 @@ export function PortfolioBarsChart({
   // bar — the tooltip surfaces the real negative number on hover. `scenarioTotals`
   // carries the raw values (negatives included) for that tooltip.
   const { chartData, scenarioTotals } = useMemo(() => {
+    const c = theme === "light" ? colorsLight : colors;
+    const palette = theme === "light" ? brandDataLight : brandData;
+
     if (baseLiquidByYear) {
       const seg = buildPortfolioDeltaSegments(visibleYears, baseLiquidByYear);
       return {
@@ -148,19 +155,19 @@ export function PortfolioBarsChart({
             {
               label: "Common floor (vs base case)",
               data: seg.floor,
-              backgroundColor: "#2563eb",
+              backgroundColor: palette.blue,
               stack: "portfolio",
             },
             {
               label: "Scenario ahead of base",
               data: seg.scenarioAhead,
-              backgroundColor: "#059669",
+              backgroundColor: c.good,
               stack: "portfolio",
             },
             {
               label: "Base case ahead of scenario",
               data: seg.baseAhead,
-              backgroundColor: "#9ca3af",
+              backgroundColor: palette.teal,
               stack: "portfolio",
             },
           ],
@@ -176,81 +183,84 @@ export function PortfolioBarsChart({
           {
             label: "Total Portfolio Assets",
             data: series.data,
-            backgroundColor: "#2563eb",
-            borderColor: "#2563eb",
+            backgroundColor: palette.blue,
+            borderColor: palette.blue,
             borderWidth: 1,
           },
         ],
       },
     };
-  }, [visibleYears, baseLiquidByYear, chartLabels]);
+  }, [visibleYears, baseLiquidByYear, chartLabels, theme]);
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    layout: { padding: { top: 20 } },
-    // Index mode keeps the tooltip reachable on flat (0-height) underwater
-    // years, where there is no bar to hover.
-    interaction: { mode: "index" as const, intersect: false },
-    plugins: {
-      legend: {
-        display: true,
-        labels: { color: "#d1d5db", boxWidth: 12, padding: 16 },
-      },
-      tooltip: {
-        backgroundColor: "#1f2937",
-        titleColor: "#f3f4f6",
-        bodyColor: "#d1d5db",
-        callbacks: {
-          label: (ctx: {
-            dataIndex: number;
-            dataset: { label?: string };
-            raw: unknown;
-          }) => {
-            const total = scenarioTotals[ctx.dataIndex];
-            // Base view: an underwater year's lone bar is flat — relabel it to
-            // the real negative total (delta view handles this via afterBody).
-            if (!showDelta && total < 0) {
-              return `Total Portfolio Assets: ${fmtNum(total)}`;
-            }
-            return `${ctx.dataset.label}: ${fmtNum(Number(ctx.raw))}`;
-          },
-          afterBody: (items: { dataIndex: number }[]) => {
-            if (!showDelta) return [];
-            const idx = items[0]?.dataIndex;
-            const total = idx == null ? 0 : scenarioTotals[idx];
-            // Delta view: the flat blue floor is filtered out — note the
-            // depleted scenario beside the still-full-height base-case bar.
-            return total < 0
-              ? [`Scenario portfolio depleted: ${fmtNum(total)}`]
-              : [];
-          },
+  const chartOptions = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 20 } },
+      // Index mode keeps the tooltip reachable on flat (0-height) underwater
+      // years, where there is no bar to hover.
+      interaction: { mode: "index" as const, intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color: chrome.legend, boxWidth: 12, padding: 16 },
         },
-        // Drop zero-height segments so the tooltip stays uncluttered. Base view
-        // always keeps its single row (its label carries the underwater value).
-        filter: (ctx: { raw: unknown }) =>
-          showDelta ? Number(ctx.raw) !== 0 : true,
-      },
-      // Typed via `as any` to satisfy chart.js plugin options extension.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      timelineMarkers: { markers: timelineMarkers } as any,
-    },
-    scales: {
-      x: {
-        stacked: showDelta,
-        ticks: { color: "#9ca3af" },
-        grid: { color: "#374151" },
-      },
-      y: {
-        stacked: showDelta,
-        ticks: {
-          color: "#9ca3af",
-          callback: (value: unknown) => fmtNum(Number(value)),
+        tooltip: {
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
+          callbacks: {
+            label: (ctx: {
+              dataIndex: number;
+              dataset: { label?: string };
+              raw: unknown;
+            }) => {
+              const total = scenarioTotals[ctx.dataIndex];
+              // Base view: an underwater year's lone bar is flat — relabel it to
+              // the real negative total (delta view handles this via afterBody).
+              if (!showDelta && total < 0) {
+                return `Total Portfolio Assets: ${fmtNum(total)}`;
+              }
+              return `${ctx.dataset.label}: ${fmtNum(Number(ctx.raw))}`;
+            },
+            afterBody: (items: { dataIndex: number }[]) => {
+              if (!showDelta) return [];
+              const idx = items[0]?.dataIndex;
+              const total = idx == null ? 0 : scenarioTotals[idx];
+              // Delta view: the flat blue floor is filtered out — note the
+              // depleted scenario beside the still-full-height base-case bar.
+              return total < 0
+                ? [`Scenario portfolio depleted: ${fmtNum(total)}`]
+                : [];
+            },
+          },
+          // Drop zero-height segments so the tooltip stays uncluttered. Base view
+          // always keeps its single row (its label carries the underwater value).
+          filter: (ctx: { raw: unknown }) =>
+            showDelta ? Number(ctx.raw) !== 0 : true,
         },
-        grid: { color: "#374151" },
+        // Typed via `as any` to satisfy chart.js plugin options extension.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        timelineMarkers: { markers: timelineMarkers } as any,
       },
-    },
-  };
+      scales: {
+        x: {
+          stacked: showDelta,
+          ticks: { color: chrome.tick },
+          grid: { color: chrome.grid },
+        },
+        y: {
+          stacked: showDelta,
+          ticks: {
+            color: chrome.tick,
+            callback: (value: unknown) => fmtNum(Number(value)),
+          },
+          grid: { color: chrome.grid },
+        },
+      },
+    };
+  }, [theme, showDelta, scenarioTotals, timelineMarkers]);
 
   return <Bar data={chartData} options={chartOptions} />;
 }

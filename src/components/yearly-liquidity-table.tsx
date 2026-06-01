@@ -17,7 +17,7 @@ interface Props {
 export function YearlyLiquidityTable({ rows, showPortfolio }: Props) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+      <div className="rounded-lg border border-hair bg-card p-6 text-center text-ink-2">
         No liquidity data available.
       </div>
     );
@@ -27,19 +27,19 @@ export function YearlyLiquidityTable({ rows, showPortfolio }: Props) {
     showPortfolio ? r.surplusDeficitWithPortfolio : r.surplusDeficitInsuranceOnly;
 
   return (
-    <section className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900">
-      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-gray-700 px-5 py-3">
+    <section className="overflow-hidden rounded-lg border border-hair bg-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-hair px-5 py-3">
         <div className="flex flex-wrap items-baseline gap-x-3">
-          <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-gray-400">
+          <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-ink-3">
             Hypothetical · Both die in year
           </span>
-          <h2 className="text-base font-semibold text-gray-50">Estate Liquidity</h2>
+          <h2 className="text-base font-semibold text-ink">Estate Liquidity</h2>
         </div>
       </header>
 
       <div className="overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-0 text-sm">
-          <thead className="sticky top-0 z-20 bg-gray-800">
+          <thead className="sticky top-0 z-20 bg-card-2">
             <tr>
               <Th align="left">Year</Th>
               <Th align="left">Age</Th>
@@ -50,7 +50,7 @@ export function YearlyLiquidityTable({ rows, showPortfolio }: Props) {
               <Th align="right" wrap>Total Transfer Cost</Th>
               <Th align="right" wrap>
                 Surplus / Deficit
-                <span className="block text-[9px] font-normal normal-case tracking-normal text-gray-400">
+                <span className="block text-[9px] font-normal normal-case tracking-normal text-ink-3">
                   {showPortfolio ? "with portfolio" : "insurance only"}
                 </span>
               </Th>
@@ -65,10 +65,10 @@ export function YearlyLiquidityTable({ rows, showPortfolio }: Props) {
                   : (r.ageClient ?? r.ageSpouse ?? "—").toString();
               return (
                 <tr key={r.year} className="group">
-                  <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 first:pl-4 tabular-nums text-gray-100 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+                  <td className="whitespace-nowrap border-b border-hair bg-card px-3 py-2 first:pl-4 tabular-nums text-ink group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
                     {r.year}
                   </td>
-                  <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 tabular-nums text-gray-400 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+                  <td className="whitespace-nowrap border-b border-hair bg-card px-3 py-2 tabular-nums text-ink-3 group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
                     {ageLabel}
                   </td>
                   <Td>{fmt.format(r.insuranceInEstate)}</Td>
@@ -97,7 +97,7 @@ function Th({
   wrap?: boolean;
 }) {
   const className =
-    "max-w-[9rem] whitespace-normal border-b-2 border-gray-700 bg-gray-800 px-3 py-3.5 text-[13px] font-semibold uppercase leading-tight tracking-wider text-gray-200 first:pl-4 last:pr-4 " +
+    "max-w-[9rem] whitespace-normal border-b-2 border-hair bg-card-2 px-3 py-3.5 text-[13px] font-semibold uppercase leading-tight tracking-wider text-ink-2 first:pl-4 last:pr-4 " +
     (align === "right" ? "text-right" : "text-left");
   if (!wrap) return <th className={className}>{children}</th>;
   return (
@@ -111,7 +111,7 @@ function Th({
 
 function Td({ children }: { children: React.ReactNode }) {
   return (
-    <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums text-gray-100 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+    <td className="whitespace-nowrap border-b border-hair bg-card px-3 py-2 text-right tabular-nums text-ink group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
       {children}
     </td>
   );
@@ -120,7 +120,7 @@ function Td({ children }: { children: React.ReactNode }) {
 function SurplusCell({ value }: { value: number }) {
   const negative = value < 0;
   const className =
-    "whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 last:pr-4 text-right tabular-nums font-semibold group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] " +
-    (negative ? "text-red-400" : "text-emerald-400");
+    "whitespace-nowrap border-b border-hair bg-card px-3 py-2 last:pr-4 text-right tabular-nums font-semibold group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] " +
+    (negative ? "text-crit" : "text-good");
   return <td className={className}>{negative ? `(${fmt.format(-value)})` : fmt.format(value)}</td>;
 }

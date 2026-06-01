@@ -52,7 +52,7 @@ export function WithdrawalSourceTableList({
         const years = clip(plan.result.years, yearRange);
         return (
           <div key={plan.id}>
-            <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">
+            <div className="mb-1 text-xs uppercase tracking-wide text-ink-3">
               {plan.label}
             </div>
             <div className="overflow-auto">
@@ -61,7 +61,7 @@ export function WithdrawalSourceTableList({
                 className="min-w-full border-collapse text-xs"
               >
                 <thead>
-                  <tr className="bg-slate-900/60 text-slate-300">
+                  <tr className="bg-card text-ink-2">
                     <th className="px-2 py-1 text-left">Year</th>
                     {SOURCE_ORDER.map((cat) => (
                       <th key={cat} className="px-2 py-1 text-right">
@@ -81,7 +81,7 @@ export function WithdrawalSourceTableList({
                     return (
                       <tr
                         key={y.year}
-                        className="border-t border-slate-800 text-slate-200"
+                        className="border-t border-hair text-ink-2"
                       >
                         <td className="px-2 py-1">{y.year}</td>
                         {SOURCE_ORDER.map((cat) => (

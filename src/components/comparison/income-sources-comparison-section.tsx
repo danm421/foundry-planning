@@ -3,6 +3,7 @@
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { EntitySummary, Income, ProjectionYear } from "@/engine/types";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 
 function fmt(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
@@ -95,27 +96,28 @@ function resolveRange(inc: Income, years: ProjectionYear[]): ResolvedRange {
 }
 
 function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
+  const theme = useThemeName();
   const incomes: Income[] = plan.tree.incomes ?? [];
   const years = plan.result.years ?? [];
   const entitiesById = new Map<string, EntitySummary>(
     (plan.tree.entities ?? []).map((e) => [e.id, e]),
   );
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs uppercase tracking-wide text-slate-400">{plan.label}</span>
+        <span className="text-xs uppercase tracking-wide text-ink-3">{plan.label}</span>
       </div>
       {incomes.length === 0 ? (
-        <p className="text-sm text-slate-400">No income sources.</p>
+        <p className="text-sm text-ink-3">No income sources.</p>
       ) : (
         <table className="w-full text-xs">
-          <thead className="text-slate-400">
+          <thead className="text-ink-3">
             <tr>
               <th className="pb-1 pr-2 text-left font-normal">Source</th>
               <th className="px-2 pb-1 text-left font-normal">Type</th>
@@ -128,19 +130,19 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
               const r = resolveRange(i, years);
               const scheduled = usesSchedule(i, entitiesById);
               return (
-                <tr key={i.id} className="align-top text-slate-200">
+                <tr key={i.id} className="align-top text-ink-2">
                   <td className="py-1 pr-2">{i.name}</td>
                   <td className="px-2 py-1">{typeLabel(i.type)}</td>
                   <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                     {scheduled ? (
-                      <span className="text-slate-400">Schedule</span>
+                      <span className="text-ink-3">Schedule</span>
                     ) : (
                       fmt(r.firstYearAmount)
                     )}
                   </td>
                   <td className="whitespace-nowrap py-1 pl-2 text-right leading-tight tabular-nums">
                     <div>{r.startYear}</div>
-                    <div className="text-slate-400">{r.endYear}</div>
+                    <div className="text-ink-3">{r.endYear}</div>
                   </td>
                 </tr>
               );
@@ -161,7 +163,7 @@ export function IncomeSourcesComparisonSection({ plans }: { plans: ComparisonPla
         : "grid-cols-1 md:grid-cols-3";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">Income Sources</h2>
+      <h2 className="mb-4 text-lg font-semibold text-ink">Income Sources</h2>
       <div className={`grid gap-4 ${cols}`}>
         {plans.map((p, i) => (
           <PlanColumn key={p.id} plan={p} index={i} />

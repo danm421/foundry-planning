@@ -122,7 +122,7 @@ export function CreateScenarioDialog({
       onClick={onClose}
     >
       <div
-        className="w-[420px] bg-[#101114] border-2 border-ink-3 ring-1 ring-black/60 rounded-md p-6 shadow-xl"
+        className="w-[420px] bg-card border-2 border-hair-2 ring-1 ring-black/60 rounded-md p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <form
@@ -133,14 +133,14 @@ export function CreateScenarioDialog({
         >
           <div
             id="create-scenario-title"
-            className="text-[11px] text-[#7a5b29] uppercase tracking-wider mb-4"
+            className="text-[11px] text-accent uppercase tracking-wider mb-4"
           >
             § NEW SCENARIO
           </div>
 
           <label
             htmlFor="scenario-name"
-            className="block text-[12px] text-[#a09c92] mb-1"
+            className="block text-[12px] text-ink-3 mb-1"
           >
             Name
           </label>
@@ -150,12 +150,12 @@ export function CreateScenarioDialog({
             onChange={(e) => setName(e.target.value)}
             maxLength={60}
             autoFocus
-            className="w-full bg-[#0b0c0f] border border-[#1f2024] rounded px-2 h-9 text-[14px] text-[#e7e6e2] mb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a]"
+            className="w-full bg-paper border border-hair rounded px-2 h-9 text-[14px] text-ink mb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
 
           <label
             htmlFor="scenario-copy-from"
-            className="block text-[12px] text-[#a09c92] mb-1"
+            className="block text-[12px] text-ink-3 mb-1"
           >
             Copy from
           </label>
@@ -163,7 +163,7 @@ export function CreateScenarioDialog({
             id="scenario-copy-from"
             value={copyFrom}
             onChange={(e) => setCopyFrom(e.target.value)}
-            className="w-full bg-[#0b0c0f] border border-[#1f2024] rounded px-2 h-9 text-[14px] text-[#e7e6e2] mb-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a]"
+            className="w-full bg-paper border border-hair rounded px-2 h-9 text-[14px] text-ink mb-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <option value="empty">Start empty</option>
             <option value="base">Base case</option>
@@ -177,7 +177,7 @@ export function CreateScenarioDialog({
           </select>
 
           {error && (
-            <div role="alert" className="text-[12px] text-[#e84545] mb-4">
+            <div role="alert" className="text-[12px] text-crit mb-4">
               {error}
             </div>
           )}
@@ -186,14 +186,14 @@ export function CreateScenarioDialog({
             <button
               type="button"
               onClick={onClose}
-              className="h-8 px-3 text-[13px] text-[#a09c92] hover:text-[#e7e6e2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a] rounded"
+              className="h-8 px-3 text-[13px] text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim() || submitting}
-              className="h-8 px-4 rounded text-[13px] bg-[#d4a04a] text-[#0b0c0f] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              className="h-8 px-4 rounded text-[13px] bg-accent text-accent-on disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               {submitting ? "Creating..." : "Create"}
             </button>

@@ -80,13 +80,13 @@ export function SnapshotButton({
   }
 
   return (
-    <div className="p-4 border-t border-[#1f2024]">
+    <div className="p-4 border-t border-hair">
       <button
         type="button"
         onClick={snap}
         disabled={disabled}
         data-testid="snapshot-button"
-        className="w-full h-10 rounded bg-[#7a5b29] text-[#0b0c0f] text-[13px] font-medium hover:bg-[#8a6a35] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full h-10 rounded bg-accent text-accent-on text-[13px] font-medium hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? "Freezing…" : "Snapshot for presentation"}
       </button>

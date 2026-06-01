@@ -33,13 +33,13 @@ export default function BenchmarkSelector({ clientId, modelPortfolios, selectedB
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm text-gray-300">
+    <label className="flex items-center gap-2 text-sm text-ink-2">
       <span>Target Portfolio:</span>
       <select
         value={value}
         onChange={handleChange}
         disabled={saving}
-        className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-200"
+        className="rounded border border-hair-2 bg-card-2 px-2 py-1 text-sm text-ink"
       >
         <option value="">— Select —</option>
         {modelPortfolios.map((p) => (

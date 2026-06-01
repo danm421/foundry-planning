@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useThemeName, chartChrome } from "@/lib/chart-colors";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -122,6 +123,8 @@ export function FanChart({
   onPromote,
 }: FanChartProps) {
   const isCompact = variant === "compact";
+  const theme = useThemeName();
+  const chrome = chartChrome(theme);
   const { ages, datasets } = useMemo(
     () => buildFanChartSeries(summary.byYear, deterministic),
     [summary.byYear, deterministic],
@@ -143,10 +146,10 @@ export function FanChart({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: "rgba(2, 6, 23, 0.92)",
-        titleColor: "rgb(226, 232, 240)",
-        bodyColor: "rgb(203, 213, 225)",
-        borderColor: "rgb(30, 41, 59)",
+        backgroundColor: chrome.tooltipBg,
+        titleColor: chrome.tooltipTitle,
+        bodyColor: chrome.tooltipBody,
+        borderColor: chrome.grid,
         borderWidth: 1,
         padding: 10,
         boxWidth: 20,
@@ -201,17 +204,17 @@ export function FanChart({
     },
     scales: {
       x: {
-        title: { display: true, text: "Age", color: "rgb(148, 163, 184)" },
-        grid: { color: "rgba(30, 41, 59, 0.6)" },
-        ticks: { color: "rgb(148, 163, 184)" },
+        title: { display: true, text: "Age", color: chrome.title },
+        grid: { color: chrome.grid },
+        ticks: { color: chrome.tick },
       },
       y: {
         type: "linear" as const,
         beginAtZero: true,
-        title: { display: true, text: "Portfolio Value", color: "rgb(148, 163, 184)" },
-        grid: { color: "rgba(30, 41, 59, 0.6)" },
+        title: { display: true, text: "Portfolio Value", color: chrome.title },
+        grid: { color: chrome.grid },
         ticks: {
-          color: "rgb(148, 163, 184)",
+          color: chrome.tick,
           callback: (v: number | string) => formatShortCurrency(typeof v === "string" ? parseFloat(v) : v),
         },
       },
@@ -233,19 +236,19 @@ export function FanChart({
   } as ChartOptions<"line">;
 
   return (
-    <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
+    <div className="rounded-lg bg-card ring-1 ring-hair p-4">
       <div className="flex items-center justify-between mb-3 gap-3">
         <h2
           className={
             isCompact
-              ? "text-sm font-semibold text-slate-100"
-              : "text-base font-semibold text-slate-100"
+              ? "text-sm font-semibold text-ink"
+              : "text-base font-semibold text-ink"
           }
         >
           Retirement Success Probability
         </h2>
         {!isCompact && (
-          <div className="flex items-center gap-3 text-xs text-slate-300">
+          <div className="flex items-center gap-3 text-xs text-ink-2">
             <span className="flex items-center gap-1.5">
               <span className="h-[2px] w-4 bg-emerald-400" /> Above average (80th)
             </span>
@@ -256,7 +259,7 @@ export function FanChart({
               <span className="h-[2px] w-4 bg-rose-400" /> Below average (20th)
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-[2px] w-4 bg-slate-400" style={{ borderTop: "2px dashed" }} /> Cash-flow projection
+              <span className="h-[2px] w-4 bg-ink-3" style={{ borderTop: "2px dashed" }} /> Cash-flow projection
             </span>
           </div>
         )}

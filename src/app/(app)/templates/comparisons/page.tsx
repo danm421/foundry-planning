@@ -19,10 +19,10 @@ export default function ComparisonTemplatesPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="min-h-screen bg-paper text-ink">
       <div className="mx-auto max-w-4xl px-8 py-10">
-        <h1 className="text-2xl font-semibold text-slate-100">Comparison templates</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <h1 className="text-2xl font-semibold text-ink">Comparison templates</h1>
+        <p className="mt-1 text-sm text-ink-3">
           Reusable starting points for client comparisons.
         </p>
 
@@ -30,21 +30,21 @@ export default function ComparisonTemplatesPage() {
 
         {!loading && (
           <>
-            <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wider text-ink-4">
               Built-in
             </h2>
-            <div className="mt-2 divide-y divide-slate-800 overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+            <div className="mt-2 divide-y divide-hair overflow-hidden rounded-lg border border-hair bg-card/40">
               {presets.map((p) => (
                 <TemplateRow key={p.key} kind="preset" preset={p} />
               ))}
             </div>
 
-            <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wider text-ink-4">
               Your firm&apos;s templates
             </h2>
-            <div className="mt-2 divide-y divide-slate-800 overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+            <div className="mt-2 divide-y divide-hair overflow-hidden rounded-lg border border-hair bg-card/40">
               {templates.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-500">
+                <div className="px-4 py-6 text-sm text-ink-3">
                   No templates yet. Build one by saving a client comparison as a template.
                 </div>
               ) : (

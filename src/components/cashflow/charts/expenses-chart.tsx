@@ -5,15 +5,17 @@ import type { ProjectionYear } from "@/engine";
 import { StackedBarChart, type StackedBarSeries } from "./stacked-bar-chart";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 
+// Colors are omitted so the chart draws from the theme-aware brand palette
+// (adjacency order) and recolors on theme toggle — see StackedBarChart.
 export function buildExpensesDatasets(): StackedBarSeries[] {
   return [
-    { label: "Living", color: "#16a34a", valueFor: (y) => y.expenses.living },
-    { label: "Surplus spent", color: "#f59e0b", valueFor: (y) => y.expenses.discretionary },
-    { label: "Real Estate", color: "#0891b2", valueFor: (y) => y.expenses.realEstate },
-    { label: "Insurance", color: "#7c3aed", valueFor: (y) => y.expenses.insurance },
-    { label: "Taxes", color: "#ea580c", valueFor: (y) => y.expenses.taxes },
-    { label: "Debt service", color: "#ef4444", valueFor: (y) => y.expenses.liabilities },
-    { label: "Other", color: "#99f6e4", valueFor: (y) => y.expenses.other },
+    { label: "Living", valueFor: (y) => y.expenses.living },
+    { label: "Surplus spent", valueFor: (y) => y.expenses.discretionary },
+    { label: "Real Estate", valueFor: (y) => y.expenses.realEstate },
+    { label: "Insurance", valueFor: (y) => y.expenses.insurance },
+    { label: "Taxes", valueFor: (y) => y.expenses.taxes },
+    { label: "Debt service", valueFor: (y) => y.expenses.liabilities },
+    { label: "Other", valueFor: (y) => y.expenses.other },
   ];
 }
 

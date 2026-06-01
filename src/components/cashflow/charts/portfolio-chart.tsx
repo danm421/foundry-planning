@@ -15,6 +15,7 @@ import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
 import type { StackedBarSeries } from "./stacked-bar-chart";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
+import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend);
 
@@ -32,13 +33,15 @@ const fmt = new Intl.NumberFormat("en-US", {
  * net-worth, not portfolio; they belong on a separate balance-sheet view
  * (follow-up — see future-work/reports).
  */
+// Each series carries a Deep Jewel palette key; PortfolioChart resolves it to a
+// theme-aware hex (Chart.js paints to canvas, which can't read CSS vars).
 export function buildPortfolioDatasets(): StackedBarSeries[] {
   return [
-    { label: "Cash",                    color: "#9ca3af", valueFor: (y) => y.portfolioAssets.cashTotal },
-    { label: "Taxable",                 color: "#facc15", valueFor: (y) => y.portfolioAssets.taxableTotal },
-    { label: "Retirement",              color: "#f97316", valueFor: (y) => y.portfolioAssets.retirementTotal },
-    { label: "Life Insurance",          color: "#16a34a", valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
-    { label: "Accessible Trust Assets", color: "#99f6e4", valueFor: (y) => y.portfolioAssets.accessibleTrustAssetsTotal },
+    { label: "Cash",                    colorKey: "teal",   valueFor: (y) => y.portfolioAssets.cashTotal },
+    { label: "Taxable",                 colorKey: "yellow", valueFor: (y) => y.portfolioAssets.taxableTotal },
+    { label: "Retirement",              colorKey: "orange", valueFor: (y) => y.portfolioAssets.retirementTotal },
+    { label: "Life Insurance",          colorKey: "green",  valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
+    { label: "Accessible Trust Assets", colorKey: "grey",   valueFor: (y) => y.portfolioAssets.accessibleTrustAssetsTotal },
   ];
 }
 
@@ -53,55 +56,63 @@ export function PortfolioChart({ years, dataVersion }: PortfolioChartProps) {
     { reportId: "cashflow", chartId: "assets", dataVersion },
     useCallback(() => ref.current?.querySelector("canvas") ?? null, []),
   );
+  const theme = useThemeName();
   const series = buildPortfolioDatasets();
 
   const data = useMemo(() => {
     if (years.length === 0) return null;
+    const pal = dataPalette(theme);
     return {
       labels: years.map((y) => String(y.year)),
-      datasets: series.map((s, i) => ({
-        label: s.label,
-        data: years.map(s.valueFor),
-        backgroundColor: s.color,
-        borderColor: s.color,
-        borderWidth: 1,
-        pointRadius: 0,
-        fill: i === 0 ? "origin" : "-1",
-        tension: 0.2,
-      })),
+      datasets: series.map((s, i) => {
+        const color = s.colorKey ? pal[s.colorKey] : pal.grey;
+        return {
+          label: s.label,
+          data: years.map(s.valueFor),
+          backgroundColor: color,
+          borderColor: color,
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: i === 0 ? "origin" : "-1",
+          tension: 0.2,
+        };
+      }),
     };
-  }, [years, series]);
+  }, [years, series, theme]);
 
   const options = useMemo(
-    () => ({
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, labels: { color: "#d1d5db", boxWidth: 12, padding: 16 } },
-        title: { display: true, text: "Liquid portfolio by category", color: "#f3f4f6", font: { size: 14 } },
-        tooltip: {
-          backgroundColor: "#1f2937",
-          titleColor: "#f3f4f6",
-          bodyColor: "#d1d5db",
-          callbacks: {
-            label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
-              `${ctx.dataset.label}: ${fmt.format(Number(ctx.raw))}`,
+    () => {
+      const chrome = chartChrome(theme);
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: chrome.legend, boxWidth: 12, padding: 16 } },
+          title: { display: true, text: "Liquid portfolio by category", color: chrome.title, font: { size: 14 } },
+          tooltip: {
+            backgroundColor: chrome.tooltipBg,
+            titleColor: chrome.tooltipTitle,
+            bodyColor: chrome.tooltipBody,
+            callbacks: {
+              label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
+                `${ctx.dataset.label}: ${fmt.format(Number(ctx.raw))}`,
+            },
           },
         },
-      },
-      scales: {
-        x: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#374151" } },
-        y: {
-          stacked: true,
-          ticks: {
-            color: "#9ca3af",
-            callback: (value: unknown) => fmt.format(Number(value)),
+        scales: {
+          x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
+          y: {
+            stacked: true,
+            ticks: {
+              color: chrome.tick,
+              callback: (value: unknown) => fmt.format(Number(value)),
+            },
+            grid: { color: chrome.grid },
           },
-          grid: { color: "#374151" },
         },
-      },
-    }),
-    [],
+      };
+    },
+    [theme],
   );
 
   if (!data) return null;

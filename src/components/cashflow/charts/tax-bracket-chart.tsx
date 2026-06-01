@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
+import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend);
 
@@ -44,6 +45,7 @@ interface TaxBracketChartProps {
 }
 
 export function TaxBracketChart({ years }: TaxBracketChartProps) {
+  const theme = useThemeName();
   const { effective, marginal } = buildTaxBracketSeries(years);
 
   const data = useMemo(
@@ -53,7 +55,7 @@ export function TaxBracketChart({ years }: TaxBracketChartProps) {
         {
           label: "Effective rate",
           data: effective,
-          borderColor: "#2563eb",
+          borderColor: dataPalette(theme).blue,
           backgroundColor: "transparent",
           borderWidth: 2,
           pointRadius: 0,
@@ -63,7 +65,7 @@ export function TaxBracketChart({ years }: TaxBracketChartProps) {
         {
           label: "Marginal rate",
           data: marginal,
-          borderColor: "#ef4444",
+          borderColor: statusColors(theme).crit,
           backgroundColor: "transparent",
           borderWidth: 2,
           pointRadius: 0,
@@ -74,48 +76,51 @@ export function TaxBracketChart({ years }: TaxBracketChartProps) {
       ],
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [years],
+    [years, theme],
   );
 
   const options = useMemo(
-    () => ({
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: true,
-          labels: { color: "#d1d5db", boxWidth: 12, padding: 16 },
-        },
-        title: {
-          display: true,
-          text: "Effective vs. marginal rate",
-          color: "#f3f4f6",
-          font: { size: 14 },
-        },
-        tooltip: {
-          backgroundColor: "#1f2937",
-          titleColor: "#f3f4f6",
-          bodyColor: "#d1d5db",
-          callbacks: {
-            label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
-              `${ctx.dataset.label}: ${pct(Number(ctx.raw))}`,
+    () => {
+      const chrome = chartChrome(theme);
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: chrome.legend, boxWidth: 12, padding: 16 },
+          },
+          title: {
+            display: true,
+            text: "Effective vs. marginal rate",
+            color: chrome.title,
+            font: { size: 14 },
+          },
+          tooltip: {
+            backgroundColor: chrome.tooltipBg,
+            titleColor: chrome.tooltipTitle,
+            bodyColor: chrome.tooltipBody,
+            callbacks: {
+              label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
+                `${ctx.dataset.label}: ${pct(Number(ctx.raw))}`,
+            },
           },
         },
-      },
-      scales: {
-        x: { ticks: { color: "#9ca3af" }, grid: { color: "#374151" } },
-        y: {
-          beginAtZero: true,
-          max: 0.5,
-          ticks: {
-            color: "#9ca3af",
-            callback: (value: unknown) => pct(Number(value)),
+        scales: {
+          x: { ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
+          y: {
+            beginAtZero: true,
+            max: 0.5,
+            ticks: {
+              color: chrome.tick,
+              callback: (value: unknown) => pct(Number(value)),
+            },
+            grid: { color: chrome.grid },
           },
-          grid: { color: "#374151" },
         },
-      },
-    }),
-    [],
+      };
+    },
+    [theme],
   );
 
   if (years.length === 0) return null;

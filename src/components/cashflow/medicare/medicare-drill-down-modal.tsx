@@ -21,7 +21,7 @@ export function MedicareDrillDownModal({ year, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
+        className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl border-2 border-hair-2 ring-1 ring-black/60 bg-card p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-start mb-4">

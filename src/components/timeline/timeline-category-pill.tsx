@@ -1,6 +1,7 @@
 "use client";
 
 import type { TimelineCategory } from "@/lib/timeline/timeline-types";
+import { colors, data as brandData } from "@/brand";
 
 const COLORS: Record<TimelineCategory, string> = {
   life: "bg-sky-400/10 text-sky-300 ring-sky-400/40 shadow-[0_0_12px_rgba(56,189,248,0.15)]",
@@ -45,14 +46,17 @@ export function categoryAccentClass(category: TimelineCategory): string {
   return COLORS[category];
 }
 
-/** Hex color per category — used by the mini-map tick marks, footer legend, and future spine dots. */
+/** Hex color per category — used by the mini-map tick marks, footer legend, and future spine dots.
+ *  Values are resolved from the brand `colors` object (dark-mode tokens) so they stay in sync
+ *  with globals.css `--color-cat-*`. Light-mode theming of canvas-drawn elements is a future task.
+ */
 export const CATEGORY_HEX: Record<TimelineCategory, string> = {
-  life: "#38BDF8",       // sky-400
-  income: "#34D399",     // emerald-400
-  transaction: "#FBBF24",// amber-400
-  portfolio: "#60A5FA",  // blue-400
-  insurance: "#E879F9",  // fuchsia-400
-  tax: "#FB7185",        // rose-400
-  estate: "#A78BFA",     // violet-400
-  strategy: "#2DD4BF",   // teal-400
+  life: colors.cat.life,
+  income: colors.cat.income,
+  transaction: colors.cat.tax,     // transactions use the amber/tax hue
+  portfolio: colors.cat.portfolio,
+  insurance: colors.cat.insurance,
+  tax: brandData.pink,             // tax uses data-pink for contrast against transaction amber
+  estate: brandData.purple,        // estate uses data-purple
+  strategy: brandData.green,       // strategy uses data-green
 };

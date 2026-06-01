@@ -41,8 +41,8 @@ export function renderViewModeConfig(
             onClick={() => ctx.onChange({ viewMode: b.value })}
             className={`rounded border px-2 py-1 text-xs ${
               active
-                ? "border-amber-400 bg-amber-400/10 text-amber-200"
-                : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-hair text-ink-2 hover:bg-card-hover"
             }`}
           >
             {b.label}

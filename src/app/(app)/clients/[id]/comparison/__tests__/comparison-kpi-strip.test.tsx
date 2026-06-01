@@ -104,9 +104,9 @@ describe("ComparisonKpiStrip (grid)", () => {
         mcSuccessByIndex={{}}
       />,
     );
-    // Lower lifetime tax is better → delta of -20k should render in emerald.
+    // Lower lifetime tax is better → delta of -20k should render in the good token.
     const compareCol = screen.getByTestId("kpi-col-1");
     const lifetimeRow = within(compareCol).getByText(/\$20,000/);
-    expect(lifetimeRow.className).toMatch(/emerald/);
+    expect(lifetimeRow.className).toMatch(/text-good/);
   });
 });

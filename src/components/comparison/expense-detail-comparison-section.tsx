@@ -3,6 +3,7 @@
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { ClientInfo, Expense, ProjectionYear } from "@/engine/types";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 
 function fmt(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
@@ -43,6 +44,7 @@ function amountInYear(
 }
 
 function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
+  const theme = useThemeName();
   const expenses = (plan.tree.expenses ?? []) as Expense[];
   const years = (plan.result.years ?? []) as ProjectionYear[];
   const client = plan.tree.client as ClientInfo | undefined;
@@ -60,21 +62,21 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
     (s, e) => s + amountInYear(years, e.id, retY),
     0,
   );
-  const color = seriesColor(index) ?? "#cbd5e1";
+  const color = seriesColor(index) ?? chartChrome(theme).tick;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-hair bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs uppercase tracking-wide text-slate-400">
+        <span className="text-xs uppercase tracking-wide text-ink-3">
           {plan.label}
         </span>
       </div>
       <table className="mb-3 w-full text-xs">
-        <thead className="text-slate-400">
+        <thead className="text-ink-3">
           <tr>
             <th className="text-left font-normal">Category</th>
             <th className="text-right font-normal">Current ({curY})</th>
@@ -83,7 +85,7 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
         </thead>
         <tbody>
           {living.map((e) => (
-            <tr key={e.id} className="text-slate-200">
+            <tr key={e.id} className="text-ink-2">
               <td className="py-0.5">{e.name}</td>
               <td className="text-right tabular-nums">
                 {fmt(amountInYear(years, e.id, curY))}
@@ -93,7 +95,7 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
               </td>
             </tr>
           ))}
-          <tr className="border-t border-slate-700 text-slate-100">
+          <tr className="border-t border-hair-2 text-ink">
             <td className="py-0.5 font-semibold">Total Living Expenses</td>
             <td className="text-right font-semibold tabular-nums">
               {fmt(livingCur)}
@@ -106,7 +108,7 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
       </table>
       {events.length > 0 && (
         <table className="w-full text-xs">
-          <thead className="text-slate-400">
+          <thead className="text-ink-3">
             <tr>
               <th className="text-left font-normal">Expense</th>
               <th className="text-right font-normal">Year(s)</th>
@@ -115,7 +117,7 @@ function PlanColumn({ plan, index }: { plan: ComparisonPlan; index: number }) {
           </thead>
           <tbody>
             {events.map((e) => (
-              <tr key={e.id} className="text-slate-200">
+              <tr key={e.id} className="text-ink-2">
                 <td className="py-0.5">{e.name}</td>
                 <td className="text-right tabular-nums">
                   {e.startYear === e.endYear
@@ -145,7 +147,7 @@ export function ExpenseDetailComparisonSection({
         : "grid-cols-1 md:grid-cols-3";
   return (
     <section className="px-6 py-8">
-      <h2 className="mb-4 text-lg font-semibold text-slate-100">
+      <h2 className="mb-4 text-lg font-semibold text-ink">
         Expense Detail
       </h2>
       <div className={`grid gap-4 ${cols}`}>

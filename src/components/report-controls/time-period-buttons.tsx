@@ -64,7 +64,7 @@ export function TimePeriodButtons({
   };
 
   return (
-    <div className="inline-flex flex-wrap gap-1 rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
+    <div className="inline-flex flex-wrap gap-1 rounded border border-hair bg-paper p-0.5 text-sm">
       {pills.map((p) => {
         const active = isActive(p);
         return (
@@ -75,10 +75,10 @@ export function TimePeriodButtons({
             onClick={() => onChange(p.value)}
             className={
               active
-                ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
+                ? "rounded bg-card-2 px-3 py-1 text-ink"
                 : p.disabled
-                  ? "rounded px-3 py-1 text-gray-600"
-                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-100"
+                  ? "rounded px-3 py-1 text-ink-4"
+                  : "rounded px-3 py-1 text-ink-2 hover:text-ink"
             }
           >
             {p.label}

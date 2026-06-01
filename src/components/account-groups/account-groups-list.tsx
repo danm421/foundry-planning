@@ -39,7 +39,7 @@ function Chevron({ open }: { open: boolean }) {
     <svg
       viewBox="0 0 12 12"
       aria-hidden="true"
-      className={`h-3 w-3 shrink-0 text-gray-500 transition-transform ${open ? "rotate-90" : ""}`}
+      className={`h-3 w-3 shrink-0 text-ink-3 transition-transform ${open ? "rotate-90" : ""}`}
     >
       <path
         d="M4 2l4 4-4 4"
@@ -97,8 +97,8 @@ export default function AccountGroupsList({
         className="flex items-center justify-between py-1.5 pr-4 text-sm"
         style={{ paddingLeft: indent }}
       >
-        <span className="truncate text-gray-300">{a.name}</span>
-        <span className="text-gray-400">${formatDollars(a.value)}</span>
+        <span className="truncate text-ink-2">{a.name}</span>
+        <span className="text-ink-3">${formatDollars(a.value)}</span>
       </li>
     );
   }
@@ -117,10 +117,10 @@ export default function AccountGroupsList({
           onClick={() => expandable && toggle(node.key)}
           aria-expanded={expandable ? isOpen : undefined}
           disabled={!expandable}
-          className="flex w-full items-center justify-between py-2 pr-4 text-sm hover:bg-gray-800/40 disabled:cursor-default disabled:hover:bg-transparent"
+          className="flex w-full items-center justify-between py-2 pr-4 text-sm hover:bg-card-2/40 disabled:cursor-default disabled:hover:bg-transparent"
           style={{ paddingLeft: indent }}
         >
-          <span className="flex items-center gap-2 text-gray-100">
+          <span className="flex items-center gap-2 text-ink">
             {expandable ? (
               <Chevron open={isOpen} />
             ) : (
@@ -128,7 +128,7 @@ export default function AccountGroupsList({
             )}
             {node.label}
           </span>
-          <span className="text-gray-400">
+          <span className="text-ink-3">
             {node.count} {node.count === 1 ? "account" : "accounts"} · $
             {formatDollars(node.value)}
           </span>
@@ -146,17 +146,17 @@ export default function AccountGroupsList({
   return (
     <div className="space-y-6">
       <section>
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-300">
+        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-2">
           Default groups (read-only)
         </h3>
-        <ul className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
+        <ul className="divide-y divide-hair rounded-md border border-hair bg-card/40">
           {tree.map((node) => renderNode(node, 0))}
         </ul>
       </section>
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-300">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
             Custom groups
           </h3>
           <button
@@ -168,11 +168,11 @@ export default function AccountGroupsList({
           </button>
         </div>
         {customGroups.length === 0 ? (
-          <p className="rounded-md border border-dashed border-gray-700 bg-gray-900/30 px-4 py-6 text-center text-sm text-gray-400">
+          <p className="rounded-md border border-dashed border-hair bg-card/30 px-4 py-6 text-center text-sm text-ink-3">
             No custom groups yet. Use <em>+ New group</em> to bucket accounts.
           </p>
         ) : (
-          <ul className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/40">
+          <ul className="divide-y divide-hair rounded-md border border-hair bg-card/40">
             {customGroups.map((g) => {
               const key = `custom:${g.id}`;
               const isOpen = expanded.has(key);
@@ -199,7 +199,7 @@ export default function AccountGroupsList({
                         <span className="inline-block h-3 w-3 shrink-0" />
                       )}
                       <span className="flex min-w-0 flex-col">
-                        <span className="flex items-center gap-2 text-gray-100">
+                        <span className="flex items-center gap-2 text-ink">
                           <span style={{ color: g.color ?? undefined }}>●</span>
                           <span className="truncate">{g.name}</span>
                           {g.illiquidMemberCount > 0 && (
@@ -209,14 +209,14 @@ export default function AccountGroupsList({
                           )}
                         </span>
                         {g.description && (
-                          <span className="truncate text-xs text-gray-400">
+                          <span className="truncate text-xs text-ink-3">
                             {g.description}
                           </span>
                         )}
                       </span>
                     </button>
                     <div className="flex items-center gap-4 pl-4">
-                      <span className="text-gray-400">
+                      <span className="text-ink-3">
                         {g.memberAccountIds.length}{" "}
                         {g.memberAccountIds.length === 1 ? "account" : "accounts"}{" "}
                         · ${formatDollars(memberValue)}
@@ -224,14 +224,14 @@ export default function AccountGroupsList({
                       <button
                         type="button"
                         onClick={() => onEdit(g.id)}
-                        className="text-xs text-gray-300 hover:text-white"
+                        className="text-xs text-ink-2 hover:text-ink"
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => onDelete(g.id)}
-                        className="text-xs text-red-400 hover:text-red-300"
+                        className="text-xs text-crit hover:opacity-80"
                       >
                         Delete
                       </button>

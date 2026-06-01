@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Inter, B612_Mono } from "next/font/google";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import { ToastProvider } from "@/components/toast";
+import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
+import { colors } from "@/brand";
 import "./globals.css";
 
 const inter = Inter({
@@ -12,10 +15,10 @@ const inter = Inter({
   weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const b612Mono = B612_Mono({
+  variable: "--font-b612",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -33,26 +36,28 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0b0c0f",
+  // Browser chrome color (static metadata, can't read CSS vars) — dark paper.
+  themeColor: colors.paper,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const theme = resolveTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
     <ClerkProvider
       appearance={{
-        baseTheme: dark,
+        baseTheme: theme === "dark" ? dark : undefined,
         variables: {
-          colorBackground: "#17181c",
-          colorForeground: "#f3f4f6",
-          colorMutedForeground: "#c7cbd4",
-          colorNeutral: "#f3f4f6",
-          colorInput: "#0b0c0f",
-          colorInputForeground: "#f3f4f6",
-          colorPrimary: "#f59e0b",
+          colorBackground: "var(--color-card)",
+          colorForeground: "var(--color-ink)",
+          colorMutedForeground: "var(--color-ink-2)",
+          colorNeutral: "var(--color-ink)",
+          colorInput: "var(--color-card-2)",
+          colorInputForeground: "var(--color-ink)",
+          colorPrimary: "var(--color-accent)",
         },
         elements: {
           card: "border border-white/10 shadow-2xl",
@@ -61,7 +66,8 @@ export default function RootLayout({
     >
       <html
         lang="en"
-        className={`${inter.variable} ${geistMono.variable} h-full antialiased dark`}
+        data-theme={theme}
+        className={`${inter.variable} ${b612Mono.variable} h-full antialiased ${theme}`}
         suppressHydrationWarning
       >
         <body className="min-h-full flex flex-col">

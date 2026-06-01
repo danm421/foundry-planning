@@ -11,6 +11,8 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type { BeneficiaryDistributionTotal } from "@/lib/estate/derive-beneficiary-distribution-form";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { data as brandData, dataLight as brandDataLight } from "@/brand";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -19,9 +21,6 @@ const fmt = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
-
-const OUTRIGHT_COLOR = "#34d399"; // emerald
-const IN_TRUST_COLOR = "#60a5fa"; // blue
 
 function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
@@ -34,48 +33,52 @@ interface Props {
 }
 
 /**
- * One bar per beneficiary, stacked into the outright portion (emerald) and
+ * One bar per beneficiary, stacked into the outright portion (green) and
  * the in-trust portion (blue). Bar height is the beneficiary's total receipt
  * across both deaths.
  */
 export function BeneficiaryDistributionFormChart({ beneficiaries }: Props) {
+  const theme = useThemeName();
+
   const data = useMemo(() => {
     if (beneficiaries.length === 0) return null;
+    const palette = theme === "light" ? brandDataLight : brandData;
     return {
       labels: beneficiaries.map((b) => truncate(b.label, 14)),
       datasets: [
         {
           label: "Outright",
           data: beneficiaries.map((b) => b.outright),
-          backgroundColor: OUTRIGHT_COLOR,
+          backgroundColor: palette.green,
           stack: "main",
           borderWidth: 0,
         },
         {
           label: "In Trust",
           data: beneficiaries.map((b) => b.inTrust),
-          backgroundColor: IN_TRUST_COLOR,
+          backgroundColor: palette.blue,
           stack: "main",
           borderWidth: 0,
         },
       ],
     };
-  }, [beneficiaries]);
+  }, [beneficiaries, theme]);
 
-  const options = useMemo(
-    () => ({
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: {
           display: true,
           position: "bottom" as const,
-          labels: { color: "#d1d5db", boxWidth: 12, padding: 12 },
+          labels: { color: chrome.legend, boxWidth: 12, padding: 12 },
         },
         tooltip: {
-          backgroundColor: "#1f2937",
-          titleColor: "#f3f4f6",
-          bodyColor: "#d1d5db",
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             title: (items: Array<{ dataIndex: number }>) =>
               beneficiaries[items[0]?.dataIndex]?.label ?? "",
@@ -87,25 +90,24 @@ export function BeneficiaryDistributionFormChart({ beneficiaries }: Props) {
       scales: {
         x: {
           stacked: true,
-          ticks: { color: "#9ca3af", maxRotation: 0, autoSkip: false },
-          grid: { color: "#374151" },
+          ticks: { color: chrome.tick, maxRotation: 0, autoSkip: false },
+          grid: { color: chrome.grid },
         },
         y: {
           stacked: true,
           ticks: {
-            color: "#9ca3af",
+            color: chrome.tick,
             callback: (value: unknown) => fmt.format(Number(value)),
           },
-          grid: { color: "#374151" },
+          grid: { color: chrome.grid },
         },
       },
-    }),
-    [beneficiaries],
-  );
+    };
+  }, [beneficiaries, theme]);
 
   if (!data) {
     return (
-      <p className="py-8 text-center text-sm text-slate-500">
+      <p className="py-8 text-center text-sm text-ink-3">
         No beneficiary distributions to display.
       </p>
     );

@@ -20,7 +20,7 @@ export function EstateTransferRecipientTotals({
           <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-indigo-300/80">
             Where it ends up
           </span>
-          <h2 className="text-base font-semibold text-gray-50">Recipient totals</h2>
+          <h2 className="text-base font-semibold text-ink">Recipient totals</h2>
         </div>
       </header>
       <div className="px-5 py-3">
@@ -35,15 +35,15 @@ export function EstateTransferRecipientTotals({
           </thead>
           <tbody className="divide-y divide-indigo-900/20">
             {totals.map((t) => (
-              <tr key={t.key} className="hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
-                <td className="py-1 text-gray-200">{t.recipientLabel}</td>
-                <td className="py-1 text-right tabular-nums text-gray-300">
+              <tr key={t.key} className="hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
+                <td className="py-1 text-ink-2">{t.recipientLabel}</td>
+                <td className="py-1 text-right tabular-nums text-ink-2">
                   {fmt.format(t.fromFirstDeath)}
                 </td>
-                <td className="py-1 text-right tabular-nums text-gray-300">
+                <td className="py-1 text-right tabular-nums text-ink-2">
                   {fmt.format(t.fromSecondDeath)}
                 </td>
-                <td className="py-1 text-right tabular-nums font-semibold text-gray-50">
+                <td className="py-1 text-right tabular-nums font-semibold text-ink">
                   {fmt.format(t.total)}
                 </td>
               </tr>

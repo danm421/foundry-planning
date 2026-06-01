@@ -124,18 +124,18 @@ export default function InvestmentsClient({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="inline-flex rounded-md border border-gray-700 p-0.5 text-sm">
+      <div className="inline-flex rounded-md border border-hair-2 p-0.5 text-sm">
         <button
           type="button"
           onClick={() => setPageView("allocation")}
-          className={pageView === "allocation" ? "rounded bg-gray-700 px-3 py-1" : "px-3 py-1 text-gray-400"}
+          className={pageView === "allocation" ? "rounded bg-card-2 px-3 py-1 text-ink" : "px-3 py-1 text-ink-3"}
         >
           Allocation
         </button>
         <button
           type="button"
           onClick={() => setPageView("analysis")}
-          className={pageView === "analysis" ? "rounded bg-gray-700 px-3 py-1" : "px-3 py-1 text-gray-400"}
+          className={pageView === "analysis" ? "rounded bg-card-2 px-3 py-1 text-ink" : "px-3 py-1 text-ink-3"}
         >
           Portfolio Analysis
         </button>
@@ -150,10 +150,10 @@ export default function InvestmentsClient({
         <header className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
-            <nav className="mb-1 text-xs uppercase tracking-wide text-gray-400">
+            <nav className="mb-1 text-xs uppercase tracking-wide text-ink-3">
               Reports / Investments / Asset Allocation
             </nav>
-            <h2 className="text-xl font-bold uppercase tracking-wide text-gray-100">
+            <h2 className="text-xl font-bold uppercase tracking-wide text-ink">
               Asset Allocation Report
             </h2>
           </div>
@@ -179,7 +179,7 @@ export default function InvestmentsClient({
           <div
             role="radiogroup"
             aria-label="Allocation view"
-            className="inline-flex self-start rounded-md border border-gray-700 bg-gray-800/50 p-0.5 text-xs"
+            className="inline-flex self-start rounded-md border border-hair-2 bg-card-2/50 p-0.5 text-xs"
           >
             {(
               [
@@ -198,8 +198,8 @@ export default function InvestmentsClient({
                 }}
                 className={`rounded px-3 py-1.5 font-medium transition-colors ${
                   view === opt.id
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-300 hover:text-gray-200"
+                    ? "bg-card text-ink"
+                    : "text-ink-3 hover:text-ink"
                 }`}
               >
                 {opt.label}
@@ -207,7 +207,7 @@ export default function InvestmentsClient({
             ))}
           </div>
           {hasOutOfEstateInvestables && (
-            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-gray-300">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-2">
               <input
                 type="checkbox"
                 checked={includeOutOfEstate}
@@ -215,7 +215,7 @@ export default function InvestmentsClient({
                   setIncludeOutOfEstate(e.target.checked);
                   setDrilledRowId(null);
                 }}
-                className="h-3.5 w-3.5 rounded border-gray-600 bg-gray-800 accent-accent"
+                className="h-3.5 w-3.5 rounded border-hair-2 bg-card-2 accent-accent"
               />
               Include out-of-estate assets
             </label>
@@ -224,8 +224,8 @@ export default function InvestmentsClient({
       </header>
 
       <div className={`grid grid-cols-1 gap-6 ${shouldShowDrift ? "lg:grid-cols-[1fr_1.1fr_1fr]" : "lg:grid-cols-[1fr_1.1fr]"}`}>
-        <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-gray-300">Allocation Details</h3>
+        <section className="rounded-lg border border-hair bg-card p-4">
+          <h3 className="mb-3 text-sm font-semibold text-ink-2">Allocation Details</h3>
           {drilledRowId === null ? (
             <AllocationTable
               household={household}
@@ -278,20 +278,20 @@ export default function InvestmentsClient({
           )}
         </section>
 
-        <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
+        <section className="rounded-lg border border-hair bg-card p-4">
           <AllocationDonut household={household} mode={view} onChartReady={handleDonutReady} />
-          <p className="mt-3 text-center text-xs text-gray-400">{disclosure}</p>
+          <p className="mt-3 text-center text-xs text-ink-3">{disclosure}</p>
         </section>
 
         {shouldShowDrift && (
-          <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-            <h3 className="mb-3 text-sm font-semibold text-gray-300">Drift vs Target</h3>
+          <section className="rounded-lg border border-hair bg-card p-4">
+            <h3 className="mb-3 text-sm font-semibold text-ink-2">Drift vs Target</h3>
             <DriftChart drift={drift} assetClasses={assetClasses} />
           </section>
         )}
       </div>
 
-      <div className="flex items-center justify-between border-t border-gray-800 pt-4">
+      <div className="flex items-center justify-between border-t border-hair pt-4">
         <div className="flex gap-2">
           <ExportButton
             reportId="investments"
@@ -299,7 +299,7 @@ export default function InvestmentsClient({
           />
           <button
             onClick={() => setCommentOpen(true)}
-            className="relative rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+            className="relative rounded border border-hair-2 bg-card-2 px-3 py-1.5 text-sm text-ink-2 hover:bg-card-hover"
           >
             Advisor Comment
             {hasComment && (

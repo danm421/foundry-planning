@@ -35,12 +35,12 @@ export default function BrandHeader({
             fontWeight={700}
             fontSize={56}
             letterSpacing="-2"
-            fill="#f4f5f7"
+            fill="var(--color-ink)"
             style={{ fontFamily: "var(--font-sans)" }}
             suppressHydrationWarning
           >
             Foundry
-            <tspan dx="-2" fill="#f59e0b" suppressHydrationWarning>
+            <tspan dx="-2" fill="var(--color-accent)" suppressHydrationWarning>
               .
             </tspan>
           </text>

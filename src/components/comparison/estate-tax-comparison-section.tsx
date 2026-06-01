@@ -16,13 +16,13 @@ export function EstateTaxComparisonSection({ clientId, plans }: Props) {
   return (
     <section className="space-y-6 px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-100">Estate</h2>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+        <h2 className="text-lg font-semibold text-ink">Estate</h2>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-4">
           {plans.map((p) => (
             <Link
               key={p.index}
               href={`/clients/${clientId}/estate-planning/estate-tax?scenario=${p.id}`}
-              className="hover:text-slate-200"
+              className="hover:text-ink-2"
             >
               View {p.label} →
             </Link>
@@ -37,7 +37,7 @@ export function EstateTaxComparisonSection({ clientId, plans }: Props) {
       )}
 
       <div className="space-y-4">
-        <h3 className="text-base font-semibold text-slate-100">Estate Tax Breakdown</h3>
+        <h3 className="text-base font-semibold text-ink">Estate Tax Breakdown</h3>
         <EstateTaxComparisonTable
           plans={plans.map((p) => ({ label: p.label, result: p.result }))}
         />

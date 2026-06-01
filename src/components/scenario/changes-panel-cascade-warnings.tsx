@@ -61,13 +61,13 @@ export function CascadeWarningsChip({
   return (
     <div
       data-testid="cascade-warnings-chip"
-      className="border-t border-[#c87a7a]/40 bg-[#c87a7a]/5"
+      className="border-t border-crit/40 bg-crit/5"
     >
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
-        className="w-full px-4 py-2 flex items-center justify-between text-xs tracking-[0.18em] uppercase font-mono text-[#c87a7a] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c87a7a]"
+        className="w-full px-4 py-2 flex items-center justify-between text-xs tracking-[0.18em] uppercase font-mono text-crit focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-crit"
       >
         <span>
           ⚠ {warnings.length} CASCADE WARNING{warnings.length === 1 ? "" : "S"}
@@ -83,9 +83,9 @@ export function CascadeWarningsChip({
             return (
               <li
                 key={`${w.causedByChangeId ?? "warn"}-${i}`}
-                className="text-xs text-[#c8c4ba]"
+                className="text-xs text-ink-2"
               >
-                <span className="text-[#a09c92]">
+                <span className="text-ink-3">
                   [{w.affectedEntityLabel || "Affected"}]
                 </span>{" "}
                 {w.message}
@@ -93,7 +93,7 @@ export function CascadeWarningsChip({
                   <button
                     type="button"
                     onClick={() => restoreCause(cause)}
-                    className="ml-2 text-[#7a5b29] hover:text-[#d4a04a] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded px-1"
+                    className="ml-2 text-accent hover:text-accent-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded px-1"
                   >
                     [Restore]
                   </button>

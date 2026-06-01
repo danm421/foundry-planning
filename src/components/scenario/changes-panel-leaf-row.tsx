@@ -23,9 +23,9 @@ import { TrashIcon } from "@/components/icons";
 import type { ScenarioChange } from "@/engine/scenario/types";
 
 const OP_ICON: Record<ScenarioChange["opType"], { glyph: string; color: string }> = {
-  add: { glyph: "+", color: "text-[#7fa97f]" },
-  remove: { glyph: "−", color: "text-[#c87a7a]" },
-  edit: { glyph: "Δ", color: "text-[#d4a04a]" },
+  add: { glyph: "+", color: "text-good" },
+  remove: { glyph: "−", color: "text-crit" },
+  edit: { glyph: "Δ", color: "text-accent-ink" },
 };
 
 export interface ChangesPanelLeafRowProps {
@@ -89,7 +89,7 @@ export function ChangesPanelLeafRow({
   return (
     <div
       data-testid={`leaf-row-${change.id}`}
-      className={`px-4 py-2 hover:bg-[#0b0c0f]/50 group flex items-start gap-2 ${
+      className={`px-4 py-2 hover:bg-paper/50 group flex items-start gap-2 ${
         enabledLocal ? "" : "opacity-50"
       }`}
     >
@@ -102,13 +102,13 @@ export function ChangesPanelLeafRow({
         {op.glyph}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-[#e7e6e2] truncate">{labelFor(change, targetName)}</div>
-        <div className="text-xs text-[#a09c92] truncate">{subtextFor(change)}</div>
+        <div className="text-sm text-ink truncate">{labelFor(change, targetName)}</div>
+        <div className="text-xs text-ink-3 truncate">{subtextFor(change)}</div>
       </div>
       <button
         type="button"
         onClick={handleRevert}
-        className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 text-white hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] rounded p-1 shrink-0"
+        className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 text-ink hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded p-1 shrink-0"
         aria-label="Revert change"
         title="Revert this change"
       >
@@ -136,13 +136,13 @@ function ToggleSwitch({
       }}
       aria-pressed={on}
       aria-label={label}
-      className={`mt-0.5 w-7 h-3.5 rounded-full border transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] shrink-0 ${
-        on ? "bg-[#d4a04a] border-[#d4a04a]" : "bg-transparent border-[#1f2024]"
+      className={`mt-0.5 w-7 h-3.5 rounded-full border transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent shrink-0 ${
+        on ? "bg-accent border-accent" : "bg-transparent border-hair"
       }`}
     >
       <span
         className={`block w-2.5 h-2.5 rounded-full transition ${
-          on ? "bg-[#0b0c0f] ml-3.5" : "bg-[#6b6760] ml-0"
+          on ? "bg-paper ml-3.5" : "bg-ink-4 ml-0"
         }`}
         aria-hidden="true"
       />

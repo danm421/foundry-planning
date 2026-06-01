@@ -115,18 +115,18 @@ export function ComparisonPageClient({
   const isEmpty = activeCid === null && comparisons.length === 0;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="min-h-screen bg-paper text-ink-2">
       {isEmpty ? (
         <div className="flex min-h-screen items-center justify-center px-4">
-          <div className="mx-auto w-full max-w-md rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-8 text-center">
-            <h2 className="text-xl font-semibold text-slate-100">No comparisons yet</h2>
-            <p className="mt-2 text-sm text-slate-400">
+          <div className="mx-auto w-full max-w-md rounded-xl border border-dashed border-hair bg-card/40 p-8 text-center">
+            <h2 className="text-xl font-semibold text-ink">No comparisons yet</h2>
+            <p className="mt-2 text-sm text-ink-3">
               Pick a starting point to build this client&apos;s first comparison.
             </p>
             <button
               type="button"
               onClick={() => setNewOpen(true)}
-              className="mt-6 rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-white"
+              className="mt-6 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink-2"
             >
               + New comparison
             </button>

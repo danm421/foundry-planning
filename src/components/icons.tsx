@@ -183,6 +183,7 @@ export function SparkleIcon(props: IconProps) {
   );
 }
 
+/* eslint-disable brand/no-raw-hex -- fixed Foundry brand-mark gradient + artwork hex (the logo itself, not themeable UI) */
 export function FoundryMark({ width = 30, height = 30, ...props }: IconProps) {
   const reactId = useId();
   const front = `fp-front-${reactId}`;
@@ -220,6 +221,7 @@ export function FoundryMark({ width = 30, height = 30, ...props }: IconProps) {
     </svg>
   );
 }
+/* eslint-enable brand/no-raw-hex */
 
 export function CheckCircleIcon(props: IconProps) {
   return (

@@ -10,7 +10,7 @@ export function PromoteButton({ onPromote, label = "View as main chart" }: Promo
       onClick={onPromote}
       title={label}
       aria-label={label}
-      className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-emerald-300 transition-colors"
+      className="rounded-md p-1 text-ink-3 hover:bg-card-2 hover:text-good transition-colors"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

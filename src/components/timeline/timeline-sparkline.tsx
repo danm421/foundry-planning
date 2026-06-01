@@ -28,7 +28,7 @@ export default function TimelineSparkline({
   width,
   height,
   strokeClass = "stroke-blue-400",
-  zeroStrokeClass = "stroke-gray-700",
+  zeroStrokeClass = "stroke-[var(--color-hair-2)]",
 }: Props) {
   if (series.length < 2) return <svg width={width} height={height} />;
 

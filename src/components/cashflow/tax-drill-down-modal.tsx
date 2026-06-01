@@ -38,15 +38,15 @@ export function TaxDrillDownModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
+        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border-2 border-hair-2 ring-1 ring-black/60 bg-card p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">Tax Detail — {year}</h3>
-          <button onClick={onClose} className="text-gray-300 hover:text-gray-200">✕</button>
+          <h3 className="text-base font-semibold text-ink">Tax Detail — {year}</h3>
+          <button onClick={onClose} className="text-ink-2 hover:text-ink">✕</button>
         </div>
 
-        <p className="mb-3 text-xs text-gray-400">Click a category to see the sources.</p>
+        <p className="mb-3 text-xs text-ink-3">Click a category to see the sources.</p>
 
         <div className="space-y-2">
           {[
@@ -71,7 +71,7 @@ export function TaxDrillDownModal({
                 .sort((a, b) => b.amount - a.amount);
 
               return (
-                <div key={row.key} className="rounded-md bg-gray-800/40 text-sm">
+                <div key={row.key} className="rounded-md bg-card-2 text-sm">
                   <button
                     type="button"
                     onClick={() => {
@@ -82,21 +82,21 @@ export function TaxDrillDownModal({
                         return next;
                       });
                     }}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-800/70"
+                    className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-card-hover"
                     disabled={sources.length === 0}
                   >
                     <span className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">{sources.length > 0 ? (isExpanded ? "▾" : "▸") : " "}</span>
-                      <span className="font-medium text-gray-200">{row.label}</span>
+                      <span className="text-xs text-ink-3">{sources.length > 0 ? (isExpanded ? "▾" : "▸") : " "}</span>
+                      <span className="font-medium text-ink">{row.label}</span>
                     </span>
-                    <span className="tabular-nums text-gray-300">{formatCurrency(detail[row.key])}</span>
+                    <span className="tabular-nums text-ink-2">{formatCurrency(detail[row.key])}</span>
                   </button>
                   {isExpanded && sources.length > 0 && (
-                    <ul className="divide-y divide-gray-800 border-t border-gray-800">
+                    <ul className="divide-y divide-hair border-t border-hair">
                       {sources.map((s) => (
                         <li key={s.id} className="flex items-center justify-between px-3 py-1.5 pl-8 text-xs">
-                          <span className="truncate text-gray-300">{s.label}</span>
-                          <span className="tabular-nums text-gray-300">{formatCurrency(s.amount)}</span>
+                          <span className="truncate text-ink-2">{s.label}</span>
+                          <span className="tabular-nums text-ink-2">{formatCurrency(s.amount)}</span>
                         </li>
                       ))}
                     </ul>
@@ -106,7 +106,7 @@ export function TaxDrillDownModal({
             })}
         </div>
 
-        <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
+        <div className="mt-4 flex justify-between border-t border-hair pt-3 text-sm font-semibold text-ink">
           <span>Total Income</span>
           <span className="tabular-nums">{formatCurrency(incomeRowTotal)}</span>
         </div>
