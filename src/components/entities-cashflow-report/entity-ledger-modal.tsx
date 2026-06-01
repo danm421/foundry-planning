@@ -39,16 +39,16 @@ export default function EntityLedgerModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border-2 border-ink-3 bg-gray-900 p-6 shadow-xl ring-1 ring-black/60"
+        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border-2 border-ink-3 bg-card p-6 shadow-xl ring-1 ring-black/60"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-100">
+          <h3 className="text-base font-semibold text-ink">
             {entityName} · {year} · {SECTION_TITLES[section]}
           </h3>
           <button
             onClick={onClose}
-            className="text-gray-300 hover:text-gray-200"
+            className="text-ink-2 hover:text-ink"
             aria-label="Close"
           >
             ✕
@@ -56,16 +56,16 @@ export default function EntityLedgerModal({
         </div>
 
         {rows.length === 0 ? (
-          <p className="text-sm text-gray-400">No contributors for this column.</p>
+          <p className="text-sm text-ink-3">No contributors for this column.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-xs text-gray-400">
-              <tr className="border-b border-gray-800">
+            <thead className="text-xs text-ink-3">
+              <tr className="border-b border-hair">
                 <th className="px-2 py-1.5 text-left font-normal">Source</th>
                 <th className="px-2 py-1.5 text-right font-normal">Amount</th>
               </tr>
             </thead>
-            <tbody className="text-gray-100">
+            <tbody className="text-ink">
               {rows.map((r, i) => {
                 const isAnchor = r.sourceKind === "walk-anchor";
                 const isNegative = r.amount < 0;
@@ -74,8 +74,8 @@ export default function EntityLedgerModal({
                     key={`${r.sourceKind}:${r.sourceId ?? i}`}
                     className={
                       isAnchor
-                        ? "border-b-2 border-gray-700 font-medium"
-                        : "border-b border-gray-800/60 last:border-b-0"
+                        ? "border-b-2 border-hair-2 font-medium"
+                        : "border-b border-hair last:border-b-0"
                     }
                   >
                     <td className="px-2 py-1.5 text-left">{r.label}</td>
@@ -90,8 +90,8 @@ export default function EntityLedgerModal({
                 );
               })}
             </tbody>
-            <tfoot className="text-gray-100">
-              <tr className="border-t border-gray-700 font-semibold">
+            <tfoot className="text-ink">
+              <tr className="border-t border-hair-2 font-semibold">
                 <td className="px-2 py-2 text-left">
                   {section === "ending" ? "End of year" : "Total"}
                 </td>

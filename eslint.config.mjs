@@ -26,6 +26,9 @@ const eslintConfig = defineConfig([
       "src/lib/report-artifacts/**",
       "src/components/pdf/**",
       "src/components/comparison-pdf/**",
+      // Report PDF renderers (react-pdf print layer): print hex lives here and
+      // the generated PDFs must stay byte-stable.
+      "src/components/*-report-pdf/**",
       "src/components/**/*-pdf.tsx",
     ],
     plugins: { brand: { rules: { "no-raw-hex": noRawHex } } },

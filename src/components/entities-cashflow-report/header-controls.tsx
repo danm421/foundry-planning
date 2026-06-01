@@ -26,12 +26,12 @@ export default function HeaderControls(props: Props) {
   const businesses = props.entities.filter((e) => e.entityType !== "trust");
 
   return (
-    <div className="flex flex-col gap-4 border-b border-gray-800 px-4 py-3">
+    <div className="flex flex-col gap-4 border-b border-hair px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm text-gray-300">
-          <span className="text-gray-400">Trust</span>
+        <label className="flex items-center gap-2 text-sm text-ink-2">
+          <span className="text-ink-3">Trust</span>
           <select
-            className="rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
+            className="rounded border border-hair-2 bg-card px-3 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
             value={props.selectedEntityId}
             onChange={(e) => props.onSelectEntity(e.target.value)}
           >
