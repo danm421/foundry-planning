@@ -21,12 +21,15 @@ for (const c of projected.assetClasses as ProjectedClass[]) {
 }
 
 type DbLike = typeof defaultDb;
+// Both the base db and a transaction client expose `.execute`; the mirror only
+// needs that, so accept either (a PgTransaction isn't assignable to NeonDatabase).
+type Executor = Pick<DbLike, "execute">;
 
 /**
  * Copy the firm's active CMA set's numbers onto the asset_classes columns.
  * Single UPDATE … FROM. Safe to run inside or outside a transaction (pass tx).
  */
-export async function mirrorActiveSetToAssetClasses(db: DbLike, firmId: string): Promise<void> {
+export async function mirrorActiveSetToAssetClasses(db: Executor, firmId: string): Promise<void> {
   await db.execute(sql`
     UPDATE ${assetClasses} AS ac
     SET geometric_return = v.geometric_return,
