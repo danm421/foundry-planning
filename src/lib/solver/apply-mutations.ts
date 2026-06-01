@@ -9,6 +9,7 @@
 
 import type { ClientData } from "@/engine/types";
 import { resolveRefYears } from "@/lib/year-refs";
+import { isRetirementLivingExpense } from "./living-expense";
 import type { SolverMutation } from "./types";
 
 export function applyMutations(
@@ -29,8 +30,9 @@ export function applyMutations(
         break;
       }
       case "living-expense-scale": {
+        const planStartYear = result.planSettings.planStartYear;
         result.expenses = result.expenses.map((e) =>
-          e.type === "living"
+          isRetirementLivingExpense(e, planStartYear)
             ? { ...e, annualAmount: e.annualAmount * m.multiplier }
             : e,
         );

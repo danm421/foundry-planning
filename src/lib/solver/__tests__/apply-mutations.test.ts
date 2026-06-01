@@ -103,7 +103,7 @@ function makeBase(): ClientData {
       },
     ],
     withdrawalStrategy: [],
-    planSettings: {} as ClientData["planSettings"],
+    planSettings: { planStartYear: 2026 } as ClientData["planSettings"],
   };
 }
 
@@ -134,14 +134,17 @@ describe("applyMutations", () => {
     expect(out.client.retirementAge).toBe(65);
   });
 
-  it("living-expense-scale multiplies every living-type expense and leaves others alone", () => {
+  it("living-expense-scale multiplies only retirement (post-plan-start) living expenses, leaving current living + non-living alone", () => {
     const out = applyMutations(makeBase(), [
       { kind: "living-expense-scale", multiplier: 1.1 },
     ]);
     const cooper = out.expenses.find((e) => e.id === "expense-living-cooper")!;
     const susan = out.expenses.find((e) => e.id === "expense-living-susan")!;
     const insurance = out.expenses.find((e) => e.id === "expense-insurance")!;
-    expect(cooper.annualAmount).toBeCloseTo(132000);
+    // Current living expense (startYear 2026 === planStartYear) is what the
+    // advisor typed — never scaled.
+    expect(cooper.annualAmount).toBe(120000);
+    // Retirement living expense (startYear 2030 > planStartYear) is scaled.
     expect(susan.annualAmount).toBeCloseTo(88000);
     expect(insurance.annualAmount).toBe(12000);
   });
@@ -435,9 +438,13 @@ describe("applyMutations", () => {
       { kind: "life-expectancy", person: "client", age: 100 },
     ]);
     expect(out.client.retirementAge).toBe(67);
+    // Current living expense untouched; retirement living expense scaled by 0.9.
     expect(
       out.expenses.find((e) => e.id === "expense-living-cooper")!.annualAmount,
-    ).toBeCloseTo(108000);
+    ).toBe(120000);
+    expect(
+      out.expenses.find((e) => e.id === "expense-living-susan")!.annualAmount,
+    ).toBeCloseTo(72000);
     expect(
       out.incomes.find((i) => i.id === "income-ss-cooper")!.claimingAge,
     ).toBe(70);

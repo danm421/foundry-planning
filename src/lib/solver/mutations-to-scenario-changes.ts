@@ -9,6 +9,7 @@
 // Returns an empty array (not null) when every mutation is a no-op vs base.
 
 import type { ClientData } from "@/engine/types";
+import { isRetirementLivingExpense } from "./living-expense";
 import type {
   SolverMutation,
   SolverPerson,
@@ -135,8 +136,9 @@ export function mutationsToScenarioChanges(
         break;
       }
       case "living-expense-scale": {
+        const planStartYear = source.planSettings.planStartYear;
         for (const e of source.expenses) {
-          if (e.type !== "living") continue;
+          if (!isRetirementLivingExpense(e, planStartYear)) continue;
           const next = e.annualAmount * m.multiplier;
           if (e.annualAmount === next) continue;
           nonClientDrafts.push({

@@ -28,9 +28,11 @@ const richSource = {
     { id: "ss1", type: "social_security", owner: "client", annualAmount: 0 },
   ],
   expenses: [
-    { id: "exp1", type: "living", annualAmount: 100000 },
-    { id: "exp2", type: "other", annualAmount: 5000 },
+    { id: "exp-current", type: "living", annualAmount: 90000, startYear: 2026 },
+    { id: "exp1", type: "living", annualAmount: 100000, startYear: 2030 },
+    { id: "exp2", type: "other", annualAmount: 5000, startYear: 2026 },
   ],
+  planSettings: { planStartYear: 2026 },
 } as unknown as ClientData;
 
 describe("mutationsToBaseUpdates", () => {
@@ -87,7 +89,7 @@ describe("mutationsToBaseUpdates", () => {
     expect(out.incomeUpdates).toEqual([{ id: "ss1", set: { piaMonthly: "3200" } }]);
   });
 
-  it("scales only living expenses for living-expense-scale", () => {
+  it("scales only retirement living expenses for living-expense-scale (current + non-living untouched)", () => {
     const out = mutationsToBaseUpdates(richSource, [
       { kind: "living-expense-scale", multiplier: 1.1 },
     ]);

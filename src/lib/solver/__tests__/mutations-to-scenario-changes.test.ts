@@ -73,7 +73,7 @@ function makeSource(): ClientData {
       },
     ],
     withdrawalStrategy: [],
-    planSettings: {} as ClientData["planSettings"],
+    planSettings: { planStartYear: 2026 } as ClientData["planSettings"],
   } as ClientData;
 }
 
@@ -242,19 +242,16 @@ describe("mutationsToScenarioChanges", () => {
     expect(drafts).toHaveLength(0);
   });
 
-  it("living-expense-scale fans out to one row per living-type expense, multiplied", () => {
+  it("living-expense-scale fans out only to retirement (post-plan-start) living expenses; current stays as typed", () => {
     const drafts = mutationsToScenarioChanges(
       makeSource(),
       CLIENT_ID,
       [{ kind: "living-expense-scale", multiplier: 1.1 }],
     );
-    expect(drafts).toHaveLength(2);
+    // expense-living-cooper (startYear 2026 === planStartYear) is the current
+    // living expense — never solved. Only the retirement row is scaled.
+    expect(drafts).toHaveLength(1);
     expect(drafts[0]).toMatchObject({
-      targetKind: "expense",
-      targetId: "expense-living-cooper",
-      payload: { annualAmount: { from: 120000, to: 132000 } },
-    });
-    expect(drafts[1]).toMatchObject({
       targetKind: "expense",
       targetId: "expense-living-susan",
       payload: { annualAmount: { from: 80000, to: 88000 } },

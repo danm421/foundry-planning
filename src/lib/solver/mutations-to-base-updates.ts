@@ -23,6 +23,7 @@
 //     round-trip; the others need junction-table writes. Deferred.
 
 import type { ClientData, Account, SavingsRule } from "@/engine/types";
+import { isRetirementLivingExpense } from "./living-expense";
 import type { SolverMutation, SolverPerson } from "./types";
 
 /** A pre-coerced partial column update for one row. */
@@ -138,8 +139,9 @@ export function mutationsToBaseUpdates(
         break;
       }
       case "living-expense-scale": {
+        const planStartYear = source.planSettings.planStartYear;
         for (const e of source.expenses ?? []) {
-          if (e.type !== "living") continue;
+          if (!isRetirementLivingExpense(e, planStartYear)) continue;
           const next = e.annualAmount * m.multiplier;
           if (next === e.annualAmount) continue;
           expensePatch(e.id).annualAmount = dec(next);
