@@ -205,4 +205,34 @@ describe("loadMonteCarloData", () => {
     // lastPersistedSeed captured in the mock's update path.
     expect(lastPersistedSeed).toBe(payload.seed);
   });
+
+  it("base path (no effective tree) leaves startingLiquidBalance at the base value", async () => {
+    seedValidFixture({ monteCarloSeed: 12345678 });
+    const payload = await loadMonteCarloData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    // taxable 250k + cash 30k + retirement (IRA) 100k
+    expect(payload.startingLiquidBalance).toBe(380000);
+  });
+
+  it("uses the effective tree's accounts for startingLiquidBalance when provided", async () => {
+    seedValidFixture({ monteCarloSeed: 12345678 });
+    // Effective tree mirrors base liquid accounts plus one extra in-estate
+    // taxable account that base doesn't have → balance rises by 20k.
+    const effectiveTree = {
+      accounts: [
+        { id: "00000000-0000-0000-0000-000000000020", category: "taxable", value: 250000, owners: [] },
+        { id: "00000000-0000-0000-0000-000000000021", category: "cash", value: 30000, owners: [] },
+        { id: "00000000-0000-0000-0000-000000000022", category: "retirement", value: 100000, owners: [] },
+        { id: "added-1", category: "taxable", value: 20000, owners: [] },
+      ],
+      entities: [],
+    };
+    const payload = await loadMonteCarloData(
+      FIXTURE_CLIENT_ID,
+      FIXTURE_FIRM_ID,
+      "base",
+      [],
+      effectiveTree as never,
+    );
+    expect(payload.startingLiquidBalance).toBe(400000);
+  });
 });
