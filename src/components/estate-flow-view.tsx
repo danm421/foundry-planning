@@ -495,7 +495,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           <button
             type="button"
             onClick={() => setRemainderDialogOpen(true)}
-            className="rounded border border-[#1f2024] px-3 py-1.5 text-xs font-medium text-[#e7e6e2] transition-colors hover:border-[#3a3b40] hover:bg-[#1f2024]"
+            className="rounded border border-hair px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-hair-2 hover:bg-paper"
           >
             Remainder estate
           </button>
@@ -580,7 +580,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         <div
           role="region"
           aria-label="Unsaved changes"
-          className="sticky bottom-0 z-20 rounded border border-amber-700/60 bg-[#1a1509] px-4 py-3 shadow-lg"
+          className="sticky bottom-0 z-20 rounded border border-accent-deep/60 bg-accent-wash px-4 py-3 shadow-lg"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             {/* Change list */}
@@ -619,7 +619,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                 type="button"
                 disabled={isSaving}
                 onClick={handleSaveInPlace}
-                className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-[#0b0c0f] transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-accent-on transition-colors hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSaving
                   ? "Saving…"

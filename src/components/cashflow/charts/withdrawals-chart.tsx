@@ -15,15 +15,15 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  retirement: "#f97316",
-  taxable: "#facc15",
-  cash: "#9ca3af",
-  real_estate: "#0891b2",
-  business: "#7c3aed",
-  life_insurance: "#16a34a",
+  retirement:    "var(--color-data-terra)",
+  taxable:       "var(--color-data-wheat)",
+  cash:          "var(--color-data-slate)",
+  real_estate:   "var(--color-data-indigo)",
+  business:      "var(--color-data-violet)",
+  life_insurance:"var(--color-data-emerald)",
 };
 
-const FALLBACK_COLOR = "#ef4444";
+const FALLBACK_COLOR = "var(--color-crit)";
 
 export function buildWithdrawalsDatasets(
   years: ProjectionYear[],

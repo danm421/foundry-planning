@@ -15,6 +15,8 @@ import {
 } from "chart.js";
 import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 
 ChartJS.register(
   BarController,
@@ -59,8 +61,15 @@ interface CashFlowDataset {
  * cash-flow report (`cashflow-report.tsx`): five stacked income bars plus a
  * Total Expenses line. If the report's income segments change, update this
  * in tandem.
+ *
+ * Colors are resolved once against the supplied theme so the returned datasets
+ * are theme-stable; callers that need live theme-switching should use
+ * `SolverCashFlowChart` (which calls `useThemeName` reactively).
  */
-export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
+export function buildSolverCashFlowChartData(
+  years: ProjectionYear[],
+  theme: "dark" | "light" = "dark",
+): {
   labels: string[];
   datasets: CashFlowDataset[];
 } {
@@ -73,6 +82,11 @@ export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
   const rmd = (y: ProjectionYear) =>
     Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
 
+  const c = theme === "light" ? colorsLight : colors;
+  const palette = theme === "light" ? brandDataLight : brandData;
+  // Expenses line sits on top of bars — use ink color for high contrast
+  const expensesLine = c.ink;
+
   return {
     labels: years.map((y) => String(y.year)),
     datasets: [
@@ -80,7 +94,7 @@ export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
         type: "bar",
         label: "Social Security",
         data: years.map((y) => y.income.socialSecurity),
-        backgroundColor: "#2563eb",
+        backgroundColor: palette.indigo,
         stack: "inflows",
         order: 1,
       },
@@ -88,7 +102,7 @@ export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
         type: "bar",
         label: "Salaries",
         data: years.map((y) => y.income.salaries),
-        backgroundColor: "#16a34a",
+        backgroundColor: palette.emerald,
         stack: "inflows",
         order: 1,
       },
@@ -96,7 +110,7 @@ export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
         type: "bar",
         label: "Other Inflows",
         data: years.map(otherIncome),
-        backgroundColor: "#99f6e4",
+        backgroundColor: palette.slate,
         stack: "inflows",
         order: 1,
       },
@@ -104,7 +118,7 @@ export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
         type: "bar",
         label: "RMDs",
         data: years.map(rmd),
-        backgroundColor: "#f97316",
+        backgroundColor: palette.terra,
         stack: "inflows",
         order: 1,
       },
@@ -112,7 +126,7 @@ export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
         type: "bar",
         label: "Withdrawals",
         data: years.map((y) => y.withdrawals.total),
-        backgroundColor: "#ef4444",
+        backgroundColor: c.crit,
         stack: "inflows",
         order: 1,
       },
@@ -120,7 +134,7 @@ export function buildSolverCashFlowChartData(years: ProjectionYear[]): {
         type: "line",
         label: "Total Expenses",
         data: years.map((y) => y.totalExpenses),
-        borderColor: "#ffffff",
+        borderColor: expensesLine,
         backgroundColor: "transparent",
         borderWidth: 2,
         pointRadius: 0,
@@ -137,7 +151,14 @@ interface Props {
 }
 
 export function SolverCashFlowChart({ years }: Props) {
-  const data = useMemo(() => buildSolverCashFlowChartData(years), [years]);
+  const theme = useThemeName();
+
+  const data = useMemo(
+    () => buildSolverCashFlowChartData(years, theme),
+    [years, theme],
+  );
+
+  const chrome = chartChrome(theme);
 
   return (
     <Chart
@@ -148,19 +169,22 @@ export function SolverCashFlowChart({ years }: Props) {
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         scales: {
-          x: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+          x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
           y: {
             stacked: true,
             ticks: {
-              color: "#9ca3af",
+              color: chrome.tick,
               callback: (v) => fmtCompact.format(Number(v)),
             },
-            grid: { color: "#1f2937" },
+            grid: { color: chrome.grid },
           },
         },
         plugins: {
-          legend: { labels: { color: "#e5e7eb" } },
+          legend: { labels: { color: chrome.legend } },
           tooltip: {
+            backgroundColor: chrome.tooltipBg,
+            titleColor: chrome.tooltipTitle,
+            bodyColor: chrome.tooltipBody,
             callbacks: {
               label: (ctx) =>
                 `${ctx.dataset.label}: ${fmtFull.format(Number(ctx.parsed.y))}`,

@@ -45,7 +45,7 @@ function ClickableCell({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className="block w-full cursor-pointer text-right hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+      className="block w-full cursor-pointer text-right hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {children}
     </button>
@@ -67,42 +67,42 @@ function FederalTable({
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="text-amber-200/70">
+          <tr className="text-ink-3">
             <th className="px-3 py-3 text-left font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Year</span>
+              <span className="border-b border-dotted border-hair pb-px">Year</span>
             </th>
             <th className="px-3 py-3 text-left font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Age</span>
+              <span className="border-b border-dotted border-hair pb-px">Age</span>
             </th>
-            <th className="border-l border-amber-200/30 px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Roth Conversion</span>
-            </th>
-            <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Taxable Portion of Roth Conversion</span>
+            <th className="border-l border-hair px-3 py-3 text-right font-normal">
+              <span className="border-b border-dotted border-hair pb-px">Roth Conversion</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Income Tax Base</span>
+              <span className="border-b border-dotted border-hair pb-px">Taxable Portion of Roth Conversion</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Federal Marginal Bracket</span>
+              <span className="border-b border-dotted border-hair pb-px">Income Tax Base</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Amount into Federal Marginal Bracket</span>
+              <span className="border-b border-dotted border-hair pb-px">Federal Marginal Bracket</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Remaining in Federal Marginal Bracket</span>
+              <span className="border-b border-dotted border-hair pb-px">Amount into Federal Marginal Bracket</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Change in Income Tax Base</span>
+              <span className="border-b border-dotted border-hair pb-px">Remaining in Federal Marginal Bracket</span>
+            </th>
+            <th className="px-3 py-3 text-right font-normal">
+              <span className="border-b border-dotted border-hair pb-px">Change in Income Tax Base</span>
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.year} className="border-t border-amber-200/10 hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+            <tr key={r.year} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]">
               <td className="px-3 py-3">{r.year}</td>
               <td className="px-3 py-3">{fmtAges(r.clientAge, r.spouseAge)}</td>
-              <td className="border-l border-amber-200/30 px-3 py-3 text-right">
+              <td className="border-l border-hair px-3 py-3 text-right">
                 <ClickableCell
                   onClick={() => onCellClick(r.year, "conversionGross")}
                   ariaLabel={`Roth conversion ${r.year} value ${fmtUsd(r.conversionGross)}`}
@@ -132,7 +132,7 @@ function FederalTable({
                 {r.remainingInBracket == null ? "—" : fmtUsd(r.remainingInBracket)}
               </td>
               <td
-                className={`px-3 py-3 text-right ${r.changeInBase < 0 ? "text-red-400" : ""}`}
+                className={`px-3 py-3 text-right ${r.changeInBase < 0 ? "text-crit" : ""}`}
               >
                 {fmtUsd(r.changeInBase)}
               </td>
@@ -141,7 +141,7 @@ function FederalTable({
         </tbody>
       </table>
       {rows.length === 0 && (
-        <div className="px-3 py-10 text-center text-amber-200/50">
+        <div className="px-3 py-10 text-center text-ink-4">
           No projection years to show.
         </div>
       )}
@@ -176,7 +176,7 @@ function StateTable({ years }: { years: ProjectionYear[] }) {
 
   if (noIncomeTaxEverywhere) {
     return (
-      <div className="rounded-md border border-amber-900/40 bg-amber-950/30 px-4 py-5 text-sm text-amber-200/80">
+      <div className="rounded-md border border-hair-2 bg-card-2 px-4 py-5 text-sm text-ink-2">
         {stateLabel
           ? `${stateLabel} does not levy a personal income tax — no state-bracket detail to display.`
           : "Residence state does not levy a personal income tax — no state-bracket detail to display."}
@@ -186,7 +186,7 @@ function StateTable({ years }: { years: ProjectionYear[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="px-3 py-10 text-center text-amber-200/50">
+      <div className="px-3 py-10 text-center text-ink-4">
         No projection years to show.
       </div>
     );
@@ -198,7 +198,7 @@ function StateTable({ years }: { years: ProjectionYear[] }) {
   const allFlatOrEmpty = rows.every((r) => r.marginalRate === 0 && r.intoBracket === 0);
   if (allFlatOrEmpty) {
     return (
-      <div className="rounded-md border border-amber-900/40 bg-amber-950/30 px-4 py-5 text-sm text-amber-200/80">
+      <div className="rounded-md border border-hair-2 bg-card-2 px-4 py-5 text-sm text-ink-2">
         No state-tax bracket data — flat rate or no income tax.
       </div>
     );
@@ -207,45 +207,45 @@ function StateTable({ years }: { years: ProjectionYear[] }) {
   return (
     <div className="overflow-x-auto">
       {stateLabel && (
-        <div className="mb-3 text-xs text-amber-200/70">
-          Residence state: <span className="text-amber-100">{stateLabel}</span>
+        <div className="mb-3 text-xs text-ink-3">
+          Residence state: <span className="text-ink">{stateLabel}</span>
         </div>
       )}
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="text-amber-200/70">
+          <tr className="text-ink-3">
             <th className="px-3 py-3 text-left font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Year</span>
+              <span className="border-b border-dotted border-hair pb-px">Year</span>
             </th>
             <th className="px-3 py-3 text-left font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Age</span>
+              <span className="border-b border-dotted border-hair pb-px">Age</span>
             </th>
-            <th className="border-l border-amber-200/30 px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">State Taxable Income</span>
-            </th>
-            <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">State Marginal Bracket</span>
+            <th className="border-l border-hair px-3 py-3 text-right font-normal">
+              <span className="border-b border-dotted border-hair pb-px">State Taxable Income</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Amount into State Marginal Bracket</span>
+              <span className="border-b border-dotted border-hair pb-px">State Marginal Bracket</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Remaining in State Marginal Bracket</span>
+              <span className="border-b border-dotted border-hair pb-px">Amount into State Marginal Bracket</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">State Tax</span>
+              <span className="border-b border-dotted border-hair pb-px">Remaining in State Marginal Bracket</span>
             </th>
             <th className="px-3 py-3 text-right font-normal">
-              <span className="border-b border-dotted border-amber-200/40 pb-px">Change in State Taxable Income</span>
+              <span className="border-b border-dotted border-hair pb-px">State Tax</span>
+            </th>
+            <th className="px-3 py-3 text-right font-normal">
+              <span className="border-b border-dotted border-hair pb-px">Change in State Taxable Income</span>
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.year} className="border-t border-amber-200/10 hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+            <tr key={r.year} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]">
               <td className="px-3 py-3">{r.year}</td>
               <td className="px-3 py-3">{fmtAges(r.clientAge, r.spouseAge)}</td>
-              <td className="border-l border-amber-200/30 px-3 py-3 text-right">
+              <td className="border-l border-hair px-3 py-3 text-right">
                 {fmtUsd(r.stateTaxableIncome)}
               </td>
               <td className="px-3 py-3 text-right">{fmtRate(r.marginalRate)}</td>
@@ -255,7 +255,7 @@ function StateTable({ years }: { years: ProjectionYear[] }) {
               </td>
               <td className="px-3 py-3 text-right">{fmtUsd(r.stateTax)}</td>
               <td
-                className={`px-3 py-3 text-right ${r.changeInBase < 0 ? "text-red-400" : ""}`}
+                className={`px-3 py-3 text-right ${r.changeInBase < 0 ? "text-crit" : ""}`}
               >
                 {fmtUsd(r.changeInBase)}
               </td>
@@ -283,10 +283,10 @@ function ModeButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+      className={`px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         active
-          ? "bg-amber-200 text-stone-950"
-          : "bg-transparent text-amber-200/70 hover:text-amber-100"
+          ? "bg-accent text-accent-ink"
+          : "bg-transparent text-ink-3 hover:text-ink"
       }`}
     >
       {label}
@@ -298,30 +298,30 @@ export function TaxBracketTab({ years, onCellClick }: TaxBracketTabProps) {
   const [mode, setMode] = useState<Mode>("federal");
 
   return (
-    <div className="rounded-md bg-stone-950 p-5 text-amber-100">
+    <div className="rounded-md bg-paper p-5 text-ink">
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold tracking-tight">Tax Bracket</h3>
-          <span className="rounded-md border border-amber-900/40 bg-amber-950/40 px-2.5 py-1 text-xs text-amber-200/80">
+          <span className="rounded-md border border-hair-2 bg-card-2 px-2.5 py-1 text-xs text-ink-2">
             All Years
           </span>
           <div
             role="group"
             aria-label="Bracket scope"
-            className="inline-flex overflow-hidden rounded-md border border-amber-900/40"
+            className="inline-flex overflow-hidden rounded-md border border-hair-2"
           >
             <ModeButton label="Federal" active={mode === "federal"} onClick={() => setMode("federal")} />
-            <span aria-hidden className="w-px bg-amber-900/40" />
+            <span aria-hidden className="w-px bg-hair" />
             <ModeButton label="State" active={mode === "state"} onClick={() => setMode("state")} />
           </div>
         </div>
-        <div className="flex items-center gap-5 text-xs text-amber-200/70">
+        <div className="flex items-center gap-5 text-xs text-ink-3">
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-3 w-3 rounded-sm border border-amber-200/60" />
+            <span aria-hidden className="inline-block h-3 w-3 rounded-sm border border-hair-2" />
             Multiple Events
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-0 w-0 border-x-[6px] border-b-[10px] border-x-transparent border-b-amber-200/60" />
+            <span aria-hidden className="inline-block h-0 w-0 border-x-[6px] border-b-[10px] border-x-transparent border-b-hair-2" />
             End Of Life
           </span>
         </div>

@@ -174,6 +174,7 @@ function ColorCard({ initial }: { initial: string | null }) {
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          // eslint-disable-next-line brand/no-raw-hex -- instructional UI: placeholder shows the expected hex format to the user
           placeholder="#0a2bff"
           maxLength={7}
           className="w-32 rounded border border-hair bg-paper px-3 py-2 font-mono text-sm text-ink"

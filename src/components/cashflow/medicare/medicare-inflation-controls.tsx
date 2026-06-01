@@ -74,7 +74,7 @@ export function MedicareInflationControls({ rate, enabled, onChange, saveError }
       </span>
 
       {saveError && (
-        <span className="text-red-600">Save failed: {saveError}</span>
+        <span className="text-crit">Save failed: {saveError}</span>
       )}
     </div>
   );

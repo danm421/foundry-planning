@@ -34,7 +34,7 @@ export function YearRangeSlider({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-gray-800 bg-gray-900/40 p-4">
+    <div className="space-y-3 rounded-lg border border-hair bg-card p-4">
       {/* Preset buttons */}
       <div className="flex items-center gap-2">
         <PresetButton
@@ -56,7 +56,7 @@ export function YearRangeSlider({
           disabledReason="Set client DOB and retirement age to enable"
           onClick={() => applyPreset(presets.retirement)}
         />
-        <span className="ml-auto text-xs tabular-nums text-gray-300">
+        <span className="ml-auto text-xs tabular-nums text-ink-2">
           {value[0]}{value[0] !== value[1] ? ` – ${value[1]}` : ""}
         </span>
       </div>
@@ -77,15 +77,15 @@ export function YearRangeSlider({
         }}
         aria-label="Year range"
       >
-        <Slider.Track className="relative h-1 w-full grow rounded-full bg-gray-700">
+        <Slider.Track className="relative h-1 w-full grow rounded-full bg-card-2">
           <Slider.Range className="absolute h-full rounded-full bg-accent" />
         </Slider.Track>
         <Slider.Thumb
-          className="block h-4 w-4 rounded-full border border-gray-300 bg-white shadow focus:outline-none focus:ring-2 focus:ring-accent"
+          className="block h-4 w-4 rounded-full border border-hair-2 bg-paper shadow focus:outline-none focus:ring-2 focus:ring-accent"
           aria-label="From year"
         />
         <Slider.Thumb
-          className="block h-4 w-4 rounded-full border border-gray-300 bg-white shadow focus:outline-none focus:ring-2 focus:ring-accent"
+          className="block h-4 w-4 rounded-full border border-hair-2 bg-paper shadow focus:outline-none focus:ring-2 focus:ring-accent"
           aria-label="To year"
         />
       </Slider.Root>
@@ -106,7 +106,7 @@ export function YearRangeSlider({
           return (
             <span
               key={label}
-              className="absolute top-0 text-xs text-gray-400 tabular-nums"
+              className="absolute top-0 text-xs text-ink-3 tabular-nums"
               style={{ left: `${leftPct}%`, transform }}
             >
               {label}
@@ -139,10 +139,10 @@ function PresetButton({
       title={disabled ? disabledReason : undefined}
       className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
         disabled
-          ? "cursor-not-allowed text-gray-600"
+          ? "cursor-not-allowed text-ink-4"
           : active
-            ? "bg-gray-700 text-white"
-            : "text-gray-300 hover:bg-gray-800 hover:text-gray-200"
+            ? "bg-card-2 text-ink"
+            : "text-ink-2 hover:bg-card-2 hover:text-ink"
       }`}
     >
       {label}

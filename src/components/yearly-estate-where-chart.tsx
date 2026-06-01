@@ -11,6 +11,8 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type { YearlyEstateRow } from "@/lib/estate/yearly-estate-report";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -25,52 +27,57 @@ interface Props {
 }
 
 export function YearlyEstateWhereChart({ rows }: Props) {
-  const data = useMemo(() => {
+  const theme = useThemeName();
+
+  const chartData = useMemo(() => {
     if (rows.length === 0) return null;
+    const c = theme === "light" ? colorsLight : colors;
+    const palette = theme === "light" ? brandDataLight : brandData;
     return {
       labels: rows.map((r) => String(r.year)),
       datasets: [
         {
           label: "Net to Heirs",
           data: rows.map((r) => r.netToHeirs),
-          backgroundColor: "#16a34a",
+          backgroundColor: c.good,
           stack: "main",
           borderWidth: 0,
         },
         {
           label: "Taxes & Expenses",
           data: rows.map((r) => r.taxesAndExpenses),
-          backgroundColor: "#e11d48",
+          backgroundColor: c.crit,
           stack: "main",
           borderWidth: 0,
         },
         {
           label: "Charitable Bequests",
           data: rows.map((r) => r.charitableBequests),
-          backgroundColor: "#f59e0b",
+          backgroundColor: palette.wheat,
           stack: "main",
           borderWidth: 0,
         },
       ],
     };
-  }, [rows]);
+  }, [rows, theme]);
 
-  const options = useMemo(
-    () => ({
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: {
           display: true,
           position: "bottom" as const,
-          labels: { color: "#d1d5db", boxWidth: 12, padding: 12 },
+          labels: { color: chrome.legend, boxWidth: 12, padding: 12 },
         },
         tooltip: {
           mode: "index" as const,
           intersect: false,
-          backgroundColor: "#1f2937",
-          titleColor: "#f3f4f6",
-          bodyColor: "#d1d5db",
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
               `${ctx.dataset.label}: ${fmt.format(Number(ctx.raw))}`,
@@ -80,27 +87,26 @@ export function YearlyEstateWhereChart({ rows }: Props) {
       scales: {
         x: {
           stacked: true,
-          ticks: { color: "#9ca3af" },
-          grid: { color: "#374151" },
+          ticks: { color: chrome.tick },
+          grid: { color: chrome.grid },
         },
         y: {
           stacked: true,
           ticks: {
-            color: "#9ca3af",
+            color: chrome.tick,
             callback: (value: unknown) => fmt.format(Number(value)),
           },
-          grid: { color: "#374151" },
+          grid: { color: chrome.grid },
         },
       },
-    }),
-    [],
-  );
+    };
+  }, [theme]);
 
-  if (!data) return null;
+  if (!chartData) return null;
 
   return (
     <div style={{ height: 280 }}>
-      <Bar data={data} options={options} />
+      <Bar data={chartData} options={options} />
     </div>
   );
 }

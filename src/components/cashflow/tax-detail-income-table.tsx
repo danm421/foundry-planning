@@ -128,14 +128,14 @@ export function TaxDetailIncomeTable({
   const transitions = detectRegimeTransitions(years);
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
+    <div className="overflow-x-auto rounded-lg border border-hair bg-card">
       <table className="min-w-full border-separate border-spacing-0 text-sm">
-        <thead className="bg-gray-900 text-xs uppercase text-gray-300">
+        <thead className="bg-card text-xs uppercase text-ink-3">
           <tr>
-            <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-gray-800 bg-gray-900 px-3 py-2 text-left">
+            <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-hair bg-card px-3 py-2 text-left">
               Year
             </th>
-            <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left">
+            <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-hair bg-card px-3 py-2 text-left">
               Age
             </th>
             {INCOME_COLUMNS.map((col, idx) => {
@@ -143,7 +143,7 @@ export function TaxDetailIncomeTable({
               return (
                 <th
                   key={col.key}
-                  className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right font-medium ${isLast ? "sticky right-0 z-20 border-l" : ""}`}
+                  className={`border-b border-hair bg-card px-3 py-2 text-right font-medium ${isLast ? "sticky right-0 z-20 border-l" : ""}`}
                 >
                   {col.tooltip ? (
                     <TaxDetailTooltip label={col.label} text={col.tooltip} />
@@ -155,7 +155,7 @@ export function TaxDetailIncomeTable({
             })}
           </tr>
         </thead>
-        <tbody className="text-gray-200">
+        <tbody className="text-ink">
           {years.map((y) => {
             const yearTransitions = transitions[y.year];
             const borderClass = yearTransitions
@@ -168,13 +168,13 @@ export function TaxDetailIncomeTable({
             return (
               <tr key={y.year} className="group">
                 <td
-                  className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-accent group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${borderClass}`}
+                  className={`sticky left-0 z-10 cursor-pointer border-b border-hair bg-card px-3 py-2 text-left hover:text-accent group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)] ${borderClass}`}
                   onClick={() => onYearClick(y)}
                   title={tooltip ?? `View per-source breakdown for ${y.year}`}
                 >
                   {y.year}
                 </td>
-                <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-300 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
+                <td className="sticky left-20 z-10 border-b border-r border-hair bg-card px-3 py-2 text-left text-ink-2 group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
                 {INCOME_COLUMNS.map((col, idx) => {
@@ -183,7 +183,7 @@ export function TaxDetailIncomeTable({
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-gray-800 bg-gray-900 px-0 py-0 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
+                      className={`border-b border-hair bg-card px-0 py-0 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
                     >
                       <button
                         type="button"

@@ -16,6 +16,8 @@ import {
 } from "chart.js";
 import { Chart } from "react-chartjs-2";
 import type { YearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 
 ChartJS.register(
   BarController,
@@ -49,12 +51,17 @@ interface Props {
 }
 
 export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
-  const data = useMemo(() => {
+  const theme = useThemeName();
+
+  const chartData = useMemo(() => {
     const labels = rows.map((r) => String(r.year));
     const portfolio = rows.map((r) => r.totalPortfolioAssets);
     const insIn = rows.map((r) => r.insuranceInEstate);
     const insOut = rows.map((r) => r.insuranceOutOfEstate);
     const transfer = rows.map((r) => r.totalTransferCost);
+
+    const c = theme === "light" ? colorsLight : colors;
+    const palette = theme === "light" ? brandDataLight : brandData;
 
     const datasets: ({
       type: "bar" | "line";
@@ -78,7 +85,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         type: "bar",
         label: "Insurance In Estate",
         data: insIn,
-        backgroundColor: "#14b8a6",
+        backgroundColor: palette.emerald,
         stack: "stack",
         order: 1,
       },
@@ -86,7 +93,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         type: "bar",
         label: "Insurance Out Of Estate",
         data: insOut,
-        backgroundColor: "#22c55e",
+        backgroundColor: c.good,
         stack: "stack",
         order: 1,
       },
@@ -96,7 +103,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         type: "bar",
         label: "Total Portfolio Assets",
         data: portfolio,
-        backgroundColor: "#3b82f6",
+        backgroundColor: palette.indigo,
         stack: "stack",
         order: 1,
       });
@@ -105,8 +112,8 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
       type: "line",
       label: "Total Transfer Cost",
       data: transfer,
-      borderColor: "#ef4444",
-      backgroundColor: "#ef4444",
+      borderColor: c.crit,
+      backgroundColor: c.crit,
       borderWidth: 4,
       pointRadius: 3,
       tension: 0,
@@ -116,32 +123,37 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
     });
 
     return { labels, datasets };
-  }, [rows, showPortfolio]);
+  }, [rows, showPortfolio, theme]);
+
+  const chrome = chartChrome(theme);
 
   return (
     <div className="h-72 w-full">
       <Chart
         ref={chartRef}
         type="bar"
-        data={data}
+        data={chartData}
         options={{
           responsive: true,
           maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
           scales: {
-            x: { stacked: true, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+            x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
             y: {
               stacked: true,
               ticks: {
-                color: "#9ca3af",
+                color: chrome.tick,
                 callback: (v) => fmtCompact.format(Number(v)),
               },
-              grid: { color: "#1f2937" },
+              grid: { color: chrome.grid },
             },
           },
           plugins: {
-            legend: { labels: { color: "#e5e7eb" } },
+            legend: { labels: { color: chrome.legend } },
             tooltip: {
+              backgroundColor: chrome.tooltipBg,
+              titleColor: chrome.tooltipTitle,
+              bodyColor: chrome.tooltipBody,
               callbacks: {
                 label: (ctx) =>
                   `${ctx.dataset.label}: ${fmtFull.format(Number(ctx.parsed.y))}`,

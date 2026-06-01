@@ -36,12 +36,12 @@ export function QuickNavDropdown({
   }
 
   return (
-    <label className="inline-flex items-center gap-2 text-sm text-gray-300">
-      <span className="text-gray-300">Jump to</span>
+    <label className="inline-flex items-center gap-2 text-sm text-ink-2">
+      <span className="text-ink-2">Jump to</span>
       <select
         value={activeView}
         onChange={handleChange}
-        className="bg-gray-800 border border-gray-600 text-gray-100 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+        className="bg-card border border-hair text-ink rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
       >
         {OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>

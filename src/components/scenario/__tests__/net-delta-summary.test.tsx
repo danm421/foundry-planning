@@ -20,8 +20,8 @@ describe("NetDeltaSummary", () => {
     );
     const value = screen.getByTestId("net-delta-value");
     expect(value).toHaveTextContent("−$275k");
-    // Negative variant carries the red token
-    expect(value.className).toContain("c87a7a");
+    // Negative variant carries the crit (loss) token
+    expect(value.className).toContain("text-crit");
   });
 
   it("hides the sparkline when fewer than 2 data points are provided", () => {

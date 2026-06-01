@@ -17,19 +17,19 @@ const SUB_TYPE_LABELS: Record<string, string> = {
 };
 
 const SUB_TYPE_COLORS: Record<string, string> = {
-  "401k": "#16a34a",
-  "403b": "#16a34a",
-  "ira": "#2563eb",
-  "roth_ira": "#7c3aed",
-  "roth_401k": "#7c3aed",
-  "brokerage": "#facc15",
-  "hsa": "#0891b2",
-  "529": "#ea580c",
-  "checking": "#9ca3af",
-  "savings": "#9ca3af",
+  "401k":      "var(--color-data-emerald)",
+  "403b":      "var(--color-data-emerald)",
+  "ira":       "var(--color-data-indigo)",
+  "roth_ira":  "var(--color-data-violet)",
+  "roth_401k": "var(--color-data-violet)",
+  "brokerage": "var(--color-data-wheat)",
+  "hsa":       "var(--color-data-slate)",
+  "529":       "var(--color-data-terra)",
+  "checking":  "var(--color-data-rose)",
+  "savings":   "var(--color-data-rose)",
 };
 
-const FALLBACK_COLOR = "#99f6e4";
+const FALLBACK_COLOR = "var(--color-data-sage)";
 
 export function buildSavingsDatasets(
   years: ProjectionYear[],

@@ -197,7 +197,7 @@ describe("ToggleList", () => {
     const pill = screen.getByTestId("toggle-row-pill-g-1");
     expect(pill).toHaveTextContent("−$250k");
     expect(pill).toHaveTextContent("end-of-plan portfolio");
-    // Negative delta carries the red token
-    expect(pill.className).toContain("c87a7a");
+    // Negative delta carries the crit (loss) token
+    expect(pill.className).toContain("text-crit");
   });
 });

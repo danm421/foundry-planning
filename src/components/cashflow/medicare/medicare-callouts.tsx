@@ -40,10 +40,10 @@ export function MedicareCallouts({ years, clientData }: Props) {
       {callouts.map((c) => {
         const styles =
           c.severity === "alert"
-            ? "border-red-300 bg-red-50 text-red-900"
+            ? "border-crit bg-crit/10 text-crit"
             : c.severity === "warning"
-              ? "border-amber-300 bg-amber-50 text-amber-900"
-              : "border-blue-300 bg-blue-50 text-blue-900";
+              ? "border-warn bg-warn/10 text-warn"
+              : "border-data-indigo bg-data-indigo/10 text-ink";
         return (
           <div key={c.id} className={`rounded border ${styles} px-4 py-3 text-sm`}>
             <div className="font-medium">{c.title}</div>
