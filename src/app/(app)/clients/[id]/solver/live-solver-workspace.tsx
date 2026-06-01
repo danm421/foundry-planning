@@ -556,7 +556,7 @@ export function LiveSolverWorkspace({
               <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
                 Base Facts
               </div>
-              <div className="mt-3 flex items-start gap-6">
+              <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3">
                 <SolverPosGauge state={baseState} successPct={baseSuccess} />
                 <SolverEndingAssetsKpi value={baseEndingAssets} />
                 <SolverYearsFundedKpi value={baseYearsFunded} />
@@ -600,7 +600,7 @@ export function LiveSolverWorkspace({
                   </svg>
                 </div>
               </div>
-              <div className="mt-2.5 flex items-start gap-6">
+              <div className="mt-2.5 flex flex-wrap items-start gap-x-6 gap-y-3">
                 <SolverPosGauge state={workingState} successPct={workingSuccess} />
                 <SolverEndingAssetsKpi
                   value={workingEndingAssets}
