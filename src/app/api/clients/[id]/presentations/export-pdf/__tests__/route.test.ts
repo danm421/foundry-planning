@@ -13,6 +13,7 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => {
 // tests don't hit the real shared Upstash budget (nondeterministic once spent).
 vi.mock("@/lib/rate-limit", () => ({
   checkExportPdfRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  checkPreviewPdfRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
   rateLimitErrorResponse: vi.fn(),
 }));
 
@@ -274,5 +275,80 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     );
     const disposition = res.headers.get("content-disposition") ?? "";
     expect(disposition).toContain('filename="custom-report.pdf"');
+  });
+});
+
+describe("POST /api/clients/[id]/presentations/export-pdf — preview mode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const previewBody = {
+    scenarioId: null,
+    preview: true,
+    pages: [
+      { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
+    ],
+  };
+
+  it("uses the preview limiter, not the export limiter", async () => {
+    const { checkExportPdfRateLimit, checkPreviewPdfRateLimit } = await import(
+      "@/lib/rate-limit"
+    );
+    const { POST } = await import("../route");
+    await POST(makeReq(previewBody) as never, {
+      params: Promise.resolve({ id: "client-1" }),
+    });
+    expect(checkPreviewPdfRateLimit).toHaveBeenCalledWith("firm-1");
+    expect(checkExportPdfRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("returns an inline Content-Disposition for preview", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(makeReq(previewBody) as never, {
+      params: Promise.resolve({ id: "client-1" }),
+    });
+    expect(res.headers.get("content-disposition") ?? "").toMatch(/^inline/);
+  });
+
+  it("audits presentations.preview_pdf in preview mode", async () => {
+    const { recordAudit } = await import("@/lib/audit");
+    const { POST } = await import("../route");
+    await POST(makeReq(previewBody) as never, {
+      params: Promise.resolve({ id: "client-1" }),
+    });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "presentations.preview_pdf" }),
+    );
+  });
+
+  it("still audits presentations.export_pdf when preview is absent", async () => {
+    const { recordAudit } = await import("@/lib/audit");
+    const { POST } = await import("../route");
+    await POST(
+      makeReq({ scenarioId: null, pages: previewBody.pages }) as never,
+      { params: Promise.resolve({ id: "client-1" }) },
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "presentations.export_pdf" }),
+    );
+  });
+
+  it("calls rateLimitErrorResponse and skips audit when preview rate limit is denied", async () => {
+    const { checkPreviewPdfRateLimit, rateLimitErrorResponse } = await import(
+      "@/lib/rate-limit"
+    );
+    const { recordAudit } = await import("@/lib/audit");
+    const { POST } = await import("../route");
+    const rlResult = { allowed: false as const, reason: "exceeded" };
+    vi.mocked(checkPreviewPdfRateLimit).mockResolvedValueOnce(rlResult);
+    await POST(makeReq(previewBody) as never, {
+      params: Promise.resolve({ id: "client-1" }),
+    });
+    expect(rateLimitErrorResponse).toHaveBeenCalledWith(
+      rlResult,
+      "Too many previews. Please wait a moment and try again.",
+    );
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });

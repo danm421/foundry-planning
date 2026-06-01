@@ -153,6 +153,24 @@ export async function checkExportPdfRateLimit(
   return safeLimit(limiter, key);
 }
 
+// PDF preview (in-builder, interactive). Looser than export (advisors iterate
+// on options/scenarios), but still bounded — each preview is a real projection
+// render. Separate bucket so preview bursts never drain the export budget and
+// vice-versa. 20/min/firm.
+const getPreviewPdfLimiter = buildLimiter(20, "1 m", "rl:preview-pdf");
+
+/**
+ * Check whether `key` (firm id) may invoke the PDF preview path.
+ * Budget: 20 req/min/firm. Fail-closed like the other limiters.
+ */
+export async function checkPreviewPdfRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getPreviewPdfLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit";
 
 /**

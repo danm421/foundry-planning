@@ -10,6 +10,7 @@ import { resolveBranding } from "@/lib/comparison-pdf/branding";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
 import {
   checkExportPdfRateLimit,
+  checkPreviewPdfRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
 import {
@@ -85,6 +86,7 @@ const pageDescriptorSchema =
 const BodySchema = z.object({
   scenarioId: z.string().nullable().default(null),
   filename: z.string().trim().min(1).max(120).optional(),
+  preview: z.boolean().optional().default(false),
   pages: z.array(pageDescriptorSchema).min(1),
 });
 
@@ -107,14 +109,6 @@ export async function POST(
   try {
     const firmId = await requireOrgId();
 
-    const rl = await checkExportPdfRateLimit(firmId);
-    if (!rl.allowed) {
-      return rateLimitErrorResponse(
-        rl,
-        "Too many PDF exports. Please wait a moment and try again.",
-      );
-    }
-
     const { id } = await params;
 
     let json: unknown;
@@ -128,6 +122,19 @@ export async function POST(
       return NextResponse.json(
         { error: "Invalid request body", issues: parsed.error.issues },
         { status: 400 },
+      );
+    }
+
+    const isPreview = parsed.data.preview;
+    const rl = isPreview
+      ? await checkPreviewPdfRateLimit(firmId)
+      : await checkExportPdfRateLimit(firmId);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        isPreview
+          ? "Too many previews. Please wait a moment and try again."
+          : "Too many PDF exports. Please wait a moment and try again.",
       );
     }
 
@@ -355,7 +362,7 @@ export async function POST(
       : `${slugify(clientLastName) || "client"}-presentation.pdf`;
 
     await recordAudit({
-      action: "presentations.export_pdf",
+      action: isPreview ? "presentations.preview_pdf" : "presentations.export_pdf",
       resourceType: "client",
       resourceId: id,
       clientId: id,
@@ -370,11 +377,12 @@ export async function POST(
       },
     });
 
+    const safeFilename = filename.replace(/["\\\r\n]/g, "");
     return new NextResponse(stream as unknown as ReadableStream, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `${isPreview ? "inline" : "attachment"}; filename="${safeFilename}"`,
         "Cache-Control": "no-store",
       },
     });
