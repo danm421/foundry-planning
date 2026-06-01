@@ -1,0 +1,34 @@
+"use client";
+
+import type { ScenarioChangesOptions } from "@/lib/presentations/pages/scenario-changes/types";
+
+interface Props {
+  value: ScenarioChangesOptions;
+  onChange: (next: ScenarioChangesOptions) => void;
+}
+
+export function ScenarioChangesOptionsControl({ value, onChange }: Props) {
+  return (
+    <div className="space-y-3 text-sm text-ink-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Title</span>
+        <input
+          type="text"
+          aria-label="Page title"
+          className="w-full rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
+          value={value.title}
+          onChange={(e) => onChange({ ...value, title: e.target.value })}
+        />
+      </label>
+      <label className="flex items-center gap-2 hover:text-ink">
+        <input
+          type="checkbox"
+          className="accent-accent"
+          checked={value.showExplanations}
+          onChange={(e) => onChange({ ...value, showExplanations: e.target.checked })}
+        />
+        <span>Show &ldquo;Why it matters&rdquo; column</span>
+      </label>
+    </div>
+  );
+}
