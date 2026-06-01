@@ -574,17 +574,19 @@ export const monteCarloPage: PresentationPage<MonteCarloPageData, MonteCarloPage
 
 const EMPTY_ALLOCATION_DATA: AssetAllocationData = {
   subtitle: "No investment data available for this client.",
-  currentDonut: { kind: "donut", size: 150, rings: [], legend: [] },
-  benchmarkDonut: null,
+  leftName: "Current allocation",
+  rightName: null,
+  leftDonut: { kind: "donut", size: 150, rings: [], legend: [] },
+  rightDonut: null,
   tableRows: [],
-  driftRows: null,
+  diffRows: null,
   disclosure: "",
 };
 
 export const assetAllocationPage: PresentationPage<AssetAllocationData, AssetAllocationOptions> = {
   id: "assetAllocation",
   title: "Asset Allocation",
-  description: "Current allocation vs. the recommended portfolio, with drift.",
+  description: "Compare any two allocations — investment groups or model portfolios — side by side, with per-class difference.",
   category: "Assets",
   defaultOptions: ASSET_ALLOCATION_OPTIONS_DEFAULT,
   optionsSchema: assetAllocationOptionsSchema,
