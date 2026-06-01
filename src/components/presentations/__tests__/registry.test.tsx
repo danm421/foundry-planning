@@ -36,6 +36,7 @@ describe("registry — Cash Flow page", () => {
         "cashFlowIncome",
         "cashFlowNet",
         "cashFlowSavings",
+        "clientProfile",
         "cover",
         "estateFlow",
         "estateFlowChart",

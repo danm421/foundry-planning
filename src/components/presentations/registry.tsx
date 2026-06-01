@@ -29,6 +29,16 @@ import { CashflowPagePdf } from "./pages/cash-flow/page-pdf";
 import { CoverOptionsControl } from "./pages/cover/options-control";
 import { CoverPdf } from "./pages/cover/page-pdf";
 import { TocPdf, type TocSection } from "./pages/toc/page-pdf";
+import { buildClientProfileData } from "@/lib/presentations/pages/client-profile/view-model";
+import { clientProfileOptionsSchema } from "@/lib/presentations/pages/client-profile/options-schema";
+import { summarizeClientProfileOptions } from "@/lib/presentations/pages/client-profile/summarize-options";
+import { estimateClientProfilePageCount } from "@/lib/presentations/pages/client-profile/estimate-page-count";
+import {
+  CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT,
+  type ClientProfilePageData,
+  type ClientProfilePageOptions,
+} from "@/lib/presentations/pages/client-profile/types";
+import { ClientProfilePagePdf } from "./pages/client-profile/page-pdf";
 // Shared drill-down infrastructure used by every Cash Flow > * drill page.
 import { DrillPagePdf } from "./shared/drill-page-pdf";
 import { DrillOptionsControl } from "./shared/drill-options-control";
@@ -256,6 +266,27 @@ export const tocPage: PresentationPage<TocPageData, TocPageOptions> = {
   renderPdf: ({ documentSections }) => (
     <TocPdf sections={documentSections ?? []} />
   ),
+};
+
+export const clientProfilePage: PresentationPage<ClientProfilePageData, ClientProfilePageOptions> = {
+  id: "clientProfile",
+  title: "Client Profile",
+  description: "Household snapshot: principals, children, cash inflows, and current vs. retirement expenses.",
+  category: "Framing",
+  defaultOptions: CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: clientProfileOptionsSchema,
+  summarizeOptions: summarizeClientProfileOptions,
+  estimatePageCount: estimateClientProfilePageCount,
+  supportsScenarioOverride: true,
+  buildData: (ctx) =>
+    buildClientProfileData({
+      years: ctx.years,
+      clientData: ctx.clientData,
+      scenarioLabel: ctx.scenarioLabel,
+      clientName: ctx.clientName,
+      spouseName: ctx.spouseName,
+    }),
+  renderPdf: (input) => <ClientProfilePagePdf {...input} />,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -577,6 +608,7 @@ export const portfolioAnalysisPage: PresentationPage<PortfolioAnalysisData, Port
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
+  clientProfile: clientProfilePage,
   cashFlow: cashFlowPage,
   cashFlowIncome: cashFlowIncomePage,
   cashFlowExpenses: cashFlowExpensesPage,
