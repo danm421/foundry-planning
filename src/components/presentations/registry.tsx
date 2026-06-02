@@ -100,6 +100,16 @@ import {
 import { summarizeEstateSummaryOptions } from "@/lib/presentations/pages/estate-summary/summarize-options";
 import { estimateEstateSummaryPageCount } from "@/lib/presentations/pages/estate-summary/estimate-page-count";
 import { EstateSummaryPagePdf } from "./pages/estate-summary/page-pdf";
+import { buildTaxSummaryData } from "@/lib/presentations/pages/tax-summary/view-model";
+import type { TaxSummaryPageData } from "@/lib/presentations/pages/tax-summary/view-model";
+import {
+  taxSummaryOptionsSchema,
+  TAX_SUMMARY_OPTIONS_DEFAULT,
+  type TaxSummaryOptions,
+} from "@/lib/presentations/pages/tax-summary/options-schema";
+import { summarizeTaxSummaryOptions } from "@/lib/presentations/pages/tax-summary/summarize-options";
+import { estimateTaxSummaryPageCount } from "@/lib/presentations/pages/tax-summary/estimate-page-count";
+import { TaxSummaryPagePdf } from "./pages/tax-summary/page-pdf";
 import { MonteCarloPagePdf } from "./pages/monte-carlo/page-pdf";
 import { MonteCarloOptionsControl } from "./pages/monte-carlo/options-control";
 import {
@@ -718,6 +728,20 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
   renderPdf: (input) => <ScenarioChangesPagePdf {...input} />,
 };
 
+export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOptions> = {
+  id: "taxSummary",
+  title: "Tax Summary",
+  description: "One-page lifetime tax overview: federal/state/cap-gains totals, bracket exposure, Roth vs pre-tax at retirement, plus an adaptive planning-opportunities page.",
+  category: "Income Tax",
+  defaultOptions: TAX_SUMMARY_OPTIONS_DEFAULT,
+  optionsSchema: taxSummaryOptionsSchema,
+  summarizeOptions: summarizeTaxSummaryOptions,
+  estimatePageCount: () => estimateTaxSummaryPageCount(),
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildTaxSummaryData(ctx, options),
+  renderPdf: (input) => <TaxSummaryPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -730,6 +754,7 @@ export const PRESENTATION_PAGES = {
   cashFlowGrowth: cashFlowGrowthPage,
   cashFlowActivity: cashFlowActivityPage,
   cashFlowAssets: cashFlowAssetsPage,
+  taxSummary: taxSummaryPage,
   incomeTaxIncome: incomeTaxIncomePage,
   incomeTaxFederal: incomeTaxFederalPage,
   incomeTaxState: incomeTaxStatePage,
