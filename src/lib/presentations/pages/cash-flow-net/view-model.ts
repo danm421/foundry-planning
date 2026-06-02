@@ -151,8 +151,13 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
     cells.total = py.withdrawals.total;
     const boy = portfolioBoy(py);
     cells.boy = boy;
-    const rmdTotal = Object.values(py.accountLedgers ?? {}).reduce(
-      (sum, led) => sum + (led?.rmdAmount ?? 0),
+    // F82: the engine sets `rmdAmount` on EVERY rmd-enabled ledger, but
+    // entity-owned (non-IIP trust) accounts route their RMD to entity checking —
+    // not a household supplemental withdrawal. Scope the numerator to accounts
+    // that resolve to a household category (the same map the columns use), which
+    // excludes fully-entity-owned accounts and the trustsAndBusinesses bucket.
+    const rmdTotal = Object.entries(py.accountLedgers ?? {}).reduce(
+      (sum, [id, led]) => sum + (accountCategoryById[id] ? led?.rmdAmount ?? 0 : 0),
       0,
     );
     cells.wdPct = boy > 0 ? (py.withdrawals.total + rmdTotal) / boy : 0;

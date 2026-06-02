@@ -184,7 +184,7 @@ export function makeProjectionYears(): ProjectionYear[] {
       portfolioAssets: {
         taxable: {},
         cash: {},
-        retirement: {},
+        retirement: { ira: 920_000 },
         realEstate: {},
         business: {},
         lifeInsurance: {},
@@ -245,7 +245,7 @@ export function makeProjectionYears(): ProjectionYear[] {
       portfolioAssets: {
         taxable: {},
         cash: {},
-        retirement: {},
+        retirement: { ira: 900_000 },
         realEstate: {},
         business: {},
         lifeInsurance: {},
@@ -255,8 +255,11 @@ export function makeProjectionYears(): ProjectionYear[] {
         realEstateTotal: 0,
         businessTotal: 0,
         lifeInsuranceTotal: 0,
-        trustsAndBusinesses: {},
-        trustsAndBusinessesTotal: 0,
+        // Entity-owned (non-IIP trust) retirement account: appears in
+        // trustsAndBusinesses, NOT in any of the six household buckets. Its
+        // RMD must be excluded from the household RMD column (F81).
+        trustsAndBusinesses: { trustIra: 300_000 },
+        trustsAndBusinessesTotal: 300_000,
         accessibleTrustAssets: {},
         accessibleTrustAssetsTotal: 0,
         total: 1_310_000,
@@ -273,6 +276,13 @@ export function makeProjectionYears(): ProjectionYear[] {
         checking: makeLedger([
           { category: "rmd", label: "RMD from ira", amount: 60_000 },
         ]),
+        // Entity-owned retirement account: the engine sets `rmdAmount` on its
+        // ledger (projection.ts:1404) for ALL rmd-enabled accounts, but the RMD
+        // is routed to entity checking — NOT to householdRmdIncome/totalIncome.
+        trustIra: makeLedger(
+          [{ category: "rmd", label: "RMD from trustIra", amount: -25_000 }],
+          25_000,
+        ),
       },
     }),
 
@@ -306,7 +316,7 @@ export function makeProjectionYears(): ProjectionYear[] {
       portfolioAssets: {
         taxable: {},
         cash: {},
-        retirement: {},
+        retirement: { ira: 450_000 },
         realEstate: {},
         business: {},
         lifeInsurance: {},

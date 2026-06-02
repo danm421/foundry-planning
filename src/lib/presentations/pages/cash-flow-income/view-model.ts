@@ -81,7 +81,11 @@ export function buildIncomeDrillData(input: BuildIncomeDrillInput): DrillPageDat
   const rows: DrillRow[] = visibleYears.map((py) => {
     const cells: Record<string, number> = {};
     for (const s of activeSeries) cells[s.key] = s.pick(py);
-    cells.total = py.income.total;
+    // F80: use the canonical reconciling field (projection.ts:4593), which folds
+    // householdRmdIncome + householdNoteCashIn on top of income.total. The drill
+    // has no RMD/notes breakdown columns, so this Total intentionally exceeds the
+    // visible column sum — matching the main Cash Flow page's Total Income.
+    cells.total = py.totalIncome;
     return {
       year: py.year,
       ageClient: py.ages.client ?? null,
