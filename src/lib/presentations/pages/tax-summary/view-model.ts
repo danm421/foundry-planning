@@ -1,0 +1,124 @@
+import type { BuildDataContext } from "@/components/presentations/registry";
+import { buildTaxBracketRows } from "@/lib/tax/bracket";
+import type { TaxSummaryOptions } from "./options-schema";
+import {
+  computeLifetimeTotals,
+  computeBracketExposure,
+  buildTaxPaidBars,
+  computeRetirementComposition,
+  buildRothConversionRows,
+  buildIrmaaRows,
+  buildCapGainsEvents,
+  buildBracketTimeline,
+  type TaxYearBar,
+  type BracketExposure,
+  type RetirementComposition,
+  type RothConversionRow,
+  type IrmaaRow,
+  type CapGainsEventRow,
+  type BracketTimelinePoint,
+} from "./aggregate";
+import { buildTaxNarrative } from "./narrative";
+
+export interface TaxSummaryKpis {
+  lifetimeFederal: number;
+  lifetimeState: number;
+  lifetimeCapGains: number;
+  lifetimeTotal: number;
+  effectiveRate: number;
+}
+
+export interface TaxOpportunities {
+  rothConversions: RothConversionRow[];
+  irmaa: IrmaaRow[];
+  capGainsEvents: CapGainsEventRow[];
+  bracketTimeline: BracketTimelinePoint[]; // empty in flat mode
+}
+
+export interface TaxSummaryPageData {
+  title: string;
+  subtitle: string;
+  isEmpty: boolean;
+  bracketMode: boolean;
+  kpis: TaxSummaryKpis;
+  chart: TaxYearBar[];
+  bracket: BracketExposure | null;
+  composition: RetirementComposition | null;
+  narrative: string[];
+  opportunities: TaxOpportunities | null;
+}
+
+export function buildTaxSummaryData(
+  ctx: BuildDataContext,
+  options: TaxSummaryOptions,
+): TaxSummaryPageData {
+  const { years, clientData } = ctx;
+  const bracketMode = clientData.planSettings.taxEngineMode === "bracket";
+
+  const totals = computeLifetimeTotals(years);
+  const bars = buildTaxPaidBars(years);
+  const isEmpty = bars.length === 0;
+
+  const bracketRows = buildTaxBracketRows(years);
+  const bracket = bracketMode
+    ? computeBracketExposure(bracketRows, options.lowThreshold, options.highThreshold)
+    : null;
+
+  const composition = computeRetirementComposition(years, clientData);
+
+  const rothConversions = buildRothConversionRows(bracketRows);
+  const irmaa = buildIrmaaRows(years);
+  const capGainsEvents = buildCapGainsEvents(years);
+  const bracketTimeline = bracketMode ? buildBracketTimeline(bracketRows, options.lowThreshold) : [];
+
+  const hasOpportunities =
+    rothConversions.length > 0 ||
+    irmaa.length > 0 ||
+    capGainsEvents.length > 0 ||
+    (bracket != null && bracket.yearsBelowLow > 0);
+
+  const rothTotal = rothConversions.reduce((s, r) => s + r.gross, 0);
+  const rothYearsArr = rothConversions.map((r) => r.year);
+  const largestGain = capGainsEvents.reduce<CapGainsEventRow | null>(
+    (best, e) => (best == null || e.gain > best.gain ? e : best),
+    null,
+  );
+
+  const narrative = buildTaxNarrative({
+    lifetimeTotal: totals.lifetimeTotal,
+    effectiveRate: totals.effectiveRate,
+    bracketMode,
+    yearsBelowLow: bracket?.yearsBelowLow ?? 0,
+    yearsAboveHigh: bracket?.yearsAboveHigh ?? 0,
+    lowThreshold: options.lowThreshold,
+    highThreshold: options.highThreshold,
+    rothConversionTotal: rothTotal,
+    rothConversionYears: rothConversions.length,
+    rothFirstYear: rothYearsArr.length ? Math.min(...rothYearsArr) : null,
+    rothLastYear: rothYearsArr.length ? Math.max(...rothYearsArr) : null,
+    irmaaYears: irmaa.length,
+    irmaaTotal: irmaa.reduce((s, r) => s + r.surcharge, 0),
+    largestGain: largestGain ? { year: largestGain.year, gain: largestGain.gain, tax: largestGain.tax } : null,
+  });
+
+  const horizon = bars.length ? `${bars[0].year}–${bars[bars.length - 1].year}` : "—";
+
+  return {
+    title: "Tax Summary",
+    subtitle: `${ctx.scenarioLabel} · Lifetime ${horizon}`,
+    isEmpty,
+    bracketMode,
+    kpis: {
+      lifetimeFederal: totals.lifetimeFederal,
+      lifetimeState: totals.lifetimeState,
+      lifetimeCapGains: totals.lifetimeCapGains,
+      lifetimeTotal: totals.lifetimeTotal,
+      effectiveRate: totals.effectiveRate,
+    },
+    chart: bars,
+    bracket,
+    composition,
+    narrative,
+    opportunities: hasOpportunities ? { rothConversions, irmaa, capGainsEvents, bracketTimeline } : null,
+  };
+}
