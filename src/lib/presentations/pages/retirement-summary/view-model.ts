@@ -8,9 +8,33 @@ import {
   type PortfolioBar, type AssetsByType, type AssetsByTaxType, type LiquidThreePoints,
   type LivingExpenseCompare, type OtherRetirementExpenses, type RetirementIncomeRow, type AssetTxnRow,
 } from "./aggregate";
-import { buildSocialSecurity, type SsBreakdown } from "./social-security";
+import { buildSocialSecurity, type SsBreakdown, type SsClient } from "./social-security";
 import { lifetimeFunding, type FundingBreakdown } from "@/lib/analysis/retirement-funding";
 import { buildRetirementNarrative } from "./narrative";
+
+/** Lifetime funding sources in display order — the single source of truth for
+ *  both the dominant-source narrative signal and the page's funding bar. */
+export interface FundingSource { label: string; value: number; }
+
+const FUNDING_KEYS: Array<{ key: keyof FundingBreakdown; label: string }> = [
+  { key: "socialSecurity", label: "Social Security" },
+  { key: "otherIncome", label: "Ongoing income" },
+  { key: "rmds", label: "RMDs" },
+  { key: "withdrawalsCash", label: "Cash withdrawals" },
+  { key: "withdrawalsTaxable", label: "Taxable withdrawals" },
+  { key: "withdrawalsPreTax", label: "Pre-tax withdrawals" },
+  { key: "withdrawalsRoth", label: "Roth withdrawals" },
+];
+
+/** SS delay value: for a not-yet-claiming client, the lift from claiming at the
+ *  selected age vs. age 70. Null when there's nothing meaningful to compare. */
+function computeSsDelayGain(c: SsClient | null) {
+  if (!c || c.alreadyClaiming || c.ladder.length < 2) return null;
+  const sel = c.ladder.find((r) => r.selected);
+  const at70 = c.ladder.find((r) => r.age === 70);
+  if (!sel || !at70 || sel.age >= 70 || sel.monthly <= 0) return null;
+  return { name: c.name, fromAge: sel.age, toAge: 70, pctGain: at70.monthly / sel.monthly - 1 };
+}
 
 export interface RetirementSummaryKpis {
   monteCarlo: string;      // "92%" or "—"
@@ -33,6 +57,7 @@ export interface RetirementSummaryPageData {
   byType: AssetsByType;
   byTaxType: AssetsByTaxType;
   funding: FundingBreakdown;
+  fundingSources: FundingSource[];
   socialSecurity: SsBreakdown;
   living: LivingExpenseCompare;
   otherExpenses: OtherRetirementExpenses;
@@ -40,17 +65,6 @@ export interface RetirementSummaryPageData {
   transactions: AssetTxnRow[];
   narrative: string[];
 }
-
-// Funding-source labels for the dominant-source narrative signal.
-const FUNDING_LABELS: Array<{ key: keyof FundingBreakdown; label: string }> = [
-  { key: "socialSecurity", label: "Social Security" },
-  { key: "otherIncome", label: "Ongoing income" },
-  { key: "rmds", label: "RMDs" },
-  { key: "withdrawalsCash", label: "Cash withdrawals" },
-  { key: "withdrawalsTaxable", label: "Taxable withdrawals" },
-  { key: "withdrawalsPreTax", label: "Pre-tax withdrawals" },
-  { key: "withdrawalsRoth", label: "Roth withdrawals" },
-];
 
 export function buildRetirementSummaryData(
   ctx: BuildDataContext,
@@ -67,10 +81,8 @@ export function buildRetirementSummaryData(
   const byType = assetsByType(years, retYear);
   const byTaxType = assetsByTaxType(years, clientData, retYear);
   const funding = lifetimeFunding(years, clientData.accounts, retYear);
-  const socialSecurity = buildSocialSecurity(clientData, nowYear, {
-    client: ctx.clientName,
-    spouse: ctx.spouseName ?? "Spouse",
-  });
+  const fundingSources: FundingSource[] = FUNDING_KEYS.map((f) => ({ label: f.label, value: funding[f.key] as number }));
+  const socialSecurity = buildSocialSecurity(clientData, nowYear, ctx.clientName, ctx.spouseName ?? "Spouse");
   const living = livingExpensesTodayVsRetirement(years, clientData, retYear);
   const otherExpenses = otherRetirementExpenses(years, retYear);
   const income = incomeInRetirement(years, clientData, retYear);
@@ -79,24 +91,14 @@ export function buildRetirementSummaryData(
   const mcRate = ctx.monteCarlo?.summary.successRate ?? null;
 
   // Narrative inputs.
-  const dominant = FUNDING_LABELS
-    .map((f) => ({ label: f.label, value: funding[f.key] as number }))
-    .reduce<{ label: string; value: number } | null>((best, c) => (best == null || c.value > best.value ? c : best), null);
+  const dominant = fundingSources.reduce<FundingSource | null>(
+    (best, c) => (best == null || c.value > best.value ? c : best), null);
   const dominantSource =
     dominant && funding.totalSpending > 0
       ? { label: dominant.label, share: dominant.value / funding.totalSpending }
       : null;
 
-  // SS delay value: for a not-yet-claiming client, compare their selected age's
-  // benefit to the age-70 benefit.
-  const ssDelayGain = (() => {
-    const c = socialSecurity.client;
-    if (!c || c.alreadyClaiming || c.ladder.length < 2) return null;
-    const sel = c.ladder.find((r) => r.selected);
-    const at70 = c.ladder.find((r) => r.age === 70);
-    if (!sel || !at70 || sel.age >= 70 || sel.monthly <= 0) return null;
-    return { name: c.name, fromAge: sel.age, toAge: 70, pctGain: at70.monthly / sel.monthly - 1 };
-  })();
+  const ssDelayGain = computeSsDelayGain(socialSecurity.client);
 
   const rothShare = byTaxType.total > 0 ? byTaxType.roth / byTaxType.total : 0;
 
@@ -125,7 +127,7 @@ export function buildRetirementSummaryData(
       retirementYear: retYear,
       totalSpend: funding.totalSpending,
     },
-    liquid, bars, byType, byTaxType, funding, socialSecurity,
+    liquid, bars, byType, byTaxType, funding, fundingSources, socialSecurity,
     living, otherExpenses, income, transactions, narrative,
   };
 }

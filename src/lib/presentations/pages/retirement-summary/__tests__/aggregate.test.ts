@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
 import {
   fmtUsd, fmtPct, retirementYearOf, liquidThreePoints, portfolioBars,
-  assetsByType, assetsByTaxType, livingExpensesTodayVsRetirement,
+  assetsByTaxType, livingExpensesTodayVsRetirement,
 } from "../aggregate";
 
 function pa(over: Partial<ProjectionYear["portfolioAssets"]>) {

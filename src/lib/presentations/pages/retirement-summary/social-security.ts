@@ -6,6 +6,7 @@
 import type { ClientData, ClientInfo, Income } from "@/engine/types";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { birthYear } from "./aggregate";
 
 export interface SsLadderRow { age: number; monthly: number; selected: boolean; }
 
@@ -20,18 +21,6 @@ export interface SsClient {
 }
 
 export interface SsBreakdown { client: SsClient | null; spouse: SsClient | null; }
-
-/** Display names for the client/spouse columns. `ClientData` does not carry
- *  assembled names, so the view-model passes them from BuildDataContext. */
-export interface SsNames { client: string; spouse: string; }
-
-const DEFAULT_NAMES: SsNames = { client: "Client", spouse: "Spouse" };
-
-function birthYear(dob: string | null | undefined): number | null {
-  if (!dob) return null;
-  const y = Number(dob.slice(0, 4));
-  return Number.isFinite(y) ? y : null;
-}
 
 function buildOne(
   income: Income | undefined,
@@ -80,10 +69,13 @@ function buildOne(
   return { name, piaMonthly: pia, claimAge: selectedAge, colaPct, alreadyClaiming: false, receivedMonthly: null, ladder };
 }
 
+// `ClientData` does not carry assembled display names, so the view-model passes
+// them from BuildDataContext; the literals keep the unit tests' 2-arg call working.
 export function buildSocialSecurity(
   clientData: ClientData,
   nowYear: number,
-  names: SsNames = DEFAULT_NAMES,
+  clientName = "Client",
+  spouseName = "Spouse",
 ): SsBreakdown {
   const client = clientData.client;
   const incomes = clientData.incomes.filter((i) => i.type === "social_security");
@@ -91,7 +83,7 @@ export function buildSocialSecurity(
   const spouseSs = incomes.find((i) => i.owner === "spouse");
 
   return {
-    client: buildOne(clientSs, client.dateOfBirth, names.client, client, nowYear),
-    spouse: buildOne(spouseSs, client.spouseDob, names.spouse, client, nowYear),
+    client: buildOne(clientSs, client.dateOfBirth, clientName, client, nowYear),
+    spouse: buildOne(spouseSs, client.spouseDob, spouseName, client, nowYear),
   };
 }

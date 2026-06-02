@@ -83,15 +83,7 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
   }
 
   const f = data.funding;
-  const fundingRows: Array<{ label: string; value: number }> = [
-    { label: "Social Security", value: f.socialSecurity },
-    { label: "Ongoing income", value: f.otherIncome },
-    { label: "RMDs", value: f.rmds },
-    { label: "Cash withdrawals", value: f.withdrawalsCash },
-    { label: "Taxable withdrawals", value: f.withdrawalsTaxable },
-    { label: "Pre-tax withdrawals", value: f.withdrawalsPreTax },
-    { label: "Roth withdrawals", value: f.withdrawalsRoth },
-  ].filter((r) => r.value > 0);
+  const fundingRows = data.fundingSources.filter((r) => r.value > 0);
 
   return (
     <>
@@ -147,7 +139,7 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           <Text style={s.h4}>{`How retirement is funded (${data.kpis.retirementYear}–${data.bars[data.bars.length - 1]?.year ?? data.kpis.retirementYear})`}</Text>
           <SplitBarPdf segments={fundingRows.map((r, i) => ({
             label: r.label, value: r.value,
-            color: [T.steel, T.good, T.accentMuted, "#7a9cc6", T.accent, T.crit, "#2f6b4a"][i % 7],
+            color: [T.steel, T.good, T.accentMuted, "#7a9cc6", T.accent, T.crit, T.good][i % 7],
           }))} />
           <StatRow lbl="Total cost of retirement" val={fmtUsd(f.totalSpending)} />
           {f.shortfall > 0 ? <StatRow lbl="Shortfall (unfunded)" val={fmtUsd(f.shortfall)} /> : null}

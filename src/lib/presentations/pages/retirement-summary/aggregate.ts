@@ -12,7 +12,7 @@ export function fmtPct(fraction: number): string {
   return `${Math.round(fraction * 100)}%`;
 }
 
-function birthYear(dob: string | null | undefined): number | null {
+export function birthYear(dob: string | null | undefined): number | null {
   if (!dob) return null;
   const y = Number(dob.slice(0, 4));
   return Number.isFinite(y) ? y : null;
@@ -23,8 +23,10 @@ export function retirementYearOf(clientData: ClientData): number | null {
   return by == null ? null : by + clientData.client.retirementAge;
 }
 
-function yearAt(years: ProjectionYear[], year: number): ProjectionYear | null {
-  return years.find((y) => y.year === year) ?? null;
+/** The projection year at retirement, falling back to the first year. Shared by
+ *  the "at retirement" snapshot helpers below. */
+function retirementYearRow(years: ProjectionYear[], retirementYear: number): ProjectionYear | undefined {
+  return years.find((y) => y.year === retirementYear) ?? years[0];
 }
 
 // ── Three-point liquid ───────────────────────────────────────────────────────
@@ -32,7 +34,7 @@ export interface LiquidThreePoints { now: number; retirement: number; endOfLife:
 
 export function liquidThreePoints(years: ProjectionYear[], retirementYear: number): LiquidThreePoints {
   const now = years[0]?.portfolioAssets.liquidTotal ?? 0;
-  const ret = (yearAt(years, retirementYear) ?? years[0])?.portfolioAssets.liquidTotal ?? 0;
+  const ret = retirementYearRow(years, retirementYear)?.portfolioAssets.liquidTotal ?? 0;
   const eol = years[years.length - 1]?.portfolioAssets.liquidTotal ?? 0;
   return { now, retirement: ret, endOfLife: eol };
 }
@@ -53,7 +55,7 @@ export function portfolioBars(years: ProjectionYear[]): PortfolioBar[] {
 export interface AssetsByType { cash: number; taxable: number; retirement: number; total: number; }
 
 export function assetsByType(years: ProjectionYear[], retirementYear: number): AssetsByType {
-  const py = yearAt(years, retirementYear) ?? years[0];
+  const py = retirementYearRow(years, retirementYear);
   const cash = py?.portfolioAssets.cashTotal ?? 0;
   const taxable = py?.portfolioAssets.taxableTotal ?? 0;
   const retirement = py?.portfolioAssets.retirementTotal ?? 0;
@@ -70,7 +72,7 @@ export function assetsByTaxType(
   clientData: ClientData,
   retirementYear: number,
 ): AssetsByTaxType {
-  const py = yearAt(years, retirementYear) ?? years[0];
+  const py = retirementYearRow(years, retirementYear);
   let roth = 0, preTax = 0, taxable = 0;
   if (py) {
     for (const a of clientData.accounts) {
@@ -102,7 +104,7 @@ export function livingExpensesTodayVsRetirement(
   const today = clientData.expenses
     .filter((e) => e.type === "living")
     .reduce((s, e) => s + e.annualAmount, 0);
-  const py = yearAt(years, retirementYear) ?? years[0];
+  const py = retirementYearRow(years, retirementYear);
   const retirement = py?.expenses.living ?? 0;
   return { today, retirement };
 }
@@ -111,7 +113,7 @@ export function livingExpensesTodayVsRetirement(
 export interface OtherRetirementExpenses { insurance: number; realEstate: number; liabilities: number; other: number; }
 
 export function otherRetirementExpenses(years: ProjectionYear[], retirementYear: number): OtherRetirementExpenses {
-  const py = yearAt(years, retirementYear) ?? years[0];
+  const py = retirementYearRow(years, retirementYear);
   return {
     insurance: py?.expenses.insurance ?? 0,
     realEstate: py?.expenses.realEstate ?? 0,
@@ -130,7 +132,7 @@ export function incomeInRetirement(
   clientData: ClientData,
   retirementYear: number,
 ): RetirementIncomeRow[] {
-  const py = yearAt(years, retirementYear) ?? years[0];
+  const py = retirementYearRow(years, retirementYear);
   if (!py) return [];
   const bySource = py.income.bySource;
   const rows: RetirementIncomeRow[] = [];

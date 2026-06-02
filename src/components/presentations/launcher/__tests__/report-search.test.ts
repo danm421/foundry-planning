@@ -43,9 +43,8 @@ describe("searchReports", () => {
     expect(result.order).not.toContain("cashFlow");
   });
 
-  it("empty placeholder category yields no sections", () => {
-    expect(searchReports("", {}, [], "Retirement").sections).toHaveLength(0);
-    expect(searchReports("", {}, [], "Retirement").order).toHaveLength(0);
+  it("the Retirement category surfaces the retirement-summary report", () => {
+    expect(searchReports("", {}, [], "Retirement").order).toContain("retirementSummary");
   });
 
   it("the Comparison category surfaces the scenario-changes report", () => {
