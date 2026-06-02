@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { LEGACY_FM_CLIENT } from "@/engine/ownership";
-import { computeNeedOverTime } from "../need-over-time";
+import { computeNeedOverTime, hasSpouse } from "../need-over-time";
 import { marriedBase } from "./test-helpers";
 
 describe("computeNeedOverTime", () => {
@@ -101,5 +101,23 @@ describe("computeNeedOverTime", () => {
       done: rows.length,
       total: rows.length,
     });
+  });
+});
+
+describe("hasSpouse", () => {
+  it("is true for a married plan with a spouseDob", () => {
+    expect(hasSpouse(marriedBase())).toBe(true);
+  });
+
+  it("is false for a married plan with no spouseDob (gates /solve + /solve-mc)", () => {
+    const data = marriedBase();
+    delete data.client.spouseDob;
+    expect(hasSpouse(data)).toBe(false);
+  });
+
+  it("is false for a single filer regardless of spouseDob", () => {
+    const data = marriedBase();
+    data.client.filingStatus = "single";
+    expect(hasSpouse(data)).toBe(false);
   });
 });
