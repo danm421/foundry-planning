@@ -43,7 +43,7 @@ function ctxFor(years: ProjectionYear[], taxEngineMode: "flat" | "bracket"): Bui
 }
 
 describe("buildTaxSummaryData", () => {
-  it("builds KPIs, bars, bracket exposure, composition, and an opportunities page in bracket mode", () => {
+  it("builds KPIs, bars, bracket exposure, and composition in bracket mode", () => {
     const years = [makeYear(2030, 0.12, { conversionGross: 50_000, conversionTaxable: 45_000 }), makeYear(2031, 0.32, { irmaa: 1_500 })];
     const data = buildTaxSummaryData(ctxFor(years, "bracket"), TAX_SUMMARY_OPTIONS_DEFAULT);
 
@@ -56,18 +56,14 @@ describe("buildTaxSummaryData", () => {
     expect(data.bracket?.yearsAboveHigh).toBe(1);  // 0.32
     expect(data.composition?.roth).toBe(100_000);
     expect(data.composition?.preTax).toBe(400_000);
-    expect(data.opportunities).not.toBeNull();
-    expect(data.opportunities?.rothConversions).toHaveLength(1);
-    expect(data.opportunities?.irmaa).toHaveLength(1);
     expect(data.narrative[0]).toContain("%");
   });
 
-  it("suppresses bracket UI in flat mode and omits the opportunities page when no signals fire", () => {
+  it("suppresses bracket UI in flat mode", () => {
     const years = [makeYear(2030, 0.25), makeYear(2031, 0.25)];
     const data = buildTaxSummaryData(ctxFor(years, "flat"), TAX_SUMMARY_OPTIONS_DEFAULT);
     expect(data.bracketMode).toBe(false);
     expect(data.bracket).toBeNull();
-    expect(data.opportunities).toBeNull();
   });
 
   it("returns an empty state when no year has a taxResult", () => {

@@ -178,12 +178,3 @@ export function buildCapGainsEvents(years: ProjectionYear[]): CapGainsEventRow[]
   }
   return out;
 }
-
-export interface BracketTimelinePoint {
-  year: number;
-  rate: number;
-  isLow: boolean;
-}
-export function buildBracketTimeline(rows: TaxBracketRow[], lowThreshold: number): BracketTimelinePoint[] {
-  return rows.map((r) => ({ year: r.year, rate: r.marginalRate, isLow: r.marginalRate < lowThreshold }));
-}

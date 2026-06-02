@@ -9,14 +9,10 @@ import {
   buildRothConversionRows,
   buildIrmaaRows,
   buildCapGainsEvents,
-  buildBracketTimeline,
   type TaxYearBar,
   type BracketExposure,
   type RetirementComposition,
-  type RothConversionRow,
-  type IrmaaRow,
   type CapGainsEventRow,
-  type BracketTimelinePoint,
 } from "./aggregate";
 import { buildTaxNarrative } from "./narrative";
 
@@ -26,13 +22,6 @@ export interface TaxSummaryKpis {
   lifetimeCapGains: number;
   lifetimeTotal: number;
   effectiveRate: number;
-}
-
-export interface TaxOpportunities {
-  rothConversions: RothConversionRow[];
-  irmaa: IrmaaRow[];
-  capGainsEvents: CapGainsEventRow[];
-  bracketTimeline: BracketTimelinePoint[]; // empty in flat mode
 }
 
 export interface TaxSummaryPageData {
@@ -45,7 +34,6 @@ export interface TaxSummaryPageData {
   bracket: BracketExposure | null;
   composition: RetirementComposition | null;
   narrative: string[];
-  opportunities: TaxOpportunities | null;
 }
 
 export function buildTaxSummaryData(
@@ -66,16 +54,11 @@ export function buildTaxSummaryData(
 
   const composition = computeRetirementComposition(years, clientData);
 
+  // Opportunity rows feed the page-1 takeaways narrative below; they are no
+  // longer rendered as a standalone table page.
   const rothConversions = buildRothConversionRows(bracketRows);
   const irmaa = buildIrmaaRows(years);
   const capGainsEvents = buildCapGainsEvents(years);
-  const bracketTimeline = bracketMode ? buildBracketTimeline(bracketRows, options.lowThreshold) : [];
-
-  const hasOpportunities =
-    rothConversions.length > 0 ||
-    irmaa.length > 0 ||
-    capGainsEvents.length > 0 ||
-    (bracket != null && bracket.yearsBelowLow > 0);
 
   const rothTotal = rothConversions.reduce((s, r) => s + r.gross, 0);
   const irmaaTotal = irmaa.reduce((s, r) => s + r.surcharge, 0);
@@ -123,6 +106,5 @@ export function buildTaxSummaryData(
     bracket,
     composition,
     narrative,
-    opportunities: hasOpportunities ? { rothConversions, irmaa, capGainsEvents, bracketTimeline } : null,
   };
 }

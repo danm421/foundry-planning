@@ -731,7 +731,7 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
 export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOptions> = {
   id: "taxSummary",
   title: "Tax Summary",
-  description: "One-page lifetime tax overview: federal/state/cap-gains totals, bracket exposure, Roth vs pre-tax at retirement, plus an adaptive planning-opportunities page.",
+  description: "One-page lifetime tax overview: federal/state/cap-gains totals, bracket exposure, and Roth vs pre-tax at retirement.",
   category: "Income Tax",
   defaultOptions: TAX_SUMMARY_OPTIONS_DEFAULT,
   optionsSchema: taxSummaryOptionsSchema,

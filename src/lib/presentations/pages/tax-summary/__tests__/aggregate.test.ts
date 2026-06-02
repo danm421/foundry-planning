@@ -17,7 +17,6 @@ import {
   buildRothConversionRows,
   buildIrmaaRows,
   buildCapGainsEvents,
-  buildBracketTimeline,
   LARGE_GAIN_THRESHOLD,
   type RothConversionRow,
   type IrmaaRow,
@@ -207,18 +206,6 @@ describe("buildCapGainsEvents", () => {
   });
 });
 
-describe("buildBracketTimeline", () => {
-  it("maps each row to year + rate + low-bracket flag", () => {
-    const rows = [
-      { year: 2030, marginalRate: 0.12 },
-      { year: 2031, marginalRate: 0.24 },
-    ] as TaxBracketRow[];
-    expect(buildBracketTimeline(rows, 0.22)).toEqual([
-      { year: 2030, rate: 0.12, isLow: true },
-      { year: 2031, rate: 0.24, isLow: false },
-    ]);
-  });
-});
 import { summarizeTaxSummaryOptions } from "../summarize-options";
 import { estimateTaxSummaryPageCount } from "../estimate-page-count";
 

@@ -28,6 +28,7 @@ describe("registry — Cash Flow page", () => {
     expect(Object.keys(PRESENTATION_PAGES).sort()).toEqual(
       [
         "assetAllocation",
+        "balanceSheet",
         "cashFlow",
         "cashFlowActivity",
         "cashFlowAssets",
@@ -38,6 +39,7 @@ describe("registry — Cash Flow page", () => {
         "cashFlowSavings",
         "clientProfile",
         "cover",
+        "entitiesBalanceSheet",
         "estateFlow",
         "estateFlowChart",
         "estateGiftTax",
@@ -55,6 +57,7 @@ describe("registry — Cash Flow page", () => {
         "monteCarlo",
         "portfolioAnalysis",
         "scenarioChanges",
+        "taxSummary",
         "toc",
       ].sort(),
     );
