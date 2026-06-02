@@ -156,6 +156,7 @@ import {
 } from "@/lib/presentations/pages/portfolio-analysis/view-model";
 import { buildScatterSpec } from "@/lib/presentations/charts/scatter-chart-spec";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
+import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type {
   ScenarioChangesContext,
   ScenarioChangesPageData,
@@ -221,6 +222,9 @@ export interface BuildDataContext {
   monteCarlo?: MonteCarloReportPayload | null;
   /** Present only when a deck includes an investment page; loaded conditionally. */
   investments?: InvestmentsBundle;
+  /** Present only when the deck includes the Life Insurance Summary page;
+   *  loaded conditionally in the export route. */
+  lifeInsurance?: LifeInsuranceInventory;
   /** Present only when the deck includes the Scenario Changes page and the
    *  active ref is a live scenario; absent for base/snapshot decks. */
   scenarioChanges?: ScenarioChangesContext;
