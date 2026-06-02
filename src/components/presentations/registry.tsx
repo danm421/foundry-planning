@@ -115,6 +115,17 @@ import { type RetirementSummaryOptions, retirementSummaryOptionsSchema, RETIREME
 import { summarizeRetirementSummaryOptions } from "@/lib/presentations/pages/retirement-summary/summarize-options";
 import { estimateRetirementSummaryPageCount } from "@/lib/presentations/pages/retirement-summary/estimate-page-count";
 import { RetirementSummaryPagePdf } from "./pages/retirement-summary/page-pdf";
+import { buildLifeInsuranceSummaryData } from "@/lib/presentations/pages/life-insurance-summary/view-model";
+import type { LifeInsuranceSummaryPageData } from "@/lib/presentations/pages/life-insurance-summary/view-model";
+import {
+  lifeInsuranceSummaryOptionsSchema,
+  LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT,
+  type LifeInsuranceSummaryOptions,
+} from "@/lib/presentations/pages/life-insurance-summary/options-schema";
+import { summarizeLifeInsuranceSummaryOptions } from "@/lib/presentations/pages/life-insurance-summary/summarize-options";
+import { estimateLifeInsuranceSummaryPageCount } from "@/lib/presentations/pages/life-insurance-summary/estimate-page-count";
+import { LifeInsuranceSummaryPagePdf } from "./pages/life-insurance-summary/page-pdf";
+import { LifeInsuranceSummaryOptionsControl } from "./pages/life-insurance-summary/options-control";
 import { MonteCarloPagePdf } from "./pages/monte-carlo/page-pdf";
 import { MonteCarloOptionsControl } from "./pages/monte-carlo/options-control";
 import {
@@ -156,6 +167,7 @@ import {
 } from "@/lib/presentations/pages/portfolio-analysis/view-model";
 import { buildScatterSpec } from "@/lib/presentations/charts/scatter-chart-spec";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
+import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type {
   ScenarioChangesContext,
   ScenarioChangesPageData,
@@ -190,6 +202,7 @@ export const CATEGORY_ORDER = [
   "Cash Flow",
   "Income Tax",
   "Assets",
+  "Insurance",
   "Estate",
   "Monte Carlo",
   "Comparison",
@@ -221,6 +234,9 @@ export interface BuildDataContext {
   monteCarlo?: MonteCarloReportPayload | null;
   /** Present only when a deck includes an investment page; loaded conditionally. */
   investments?: InvestmentsBundle;
+  /** Present only when the deck includes the Life Insurance Summary page;
+   *  loaded conditionally in the export route. */
+  lifeInsurance?: LifeInsuranceInventory;
   /** Present only when the deck includes the Scenario Changes page and the
    *  active ref is a live scenario; absent for base/snapshot decks. */
   scenarioChanges?: ScenarioChangesContext;
@@ -759,6 +775,25 @@ export const retirementSummaryPage: PresentationPage<RetirementSummaryPageData, 
   renderPdf: (input) => <RetirementSummaryPagePdf {...input} />,
 };
 
+export const lifeInsuranceSummaryPage: PresentationPage<
+  LifeInsuranceSummaryPageData,
+  LifeInsuranceSummaryOptions
+> = {
+  id: "lifeInsuranceSummary",
+  title: "Life Insurance Summary",
+  description:
+    "Two-page life insurance overview: policy inventory + beneficiaries, then Monte-Carlo coverage-vs-need and the need-over-time chart.",
+  category: "Insurance",
+  defaultOptions: LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT,
+  optionsSchema: lifeInsuranceSummaryOptionsSchema,
+  summarizeOptions: summarizeLifeInsuranceSummaryOptions,
+  estimatePageCount: () => estimateLifeInsuranceSummaryPageCount(),
+  OptionsControl: LifeInsuranceSummaryOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildLifeInsuranceSummaryData(ctx, options),
+  renderPdf: (input) => <LifeInsuranceSummaryPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -793,6 +828,7 @@ export const PRESENTATION_PAGES = {
   balanceSheet: balanceSheetPage,
   entitiesBalanceSheet: entitiesBalanceSheetPage,
   scenarioChanges: scenarioChangesPage,
+  lifeInsuranceSummary: lifeInsuranceSummaryPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;

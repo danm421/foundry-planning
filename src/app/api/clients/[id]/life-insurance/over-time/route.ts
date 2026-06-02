@@ -95,7 +95,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       };
       try {
         const [{ effectiveTree }, proceeds] = await Promise.all([
-          loadEffectiveTree(clientId, firmId, "base", {}),
+          loadEffectiveTree(clientId, firmId, assumptions.scenarioRef, {}),
           loadLiProceedsGrowth(
             firmId,
             assumptions.modelPortfolioId,

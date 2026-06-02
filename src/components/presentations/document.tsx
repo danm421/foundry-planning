@@ -6,6 +6,7 @@ import { ensureFontsRegistered } from "./shared/fonts";
 import type { TocSection } from "./pages/toc/page-pdf";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
+import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 
 export interface PageScenarioBundle {
@@ -37,6 +38,8 @@ interface PresentationDocumentProps {
   topScenarioKey: string;
   /** Present only when the deck includes an investment page; scenario-independent. */
   investments?: InvestmentsBundle;
+  /** Present only when the deck includes the Life Insurance Summary page. */
+  lifeInsurance?: LifeInsuranceInventory;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {
@@ -86,6 +89,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             reportDate: props.reportDate,
             monteCarlo: bundle.monteCarlo ?? null,
             investments: props.investments,
+            lifeInsurance: props.lifeInsurance,
             scenarioChanges: bundle.scenarioChanges,
           },
           options as never,
