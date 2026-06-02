@@ -111,4 +111,15 @@ describe("buildHouseholdColumns", () => {
     const biz = withBiz.assetCategories.find((c) => c.key === "business")!;
     expect(biz.rows.find((r) => r.name === "Smith LLC")).toMatchObject({ client: 1_000_000, total: 1_000_000 });
   });
+
+  it("excludes a business owned entirely by an entity from the household table", () => {
+    const trustOwnedBiz = buildHouseholdColumns({
+      ...base,
+      entities: [
+        ...base.entities,
+        { id: "llc-t", name: "Trust-Owned LLC", entityType: "llc", value: 1_000_000, valueGrowthRate: 0, owners: [{ kind: "entity", entityId: "t1", percent: 1 }] },
+      ],
+    });
+    expect(trustOwnedBiz.assetCategories.find((c) => c.key === "business")).toBeUndefined();
+  });
 });

@@ -188,6 +188,9 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     const familyOwners = (e.owners ?? [])
       .filter((o) => o.kind === "family_member")
       .map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent }));
+    // A business with explicit owners but no family-member share belongs to the
+    // owning entity (shown in the By-Entity tab), not the household table.
+    if (e.owners != null && familyOwners.length === 0) continue;
     const cols = splitToColumns(
       attributeEntityFlatValue({ id: e.id, value: flat, owners: familyOwners.length ? familyOwners : undefined }, ctx),
     );
