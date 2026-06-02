@@ -11,6 +11,8 @@ import {
   type TaxYearBar,
 } from "../aggregate";
 import type { TaxBracketRow } from "@/lib/tax/bracket";
+import { computeRetirementComposition, type RetirementComposition } from "../aggregate";
+import type { ClientData } from "@/engine/types";
 
 function row(year: number, marginalRate: number): TaxBracketRow {
   return { year, marginalRate } as TaxBracketRow;
@@ -94,6 +96,56 @@ describe("buildTaxPaidBars", () => {
   it("skips years with no taxResult", () => {
     const bars = buildTaxPaidBars([{ year: 2040 } as ProjectionYear]);
     expect(bars).toHaveLength(0);
+  });
+});
+
+function projectionYear(year: number, ledgers: Record<string, { endingValue: number; rothValueEoY?: number }>): ProjectionYear {
+  return { year, accountLedgers: ledgers } as unknown as ProjectionYear;
+}
+
+function clientDataWith(accounts: Array<{ id: string; category: string; subType: string }>): ClientData {
+  return {
+    client: { dateOfBirth: "1965-04-10", retirementAge: 65 }, // retires 2030
+    accounts,
+  } as unknown as ClientData;
+}
+
+describe("computeRetirementComposition", () => {
+  it("splits retirement into Roth (roth_ira full + 401k rothValueEoY) vs pre-tax, plus taxable", () => {
+    const years = [
+      projectionYear(2030, {
+        ira: { endingValue: 500_000 },                    // traditional → pre-tax
+        roth: { endingValue: 200_000 },                   // roth_ira → all Roth
+        k401: { endingValue: 300_000, rothValueEoY: 90_000 }, // 401k: 90k Roth / 210k pre-tax
+        brk: { endingValue: 400_000 },                    // taxable
+      }),
+    ];
+    const cd = clientDataWith([
+      { id: "ira", category: "retirement", subType: "traditional_ira" },
+      { id: "roth", category: "retirement", subType: "roth_ira" },
+      { id: "k401", category: "retirement", subType: "401k" },
+      { id: "brk", category: "taxable", subType: "brokerage" },
+    ]);
+    const c = computeRetirementComposition(years, cd) as RetirementComposition;
+    expect(c.year).toBe(2030);
+    expect(c.roth).toBe(290_000);   // 200k + 90k
+    expect(c.preTax).toBe(710_000); // 500k + 210k
+    expect(c.taxable).toBe(400_000);
+    expect(c.total).toBe(1_400_000);
+  });
+
+  it("falls back to the first projection year when the retirement year is outside the projection", () => {
+    const years = [projectionYear(2035, { ira: { endingValue: 100_000 } })];
+    const cd = clientDataWith([{ id: "ira", category: "retirement", subType: "traditional_ira" }]);
+    const c = computeRetirementComposition(years, cd) as RetirementComposition;
+    expect(c.year).toBe(2035);
+    expect(c.preTax).toBe(100_000);
+  });
+
+  it("returns null when the client has no date of birth", () => {
+    const years = [projectionYear(2030, {})];
+    const cd = { client: { dateOfBirth: null, retirementAge: 65 }, accounts: [] } as unknown as ClientData;
+    expect(computeRetirementComposition(years, cd)).toBeNull();
   });
 });
 

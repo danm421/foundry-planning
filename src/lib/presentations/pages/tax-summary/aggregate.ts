@@ -85,3 +85,50 @@ export function buildTaxPaidBars(years: ProjectionYear[]): TaxYearBar[] {
   }
   return bars;
 }
+
+// ── Account composition at retirement ───────────────────────────────────────
+export interface RetirementComposition {
+  year: number;
+  roth: number;
+  preTax: number;
+  taxable: number;
+  total: number;
+}
+
+function birthYear(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const y = Number(dob.slice(0, 4));
+  return Number.isFinite(y) ? y : null;
+}
+
+/** Roth/pre-tax/taxable snapshot at the primary client's retirement year. Roth
+ *  includes full roth_ira balances + the designated-Roth sub-portion inside
+ *  401k/403b (`rothValueEoY`). Accounts created mid-projection that are absent
+ *  from `clientData.accounts` are not counted (accepted; see spec). */
+export function computeRetirementComposition(
+  years: ProjectionYear[],
+  clientData: ClientData,
+): RetirementComposition | null {
+  const by = birthYear(clientData.client.dateOfBirth);
+  if (by == null) return null;
+  const retYear = by + clientData.client.retirementAge;
+  const py = years.find((y) => y.year === retYear) ?? years[0];
+  if (!py) return null;
+
+  let roth = 0, preTax = 0, taxable = 0;
+  for (const a of clientData.accounts) {
+    const led = py.accountLedgers[a.id];
+    const ev = led?.endingValue ?? 0;
+    if (a.category === "retirement") {
+      const rothPortion =
+        a.subType === "roth_ira" ? ev
+        : a.subType === "401k" || a.subType === "403b" ? (led?.rothValueEoY ?? 0)
+        : 0;
+      roth += rothPortion;
+      preTax += ev - rothPortion;
+    } else if (a.category === "taxable") {
+      taxable += ev;
+    }
+  }
+  return { year: py.year, roth, preTax, taxable, total: roth + preTax + taxable };
+}
