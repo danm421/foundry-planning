@@ -110,6 +110,11 @@ import {
 import { summarizeTaxSummaryOptions } from "@/lib/presentations/pages/tax-summary/summarize-options";
 import { estimateTaxSummaryPageCount } from "@/lib/presentations/pages/tax-summary/estimate-page-count";
 import { TaxSummaryPagePdf } from "./pages/tax-summary/page-pdf";
+import { buildRetirementSummaryData, type RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
+import { type RetirementSummaryOptions, retirementSummaryOptionsSchema, RETIREMENT_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/retirement-summary/options-schema";
+import { summarizeRetirementSummaryOptions } from "@/lib/presentations/pages/retirement-summary/summarize-options";
+import { estimateRetirementSummaryPageCount } from "@/lib/presentations/pages/retirement-summary/estimate-page-count";
+import { RetirementSummaryPagePdf } from "./pages/retirement-summary/page-pdf";
 import { MonteCarloPagePdf } from "./pages/monte-carlo/page-pdf";
 import { MonteCarloOptionsControl } from "./pages/monte-carlo/options-control";
 import {
@@ -742,6 +747,20 @@ export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOpti
   renderPdf: (input) => <TaxSummaryPagePdf {...input} />,
 };
 
+export const retirementSummaryPage: PresentationPage<RetirementSummaryPageData, RetirementSummaryOptions> = {
+  id: "retirementSummary",
+  title: "Retirement Summary",
+  description: "Two-page retirement overview: asset trajectory & Monte Carlo, Social Security 62–70, spending, and lifetime funding sources.",
+  category: "Retirement",
+  defaultOptions: RETIREMENT_SUMMARY_OPTIONS_DEFAULT,
+  optionsSchema: retirementSummaryOptionsSchema,
+  summarizeOptions: summarizeRetirementSummaryOptions,
+  estimatePageCount: () => estimateRetirementSummaryPageCount(),
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildRetirementSummaryData(ctx, options),
+  renderPdf: (input) => <RetirementSummaryPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -755,6 +774,7 @@ export const PRESENTATION_PAGES = {
   cashFlowActivity: cashFlowActivityPage,
   cashFlowAssets: cashFlowAssetsPage,
   taxSummary: taxSummaryPage,
+  retirementSummary: retirementSummaryPage,
   incomeTaxIncome: incomeTaxIncomePage,
   incomeTaxFederal: incomeTaxFederalPage,
   incomeTaxState: incomeTaxStatePage,
