@@ -41,7 +41,16 @@ export function buildDrillChartSpec(
 
   const xDomain = years;
   const xExtent = extent(years) as [number, number];
-  const xTicks = xExtent[0] === undefined ? [] : ticks(xExtent[0], xExtent[1], 6);
+  // F76: the renderer places ticks on a scaleBand over integer years, so any
+  // fractional tick d3 emits for short ranges (e.g. 2026.5 from a 3-year span)
+  // resolves to undefined → pinned to the leftmost bar. Keep only integer years
+  // that exist in the domain.
+  const xTicks =
+    xExtent[0] === undefined
+      ? []
+      : ticks(xExtent[0], xExtent[1], 6).filter(
+          (t) => Number.isInteger(t) && years.includes(t),
+        );
 
   const specStacks: ChartSpec["stacks"] = stacks.map((s) => ({
     seriesId: s.seriesId,
