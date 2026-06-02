@@ -16,6 +16,10 @@
 import { NextRequest } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
+import {
+  checkProjectionRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { computeNeedOverTime } from "@/lib/life-insurance/need-over-time";
@@ -51,6 +55,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       });
     }
     throw err;
+  }
+
+  // Rate-limit before opening the stream so a denial is a normal 429/503, not a
+  // mid-stream error event. This route runs one deterministic projection per
+  // plan year (40–60 engine runs), so it shares the projection budget like the
+  // sibling solve / solve-mc routes (F6).
+  const rl = await checkProjectionRateLimit(firmId);
+  if (!rl.allowed) {
+    return rateLimitErrorResponse(
+      rl,
+      "Too many solver requests. Please wait a moment and try again.",
+    );
   }
 
   const inFirm = await findClientInFirm(clientId, firmId);

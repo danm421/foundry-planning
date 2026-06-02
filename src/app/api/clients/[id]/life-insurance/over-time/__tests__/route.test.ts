@@ -1,0 +1,94 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return { ...actual, requireOrgId: vi.fn() };
+});
+vi.mock("@/lib/rate-limit", () => ({
+  checkProjectionRateLimit: vi.fn(),
+  rateLimitErrorResponse: vi.fn(
+    () =>
+      new Response(JSON.stringify({ error: "Too many requests" }), {
+        status: 429,
+        headers: { "content-type": "application/json" },
+      }),
+  ),
+}));
+vi.mock("@/lib/db-scoping", () => ({ findClientInFirm: vi.fn() }));
+vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
+vi.mock("@/lib/life-insurance/load-li-portfolio", () => ({
+  loadLiProceedsGrowth: vi.fn(),
+  DEFAULT_LI_GROWTH: 0.05,
+}));
+vi.mock("@/lib/life-insurance/need-over-time", () => ({
+  computeNeedOverTime: vi.fn(() => []),
+}));
+
+import { POST } from "../route";
+import { requireOrgId } from "@/lib/db-helpers";
+import { checkProjectionRateLimit } from "@/lib/rate-limit";
+import { findClientInFirm } from "@/lib/db-scoping";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadLiProceedsGrowth } from "@/lib/life-insurance/load-li-portfolio";
+
+const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
+const FIRM_ID = "00000000-0000-4000-8000-000000000099";
+
+const VALID_BODY = {
+  deathYear: 2030,
+  modelPortfolioId: null,
+  leaveToHeirsAmount: 1000000,
+  livingExpenseAtDeath: 80000,
+  payoffLiabilityIds: [],
+  mcTargetScore: 0.8,
+};
+
+function makeRequest(body: unknown) {
+  return new Request(
+    `http://localhost/api/clients/${CLIENT_ID}/life-insurance/over-time`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  ) as unknown as import("next/server").NextRequest;
+}
+
+const ctx = { params: Promise.resolve({ id: CLIENT_ID }) };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
+  vi.mocked(findClientInFirm).mockResolvedValue({ id: CLIENT_ID } as never);
+  vi.mocked(loadEffectiveTree).mockResolvedValue({
+    effectiveTree: { client: { filingStatus: "single" } },
+    warnings: [],
+  } as never);
+  vi.mocked(loadLiProceedsGrowth).mockResolvedValue({
+    rate: 0.05,
+    realization: {},
+    mix: [],
+  } as never);
+});
+
+describe("POST /api/clients/[id]/life-insurance/over-time — rate limit (F6)", () => {
+  it("returns the rate-limit denial and never touches the client when over budget", async () => {
+    vi.mocked(checkProjectionRateLimit).mockResolvedValue({
+      allowed: false,
+    } as never);
+    const res = await POST(makeRequest(VALID_BODY), ctx as never);
+    expect(res.status).toBe(429);
+    // The guard must gate BEFORE the work — no client lookup, no tree load.
+    expect(findClientInFirm).not.toHaveBeenCalled();
+    expect(loadEffectiveTree).not.toHaveBeenCalled();
+  });
+
+  it("consults the projection rate limit with the firm id and proceeds when allowed", async () => {
+    vi.mocked(checkProjectionRateLimit).mockResolvedValue({
+      allowed: true,
+    } as never);
+    const res = await POST(makeRequest(VALID_BODY), ctx as never);
+    expect(checkProjectionRateLimit).toHaveBeenCalledWith(FIRM_ID);
+    expect(res.status).toBe(200);
+  });
+});
