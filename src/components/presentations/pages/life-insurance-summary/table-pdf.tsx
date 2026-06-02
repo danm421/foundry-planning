@@ -10,7 +10,6 @@ const s = StyleSheet.create({
   head: { backgroundColor: T.paper, borderBottomWidth: 1 },
   hCell: { fontSize: 6, fontWeight: 700, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.3 },
   cell: { fontSize: 8, color: T.ink },
-  right: { textAlign: "right" },
   cName: { flex: 2.2 },
   cType: { flex: 1.1 },
   cOwner: { flex: 1 },

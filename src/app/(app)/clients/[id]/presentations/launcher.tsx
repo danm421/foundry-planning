@@ -227,17 +227,16 @@ export function PresentationsLauncher(props: Props) {
     const liPages = pages.filter((p) => p.pageId === "lifeInsuranceSummary");
     if (liPages.length === 0) return pages;
 
+    // undefined override = inherit the deck scenario; null = base.
+    const resolveRef = (override: string | null | undefined) =>
+      override === undefined ? (resolvedScenarioId ?? "base") : (override ?? "base");
+
     setPresolving(true);
     try {
       const solvedByScenario = new Map<string, LiSolved>();
       for (const page of liPages) {
         const opts = page.options as LifeInsuranceSummaryOptions;
-        const scenarioRef =
-          page.scenarioOverride === undefined
-            ? (resolvedScenarioId ?? "base")
-            : page.scenarioOverride === null
-              ? "base"
-              : page.scenarioOverride;
+        const scenarioRef = resolveRef(page.scenarioOverride);
 
         if (!solvedByScenario.has(scenarioRef)) {
           const portfolioLabel =
@@ -262,13 +261,7 @@ export function PresentationsLauncher(props: Props) {
 
       return pages.map((p) => {
         if (p.pageId !== "lifeInsuranceSummary") return p;
-        const scenarioRef =
-          p.scenarioOverride === undefined
-            ? (resolvedScenarioId ?? "base")
-            : p.scenarioOverride === null
-              ? "base"
-              : p.scenarioOverride;
-        const solved = solvedByScenario.get(scenarioRef) ?? null;
+        const solved = solvedByScenario.get(resolveRef(p.scenarioOverride)) ?? null;
         return { ...p, options: { ...(p.options as object), solved } };
       });
     } finally {
