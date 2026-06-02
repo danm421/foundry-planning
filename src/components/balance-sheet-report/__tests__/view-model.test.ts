@@ -302,7 +302,7 @@ describe("buildViewModel (entities view)", () => {
     expect(vm.entityGroups?.map((g) => g.entityId)).toEqual(["trust-1"]);
   });
 
-  it("rolls a fully-trust-owned business into the trust's card and drops the business's card", () => {
+  it("gives a fully-trust-owned business its own full-value card instead of rolling it into the trust", () => {
     const vm = buildViewModel({
       ...baseInput,
       entities: [
@@ -317,19 +317,18 @@ describe("buildViewModel (entities view)", () => {
       ],
       view: "entities",
     });
-    // Business card disappears; its full value rolls into the trust card.
-    expect(vm.entityGroups?.map((g) => g.entityId)).toEqual(["trust-1"]);
-    const trust = vm.entityGroups![0];
-    const rollup = trust.assetRows.find((r) => r.accountId === "llc-1");
-    expect(rollup).toBeDefined();
-    expect(rollup?.accountName).toBe("Test Bus");
-    expect(rollup?.value).toBe(280_000);
-    expect(rollup?.isFlatBusinessValue).toBe(true);
-    // Trust card total = its own brokerage slice (300k) + rolled-up business (280k).
-    expect(trust.assetTotal).toBe(580_000);
+    // Both the trust and the business get their own cards.
+    expect(vm.entityGroups?.map((g) => g.entityId).sort()).toEqual(["llc-1", "trust-1"]);
+    const trust = vm.entityGroups!.find((g) => g.entityId === "trust-1")!;
+    // Trust shows only its own brokerage — no rolled-up business line.
+    expect(trust.assetRows.find((r) => r.accountId === "llc-1")).toBeUndefined();
+    expect(trust.assetTotal).toBe(300_000);
+    const biz = vm.entityGroups!.find((g) => g.entityId === "llc-1")!;
+    expect(biz.assetTotal).toBe(280_000);
+    expect(biz.netWorth).toBe(280_000);
   });
 
-  it("splits a 50/50 family/trust-owned business between the business's card and the trust's card", () => {
+  it("shows a 50/50 family/trust-owned business at full value on its own card, not rolled into the trust", () => {
     const vm = buildViewModel({
       ...baseInput,
       entities: [
@@ -348,10 +347,36 @@ describe("buildViewModel (entities view)", () => {
       view: "entities",
     });
     const llc = vm.entityGroups?.find((g) => g.entityId === "llc-2");
-    expect(llc?.assetTotal).toBe(500_000); // family share only — flat value scaled by 0.5
+    expect(llc?.assetTotal).toBe(1_000_000); // full value, not scaled to family share
     const trust = vm.entityGroups?.find((g) => g.entityId === "trust-1");
-    const rollup = trust?.assetRows.find((r) => r.accountId === "llc-2");
-    expect(rollup?.value).toBe(500_000); // trust gets 50% of full $1M net worth
+    expect(trust?.assetRows.find((r) => r.accountId === "llc-2")).toBeUndefined();
+    expect(trust?.assetTotal).toBe(300_000);
+  });
+
+  it("lists a trust-owned business's own sub-accounts under the business card", () => {
+    const llcAccount = {
+      id: "a-llc-cash",
+      name: "Biz Operating Cash",
+      category: "cash",
+      owners: [{ kind: "entity" as const, entityId: "llc-1", percent: 1 }],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, llcAccount],
+      entities: [
+        ...entities,
+        { id: "llc-1", name: "Test Bus", entityType: "llc", value: 280_000, owners: [{ kind: "entity" as const, entityId: "trust-1", percent: 1 }] },
+      ],
+      projectionYears: [
+        priorYear,
+        { ...projectionYear, accountLedgers: { ...projectionYear.accountLedgers, "a-llc-cash": { beginningValue: 0, endingValue: 120_000 } } },
+      ],
+      view: "entities",
+    });
+    const biz = vm.entityGroups!.find((g) => g.entityId === "llc-1")!;
+    expect(biz.assetRows.some((r) => r.accountId === "a-llc-cash")).toBe(true);
+    const trust = vm.entityGroups!.find((g) => g.entityId === "trust-1")!;
+    expect(trust.assetRows.some((r) => r.accountId === "a-llc-cash")).toBe(false);
   });
 });
 

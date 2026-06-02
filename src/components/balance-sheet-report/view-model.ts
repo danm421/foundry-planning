@@ -245,32 +245,10 @@ function isBusinessEntity(e: EntityInfo | undefined): boolean {
  *  for data imported before the entity_owners join table). NOTE: this also
  *  counts entity-owners' percents — the original semantic was "total
  *  declared ownership of this business" which the consolidated view treats
- *  as fully in-estate. The entities-view rollup uses
- *  {@link householdMemberFraction} instead to split family vs. trust share. */
+ *  as fully in-estate. */
 function familyOwnedFraction(entity: EntityInfo): number {
   if (entity.owners == null) return 1;
   const sum = entity.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
-  return Math.max(0, Math.min(1, sum));
-}
-
-/** Fraction of a business held by household family members (not other
- *  entities). Drives the entities-view rollup: the family share stays on the
- *  business's card; the entity share rolls up into each owning entity's card. */
-function householdMemberFraction(entity: EntityInfo): number {
-  if (entity.owners == null) return 1;
-  const sum = entity.owners
-    .filter((o) => o.kind === "family_member")
-    .reduce((s, o) => s + (o.percent ?? 0), 0);
-  return Math.max(0, Math.min(1, sum));
-}
-
-/** Sum of entity-owner percents on a business — i.e. the share held by other
- *  entities (typically trusts). Missing `owners` returns 0. */
-function entityOwnedFraction(entity: EntityInfo): number {
-  if (entity.owners == null) return 0;
-  const sum = entity.owners
-    .filter((o) => o.kind === "entity")
-    .reduce((s, o) => s + (o.percent ?? 0), 0);
   return Math.max(0, Math.min(1, sum));
 }
 
@@ -844,60 +822,6 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       const list = liabsByEntity.get(row.ownerEntityId) ?? [];
       list.push(row);
       liabsByEntity.set(row.ownerEntityId, list);
-    }
-
-    // A business owned (in whole or part) by another entity (typically a
-    // trust) rolls up into the owning entity's card as a single line — the
-    // advisor shouldn't have to mentally re-aggregate the business's
-    // underlying accounts to see what the trust holds. The business's own
-    // card retains only the family-owned share; rows are scaled by
-    // `familyOwnedFraction` and dropped entirely when 100% entity-owned.
-    for (const b of entities) {
-      if (!isBusinessEntity(b)) continue;
-      const entityShare = entityOwnedFraction(b);
-      if (entityShare <= 0) continue;
-
-      const bAssetRows = assetsByEntity.get(b.id) ?? [];
-      const bLiabRows = liabsByEntity.get(b.id) ?? [];
-      const fullAssetTotal = bAssetRows.reduce((s, r) => s + r.value, 0);
-      const fullLiabilityTotal = bLiabRows.reduce((s, r) => s + r.balance, 0);
-      const fullNetWorth = fullAssetTotal - fullLiabilityTotal;
-
-      const familyShare = householdMemberFraction(b);
-      if (familyShare <= 0) {
-        assetsByEntity.delete(b.id);
-        liabsByEntity.delete(b.id);
-      } else if (familyShare < 1) {
-        assetsByEntity.set(
-          b.id,
-          bAssetRows.map((r) => ({ ...r, value: r.value * familyShare })),
-        );
-        liabsByEntity.set(
-          b.id,
-          bLiabRows.map((r) => ({ ...r, balance: r.balance * familyShare })),
-        );
-      }
-
-      for (const owner of b.owners ?? []) {
-        if (owner.kind !== "entity") continue;
-        const rollupValue = fullNetWorth * owner.percent;
-        if (rollupValue <= 0) continue;
-        const ownerList = assetsByEntity.get(owner.entityId) ?? [];
-        ownerList.push({
-          rowKey: `biz-rollup:${b.id}@${owner.entityId}`,
-          accountId: b.id,
-          accountName: b.name,
-          owner: null,
-          ownerEntityId: owner.entityId,
-          ownerPercent: owner.percent,
-          ownerLabel: b.name,
-          value: rollupValue,
-          hasLinkedMortgage: false,
-          isFlatBusinessValue: true,
-          accountHasMultipleOwners: false,
-        });
-        assetsByEntity.set(owner.entityId, ownerList);
-      }
     }
 
     entityGroups = entities
