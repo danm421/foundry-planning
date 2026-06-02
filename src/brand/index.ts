@@ -18,6 +18,10 @@ export const colors = {
   accentDeep:  "#b45309",
   accentOn:    "#1a1205",
 
+  secondary:    "#6366f1",
+  secondaryInk: "#818cf8",
+  secondaryOn:  "#ffffff",
+
   // Surfaces
   paper:       "#0b0c0f",
   card:        "#15171f",
@@ -55,6 +59,10 @@ export const colorsLight = {
   accentInk:   "#b45309",
   accentDeep:  "#92400e",
   accentOn:    "#fffbeb",
+
+  secondary:    "#4f46e5",
+  secondaryInk: "#4338ca",
+  secondaryOn:  "#ffffff",
 
   paper:       "#fefdf8",
   card:        "#faf8ef",
@@ -119,6 +127,12 @@ export const accentWash = {
   light: "rgba(217, 119, 6, 0.16)",
 } as const;
 
+// Secondary-wash (indigo active/selected backgrounds) per theme.
+export const secondaryWash = {
+  dark:  "rgba(99, 102, 241, 0.16)",
+  light: "rgba(79, 70, 229, 0.16)",
+} as const;
+
 // Deterministic categorical scale, in the Deep Jewel palette's perceptual band.
 // Band per theme (OKLCH): dark L 0.78 · C 0.15, light L 0.58 · C 0.15.
 // The accent-amber hue band (~55–85°) is reserved so data never reads as a CTA.
@@ -150,8 +164,8 @@ export const fonts = {
 } as const;
 
 export const type = {
-  display: { size: 72, weight: 600, ls: "-0.04em",  lh: 1.05 },
-  h1:      { size: 44, weight: 600, ls: "-0.03em",  lh: 1.1  },
+  display: { size: 72, weight: 800, ls: "-0.035em", lh: 1.04 },
+  h1:      { size: 44, weight: 800, ls: "-0.035em", lh: 1.08 },
   h2:      { size: 32, weight: 600, ls: "-0.025em", lh: 1.15 },
   h3:      { size: 22, weight: 600, ls: "-0.015em", lh: 1.25 },
   bodyL:   { size: 17, weight: 400, ls: "-0.005em", lh: 1.55 },

@@ -17,6 +17,12 @@
   --color-accent-on: #1a1205;
   --color-accent-wash: rgba(245, 158, 11, 0.16);
 
+  /* Secondary — indigo (links, secondary CTAs, AI treatment, focus/selection) */
+  --color-secondary: #6366f1;
+  --color-secondary-ink: #818cf8;
+  --color-secondary-on: #ffffff;
+  --color-secondary-wash: rgba(99, 102, 241, 0.16);
+
   /* Surfaces */
   --color-paper: #0b0c0f;
   --color-card: #15171f;
@@ -101,6 +107,12 @@
   --color-accent-on: #fffbeb;
   --color-accent-wash: rgba(217, 119, 6, 0.16);
 
+  /* Secondary — indigo-600/700 for AA contrast on cream */
+  --color-secondary: #4f46e5;
+  --color-secondary-ink: #4338ca;
+  --color-secondary-on: #ffffff;
+  --color-secondary-wash: rgba(79, 70, 229, 0.16);
+
   /* Surfaces */
   --color-paper: #fefdf8;
   --color-card: #faf8ef;
@@ -170,6 +182,11 @@
   --color-accent-deep: var(--color-accent-deep);
   --color-accent-on: var(--color-accent-on);
   --color-accent-wash: var(--color-accent-wash);
+
+  --color-secondary: var(--color-secondary);
+  --color-secondary-ink: var(--color-secondary-ink);
+  --color-secondary-on: var(--color-secondary-on);
+  --color-secondary-wash: var(--color-secondary-wash);
 
   --color-hair: var(--color-hair);
   --color-hair-2: var(--color-hair-2);
