@@ -90,6 +90,16 @@ import { EstateFlowChartPagePdf } from "./pages/estate-flow-chart/page-pdf";
 import { buildEstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
 import type { EstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
 import { EstateFlowReportPagePdf } from "./pages/estate-flow/page-pdf";
+import { buildEstateSummaryData } from "@/lib/presentations/pages/estate-summary/view-model";
+import type { EstateSummaryPageData } from "@/lib/presentations/pages/estate-summary/view-model";
+import {
+  estateSummaryOptionsSchema,
+  ESTATE_SUMMARY_OPTIONS_DEFAULT,
+  type EstateSummaryOptions,
+} from "@/lib/presentations/pages/estate-summary/options-schema";
+import { summarizeEstateSummaryOptions } from "@/lib/presentations/pages/estate-summary/summarize-options";
+import { estimateEstateSummaryPageCount } from "@/lib/presentations/pages/estate-summary/estimate-page-count";
+import { EstateSummaryPagePdf } from "./pages/estate-summary/page-pdf";
 import { MonteCarloPagePdf } from "./pages/monte-carlo/page-pdf";
 import { MonteCarloOptionsControl } from "./pages/monte-carlo/options-control";
 import {
@@ -558,6 +568,22 @@ export const estateFlowReportPage: PresentationPage<EstateFlowReportData, Estate
   renderPdf: (input) => <EstateFlowReportPagePdf {...input} />,
 };
 
+export const estateSummaryPage: PresentationPage<EstateSummaryPageData, EstateSummaryOptions> = {
+  id: "estateSummary",
+  title: "Estate Summary",
+  description: "One-page estate overview: gross estate & taxes today vs. end of life, and per-heir outright/in-trust distributions.",
+  category: "Estate",
+  defaultOptions: ESTATE_SUMMARY_OPTIONS_DEFAULT,
+  optionsSchema: estateSummaryOptionsSchema,
+  summarizeOptions: summarizeEstateSummaryOptions,
+  estimatePageCount: estimateEstateSummaryPageCount,
+  // No OptionsControl in v1 — ordering defaults to primaryFirst. A control can be
+  // added later mirroring EstateOptionsControl (ordering segment only).
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildEstateSummaryData(ctx, options),
+  renderPdf: (input) => <EstateSummaryPagePdf {...input} />,
+};
+
 export const monteCarloPage: PresentationPage<MonteCarloPageData, MonteCarloPageOptions> = {
   id: "monteCarlo",
   title: "Monte Carlo",
@@ -670,6 +696,7 @@ export const PRESENTATION_PAGES = {
   estateGiftTax: estateGiftTaxPage,
   estateFlowChart: estateFlowChartPage,
   estateFlow: estateFlowReportPage,
+  estateSummary: estateSummaryPage,
   monteCarlo: monteCarloPage,
   assetAllocation: assetAllocationPage,
   portfolioAnalysis: portfolioAnalysisPage,

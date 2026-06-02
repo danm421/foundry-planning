@@ -36,3 +36,20 @@ describe("PRESENTATION_PAGES", () => {
     expect(PRESENTATION_PAGES.monteCarlo.category).toBe("Monte Carlo");
   });
 });
+
+describe("estateSummary registration", () => {
+  it("is registered in the Estate category", () => {
+    const page = PRESENTATION_PAGES.estateSummary;
+    expect(page).toBeDefined();
+    expect(page.id).toBe("estateSummary");
+    expect(page.category).toBe("Estate");
+  });
+  it("estimatePageCount is data-independent (callable with undefined data)", () => {
+    const page = PRESENTATION_PAGES.estateSummary;
+    expect(page.estimatePageCount(undefined as never, page.defaultOptions)).toBe(1);
+  });
+  it("defaultOptions parse against the schema", () => {
+    const page = PRESENTATION_PAGES.estateSummary;
+    expect(() => page.optionsSchema.parse(page.defaultOptions)).not.toThrow();
+  });
+});
