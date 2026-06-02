@@ -30,10 +30,10 @@ interface EntityBalanceSheetsProps {
 export default function EntityBalanceSheets({ groups }: EntityBalanceSheetsProps) {
   const cleaned = groups.map(dedupeFlat).filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
   if (cleaned.length === 0) {
-    return <div className="rounded-lg border border-hair bg-card p-6 text-center text-ink-2">No business or trust entities.</div>;
+    return <div className="w-full max-w-sm rounded-lg border border-hair bg-card p-6 text-center text-ink-2">No business or trust entities.</div>;
   }
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full max-w-sm flex-col gap-4">
       {cleaned.map((g) => (
         <div key={g.entityId} className="overflow-hidden rounded-lg border border-hair bg-card">
           <div className="flex items-baseline justify-between bg-paper px-4 py-2.5">
