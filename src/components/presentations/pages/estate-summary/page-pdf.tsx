@@ -74,7 +74,7 @@ export function EstateSummaryPagePdf({ data, firmName, clientName, reportDate, p
         <>
           {/* KPI strip */}
           <View style={s.kpis}>
-            <Kpi lbl="Gross Estate · End of Life" val={fmtUsd(data.kpis.grossEstateEol)} sub={`Today: ${fmtUsd(data.kpis.grossEstateToday)}`} />
+            <Kpi lbl="Gross Estate · EOL" val={fmtUsd(data.kpis.grossEstateEol)} sub={`Today: ${fmtUsd(data.kpis.grossEstateToday)}`} />
             <Kpi lbl="Total Tax & Costs · EOL" val={fmtUsd(data.kpis.taxAndCostsEol)} sub={`Today: ${fmtUsd(data.kpis.taxAndCostsToday)}`} />
             <Kpi lbl="Net to Heirs · EOL" val={fmtUsd(data.kpis.netToHeirsEol)} sub={`Today: ${fmtUsd(data.kpis.netToHeirsToday)}`} />
             <Kpi lbl="Estate Shrinkage · EOL" val={fmtPct(data.kpis.shrinkageEol)} sub={`Today: ${fmtPct(data.kpis.shrinkageToday)}`} />
@@ -100,6 +100,9 @@ export function EstateSummaryPagePdf({ data, firmName, clientName, reportDate, p
                 {data.todayRows.map((r) => <DeathRow key={`t-${r.deathOrder}`} r={r} />)}
                 <Text style={s.grp}>End of Life (projected death years)</Text>
                 {data.eolRows.map((r) => <DeathRow key={`e-${r.deathOrder}`} r={r} />)}
+                <Text style={s.note}>
+                  Gross is each decedent&apos;s Form 706 chargeable estate (e.g. ~50% of jointly-titled assets at the first death) — a different basis than the headline Gross Estate, so these need not sum to it.
+                </Text>
               </View>
             </View>
 

@@ -1,4 +1,4 @@
-import { fmtUsd, fmtPct, type EstateSummaryHousehold } from "./aggregate";
+import { fmtUsd, fmtPct, shrink, type EstateSummaryHousehold } from "./aggregate";
 
 export interface NarrativeInput {
   today: EstateSummaryHousehold;
@@ -15,8 +15,8 @@ export function buildNarrative(input: NarrativeInput): string[] {
   const { today, eol, isMarried, firstDeathTaxedEol, inTrustShareEol } = input;
   const lines: string[] = [];
 
-  const shrinkEol = eol.estateValue > 0 ? eol.taxAndCosts / eol.estateValue : 0;
-  const shrinkToday = today.estateValue > 0 ? today.taxAndCosts / today.estateValue : 0;
+  const shrinkEol = shrink(eol);
+  const shrinkToday = shrink(today);
   lines.push(
     `At end of life, estate taxes & costs consume ${fmtUsd(eol.taxAndCosts)} (${fmtPct(shrinkEol)}) of the estate — up from ${fmtUsd(today.taxAndCosts)} (${fmtPct(shrinkToday)}) today.`,
   );

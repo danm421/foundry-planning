@@ -4,6 +4,7 @@ import type { EstateSummaryOptions } from "./options-schema";
 import {
   summarizeHousehold,
   buildDeathRows,
+  shrink,
   type EstateSummaryHousehold,
   type EstateSummaryDeathRow,
 } from "./aggregate";
@@ -56,10 +57,6 @@ function bar(label: string, h: EstateSummaryHousehold): EstateSummaryChartBar {
     debts: h.debts,
     total: h.estateValue,
   };
-}
-
-function shrink(h: EstateSummaryHousehold): number {
-  return h.estateValue > 0 ? h.taxAndCosts / h.estateValue : 0;
 }
 
 export function buildEstateSummaryData(

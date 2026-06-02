@@ -27,6 +27,11 @@ export interface EstateSummaryHousehold {
   estateValue: number; // netToHeirs + four taxes + debts
 }
 
+/** Estate shrinkage = taxes & costs as a share of total estate value (0 if empty). */
+export function shrink(h: EstateSummaryHousehold): number {
+  return h.estateValue > 0 ? h.taxAndCosts / h.estateValue : 0;
+}
+
 function reductionAmount(section: DeathSectionData, kind: ReductionsLine["kind"]): number {
   return section.reductions.find((r) => r.kind === kind)?.amount ?? 0;
 }
