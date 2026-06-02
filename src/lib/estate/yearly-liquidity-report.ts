@@ -11,6 +11,7 @@ import type {
 } from "@/engine/types";
 import { inEstateWeight, outOfEstateWeight } from "./in-estate-weights";
 import { insuredRetirementYearFor, isPolicyInForce } from "./insurance-in-force";
+import type { Ordering } from "./yearly-estate-report";
 
 export interface YearlyLiquidityReportInput {
   /** Only `.years` is read — accepts a full ProjectionResult or a bare
@@ -19,6 +20,12 @@ export interface YearlyLiquidityReportInput {
   clientData: ClientData;
   ownerNames: { clientName: string; spouseName: string | null };
   ownerDobs: { clientDob: string | null; spouseDob: string | null };
+  /** Death ordering — selects which hypothetical-estate-tax branch the transfer
+   *  cost reads from. Must match the ordering the Estate Transfer report uses
+   *  for the same context, or the two estate surfaces disagree (F84). Defaults
+   *  to `"primaryFirst"` to preserve the prior behaviour for callers (e.g. the
+   *  comparison reports) that deliberately pin both surfaces to primaryFirst. */
+  ordering?: Ordering;
 }
 
 export interface YearlyLiquidityRow {
@@ -60,7 +67,7 @@ const ZERO_TOTALS: YearlyLiquidityReport["totals"] = {
 export function buildYearlyLiquidityReport(
   input: YearlyLiquidityReportInput,
 ): YearlyLiquidityReport {
-  const { projection, clientData, ownerDobs } = input;
+  const { projection, clientData, ownerDobs, ordering = "primaryFirst" } = input;
 
   const clientBirthYear = parseBirthYear(ownerDobs.clientDob);
   const spouseBirthYear = parseBirthYear(ownerDobs.spouseDob);
@@ -80,7 +87,7 @@ export function buildYearlyLiquidityReport(
   for (const yearRow of projection.years) {
     const ht = yearRow.hypotheticalEstateTax;
     if (!ht) continue;
-    const branch = pickBranch(ht);
+    const branch = pickBranch(ht, ordering);
     if (!branch) continue;
     rows.push(
       buildRow({
@@ -330,9 +337,15 @@ function sumDrainKind(
   return total;
 }
 
+// Select the death-ordering branch, matching yearly-estate-report's pickBranch:
+// honour the requested ordering when that branch exists, else fall back to the
+// other available branch (so single-death plans that only carry one branch
+// still resolve).
 function pickBranch(
   ht: HypotheticalEstateTax,
+  ordering: Ordering,
 ): HypotheticalEstateTaxOrdering | null {
+  if (ordering === "spouseFirst") return ht.spouseFirst ?? ht.primaryFirst ?? null;
   return ht.primaryFirst ?? ht.spouseFirst ?? null;
 }
 

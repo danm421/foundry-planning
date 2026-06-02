@@ -738,3 +738,89 @@ describe("buildYearlyLiquidityReport — invariants", () => {
     expect(report.rows[0].totalTransferCost).toBe(500_000);
   });
 });
+
+// F84: when the spouse dies first, the Estate Transfer table uses the natural
+// spouseFirst ordering but the Liquidity table was pinned to primaryFirst, so
+// the two estate surfaces reported different transfer costs for the same year.
+// `buildYearlyLiquidityReport` must accept an `ordering` and pick that branch,
+// matching `buildYearlyEstateReport`.
+function htBothOrderings(opts: {
+  primaryFirstTax: number;
+  primaryFinalTax: number;
+  spouseFirstTax: number;
+  spouseFinalTax: number;
+}): HypotheticalEstateTax {
+  return {
+    primaryFirst: {
+      firstDecedent: "client",
+      firstDeath: deathResult({ decedent: "client", order: 1, totalTaxesAndExpenses: opts.primaryFirstTax }),
+      finalDeath: deathResult({ decedent: "spouse", order: 2, totalTaxesAndExpenses: opts.primaryFinalTax }),
+      firstDeathTransfers: [],
+      finalDeathTransfers: [],
+      totals: { federal: 0, state: 0, admin: 0, total: 0 },
+    },
+    spouseFirst: {
+      firstDecedent: "spouse",
+      firstDeath: deathResult({ decedent: "spouse", order: 1, totalTaxesAndExpenses: opts.spouseFirstTax }),
+      finalDeath: deathResult({ decedent: "client", order: 2, totalTaxesAndExpenses: opts.spouseFinalTax }),
+      firstDeathTransfers: [],
+      finalDeathTransfers: [],
+      totals: { federal: 0, state: 0, admin: 0, total: 0 },
+    },
+  } as unknown as HypotheticalEstateTax;
+}
+
+describe("buildYearlyLiquidityReport — death ordering (F84)", () => {
+  const projection = {
+    years: [
+      projectionYear({
+        year: 2026,
+        hypothetical: htBothOrderings({
+          primaryFirstTax: 100_000,
+          primaryFinalTax: 200_000, // primaryFirst transfer cost = 300_000
+          spouseFirstTax: 60_000,
+          spouseFinalTax: 90_000, // spouseFirst transfer cost = 150_000
+        }),
+      }),
+    ],
+  } as unknown as ProjectionResult;
+
+  it("uses the primaryFirst branch by default", () => {
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: emptyClientData(),
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    expect(report.rows[0].totalTransferCost).toBe(300_000);
+  });
+
+  it("uses the spouseFirst branch when ordering is spouseFirst", () => {
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: emptyClientData(),
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+      ordering: "spouseFirst",
+    });
+    expect(report.rows[0].totalTransferCost).toBe(150_000);
+  });
+
+  it("agrees with yearly-estate-report under the same (spouseFirst) ordering", () => {
+    const liquidity = buildYearlyLiquidityReport({
+      projection,
+      clientData: emptyClientData(),
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+      ordering: "spouseFirst",
+    });
+    const yearly = buildYearlyEstateReport({
+      projection,
+      clientData: emptyClientData(),
+      ordering: "spouseFirst",
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    expect(liquidity.rows[0].totalTransferCost).toBe(yearly.rows[0].taxesAndExpenses);
+  });
+});

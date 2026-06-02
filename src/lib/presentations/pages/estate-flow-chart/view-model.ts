@@ -14,7 +14,14 @@ export function buildEstateFlowChartData(
   ctx: BuildDataContext,
   options: EstatePageOptions,
 ): EstateFlowChartData {
-  const { summary, asOfYear } = prepEstate(ctx, options.asOf);
+  // F83: honour the user-selected death ordering, matching the sibling
+  // estate-flow report view-model. Omitting it pinned the chart summary to
+  // "primaryFirst" regardless of the toggle.
+  const { summary, asOfYear } = prepEstate(
+    ctx,
+    options.asOf,
+    options.ordering ?? "primaryFirst",
+  );
   return {
     title: "Estate Flow",
     subtitle: `${ctx.scenarioLabel} · As of ${asOfYear}`,

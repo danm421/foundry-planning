@@ -61,4 +61,27 @@ describe("buildEstateLiquidityDrillData", () => {
     ]);
     expect(d.chartSpec!.lines.map((l) => l.seriesId)).toEqual(["totalTransferCost"]);
   });
+
+  // F84: the liquidity drill must use the natural death ordering so its transfer
+  // costs agree with the sibling Estate Transfer drill (which uses naturalOrdering).
+  it("forwards the natural death ordering to the report (spouse dies first)", () => {
+    vi.mocked(buildYearlyLiquidityReport).mockClear();
+    vi.mocked(buildYearlyLiquidityReport).mockReturnValue(mockReport());
+    buildEstateLiquidityDrillData({
+      ...base,
+      projection: { years: [{ year: 2026 }], firstDeathEvent: { deceased: "spouse" } } as never,
+    });
+    expect(buildYearlyLiquidityReport).toHaveBeenCalledWith(
+      expect.objectContaining({ ordering: "spouseFirst" }),
+    );
+  });
+
+  it("forwards primaryFirst when the client dies first", () => {
+    vi.mocked(buildYearlyLiquidityReport).mockClear();
+    vi.mocked(buildYearlyLiquidityReport).mockReturnValue(mockReport());
+    buildEstateLiquidityDrillData(base);
+    expect(buildYearlyLiquidityReport).toHaveBeenCalledWith(
+      expect.objectContaining({ ordering: "primaryFirst" }),
+    );
+  });
 });
