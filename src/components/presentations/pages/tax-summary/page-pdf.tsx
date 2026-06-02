@@ -11,7 +11,7 @@ const s = StyleSheet.create({
   subtitle: { fontSize: 8, color: T.ink2, marginBottom: 6 },
   kpis: { flexDirection: "row", gap: 8, marginBottom: 8 },
   kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 6 },
-  kpiLbl: { fontSize: 6.5, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.4 },
+  kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 },
   kpiVal: { fontSize: 15, fontWeight: 700, marginTop: 2 },
   body: { flexDirection: "row", gap: 10 },
   panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 10 },
@@ -24,10 +24,17 @@ const s = StyleSheet.create({
   note: { fontSize: 6.5, color: T.ink3, marginTop: 4 },
   // Composition split bar
   splitTrack: { flexDirection: "row", height: 16, borderRadius: 2, overflow: "hidden", marginTop: 6, marginBottom: 4 },
-  splitLegend: { flexDirection: "row", flexWrap: "wrap", marginTop: 2 },
-  legendItem: { flexDirection: "row", alignItems: "center", marginRight: 10, marginBottom: 2 },
-  swatch: { width: 6, height: 6, marginRight: 3 },
-  legendTxt: { fontSize: 7, color: T.ink2 },
+  swatch: { width: 6, height: 6, marginRight: 4 },
+  // Composition value table (below the split bar)
+  compTable: { marginTop: 2 },
+  compRow: { flexDirection: "row", alignItems: "center", paddingVertical: 2.5, borderBottomWidth: 0.5, borderBottomColor: T.hair },
+  compLabelCell: { flexDirection: "row", alignItems: "center", flex: 1 },
+  compLabel: { fontSize: 8, color: T.ink },
+  compPct: { fontSize: 8, color: T.ink2, width: 36, textAlign: "right" },
+  compAmt: { fontSize: 9, fontWeight: 700, color: T.ink, width: 56, textAlign: "right" },
+  compTotalRow: { flexDirection: "row", alignItems: "center", paddingTop: 3, marginTop: 1, borderTopWidth: 1, borderTopColor: T.hair },
+  compTotalLabel: { fontSize: 8, fontWeight: 700, color: T.ink, flex: 1 },
+  compTotalAmt: { fontSize: 9, fontWeight: 700, color: T.ink, width: 56, textAlign: "right" },
   narr: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 7, marginTop: 6 },
   narrText: { fontSize: 8, color: T.ink, lineHeight: 1.35, marginBottom: 1.5 },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
@@ -107,13 +114,25 @@ export function TaxSummaryPagePdf(input: RenderPdfInput<TaxSummaryPageData>) {
                       return <View key={seg.key} style={{ width: `${pct}%`, backgroundColor: seg.color }} />;
                     })}
                   </View>
-                  <View style={s.splitLegend}>
-                    {COMP_SEGMENTS.map((seg) => (
-                      <View key={seg.key} style={s.legendItem}>
-                        <View style={[s.swatch, { backgroundColor: seg.color }]} />
-                        <Text style={s.legendTxt}>{`${seg.label} ${fmtUsd(data.composition![seg.key])}`}</Text>
-                      </View>
-                    ))}
+                  <View style={s.compTable}>
+                    {COMP_SEGMENTS.map((seg) => {
+                      const v = data.composition![seg.key];
+                      const pct = (v / data.composition!.total) * 100;
+                      return (
+                        <View key={seg.key} style={s.compRow}>
+                          <View style={s.compLabelCell}>
+                            <View style={[s.swatch, { backgroundColor: seg.color }]} />
+                            <Text style={s.compLabel}>{seg.label}</Text>
+                          </View>
+                          <Text style={s.compPct}>{`${Math.round(pct)}%`}</Text>
+                          <Text style={s.compAmt}>{fmtUsd(v)}</Text>
+                        </View>
+                      );
+                    })}
+                    <View style={s.compTotalRow}>
+                      <Text style={s.compTotalLabel}>Total</Text>
+                      <Text style={s.compTotalAmt}>{fmtUsd(data.composition.total)}</Text>
+                    </View>
                   </View>
                 </View>
               ) : null}
