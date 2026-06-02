@@ -31,6 +31,11 @@ interface DialogShellProps {
    *  as the first child (e.g. an in-form tab strip) can pin flush against the
    *  header with content scrolling cleanly behind it. */
   bodyTopFlush?: boolean;
+  /** Media/preview mode: gives the surface a real, tall height (instead of the
+   *  default content-hugging `max-h` cap) and makes the body a flex column, so
+   *  a single `flex-1` child (e.g. a PDF iframe) fills the dialog vertically
+   *  instead of collapsing to its intrinsic height. */
+  contentFill?: boolean;
   primaryAction?: ActionConfig;
   secondaryAction?: ActionConfig;        // defaults to a Cancel button that closes the dialog
   destructiveAction?: ActionConfig;
@@ -54,6 +59,7 @@ export default function DialogShell({
   onTabChange,
   tabBarRight,
   bodyTopFlush,
+  contentFill,
   primaryAction,
   secondaryAction,
   destructiveAction,
@@ -139,7 +145,9 @@ export default function DialogShell({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative z-10 w-full ${sizeClass[size]} max-h-[min(80vh,720px)] flex flex-col rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
+        className={`relative z-10 w-full ${sizeClass[size]} ${
+          contentFill ? "h-[min(90vh,940px)]" : "max-h-[min(80vh,720px)]"
+        } flex flex-col rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
       >
         {/* Header */}
         <div
@@ -178,7 +186,7 @@ export default function DialogShell({
         <div
           className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 pb-6 ${
             bodyTopFlush ? "pt-0" : "pt-6"
-          }`}
+          } ${contentFill ? "flex flex-col" : ""}`}
         >
           {children}
         </div>
