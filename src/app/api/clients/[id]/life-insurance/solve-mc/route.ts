@@ -108,9 +108,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         // Inject the synthetic policy's model-portfolio mix so the §101
         // proceeds randomize through Monte Carlo. The transformed payout
         // account keeps id === SYNTHETIC_POLICY_ID.
-        // F16: scenarioId is now the 3rd positional arg; the LI solver always
-        // runs against the base seed, so pass "base" and keep the synthetic
-        // mixes in the 4th slot.
+        // scenarioId is the 3rd positional arg; it defaults to "base" (the
+        // solver tab) but the presentations pre-solve passes a live scenario id
+        // for scenario-override decks. The synthetic mixes stay in the 4th slot.
         const mcPayload = await loadMonteCarloData(clientId, firmId, assumptions.scenarioRef, [
           { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
         ]);

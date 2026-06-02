@@ -230,6 +230,10 @@ export function PresentationsLauncher(props: Props) {
     // undefined override = inherit the deck scenario; null = base.
     const resolveRef = (override: string | null | undefined) =>
       override === undefined ? (resolvedScenarioId ?? "base") : (override ?? "base");
+    // Snapshots are frozen trees with no live seed, so the need solve (which
+    // runs Monte Carlo) can't be run against them — those pages fall back to
+    // the report's "not solved" state instead of failing the whole export.
+    const isSolvable = (ref: string) => !ref.startsWith("snap:");
 
     setPresolving(true);
     try {
@@ -238,7 +242,7 @@ export function PresentationsLauncher(props: Props) {
         const opts = page.options as LifeInsuranceSummaryOptions;
         const scenarioRef = resolveRef(page.scenarioOverride);
 
-        if (!solvedByScenario.has(scenarioRef)) {
+        if (isSolvable(scenarioRef) && !solvedByScenario.has(scenarioRef)) {
           const portfolioLabel =
             props.investmentCatalog.portfolios.find(
               (m) => m.id === opts.modelPortfolioId,
