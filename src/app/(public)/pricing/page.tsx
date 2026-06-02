@@ -11,7 +11,7 @@ export default function PricingPage() {
       <p className="mb-4 font-mono text-xs uppercase tracking-[0.2em] text-accent">
         01 · Pricing
       </p>
-      <h1 className="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+      <h1 className="text-balance text-4xl font-extrabold tracking-[-0.035em] text-ink sm:text-5xl">
         One price. Everything in Foundry.
       </h1>
       <p className="mt-4 text-ink-2">
