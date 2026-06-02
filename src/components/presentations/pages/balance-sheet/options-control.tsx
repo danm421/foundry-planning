@@ -42,6 +42,15 @@ export function BalanceSheetOptionsControl({
           />
         </label>
       )}
+      <label className="flex items-center gap-2 hover:text-ink">
+        <input
+          type="checkbox"
+          className="accent-accent"
+          checked={value.includeOutOfEstate}
+          onChange={(e) => onChange({ ...value, includeOutOfEstate: e.target.checked })}
+        />
+        <span>Include Out of Estate table</span>
+      </label>
     </div>
   );
 }

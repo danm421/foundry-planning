@@ -57,6 +57,7 @@ const S = StyleSheet.create({
   totalLabel: { fontSize: 9, fontFamily: "Fraunces", color: T.ink },
   totalVal: { fontSize: 9, fontFamily: "JetBrains Mono", color: T.ink },
   empty: { fontSize: 8, color: T.ink3 },
+  ooeHead: { fontSize: 9, fontFamily: "Fraunces", color: T.ink, marginTop: 16, marginBottom: 6 },
 });
 
 function Badge({ yoy }: { yoy: YoyResult | null }) {
@@ -94,6 +95,7 @@ export function BalanceSheetPagePdf({
   totalPages,
 }: RenderPdfInput<BalanceSheetPageData>) {
   const vm = data.viewModel;
+  const showOutOfEstate = data.showOutOfEstate && vm.outOfEstateOwnerRows.length > 0;
   return (
     <PageFrame
       firmName={firmName}
@@ -157,6 +159,24 @@ export function BalanceSheetPagePdf({
             <Text style={S.totalLabel}>Net Worth</Text>
             <Text style={S.totalVal}>{fmt(vm.netWorth)}</Text>
           </View>
+
+          {showOutOfEstate && (
+            <View wrap={false}>
+              <Text style={S.ooeHead}>Out of Estate</Text>
+              {vm.outOfEstateOwnerRows.map((r) => (
+                <View key={r.ownerKey} style={S.row}>
+                  <Text style={S.rowName}>{r.ownerName}</Text>
+                  <Text style={[S.rowVal, r.net < 0 ? { color: T.crit } : {}]}>{fmt(r.net)}</Text>
+                </View>
+              ))}
+              <View style={S.totalRow}>
+                <Text style={S.totalLabel}>Net Out of Estate</Text>
+                <Text style={[S.totalVal, vm.outOfEstateNetWorth < 0 ? { color: T.crit } : {}]}>
+                  {fmt(vm.outOfEstateNetWorth)}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
       </View>
     </PageFrame>

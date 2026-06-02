@@ -21,7 +21,7 @@ export function liquidPortfolioTotal(
  *  otherwise the selected year clamped to the projection range. */
 export function resolveBalanceSheetYear(
   years: { year: number }[],
-  options: BalanceSheetOptions,
+  options: Pick<BalanceSheetOptions, "asOf" | "year">,
 ): number {
   if (years.length === 0) return options.year;
   const first = years[0].year;
@@ -35,6 +35,8 @@ export interface BalanceSheetPageData {
   asOfLabel: string;
   /** cash + taxable + retirement category totals. */
   liquidPortfolio: number;
+  /** Render the Out of Estate table (opt-in; consolidated view only). */
+  showOutOfEstate: boolean;
   viewModel: BalanceSheetViewModel;
 }
 
@@ -68,6 +70,7 @@ export function buildBalanceSheetPageData(
   return {
     asOfLabel: options.asOf === "today" ? "Today" : `End of ${selectedYear}`,
     liquidPortfolio: liquidPortfolioTotal(viewModel.assetCategories),
+    showOutOfEstate: options.includeOutOfEstate,
     viewModel,
   };
 }

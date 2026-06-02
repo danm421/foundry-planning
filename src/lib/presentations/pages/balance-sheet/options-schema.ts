@@ -3,6 +3,9 @@ import { z } from "zod";
 export const balanceSheetOptionsSchema = z.object({
   asOf: z.enum(["today", "eoy"]),
   year: z.number().int(),
+  // Opt-in Out of Estate table (consolidated Balance Sheet page only). The
+  // entities page shares this schema but has no out-of-estate rows to show.
+  includeOutOfEstate: z.boolean().default(false),
 });
 
 export type BalanceSheetOptions = z.infer<typeof balanceSheetOptionsSchema>;
@@ -13,4 +16,5 @@ export type BalanceSheetOptions = z.infer<typeof balanceSheetOptionsSchema>;
 export const BALANCE_SHEET_OPTIONS_DEFAULT: BalanceSheetOptions = {
   asOf: "today",
   year: new Date().getFullYear(),
+  includeOutOfEstate: false,
 };
