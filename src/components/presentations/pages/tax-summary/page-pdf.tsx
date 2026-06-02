@@ -39,6 +39,12 @@ const s = StyleSheet.create({
   cellL: { flex: 1.2, textAlign: "left", paddingVertical: 1, paddingHorizontal: 2 },
   hair: { borderBottomWidth: 0.5, borderBottomColor: T.hair },
   grp: { backgroundColor: T.accentTint, fontSize: 6.5, fontWeight: 700, textTransform: "uppercase", paddingVertical: 2, paddingHorizontal: 2, marginTop: 6, marginBottom: 2 },
+  // Bracket-timeline heatmap
+  heatRow: { flexDirection: "row", flexWrap: "wrap", gap: 1, marginTop: 2 },
+  heatCell: { alignItems: "center", width: 22, marginBottom: 3 },
+  heatTile: { width: 18, height: 14, borderRadius: 1, alignItems: "center", justifyContent: "center" },
+  heatRate: { fontSize: 5, color: T.card },
+  heatYear: { fontSize: 5, color: T.ink3 },
 });
 
 function Kpi({ lbl, val }: { lbl: string; val: string }) {
@@ -127,13 +133,13 @@ function OpportunitiesPage({
       {opp.bracketTimeline.length > 0 ? (
         <>
           <Text style={s.grp}>Marginal bracket by year — low-bracket years are conversion / harvest windows</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 1, marginTop: 2 }}>
+          <View style={s.heatRow}>
             {opp.bracketTimeline.map((p) => (
-              <View key={p.year} style={{ alignItems: "center", width: 22, marginBottom: 3 }}>
-                <View style={{ width: 18, height: 14, backgroundColor: p.isLow ? T.good : T.accentMuted, borderRadius: 1, alignItems: "center", justifyContent: "center" }}>
-                  <Text style={{ fontSize: 5, color: T.card }}>{Math.round(p.rate * 100)}</Text>
+              <View key={p.year} style={s.heatCell}>
+                <View style={[s.heatTile, { backgroundColor: p.isLow ? T.good : T.accentMuted }]}>
+                  <Text style={s.heatRate}>{Math.round(p.rate * 100)}</Text>
                 </View>
-                <Text style={{ fontSize: 5, color: T.ink3 }}>{`'${String(p.year).slice(2)}`}</Text>
+                <Text style={s.heatYear}>{`'${String(p.year).slice(2)}`}</Text>
               </View>
             ))}
           </View>

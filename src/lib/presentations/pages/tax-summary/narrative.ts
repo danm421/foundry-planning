@@ -19,6 +19,8 @@ export interface TaxNarrativeInput {
 
 const MAX_LINES = 4;
 
+const plural = (n: number) => (n === 1 ? "" : "s");
+
 /** Opener line + up to 3 signal lines, priority-ordered. */
 export function buildTaxNarrative(input: TaxNarrativeInput): string[] {
   const lines: string[] = [
@@ -33,26 +35,28 @@ export function buildTaxNarrative(input: TaxNarrativeInput): string[] {
       ? `${input.rothFirstYear}`
       : `${input.rothFirstYear}–${input.rothLastYear}`;
     signals.push(
-      `The plan converts ${fmtUsd(input.rothConversionTotal)} to Roth across ${input.rothConversionYears} year${input.rothConversionYears === 1 ? "" : "s"} (${span}), front-loading tax to build tax-free assets.`,
+      `The plan converts ${fmtUsd(input.rothConversionTotal)} to Roth across ${input.rothConversionYears} year${plural(input.rothConversionYears)} (${span}), front-loading tax to build tax-free assets.`,
     );
   }
 
   // 2. High-bracket years
   if (input.bracketMode && input.yearsAboveHigh > 0) {
     signals.push(
-      `${input.yearsAboveHigh} year${input.yearsAboveHigh === 1 ? "" : "s"} land above the ${fmtPct(input.highThreshold)} bracket — the plan's highest-tax years.`,
+      `${input.yearsAboveHigh} year${plural(input.yearsAboveHigh)} land above the ${fmtPct(input.highThreshold)} bracket — the plan's highest-tax years.`,
     );
   }
 
   // 3. IRMAA
   if (input.irmaaYears > 0) {
     signals.push(
-      `Income triggers IRMAA Medicare surcharges in ${input.irmaaYears} year${input.irmaaYears === 1 ? "" : "s"}, totaling ${fmtUsd(input.irmaaTotal)}.`,
+      `Income triggers IRMAA Medicare surcharges in ${input.irmaaYears} year${plural(input.irmaaYears)}, totaling ${fmtUsd(input.irmaaTotal)}.`,
     );
   }
 
-  // 4. Large capital-gains event
-  if (input.largestGain && input.largestGain.gain > 0) {
+  // 4. Large capital-gains event. Guard on tax (not just gain): in flat-tax mode
+  // capitalGainsTax is always 0, so this would otherwise read "drives $0 of
+  // capital-gains tax" for a real realized gain.
+  if (input.largestGain && input.largestGain.tax > 0) {
     signals.push(
       `A ${fmtUsd(input.largestGain.gain)} realized gain in ${input.largestGain.year} drives ${fmtUsd(input.largestGain.tax)} of capital-gains tax.`,
     );
@@ -61,7 +65,7 @@ export function buildTaxNarrative(input: TaxNarrativeInput): string[] {
   // 5. Low-bracket opportunity years
   if (input.bracketMode && input.yearsBelowLow > 0) {
     signals.push(
-      `${input.yearsBelowLow} year${input.yearsBelowLow === 1 ? "" : "s"} fall below the ${fmtPct(input.lowThreshold)} bracket — windows for additional Roth conversions or 0% capital-gains harvesting.`,
+      `${input.yearsBelowLow} year${plural(input.yearsBelowLow)} fall below the ${fmtPct(input.lowThreshold)} bracket — windows for additional Roth conversions or 0% capital-gains harvesting.`,
     );
   }
 

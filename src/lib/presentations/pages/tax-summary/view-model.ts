@@ -78,7 +78,11 @@ export function buildTaxSummaryData(
     (bracket != null && bracket.yearsBelowLow > 0);
 
   const rothTotal = rothConversions.reduce((s, r) => s + r.gross, 0);
-  const rothYearsArr = rothConversions.map((r) => r.year);
+  const irmaaTotal = irmaa.reduce((s, r) => s + r.surcharge, 0);
+  // rothConversions is year-ordered (it's filtered from buildTaxBracketRows,
+  // which iterates years ascending), so first/last entries bound the span.
+  const rothFirstYear = rothConversions.length ? rothConversions[0].year : null;
+  const rothLastYear = rothConversions.length ? rothConversions[rothConversions.length - 1].year : null;
   const largestGain = capGainsEvents.reduce<CapGainsEventRow | null>(
     (best, e) => (best == null || e.gain > best.gain ? e : best),
     null,
@@ -94,11 +98,11 @@ export function buildTaxSummaryData(
     highThreshold: options.highThreshold,
     rothConversionTotal: rothTotal,
     rothConversionYears: rothConversions.length,
-    rothFirstYear: rothYearsArr.length ? Math.min(...rothYearsArr) : null,
-    rothLastYear: rothYearsArr.length ? Math.max(...rothYearsArr) : null,
+    rothFirstYear,
+    rothLastYear,
     irmaaYears: irmaa.length,
-    irmaaTotal: irmaa.reduce((s, r) => s + r.surcharge, 0),
-    largestGain: largestGain ? { year: largestGain.year, gain: largestGain.gain, tax: largestGain.tax } : null,
+    irmaaTotal,
+    largestGain,
   });
 
   const horizon = bars.length ? `${bars[0].year}–${bars[bars.length - 1].year}` : "—";
