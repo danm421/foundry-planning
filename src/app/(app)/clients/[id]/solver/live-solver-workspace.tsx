@@ -415,8 +415,11 @@ export function LiveSolverWorkspace({
       for (const m of extraMutations) merged.set(mutationKey(m), m);
       // Filter out any existing mutation for this lever; bisect iterates on it.
       // mutationKey() ignores the value, so we pass an arbitrary placeholder (0)
-      // just to derive the key.
-      const targetKey = mutationKey(buildLeverMutation(target, 0, initialSourceClientData));
+      // just to derive the key. Use workingTree (base + mutations), not the base
+      // tree — a roth-conversion-amount lever added inside the workspace lives
+      // only in the working tree, and buildLeverMutation throws if it can't find
+      // the conversion (F4).
+      const targetKey = mutationKey(buildLeverMutation(target, 0, workingTree));
       merged.delete(targetKey);
       void solveController.start({
         source: initialSource,
@@ -425,7 +428,7 @@ export function LiveSolverWorkspace({
         targetPoS,
       });
     },
-    [activeSolve, mutations, initialSource, solveController, initialSourceClientData],
+    [activeSolve, mutations, initialSource, solveController, workingTree],
   );
 
   const handleSolveCancel = useCallback(() => {
