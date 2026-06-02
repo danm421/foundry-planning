@@ -348,6 +348,14 @@ function familyRoleLabel(
   return "joint";
 }
 
+/** Household roles whose holdings count toward the in-estate balance sheet.
+ *  Child / other family members are out-of-estate. */
+function isInEstateFamilyRole(
+  role: "client" | "spouse" | "child" | "other",
+): boolean {
+  return role === "client" || role === "spouse";
+}
+
 function ownerLabelForFamily(
   role: "client" | "spouse" | "joint",
   firstName: string | undefined,
@@ -389,6 +397,10 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     cur.asset += asset;
     cur.liab += liab;
     ooeOwners.set(key, cur);
+  }
+  function ooeAddEntity(entityId: string, fallbackName: string, asset: number, liab: number) {
+    const e = entitiesById.get(entityId);
+    ooeAdd(`en:${entityId}`, e?.name ?? fallbackName, ownerTypeForEntity(e?.entityType ?? "other"), asset, liab);
   }
 
   // Mortgages keyed by linked-property accountId — used for the M chip on
@@ -556,14 +568,11 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   for (const slice of viewSlices) {
     const sliceRow: AssetRow = sliceToRow(slice);
 
-    // Entity slice that's fully out-of-estate (irrevocable trust, foundation,
-    // unknown entity) → OOE in consolidated view, or kept under entity card
-    // in entities view.
-    // Entity slice that's out-of-estate → OOE detail row + per-owner aggregate.
+    // Entity slice that's out-of-estate (irrevocable trust, foundation, unknown
+    // entity) → OOE detail row + per-owner aggregate (consolidated view only).
     if (view === "consolidated" && slice.kind === "entity" && (!slice.inEstate || slice.familyShare === 0)) {
       outOfEstateRows.push(sliceRow);
-      const e = entitiesById.get(slice.entityId);
-      ooeAdd(`en:${slice.entityId}`, e?.name ?? slice.ownerLabel, ownerTypeForEntity(e?.entityType ?? "other"), slice.value, 0);
+      ooeAddEntity(slice.entityId, slice.ownerLabel, slice.value, 0);
       continue;
     }
 
@@ -584,7 +593,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     if (view === "consolidated" && slice.kind === "family") {
       const fm = familyMemberById.get(slice.familyMemberId);
       const realRole = fm?.role ?? "other";
-      if (realRole !== "client" && realRole !== "spouse") {
+      if (!isInEstateFamilyRole(realRole)) {
         outOfEstateRows.push(sliceRow);
         ooeAdd(`fm:${slice.familyMemberId}`, fm?.firstName ?? "Other", "person", slice.value, 0);
         continue;
@@ -792,7 +801,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     outOfEstateLiabilityRows = [];
     for (const ls of liabilitySlices) {
       if (ls.kind === "family") {
-        if (ls.rawRole !== "client" && ls.rawRole !== "spouse") {
+        if (!isInEstateFamilyRole(ls.rawRole)) {
           outOfEstateLiabilityRows.push(ls.row);
           ooeAdd(`fm:${ls.familyMemberId}`, ls.firstName ?? "Other", "person", 0, ls.row.balance);
         } else {
@@ -803,8 +812,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       // Entity liability: family share → in-estate, residual → OOE.
       if (!ls.inEstate || ls.familyShare === 0) {
         outOfEstateLiabilityRows.push(ls.row);
-        const e = entitiesById.get(ls.entityId);
-        ooeAdd(`en:${ls.entityId}`, e?.name ?? ls.row.ownerLabel, ownerTypeForEntity(e?.entityType ?? "other"), 0, ls.row.balance);
+        ooeAddEntity(ls.entityId, ls.row.ownerLabel, 0, ls.row.balance);
         continue;
       }
       if (ls.familyShare < 1) {
@@ -812,8 +820,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         const residual = ls.row.balance - familyVal;
         liabilityRows.push({ ...ls.row, rowKey: `${ls.row.rowKey}@in`, balance: familyVal });
         outOfEstateLiabilityRows.push({ ...ls.row, rowKey: `${ls.row.rowKey}@oo`, balance: residual });
-        const e = entitiesById.get(ls.entityId);
-        ooeAdd(`en:${ls.entityId}`, e?.name ?? ls.row.ownerLabel, ownerTypeForEntity(e?.entityType ?? "other"), 0, residual);
+        ooeAddEntity(ls.entityId, ls.row.ownerLabel, 0, residual);
       } else {
         liabilityRows.push(ls.row);
       }
@@ -1095,7 +1102,7 @@ function computeYearTotals(
       if (owner.kind === "family_member") {
         const fm = familyMemberById.get(owner.familyMemberId);
         const role = fm?.role ?? "other";
-        if (role === "client" || role === "spouse") inEstateValue = sliceValue;
+        if (isInEstateFamilyRole(role)) inEstateValue = sliceValue;
       } else if (owner.kind === "entity") {
         const e = entitiesById.get(owner.entityId);
         if (!e) continue;
@@ -1131,7 +1138,7 @@ function computeYearTotals(
       if (owner.kind === "family_member") {
         const fm = familyMemberById.get(owner.familyMemberId);
         const role = fm?.role ?? "other";
-        if (role === "client" || role === "spouse") inEstateBalance = sliceBalance;
+        if (isInEstateFamilyRole(role)) inEstateBalance = sliceBalance;
       } else if (owner.kind === "entity") {
         const e = entitiesById.get(owner.entityId);
         if (!e) continue;
