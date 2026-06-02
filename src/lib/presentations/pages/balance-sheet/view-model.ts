@@ -4,19 +4,16 @@ import type { OwnershipView } from "@/components/balance-sheet-report/ownership-
 import {
   buildViewModel,
   type BalanceSheetViewModel,
-  type AccountLike,
-  type LiabilityLike,
-  type EntityInfo,
 } from "@/components/balance-sheet-report/view-model";
-
-const LIQUID_KEYS = new Set(["cash", "taxable", "retirement"]);
+import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
+import { LIQUID_CATEGORIES, type AccountCategory } from "@/lib/account-groups/liquid-filter";
 
 /** Liquid portfolio = cash + taxable + retirement category totals. */
 export function liquidPortfolioTotal(
   categories: { key: string; total: number }[],
 ): number {
   return categories
-    .filter((c) => LIQUID_KEYS.has(c.key))
+    .filter((c) => LIQUID_CATEGORIES.has(c.key as AccountCategory))
     .reduce((sum, c) => sum + c.total, 0);
 }
 
@@ -51,38 +48,17 @@ export function buildBalanceSheetPageData(
 ): BalanceSheetPageData {
   const selectedYear = resolveBalanceSheetYear(ctx.years, options);
 
-  const accounts: AccountLike[] = ctx.clientData.accounts.map((a) => ({
-    id: a.id,
-    name: a.name,
-    category: a.category,
-    owners: a.owners ?? [],
-    parentAccountId: a.parentAccountId ?? null,
-    businessType: a.businessType ?? null,
-  }));
-
-  const liabilities: LiabilityLike[] = ctx.clientData.liabilities.map((l) => ({
-    id: l.id,
-    name: l.name,
-    owners: l.owners ?? [],
-    linkedPropertyId: l.linkedPropertyId ?? null,
-    parentAccountId: l.parentAccountId ?? null,
-  }));
-
-  const entities: EntityInfo[] = (ctx.clientData.entities ?? []).map((e) => ({
-    id: e.id,
-    name: e.name ?? "Entity",
-    entityType: e.entityType ?? "other",
-    isIrrevocable: e.isIrrevocable,
-    value: e.value,
-    valueGrowthRate: e.valueGrowthRate,
-    owners: e.owners,
-  }));
+  // `buildViewModelInputs` is the canonical `ClientData` → view-model-inputs
+  // mapper, shared with the on-screen balance-sheet report so both stay in
+  // sync. (Its `notesReceivable` output is unused by `buildViewModel`.)
+  const { accounts, liabilities, entities, familyMembers } =
+    buildViewModelInputs(ctx.clientData);
 
   const viewModel = buildViewModel({
     accounts,
     liabilities,
     entities,
-    familyMembers: ctx.clientData.familyMembers ?? [],
+    familyMembers,
     projectionYears: ctx.years,
     selectedYear,
     view,

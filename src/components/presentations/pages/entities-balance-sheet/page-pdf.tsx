@@ -4,6 +4,7 @@ import { SectionHead } from "@/components/presentations/shared/section-head";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { BalanceSheetPageData } from "@/lib/presentations/pages/balance-sheet/view-model";
+import { exactCurrency as fmt } from "@/lib/presentations/format";
 
 const ENTITY_TYPE_LABEL: Record<string, string> = {
   trust: "Trust",
@@ -11,17 +12,10 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   s_corp: "S-Corp",
   c_corp: "C-Corp",
   partnership: "Partnership",
+  sole_prop: "Sole Prop",
   foundation: "Foundation",
   other: "Entity",
 };
-
-function fmt(v: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(v);
-}
 
 const S = StyleSheet.create({
   card: {

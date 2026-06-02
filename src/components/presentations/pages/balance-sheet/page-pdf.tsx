@@ -5,14 +5,7 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { BalanceSheetPageData } from "@/lib/presentations/pages/balance-sheet/view-model";
 import type { YoyResult } from "@/components/balance-sheet-report/yoy";
-
-function fmt(v: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(v);
-}
+import { exactCurrency as fmt } from "@/lib/presentations/format";
 
 const S = StyleSheet.create({
   kpiRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
