@@ -98,6 +98,10 @@ export interface DeathSectionData {
    *  and admin-expense deductions. Anchors the tax track in the Reductions
    *  card. NOT comparable to the asset-transfer total; see `assetEstateValue`. */
   taxableEstate: number;
+  /** Form 706 gross estate for this decedent (full chargeable estate before
+   *  deductions). Re-exported from the underlying EstateTaxResult so summary
+   *  surfaces can show per-death-event gross without re-resolving ordering. */
+  grossEstate: number;
   /** Σ positive asset-source transfers. The asset value physically passing
    *  through this death event (full balance of joint accounts at first death,
    *  since titling routes 100% to the survivor). */
@@ -674,6 +678,7 @@ function buildDeathSection(
     decedentName,
     year: payload.year,
     taxableEstate,
+    grossEstate: tax.grossEstate,
     assetEstateValue,
     assetCount,
     recipients,
