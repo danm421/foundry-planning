@@ -219,3 +219,17 @@ describe("buildBracketTimeline", () => {
     ]);
   });
 });
+import { summarizeTaxSummaryOptions } from "../summarize-options";
+import { estimateTaxSummaryPageCount } from "../estimate-page-count";
+
+describe("summarizeTaxSummaryOptions", () => {
+  it("renders both thresholds", () => {
+    expect(summarizeTaxSummaryOptions({ lowThreshold: 0.22, highThreshold: 0.24 })).toBe("Low <22% · High >24%");
+  });
+});
+
+describe("estimateTaxSummaryPageCount", () => {
+  it("reserves one page", () => {
+    expect(estimateTaxSummaryPageCount()).toBe(1);
+  });
+});
