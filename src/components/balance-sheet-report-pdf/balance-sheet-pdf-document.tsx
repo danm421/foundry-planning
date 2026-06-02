@@ -151,13 +151,13 @@ export function BalanceSheetPdfDocument({
                 ))}
               </View>
             ))}
-            {viewModel.outOfEstateRows.length > 0 && (
+            {viewModel.outOfEstateOwnerRows.length > 0 && (
               <View style={styles.panel}>
-                <Text style={{ marginBottom: 4 }}>Out of Estate (Entity-owned)</Text>
-                {viewModel.outOfEstateRows.map((r) => (
-                  <View key={r.rowKey} style={styles.itemRow}>
-                    <Text>{r.accountName}</Text>
-                    <Text>{formatCurrency(r.value)}</Text>
+                <Text style={{ marginBottom: 4 }}>Out of Estate</Text>
+                {viewModel.outOfEstateOwnerRows.map((r) => (
+                  <View key={r.ownerKey} style={styles.itemRow}>
+                    <Text>{r.ownerName}</Text>
+                    <Text>{formatCurrency(r.net)}</Text>
                   </View>
                 ))}
               </View>

@@ -62,7 +62,9 @@ function multiOwnerViewModel(): BalanceSheetViewModel {
     ],
     outOfEstateLiabilityRows: [],
     outOfEstateNetWorth: 500_000,
-    outOfEstateOwnerRows: [],
+    outOfEstateOwnerRows: [
+      { ownerKey: "en:ooe1", ownerName: "Family Trust", ownerType: "trust", assetTotal: 500_000, liabilityTotal: 0, net: 500_000 },
+    ],
     liabilityRows: [
       mkLiability({ rowKey: "liab1#client", liabilityId: "liab1", balance: 150_000 }),
       mkLiability({ rowKey: "liab1#spouse", liabilityId: "liab1", balance: 100_000 }),
@@ -101,5 +103,16 @@ describe("BalanceSheetPdfDocument — multi-owner row keys (F78)", () => {
     expect(buf.length).toBeGreaterThan(0);
     const dupKeyWarning = calls.find((c) => c.includes("same key"));
     expect(dupKeyWarning).toBeUndefined();
+  });
+
+  it("renders the out-of-estate block keyed by owner without duplicate-key warnings", async () => {
+    const calls: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { calls.push(String(a[0])); });
+    const buf = await renderToBuffer(
+      <BalanceSheetPdfDocument {...docProps} viewModel={multiOwnerViewModel()} />,
+    );
+    spy.mockRestore();
+    expect(buf.length).toBeGreaterThan(0);
+    expect(calls.find((c) => c.includes("same key"))).toBeUndefined();
   });
 });
