@@ -26,12 +26,15 @@ export function buildViewModelInputs(tree: ClientData): ViewModelInputs {
     name: a.name,
     category: a.category,
     owners: a.owners ?? [],
+    parentAccountId: a.parentAccountId ?? null,
+    businessType: a.businessType ?? null,
   }));
   const liabilities: LiabilityLike[] = (tree.liabilities ?? []).map((l) => ({
     id: l.id,
     name: l.name,
     owners: l.owners ?? [],
     linkedPropertyId: l.linkedPropertyId ?? null,
+    parentAccountId: l.parentAccountId ?? null,
   }));
   const entities: EntityInfo[] = (tree.entities ?? []).map((e) => ({
     id: e.id,

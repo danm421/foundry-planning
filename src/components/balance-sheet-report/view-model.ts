@@ -9,6 +9,7 @@
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import type { FamilyMember } from "@/engine/types";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
+import { collectBusinessTree } from "@/engine/business/business-tree";
 import { resolveOwnerSlices } from "@/lib/estate/account-owner-slices";
 import type { OwnershipView } from "./ownership-filter";
 import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
@@ -21,6 +22,14 @@ export interface AccountLike {
   name: string;
   category: string; // "cash" | "taxable" | "retirement" | "real_estate" | "business" | "life_insurance"
   owners: AccountOwner[];
+  /** Business-as-asset model: a sub-account (operating cash, real estate held
+   *  inside the business, etc.) hangs off its parent business account via this
+   *  id. Null/undefined for top-level accounts. */
+  parentAccountId?: string | null;
+  /** Business-as-asset model: legal type on a top-level business account
+   *  (`category === "business"`, `parentAccountId == null`). Drives the
+   *  entity-card type chip on the By-Entity tab. */
+  businessType?: string | null;
 }
 
 export interface LiabilityLike {
@@ -28,6 +37,9 @@ export interface LiabilityLike {
   name: string;
   owners: AccountOwner[];
   linkedPropertyId?: string | null;
+  /** Business-as-asset model: a debt carried by a business hangs off its
+   *  parent business account via this id. */
+  parentAccountId?: string | null;
 }
 
 export interface ProjectionYearLike {
@@ -889,10 +901,23 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
 
   let entityGroups: EntityGroup[] | undefined;
   if (view === "entities") {
+    // Each top-level business account (category="business", no parent) and its
+    // parentAccountId subtree gets its own business card below. Resolve the
+    // subtrees once, up front: reused both to exclude those accounts from the
+    // trust/entity cards (so a trust-owned business doesn't also show as a
+    // rolled-up row under the trust) and to build the business cards.
+    const businessTrees = accounts
+      .filter((a) => a.category === "business" && a.parentAccountId == null)
+      .map((b) => ({ root: b, tree: collectBusinessTree(b.id, accounts) }));
+    const businessTreeAccountIds = new Set(
+      businessTrees.flatMap(({ tree }) => tree.map((a) => a.id)),
+    );
+
     const allAssetRows = assetCategories.flatMap((c) => c.rows);
     const assetsByEntity = new Map<string, AssetRow[]>();
     for (const row of allAssetRows) {
       if (!row.ownerEntityId) continue;
+      if (businessTreeAccountIds.has(row.accountId)) continue;
       const list = assetsByEntity.get(row.ownerEntityId) ?? [];
       list.push(row);
       assetsByEntity.set(row.ownerEntityId, list);
@@ -905,24 +930,65 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       liabsByEntity.set(row.ownerEntityId, list);
     }
 
-    entityGroups = entities
-      .map((e) => {
-        const aRows = assetsByEntity.get(e.id) ?? [];
-        const lRows = liabsByEntity.get(e.id) ?? [];
-        const assetTotal = aRows.reduce((s, r) => s + r.value, 0);
-        const liabilityTotal = lRows.reduce((s, r) => s + r.balance, 0);
-        return {
-          entityId: e.id,
-          entityName: e.name,
-          entityType: e.entityType,
-          assetRows: aRows,
-          assetTotal,
-          liabilityRows: lRows,
-          liabilityTotal,
-          netWorth: assetTotal - liabilityTotal,
-        };
-      })
+    const makeGroup = (
+      entityId: string,
+      entityName: string,
+      entityType: string,
+      assetRows: AssetRow[],
+      liabilityRows: LiabilityRow[],
+    ): EntityGroup => {
+      const assetTotal = assetRows.reduce((s, r) => s + r.value, 0);
+      const liabilityTotal = liabilityRows.reduce((s, r) => s + r.balance, 0);
+      return { entityId, entityName, entityType, assetRows, assetTotal, liabilityRows, liabilityTotal, netWorth: assetTotal - liabilityTotal };
+    };
+
+    const trustGroups = entities
+      .map((e) => makeGroup(e.id, e.name, e.entityType, assetsByEntity.get(e.id) ?? [], liabsByEntity.get(e.id) ?? []))
       .filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
+
+    // Business-as-asset groups: one card per business with its own value plus
+    // its parentAccountId sub-accounts as nested rows and its sub-liabilities
+    // netted out. Ownership is irrelevant here — a business gets its own card
+    // whether it's family- or trust-owned.
+    const businessGroups: EntityGroup[] = [];
+    for (const { root: b, tree } of businessTrees) {
+      const treeIds = new Set(tree.map((a) => a.id));
+      const assetRows: AssetRow[] = tree.map((acct) => ({
+        rowKey: acct.id === b.id ? `biz:${acct.id}` : `bizchild:${acct.id}`,
+        accountId: acct.id,
+        accountName: acct.name,
+        owner: null,
+        ownerEntityId: b.id,
+        ownerPercent: 1,
+        ownerLabel: acct.name,
+        value: accountValueForYear(yearData, acct.id, asOfMode),
+        hasLinkedMortgage: false,
+        isFlatBusinessValue: false,
+        accountHasMultipleOwners: false,
+      }));
+      const bizLiabRows: LiabilityRow[] = [];
+      for (const l of liabilities) {
+        if (l.parentAccountId == null || !treeIds.has(l.parentAccountId)) continue;
+        const balance = yearData.liabilityBalancesBoY[l.id] ?? 0;
+        if (balance <= 0) continue;
+        bizLiabRows.push({
+          rowKey: `bizliab:${l.id}`,
+          liabilityId: l.id,
+          liabilityName: l.name,
+          owner: null,
+          ownerEntityId: b.id,
+          ownerPercent: 1,
+          ownerLabel: l.name,
+          balance,
+        });
+      }
+      const group = makeGroup(b.id, b.name, b.businessType ?? "other", assetRows, bizLiabRows);
+      // Skip a wholly empty business (no value anywhere, no debt).
+      if (group.assetTotal === 0 && group.liabilityTotal === 0) continue;
+      businessGroups.push(group);
+    }
+
+    entityGroups = [...trustGroups, ...businessGroups];
   }
 
   // ── Totals ──────────────────────────────────────────────────────────────

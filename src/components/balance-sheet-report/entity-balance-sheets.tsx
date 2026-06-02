@@ -10,6 +10,7 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   s_corp: "S-Corp",
   c_corp: "C-Corp",
   partnership: "Partnership",
+  sole_prop: "Sole Prop",
   foundation: "Foundation",
   other: "Entity",
 };

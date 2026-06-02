@@ -378,6 +378,135 @@ describe("buildViewModel (entities view)", () => {
     const trust = vm.entityGroups!.find((g) => g.entityId === "trust-1")!;
     expect(trust.assetRows.some((r) => r.accountId === "a-llc-cash")).toBe(false);
   });
+
+  // ── Business-as-asset model (category="business" + parentAccountId children) ──
+  // Mirrors the Cooper & Susan sample: a family-owned "Consulting Business"
+  // (category=business) with a "— Cash" sub-account hung off it via
+  // parentAccountId. These are accounts, not `entities` rows — the legacy
+  // entity-business path never surfaces them on the By-Entity tab.
+
+  it("surfaces a family-owned business-as-asset account as its own group with nested sub-accounts", () => {
+    const bizParent = {
+      id: "biz-1", name: "Consulting Business", category: "business",
+      parentAccountId: null, businessType: "llc",
+      owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
+    };
+    const bizCash = {
+      id: "biz-cash", name: "Consulting Business — Cash", category: "cash",
+      parentAccountId: "biz-1", owners: [] as AccountOwner[],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, bizParent, bizCash],
+      projectionYears: [
+        priorYear,
+        {
+          ...projectionYear,
+          accountLedgers: {
+            ...projectionYear.accountLedgers,
+            "biz-1": { beginningValue: 50_000, endingValue: 50_000 },
+            "biz-cash": { beginningValue: 10_000, endingValue: 10_000 },
+          },
+        },
+      ],
+      view: "entities",
+    });
+    const biz = vm.entityGroups!.find((g) => g.entityId === "biz-1")!;
+    expect(biz).toBeDefined();
+    expect(biz.entityType).toBe("llc");
+    // Parent's own value AND the sub-account both surface as rows.
+    expect(biz.assetRows.some((r) => r.accountId === "biz-1")).toBe(true);
+    expect(biz.assetRows.some((r) => r.accountId === "biz-cash")).toBe(true);
+    // Consolidated value is additive: parent 50k + child 10k.
+    expect(biz.assetTotal).toBe(60_000);
+    expect(biz.netWorth).toBe(60_000);
+  });
+
+  it("keeps a $0 business sub-account visible as a row", () => {
+    const bizParent = {
+      id: "biz-1", name: "Consulting Business", category: "business",
+      parentAccountId: null, businessType: "llc",
+      owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
+    };
+    const bizCash = {
+      id: "biz-cash", name: "Consulting Business — Cash", category: "cash",
+      parentAccountId: "biz-1", owners: [] as AccountOwner[],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, bizParent, bizCash],
+      projectionYears: [
+        priorYear,
+        {
+          ...projectionYear,
+          accountLedgers: {
+            ...projectionYear.accountLedgers,
+            "biz-1": { beginningValue: 50_000, endingValue: 50_000 },
+            "biz-cash": { beginningValue: 0, endingValue: 0 },
+          },
+        },
+      ],
+      view: "entities",
+    });
+    const biz = vm.entityGroups!.find((g) => g.entityId === "biz-1")!;
+    expect(biz.assetRows.find((r) => r.accountId === "biz-cash")?.value).toBe(0);
+    expect(biz.assetTotal).toBe(50_000);
+  });
+
+  it("subtracts a business's sub-liability from its group net worth", () => {
+    const bizParent = {
+      id: "biz-1", name: "Consulting Business", category: "business",
+      parentAccountId: null, businessType: "s_corp",
+      owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
+    };
+    const bizLoan = {
+      id: "biz-loan", name: "Business LOC", owners: [] as AccountOwner[],
+      linkedPropertyId: null, parentAccountId: "biz-1",
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, bizParent],
+      liabilities: [...liabilities, bizLoan],
+      projectionYears: [
+        priorYear,
+        {
+          ...projectionYear,
+          accountLedgers: { ...projectionYear.accountLedgers, "biz-1": { beginningValue: 50_000, endingValue: 50_000 } },
+          liabilityBalancesBoY: { ...projectionYear.liabilityBalancesBoY, "biz-loan": 20_000 },
+        },
+      ],
+      view: "entities",
+    });
+    const biz = vm.entityGroups!.find((g) => g.entityId === "biz-1")!;
+    expect(biz.liabilityRows.some((r) => r.liabilityId === "biz-loan")).toBe(true);
+    expect(biz.liabilityTotal).toBe(20_000);
+    expect(biz.netWorth).toBe(30_000);
+  });
+
+  it("does not also roll a trust-owned business-as-asset account into the trust card", () => {
+    // Business account owned by a trust (entity_id owner) — its parent row
+    // belongs to its own business group, not the trust's.
+    const bizParent = {
+      id: "biz-1", name: "Trust-Held Business", category: "business",
+      parentAccountId: null, businessType: "llc",
+      owners: [{ kind: "entity" as const, entityId: "trust-1", percent: 1 }],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, bizParent],
+      projectionYears: [
+        priorYear,
+        { ...projectionYear, accountLedgers: { ...projectionYear.accountLedgers, "biz-1": { beginningValue: 90_000, endingValue: 90_000 } } },
+      ],
+      view: "entities",
+    });
+    const biz = vm.entityGroups!.find((g) => g.entityId === "biz-1")!;
+    expect(biz.assetTotal).toBe(90_000);
+    const trust = vm.entityGroups!.find((g) => g.entityId === "trust-1")!;
+    // Trust shows only its own brokerage (300k) — not the business.
+    expect(trust.assetRows.some((r) => r.accountId === "biz-1")).toBe(false);
+    expect(trust.assetTotal).toBe(300_000);
+  });
 });
 
 describe("buildViewModel (personal views)", () => {

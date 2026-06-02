@@ -20,12 +20,14 @@ const tree = {
 describe("buildViewModelInputs", () => {
   const out = buildViewModelInputs(tree);
 
-  it("maps accounts to AccountLike (id, name, category, owners)", () => {
-    expect(out.accounts).toEqual([{ id: "a1", name: "Checking", category: "cash", owners: tree.accounts[0].owners }]);
+  it("maps accounts to AccountLike (id, name, category, owners, business-as-asset fields)", () => {
+    expect(out.accounts).toEqual([
+      { id: "a1", name: "Checking", category: "cash", owners: tree.accounts[0].owners, parentAccountId: null, businessType: null },
+    ]);
   });
 
   it("maps liabilities to LiabilityLike with linkedPropertyId coerced to null", () => {
-    expect(out.liabilities[0]).toEqual({ id: "l1", name: "Mortgage", owners: tree.liabilities[0].owners, linkedPropertyId: "h1" });
+    expect(out.liabilities[0]).toEqual({ id: "l1", name: "Mortgage", owners: tree.liabilities[0].owners, linkedPropertyId: "h1", parentAccountId: null });
   });
 
   it("maps entities to EntityInfo carrying entityType/value/valueGrowthRate/owners", () => {

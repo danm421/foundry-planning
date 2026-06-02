@@ -1,17 +1,25 @@
 import type { Account } from "../types";
 
+/** Minimal account shape the tree walk needs. The engine passes full
+ *  `Account`s; the balance-sheet report passes its slimmer `AccountLike`. */
+interface TreeNode {
+  id: string;
+  parentAccountId?: string | null;
+}
+
 /**
  * Return the business account plus every descendant account reachable via
  * parentAccountId. Cycle-safe via a visited set. Order is parent-first then
- * depth-first.
+ * depth-first. Generic over any node carrying `id` + `parentAccountId` so
+ * callers with reduced account shapes can reuse it.
  */
-export function collectBusinessTree(rootId: string, accounts: Account[]): Account[] {
+export function collectBusinessTree<T extends TreeNode>(rootId: string, accounts: T[]): T[] {
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const root = byId.get(rootId);
   if (!root) return [];
-  const out: Account[] = [];
+  const out: T[] = [];
   const seen = new Set<string>();
-  const stack: Account[] = [root];
+  const stack: T[] = [root];
   while (stack.length > 0) {
     const cur = stack.pop()!;
     if (seen.has(cur.id)) continue;
