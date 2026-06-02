@@ -14,7 +14,7 @@ const SEGMENTS: Array<{ key: keyof EstateSummaryChartBar; label: string; color: 
 
 export function EstateSummaryChartPdf({ bars }: { bars: EstateSummaryChartBar[] }) {
   const width = 300;
-  const height = 150;
+  const height = 88;
   const barWidth = 54;
   const gap = 60;
   const leftPad = 40;

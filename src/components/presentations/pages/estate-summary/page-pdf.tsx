@@ -8,26 +8,26 @@ import { fmtUsd, fmtPct } from "@/lib/presentations/pages/estate-summary/aggrega
 import { EstateSummaryChartPdf } from "./chart-pdf";
 
 const s = StyleSheet.create({
-  kpis: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8 },
+  kpis: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 6 },
   kpiLbl: { fontSize: 6.5, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.4 },
   kpiVal: { fontSize: 15, fontWeight: 700, marginTop: 2 },
   kpiSub: { fontSize: 6.5, color: T.ink2, marginTop: 1 },
-  body: { flexDirection: "row", gap: 10, flex: 1 },
+  body: { flexDirection: "row", gap: 10 },
   panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 10 },
   panelLeft: { flexBasis: "56%" },
   panelRight: { flexBasis: "44%" },
-  h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 },
+  h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 },
   row: { flexDirection: "row" },
   th: { fontSize: 6.5, color: T.ink3, textTransform: "uppercase" },
   td: { fontSize: 7.5, color: T.ink },
-  cell: { flex: 1, textAlign: "right", paddingVertical: 1.5, paddingHorizontal: 2 },
-  cellL: { flex: 1.4, textAlign: "left", paddingVertical: 1.5, paddingHorizontal: 2 },
-  grp: { backgroundColor: T.accentTint, fontSize: 6.5, fontWeight: 700, textTransform: "uppercase", paddingVertical: 2, paddingHorizontal: 2, marginTop: 4 },
+  cell: { flex: 1, textAlign: "right", paddingVertical: 1, paddingHorizontal: 2 },
+  cellL: { flex: 1.4, textAlign: "left", paddingVertical: 1, paddingHorizontal: 2 },
+  grp: { backgroundColor: T.accentTint, fontSize: 6.5, fontWeight: 700, textTransform: "uppercase", paddingVertical: 2, paddingHorizontal: 2, marginTop: 3 },
   hair: { borderBottomWidth: 0.5, borderBottomColor: T.hair },
-  narr: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 8, marginTop: 8 },
-  narrText: { fontSize: 8, color: T.ink, lineHeight: 1.45, marginBottom: 2 },
-  note: { fontSize: 6.5, color: T.ink3, marginTop: 5 },
+  narr: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 7, marginTop: 6 },
+  narrText: { fontSize: 8, color: T.ink, lineHeight: 1.35, marginBottom: 1.5 },
+  note: { fontSize: 6.5, color: T.ink3, marginTop: 4 },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
 
@@ -66,7 +66,7 @@ export function EstateSummaryPagePdf({ data, firmName, clientName, reportDate, p
       orientation="landscape"
     >
       <Text style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>{data.title}</Text>
-      <Text style={{ fontSize: 8, color: T.ink2, marginBottom: 10 }}>{data.subtitle}</Text>
+      <Text style={{ fontSize: 8, color: T.ink2, marginBottom: 6 }}>{data.subtitle}</Text>
 
       {data.isEmpty ? (
         <Text style={s.empty}>No estate data available for this scenario.</Text>
