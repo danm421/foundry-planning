@@ -105,7 +105,8 @@ export function PdfPreviewDialog({ request, clientId, onClose }: Props) {
         if (!o) onClose();
       }}
       title={request.title}
-      size="xl"
+      size="lg"
+      contentFill
       primaryAction={{
         label: "Download PDF",
         onClick: handleDownload,
