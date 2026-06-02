@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import type { FamilyMember } from "@/engine/types";
-import type { AccountLike, LiabilityLike, EntityInfo, ProjectionYearLike } from "./view-model";
+import type { LiabilityLike, EntityInfo, ProjectionYearLike } from "./view-model";
 import { buildViewModel } from "./view-model";
 import {
   buildHouseholdColumns,
@@ -16,6 +16,9 @@ import HouseholdTable from "./household-table";
 import OutOfEstateTable from "./out-of-estate-table";
 import EntityBalanceSheets from "./entity-balance-sheets";
 
+/** Per-year payload the report needs: satisfies both view-model and household helpers. */
+export type BalanceSheetProjYear = ProjectionYearLike & HouseholdProjYear;
+
 export interface BalanceSheetReportProps {
   accounts: HouseholdAccountLike[];
   liabilities: LiabilityLike[];
@@ -24,7 +27,7 @@ export interface BalanceSheetReportProps {
   familyMembers: FamilyMember[];
   /** Slim per-year data: must satisfy both ProjectionYearLike (for buildViewModel)
    *  and HouseholdProjYear (for buildHouseholdColumns). */
-  projectionYears: Array<ProjectionYearLike & HouseholdProjYear>;
+  projectionYears: BalanceSheetProjYear[];
   selectableYears: number[];
   defaultYear: number;
   clientLabel: string;
@@ -40,8 +43,6 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
   );
   const [tab, setTab] = useState<Tab>("household");
 
-  const accounts: AccountLike[] = props.accounts;
-
   const household = useMemo(
     () =>
       buildHouseholdColumns({
@@ -53,13 +54,13 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
         projectionYears: props.projectionYears,
         selectedYear: year,
       }),
-    [props, year],
+    [props.accounts, props.liabilities, props.entities, props.notesReceivable, props.familyMembers, props.projectionYears, year],
   );
 
   const consolidated = useMemo(
     () =>
       buildViewModel({
-        accounts,
+        accounts: props.accounts,
         liabilities: props.liabilities,
         entities: props.entities,
         familyMembers: props.familyMembers,
@@ -67,14 +68,14 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
         selectedYear: year,
         view: "consolidated",
       }),
-    [accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, year],
+    [props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, year],
   );
 
   const entityModel = useMemo(
     () =>
       tab === "entities"
         ? buildViewModel({
-            accounts,
+            accounts: props.accounts,
             liabilities: props.liabilities,
             entities: props.entities,
             familyMembers: props.familyMembers,
@@ -83,7 +84,7 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
             view: "entities",
           })
         : null,
-    [tab, accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, year],
+    [tab, props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, year],
   );
 
   const tabClass = (active: boolean) =>

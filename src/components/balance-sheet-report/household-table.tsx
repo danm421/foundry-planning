@@ -35,6 +35,17 @@ export default function HouseholdTable({ model, clientLabel, spouseLabel }: Hous
       </>
     );
   };
+  const nwCell = (v: number) => (
+    <td className={`px-3 py-2 text-right tabular-nums ${v < 0 ? "text-crit" : "text-good"}`}>{fmt(v)}</td>
+  );
+  const nwCols = (c: OwnerColumns) => (
+    <>
+      {nwCell(c.client)}
+      {showSplit && nwCell(c.spouse)}
+      {showSplit && nwCell(c.joint)}
+      {nwCell(c.total)}
+    </>
+  );
 
   const rowEl = (r: OwnerColumnRow, negative = false) => (
     <tr key={r.key} className="border-t border-hair">
@@ -80,20 +91,7 @@ export default function HouseholdTable({ model, clientLabel, spouseLabel }: Hous
           </tr>
           <tr className="border-t-2 border-hair-2 bg-paper font-semibold">
             <td className="px-3 py-2 text-ink">Net Worth</td>
-            {(() => {
-              const c = model.netWorth;
-              const nwCell = (v: number) => (
-                <td className={`px-3 py-2 text-right tabular-nums ${v < 0 ? "text-crit" : "text-good"}`}>{fmt(v)}</td>
-              );
-              return (
-                <>
-                  {nwCell(c.client)}
-                  {showSplit && nwCell(c.spouse)}
-                  {showSplit && nwCell(c.joint)}
-                  {nwCell(c.total)}
-                </>
-              );
-            })()}
+            {nwCols(model.netWorth)}
           </tr>
         </tbody>
       </table>

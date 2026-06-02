@@ -5,7 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
-import BalanceSheetReport, { type BalanceSheetReportProps } from "@/components/balance-sheet-report/balance-sheet-report";
+import BalanceSheetReport, { type BalanceSheetReportProps, type BalanceSheetProjYear } from "@/components/balance-sheet-report/balance-sheet-report";
 
 interface BalanceSheetReportContentProps {
   clientId: string;
@@ -21,11 +21,20 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   if (!clientRow) notFound();
 
-  const { tree, result } = await loadProjectionForRef(id, firmId, {
-    kind: "scenario",
-    id: scenarioParam ?? "base",
-    toggleState: {},
-  });
+  // Owner labels (first names) from CRM contacts; fall back to the tree.
+  // crmHouseholdId is notNull on the clients table so no null-guard needed.
+  // Both reads are independent — run them concurrently.
+  const [{ tree, result }, contactRows] = await Promise.all([
+    loadProjectionForRef(id, firmId, {
+      kind: "scenario",
+      id: scenarioParam ?? "base",
+      toggleState: {},
+    }),
+    db
+      .select({ role: crmHouseholdContacts.role, firstName: crmHouseholdContacts.firstName })
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId)),
+  ]);
 
   const inputs = buildViewModelInputs(tree);
 
@@ -51,18 +60,11 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
     notesReceivableByNote: y.notesReceivableByNote,
     entityAccountSharesEoY: y.entityAccountSharesEoY,
     familyAccountSharesEoY: y.familyAccountSharesEoY,
-  })) as BalanceSheetReportProps["projectionYears"];
+  })) satisfies BalanceSheetProjYear[];
 
   const selectableYears = projectionYears.map((y) => y.year);
   const currentYear = new Date().getFullYear();
   const defaultYear = selectableYears.includes(currentYear) ? currentYear : selectableYears[0];
-
-  // Owner labels (first names) from CRM contacts; fall back to the tree.
-  // crmHouseholdId is notNull on the clients table so no null-guard needed.
-  const contactRows = await db
-    .select({ role: crmHouseholdContacts.role, firstName: crmHouseholdContacts.firstName })
-    .from(crmHouseholdContacts)
-    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
   const clientLabel =
     contactRows.find((c) => c.role === "primary")?.firstName ?? tree.client.firstName ?? "Client";
   const spouseContact = contactRows.find((c) => c.role === "spouse");

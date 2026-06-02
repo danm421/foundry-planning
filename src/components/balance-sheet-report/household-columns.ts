@@ -222,14 +222,8 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     liabilityRows.push({ key: liab.id, name: liab.name, hasLinkedMortgage: false, ...cols });
   }
 
-  const totalAssets = assetCategories.reduce<OwnerColumns>(
-    (acc, c) => addColumns(acc, { client: c.client, spouse: c.spouse, joint: c.joint, total: c.total }),
-    ZERO,
-  );
-  const totalLiabilities = liabilityRows.reduce<OwnerColumns>(
-    (acc, r) => addColumns(acc, { client: r.client, spouse: r.spouse, joint: r.joint, total: r.total }),
-    ZERO,
-  );
+  const totalAssets = assetCategories.reduce<OwnerColumns>((acc, c) => addColumns(acc, c), ZERO);
+  const totalLiabilities = liabilityRows.reduce<OwnerColumns>((acc, r) => addColumns(acc, r), ZERO);
   const netWorth: OwnerColumns = {
     client: totalAssets.client - totalLiabilities.client,
     spouse: totalAssets.spouse - totalLiabilities.spouse,
