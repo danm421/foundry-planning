@@ -4,7 +4,7 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
-import { fmtUsd } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { fmtUsd, fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import { PortfolioBarsPdf, SplitBarPdf } from "./chart-pdf";
 
 const s = StyleSheet.create({
@@ -52,17 +52,17 @@ function SsColumn({ c }: { c: SsClient }) {
   return (
     <View style={{ flex: 1 }}>
       <Text style={s.ssName}>{c.name}</Text>
-      <Text style={s.ssMeta}>{`PIA ${fmtUsd(c.piaMonthly)}/mo · claims at ${c.claimAge} · COLA ${Math.round(c.colaPct * 100)}%`}</Text>
+      <Text style={s.ssMeta}>{`PIA ${fmtUsdMonthly(c.piaMonthly)}/mo · claims at ${c.claimAge} · COLA ${Math.round(c.colaPct * 100)}%`}</Text>
       {c.alreadyClaiming ? (
         <View style={s.ssRow}>
           <Text style={s.ssCell}>Receiving</Text>
-          <Text style={s.ssCell}>{`${fmtUsd(c.receivedMonthly ?? 0)}/mo`}</Text>
+          <Text style={s.ssCell}>{`${fmtUsdMonthly(c.receivedMonthly ?? 0)}/mo`}</Text>
         </View>
       ) : (
         c.ladder.map((r) => (
           <View key={r.age} style={[s.ssRow, ...(r.selected ? [s.ssRowSel] : [])]}>
             <Text style={r.selected ? s.ssCellSel : s.ssCell}>{r.age}</Text>
-            <Text style={r.selected ? s.ssCellSel : s.ssCell}>{`${fmtUsd(r.monthly)}/mo`}</Text>
+            <Text style={r.selected ? s.ssCellSel : s.ssCell}>{`${fmtUsdMonthly(r.monthly)}/mo`}</Text>
           </View>
         ))
       )}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
 import {
-  fmtUsd, fmtPct, retirementYearOf, liquidThreePoints, portfolioBars,
+  fmtUsd, fmtPct, fmtUsdMonthly, retirementYearOf, liquidThreePoints, portfolioBars,
   assetsByTaxType, livingExpensesTodayVsRetirement,
 } from "../aggregate";
 
@@ -23,6 +23,13 @@ describe("fmtUsd / fmtPct", () => {
     expect(fmtUsd(2_400_000)).toBe("$2.4M");
     expect(fmtUsd(31_000)).toBe("$31k");
     expect(fmtPct(0.92)).toBe("92%");
+  });
+});
+
+describe("fmtUsdMonthly", () => {
+  it("keeps full dollars so the SS ladder gradient stays visible", () => {
+    expect(fmtUsdMonthly(2_800)).toBe("$2,800");
+    expect(fmtUsdMonthly(1_960.4)).toBe("$1,960");
   });
 });
 

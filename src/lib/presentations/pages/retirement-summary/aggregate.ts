@@ -11,6 +11,11 @@ export function fmtUsd(n: number): string {
 export function fmtPct(fraction: number): string {
   return `${Math.round(fraction * 100)}%`;
 }
+// Full-dollar format for monthly amounts (e.g. Social Security), where the
+// thousands-rounding of fmtUsd would flatten the 62–70 benefit gradient.
+export function fmtUsdMonthly(n: number): string {
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
 
 export function birthYear(dob: string | null | undefined): number | null {
   if (!dob) return null;
