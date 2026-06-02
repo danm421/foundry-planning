@@ -87,6 +87,7 @@ const baseProps = {
     payoffLiabilityIds: [],
     mcTargetScore: 0.9,
     coverEstateTaxes: false,
+    scenarioRef: "base",
   },
   clientName: "Client",
   spouseName: "Spouse",

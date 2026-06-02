@@ -24,6 +24,7 @@ export function defaultAssumptions(data: ClientData): LiAssumptions {
     payoffLiabilityIds: [],
     mcTargetScore: 0.9,
     coverEstateTaxes: false,
+    scenarioRef: "base",
   };
 }
 
@@ -44,6 +45,8 @@ export async function loadLifeInsuranceSettings(
     payoffLiabilityIds: row.payoffLiabilityIds ?? [],
     mcTargetScore: Number(row.mcTargetScore),
     coverEstateTaxes: row.coverEstateTaxes ?? false,
+    // Not persisted on the settings row — UI-scoped, defaults to the base scenario.
+    scenarioRef: "base",
   };
 }
 
