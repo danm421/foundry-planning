@@ -88,7 +88,6 @@ export interface BuildHouseholdColumnsInput {
 function buildCtx(
   familyMembers: FamilyMember[],
   entities: EntityInfo[],
-  _accounts: AccountLike[],
 ): AttributionCtx {
   const rolesByFamilyMemberId = new Map<string, "client" | "spouse" | "child" | "other">();
   let clientFamilyMemberId: string | null = null;
@@ -148,7 +147,7 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
   const yearData = projectionYears.find((y) => y.year === selectedYear);
   if (!yearData) throw new Error(`Projection year ${selectedYear} not found`);
 
-  const ctx = buildCtx(familyMembers, entities, accounts);
+  const ctx = buildCtx(familyMembers, entities);
   for (const a of accounts) {
     if (a.titlingType) ctx.titlingByItemId.set(a.id, a.titlingType);
   }
@@ -157,7 +156,6 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
   const linkedPropertyIds = new Set(
     liabilities.map((l) => l.linkedPropertyId).filter((id): id is string => !!id),
   );
-  const entitiesById = new Map(entities.map((e) => [e.id, e]));
 
   // ── Asset rows by category ────────────────────────────────────────────────
   const rowsByCategory = new Map<HouseholdCategoryKey, OwnerColumnRow[]>();
@@ -239,6 +237,5 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     total: totalAssets.total - totalLiabilities.total,
   };
 
-  void entitiesById; // reserved for future per-entity drilldown; keeps lint quiet if unused
   return { selectedYear, hasSpouse, assetCategories, liabilityRows, totalAssets, totalLiabilities, netWorth };
 }
