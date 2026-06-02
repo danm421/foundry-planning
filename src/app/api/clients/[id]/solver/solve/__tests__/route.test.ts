@@ -41,12 +41,12 @@ async function readBody(response: Response): Promise<string> {
   return out;
 }
 
-function makeRequest(body: unknown): Request {
+function makeRequest(body: unknown) {
   return new Request("http://test/api/clients/c1/solver/solve", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }) as unknown as import("next/server").NextRequest;
 }
 
 const ctx = { params: Promise.resolve({ id: "c1" }) };
@@ -54,10 +54,11 @@ const ctx = { params: Promise.resolve({ id: "c1" }) };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("firm-1");
-  vi.mocked(findClientInFirm).mockResolvedValue(true);
+  vi.mocked(findClientInFirm).mockResolvedValue({ id: "c1" } as never);
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: { client: {}, accounts: [], incomes: [], expenses: [], liabilities: [], savingsRules: [], withdrawalStrategy: [], planSettings: {} } as never,
-  });
+    warnings: [],
+  } as never);
   vi.mocked(loadMonteCarloData).mockResolvedValue({
     indices: [], correlation: [], accountMixes: [], startingLiquidBalance: 0, seed: 1, requiredMinimumAssetLevel: 0,
   });
@@ -70,7 +71,7 @@ describe("POST /api/clients/[id]/solver/solve", () => {
   });
 
   it("returns 404 when client not in firm", async () => {
-    vi.mocked(findClientInFirm).mockResolvedValueOnce(false);
+    vi.mocked(findClientInFirm).mockResolvedValueOnce(null as never);
     const res = await POST(
       makeRequest({
         source: "base",

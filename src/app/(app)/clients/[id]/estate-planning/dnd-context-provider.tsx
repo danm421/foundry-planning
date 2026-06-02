@@ -27,6 +27,7 @@ import {
 import { sliceToAsset } from "./drop/lib/slice-percent-conversion";
 import type { WillBequestInput } from "@/lib/schemas/wills";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
+import type { WillGrantor } from "@/components/wills-panel";
 import { controllingEntity } from "@/engine/ownership";
 
 /** Context that heir/charity cards use to open the edit dialog without prop-drilling. */
@@ -141,6 +142,7 @@ function pickExistingWills(
 interface EditingState {
   willId: string;
   bequestId: string;
+  grantor: WillGrantor;
   draft: BequestDraft;
 }
 
@@ -335,7 +337,9 @@ export function CanvasDndProvider({
           const currentOwners: SaveAccountOwner[] = account.owners.map((o) =>
             o.kind === "family_member"
               ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }
-              : { kind: "entity", entityId: o.entityId, percent: o.percent },
+              : o.kind === "entity"
+                ? { kind: "entity", entityId: o.entityId, percent: o.percent }
+                : { kind: "external_beneficiary", externalBeneficiaryId: o.externalBeneficiaryId, percent: o.percent },
           );
           await saveRetitle({
             clientId,
@@ -371,6 +375,7 @@ export function CanvasDndProvider({
     setEditing({
       willId,
       bequestId,
+      grantor: will.grantor,
       draft: {
         kind: "asset",
         name: bequest.name,
@@ -478,6 +483,7 @@ export function CanvasDndProvider({
             <BequestDialog
               open
               onOpenChange={(open) => { if (!open) setEditing(null); }}
+              grantor={editing.grantor}
               primary={{
                 firstName: clientFirstName,
                 lastName: "",

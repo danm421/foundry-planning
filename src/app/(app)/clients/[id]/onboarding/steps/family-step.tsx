@@ -13,6 +13,7 @@ export default async function FamilyStep({ clientId, tree }: FamilyStepProps) {
   return (
     <FamilyView
       clientId={clientId}
+      contacts={null}
       primary={data.primary}
       initialMembers={data.members}
       initialEntities={data.ents}

@@ -593,7 +593,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     };
     const result = applyBeneficiaryDesignations(
       iraWithBens, 1,
-      [{ id: "fm-spouse", role: "spouse" as const, relationship: "spouse", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" }],
+      [{ id: "fm-spouse", role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" }],
       [], [], undefined,
     );
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
@@ -829,7 +829,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     };
     const result = applyBeneficiaryDesignations(
       iraSpousePlusTrust, 1,
-      [{ id: "fm-spouse", role: "spouse" as const, relationship: "spouse", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" }],
+      [{ id: "fm-spouse", role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" }],
       [], [], undefined,
       /* deceasedFmId */ null,
       /* survivorFmId */ "fm-spouse",

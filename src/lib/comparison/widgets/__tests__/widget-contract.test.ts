@@ -19,8 +19,9 @@ describe("widget contract — category + scenarios + defaultPlanCount", () => {
   it("every widget declares a valid category", () => {
     for (const kind of WIDGET_KINDS) {
       const def = COMPARISON_WIDGETS[kind];
+      const validCats: readonly string[] = VALID_CATEGORIES;
       expect(
-        VALID_CATEGORIES.includes(def.category),
+        validCats.includes(def.category),
         `widget ${kind} has invalid category ${def.category}`,
       ).toBe(true);
     }

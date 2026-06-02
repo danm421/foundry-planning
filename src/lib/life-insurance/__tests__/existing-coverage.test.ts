@@ -5,7 +5,6 @@ import type { Account, ClientData } from "@/engine/types";
 function policy(over: Partial<Account> & { name: string }): Account {
   return {
     id: over.name,
-    name: over.name,
     category: "life_insurance",
     subType: "term",
     value: 0,

@@ -103,6 +103,7 @@ function makeBase(): ClientData {
       },
     ],
     withdrawalStrategy: [],
+    giftEvents: [],
     planSettings: { planStartYear: 2026 } as ClientData["planSettings"],
   };
 }
@@ -548,6 +549,7 @@ function makeRefsBase(): ClientData {
       },
     ],
     withdrawalStrategy: [],
+    giftEvents: [],
     planSettings: {
       planStartYear: 2026,
       planEndYear: 2065,

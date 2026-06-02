@@ -294,6 +294,9 @@ function classifySlice(
   entitiesById: Map<string, EntityInfo>,
 ): SliceClassification {
   if (owner.kind === "family_member") return "in_estate";
+  // External beneficiaries (death-benefit recipients / charities) never hold
+  // present interest in the household estate.
+  if (owner.kind === "external_beneficiary") return "out_of_estate";
   const entity = entitiesById.get(owner.entityId);
   if (!entity) return "out_of_estate";
   if (entity.entityType === "trust") {

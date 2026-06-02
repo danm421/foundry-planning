@@ -142,6 +142,7 @@ const populatedReport: EstateFlowReportData = {
     decedentName: "Tom",
     year: 2030,
     taxableEstate: 950_000,
+    grossEstate: 950_000,
     assetEstateValue: 950_000,
     assetCount: 1,
     recipients: [

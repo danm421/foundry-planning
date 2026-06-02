@@ -282,7 +282,7 @@ describe("applyFirstDeath — business-interest succession integration", () => {
       basis: 50_000,
       growthRate: 0,
       rmdEnabled: false,
-      titlingType: "sole",
+      titlingType: "jtwros",
       parentAccountId: "test-bus",
       owners: [{ kind: "entity", entityId: "test-bus-entity", percent: 1 }],
     };

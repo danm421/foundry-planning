@@ -8,7 +8,7 @@ function mkPlan(label: string, tree: Partial<ComparisonPlan["tree"]>): Compariso
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: tree as ComparisonPlan["tree"],

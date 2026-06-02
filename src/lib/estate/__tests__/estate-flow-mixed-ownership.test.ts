@@ -5,9 +5,9 @@ import type {
   DeathTransfer,
   FamilyMember,
   PlanSettings,
-  ProjectionResult,
   HypotheticalEstateTax,
 } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import { applyFirstDeath } from "@/engine/death-event";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
@@ -72,7 +72,7 @@ function buildPipeline() {
     basis: 64_000,
     growthRate: 0,
     rmdEnabled: false,
-    titlingType: "sole",
+    titlingType: "jtwros",
     owners: [
       { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 },
     ],

@@ -80,6 +80,12 @@ function describeOwners(
       const pct = o.percent < 1 ? ` (${Math.round(o.percent * 100)}%)` : "";
       return `${name}${pct}`;
     }
+    if (o.kind === "external_beneficiary") {
+      const eb = (clientData.externalBeneficiaries ?? []).find((x) => x.id === o.externalBeneficiaryId);
+      const name = eb?.name ?? o.externalBeneficiaryId;
+      const pct = o.percent < 1 ? ` (${Math.round(o.percent * 100)}%)` : "";
+      return `${name}${pct}`;
+    }
     // family_member
     let name: string;
     if (o.familyMemberId === LEGACY_FM_CLIENT || o.familyMemberId === clientData.client.firstName) {
@@ -274,7 +280,12 @@ export default function EstateFlowChangeOwnerDialog({
       // Pre-populate from current owners for a cleaner UX on re-open
       const map: Record<string, number> = {};
       for (const o of account.owners) {
-        const key = o.kind === "family_member" ? o.familyMemberId : o.entityId;
+        const key =
+          o.kind === "family_member"
+            ? o.familyMemberId
+            : o.kind === "entity"
+              ? o.entityId
+              : o.externalBeneficiaryId;
         map[key] = Math.round(o.percent * 100);
       }
       return map;

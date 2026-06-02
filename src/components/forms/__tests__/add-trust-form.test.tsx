@@ -575,7 +575,7 @@ describe("<AddTrustForm> CRT submission", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     const postCall = fetchMock.mock.calls.find(
-      ([url, init]: [string, RequestInit | undefined]) =>
+      ([url, init]: [string, (RequestInit | undefined)?]) =>
         typeof url === "string" && url.includes("/entities") && init?.method === "POST",
     );
     expect(postCall).toBeDefined();
@@ -590,7 +590,7 @@ describe("<AddTrustForm> CRT submission", () => {
     // inception-year funding transfer. There is no *extra* auto-emitted gift
     // (e.g. a remainder-interest gift) beyond the funding pick ops.
     const giftPosts = fetchMock.mock.calls.filter(
-      ([url, init]: [string, RequestInit | undefined]) =>
+      ([url, init]: [string, (RequestInit | undefined)?]) =>
         typeof url === "string" && url.includes("/gifts") && init?.method === "POST",
     );
     expect(giftPosts).toHaveLength(1);

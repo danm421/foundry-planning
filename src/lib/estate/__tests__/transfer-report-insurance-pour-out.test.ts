@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { buildEstateTransferReportData } from "../transfer-report";
 import type {
   ClientData,
-  ProjectionResult,
   DeathTransfer,
   EstateTaxResult,
 } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
 
 function emptyEstateTaxResult(deathOrder: 1 | 2): EstateTaxResult {
   return {

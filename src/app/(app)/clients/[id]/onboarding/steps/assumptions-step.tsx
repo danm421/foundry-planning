@@ -263,6 +263,9 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
         surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
         surplusSaveAccountId: settings.surplusSaveAccountId,
+        medicarePremiumInflationRate:
+          settings.medicarePremiumInflationRate != null ? String(settings.medicarePremiumInflationRate) : "0.03",
+        medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,
       }}
       resolvedInflationRate={resolvedInflationRate}
       hasInflationAssetClass={firmInflationAc != null}

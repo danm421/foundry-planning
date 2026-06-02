@@ -73,6 +73,7 @@ function makeSource(): ClientData {
       },
     ],
     withdrawalStrategy: [],
+    giftEvents: [],
     planSettings: { planStartYear: 2026 } as ClientData["planSettings"],
   } as ClientData;
 }

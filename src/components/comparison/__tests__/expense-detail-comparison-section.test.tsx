@@ -8,7 +8,7 @@ function mkPlan(): ComparisonPlan {
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: "A" },
+    ref: { kind: "scenario", id: "A", toggleState: {} },
     id: "A",
     label: "A",
     tree: {

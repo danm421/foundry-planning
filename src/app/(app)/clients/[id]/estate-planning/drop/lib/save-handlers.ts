@@ -189,7 +189,11 @@ export async function saveBequest(args: SaveBequestArgs): Promise<void> {
  */
 export type AccountOwner =
   | { kind: "family_member"; familyMemberId: string; percent: number }
-  | { kind: "entity"; entityId: string; percent: number };
+  | { kind: "entity"; entityId: string; percent: number }
+  // External-beneficiary owners can't be a retitle moveFrom/moveTo (charity
+  // targets are blocked), but they must survive the round-trip: the PUT
+  // overwrites account_owners, so dropping them here would be data loss.
+  | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number };
 
 export interface SaveRetitleArgs {
   clientId: string;
@@ -216,7 +220,9 @@ export async function saveRetitle(args: SaveRetitleArgs): Promise<void> {
 }
 
 function ownerId(o: AccountOwner): string {
-  return o.kind === "family_member" ? o.familyMemberId : o.entityId;
+  if (o.kind === "family_member") return o.familyMemberId;
+  if (o.kind === "entity") return o.entityId;
+  return o.externalBeneficiaryId;
 }
 
 function makeOwner(

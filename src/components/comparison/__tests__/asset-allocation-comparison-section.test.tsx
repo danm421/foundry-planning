@@ -12,11 +12,11 @@ function mkPlan(label: string, allocation: unknown): ComparisonPlan {
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: {} as ComparisonPlan["tree"],
-    result: { years: [] } as ComparisonPlan["result"],
+    result: { years: [] } as unknown as ComparisonPlan["result"],
     lifetime: {} as ComparisonPlan["lifetime"],
     liquidityRows: [],
     finalEstate: null,

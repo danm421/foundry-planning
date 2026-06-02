@@ -91,7 +91,10 @@ export function PresentationDocument(props: PresentationDocumentProps) {
           options as never,
         );
         return page.renderPdf({
-          data,
+          // `data` is the union of all page-data types; `renderPdf`'s param is the
+          // intersection (contravariant method on a union of page defs). Same
+          // `as never` escape hatch already used for buildData/estimatePageCount.
+          data: data as never,
           firmName: props.firmName,
           clientName: props.clientName,
           reportDate: props.reportDate,

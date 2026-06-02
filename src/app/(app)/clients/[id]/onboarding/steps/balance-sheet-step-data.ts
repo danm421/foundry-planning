@@ -240,6 +240,9 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       : [];
   const ownersByEntity = new Map<string, { familyMemberId: string; percent: number }[]>();
   for (const row of entityOwnerRows) {
+    // entity_owners now also models entity-owned-by-entity rows (ownerEntityId);
+    // this step only attributes value to family-member owners.
+    if (!row.familyMemberId) continue;
     const list = ownersByEntity.get(row.entityId) ?? [];
     list.push({ familyMemberId: row.familyMemberId, percent: parseFloat(row.percent) });
     ownersByEntity.set(row.entityId, list);

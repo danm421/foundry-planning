@@ -10,11 +10,11 @@ function mkPlan(label: string, panelData: ComparisonPlan["panelData"]): Comparis
   return {
     index: 0,
     isBaseline: false,
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: {} as ComparisonPlan["tree"],
-    result: { years: [] } as ComparisonPlan["result"],
+    result: { years: [] } as unknown as ComparisonPlan["result"],
     lifetime: {} as ComparisonPlan["lifetime"],
     liquidityRows: [],
     finalEstate: null,

@@ -28,7 +28,8 @@
  * "Default-checking variant of golden fixtures G2/G3").
  */
 
-import type { ClientData, PlanSettings, TaxYearParameters } from "../types";
+import type { ClientData, PlanSettings } from "../types";
+import type { TaxYearParameters } from "@/lib/tax/types";
 import {
   baseClient,
   basePlanSettings,

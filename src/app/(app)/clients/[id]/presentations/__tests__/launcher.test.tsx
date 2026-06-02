@@ -34,7 +34,7 @@ describe("PresentationsLauncher", () => {
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
-        investmentCatalog={{ groups: [], entities: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
     expect(screen.getByText("Cover Sheet")).toBeInTheDocument();
@@ -54,7 +54,7 @@ describe("PresentationsLauncher", () => {
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
-        investmentCatalog={{ groups: [], entities: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
     fireEvent.click(screen.getByLabelText("Remove Cover Sheet"));
@@ -74,7 +74,7 @@ describe("PresentationsLauncher", () => {
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
-        investmentCatalog={{ groups: [], entities: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Preview Cash Flow/i }));
@@ -96,7 +96,7 @@ describe("PresentationsLauncher", () => {
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
-        investmentCatalog={{ groups: [], entities: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Preview full/i }));

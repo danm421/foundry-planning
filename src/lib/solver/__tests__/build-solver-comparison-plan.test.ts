@@ -19,6 +19,7 @@ const tree = {
   liabilities: [],
   savingsRules: [],
   withdrawalStrategy: [],
+  giftEvents: [],
   planSettings: {} as ClientData["planSettings"],
 } as ClientData;
 

@@ -7,6 +7,7 @@ import {
   type ProjectedAssetClass,
 } from "../cma-projected-build";
 import type { SeedAssetClass } from "../cma-seed";
+import type { AssetClassSlug } from "../investments/asset-class-slugs";
 
 const HISTORICAL = cmaDefaults.assetClasses as SeedAssetClass[];
 const histBySlug = new Map(HISTORICAL.map((c) => [c.slug, c]));
@@ -62,8 +63,8 @@ describe("buildProjectedAssetClasses", () => {
   it.each(["ten_year_treasury", "tax_exempt_muni", "long_term_treasury", "gold"])(
     "Carried class %s copies historical geom/arith/vol verbatim",
     (slug) => {
-      const c = bySlug.get(slug)!;
-      const hist = histBySlug.get(slug)!;
+      const c = bySlug.get(slug as AssetClassSlug)!;
+      const hist = histBySlug.get(slug as AssetClassSlug)!;
       expect(c.geometricReturn).toBe(hist.geometricReturn);
       expect(c.arithmeticMean).toBe(hist.arithmeticMean);
       expect(c.volatility).toBe(hist.volatility);

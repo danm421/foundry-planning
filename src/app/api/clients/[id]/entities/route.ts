@@ -92,6 +92,9 @@ export async function GET(
       : [];
     const ownersByEntity = new Map<string, { kind: "family_member"; familyMemberId: string; percent: number }[]>();
     for (const o of ownerRows) {
+      // entity_owners now also models entity-owned-by-entity rows (ownerEntityId);
+      // this endpoint surfaces only family-member owners.
+      if (!o.familyMemberId) continue;
       const arr = ownersByEntity.get(o.entityId) ?? [];
       arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
       ownersByEntity.set(o.entityId, arr);

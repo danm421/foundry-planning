@@ -134,7 +134,9 @@ function PresetButton({ label, active, onClick }: PresetButtonProps) {
 
 // Owner value encoding for <select> options
 function ownerToSelectValue(o: AccountOwner): string {
-  return o.kind === "family_member" ? `fm:${o.familyMemberId}` : `ent:${o.entityId}`;
+  if (o.kind === "family_member") return `fm:${o.familyMemberId}`;
+  if (o.kind === "entity") return `ent:${o.entityId}`;
+  return `eb:${o.externalBeneficiaryId}`;
 }
 
 function selectValueToOwner(v: string, currentPercent: number): AccountOwner {

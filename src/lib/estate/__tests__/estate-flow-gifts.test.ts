@@ -35,6 +35,8 @@ function liability(overrides: Partial<Liability> = {}): Liability {
     startMonth: 1,
     termMonths: 360,
     linkedPropertyId: "acc-1",
+    extraPayments: [],
+    owners: [],
     ...overrides,
   };
 }
