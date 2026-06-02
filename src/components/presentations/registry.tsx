@@ -152,6 +152,23 @@ import { estimateScenarioChangesPageCount } from "@/lib/presentations/pages/scen
 import { buildScenarioChangesData } from "@/lib/presentations/pages/scenario-changes/view-model";
 import { ScenarioChangesPagePdf } from "./pages/scenario-changes/page-pdf";
 import { ScenarioChangesOptionsControl } from "./pages/scenario-changes/options-control";
+import {
+  balanceSheetOptionsSchema,
+  BALANCE_SHEET_OPTIONS_DEFAULT,
+  type BalanceSheetOptions,
+} from "@/lib/presentations/pages/balance-sheet/options-schema";
+import { summarizeBalanceSheetOptions } from "@/lib/presentations/pages/balance-sheet/summarize-options";
+import {
+  estimateBalanceSheetPageCount,
+  estimateEntitiesBalanceSheetPageCount,
+} from "@/lib/presentations/pages/balance-sheet/estimate-page-count";
+import {
+  buildBalanceSheetPageData,
+  type BalanceSheetPageData,
+} from "@/lib/presentations/pages/balance-sheet/view-model";
+import { BalanceSheetOptionsControl } from "./pages/balance-sheet/options-control";
+import { BalanceSheetPagePdf } from "./pages/balance-sheet/page-pdf";
+import { EntitiesBalanceSheetPagePdf } from "./pages/entities-balance-sheet/page-pdf";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -656,6 +673,36 @@ export const portfolioAnalysisPage: PresentationPage<PortfolioAnalysisData, Port
   renderPdf: (input) => <PortfolioAnalysisPagePdf {...input} />,
 };
 
+export const balanceSheetPage: PresentationPage<BalanceSheetPageData, BalanceSheetOptions> = {
+  id: "balanceSheet",
+  title: "Balance Sheet",
+  description: "Net worth, total assets, liabilities, and liquid portfolio with asset & liability detail.",
+  category: "Assets",
+  defaultOptions: BALANCE_SHEET_OPTIONS_DEFAULT,
+  optionsSchema: balanceSheetOptionsSchema,
+  summarizeOptions: summarizeBalanceSheetOptions,
+  estimatePageCount: estimateBalanceSheetPageCount,
+  OptionsControl: BalanceSheetOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildBalanceSheetPageData(ctx, options, "consolidated"),
+  renderPdf: (input) => <BalanceSheetPagePdf {...input} />,
+};
+
+export const entitiesBalanceSheetPage: PresentationPage<BalanceSheetPageData, BalanceSheetOptions> = {
+  id: "entitiesBalanceSheet",
+  title: "Balance Sheet — Entities",
+  description: "Per-entity balance sheets — assets, liabilities, and net worth for each trust and business.",
+  category: "Assets",
+  defaultOptions: BALANCE_SHEET_OPTIONS_DEFAULT,
+  optionsSchema: balanceSheetOptionsSchema,
+  summarizeOptions: summarizeBalanceSheetOptions,
+  estimatePageCount: estimateEntitiesBalanceSheetPageCount,
+  OptionsControl: BalanceSheetOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildBalanceSheetPageData(ctx, options, "entities"),
+  renderPdf: (input) => <EntitiesBalanceSheetPagePdf {...input} />,
+};
+
 export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, ScenarioChangesOptions> = {
   id: "scenarioChanges",
   title: "Scenario Changes",
@@ -700,6 +747,8 @@ export const PRESENTATION_PAGES = {
   monteCarlo: monteCarloPage,
   assetAllocation: assetAllocationPage,
   portfolioAnalysis: portfolioAnalysisPage,
+  balanceSheet: balanceSheetPage,
+  entitiesBalanceSheet: entitiesBalanceSheetPage,
   scenarioChanges: scenarioChangesPage,
 } as const;
 
