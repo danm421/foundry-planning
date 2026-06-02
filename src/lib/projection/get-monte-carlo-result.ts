@@ -14,14 +14,19 @@ export const getMonteCarloResult = cache(
     toggleState: ToggleState = {},
   ): Promise<MonteCarloResult | null> => {
     try {
-      const [clientData, mcPayload] = await Promise.all([
-        loadEffectiveTree(clientId, firmId, scenarioId, toggleState).then(
-          (r) => r.effectiveTree,
-        ),
-        // Thread scenarioId so the ACTIVE scenario's own MC seed is used (F16).
-        // Mixes/volatility stay base-sourced inside loadMonteCarloData.
-        loadMonteCarloData(clientId, firmId, scenarioId),
-      ]);
+      const clientData = (
+        await loadEffectiveTree(clientId, firmId, scenarioId, toggleState)
+      ).effectiveTree;
+      // Thread scenarioId for the ACTIVE scenario's own MC seed (F16), and the
+      // effective tree so startingLiquidBalance is per-scenario (Depth 1).
+      // Mixes/volatility/correlations stay base-sourced inside loadMonteCarloData.
+      const mcPayload = await loadMonteCarloData(
+        clientId,
+        firmId,
+        scenarioId,
+        [],
+        clientData,
+      );
       const returnEngine = createReturnEngine({
         indices: mcPayload.indices,
         correlation: mcPayload.correlation,

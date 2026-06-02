@@ -22,6 +22,11 @@ import type { IndexInput } from "@/engine/monteCarlo/returns";
 import { ClientNotFoundError, ProjectionInputError } from "./load-client-data";
 import { type HoldingInput } from "@/lib/investments/holdings-rollup";
 import { computeHoldingsTotals } from "./holdings-totals";
+import type { ClientData } from "@/engine/types";
+import {
+  computeStartingLiquidBalance,
+  type LiquidAccountInput,
+} from "./starting-liquid-balance";
 
 export type MonteCarloPayload = {
   indices: IndexInput[];
@@ -42,14 +47,20 @@ export const loadMonteCarloData = cache(
     clientId: string,
     firmId: string,
     // Active scenario whose per-scenario MC seed should be used/persisted (F16).
-    // IMPORTANT: this affects ONLY the seed. All portfolio inputs below (account
-    // mixes, asset-class volatility, correlations, starting balance) stay
-    // base-sourced — non-base scenarios are an overlay diff and are NOT
-    // physically cloned, so querying accounts under a non-base scenarioId
-    // returns zero rows. "base", unknown, or the base id => base seed (today's
-    // behavior). See the seed block below.
+    // IMPORTANT: non-base scenarios are an overlay diff and are NOT physically
+    // cloned, so account/mix/volatility/correlation queries stay base-sourced.
+    // The seed is read/persisted from the active scenario's own row. When
+    // `effectiveTree` is also provided, startingLiquidBalance and the in-estate
+    // liquid account set follow the tree (per-scenario). "base", unknown, or
+    // the base id => base seed. See the seed block below.
     scenarioId: string | "base" = "base",
     extraAccountMixes: ReadonlyArray<{ accountId: string; mix: AccountAssetMix[] }> = [],
+    // Optional per-scenario effective tree. When provided, the in-estate liquid
+    // account set + startingLiquidBalance are derived from it (Depth 1).
+    // Account MIXES, asset-class volatility, and correlations stay base/firm-
+    // sourced (the tree's engine Account drops growthSource/modelPortfolioId).
+    // Omitted → byte-identical base behavior.
+    effectiveTree?: Pick<ClientData, "accounts" | "entities">,
   ): Promise<MonteCarloPayload> => {
     const [client] = await db
       .select()
@@ -58,9 +69,10 @@ export const loadMonteCarloData = cache(
     if (!client) throw new ClientNotFoundError(clientId);
 
     // Base scenario drives ALL portfolio data queries below (accounts, plan
-    // settings, mixes, correlations, starting balance). Non-base scenarios are
-    // overlay diffs, not physical clones, so these queries only have rows under
-    // the base scenario id — mixes & volatility intentionally stay base-sourced.
+    // settings, mixes, correlations). Non-base scenarios are overlay diffs, not
+    // physical clones, so these queries only have rows under the base scenario
+    // id — mixes & volatility intentionally stay base-sourced. (startingLiquid-
+    // Balance is the exception: it follows `effectiveTree` when one is passed.)
     const [scenario] = await db
       .select()
       .from(scenarios)
@@ -271,18 +283,45 @@ export const loadMonteCarloData = cache(
     const correlation = buildCorrelationMatrix(orderedIds, rawCorrelationRows);
 
     // ── Starting liquid balance (CAGR reference) ─────────────────────────
-    let startingLiquidBalance = 0;
-    for (const acct of accountRows) {
-      if (acct.category !== "taxable" && acct.category !== "cash" && acct.category !== "retirement") continue;
-      if (!accountInEstate(acct)) continue;
-      startingLiquidBalance += holdingsTotalsByAccountId.get(acct.id)?.value ?? parseFloat(acct.value);
+    // Per-scenario when an effectiveTree is supplied: its accounts carry the
+    // scenario's values/ownership (added/removed accounts + balance edits).
+    // Mixes above stay base-sourced. Holdings rollup stays base-keyed; an added
+    // account (no base holdings) falls back to its effective `value`.
+    const holdingsValueByAccountId = new Map<string, number>();
+    for (const [accountId, totals] of holdingsTotalsByAccountId) {
+      holdingsValueByAccountId.set(accountId, totals.value);
     }
+
+    const liquidAccounts: LiquidAccountInput[] = effectiveTree
+      ? effectiveTree.accounts.map((a) => ({
+          id: a.id,
+          category: a.category,
+          value: a.value,
+          entityId: a.owners.find((o) => o.kind === "entity")?.entityId ?? null,
+        }))
+      : accountRows.map((a) => ({
+          id: a.id,
+          category: a.category,
+          value: parseFloat(a.value),
+          entityId: accountEntityOwner.get(a.id) ?? null,
+        }));
+
+    const liquidEntityInPortfolio = effectiveTree
+      ? new Map((effectiveTree.entities ?? []).map((e) => [e.id, e.includeInPortfolio]))
+      : entityInPortfolio;
+
+    const startingLiquidBalance = computeStartingLiquidBalance(
+      liquidAccounts,
+      liquidEntityInPortfolio,
+      holdingsValueByAccountId,
+    );
 
     // ── Seed management ──────────────────────────────────────────────────
     // Reads/persists the ACTIVE scenario's own seed (seedScenario), so each
-    // scenario reproduces its own Monte Carlo draws. Everything above this line
-    // is base-sourced (see the base-scenario comment near the top): mixes,
-    // volatility, correlations, and starting balance do NOT vary per scenario.
+    // scenario reproduces its own Monte Carlo draws. Account mixes, asset-class
+    // volatility, and correlations stay base/firm-sourced (see the base-scenario
+    // comment near the top). startingLiquidBalance and the in-estate liquid
+    // account set follow effectiveTree when one is supplied.
     let seed = seedScenario.monteCarloSeed;
     if (seed == null) {
       seed = generateSeed();

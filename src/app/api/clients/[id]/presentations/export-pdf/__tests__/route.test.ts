@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 
 // Mock auth, loaders, projection runner, and audit BEFORE importing the route.
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -60,6 +61,10 @@ vi.mock("@/lib/comparison-pdf/branding", () => ({
 
 vi.mock("@/lib/presentations/default-logo", () => ({
   foundryDefaultLogoDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,AAAA"),
+}));
+
+vi.mock("@/lib/projection/load-monte-carlo-data", () => ({
+  loadMonteCarloData: vi.fn().mockRejectedValue(new Error("stub: skip MC body")),
 }));
 
 // Keep a benign @/db mock so importing the route doesn't open a real connection.
@@ -258,6 +263,28 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
       expect.objectContaining({
         metadata: expect.objectContaining({ hasOverrides: true }),
       }),
+    );
+  });
+
+  it("threads the active scenario id + effective tree into loadMonteCarloData", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(
+      makeReq({
+        scenarioId: "moderate",
+        pages: [{ pageId: "monteCarlo", options: { highlight: "fan" } }],
+      }) as never,
+      { params: Promise.resolve({ id: "client-1" }) },
+    );
+    // MC failure is non-fatal → route still succeeds.
+    expect(res.status).toBe(200);
+    // Layer 1: per-scenario seed/cache key — NOT the defaulted "base".
+    // 4th arg is extraAccountMixes ([]); 5th is the per-scenario effective tree.
+    expect(loadMonteCarloData).toHaveBeenCalledWith(
+      "client-1",
+      "firm-1",
+      "moderate",
+      [],
+      expect.anything(),
     );
   });
 
