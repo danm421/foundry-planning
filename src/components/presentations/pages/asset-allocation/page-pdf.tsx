@@ -19,6 +19,8 @@ export function AssetAllocationPagePdf({
   data, firmName, clientName, reportDate, pageIndex, totalPages,
 }: RenderPdfInput<AssetAllocationData>) {
   const hasRight = data.rightDonut !== null;
+  const hasDiff = !!(data.diffRows && data.diffRows.length > 0);
+  const showTable = data.tableRows.length > 0;
   return (
     <PageFrame
       firmName={firmName}
@@ -33,44 +35,49 @@ export function AssetAllocationPagePdf({
         {/* rightName is non-null whenever rightDonut is (both derive from `right` in the view-model) */}
         {data.rightDonut && <DonutPdf spec={data.rightDonut} title={data.rightName!} />}
       </View>
-      {data.tableRows.length > 0 && (
-        <View style={{ marginBottom: 12 }}>
-          <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingBottom: 3 }}>
-            <Text style={[S.headCell, { flex: 2 }]}>Asset class</Text>
-            <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.leftName}</Text>
-            {hasRight && <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.rightName}</Text>}
-          </View>
-          {data.tableRows.map((r) => (
-            <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
-              <Text style={S.bodyName}>{r.name}</Text>
-              <Text style={S.bodyNum}>{pct(r.leftPct)}</Text>
-              {hasRight && <Text style={S.bodyNum}>{pct(r.rightPct)}</Text>}
-            </View>
-          ))}
-        </View>
-      )}
-      {data.diffRows && data.diffRows.length > 0 && (
-        <View style={{ marginBottom: 10 }}>
-          <Text style={{ fontSize: 9, fontFamily: "Fraunces", color: T.ink, marginBottom: 4 }}>
-            {`Difference: ${data.leftName} vs ${data.rightName}`}
-          </Text>
-          {data.diffRows.map((d) => (
-            <View key={d.id} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-              <Text style={{ flex: 2, fontSize: 8, color: T.ink2 }}>{d.name}</Text>
-              <View style={{ flex: 3, height: 8, backgroundColor: T.card, position: "relative" }}>
-                <View style={{
-                  position: "absolute", left: "50%",
-                  width: `${Math.min(50, Math.abs(d.diffPct) * 100 * 2)}%`,
-                  // @react-pdf: unset base `left` for the negative (left-side) bar
-                  ...(d.diffPct >= 0 ? {} : { right: "50%", left: undefined as never }),
-                  height: 8, backgroundColor: d.diffPct >= 0 ? T.good : T.accent,
-                }} />
+      {(showTable || hasDiff) && (
+        // Table and Difference sit side-by-side so the page stays single-page.
+        <View style={{ flexDirection: "row", marginBottom: 12 }}>
+          {showTable && (
+            <View style={{ flex: 1, marginRight: hasDiff ? 18 : 0 }}>
+              <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingBottom: 3 }}>
+                <Text style={[S.headCell, { flex: 2 }]}>Asset class</Text>
+                <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.leftName}</Text>
+                {hasRight && <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.rightName}</Text>}
               </View>
-              <Text style={{ flex: 1, fontSize: 8, color: T.ink2, textAlign: "right", fontFamily: "JetBrains Mono" }}>
-                {`${d.diffPct >= 0 ? "+" : ""}${(d.diffPct * 100).toFixed(1)}%`}
-              </Text>
+              {data.tableRows.map((r) => (
+                <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
+                  <Text style={S.bodyName}>{r.name}</Text>
+                  <Text style={S.bodyNum}>{pct(r.leftPct)}</Text>
+                  {hasRight && <Text style={S.bodyNum}>{pct(r.rightPct)}</Text>}
+                </View>
+              ))}
             </View>
-          ))}
+          )}
+          {hasDiff && (
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 9, fontFamily: "Fraunces", color: T.ink, marginBottom: 4 }}>
+                {`Difference: ${data.leftName} vs ${data.rightName}`}
+              </Text>
+              {data.diffRows!.map((d) => (
+                <View key={d.id} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+                  <Text style={{ flex: 3, fontSize: 8, color: T.ink2 }}>{d.name}</Text>
+                  <View style={{ flex: 2, height: 8, backgroundColor: T.card, position: "relative" }}>
+                    <View style={{
+                      position: "absolute", left: "50%",
+                      width: `${Math.min(50, Math.abs(d.diffPct) * 100 * 2)}%`,
+                      // @react-pdf: unset base `left` for the negative (left-side) bar
+                      ...(d.diffPct >= 0 ? {} : { right: "50%", left: undefined as never }),
+                      height: 8, backgroundColor: d.diffPct >= 0 ? T.good : T.accent,
+                    }} />
+                  </View>
+                  <Text style={{ flex: 1.2, fontSize: 8, color: T.ink2, textAlign: "right", fontFamily: "JetBrains Mono" }}>
+                    {`${d.diffPct >= 0 ? "+" : ""}${(d.diffPct * 100).toFixed(1)}%`}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       )}
       <Callout>{data.disclosure}</Callout>
