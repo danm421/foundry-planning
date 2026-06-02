@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { findClientInFirm, assertModelPortfoliosInFirm } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import { saveLifeInsuranceSettings } from "@/lib/life-insurance/settings";
@@ -35,6 +35,17 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
         { error: "Invalid body", details: parsed.error.flatten() },
         { status: 400 },
       );
+    }
+
+    // A modelPortfolioId from another firm must be rejected — otherwise it is
+    // written and silently falls back to DEFAULT_LI_GROWTH at solve time,
+    // producing wrong proceeds growth and leaving orphaned cross-firm data
+    // (F14). assertModelPortfoliosInFirm no-ops on null/empty ids.
+    const mpCheck = await assertModelPortfoliosInFirm(firmId, [
+      parsed.data.modelPortfolioId,
+    ]);
+    if (!mpCheck.ok) {
+      return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
     await saveLifeInsuranceSettings(clientId, parsed.data);
