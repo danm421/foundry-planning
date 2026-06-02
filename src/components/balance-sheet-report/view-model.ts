@@ -566,6 +566,17 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       // Revocable trust slice — falls through to category routing below.
     }
 
+    // Child / other family members are out-of-estate (consistent with attribute.ts).
+    if (view === "consolidated" && slice.kind === "family") {
+      const fm = familyMemberById.get(slice.familyMemberId);
+      const realRole = fm?.role ?? "other";
+      if (realRole !== "client" && realRole !== "spouse") {
+        outOfEstateRows.push(sliceRow);
+        ooeAdd(`fm:${slice.familyMemberId}`, fm?.firstName ?? "Other", "person", slice.value, 0);
+        continue;
+      }
+    }
+
     const list = inEstateSlicesByCategory.get(slice.category) ?? [];
     list.push(sliceRow);
     inEstateSlicesByCategory.set(slice.category, list);
@@ -700,7 +711,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   // ── Liabilities: same slice expansion ───────────────────────────────────
 
   const liabilitySlices: Array<
-    | { kind: "family"; rowKey: string; row: LiabilityRow }
+    | { kind: "family"; rowKey: string; familyMemberId: string; rawRole: "client" | "spouse" | "child" | "other"; firstName?: string; row: LiabilityRow }
     | { kind: "entity"; rowKey: string; row: LiabilityRow; inEstate: boolean; entityId: string; familyShare: number }
   > = [];
 
@@ -716,6 +727,9 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         liabilitySlices.push({
           kind: "family",
           rowKey: `${liab.id}#fm:${owner.familyMemberId}`,
+          familyMemberId: owner.familyMemberId,
+          rawRole: fm?.role ?? "other",
+          firstName: fm?.firstName,
           row: {
             rowKey: `${liab.id}#fm:${owner.familyMemberId}`,
             liabilityId: liab.id,
@@ -760,7 +774,12 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     outOfEstateLiabilityRows = [];
     for (const ls of liabilitySlices) {
       if (ls.kind === "family") {
-        liabilityRows.push(ls.row);
+        if (ls.rawRole !== "client" && ls.rawRole !== "spouse") {
+          outOfEstateLiabilityRows.push(ls.row);
+          ooeAdd(`fm:${ls.familyMemberId}`, ls.firstName ?? "Other", "person", 0, ls.row.balance);
+        } else {
+          liabilityRows.push(ls.row);
+        }
         continue;
       }
       // Entity liability: family share → in-estate, residual → OOE.

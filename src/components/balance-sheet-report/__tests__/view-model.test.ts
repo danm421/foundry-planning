@@ -554,6 +554,18 @@ describe("buildViewModel — entity default-cash account visibility", () => {
 });
 
 describe("buildViewModel — out-of-estate owner rows", () => {
+  const childMember = { id: "fm-child", role: "child" as const, relationship: "child" as const, firstName: "Emma", lastName: null, dateOfBirth: null };
+  const childAccount = { id: "a-child", name: "Emma UTMA", category: "taxable", owners: [{ kind: "family_member" as const, familyMemberId: "fm-child", percent: 1 }] };
+  const withChild = {
+    ...baseInput,
+    familyMembers: [...familyMembers, childMember],
+    accounts: [...accounts, childAccount],
+    projectionYears: [
+      priorYear,
+      { ...projectionYear, accountLedgers: { ...projectionYear.accountLedgers, "a-child": { beginningValue: 55_000, endingValue: 60_000 } } },
+    ],
+  };
+
   it("emits one net row per out-of-estate entity owner", () => {
     const vm = buildViewModel(baseInput);
     const trust = vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "en:trust-1");
@@ -587,5 +599,15 @@ describe("buildViewModel — out-of-estate owner rows", () => {
   it("is empty for non-consolidated views", () => {
     const vm = buildViewModel({ ...baseInput, view: "entities" });
     expect(vm.outOfEstateOwnerRows).toEqual([]);
+  });
+
+  it("surfaces a child's account as a person net row and excludes it from in-estate totals", () => {
+    const vm = buildViewModel(withChild);
+    const child = vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "fm:fm-child");
+    expect(child).toMatchObject({ ownerName: "Emma", ownerType: "person", net: 60_000 });
+    expect(vm.totalAssets).toBe(1_550_000); // child not counted in-estate
+    // The child's account is not in any in-estate category.
+    const allInEstate = vm.assetCategories.flatMap((c) => c.rows);
+    expect(allInEstate.some((r) => r.accountId === "a-child")).toBe(false);
   });
 });
