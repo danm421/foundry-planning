@@ -24,6 +24,10 @@ export const LI_ASSUMPTIONS_SCHEMA = z.object({
    *  (federal + state estate tax + IRD income tax). `.default(false)` keeps
    *  older request bodies — and the over-time route — parsing unchanged. */
   coverEstateTaxes: z.boolean().default(false),
+  /** Which scenario tree to solve against. Defaults to "base" so existing
+   *  callers (the solver tab) are unchanged; the presentations pre-solve phase
+   *  passes a scenario/snapshot id for scenario-override decks. */
+  scenarioRef: z.string().default("base"),
 });
 
 export type LiAssumptions = z.infer<typeof LI_ASSUMPTIONS_SCHEMA>;
