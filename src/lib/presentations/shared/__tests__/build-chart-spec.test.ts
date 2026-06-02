@@ -41,3 +41,20 @@ describe("buildDrillChartSpec — y-domain", () => {
     expect(spec.yAxis.domain[0]).toBeLessThanOrEqual(-90);
   });
 });
+
+// F76: for ranges of 5 or fewer years, d3.ticks emits half-integer ticks
+// (e.g. 2026.5). The x-scale is a scaleBand over integer years, so x(2026.5)
+// is undefined and the renderer pins those labels to the leftmost bar. Ticks
+// must be integer years that exist in the domain.
+describe("buildDrillChartSpec — x-axis ticks (F76)", () => {
+  it("emits only integer year ticks that exist in the domain (short range)", () => {
+    const spec = buildDrillChartSpec({
+      years: [2026, 2027, 2028],
+      stacks: [{ seriesId: "a", label: "A", color: "#000", values: [1, 2, 3] }],
+      markers,
+    });
+    expect(spec.xAxis.ticks.length).toBeGreaterThan(0);
+    expect(spec.xAxis.ticks.every((t) => Number.isInteger(t))).toBe(true);
+    expect(spec.xAxis.ticks.every((t) => spec.xAxis.domain.includes(t))).toBe(true);
+  });
+});

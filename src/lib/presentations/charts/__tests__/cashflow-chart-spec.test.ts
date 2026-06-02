@@ -77,3 +77,26 @@ describe("buildCashFlowChartSpec", () => {
     expect(legendKinds.filter((k) => k === "line")).toHaveLength(1);
   });
 });
+
+// F76: short year ranges (≤5 years) make d3.ticks emit half-integer ticks
+// (e.g. 2026.5) that the scaleBand renderer can't place, pinning every label
+// to the leftmost bar. Ticks must be integer years present in the domain.
+describe("buildCashFlowChartSpec — x-axis ticks (F76)", () => {
+  const shortRows: CashFlowTableRow[] = [2026, 2027, 2028].map((year) => ({
+    year,
+    ageClient: null,
+    ageSpouse: null,
+    cells: {
+      salary: 0, socialSecurity: 0, otherInflows: 0, rmds: 0, withdrawals: 0,
+      totalIncome: 0, expenses: 0, savings: 0, totalExpenses: 0,
+      netCashFlow: 0, portfolioGrowth: 0, portfolioActivity: 0, portfolioAssets: 0,
+    },
+  }));
+
+  it("emits only integer year ticks that exist in the domain", () => {
+    const spec = buildCashFlowChartSpec({ rows: shortRows, markers: [] });
+    expect(spec.xAxis.ticks.length).toBeGreaterThan(0);
+    expect(spec.xAxis.ticks.every((t) => Number.isInteger(t))).toBe(true);
+    expect(spec.xAxis.ticks.every((t) => spec.xAxis.domain.includes(t))).toBe(true);
+  });
+});

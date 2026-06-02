@@ -7,15 +7,20 @@ import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 import {
-  ESTATE_DISCLAIMER, deriveOwnerInfo, estateCallout, type EstateDrillInput,
+  ESTATE_DISCLAIMER, deriveOwnerInfo, estateCallout, naturalOrdering,
+  type EstateDrillInput,
 } from "../estate-shared";
 
 export function buildEstateLiquidityDrillData(input: EstateDrillInput): DrillPageData {
   const { projection, clientData, options, scenarioLabel, clientName, spouseName } = input;
   const { ownerNames, ownerDobs } = deriveOwnerInfo(clientData, clientName, spouseName);
 
+  // F84: use the natural death ordering, matching the sibling Estate Transfer
+  // drill — otherwise the two estate PDFs report different transfer costs when
+  // the spouse dies first.
   const report = buildYearlyLiquidityReport({
     projection: { years: projection.years }, clientData, ownerNames, ownerDobs,
+    ordering: naturalOrdering(projection),
   });
 
   const visibleYears = filterYearsToRange(projection.years, clientData, options.range as RangeOption);

@@ -118,15 +118,11 @@ export async function loadInvestmentsBundle(
     .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenario.id)));
   if (!settings) return null;
 
-  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, entityRows, correlationRows] =
+  const [acctRows, classRows, portfolioRows, entityRows, correlationRows] =
     await Promise.all([
       db.select().from(accountsTable).where(and(eq(accountsTable.clientId, clientId), eq(accountsTable.scenarioId, scenario.id))),
-      // No WHERE clause: accountAssetAllocations has no clientId; scoped transitively by filtering to this client's accountIds below.
-      db.select().from(accountAssetAllocations),
       db.select().from(assetClassesTable).where(eq(assetClassesTable.firmId, firmId)),
       db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
-      // No WHERE clause: modelPortfolioAllocations has no firmId; scoped transitively by filtering to this firm's portfolioIds below.
-      db.select().from(modelPortfolioAllocations),
       db.select({ id: entitiesTable.id, includeInPortfolio: entitiesTable.includeInPortfolio })
         .from(entitiesTable).where(eq(entitiesTable.clientId, clientId)),
       db.select({
@@ -138,6 +134,24 @@ export async function loadInvestmentsBundle(
         rows.map((r) => ({ ...r, correlation: Number(r.correlation) })),
       ),
     ]);
+
+  // F79: the allocation tables carry no clientId/firmId, so they were
+  // full-table-scanned and filtered in JS — loading every tenant's rows on
+  // each export. Scope them at the DB level by the account/portfolio ids we
+  // just loaded (both are already client/firm-scoped). Mirrors the deterministic
+  // loader in load-client-data.ts.
+  const accountIdList = acctRows.map((a) => a.id);
+  const portfolioIdList = portfolioRows.map((p) => p.id);
+  const [mixRows, portfolioAllocRows] = await Promise.all([
+    accountIdList.length > 0
+      ? db.select().from(accountAssetAllocations)
+          .where(inArray(accountAssetAllocations.accountId, accountIdList))
+      : Promise.resolve([]),
+    portfolioIdList.length > 0
+      ? db.select().from(modelPortfolioAllocations)
+          .where(inArray(modelPortfolioAllocations.modelPortfolioId, portfolioIdList))
+      : Promise.resolve([]),
+  ]);
 
   const entityIncludeInPortfolio = new Map<string, boolean>();
   for (const e of entityRows) entityIncludeInPortfolio.set(e.id, e.includeInPortfolio);

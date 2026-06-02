@@ -23,14 +23,14 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
   const visibleYears = filterYearsToRange(years, clientData, options.range);
 
   const rows: CashFlowTableRow[] = visibleYears.map((py) => {
-    const rmds = sumRmdAmounts(py);
+    const ids = portfolioAccountIds(py);
+    const rmds = sumRmdAmounts(py, ids);
     const otherInflows =
       py.income.business +
       py.income.trust +
       py.income.deferred +
       py.income.other +
       py.income.capitalGains;
-    const ids = portfolioAccountIds(py);
     return {
       year: py.year,
       ageClient: py.ages.client ?? null,
@@ -102,11 +102,16 @@ function computeFirstRetirementYear(client: ClientInfo): number | null {
 // on checking via `creditCash`), so `Math.abs`-summing them double-counts —
 // inflating the table's RMDs column and pushing the chart's stacked bar above
 // the Total Expenses line in RMD years.
-function sumRmdAmounts(py: ProjectionYear): number {
+//
+// Scope to the household-portfolio account ids: the engine sets `rmdAmount` on
+// EVERY rmd-enabled ledger (projection.ts:1404), but entity-owned (non-IIP
+// trust) accounts route their RMD to entity checking, not to
+// householdRmdIncome/totalIncome. Counting them here would push the RMD bar
+// above totalIncome so the stacked total stops reconciling (F81). These are
+// the same `ids` the growth/activity columns already scope to.
+function sumRmdAmounts(py: ProjectionYear, ids: Set<string>): number {
   let total = 0;
-  for (const ledger of Object.values(py.accountLedgers ?? {})) {
-    total += ledger.rmdAmount ?? 0;
-  }
+  for (const id of ids) total += py.accountLedgers?.[id]?.rmdAmount ?? 0;
   return total;
 }
 

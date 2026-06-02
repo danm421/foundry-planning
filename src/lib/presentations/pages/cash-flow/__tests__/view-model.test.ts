@@ -128,6 +128,19 @@ describe("buildCashFlowPageData — RMD splitting", () => {
     expect(r2071?.cells.rmds).toBe(50_000);              // single rmdAmount, not 100k
     expect(r2071?.cells.withdrawals).toBe(0);             // no supplemental withdrawals
   });
+
+  // F81: the engine sets `rmdAmount` on the ledger of EVERY rmd-enabled account
+  // (projection.ts:1404), but entity-owned (non-IIP trust) accounts route their
+  // RMD to entity checking, not to householdRmdIncome/totalIncome. Summing every
+  // ledger's rmdAmount therefore over-counts the household RMD bar so the stacked
+  // total no longer reconciles to totalIncome. The RMD scan must be scoped to the
+  // household-portfolio accounts (the same `portfolioAccountIds` set the growth /
+  // activity columns already use). 2036's fixture has an entity-owned `trustIra`
+  // (rmdAmount 25k, in trustsAndBusinesses) alongside the household `ira` (60k).
+  it("excludes entity-owned RMDs from the household RMD column", () => {
+    const r2036 = data.table.rows.find((r) => r.year === 2036);
+    expect(r2036?.cells.rmds).toBe(60_000); // household ira only, NOT 85k (incl. trustIra)
+  });
 });
 
 describe("buildCashFlowPageData — chart stack vs Total Expenses line", () => {

@@ -144,7 +144,7 @@ export function BalanceSheetPdfDocument({
                   </View>
                 </View>
                 {cat.rows.map((r) => (
-                  <View key={r.accountId} style={styles.itemRow}>
+                  <View key={r.rowKey} style={styles.itemRow}>
                     <Text>{r.accountName}{r.hasLinkedMortgage ? " (M)" : ""}</Text>
                     <Text>{formatCurrency(r.value)}</Text>
                   </View>
@@ -155,7 +155,7 @@ export function BalanceSheetPdfDocument({
               <View style={styles.panel}>
                 <Text style={{ marginBottom: 4 }}>Out of Estate (Entity-owned)</Text>
                 {viewModel.outOfEstateRows.map((r) => (
-                  <View key={r.accountId} style={styles.itemRow}>
+                  <View key={r.rowKey} style={styles.itemRow}>
                     <Text>{r.accountName}</Text>
                     <Text>{formatCurrency(r.value)}</Text>
                   </View>
@@ -208,7 +208,7 @@ export function BalanceSheetPdfDocument({
                 <Text style={{ color: PDF_THEME.text.muted }}>No liabilities.</Text>
               ) : (
                 viewModel.liabilityRows.map((r) => (
-                  <View key={r.liabilityId} style={styles.itemRow}>
+                  <View key={r.rowKey} style={styles.itemRow}>
                     <Text>{r.liabilityName}</Text>
                     <Text>{formatCurrency(r.balance)}</Text>
                   </View>

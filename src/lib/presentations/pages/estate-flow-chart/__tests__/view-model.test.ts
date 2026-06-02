@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 // ClientData fixture + projection). Here we mock it away and only assert the
 // view-model forwards the summary + framing and tolerates a null summary.
 vi.mock("@/lib/presentations/shared/estate-context", () => ({
-  prepEstate: () => ({
+  prepEstate: vi.fn(() => ({
     reportData: { isEmpty: false },
     ownership: { groups: [], grandTotal: 0 },
     summary: {
@@ -19,10 +19,11 @@ vi.mock("@/lib/presentations/shared/estate-context", () => ({
     planStartYear: 2026,
     planEndYear: 2056,
     asOfYear: 2026,
-  }),
+  })),
 }));
 
 import { buildEstateFlowChartData } from "../view-model";
+import { prepEstate } from "@/lib/presentations/shared/estate-context";
 import type { BuildDataContext } from "@/components/presentations/registry";
 
 const ctx = {
@@ -43,5 +44,18 @@ describe("buildEstateFlowChartData", () => {
     expect(data.subtitle).toContain("As of 2026");
     expect(data.summary?.totals.totalToHeirs).toBe(5000);
     expect(data.showHeirDetail).toBe(true);
+  });
+
+  // F83: the chart summary must honour the user-selected death ordering. The
+  // sibling estate-flow report passes options.ordering into prepEstate; the
+  // chart page previously omitted it, so the toggle had no effect.
+  it("forwards the selected death ordering to prepEstate", () => {
+    vi.mocked(prepEstate).mockClear();
+    buildEstateFlowChartData(ctx, {
+      asOf: { kind: "split" },
+      showHeirDetail: false,
+      ordering: "spouseFirst",
+    });
+    expect(prepEstate).toHaveBeenCalledWith(ctx, { kind: "split" }, "spouseFirst");
   });
 });
