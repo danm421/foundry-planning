@@ -94,4 +94,38 @@ describe("AddReinvestmentForm — draft mode", () => {
     // onSaved must have been called to close the dialog
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
+
+  it("preserves the selected model portfolio when editing a draft", async () => {
+    render(
+      <AddReinvestmentForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        modelPortfolios={MODEL_PORTFOLIOS}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={() => {}}
+        initialData={{
+          id: "ri-1",
+          name: "Shift mix",
+          accountIds: ["acc-taxable"],
+          year: 2030,
+          yearRef: null,
+          targetType: "model_portfolio",
+          realizeTaxesOnSwitch: false,
+          // The draft carried the non-default ("Conservative") portfolio.
+          modelPortfolioId: "mp-2",
+        }}
+      />,
+    );
+
+    const select = (await screen.findByLabelText(
+      /model portfolio/i,
+    )) as HTMLSelectElement;
+
+    // Must reflect the saved model, not fall back to MODEL_PORTFOLIOS[0].
+    expect(select.value).toBe("mp-2");
+
+    // Draft edits never hit the DB to recover detail fields.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -103,9 +103,9 @@ export function toAssetTransactionInitialData(
   };
 }
 
-/** Engine Reinvestment → the form's initial-data shape. The form re-fetches
- *  detail fields (modelPortfolioId / custom percents) on mount, so only the
- *  card-level fields are needed here. */
+/** Engine Reinvestment → the form's initial-data shape. Solver drafts aren't
+ *  persisted, so the form can't re-fetch the detail fields (modelPortfolioId /
+ *  custom percents) — carry them through from the in-memory engine object. */
 export function toReinvestmentInitialData(
   ri: Reinvestment,
 ): ReinvestmentInitialData {
@@ -117,5 +117,11 @@ export function toReinvestmentInitialData(
     yearRef: ri.yearRef ?? null,
     targetType: ri.targetType ?? "custom",
     realizeTaxesOnSwitch: ri.realizeTaxesOnSwitch,
+    modelPortfolioId: ri.modelPortfolioId ?? null,
+    customGrowthRate: ri.customGrowthRate ?? null,
+    customPctOrdinaryIncome: ri.customPctOrdinaryIncome ?? null,
+    customPctLtCapitalGains: ri.customPctLtCapitalGains ?? null,
+    customPctQualifiedDividends: ri.customPctQualifiedDividends ?? null,
+    customPctTaxExempt: ri.customPctTaxExempt ?? null,
   };
 }

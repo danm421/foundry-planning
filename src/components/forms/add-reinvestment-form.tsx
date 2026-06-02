@@ -11,9 +11,11 @@ import type { Reinvestment } from "@/engine/types";
 
 /**
  * Shape passed in when editing. The card-level fields come straight from
- * `ReinvestmentRow`; the editable detail fields (`modelPortfolioId`,
- * `customGrowthRate`, custom realization percents) are not carried on the row,
- * so the form fetches them from `GET /api/clients/:id/reinvestments` on mount.
+ * `ReinvestmentRow`. The DB-backed edit path leaves the detail fields
+ * (`modelPortfolioId`, `customGrowthRate`, custom realization percents)
+ * undefined and the form re-fetches them from `GET /api/clients/:id/reinvestments`
+ * on mount. The solver's draft path can't fetch (drafts aren't persisted), so it
+ * supplies the detail fields directly off the in-memory engine object instead.
  */
 export interface ReinvestmentInitialData {
   id: string;
@@ -23,6 +25,14 @@ export interface ReinvestmentInitialData {
   yearRef: string | null;
   targetType: "model_portfolio" | "custom";
   realizeTaxesOnSwitch: boolean;
+  // Detail fields — provided by the draft path; omitted by the DB path. Decimal
+  // fractions (engine-shaped), matching the `Reinvestment` resolution inputs.
+  modelPortfolioId?: string | null;
+  customGrowthRate?: number | null;
+  customPctOrdinaryIncome?: number | null;
+  customPctLtCapitalGains?: number | null;
+  customPctQualifiedDividends?: number | null;
+  customPctTaxExempt?: number | null;
 }
 
 interface AddReinvestmentFormProps {
@@ -121,13 +131,23 @@ export default function AddReinvestmentForm({
     initialData?.targetType ?? "model_portfolio",
   );
   const [modelPortfolioId, setModelPortfolioId] = useState<string>(
-    modelPortfolios[0]?.id ?? "",
+    initialData?.modelPortfolioId ?? modelPortfolios[0]?.id ?? "",
   );
-  const [customGrowthRate, setCustomGrowthRate] = useState("");
-  const [pctOrdinary, setPctOrdinary] = useState("");
-  const [pctLtGains, setPctLtGains] = useState("");
-  const [pctQualifiedDiv, setPctQualifiedDiv] = useState("");
-  const [pctTaxExempt, setPctTaxExempt] = useState("");
+  const [customGrowthRate, setCustomGrowthRate] = useState(
+    toPercentString(initialData?.customGrowthRate),
+  );
+  const [pctOrdinary, setPctOrdinary] = useState(
+    toPercentString(initialData?.customPctOrdinaryIncome),
+  );
+  const [pctLtGains, setPctLtGains] = useState(
+    toPercentString(initialData?.customPctLtCapitalGains),
+  );
+  const [pctQualifiedDiv, setPctQualifiedDiv] = useState(
+    toPercentString(initialData?.customPctQualifiedDividends),
+  );
+  const [pctTaxExempt, setPctTaxExempt] = useState(
+    toPercentString(initialData?.customPctTaxExempt),
+  );
   const [realizeTaxesOnSwitch, setRealizeTaxesOnSwitch] = useState(
     initialData?.realizeTaxesOnSwitch ?? false,
   );
@@ -142,8 +162,11 @@ export default function AddReinvestmentForm({
   // form needs (modelPortfolioId, customGrowthRate, custom realization %s).
   // Those are resolved away at load time; the engine never needs them. Rather
   // than pollute the engine type with DB/UI shape, the form re-fetches them.
+  // Draft mode (onSubmitDraft) seeds detail fields from `initialData` directly —
+  // the draft isn't in the DB, so a fetch would find nothing and clobber the
+  // seeded model with the default. Only the DB-backed edit path needs the fetch.
   useEffect(() => {
-    if (!initialData) return;
+    if (!initialData || onSubmitDraft) return;
     const editId = initialData.id;
     let cancelled = false;
     async function loadDetail() {
@@ -175,7 +198,7 @@ export default function AddReinvestmentForm({
     return () => {
       cancelled = true;
     };
-  }, [clientId, initialData]);
+  }, [clientId, initialData, onSubmitDraft]);
 
   function toggleAccount(accountId: string) {
     setAccountIds((ids) =>
