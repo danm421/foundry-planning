@@ -610,4 +610,41 @@ describe("buildViewModel — out-of-estate owner rows", () => {
     const allInEstate = vm.assetCategories.flatMap((c) => c.rows);
     expect(allInEstate.some((r) => r.accountId === "a-child")).toBe(false);
   });
+
+  it("groups external-beneficiary holdings into a single Other (out of estate) row", () => {
+    const extAccount = { id: "a-ext", name: "Charity DAF", category: "taxable", owners: [{ kind: "external_beneficiary" as const, externalBeneficiaryId: "ext-1", percent: 1 }] };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, extAccount],
+      projectionYears: [
+        priorYear,
+        { ...projectionYear, accountLedgers: { ...projectionYear.accountLedgers, "a-ext": { beginningValue: 18_000, endingValue: 20_000 } } },
+      ],
+    });
+    const other = vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "ext");
+    expect(other).toMatchObject({ ownerName: "Other (out of estate)", ownerType: "external", net: 20_000 });
+  });
+
+  it("does not double-count an external beneficiary's share when a family member co-owns the account", () => {
+    const mixedAccount = {
+      id: "a-mixed-ext",
+      name: "Joint w/ DAF beneficiary",
+      category: "taxable",
+      owners: [
+        { kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 0.8 },
+        { kind: "external_beneficiary" as const, externalBeneficiaryId: "ext-1", percent: 0.2 },
+      ],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, mixedAccount],
+      projectionYears: [
+        priorYear,
+        { ...projectionYear, accountLedgers: { ...projectionYear.accountLedgers, "a-mixed-ext": { beginningValue: 90_000, endingValue: 100_000 } } },
+      ],
+    });
+    // Family owner absorbs the full balance in-estate; external is not surfaced separately.
+    expect(vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "ext")).toBeUndefined();
+    expect(vm.totalAssets).toBe(1_650_000);
+  });
 });

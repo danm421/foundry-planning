@@ -434,6 +434,20 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       // A $0 entity slice (e.g. an empty default-cash account) still emits a
       // row so the account is visible under its entity. Zero family slices
       // remain suppressed.
+      if (owner.kind === "external_beneficiary") {
+        // An external beneficiary carries no present balance-sheet value when a
+        // real (family/entity) owner is on the account — that owner already holds
+        // the full balance (resolveOwnerSlices gives them the residual pool).
+        // Only surface external value when it would otherwise be dropped entirely
+        // (e.g. an external-only account), to avoid double-counting into OOE.
+        const absorbedByInEstateOwner = acct.owners.some(
+          (o) => o.kind === "family_member" || o.kind === "entity",
+        );
+        if (view === "consolidated" && value > 0 && !absorbedByInEstateOwner) {
+          ooeAdd("ext", "Other (out of estate)", "external", value * owner.percent, 0);
+        }
+        continue;
+      }
       if (sliceValue <= 0 && owner.kind !== "entity") continue;
       // Derive percent from slice / account so multi-owner accounts surface
       // the projected (drifted) ownership rather than the static authored split.
@@ -721,6 +735,10 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     for (const owner of liab.owners) {
       const sliceBalance = balance * owner.percent;
       if (sliceBalance <= 0) continue;
+      if (owner.kind === "external_beneficiary") {
+        if (view === "consolidated") ooeAdd("ext", "Other (out of estate)", "external", 0, sliceBalance);
+        continue;
+      }
       if (owner.kind === "family_member") {
         const fm = familyMemberById.get(owner.familyMemberId);
         const role = familyRoleLabel(fm?.role ?? "other");
