@@ -258,6 +258,32 @@ describe("mutationsToScenarioChanges", () => {
     });
   });
 
+  it("living-expense-scale + expense-annual-amount on the same expense coalesce into one edit row (F3: no scenario_changes_unique dup)", () => {
+    const drafts = mutationsToScenarioChanges(makeSource(), CLIENT_ID, [
+      { kind: "living-expense-scale", multiplier: 1.1 },
+      {
+        kind: "expense-annual-amount",
+        expenseId: "expense-living-susan",
+        annualAmount: 90000,
+      },
+    ]);
+    const susanRows = drafts.filter(
+      (d) => d.targetKind === "expense" && d.targetId === "expense-living-susan",
+    );
+    // Two `edit` rows for the same expense would violate
+    // scenario_changes_unique (scenarioId, targetKind, targetId, opType).
+    expect(susanRows).toHaveLength(1);
+    expect(susanRows[0].opType).toBe("edit");
+    // Last write wins: the explicit annual amount overrides the scaled value;
+    // `from` stays the base value.
+    expect(susanRows[0].payload).toEqual({
+      annualAmount: { from: 80000, to: 90000 },
+    });
+    // No (targetKind, targetId, opType) collision anywhere in the output.
+    const keys = drafts.map((d) => `${d.targetKind}:${d.targetId}:${d.opType}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it("ss-claim-age produces an edit row on the matching incomes row", () => {
     const drafts = mutationsToScenarioChanges(
       makeSource(),
