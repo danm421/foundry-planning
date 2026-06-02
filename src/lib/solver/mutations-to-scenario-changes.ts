@@ -39,6 +39,15 @@ export function mutationsToScenarioChanges(
     string,
     { fields: Record<string, { from: unknown; to: unknown }> }
   >();
+  // Coalesce per-expense edits into one expense row per expenseId.
+  // `living-expense-scale` (fans out to retirement living expenses) and
+  // `expense-annual-amount` (a single expense) can both target the same
+  // expense; emitting two `edit` rows would violate the
+  // (scenarioId, targetKind, targetId, opType) unique index.
+  const expenseDiffs = new Map<
+    string,
+    { fields: Record<string, { from: unknown; to: unknown }> }
+  >();
   const nonClientDrafts: SolverScenarioChangeDraft[] = [];
 
   const ssRowFor = (person: SolverPerson) =>
@@ -91,6 +100,18 @@ export function mutationsToScenarioChanges(
     incomeDiffs.set(incomeId, entry);
   };
 
+  const accumulateExpense = (
+    expenseId: string,
+    field: string,
+    from: unknown,
+    to: unknown,
+  ): void => {
+    if (from === to) return;
+    const entry = expenseDiffs.get(expenseId) ?? { fields: {} };
+    entry.fields[field] = { from, to };
+    expenseDiffs.set(expenseId, entry);
+  };
+
   for (const m of mutations) {
     switch (m.kind) {
       case "retirement-age": {
@@ -139,31 +160,24 @@ export function mutationsToScenarioChanges(
         const planStartYear = source.planSettings.planStartYear;
         for (const e of source.expenses) {
           if (!isRetirementLivingExpense(e, planStartYear)) continue;
-          const next = e.annualAmount * m.multiplier;
-          if (e.annualAmount === next) continue;
-          nonClientDrafts.push({
-            opType: "edit",
-            targetKind: "expense",
-            targetId: e.id,
-            payload: { annualAmount: { from: e.annualAmount, to: next } },
-            orderIndex: 0,
-          });
+          accumulateExpense(
+            e.id,
+            "annualAmount",
+            e.annualAmount,
+            e.annualAmount * m.multiplier,
+          );
         }
         break;
       }
       case "expense-annual-amount": {
         const expense = source.expenses.find((e) => e.id === m.expenseId);
-        if (expense && expense.annualAmount !== m.annualAmount) {
-          nonClientDrafts.push({
-            opType: "edit",
-            targetKind: "expense",
-            targetId: expense.id,
-            payload: {
-              annualAmount: { from: expense.annualAmount, to: m.annualAmount },
-            },
-            orderIndex: 0,
-          });
-        }
+        if (!expense) break;
+        accumulateExpense(
+          expense.id,
+          "annualAmount",
+          expense.annualAmount,
+          m.annualAmount,
+        );
         break;
       }
       case "income-annual-amount": {
@@ -492,6 +506,16 @@ export function mutationsToScenarioChanges(
       opType: "edit",
       targetKind: "income",
       targetId: incomeId,
+      payload: entry.fields,
+      orderIndex: 0,
+    });
+  }
+  for (const [expenseId, entry] of expenseDiffs.entries()) {
+    if (Object.keys(entry.fields).length === 0) continue;
+    drafts.push({
+      opType: "edit",
+      targetKind: "expense",
+      targetId: expenseId,
       payload: entry.fields,
       orderIndex: 0,
     });

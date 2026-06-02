@@ -8,6 +8,7 @@ import {
   SAVINGS_SOURCE_MULTIPLIER,
 } from "../lever-search-config";
 import { SYNTHETIC_SAVINGS_ACCOUNT_ID } from "@/lib/analysis/hypothetical-savings";
+import { applyMutations } from "../apply-mutations";
 
 const emptyTree = {
   client: {},
@@ -203,5 +204,31 @@ describe("roth-conversion-amount target", () => {
     const tree = { rothConversions: [rc] } as unknown as import("@/engine/types").ClientData;
     const cfg = leverSearchConfig({ kind: "roth-conversion-amount", techniqueId: "rc-1" }, tree);
     expect(cfg.direction).toBe(1);
+  });
+
+  it("F4: a conversion added in-session resolves only via the working tree, not the base tree", () => {
+    // The base plan has no Roth conversions. The advisor adds one inside the
+    // solver workspace, where it lives only as a mutation until saved.
+    const baseTree = {
+      ...emptyTree,
+      rothConversions: [],
+    } as unknown as import("@/engine/types").ClientData;
+    const target = { kind: "roth-conversion-amount", techniqueId: "rc-new" } as const;
+    const addMutation = {
+      kind: "roth-conversion-upsert" as const,
+      id: "rc-new",
+      value: { ...rc, id: "rc-new" },
+    };
+
+    // Deriving the lever key from the base tree throws — this is the crash the
+    // workspace hit when it passed initialSourceClientData instead of workingTree.
+    expect(() => buildLeverMutation(target, 0, baseTree)).toThrow(/no conversion/);
+
+    // workingTree = applyMutations(base, mutations) contains the added conversion,
+    // so the key derivation the workspace performs at solve time succeeds.
+    const workingTree = applyMutations(baseTree, [addMutation]);
+    const m = buildLeverMutation(target, 0, workingTree);
+    expect(m.kind).toBe("roth-conversion-upsert");
+    if (m.kind === "roth-conversion-upsert") expect(m.id).toBe("rc-new");
   });
 });

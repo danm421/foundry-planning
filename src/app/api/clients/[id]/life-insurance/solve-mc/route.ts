@@ -22,6 +22,7 @@ import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { solveLifeInsuranceNeedMc } from "@/lib/life-insurance/solve-need-mc";
+import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { computeEstateTaxAddend } from "@/lib/life-insurance/estate-tax-addend";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import {
@@ -126,9 +127,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           mcTargetScore: assumptions.mcTargetScore,
         };
 
-        const filingStatus = effectiveTree.client.filingStatus;
-        const isMarried =
-          filingStatus === "married_joint" || filingStatus === "married_separate";
+        // Use hasSpouse (filing status AND spouseDob), not filing status alone:
+        // a married plan with no spouseDob cannot build the spouse-death case
+        // and would throw inside buildLifeInsuranceWhatIfData (F8).
+        const isMarried = hasSpouse(effectiveTree);
 
         // Per-decedent estate-tax addend (0 when the toggle is off).
         const clientAddend = assumptions.coverEstateTaxes

@@ -26,6 +26,7 @@ import {
   DEFAULT_LI_GROWTH,
 } from "@/lib/life-insurance/load-li-portfolio";
 import { existingCoverageInForce } from "@/lib/life-insurance/existing-coverage";
+import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { computeEstateTaxAddend } from "@/lib/life-insurance/estate-tax-addend";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import type { ClientData } from "@/engine/types";
@@ -110,9 +111,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       payoffLiabilityIds: body.payoffLiabilityIds,
     };
 
-    const filingStatus = effectiveTree.client.filingStatus;
-    const isMarried =
-      filingStatus === "married_joint" || filingStatus === "married_separate";
+    // Use hasSpouse (filing status AND spouseDob), not filing status alone:
+    // a married plan with no spouseDob cannot build the spouse-death case and
+    // would throw inside buildLifeInsuranceWhatIfData (F5).
+    const isMarried = hasSpouse(effectiveTree);
 
     const client = solveCase(effectiveTree, "client", a, body.coverEstateTaxes);
     const spouse = isMarried

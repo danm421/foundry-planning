@@ -61,9 +61,9 @@ const VALID_BODY = {
   mcTargetScore: 0.8,
 };
 
-function mockTree(filingStatus: string) {
+function mockTree(filingStatus: string, spouseDob: string | null = "1970-06-15") {
   return {
-    client: { filingStatus },
+    client: { filingStatus, spouseDob },
     accounts: [],
     incomes: [],
     expenses: [],
@@ -120,6 +120,21 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
     const res = await POST(makeRequest(VALID_BODY), ctx as never);
     expect(res.status).toBe(200);
     const body = await res.json();
+    expect(body.isMarried).toBe(false);
+    expect(body.spouse).toBeNull();
+    expect(solveLifeInsuranceNeed).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns spouse: null for a married filer with no spouseDob (F5: avoids the spouse-solve crash)", async () => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: mockTree("married_joint", null),
+      warnings: [],
+    } as never);
+    const res = await POST(makeRequest(VALID_BODY), ctx as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Without a spouseDob the spouse case can't be built; treat the plan as
+    // single rather than attempting (and crashing) the spouse solve.
     expect(body.isMarried).toBe(false);
     expect(body.spouse).toBeNull();
     expect(solveLifeInsuranceNeed).toHaveBeenCalledTimes(1);
