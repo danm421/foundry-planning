@@ -332,7 +332,7 @@ export async function POST(
     // Conditionally load the life insurance inventory — only when the deck
     // includes the Life Insurance Summary page.
     const needsLifeInsurance = parsed.data.pages.some(
-      (p) => (p.pageId as string) === "lifeInsuranceSummary",
+      (p) => p.pageId === "lifeInsuranceSummary",
     );
     const lifeInsurance = needsLifeInsurance
       ? await loadLifeInsuranceInventory(id, firmId, clientFullName, spouseFirstName)
