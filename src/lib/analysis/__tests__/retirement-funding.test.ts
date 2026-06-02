@@ -6,8 +6,9 @@ function acct(id: string, category: Account["category"], subType: string): Accou
   return { id, category, subType } as Account;
 }
 
-// Minimal ProjectionYear factory — only fields the funding math reads.
-function yr(year: number, over: Partial<ProjectionYear>): ProjectionYear {
+// Minimal ProjectionYear factory — only fields the funding math reads. `over`
+// is intentionally loose: fixtures supply just the subfields the math touches.
+function yr(year: number, over: Record<string, unknown>): ProjectionYear {
   return {
     year,
     income: { socialSecurity: 0, salaries: 0, business: 0, deferred: 0, capitalGains: 0, trust: 0, other: 0 },
