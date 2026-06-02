@@ -647,4 +647,10 @@ describe("buildViewModel — out-of-estate owner rows", () => {
     expect(vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "ext")).toBeUndefined();
     expect(vm.totalAssets).toBe(1_650_000);
   });
+
+  it("excludes child/other family from the in-estate bar-chart series", () => {
+    const vm = buildViewModel(withChild);
+    const point = vm.barChartSeries.find((p) => p.year === 2026);
+    expect(point?.assets).toBe(1_550_000); // child's 60k excluded
+  });
 });

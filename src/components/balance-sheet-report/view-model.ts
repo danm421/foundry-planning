@@ -1071,7 +1071,6 @@ function computeYearTotals(
   const planStartYear = projectionYears[0]?.year ?? selectedYear;
   const entitiesById = new Map(entities.map((e) => [e.id, e]));
   const familyMemberById = new Map(familyMembers.map((fm) => [fm.id, fm]));
-  void familyMemberById; // referenced only for symmetry with main builder
 
   const byCategory = new Map<AssetCategoryKey, number>();
   let totalLiabilities = 0;
@@ -1094,8 +1093,10 @@ function computeYearTotals(
       if (sliceValue <= 0) continue;
       let inEstateValue = 0;
       if (owner.kind === "family_member") {
-        inEstateValue = sliceValue;
-      } else {
+        const fm = familyMemberById.get(owner.familyMemberId);
+        const role = fm?.role ?? "other";
+        if (role === "client" || role === "spouse") inEstateValue = sliceValue;
+      } else if (owner.kind === "entity") {
         const e = entitiesById.get(owner.entityId);
         if (!e) continue;
         if (e.entityType === "trust") {
@@ -1128,8 +1129,10 @@ function computeYearTotals(
       if (sliceBalance <= 0) continue;
       let inEstateBalance = 0;
       if (owner.kind === "family_member") {
-        inEstateBalance = sliceBalance;
-      } else {
+        const fm = familyMemberById.get(owner.familyMemberId);
+        const role = fm?.role ?? "other";
+        if (role === "client" || role === "spouse") inEstateBalance = sliceBalance;
+      } else if (owner.kind === "entity") {
         const e = entitiesById.get(owner.entityId);
         if (!e) continue;
         if (e.entityType === "trust") {
