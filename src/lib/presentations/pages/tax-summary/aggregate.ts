@@ -132,3 +132,58 @@ export function computeRetirementComposition(
   }
   return { year: py.year, roth, preTax, taxable, total: roth + preTax + taxable };
 }
+
+// ── Opportunity rows ────────────────────────────────────────────────────────
+/** Realized LTCG (taxDetail.capitalGains) at or above this counts as an "event"
+ *  worth surfacing on the opportunities page. Fixed for v1 (see spec). */
+export const LARGE_GAIN_THRESHOLD = 25_000;
+
+export interface RothConversionRow {
+  year: number;
+  gross: number;
+  taxable: number;
+  marginalRate: number;
+}
+export function buildRothConversionRows(rows: TaxBracketRow[]): RothConversionRow[] {
+  return rows
+    .filter((r) => r.conversionGross > 0)
+    .map((r) => ({ year: r.year, gross: r.conversionGross, taxable: r.conversionTaxable, marginalRate: r.marginalRate }));
+}
+
+export interface IrmaaRow {
+  year: number;
+  surcharge: number;
+}
+export function buildIrmaaRows(years: ProjectionYear[]): IrmaaRow[] {
+  const out: IrmaaRow[] = [];
+  for (const y of years) {
+    const s = y.medicare?.totalIrmaaSurcharge ?? 0;
+    if (s > 0) out.push({ year: y.year, surcharge: s });
+  }
+  return out;
+}
+
+export interface CapGainsEventRow {
+  year: number;
+  gain: number;
+  tax: number;
+}
+export function buildCapGainsEvents(years: ProjectionYear[]): CapGainsEventRow[] {
+  const out: CapGainsEventRow[] = [];
+  for (const y of years) {
+    const gain = y.taxDetail?.capitalGains ?? 0;
+    if (gain >= LARGE_GAIN_THRESHOLD) {
+      out.push({ year: y.year, gain, tax: y.taxResult?.flow.capitalGainsTax ?? 0 });
+    }
+  }
+  return out;
+}
+
+export interface BracketTimelinePoint {
+  year: number;
+  rate: number;
+  isLow: boolean;
+}
+export function buildBracketTimeline(rows: TaxBracketRow[], lowThreshold: number): BracketTimelinePoint[] {
+  return rows.map((r) => ({ year: r.year, rate: r.marginalRate, isLow: r.marginalRate < lowThreshold }));
+}

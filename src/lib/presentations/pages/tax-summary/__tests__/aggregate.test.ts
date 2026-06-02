@@ -13,6 +13,16 @@ import {
 import type { TaxBracketRow } from "@/lib/tax/bracket";
 import { computeRetirementComposition, type RetirementComposition } from "../aggregate";
 import type { ClientData } from "@/engine/types";
+import {
+  buildRothConversionRows,
+  buildIrmaaRows,
+  buildCapGainsEvents,
+  buildBracketTimeline,
+  LARGE_GAIN_THRESHOLD,
+  type RothConversionRow,
+  type IrmaaRow,
+  type CapGainsEventRow,
+} from "../aggregate";
 
 function row(year: number, marginalRate: number): TaxBracketRow {
   return { year, marginalRate } as TaxBracketRow;
@@ -160,5 +170,52 @@ describe("taxSummaryOptionsSchema", () => {
       lowThreshold: 0.22,
       highThreshold: 0.24,
     });
+  });
+});
+
+describe("buildRothConversionRows", () => {
+  it("keeps only years with a gross conversion and carries the marginal rate", () => {
+    const rows = [
+      { year: 2030, conversionGross: 0, conversionTaxable: 0, marginalRate: 0.12 },
+      { year: 2031, conversionGross: 50_000, conversionTaxable: 45_000, marginalRate: 0.22 },
+    ] as TaxBracketRow[];
+    const out: RothConversionRow[] = buildRothConversionRows(rows);
+    expect(out).toEqual([{ year: 2031, gross: 50_000, taxable: 45_000, marginalRate: 0.22 }]);
+  });
+});
+
+describe("buildIrmaaRows", () => {
+  it("keeps only years with a positive IRMAA surcharge", () => {
+    const years = [
+      { year: 2040, medicare: { totalIrmaaSurcharge: 0 } },
+      { year: 2041, medicare: { totalIrmaaSurcharge: 1_200 } },
+      { year: 2042 },
+    ] as unknown as ProjectionYear[];
+    const out: IrmaaRow[] = buildIrmaaRows(years);
+    expect(out).toEqual([{ year: 2041, surcharge: 1_200 }]);
+  });
+});
+
+describe("buildCapGainsEvents", () => {
+  it("flags years whose realized gain meets the threshold", () => {
+    const years = [
+      { year: 2032, taxDetail: { capitalGains: 5_000 }, taxResult: { flow: { capitalGainsTax: 0 } } },
+      { year: 2033, taxDetail: { capitalGains: LARGE_GAIN_THRESHOLD }, taxResult: { flow: { capitalGainsTax: 9_000 } } },
+    ] as unknown as ProjectionYear[];
+    const out: CapGainsEventRow[] = buildCapGainsEvents(years);
+    expect(out).toEqual([{ year: 2033, gain: LARGE_GAIN_THRESHOLD, tax: 9_000 }]);
+  });
+});
+
+describe("buildBracketTimeline", () => {
+  it("maps each row to year + rate + low-bracket flag", () => {
+    const rows = [
+      { year: 2030, marginalRate: 0.12 },
+      { year: 2031, marginalRate: 0.24 },
+    ] as TaxBracketRow[];
+    expect(buildBracketTimeline(rows, 0.22)).toEqual([
+      { year: 2030, rate: 0.12, isLow: true },
+      { year: 2031, rate: 0.24, isLow: false },
+    ]);
   });
 });
