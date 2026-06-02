@@ -223,7 +223,11 @@ const ALL_OUTER_COLS: OuterCol[] = [
   { key: "netToHeirs", label: "Net To Heirs", totalKey: "netToHeirs" },
   { key: "heirsAssets", label: "Heirs Assets" },
   { key: "totalToHeirs", label: "Total To Heirs", totalKey: "totalToHeirs" },
-  { key: "charity", label: "Charity", totalKey: "charity" },
+  // F77: the per-row `charity` value is a cumulative running total (compounded
+  // lifetime gifts), so a column-Total that sums it re-counts every prior year
+  // (10-30x overstatement). The lifetime figure already shows in the final row;
+  // omit the total, matching the on-screen widget (yearly-estate-table.tsx).
+  { key: "charity", label: "Charity" },
 ];
 
 /**

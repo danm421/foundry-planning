@@ -396,6 +396,42 @@ describe("EstateTransfersYearlyBlock (inner renderer)", () => {
     expect(tree).toContain("$2,200");
   });
 
+  it("does not display a summed Total for the cumulative Charity column (F77)", () => {
+    // Per-row `charity` is a cumulative running total (compounded lifetime gifts),
+    // so summing it across rows re-counts every prior year. The lifetime figure
+    // is already the final row's value; the on-screen widget omits a charity
+    // total for exactly this reason. The PDF must not render the inflated sum.
+    const report = mkReport({
+      rows: [
+        mkRow({ year: 2030, grossEstate: 1000, charity: 500_000 }),
+        mkRow({ year: 2031, grossEstate: 1000, charity: 500_000 }),
+      ],
+      totals: {
+        taxesAndExpenses: 0,
+        charitableBequests: 0,
+        netToHeirs: 0,
+        heirsAssets: 0,
+        totalToHeirs: 0,
+        charity: 1_000_000, // re-counted sum (500k + 500k) — must NOT be displayed
+      },
+    });
+    const tree = renderToTree(
+      <EstateTransfersYearlyBlock
+        report={report}
+        ownerNames={ownerNames}
+        planLabel={undefined}
+        multiPlan={false}
+        dotColor="#000"
+        compact={false}
+      />,
+    );
+    // The Charity column still appears (its rows are non-zero)...
+    expect(tree).toContain("Charity");
+    expect(tree).toContain("$500,000");
+    // ...but its inflated lifetime total must not be rendered in the Total row.
+    expect(tree).not.toContain("$1,000,000");
+  });
+
   it("renders empty state when report.rows is empty", () => {
     const report = mkReport({ rows: [] });
     const tree = renderToTree(
