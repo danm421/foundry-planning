@@ -40,6 +40,7 @@ import {
 import { dateLong } from "@/lib/presentations/format";
 import { recordAudit } from "@/lib/audit";
 import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
+import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
@@ -328,6 +329,15 @@ export async function POST(
     const spouseFirstName = ci.spouseName ?? null;
     const clientFullName = `${ci.firstName} ${clientLastName}`.trim();
 
+    // Conditionally load the life insurance inventory — only when the deck
+    // includes the Life Insurance Summary page.
+    const needsLifeInsurance = parsed.data.pages.some(
+      (p) => (p.pageId as string) === "lifeInsuranceSummary",
+    );
+    const lifeInsurance = needsLifeInsurance
+      ? await loadLifeInsuranceInventory(id, firmId, clientFullName, spouseFirstName)
+      : undefined;
+
     // Firm branding for the cover: name, accent color, and logo. Falls back to
     // the Foundry mark + gold when the firm hasn't set their own.
     const branding = await resolveBranding(firmId);
@@ -353,6 +363,7 @@ export async function POST(
       bundles,
       topScenarioKey: plan.topKey,
       investments,
+      lifeInsurance,
     }) as unknown as React.ReactElement<DocumentProps>;
 
     // @react-pdf/renderer has a memory-leak history on large docs, and
