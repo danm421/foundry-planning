@@ -5,6 +5,7 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { BalanceSheetPageData } from "@/lib/presentations/pages/balance-sheet/view-model";
 import { exactCurrency as fmt } from "@/lib/presentations/format";
+import { prepareEntityGroups } from "@/lib/balance-sheet/entity-groups";
 
 const ENTITY_TYPE_LABEL: Record<string, string> = {
   trust: "Trust",
@@ -79,7 +80,7 @@ export function EntitiesBalanceSheetPagePdf({
   pageIndex,
   totalPages,
 }: RenderPdfInput<BalanceSheetPageData>) {
-  const groups = data.viewModel.entityGroups ?? [];
+  const groups = prepareEntityGroups(data.viewModel.entityGroups ?? []);
   return (
     <PageFrame
       firmName={firmName}

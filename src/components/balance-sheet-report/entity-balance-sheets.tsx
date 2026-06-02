@@ -1,5 +1,6 @@
 // src/components/balance-sheet-report/entity-balance-sheets.tsx
-import type { BalanceSheetViewModel, EntityGroup } from "./view-model";
+import type { BalanceSheetViewModel } from "./view-model";
+import { prepareEntityGroups } from "@/lib/balance-sheet/entity-groups";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -15,20 +16,12 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   other: "Entity",
 };
 
-function dedupeFlat(group: EntityGroup): EntityGroup {
-  const hasReal = group.assetRows.some((r) => !r.rowKey.startsWith("flat:"));
-  if (!hasReal) return group;
-  const assetRows = group.assetRows.filter((r) => !r.rowKey.startsWith("flat:"));
-  const assetTotal = assetRows.reduce((s, r) => s + r.value, 0);
-  return { ...group, assetRows, assetTotal, netWorth: assetTotal - group.liabilityTotal };
-}
-
 interface EntityBalanceSheetsProps {
   groups: NonNullable<BalanceSheetViewModel["entityGroups"]>;
 }
 
 export default function EntityBalanceSheets({ groups }: EntityBalanceSheetsProps) {
-  const cleaned = groups.map(dedupeFlat).filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
+  const cleaned = prepareEntityGroups(groups);
   if (cleaned.length === 0) {
     return <div className="w-full max-w-sm rounded-lg border border-hair bg-card p-6 text-center text-ink-2">No business or trust entities.</div>;
   }
