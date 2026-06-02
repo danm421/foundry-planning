@@ -151,6 +151,20 @@ export interface LiabilityRow {
   balance: number;
 }
 
+export type OutOfEstateOwnerType =
+  | "trust" | "foundation" | "business" | "person" | "entity" | "external";
+
+export interface OutOfEstateOwnerRow {
+  /** "en:<entityId>" | "fm:<familyMemberId>" | "ext" */
+  ownerKey: string;
+  ownerName: string;
+  ownerType: OutOfEstateOwnerType;
+  assetTotal: number;
+  liabilityTotal: number;
+  /** assetTotal - liabilityTotal */
+  net: number;
+}
+
 export interface DonutSlice {
   key: AssetCategoryKey;
   label: string;
@@ -188,6 +202,9 @@ export interface BalanceSheetViewModel {
   outOfEstateRows: AssetRow[];
   outOfEstateLiabilityRows: LiabilityRow[];
   outOfEstateNetWorth: number;
+  /** One net line per out-of-estate owner (entities, child/other people,
+   *  external beneficiaries). Consolidated view only; [] otherwise. */
+  outOfEstateOwnerRows: OutOfEstateOwnerRow[];
   liabilityRows: LiabilityRow[];
   /** Present only when view === "entities". */
   entityGroups?: EntityGroup[];
@@ -360,6 +377,20 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   const entitiesById = new Map(entities.map((e) => [e.id, e]));
   const familyMemberById = new Map(familyMembers.map((fm) => [fm.id, fm]));
 
+  function ownerTypeForEntity(entityType: string): OutOfEstateOwnerType {
+    if (entityType === "trust") return "trust";
+    if (entityType === "foundation") return "foundation";
+    if (BUSINESS_ENTITY_TYPES.has(entityType)) return "business";
+    return "entity";
+  }
+  const ooeOwners = new Map<string, { name: string; type: OutOfEstateOwnerType; asset: number; liab: number }>();
+  function ooeAdd(key: string, name: string, type: OutOfEstateOwnerType, asset: number, liab: number) {
+    const cur = ooeOwners.get(key) ?? { name, type, asset: 0, liab: 0 };
+    cur.asset += asset;
+    cur.liab += liab;
+    ooeOwners.set(key, cur);
+  }
+
   // Mortgages keyed by linked-property accountId — used for the M chip on
   // real-estate rows and for the in-estate equity calculation.
   const mortgagesByPropertyId = new Map<string, LiabilityLike[]>();
@@ -514,10 +545,11 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     // Entity slice that's fully out-of-estate (irrevocable trust, foundation,
     // unknown entity) → OOE in consolidated view, or kept under entity card
     // in entities view.
-    const isOutOfEstateSlice =
-      view === "consolidated" && slice.kind === "entity" && (!slice.inEstate || slice.familyShare === 0);
-    if (isOutOfEstateSlice) {
+    // Entity slice that's out-of-estate → OOE detail row + per-owner aggregate.
+    if (view === "consolidated" && slice.kind === "entity" && (!slice.inEstate || slice.familyShare === 0)) {
       outOfEstateRows.push(sliceRow);
+      const e = entitiesById.get(slice.entityId);
+      ooeAdd(`en:${slice.entityId}`, e?.name ?? slice.ownerLabel, ownerTypeForEntity(e?.entityType ?? "other"), slice.value, 0);
       continue;
     }
 
@@ -643,6 +675,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           isFlatBusinessValue: true,
           accountHasMultipleOwners: false,
         });
+        ooeAdd(`en:${entityId}`, agg.entityName, "business", agg.outOfEstate, 0);
       }
     }
   }
@@ -733,6 +766,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       // Entity liability: family share → in-estate, residual → OOE.
       if (!ls.inEstate || ls.familyShare === 0) {
         outOfEstateLiabilityRows.push(ls.row);
+        const e = entitiesById.get(ls.entityId);
+        ooeAdd(`en:${ls.entityId}`, e?.name ?? ls.row.ownerLabel, ownerTypeForEntity(e?.entityType ?? "other"), 0, ls.row.balance);
         continue;
       }
       if (ls.familyShare < 1) {
@@ -740,6 +775,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         const residual = ls.row.balance - familyVal;
         liabilityRows.push({ ...ls.row, rowKey: `${ls.row.rowKey}@in`, balance: familyVal });
         outOfEstateLiabilityRows.push({ ...ls.row, rowKey: `${ls.row.rowKey}@oo`, balance: residual });
+        const e = entitiesById.get(ls.entityId);
+        ooeAdd(`en:${ls.entityId}`, e?.name ?? ls.row.ownerLabel, ownerTypeForEntity(e?.entityType ?? "other"), 0, residual);
       } else {
         liabilityRows.push(ls.row);
       }
@@ -850,12 +887,20 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   const totalLiabilities = liabilityRows.reduce((sum, r) => sum + r.balance, 0);
   const netWorth = totalAssets - totalLiabilities;
 
-  const outOfEstateAssetTotal = outOfEstateRows.reduce((sum, r) => sum + r.value, 0);
-  const outOfEstateLiabilityTotal = outOfEstateLiabilityRows.reduce(
-    (sum, r) => sum + r.balance,
-    0,
-  );
-  const outOfEstateNetWorth = outOfEstateAssetTotal - outOfEstateLiabilityTotal;
+  const outOfEstateOwnerRows: OutOfEstateOwnerRow[] =
+    view === "consolidated"
+      ? [...ooeOwners.entries()]
+          .map(([ownerKey, o]) => ({
+            ownerKey,
+            ownerName: o.name,
+            ownerType: o.type,
+            assetTotal: o.asset,
+            liabilityTotal: o.liab,
+            net: o.asset - o.liab,
+          }))
+          .sort((a, b) => b.net - a.net)
+      : [];
+  const outOfEstateNetWorth = outOfEstateOwnerRows.reduce((s, r) => s + r.net, 0);
 
   // ── Real estate equity (in-estate real estate − linked mortgages) ───────
 
@@ -920,6 +965,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     outOfEstateRows,
     outOfEstateLiabilityRows,
     outOfEstateNetWorth,
+    outOfEstateOwnerRows,
     liabilityRows,
     entityGroups,
     totalAssets,

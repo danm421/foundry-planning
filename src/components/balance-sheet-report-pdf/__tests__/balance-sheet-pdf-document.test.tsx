@@ -62,6 +62,7 @@ function multiOwnerViewModel(): BalanceSheetViewModel {
     ],
     outOfEstateLiabilityRows: [],
     outOfEstateNetWorth: 500_000,
+    outOfEstateOwnerRows: [],
     liabilityRows: [
       mkLiability({ rowKey: "liab1#client", liabilityId: "liab1", balance: 150_000 }),
       mkLiability({ rowKey: "liab1#spouse", liabilityId: "liab1", balance: 100_000 }),

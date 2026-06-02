@@ -552,3 +552,40 @@ describe("buildViewModel — entity default-cash account visibility", () => {
     expect(llcGroup?.assetRows.some((r) => r.accountId === "llc-cash")).toBe(true);
   });
 });
+
+describe("buildViewModel — out-of-estate owner rows", () => {
+  it("emits one net row per out-of-estate entity owner", () => {
+    const vm = buildViewModel(baseInput);
+    const trust = vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "en:trust-1");
+    expect(trust).toMatchObject({
+      ownerName: "Smith Family IDGT",
+      ownerType: "trust",
+      assetTotal: 300_000,
+      liabilityTotal: 0,
+      net: 300_000,
+    });
+  });
+
+  it("nets an out-of-estate entity's liabilities against its assets", () => {
+    const vm = buildViewModel({
+      ...baseInput,
+      liabilities: [
+        ...liabilities,
+        { id: "l-trust", name: "Trust LOC", owners: trustOnly, linkedPropertyId: null },
+      ],
+      projectionYears: [
+        priorYear,
+        { ...projectionYear, liabilityBalancesBoY: { ...projectionYear.liabilityBalancesBoY, "l-trust": 50_000 } },
+      ],
+    });
+    const trust = vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "en:trust-1");
+    expect(trust?.liabilityTotal).toBe(50_000);
+    expect(trust?.net).toBe(250_000);
+    expect(vm.outOfEstateNetWorth).toBe(250_000);
+  });
+
+  it("is empty for non-consolidated views", () => {
+    const vm = buildViewModel({ ...baseInput, view: "entities" });
+    expect(vm.outOfEstateOwnerRows).toEqual([]);
+  });
+});
