@@ -56,6 +56,13 @@ interface AddReinvestmentFormProps {
   onSubmitDraft?: (technique: Reinvestment) => void;
 }
 
+const DEFAULT_GROUPS: { key: string; label: string }[] = [
+  { key: "all-liquid", label: "All Liquid Assets" },
+  { key: "taxable", label: "Taxable" },
+  { key: "retirement", label: "Retirement" },
+  { key: "cash", label: "Cash" },
+];
+
 const TARGET_OPTIONS: {
   value: "model_portfolio" | "custom";
   label: string;
@@ -271,12 +278,6 @@ export default function AddReinvestmentForm({
     ]),
   );
 
-  const DEFAULT_GROUPS: { key: string; label: string }[] = [
-    { key: "all-liquid", label: "All Liquid Assets" },
-    { key: "taxable", label: "Taxable" },
-    { key: "retirement", label: "Retirement" },
-    { key: "cash", label: "Cash" },
-  ];
   const groupOptions = [
     ...DEFAULT_GROUPS,
     ...customGroups.map((g) => ({ key: g.id, label: g.name })),
@@ -605,6 +606,7 @@ export default function AddReinvestmentForm({
               type="button"
               onClick={() => setRealizeTaxesOnSwitch((v) => !v)}
               aria-pressed={realizeTaxesOnSwitch}
+              aria-label="Apply taxes on switch"
               className={`flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left transition-colors ${
                 realizeTaxesOnSwitch
                   ? "border-accent/50 bg-accent/10"
@@ -655,28 +657,28 @@ export default function AddReinvestmentForm({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-[12px] text-ink-3">
+                <label htmlFor="reinvestment-pct-ordinary" className="mb-1 block text-[12px] text-ink-3">
                   Ordinary income
                 </label>
-                <PercentInput value={pctOrdinary} onChange={(raw) => setPctOrdinary(raw)} className={inputClassName} />
+                <PercentInput id="reinvestment-pct-ordinary" value={pctOrdinary} onChange={(raw) => setPctOrdinary(raw)} className={inputClassName} />
               </div>
               <div>
-                <label className="mb-1 block text-[12px] text-ink-3">
+                <label htmlFor="reinvestment-pct-lt-gains" className="mb-1 block text-[12px] text-ink-3">
                   LT capital gains
                 </label>
-                <PercentInput value={pctLtGains} onChange={(raw) => setPctLtGains(raw)} className={inputClassName} />
+                <PercentInput id="reinvestment-pct-lt-gains" value={pctLtGains} onChange={(raw) => setPctLtGains(raw)} className={inputClassName} />
               </div>
               <div>
-                <label className="mb-1 block text-[12px] text-ink-3">
+                <label htmlFor="reinvestment-pct-qualified-div" className="mb-1 block text-[12px] text-ink-3">
                   Qualified dividends
                 </label>
-                <PercentInput value={pctQualifiedDiv} onChange={(raw) => setPctQualifiedDiv(raw)} className={inputClassName} />
+                <PercentInput id="reinvestment-pct-qualified-div" value={pctQualifiedDiv} onChange={(raw) => setPctQualifiedDiv(raw)} className={inputClassName} />
               </div>
               <div>
-                <label className="mb-1 block text-[12px] text-ink-3">
+                <label htmlFor="reinvestment-pct-tax-exempt" className="mb-1 block text-[12px] text-ink-3">
                   Tax-exempt
                 </label>
-                <PercentInput value={pctTaxExempt} onChange={(raw) => setPctTaxExempt(raw)} className={inputClassName} />
+                <PercentInput id="reinvestment-pct-tax-exempt" value={pctTaxExempt} onChange={(raw) => setPctTaxExempt(raw)} className={inputClassName} />
               </div>
             </div>
           </div>
