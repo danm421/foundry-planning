@@ -38,6 +38,9 @@ import {
   taxYearParameters,
   reinvestments,
   reinvestmentAccounts,
+  reinvestmentGroups,
+  accountGroups,
+  accountGroupMembers,
   rothConversions,
   rothConversionSources,
   transfers,
@@ -84,6 +87,8 @@ import {
 } from "./resolve-entity";
 import { type AllocationMap } from "./reinvestment-sold-fraction";
 import { resolveReinvestments } from "./resolve-reinvestments";
+import { expandReinvestmentTargets } from "./expand-reinvestment-targets";
+import { isLiquid, type AccountCategory } from "@/lib/account-groups/liquid-filter";
 
 export class ClientNotFoundError extends Error {
   constructor(public clientId: string) {
@@ -174,6 +179,8 @@ export const loadClientDataWithContext = cache(
       transferScheduleRows,
       reinvestmentRows,
       reinvestmentAccountRows,
+      reinvestmentGroupRows,
+      accountGroupMemberRows,
       rothConversionRows,
       rothConversionSourceRows,
       assetTransactionRows,
@@ -199,6 +206,15 @@ export const loadClientDataWithContext = cache(
       db.select().from(transferSchedules),
       db.select().from(reinvestments).where(and(eq(reinvestments.clientId, id), eq(reinvestments.scenarioId, scenario.id))),
       db.select().from(reinvestmentAccounts),
+      db.select().from(reinvestmentGroups),
+      db
+        .select({
+          accountGroupId: accountGroupMembers.accountGroupId,
+          accountId: accountGroupMembers.accountId,
+        })
+        .from(accountGroupMembers)
+        .innerJoin(accountGroups, eq(accountGroups.id, accountGroupMembers.accountGroupId))
+        .where(eq(accountGroups.clientId, id)),
       db.select().from(rothConversions).where(and(eq(rothConversions.clientId, id), eq(rothConversions.scenarioId, scenario.id))),
       db.select().from(rothConversionSources),
       db.select().from(assetTransactions).where(and(eq(assetTransactions.clientId, id), eq(assetTransactions.scenarioId, scenario.id))),
@@ -1105,14 +1121,37 @@ export const loadClientDataWithContext = cache(
     // `resolveReinvestments`. Carrying the raw inputs lets `lookupBaseEntity`
     // (which reads the effective base tree) produce a correct raw-keyed diff
     // for scenario edits, and lets the scenario overlay re-resolve.
+
+    // Group-target expansion context (live group reference). Default keys
+    // expand from account category; custom UUIDs from their liquid members.
+    const accountCategoryById = new Map<string, AccountCategory>(
+      accountRows.map((a) => [a.id, a.category as AccountCategory]),
+    );
+    const customGroupMembersById = new Map<string, string[]>();
+    for (const m of accountGroupMemberRows) {
+      const cat = accountCategoryById.get(m.accountId);
+      if (cat == null || !isLiquid(cat)) continue; // groups are liquid-only
+      const list = customGroupMembersById.get(m.accountGroupId) ?? [];
+      list.push(m.accountId);
+      customGroupMembersById.set(m.accountGroupId, list);
+    }
+
     const rawReinvestments: Reinvestment[] = reinvestmentRows.map((r) => {
-      const accountIds = reinvestmentAccountRows
+      const individualAccountIds = reinvestmentAccountRows
         .filter((ra) => ra.reinvestmentId === r.id)
         .map((ra) => ra.accountId);
+      const groupKeys = reinvestmentGroupRows
+        .filter((rg) => rg.reinvestmentId === r.id)
+        .map((rg) => rg.groupKey);
+      const accountIds = expandReinvestmentTargets(individualAccountIds, groupKeys, {
+        accountCategoryById,
+        customGroupMembersById,
+      });
       return {
         id: r.id,
         name: r.name,
         accountIds,
+        groupKeys,
         year: resolvedStart(r.yearRef ?? null, r.year),
         // Resolved fields — (re)computed by resolveReinvestments below.
         newGrowthRate: 0,
