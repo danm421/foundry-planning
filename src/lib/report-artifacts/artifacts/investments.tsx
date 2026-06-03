@@ -1,3 +1,4 @@
+import { colorsLight } from "@/brand";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { eq, and, inArray } from "drizzle-orm";
@@ -386,7 +387,7 @@ export const investmentsArtifact: ReportArtifact<InvestmentsData, typeof options
     const styles = StyleSheet.create({
       sectionTitle: { fontSize: 13, fontWeight: 700, marginTop: 12, marginBottom: 4 },
       totalBlock: { alignItems: "center", marginTop: 4 },
-      totalLabel: { fontSize: 9, color: "#6b7280" },
+      totalLabel: { fontSize: 9, color: colorsLight.ink3 },
       totalValue: { fontSize: 18, fontWeight: 700, marginTop: 2 },
     });
 

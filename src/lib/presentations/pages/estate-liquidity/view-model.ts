@@ -1,6 +1,7 @@
 // Estate Liquidity drill — mirrors the in-app Liquidity tab (with-portfolio
 // surplus). Adapter over buildYearlyLiquidityReport.
 
+import { dataLight } from "@/brand";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import type { DrillColumn, DrillPageData, DrillRow } from "../../shared/drill-types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
@@ -54,11 +55,11 @@ export function buildEstateLiquidityDrillData(input: EstateDrillInput): DrillPag
   const chartSpec = buildDrillChartSpec({
     years: reportRows.map((r) => r.year),
     stacks: [
-      { seriesId: "totalPortfolioAssets",  label: "Portfolio Assets",  color: "#2563eb", values: reportRows.map((r) => r.totalPortfolioAssets) },
-      { seriesId: "totalInsuranceBenefit", label: "Insurance Benefit", color: "#16a34a", values: reportRows.map((r) => r.totalInsuranceBenefit) },
+      { seriesId: "totalPortfolioAssets",  label: "Portfolio Assets",  color: dataLight.blue, values: reportRows.map((r) => r.totalPortfolioAssets) },
+      { seriesId: "totalInsuranceBenefit", label: "Insurance Benefit", color: dataLight.green, values: reportRows.map((r) => r.totalInsuranceBenefit) },
     ],
     lines: [
-      { seriesId: "totalTransferCost", label: "Transfer Cost", color: "#dc2626", values: reportRows.map((r) => r.totalTransferCost) },
+      { seriesId: "totalTransferCost", label: "Transfer Cost", color: dataLight.red, values: reportRows.map((r) => r.totalTransferCost) },
     ],
     markers,
   });
