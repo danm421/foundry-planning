@@ -166,7 +166,7 @@ export function PortfolioBarsChart({
             {
               label: "Base case ahead of scenario",
               data: seg.baseAhead,
-              backgroundColor: palette.teal,
+              backgroundColor: palette.grey,
               stack: "portfolio",
             },
           ],

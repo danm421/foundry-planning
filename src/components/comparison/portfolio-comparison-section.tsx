@@ -151,7 +151,7 @@ function TwoPlanDeltaChart({ plans }: { plans: [ComparisonPlan, ComparisonPlan] 
             const s = scenarioByYear.get(yr) ?? baseByYear.get(yr) ?? 0;
             return Math.max(0, b - s);
           }),
-          backgroundColor: palette.teal,
+          backgroundColor: palette.grey,
           stack: "portfolio",
         },
       ],
