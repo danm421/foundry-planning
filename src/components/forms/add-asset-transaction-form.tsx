@@ -635,6 +635,12 @@ export default function AddAssetTransactionForm({
   const sellAccount = accounts.find((a) => a.id === sellAccountId);
   const isSellRealEstate = sellAccount?.category === "real_estate";
 
+  // Sale proceeds can only land in liquid spend-down buckets — cash or taxable.
+  const proceedsAccountOptions = useMemo(
+    () => accounts.filter((a) => a.category === "cash" || a.category === "taxable"),
+    [accounts],
+  );
+
   return (
     <DialogShell
       open
@@ -1441,7 +1447,7 @@ export default function AddAssetTransactionForm({
                 className={selectClassName}
               >
                 <option value="">Default Checking</option>
-                {accounts.map((a) => (
+                {proceedsAccountOptions.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
                   </option>
