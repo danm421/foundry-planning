@@ -32,6 +32,17 @@ describe("ClientHeader", () => {
     expect(bar.className).not.toContain("h-[100px]");
   });
 
+  it("stacks above the report subtab bars so its dropdown isn't overlapped", () => {
+    // Report subtab bars (assets/cashflow/estate-planning) are sticky `z-30`
+    // and live later in the DOM, so a `z-30` header loses the stacking tie and
+    // its dropdown gets painted over. The header must sit above `z-30` (and
+    // below the topbar's `z-40`, whose hover menus open into the header row).
+    const { container } = render(<ClientHeader clientId="abc" people={people} />);
+    const bar = container.firstChild as HTMLElement;
+    expect(bar.className).not.toContain("z-30");
+    expect(bar.className).toContain("z-[35]");
+  });
+
   it("renders the identity trigger and the right slot", () => {
     render(
       <ClientHeader
