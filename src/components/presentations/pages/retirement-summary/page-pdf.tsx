@@ -6,6 +6,7 @@ import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retire
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
 import { fmtUsd, fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import { PortfolioBarsPdf, SplitBarPdf } from "./chart-pdf";
+import { CashflowChartPdf } from "../cash-flow/chart-pdf";
 
 const s = StyleSheet.create({
   title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
@@ -136,6 +137,11 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
       {/* ── PAGE 2 — Income, Spending & Funding ── */}
       <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages} orientation="portrait">
         <Text style={s.title}>Income, Spending &amp; Funding</Text>
+
+        <View style={s.panel}>
+          <Text style={s.h4}>Cash flow in retirement</Text>
+          <CashflowChartPdf spec={data.cashFlowChartSpec} />
+        </View>
 
         <View style={s.panel}>
           <Text style={s.h4}>{`How retirement is funded (${data.kpis.retirementYear}–${data.bars[data.bars.length - 1]?.year ?? data.kpis.retirementYear})`}</Text>
