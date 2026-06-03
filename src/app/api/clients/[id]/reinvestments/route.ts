@@ -9,7 +9,7 @@ import {
   toReinvestmentSnapshot,
   REINVESTMENT_FIELD_LABELS,
 } from "@/lib/audit/snapshots/reinvestment";
-import { DEFAULT_GROUP_KEYS } from "@/lib/account-groups/resolver";
+import { isDefaultKey } from "@/lib/account-groups/resolver";
 import { listAccountGroups } from "@/lib/account-groups/queries";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ async function validateGroupKeys(
     return { ok: false, reason: "groupKeys must be an array of strings" };
   }
   const keys = groupKeys as string[];
-  const customKeys = keys.filter((k) => !(DEFAULT_GROUP_KEYS as Set<string>).has(k));
+  const customKeys = keys.filter((k) => !isDefaultKey(k));
   if (customKeys.length > 0) {
     const owned = new Set((await listAccountGroups(clientId)).map((g) => g.id));
     const bad = customKeys.find((k) => !owned.has(k));

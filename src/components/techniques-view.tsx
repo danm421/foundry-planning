@@ -12,6 +12,7 @@ import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { YEAR_REF_LABELS } from "@/lib/milestones";
+import { formatReinvestmentScope } from "@/lib/solver/technique-summaries";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -562,9 +563,7 @@ function ReinvestmentsTable({
                 )}
               </div>
               <span className="truncate text-xs tabular-nums text-ink-2">
-                {groupCount > 0
-                  ? `${groupCount} ${groupCount === 1 ? "group" : "groups"}`
-                  : `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`}
+                {formatReinvestmentScope(groupCount, accountCount)}
               </span>
               <span className="truncate text-xs tabular-nums text-ink-3">
                 {formatYear(r.year, r.yearRef)}

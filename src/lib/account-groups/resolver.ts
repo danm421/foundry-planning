@@ -21,7 +21,7 @@ export type ResolvedGroup = {
   strippedMemberCount?: number;
 };
 
-const DEFAULT_NAMES: Record<DefaultGroupKey, string> = {
+export const DEFAULT_NAMES: Record<DefaultGroupKey, string> = {
   "all-liquid": "All Liquid Assets",
   taxable: "Taxable",
   retirement: "Retirement",
@@ -40,7 +40,7 @@ export type ResolverDeps = {
   } | null>;
 };
 
-function isDefaultKey(key: string): key is DefaultGroupKey {
+export function isDefaultKey(key: string): key is DefaultGroupKey {
   return (DEFAULT_GROUP_KEYS as Set<string>).has(key);
 }
 

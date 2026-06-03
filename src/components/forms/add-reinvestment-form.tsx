@@ -9,6 +9,7 @@ import { inputClassName, selectClassName, fieldLabelClassName } from "./input-st
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { Reinvestment } from "@/engine/types";
 import type { AccountCategory } from "@/lib/account-groups/liquid-filter";
+import { DEFAULT_GROUP_KEYS, DEFAULT_NAMES } from "@/lib/account-groups/resolver";
 
 /**
  * Shape passed in when editing. The card-level fields come straight from
@@ -56,12 +57,10 @@ interface AddReinvestmentFormProps {
   onSubmitDraft?: (technique: Reinvestment) => void;
 }
 
-const DEFAULT_GROUPS: { key: string; label: string }[] = [
-  { key: "all-liquid", label: "All Liquid Assets" },
-  { key: "taxable", label: "Taxable" },
-  { key: "retirement", label: "Retirement" },
-  { key: "cash", label: "Cash" },
-];
+const DEFAULT_GROUPS = [...DEFAULT_GROUP_KEYS].map((key) => ({
+  key,
+  label: DEFAULT_NAMES[key],
+}));
 
 const TARGET_OPTIONS: {
   value: "model_portfolio" | "custom";
@@ -106,6 +105,38 @@ function CheckIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function SelectorButton({
+  label,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={selected}
+      className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-[13px] transition-colors ${
+        selected
+          ? "border-accent/50 bg-accent/10 text-ink"
+          : "border-hair bg-card-2 text-ink-2 hover:border-hair-2 hover:text-ink"
+      }`}
+    >
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+          selected ? "border-accent bg-accent text-accent-on" : "border-hair-2 bg-card"
+        }`}
+      >
+        {selected && <CheckIcon />}
+      </span>
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 
@@ -200,6 +231,7 @@ export default function AddReinvestmentForm({
           customPctLtCapitalGains: string | null;
           customPctQualifiedDividends: string | null;
           customPctTaxExempt: string | null;
+          groupKeys?: string[];
         }> = await res.json();
         const row = rows.find((r) => r.id === editId);
         if (!row || cancelled) return;
@@ -209,9 +241,8 @@ export default function AddReinvestmentForm({
         setPctLtGains(toPercentString(row.customPctLtCapitalGains));
         setPctQualifiedDiv(toPercentString(row.customPctQualifiedDividends));
         setPctTaxExempt(toPercentString(row.customPctTaxExempt));
-        const typedRow = row as typeof row & { groupKeys?: string[] };
-        if (Array.isArray(typedRow.groupKeys)) {
-          setSelectedGroupKeys(typedRow.groupKeys);
+        if (Array.isArray(row.groupKeys)) {
+          setSelectedGroupKeys(row.groupKeys);
         }
       } catch {
         // Detail fetch failed — the form still works with defaults.
@@ -699,62 +730,28 @@ export default function AddReinvestmentForm({
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
                   Groups
                 </p>
-                {groupOptions.map((g) => {
-                  const selected = selectedGroupKeys.includes(g.key);
-                  return (
-                    <button
-                      key={g.key}
-                      type="button"
-                      onClick={() => toggleGroup(g.key)}
-                      aria-pressed={selected}
-                      className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-[13px] transition-colors ${
-                        selected
-                          ? "border-accent/50 bg-accent/10 text-ink"
-                          : "border-hair bg-card-2 text-ink-2 hover:border-hair-2 hover:text-ink"
-                      }`}
-                    >
-                      <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-                          selected ? "border-accent bg-accent text-accent-on" : "border-hair-2 bg-card"
-                        }`}
-                      >
-                        {selected && <CheckIcon />}
-                      </span>
-                      <span className="truncate">{g.label}</span>
-                    </button>
-                  );
-                })}
+                {groupOptions.map((g) => (
+                  <SelectorButton
+                    key={g.key}
+                    label={g.label}
+                    selected={selectedGroupKeys.includes(g.key)}
+                    onToggle={() => toggleGroup(g.key)}
+                  />
+                ))}
               </div>
 
               <div className="space-y-1.5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
                   Individual assets
                 </p>
-                {liquidAccounts.map((a) => {
-                  const selected = accountIds.includes(a.id);
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => toggleAccount(a.id)}
-                      aria-pressed={selected}
-                      className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-[13px] transition-colors ${
-                        selected
-                          ? "border-accent/50 bg-accent/10 text-ink"
-                          : "border-hair bg-card-2 text-ink-2 hover:border-hair-2 hover:text-ink"
-                      }`}
-                    >
-                      <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-                          selected ? "border-accent bg-accent text-accent-on" : "border-hair-2 bg-card"
-                        }`}
-                      >
-                        {selected && <CheckIcon />}
-                      </span>
-                      <span className="truncate">{a.name}</span>
-                    </button>
-                  );
-                })}
+                {liquidAccounts.map((a) => (
+                  <SelectorButton
+                    key={a.id}
+                    label={a.name}
+                    selected={accountIds.includes(a.id)}
+                    onToggle={() => toggleAccount(a.id)}
+                  />
+                ))}
               </div>
             </div>
           )}

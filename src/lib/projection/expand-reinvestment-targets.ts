@@ -10,7 +10,7 @@
 // correct expanded accountIds). Framework-free — safe on client and server.
 
 import { isLiquid, type AccountCategory } from "@/lib/account-groups/liquid-filter";
-import { DEFAULT_GROUP_KEYS } from "@/lib/account-groups/resolver";
+import { isDefaultKey } from "@/lib/account-groups/resolver";
 
 export interface ExpandReinvestmentTargetsDeps {
   /** Category for every account in scope (used to expand default keys). */
@@ -26,7 +26,7 @@ export function expandReinvestmentTargets(
 ): string[] {
   const out = new Set<string>(individualAccountIds);
   for (const key of groupKeys) {
-    if ((DEFAULT_GROUP_KEYS as Set<string>).has(key)) {
+    if (isDefaultKey(key)) {
       for (const [accountId, category] of deps.accountCategoryById) {
         const match = key === "all-liquid" ? isLiquid(category) : category === key;
         if (match) out.add(accountId);

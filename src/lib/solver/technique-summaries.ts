@@ -33,13 +33,14 @@ export function summarizeAssetTransaction(at: AssetTransaction): string {
   return `${verb} · ${label} · ${at.year}`;
 }
 
+export function formatReinvestmentScope(groupCount: number, accountCount: number): string {
+  return groupCount > 0
+    ? `${groupCount} ${groupCount === 1 ? "group" : "groups"}`
+    : `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`;
+}
+
 export function summarizeReinvestment(ri: Reinvestment): string {
-  const groupCount = ri.groupKeys?.length ?? 0;
-  const acctCount = ri.accountIds.length;
-  const target =
-    groupCount > 0
-      ? `${groupCount} group${groupCount === 1 ? "" : "s"}`
-      : `${acctCount} account${acctCount === 1 ? "" : "s"}`;
+  const target = formatReinvestmentScope(ri.groupKeys?.length ?? 0, ri.accountIds.length);
   const rate = `${Math.round(ri.newGrowthRate * 100)}%`;
   return `${target} · ${rate} from ${ri.year}`;
 }
