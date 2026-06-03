@@ -15,6 +15,17 @@ config({ path: ".env.local" });
 //
 // Fix: whenever jsdom has set up its own window storage objects, forward them
 // to the global scope so test code can call `localStorage.clear()` etc.
+// jsdom ships no ResizeObserver, which components that pin/measure elements
+// (solver tab bar, timeline spine) construct on mount. A no-op stub lets them
+// render under test; individual tests can still override with a richer fake.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as typeof ResizeObserver;
+}
+
 const jsdomWindow = (globalThis as { jsdom?: { window: Window & typeof globalThis } }).jsdom
   ?.window;
 if (jsdomWindow) {

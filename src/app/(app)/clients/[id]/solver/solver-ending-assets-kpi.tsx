@@ -9,10 +9,10 @@ interface Props {
 export function SolverEndingAssetsKpi({ value, delta, dimmed }: Props) {
   return (
     <div className={dimmed ? "opacity-70" : ""}>
-      <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
+      <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
         Ending Portfolio Assets
       </div>
-      <div className="mt-1 text-[18px] font-semibold leading-none tabular tracking-tight text-ink">
+      <div className="mt-0.5 text-[16px] font-semibold leading-none tabular tracking-tight text-ink">
         {value == null ? "—" : formatCurrency(value)}
       </div>
       {delta != null && Math.abs(delta) >= 1 ? (

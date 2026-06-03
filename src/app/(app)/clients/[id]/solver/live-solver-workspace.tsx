@@ -291,6 +291,16 @@ export function LiveSolverWorkspace({
         )?.successRate ?? null)
       : null;
 
+  // Name of the plan shown in the right ("Scenario") column. Selection now lives
+  // in the top-right ScenarioChipRow (client header), so the column only labels
+  // what it's showing rather than carrying its own picker. Base facts (no
+  // `?scenario=`) is itself a valid right-column source, hence the fallback.
+  const scenarioName =
+    initialSource === "base"
+      ? "Base Facts"
+      : (availableScenarios.find((s) => s.id === initialSource)?.name ??
+        "Base Facts");
+
   const handleGenerateMc = useCallback(() => {
     setMcRequested(true);
     setMcVersion((v) => v + 1);
@@ -301,17 +311,6 @@ export function LiveSolverWorkspace({
     setComputeStatus("fresh");
     setCurrentProjection(initialSourceProjection);
   }, [initialSourceProjection]);
-
-  function handleSourceChange(next: string) {
-    if (mutations.length > 0) {
-      if (!confirm("Discard your pending edits and load this scenario?")) return;
-    }
-    const target =
-      next === "base"
-        ? `/clients/${clientId}/solver`
-        : `/clients/${clientId}/solver?scenario=${next}`;
-    router.push(target);
-  }
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -520,13 +519,33 @@ export function LiveSolverWorkspace({
     };
   }, [mutations, clientId, initialSource, initialSourceProjection, activeSolve]);
 
+  // Pin the editing-surface tab bar directly beneath the sticky chart panel so
+  // Retirement / Techniques / Life Insurance stay reachable while the rows
+  // scroll. The chart panel sits at top-[100px] (app chrome height) and its own
+  // height changes (the expandable table), so we measure it rather than
+  // hard-coding the tab bar's sticky offset.
+  const chartStickyRef = useRef<HTMLDivElement>(null);
+  const [tabBarTop, setTabBarTop] = useState(100);
+  useEffect(() => {
+    const el = chartStickyRef.current;
+    if (!el) return;
+    // Tuck the bar up over the chart card's bottom padding (the panel's `pb-2` =
+    // 8px) so, once pinned, it sits tight beneath the chart's view controls
+    // rather than a padding-gap below them.
+    const measure = () => setTabBarTop(100 + el.offsetHeight - 8);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div className="space-y-5">
       {/* Pin the chart just below the collapsed header (Topbar 56px +
           collapsed ClientHeader 44px = 100px) so it stays in view while the
           data-entry grid below scrolls. z-20 keeps it above the scrolling
           grid (a later sibling) but below the sticky headers (z-30/z-40). */}
-      <div className="sticky top-[100px] z-20">
+      <div ref={chartStickyRef} className="sticky top-[100px] z-20">
         <SolverChartPanel
           currentProjection={currentProjection}
           baseProjection={baseProjection}
@@ -573,7 +592,7 @@ export function LiveSolverWorkspace({
               <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
                 Base Facts
               </div>
-              <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3">
+              <div className="mt-3 flex items-start gap-x-4">
                 <SolverPosGauge state={baseState} successPct={baseSuccess} />
                 <SolverEndingAssetsKpi value={baseEndingAssets} />
                 <SolverYearsFundedKpi value={baseYearsFunded} />
@@ -586,38 +605,9 @@ export function LiveSolverWorkspace({
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
-                Scenario
+                Scenario — {scenarioName}
               </div>
-              <div className="mt-1.5">
-                <div className="relative inline-flex">
-                  <select
-                    aria-label="Right-column source"
-                    value={initialSource}
-                    onChange={(e) => handleSourceChange(e.target.value)}
-                    className="appearance-none h-8 rounded-md border border-hair-2 bg-card-2 pl-2.5 pr-7 text-[13px] text-ink hover:border-accent/60 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-                  >
-                    <option value="base">Base Facts</option>
-                    {availableScenarios.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 12 12"
-                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-ink-3"
-                  >
-                    <path
-                      d="M3 4.5 6 7.5l3-3"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-              </div>
-              <div className="mt-2.5 flex flex-wrap items-start gap-x-6 gap-y-3">
+              <div className="mt-3 flex items-start gap-x-4">
                 <SolverPosGauge state={workingState} successPct={workingSuccess} />
                 <SolverEndingAssetsKpi
                   value={workingEndingAssets}
@@ -642,7 +632,8 @@ export function LiveSolverWorkspace({
         <div
           role="tablist"
           aria-label="Solver editing surface"
-          className="flex gap-1 border-b border-hair-2 px-3 pt-2"
+          className="sticky z-10 flex gap-1 border-b border-hair-2 bg-card px-3 pt-0.5"
+          style={{ top: tabBarTop }}
         >
           <button
             type="button"
@@ -651,8 +642,8 @@ export function LiveSolverWorkspace({
             onClick={() => setActiveTab("retirement")}
             className={
               activeTab === "retirement"
-                ? "border-b-2 border-accent px-3 py-1.5 text-[13px] font-medium text-ink"
-                : "border-b-2 border-transparent px-3 py-1.5 text-[13px] text-ink-3 hover:text-ink"
+                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
             }
           >
             Retirement
@@ -664,8 +655,8 @@ export function LiveSolverWorkspace({
             onClick={() => setActiveTab("techniques")}
             className={
               activeTab === "techniques"
-                ? "border-b-2 border-accent px-3 py-1.5 text-[13px] font-medium text-ink"
-                : "border-b-2 border-transparent px-3 py-1.5 text-[13px] text-ink-3 hover:text-ink"
+                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
             }
           >
             Techniques
@@ -677,8 +668,8 @@ export function LiveSolverWorkspace({
             onClick={() => setActiveTab("life_insurance")}
             className={
               activeTab === "life_insurance"
-                ? "border-b-2 border-accent px-3 py-1.5 text-[13px] font-medium text-ink"
-                : "border-b-2 border-transparent px-3 py-1.5 text-[13px] text-ink-3 hover:text-ink"
+                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
             }
           >
             Life Insurance

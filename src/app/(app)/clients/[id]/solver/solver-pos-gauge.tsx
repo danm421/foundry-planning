@@ -26,10 +26,10 @@ export function SolverPosGauge({ state, successPct }: Props) {
   const dimmed = state === "stale" || state === "idle";
   return (
     <div className={dimmed ? "opacity-70" : ""}>
-      <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
+      <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
         Probability of Success
       </div>
-      <div className={`mt-1 text-[28px] font-semibold leading-none tabular tracking-tight ${valueTone}`}>
+      <div className={`mt-0.5 text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}>
         {display}
       </div>
       {state === "stale" ? (

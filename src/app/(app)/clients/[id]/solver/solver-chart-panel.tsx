@@ -109,7 +109,7 @@ export function SolverChartPanel({
   }, [tab, currentProjection, workingTree]);
 
   return (
-    <div className="rounded-lg border border-hair bg-card p-4 pt-2.5">
+    <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
       {tab === "portfolio" ? (
         <div style={{ height: 300 }}>
           <PortfolioBarsChart
