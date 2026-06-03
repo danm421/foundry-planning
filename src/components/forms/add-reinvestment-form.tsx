@@ -8,6 +8,7 @@ import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { Reinvestment } from "@/engine/types";
+import type { AccountCategory } from "@/lib/account-groups/liquid-filter";
 
 /**
  * Shape passed in when editing. The card-level fields come straight from
@@ -153,6 +154,16 @@ export default function AddReinvestmentForm({
     initialData?.realizeTaxesOnSwitch ?? false,
   );
 
+  const [selectedGroupKeys, setSelectedGroupKeys] = useState<string[]>(
+    initialData?.groupKeys ?? [],
+  );
+  const [customGroups, setCustomGroups] = useState<
+    { id: string; name: string; memberAccountIds: string[] }[]
+  >([]);
+  // Auto-name "Reinvestment - {year}" until the user edits the name. Edit mode
+  // (existing record) starts "touched" so a saved name is never clobbered.
+  const [nameTouched, setNameTouched] = useState<boolean>(Boolean(initialData));
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -191,6 +202,10 @@ export default function AddReinvestmentForm({
         setPctLtGains(toPercentString(row.customPctLtCapitalGains));
         setPctQualifiedDiv(toPercentString(row.customPctQualifiedDividends));
         setPctTaxExempt(toPercentString(row.customPctTaxExempt));
+        const typedRow = row as typeof row & { groupKeys?: string[] };
+        if (Array.isArray(typedRow.groupKeys)) {
+          setSelectedGroupKeys(typedRow.groupKeys);
+        }
       } catch {
         // Detail fetch failed — the form still works with defaults.
       }
@@ -200,6 +215,31 @@ export default function AddReinvestmentForm({
       cancelled = true;
     };
   }, [clientId, initialData, onSubmitDraft]);
+
+  // Auto-name "Reinvestment - {year}" until the user edits the name.
+  useEffect(() => {
+    if (!nameTouched) setName(`Reinvestment - ${year}`);
+  }, [year, nameTouched]);
+
+  // Fetch custom groups for the combined selector.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadGroups() {
+      try {
+        const res = await fetch(`/api/clients/${clientId}/account-groups`);
+        if (!res.ok) return;
+        const rows: Array<{ id: string; name: string; memberAccountIds: string[] }> =
+          await res.json();
+        if (!cancelled) setCustomGroups(rows);
+      } catch {
+        // Selector still works with default groups + individual accounts.
+      }
+    }
+    loadGroups();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
 
   function toggleAccount(accountId: string) {
     setAccountIds((ids) =>
@@ -220,13 +260,41 @@ export default function AddReinvestmentForm({
   );
   const realizationBalanced = Math.abs(realizationTotal - 100) < 1e-6;
 
+  // Derive group option list + liquid-category map for expand logic.
+  const liquidCategoryById = new Map(
+    liquidAccounts.map((a) => [a.id, a.category as AccountCategory]),
+  );
+  const customGroupMembersById = new Map(
+    customGroups.map((g) => [
+      g.id,
+      g.memberAccountIds.filter((aid) => liquidCategoryById.has(aid)),
+    ]),
+  );
+
+  const DEFAULT_GROUPS: { key: string; label: string }[] = [
+    { key: "all-liquid", label: "All Liquid Assets" },
+    { key: "taxable", label: "Taxable" },
+    { key: "retirement", label: "Retirement" },
+    { key: "cash", label: "Cash" },
+  ];
+  const groupOptions = [
+    ...DEFAULT_GROUPS,
+    ...customGroups.map((g) => ({ key: g.id, label: g.name })),
+  ];
+
+  function toggleGroup(key: string) {
+    setSelectedGroupKeys((keys) =>
+      keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key],
+    );
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
     // ── Client-side validation ─────────────────────────────────────────────
-    if (accountIds.length === 0) {
-      setError("Select at least one account.");
+    if (accountIds.length === 0 && selectedGroupKeys.length === 0) {
+      setError("Select at least one account or group.");
       return;
     }
     if (targetType === "model_portfolio" && !modelPortfolioId) {
@@ -280,6 +348,7 @@ export default function AddReinvestmentForm({
         customPctTaxExempt: customRealization?.customPctTaxExempt ?? null,
         realizeTaxesOnSwitch,
         accountIds,
+        groupKeys: selectedGroupKeys,
       };
 
       // ── Draft mode ────────────────────────────────────────────────────────
@@ -287,10 +356,22 @@ export default function AddReinvestmentForm({
       // and skip persistence entirely. `newGrowthRate` and `soldFractionByAccount`
       // are intentional placeholders — the solver server re-resolves them.
       if (onSubmitDraft) {
+        const { expandReinvestmentTargets } = await import(
+          "@/lib/projection/expand-reinvestment-targets"
+        );
+        const unionAccountIds = expandReinvestmentTargets(
+          body.accountIds,
+          selectedGroupKeys,
+          {
+            accountCategoryById: liquidCategoryById as Map<string, AccountCategory>,
+            customGroupMembersById,
+          },
+        );
         const technique: Reinvestment = {
           id: initialData?.id ?? makeId(),
           name: body.name,
-          accountIds: body.accountIds,
+          accountIds: unionAccountIds,
+          groupKeys: selectedGroupKeys,
           year: body.year,
           realizeTaxesOnSwitch: body.realizeTaxesOnSwitch,
           newGrowthRate: 0,
@@ -377,101 +458,62 @@ export default function AddReinvestmentForm({
           </p>
         )}
 
-        {/* Name */}
-        <div>
-          <label className={fieldLabelClassName} htmlFor="reinvestment-name">
-            Name <span className="text-crit">*</span>
-          </label>
-          <input
-            id="reinvestment-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Shift to growth portfolio at retirement"
-            required
-            className={inputClassName}
-          />
-        </div>
-
-        {/* Accounts */}
-        <div>
-          <label className={fieldLabelClassName}>
-            Accounts <span className="text-crit">*</span>
-          </label>
-          {liquidAccounts.length === 0 ? (
-            <p className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink-3">
-              No eligible accounts.
-            </p>
-          ) : (
-            <div className="max-h-44 space-y-1.5 overflow-y-auto pr-0.5">
-              {liquidAccounts.map((a) => {
-                const selected = accountIds.includes(a.id);
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => toggleAccount(a.id)}
-                    aria-pressed={selected}
-                    className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-[13px] transition-colors ${
-                      selected
-                        ? "border-accent/50 bg-accent/10 text-ink"
-                        : "border-hair bg-card-2 text-ink-2 hover:border-hair-2 hover:text-ink"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-                        selected
-                          ? "border-accent bg-accent text-accent-on"
-                          : "border-hair-2 bg-card"
-                      }`}
-                    >
-                      {selected && <CheckIcon />}
-                    </span>
-                    <span className="truncate">{a.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Year */}
-        <div>
-          {milestones ? (
-            <MilestoneYearPicker
-              name="year"
-              id="reinvestment-year"
-              value={year}
-              yearRef={yearRef}
-              milestones={milestones}
-              onChange={(y, r) => {
-                setYear(y);
-                setYearRef(r);
+        {/* Row 1 — Name + Year */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={fieldLabelClassName} htmlFor="reinvestment-name">
+              Name <span className="text-crit">*</span>
+            </label>
+            <input
+              id="reinvestment-name"
+              value={name}
+              onChange={(e) => {
+                setNameTouched(true);
+                setName(e.target.value);
               }}
-              label="Year"
-              clientFirstName={clientFirstName}
-              spouseFirstName={spouseFirstName}
-              position="start"
+              placeholder="e.g., Shift to growth portfolio"
+              required
+              className={inputClassName}
             />
-          ) : (
-            <>
-              <label className={fieldLabelClassName} htmlFor="reinvestment-year">
-                Year
-              </label>
-              <input
+          </div>
+          <div>
+            {milestones ? (
+              <MilestoneYearPicker
+                name="year"
                 id="reinvestment-year"
-                type="number"
-                min={2000}
-                max={2100}
                 value={year}
-                onChange={(e) => {
-                  setYear(Number(e.target.value));
-                  setYearRef(null);
+                yearRef={yearRef}
+                milestones={milestones}
+                onChange={(y, r) => {
+                  setYear(y);
+                  setYearRef(r);
                 }}
-                required
-                className={inputClassName}
+                label="Year"
+                clientFirstName={clientFirstName}
+                spouseFirstName={spouseFirstName}
+                position="start"
               />
-            </>
-          )}
+            ) : (
+              <>
+                <label className={fieldLabelClassName} htmlFor="reinvestment-year">
+                  Year
+                </label>
+                <input
+                  id="reinvestment-year"
+                  type="number"
+                  min={2000}
+                  max={2100}
+                  value={year}
+                  onChange={(e) => {
+                    setYear(Number(e.target.value));
+                    setYearRef(null);
+                  }}
+                  required
+                  className={inputClassName}
+                />
+              </>
+            )}
+          </div>
         </div>
 
         {/* Target type — segmented control */}
@@ -508,149 +550,213 @@ export default function AddReinvestmentForm({
           </div>
         </div>
 
-        {/* Model portfolio dropdown */}
-        {targetType === "model_portfolio" && (
+        {/* Row — target-specific control + Apply taxes on switch */}
+        <div className="grid grid-cols-2 items-start gap-3">
           <div>
-            <label
-              className={fieldLabelClassName}
-              htmlFor="reinvestment-model-portfolio"
-            >
-              Model portfolio <span className="text-crit">*</span>
-            </label>
-            {modelPortfolios.length === 0 ? (
-              <p className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
-                No model portfolios available.
-              </p>
+            {targetType === "model_portfolio" ? (
+              <>
+                <label
+                  className={fieldLabelClassName}
+                  htmlFor="reinvestment-model-portfolio"
+                >
+                  Model portfolio <span className="text-crit">*</span>
+                </label>
+                {modelPortfolios.length === 0 ? (
+                  <p className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+                    No model portfolios available.
+                  </p>
+                ) : (
+                  <select
+                    id="reinvestment-model-portfolio"
+                    value={modelPortfolioId}
+                    onChange={(e) => setModelPortfolioId(e.target.value)}
+                    className={selectClassName}
+                  >
+                    {modelPortfolios.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
             ) : (
-              <select
-                id="reinvestment-model-portfolio"
-                value={modelPortfolioId}
-                onChange={(e) => setModelPortfolioId(e.target.value)}
-                className={selectClassName}
-              >
-                {modelPortfolios.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <label
+                  className={fieldLabelClassName}
+                  htmlFor="reinvestment-growth-rate"
+                >
+                  Growth rate (% / yr) <span className="text-crit">*</span>
+                </label>
+                <PercentInput
+                  id="reinvestment-growth-rate"
+                  value={customGrowthRate}
+                  onChange={(raw) => setCustomGrowthRate(raw)}
+                  className={inputClassName}
+                />
+              </>
             )}
+          </div>
+
+          {/* Apply taxes on switch */}
+          <div>
+            <label className={fieldLabelClassName}>&nbsp;</label>
+            <button
+              type="button"
+              onClick={() => setRealizeTaxesOnSwitch((v) => !v)}
+              aria-pressed={realizeTaxesOnSwitch}
+              className={`flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left transition-colors ${
+                realizeTaxesOnSwitch
+                  ? "border-accent/50 bg-accent/10"
+                  : "border-hair bg-card-2 hover:border-hair-2"
+              }`}
+            >
+              <span
+                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                  realizeTaxesOnSwitch
+                    ? "border-accent bg-accent text-accent-on"
+                    : "border-hair-2 bg-card"
+                }`}
+              >
+                {realizeTaxesOnSwitch && <CheckIcon />}
+              </span>
+              <span>
+                <span className="text-[13px] font-medium text-ink">
+                  Apply taxes on switch
+                </span>
+                <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
+                  Taxable accounts realize gains for the sold portion.
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Custom realization split — full width */}
+        {targetType === "custom" && (
+          <div>
+            <div className="mb-1.5 flex items-baseline justify-between gap-2">
+              <span className="text-[13px] font-medium text-ink-2">
+                Realization split <span className="text-ink-4">(optional)</span>
+              </span>
+              {anyRealizationEntered && (
+                <span
+                  className={`tabular text-[12px] font-medium ${
+                    realizationBalanced ? "text-good" : "text-crit"
+                  }`}
+                >
+                  Total {realizationTotal}%
+                </span>
+              )}
+            </div>
+            <p className="-mt-1 mb-2 text-[12px] text-ink-3">
+              Leave blank to default to 100% ordinary income. When set, the four
+              shares must total 100%.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[12px] text-ink-3">
+                  Ordinary income
+                </label>
+                <PercentInput value={pctOrdinary} onChange={(raw) => setPctOrdinary(raw)} className={inputClassName} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[12px] text-ink-3">
+                  LT capital gains
+                </label>
+                <PercentInput value={pctLtGains} onChange={(raw) => setPctLtGains(raw)} className={inputClassName} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[12px] text-ink-3">
+                  Qualified dividends
+                </label>
+                <PercentInput value={pctQualifiedDiv} onChange={(raw) => setPctQualifiedDiv(raw)} className={inputClassName} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[12px] text-ink-3">
+                  Tax-exempt
+                </label>
+                <PercentInput value={pctTaxExempt} onChange={(raw) => setPctTaxExempt(raw)} className={inputClassName} />
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Custom growth rate + optional realization split */}
-        {targetType === "custom" && (
-          <>
-            <div>
-              <label
-                className={fieldLabelClassName}
-                htmlFor="reinvestment-growth-rate"
-              >
-                Growth rate (% / yr) <span className="text-crit">*</span>
-              </label>
-              <PercentInput
-                id="reinvestment-growth-rate"
-                value={customGrowthRate}
-                onChange={(raw) => setCustomGrowthRate(raw)}
-                className={inputClassName}
-              />
-            </div>
-            <div>
-              <div className="mb-1.5 flex items-baseline justify-between gap-2">
-                <span className="text-[13px] font-medium text-ink-2">
-                  Realization split{" "}
-                  <span className="text-ink-4">(optional)</span>
-                </span>
-                {anyRealizationEntered && (
-                  <span
-                    className={`tabular text-[12px] font-medium ${
-                      realizationBalanced ? "text-good" : "text-crit"
-                    }`}
-                  >
-                    Total {realizationTotal}%
-                  </span>
-                )}
+        {/* Bottom — combined group + individual-asset selector */}
+        <div>
+          <label className={fieldLabelClassName}>
+            Target accounts <span className="text-crit">*</span>
+          </label>
+          {liquidAccounts.length === 0 ? (
+            <p className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink-3">
+              No eligible accounts.
+            </p>
+          ) : (
+            <div className="max-h-60 space-y-3 overflow-y-auto pr-0.5">
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                  Groups
+                </p>
+                {groupOptions.map((g) => {
+                  const selected = selectedGroupKeys.includes(g.key);
+                  return (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => toggleGroup(g.key)}
+                      aria-pressed={selected}
+                      className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-[13px] transition-colors ${
+                        selected
+                          ? "border-accent/50 bg-accent/10 text-ink"
+                          : "border-hair bg-card-2 text-ink-2 hover:border-hair-2 hover:text-ink"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                          selected ? "border-accent bg-accent text-accent-on" : "border-hair-2 bg-card"
+                        }`}
+                      >
+                        {selected && <CheckIcon />}
+                      </span>
+                      <span className="truncate">{g.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <p className="-mt-1 mb-2 text-[12px] text-ink-3">
-                Leave blank to default to 100% ordinary income. When set, the
-                four shares must total 100%.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-[12px] text-ink-3">
-                    Ordinary income
-                  </label>
-                  <PercentInput
-                    value={pctOrdinary}
-                    onChange={(raw) => setPctOrdinary(raw)}
-                    className={inputClassName}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[12px] text-ink-3">
-                    LT capital gains
-                  </label>
-                  <PercentInput
-                    value={pctLtGains}
-                    onChange={(raw) => setPctLtGains(raw)}
-                    className={inputClassName}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[12px] text-ink-3">
-                    Qualified dividends
-                  </label>
-                  <PercentInput
-                    value={pctQualifiedDiv}
-                    onChange={(raw) => setPctQualifiedDiv(raw)}
-                    className={inputClassName}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[12px] text-ink-3">
-                    Tax-exempt
-                  </label>
-                  <PercentInput
-                    value={pctTaxExempt}
-                    onChange={(raw) => setPctTaxExempt(raw)}
-                    className={inputClassName}
-                  />
-                </div>
-              </div>
-            </div>
-          </>
-        )}
 
-        {/* Apply taxes on switch */}
-        <button
-          type="button"
-          onClick={() => setRealizeTaxesOnSwitch((v) => !v)}
-          aria-pressed={realizeTaxesOnSwitch}
-          className={`flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left transition-colors ${
-            realizeTaxesOnSwitch
-              ? "border-accent/50 bg-accent/10"
-              : "border-hair bg-card-2 hover:border-hair-2"
-          }`}
-        >
-          <span
-            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-              realizeTaxesOnSwitch
-                ? "border-accent bg-accent text-accent-on"
-                : "border-hair-2 bg-card"
-            }`}
-          >
-            {realizeTaxesOnSwitch && <CheckIcon />}
-          </span>
-          <span>
-            <span className="text-[13px] font-medium text-ink">
-              Apply taxes on switch
-            </span>
-            <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
-              Taxable accounts realize capital gains for the portion of holdings
-              the reallocation sells.
-            </span>
-          </span>
-        </button>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                  Individual assets
+                </p>
+                {liquidAccounts.map((a) => {
+                  const selected = accountIds.includes(a.id);
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => toggleAccount(a.id)}
+                      aria-pressed={selected}
+                      className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-[13px] transition-colors ${
+                        selected
+                          ? "border-accent/50 bg-accent/10 text-ink"
+                          : "border-hair bg-card-2 text-ink-2 hover:border-hair-2 hover:text-ink"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                          selected ? "border-accent bg-accent text-accent-on" : "border-hair-2 bg-card"
+                        }`}
+                      >
+                        {selected && <CheckIcon />}
+                      </span>
+                      <span className="truncate">{a.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </form>
     </DialogShell>
   );
