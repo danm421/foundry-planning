@@ -45,7 +45,13 @@ export function SolverRowSavingsContributions({
 }: Props) {
   const side = useSolverSide();
   const baseActive = activeSavingsRules(baseClientData.savingsRules, currentYear);
-  if (baseActive.length === 0) return null;
+
+  const baseRuleIds = new Set(baseClientData.savingsRules.map((r) => r.id));
+  const workingAdded = activeSavingsRules(workingClientData.savingsRules, currentYear)
+    .filter((r) => !baseRuleIds.has(r.id))
+    .filter((r) => !r.fundFromExpenseReduction);
+
+  if (baseActive.length === 0 && (side === "base" || workingAdded.length === 0)) return null;
 
   const resolvedInflationRate =
     workingClientData.planSettings?.inflationRate ??
@@ -80,6 +86,24 @@ export function SolverRowSavingsContributions({
             />
           );
         })}
+        {side !== "base" &&
+          workingAdded.map((rule) => {
+            const account = workingClientData.accounts.find((a) => a.id === rule.accountId);
+            const label = account?.name ?? rule.accountId.slice(0, 6);
+            return (
+              <Editable
+                key={rule.id}
+                label={label}
+                workingRule={rule}
+                workingAccount={account}
+                resolvedInflationRate={resolvedInflationRate}
+                activeSolve={activeSolve}
+                onSolveStart={onSolveStart}
+                onSolveCancel={onSolveCancel}
+                onChange={onChange}
+              />
+            );
+          })}
       </div>
     </div>
   );
