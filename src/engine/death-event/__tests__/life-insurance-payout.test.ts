@@ -251,6 +251,33 @@ describe("prepareLifeInsurancePayouts", () => {
     ]);
   });
 
+  it("pays the scheduled death benefit for the death year when in scheduled mode", () => {
+    const acct = mkAccount({
+      id: "pol-1",
+      insuredPerson: "client",
+      lifeInsurance: mkPolicy({
+        faceValue: 5_000_000, // scalar — should be ignored in scheduled mode
+        deathBenefitScheduleMode: "scheduled",
+        cashValueSchedule: [
+          { year: 2030, deathBenefit: 5_000_000 },
+          { year: 2056, deathBenefit: 1_843_913 },
+        ],
+      }),
+    });
+    const result = prepareLifeInsurancePayouts({
+      year: 2056,
+      deceased: "client",
+      eventKind: "first_death",
+      accounts: [acct],
+      accountBalances: {},
+      basisMap: {},
+      entities: [],
+    });
+    expect(result.lifeInsurancePayouts[0].faceValue).toBe(1_843_913);
+    expect(result.accountBalances["pol-1"]).toBe(1_843_913);
+    expect(result.basisMap["pol-1"]).toBe(1_843_913);
+  });
+
   it("returns an empty list when no policy triggers", () => {
     const acct = mkAccount({ id: "pol-1", insuredPerson: "spouse" });
     const result = prepareLifeInsurancePayouts({
