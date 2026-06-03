@@ -9,10 +9,12 @@ const PORTFOLIO_SEGMENTS: Array<{ key: keyof PortfolioBar; label: string; color:
   { key: "retirement", label: "Retirement", color: T.good },
 ];
 
-/** Stacked portfolio bars over time. Portrait page is narrower than landscape,
- *  so width is 300pt. Markers at the retirement year. */
+/** Stacked portfolio bars over time. Width matches the panel's available
+ *  content width on a portrait Letter page (612 − 86 page padding − 20 panel
+ *  padding ≈ 506pt; 500 leaves a small safety margin). Markers at the
+ *  retirement year. */
 export function PortfolioBarsPdf({ bars, retirementYear }: { bars: PortfolioBar[]; retirementYear: number }) {
-  const width = 300;
+  const width = 500;
   const height = 150;
   const leftPad = 6;
   const plotH = height - 22;
