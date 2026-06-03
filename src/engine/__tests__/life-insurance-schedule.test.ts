@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { resolveCashValueForYear } from "../life-insurance-schedule";
+import {
+  resolveCashValueForYear,
+  resolveScheduledColumnForYear,
+} from "../life-insurance-schedule";
 import type { LifeInsuranceCashValueScheduleRow } from "../types";
 
 const schedule: LifeInsuranceCashValueScheduleRow[] = [
@@ -48,5 +51,43 @@ describe("resolveCashValueForYear", () => {
       { year: 2035, cashValue: 200_000 },
     ];
     expect(resolveCashValueForYear(shuffled, 2032)).toBeCloseTo(140_000, 2);
+  });
+});
+
+describe("resolveScheduledColumnForYear", () => {
+  const rows: LifeInsuranceCashValueScheduleRow[] = [
+    { year: 2030, cashValue: 100, deathBenefit: 5_000_000 },
+    { year: 2032, cashValue: 200, deathBenefit: 5_000_000 },
+    { year: 2034, cashValue: 400, deathBenefit: 4_000_000 },
+  ];
+
+  it("returns exact-year value for the requested column", () => {
+    expect(resolveScheduledColumnForYear(rows, 2032, "cashValue")).toBe(200);
+    expect(resolveScheduledColumnForYear(rows, 2034, "deathBenefit")).toBe(4_000_000);
+  });
+
+  it("interpolates between rows", () => {
+    expect(resolveScheduledColumnForYear(rows, 2031, "cashValue")).toBe(150);
+  });
+
+  it("flat-extends before first and after last row", () => {
+    expect(resolveScheduledColumnForYear(rows, 2025, "cashValue")).toBe(100);
+    expect(resolveScheduledColumnForYear(rows, 2040, "deathBenefit")).toBe(4_000_000);
+  });
+
+  it("ignores rows missing the requested column", () => {
+    const sparse: LifeInsuranceCashValueScheduleRow[] = [
+      { year: 2030, deathBenefit: 5_000_000 }, // no cashValue
+      { year: 2032, cashValue: 200 },
+      { year: 2034, cashValue: 400 },
+    ];
+    expect(resolveScheduledColumnForYear(sparse, 2031, "cashValue")).toBe(200);
+  });
+
+  it("returns null when no row has the requested column", () => {
+    const sparse: LifeInsuranceCashValueScheduleRow[] = [
+      { year: 2030, premiumAmount: 87_216 },
+    ];
+    expect(resolveScheduledColumnForYear(sparse, 2031, "cashValue")).toBeNull();
   });
 });

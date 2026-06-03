@@ -1,39 +1,56 @@
 import type { LifeInsuranceCashValueScheduleRow } from "./types";
 
+type ScheduleColumn = "cashValue" | "premiumAmount" | "income" | "deathBenefit";
+
 /**
- * Resolve the cash value for a given year from a free-form schedule.
+ * Resolve a single schedule column for a year.
  *
+ * - Only rows where `column` is defined participate.
  * - Exact year → row value.
  * - Between two rows → linear interpolation.
- * - Before first row → flat-back at first row's value.
- * - After last row → flat-forward at last row's value.
- * - Empty schedule → throws.
+ * - Before first / after last → flat-extend.
+ * - No row defines the column → null.
+ */
+export function resolveScheduledColumnForYear(
+  schedule: LifeInsuranceCashValueScheduleRow[],
+  year: number,
+  column: ScheduleColumn,
+): number | null {
+  const points = schedule
+    .filter((r) => r[column] != null)
+    .map((r) => ({ year: r.year, value: r[column] as number }))
+    .sort((a, b) => a.year - b.year);
+
+  if (points.length === 0) return null;
+  if (year <= points[0].year) return points[0].value;
+  if (year >= points[points.length - 1].year) {
+    return points[points.length - 1].value;
+  }
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const lo = points[i];
+    const hi = points[i + 1];
+    if (year >= lo.year && year <= hi.year) {
+      if (year === lo.year) return lo.value;
+      if (year === hi.year) return hi.value;
+      const t = (year - lo.year) / (hi.year - lo.year);
+      return lo.value + t * (hi.value - lo.value);
+    }
+  }
+  return null;
+}
+
+/**
+ * Back-compat cash-value resolver. Throws on empty schedule (existing
+ * contract relied on by the projection's free-form override block).
  */
 export function resolveCashValueForYear(
   schedule: LifeInsuranceCashValueScheduleRow[],
   year: number,
 ): number {
-  if (schedule.length === 0) {
+  const v = resolveScheduledColumnForYear(schedule, year, "cashValue");
+  if (v == null) {
     throw new Error("resolveCashValueForYear: empty cash-value schedule");
   }
-
-  const sorted = [...schedule].sort((a, b) => a.year - b.year);
-
-  if (year <= sorted[0].year) return sorted[0].cashValue;
-  if (year >= sorted[sorted.length - 1].year) {
-    return sorted[sorted.length - 1].cashValue;
-  }
-
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const lo = sorted[i];
-    const hi = sorted[i + 1];
-    if (year >= lo.year && year <= hi.year) {
-      if (year === lo.year) return lo.cashValue;
-      if (year === hi.year) return hi.cashValue;
-      const t = (year - lo.year) / (hi.year - lo.year);
-      return lo.cashValue + t * (hi.cashValue - lo.cashValue);
-    }
-  }
-
-  throw new Error("resolveCashValueForYear: unreachable");
+  return v;
 }
