@@ -522,17 +522,23 @@ export function LiveSolverWorkspace({
 
   return (
     <div className="space-y-5">
-      <SolverChartPanel
-        currentProjection={currentProjection}
-        baseProjection={baseProjection}
-        workingTree={workingTree}
-        computeStatus={computeStatus}
-        clientId={clientId}
-        liAssumptions={liAssumptions}
-        clientName={clientName}
-        spouseName={spouseName}
-        showLifeInsuranceTab={activeTab === "life_insurance"}
-      />
+      {/* Pin the chart just below the collapsed header (Topbar 56px +
+          collapsed ClientHeader 44px = 100px) so it stays in view while the
+          data-entry grid below scrolls. z-20 keeps it above the scrolling
+          grid (a later sibling) but below the sticky headers (z-30/z-40). */}
+      <div className="sticky top-[100px] z-20">
+        <SolverChartPanel
+          currentProjection={currentProjection}
+          baseProjection={baseProjection}
+          workingTree={workingTree}
+          computeStatus={computeStatus}
+          clientId={clientId}
+          liAssumptions={liAssumptions}
+          clientName={clientName}
+          spouseName={spouseName}
+          showLifeInsuranceTab={activeTab === "life_insurance"}
+        />
+      </div>
 
       {errorMessage ? (
         <div

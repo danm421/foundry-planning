@@ -109,8 +109,41 @@ export function SolverChartPanel({
   }, [tab, currentProjection, workingTree]);
 
   return (
-    <div className="rounded-lg border border-hair bg-card p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="rounded-lg border border-hair bg-card p-4 pt-2.5">
+      {tab === "portfolio" ? (
+        <div style={{ height: 300 }}>
+          <PortfolioBarsChart
+            current={currentProjection}
+            baseline={baseProjection}
+          />
+        </div>
+      ) : null}
+      {tab === "cashflow" ? (
+        <div style={{ height: 300 }}>
+          <SolverCashFlowChart years={currentProjection} />
+        </div>
+      ) : null}
+      {tab === "liquidity" ? (
+        <YearlyLiquidityChart
+          rows={liquidityRows}
+          showPortfolio={showPortfolioAssets}
+        />
+      ) : null}
+      {tab === "lifeInsurance" ? (
+        <LiNeedOverTimeView
+          rows={overTime.rows}
+          isRunning={overTime.isRunning}
+          progress={overTime.progress}
+          errorMessage={overTime.errorMessage}
+          onRun={() => overTime.run(liAssumptions)}
+          onCancel={overTime.cancel}
+          isMarried={isMarried}
+          clientName={clientName}
+          spouseName={spouseName}
+        />
+      ) : null}
+
+      <div className="mt-3 flex items-center justify-between gap-3">
         <div
           role="tablist"
           aria-label="Chart view"
@@ -155,39 +188,6 @@ export function SolverChartPanel({
           </button>
         </div>
       </div>
-
-      {tab === "portfolio" ? (
-        <div style={{ height: 300 }}>
-          <PortfolioBarsChart
-            current={currentProjection}
-            baseline={baseProjection}
-          />
-        </div>
-      ) : null}
-      {tab === "cashflow" ? (
-        <div style={{ height: 300 }}>
-          <SolverCashFlowChart years={currentProjection} />
-        </div>
-      ) : null}
-      {tab === "liquidity" ? (
-        <YearlyLiquidityChart
-          rows={liquidityRows}
-          showPortfolio={showPortfolioAssets}
-        />
-      ) : null}
-      {tab === "lifeInsurance" ? (
-        <LiNeedOverTimeView
-          rows={overTime.rows}
-          isRunning={overTime.isRunning}
-          progress={overTime.progress}
-          errorMessage={overTime.errorMessage}
-          onRun={() => overTime.run(liAssumptions)}
-          onCancel={overTime.cancel}
-          isMarried={isMarried}
-          clientName={clientName}
-          spouseName={spouseName}
-        />
-      ) : null}
 
       {showTable ? (
         <SolverYearTablePanel

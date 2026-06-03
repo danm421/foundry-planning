@@ -18,7 +18,7 @@ import {
   liquidPortfolioTotal,
 } from "./portfolio-bars-data";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
-import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
+import { data as brandData, dataLight as brandDataLight } from "@/brand";
 
 // Re-exported for existing importers (solver, monte-carlo report, etc.).
 export { liquidPortfolioTotal };
@@ -142,7 +142,6 @@ export function PortfolioBarsChart({
   // bar — the tooltip surfaces the real negative number on hover. `scenarioTotals`
   // carries the raw values (negatives included) for that tooltip.
   const { chartData, scenarioTotals } = useMemo(() => {
-    const c = theme === "light" ? colorsLight : colors;
     const palette = theme === "light" ? brandDataLight : brandData;
 
     if (baseLiquidByYear) {
@@ -161,7 +160,7 @@ export function PortfolioBarsChart({
             {
               label: "Scenario ahead of base",
               data: seg.scenarioAhead,
-              backgroundColor: c.good,
+              backgroundColor: palette.green,
               stack: "portfolio",
             },
             {
@@ -197,7 +196,10 @@ export function PortfolioBarsChart({
     return {
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: { top: 20 } },
+      // Top padding only exists to clear the timeline-marker labels drawn above
+      // the plot. With no markers (e.g. the solver chart) that 20px is dead
+      // space — drop it so the chart sits tight under the header when pinned.
+      layout: { padding: { top: timelineMarkers.length > 0 ? 20 : 6 } },
       // Index mode keeps the tooltip reachable on flat (0-height) underwater
       // years, where there is no bar to hover.
       interaction: { mode: "index" as const, intersect: false },
