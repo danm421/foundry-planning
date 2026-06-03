@@ -4816,6 +4816,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               principalLTCG: notesYearResult.totals.principalLTCG,
               principalBasis: notesYearResult.totals.principalBasis,
               totalCashIn: notesYearResult.totals.totalCashIn,
+              householdCashIn: householdNoteCashIn,
             },
           }
         : {}),

@@ -2,6 +2,7 @@
 // Framework-free. Drives the cards and tables in the Client Profile page.
 
 import type { ClientData, ClientInfo, Income, ProjectionYear } from "@/engine/types";
+import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import type {
   BuildClientProfileInput,
   ClientProfilePageData,
@@ -38,6 +39,16 @@ function birthYear(iso: string | null | undefined): number | null {
   if (!iso) return null;
   const y = new Date(iso).getUTCFullYear();
   return Number.isFinite(y) ? y : null;
+}
+
+// A family member counts as a "child card" by descendant relationship. We can't
+// rely on the `role` column: the family-member form never sets it, so UI-entered
+// children land in the DB as role:"other". Match imported data (role:"child")
+// too, for completeness.
+const CHILD_RELATIONSHIPS = new Set(["child", "stepchild", "grandchild", "great_grandchild"]);
+
+function isChildMember(m: { role?: string | null; relationship?: string | null }): boolean {
+  return m.role === "child" || (m.relationship != null && CHILD_RELATIONSHIPS.has(m.relationship));
 }
 
 export function buildClientProfileData(input: BuildClientProfileInput): ClientProfilePageData {
@@ -102,7 +113,7 @@ function personCard(
 
 function buildChildren(clientData: ClientData, currentYear: number): ProfileChildCard[] {
   return (clientData.familyMembers ?? [])
-    .filter((m) => m.role === "child")
+    .filter(isChildMember)
     .map((m) => {
       const yob = birthYear(m.dateOfBirth);
       const name = m.lastName ? `${m.firstName} ${m.lastName}` : m.firstName;
@@ -116,21 +127,53 @@ function buildIncome(
   firstYear: number,
   lastYear: number,
 ): ProfileIncomeRow[] {
+  const ci = clientData.client;
   const rows = clientData.incomes.map((inc): ProfileIncomeRow => {
-    const active = inc.startYear <= firstYear;
-    const lookupYear = Math.max(inc.startYear, firstYear);
-    const py = years.find((y) => y.year === lookupYear);
-    const amount = py?.income.bySource[inc.id] ?? 0;
+    // Social Security is anchored at plan start, but the benefit doesn't begin
+    // until the claim age — so its Start column and amount must reflect the
+    // resolved claim year and PIA, not the plan-start anchor (which would show
+    // "Active" + $0).
+    const startYear = inc.type === "social_security" ? ssClaimYear(inc, ci) ?? inc.startYear : inc.startYear;
+    const amount =
+      inc.type === "social_security"
+        ? ssAnnualAmount(inc, years, startYear)
+        : (years.find((y) => y.year === Math.max(inc.startYear, firstYear))?.income.bySource[inc.id] ?? 0);
     return {
       name: inc.name,
       typeLabel: INCOME_TYPE_LABELS[inc.type] ?? "Other",
       amount,
-      active,
-      startYear: inc.startYear,
+      active: startYear <= firstYear,
+      startYear,
       endYear: inc.endYear >= lastYear ? null : inc.endYear,
     };
   });
   return rows.sort((a, b) => a.startYear - b.startYear || a.name.localeCompare(b.name));
+}
+
+// First calendar year a Social Security row actually pays, mirroring the engine's
+// claim gate (computeIncome: pays once year*12 >= birthYear*12 + claimAgeMonths).
+// Returns null for legacy/unresolvable rows so callers fall back to inc.startYear.
+function ssClaimYear(inc: Income, ci: ClientInfo): number | null {
+  // Mirror the engine's delay gate (income.ts): SS only pays at the claim age
+  // when claimingAge is set; otherwise it's treated as a regular income paying
+  // from its startYear, so fall back to that.
+  if (inc.claimingAge == null) return null;
+  const ownerDob = inc.owner === "spouse" ? ci.spouseDob : ci.dateOfBirth;
+  if (!ownerDob) return null;
+  const claimAgeMonths = resolveClaimAgeMonths(inc, ci);
+  if (claimAgeMonths == null) return null;
+  const by = birthYear(ownerDob);
+  if (by == null) return null;
+  return by + Math.ceil(claimAgeMonths / 12);
+}
+
+// Headline annual SS benefit. For PIA-mode rows show PIA×12 (today's dollars,
+// consistent with how the other income rows display their entered amount). Fall
+// back to the projection at the claim year for legacy/manual rows.
+function ssAnnualAmount(inc: Income, years: ProjectionYear[], startYear: number): number {
+  if (inc.ssBenefitMode === "no_benefit") return 0;
+  if (inc.ssBenefitMode === "pia_at_fra" && inc.piaMonthly != null) return inc.piaMonthly * 12;
+  return years.find((y) => y.year === startYear)?.income.bySource[inc.id] ?? inc.annualAmount;
 }
 
 // First retirement year = min of client/spouse (dob year + retirementAge).

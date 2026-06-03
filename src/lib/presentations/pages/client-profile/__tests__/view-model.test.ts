@@ -95,9 +95,73 @@ describe("buildClientProfileData — children", () => {
     expect(data.children[1]).toMatchObject({ name: "Liam", dob: null, age: null });
   });
 
+  it("includes UI-entered children where relationship is child but role defaulted to other", () => {
+    // The family-member form never sets `role`, so UI-entered children land in
+    // the DB as role:"other". Children must populate off `relationship`.
+    const data = buildClientProfileData({
+      ...base,
+      clientData: clientData({}, {
+        familyMembers: [
+          { id: "1", role: "other", relationship: "child", firstName: "Emma", lastName: "Smith", dateOfBirth: "2013-01-01" },
+          { id: "2", role: "other", relationship: "stepchild", firstName: "Noah", lastName: "Smith", dateOfBirth: "2015-01-01" },
+          { id: "3", role: "other", relationship: "parent", firstName: "Pat", lastName: "Smith", dateOfBirth: "1945-01-01" },
+        ] as ClientData["familyMembers"],
+      }),
+    });
+    expect(data.children).toHaveLength(2);
+    expect(data.children.map((c) => c.name)).toEqual(["Emma Smith", "Noah Smith"]);
+  });
+
   it("returns empty children when none present", () => {
     const data = buildClientProfileData({ ...base, clientData: clientData({}) });
     expect(data.children).toEqual([]);
+  });
+});
+
+describe("buildClientProfileData — social security", () => {
+  it("shows the resolved claim year as start and PIA×12 as the annual amount", () => {
+    // SS row is anchored at plan start (2020) but the client doesn't claim until
+    // age 67. The Start column must show the claim year (2035), not "Active", and
+    // the amount must be PIA×12 ($43,200), not the $0 the engine emits pre-claim.
+    const years = [
+      py({ year: 2026, ageClient: 58, bySource: { ss: 0 } }),
+      py({ year: 2035, ageClient: 67, bySource: { ss: 41000 } }),
+    ];
+    const data = buildClientProfileData({
+      ...base,
+      years,
+      clientData: clientData({ dateOfBirth: "1968-03-12" }, {
+        incomes: [
+          {
+            id: "ss", type: "social_security", name: "SS — John", annualAmount: 0,
+            startYear: 2020, endYear: 2060, owner: "client", growthRate: 0,
+            ssBenefitMode: "pia_at_fra", piaMonthly: 3600, claimingAge: 67, claimingAgeMode: "years",
+          },
+        ] as ClientData["incomes"],
+      }),
+    });
+    const ss = data.income.find((r) => r.name === "SS — John")!;
+    expect(ss).toMatchObject({ active: false, startYear: 2035, amount: 43200 });
+  });
+
+  it("treats SS as active when the client is already past the claim age", () => {
+    const years = [py({ year: 2026, ageClient: 68, bySource: { ss: 40000 } })];
+    const data = buildClientProfileData({
+      ...base,
+      years,
+      clientData: clientData({ dateOfBirth: "1958-03-12" }, {
+        incomes: [
+          {
+            id: "ss", type: "social_security", name: "SS — John", annualAmount: 0,
+            startYear: 2020, endYear: 2060, owner: "client", growthRate: 0,
+            ssBenefitMode: "pia_at_fra", piaMonthly: 3000, claimingAge: 67, claimingAgeMode: "years",
+          },
+        ] as ClientData["incomes"],
+      }),
+    });
+    const ss = data.income.find((r) => r.name === "SS — John")!;
+    // born 1958, claim 67 -> claim year 2025, before firstYear 2026 -> active
+    expect(ss).toMatchObject({ active: true, startYear: 2025, amount: 36000 });
   });
 });
 

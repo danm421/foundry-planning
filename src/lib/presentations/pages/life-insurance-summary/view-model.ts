@@ -31,6 +31,21 @@ export interface LiChart {
   clientCoverageLine: number;
   spouseCoverageLine: number | null;
 }
+
+// Trim the need curve to the span that actually has a need — first year with a
+// positive client or spouse need through the last such year. Drops the flat $0
+// runs before/after so the chart shows only the meaningful window. Returns []
+// when there's never a need (chart renders its empty state).
+function clipToNeedWindow(rows: LiChartRow[]): LiChartRow[] {
+  const hasNeed = (r: LiChartRow) => r.clientNeed > 0 || (r.spouseNeed ?? 0) > 0;
+  const first = rows.findIndex(hasNeed);
+  if (first === -1) return [];
+  let last = first;
+  for (let i = rows.length - 1; i > first; i--) {
+    if (hasNeed(rows[i])) { last = i; break; }
+  }
+  return rows.slice(first, last + 1);
+}
 export interface LifeInsuranceSummaryPageData {
   title: string;
   subtitle: string;
@@ -95,12 +110,13 @@ export function buildLifeInsuranceSummaryData(
       : null;
 
   const chart: LiChart = {
-    rows:
+    rows: clipToNeedWindow(
       solved?.curveRows.map((r) => ({
         year: r.year,
         clientNeed: r.clientNeed,
         spouseNeed: married ? r.spouseNeed : null,
       })) ?? [],
+    ),
     markYear: solved?.assumptions.deathYear ?? null,
     clientCoverageLine: clientCov.total,
     spouseCoverageLine: married ? spouseCov.total : null,

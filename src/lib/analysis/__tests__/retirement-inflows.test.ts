@@ -17,6 +17,7 @@ function yr(opts: {
   other?: number;
   withdrawals?: number;
   rmds?: number[];
+  noteCash?: number;
   totalExpenses: number;
 }): ProjectionYear {
   const income = {
@@ -35,6 +36,9 @@ function yr(opts: {
     accountLedgers: Object.fromEntries(
       (opts.rmds ?? []).map((amt, i) => [`acct-${i}`, ledger(amt)]),
     ),
+    ...(opts.noteCash != null
+      ? { notesReceivableTotals: { interest: 0, principalLTCG: 0, principalBasis: 0, totalCashIn: opts.noteCash, householdCashIn: opts.noteCash } }
+      : {}),
   } as ProjectionYear;
 }
 
@@ -82,6 +86,22 @@ describe("retirementInflows", () => {
       }),
     );
     expect(r.rmds).toBe(60_000);
+    expect(r.shortfall).toBe(0);
+  });
+
+  it("counts household notes-receivable cash toward coverage so it does not show a phantom shortfall", () => {
+    // Note principal+interest is credited straight to checking, not income.*.
+    // It must still count as an inflow or it reads as an unfunded gap.
+    const r = retirementInflows(
+      yr({
+        socialSecurity: 30_000,
+        withdrawals: 10_000,
+        noteCash: 60_000,
+        totalExpenses: 100_000,
+      }),
+    );
+    expect(r.otherInflows).toBe(60_000);
+    expect(r.total).toBe(100_000); // 30 + 10 + 60 note cash
     expect(r.shortfall).toBe(0);
   });
 

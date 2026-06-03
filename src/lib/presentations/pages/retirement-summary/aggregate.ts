@@ -1,5 +1,6 @@
 // src/lib/presentations/pages/retirement-summary/aggregate.ts
 import type { ClientData, ProjectionYear } from "@/engine/types";
+import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 
 // ── Formatting (single source; page-pdf + chart import these) ────────────────
 export function fmtUsd(n: number): string {
@@ -106,8 +107,13 @@ export function livingExpensesTodayVsRetirement(
   clientData: ClientData,
   retirementYear: number,
 ): LivingExpenseCompare {
+  // "today" = the retirement living expense as the present-value amount the
+  // advisor entered (it inflates to the retirement year). Only the retirement-
+  // anchored living row(s); the current-living row is excluded so this lines up
+  // with the "at retirement" figure as the same dollars before/after growth.
+  const planStartYear = clientData.planSettings.planStartYear;
   const today = clientData.expenses
-    .filter((e) => e.type === "living")
+    .filter((e) => isRetirementLivingExpense(e, planStartYear))
     .reduce((s, e) => s + e.annualAmount, 0);
   const py = retirementYearRow(years, retirementYear);
   const retirement = py?.expenses.living ?? 0;
