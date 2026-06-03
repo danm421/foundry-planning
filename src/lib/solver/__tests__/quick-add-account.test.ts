@@ -4,6 +4,7 @@ import {
   defaultAccountName,
   QUICK_ADD_TYPE_MAP,
   buildAdditionalSavingsAccount,
+  buildSavingsRuleForAccount,
 } from "../quick-add-account";
 
 describe("quick-add account builder", () => {
@@ -59,5 +60,76 @@ describe("additional-savings account (min-savings solve)", () => {
     });
     expect(account).toMatchObject({ category: "taxable", subType: "brokerage", name: "Additional Savings", value: 0 });
     expect(rule).toMatchObject({ accountId: "acct", annualAmount: 0, isDeductible: false, fundFromExpenseReduction: true });
+  });
+});
+
+describe("buildSavingsRuleForAccount", () => {
+  const base = { annualAmount: 5000, startYear: 2026, endYear: 2045, ruleId: "rule-1" };
+
+  it("builds a non-deductible rule for a taxable brokerage", () => {
+    const rule = buildSavingsRuleForAccount({
+      account: { id: "a1", category: "taxable", subType: "brokerage" },
+      ...base,
+    });
+    expect(rule).toMatchObject({
+      id: "rule-1",
+      accountId: "a1",
+      annualAmount: 5000,
+      isDeductible: false,
+      startYear: 2026,
+      endYear: 2045,
+    });
+    expect(rule.rothPercent).toBeUndefined();
+  });
+
+  it("builds a non-deductible rule for a cash account", () => {
+    const rule = buildSavingsRuleForAccount({
+      account: { id: "a2", category: "cash", subType: "checking" },
+      ...base,
+    });
+    expect(rule.isDeductible).toBe(false);
+    expect(rule.rothPercent).toBeUndefined();
+  });
+
+  it("builds a deductible rule for a traditional IRA", () => {
+    const rule = buildSavingsRuleForAccount({
+      account: { id: "a3", category: "retirement", subType: "traditional_ira" },
+      ...base,
+    });
+    expect(rule.isDeductible).toBe(true);
+    expect(rule.rothPercent).toBeUndefined();
+  });
+
+  it("builds a deductible, pre-tax rule for a 401k (Roth split left to the toggle)", () => {
+    const rule = buildSavingsRuleForAccount({
+      account: { id: "a4", category: "retirement", subType: "401k" },
+      ...base,
+    });
+    expect(rule.isDeductible).toBe(true);
+    expect(rule.rothPercent).toBeUndefined();
+  });
+
+  it("builds an after-tax, fully-Roth rule for a Roth IRA", () => {
+    const rule = buildSavingsRuleForAccount({
+      account: { id: "a5", category: "retirement", subType: "roth_ira" },
+      ...base,
+    });
+    expect(rule.isDeductible).toBe(false);
+    expect(rule.rothPercent).toBe(1);
+  });
+
+  it("treats retirement 'other' / 529 as non-deductible (advisor asserts manually)", () => {
+    expect(
+      buildSavingsRuleForAccount({
+        account: { id: "a6", category: "retirement", subType: "other" },
+        ...base,
+      }).isDeductible,
+    ).toBe(false);
+    expect(
+      buildSavingsRuleForAccount({
+        account: { id: "a7", category: "retirement", subType: "529" },
+        ...base,
+      }).isDeductible,
+    ).toBe(false);
   });
 });
