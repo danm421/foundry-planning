@@ -103,7 +103,17 @@ export function buildRetirementSummaryData(
     clientName: ctx.clientName,
     spouseName: ctx.spouseName ?? null,
   });
-  const cashFlowChartSpec: ChartSpec = { ...cf.chartSpec, width: 500, height: 210 };
+  const cashFlowChartSpec: ChartSpec = {
+    ...cf.chartSpec,
+    width: 500,
+    height: 210,
+    // The chart is sliced to [retirement..end-of-life], so both timeline markers land
+    // on the domain edges: the retirement line duplicates the leftmost bar and the
+    // end-of-life label clips past the right edge. Drop both for the compact page-2 panel.
+    markers: cf.chartSpec.markers.filter(
+      (m) => m.iconKind !== "retirement" && m.iconKind !== "endOfLife",
+    ),
+  };
 
   const mcRate = ctx.monteCarlo?.summary.successRate ?? null;
 

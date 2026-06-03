@@ -95,5 +95,9 @@ describe("buildRetirementSummaryData", () => {
     // Width + height overrides applied so it fits the portrait page-2 panel.
     expect(spec.width).toBe(500);
     expect(spec.height).toBe(210);
+
+    // Endpoint markers (retirement-start, end-of-life) are stripped: on the sliced
+    // chart they sit on the domain edges and clip.
+    expect(spec.markers.some((m) => m.iconKind === "retirement" || m.iconKind === "endOfLife")).toBe(false);
   });
 });
