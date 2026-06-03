@@ -1,6 +1,8 @@
 // src/lib/presentations/pages/retirement-summary/view-model.ts
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type { RetirementSummaryOptions } from "./options-schema";
+import type { ChartSpec } from "@/lib/presentations/charts/types";
+import { buildCashFlowPageData } from "../cash-flow/view-model";
 import {
   retirementYearOf, liquidThreePoints, portfolioBars, assetsByType, assetsByTaxType,
   livingExpensesTodayVsRetirement, otherRetirementExpenses, incomeInRetirement,
@@ -64,6 +66,7 @@ export interface RetirementSummaryPageData {
   income: RetirementIncomeRow[];
   transactions: AssetTxnRow[];
   narrative: string[];
+  cashFlowChartSpec: ChartSpec;
 }
 
 export function buildRetirementSummaryData(
@@ -87,6 +90,20 @@ export function buildRetirementSummaryData(
   const otherExpenses = otherRetirementExpenses(years, retYear);
   const income = incomeInRetirement(years, clientData, retYear);
   const transactions = assetTransactionsInRetirement(years, retYear);
+
+  // Cash-flow chart for page 2: reuse the standalone Cash Flow page builder
+  // (range "retirement" slices to the first retirement year + carries the RMD
+  // double-count logic) and take just its chart spec, fitted to the portrait
+  // page-2 panel.
+  const cf = buildCashFlowPageData({
+    years,
+    clientData,
+    options: { range: "retirement", showCallout: false },
+    scenarioLabel: ctx.scenarioLabel,
+    clientName: ctx.clientName,
+    spouseName: ctx.spouseName ?? null,
+  });
+  const cashFlowChartSpec: ChartSpec = { ...cf.chartSpec, width: 500, height: 210 };
 
   const mcRate = ctx.monteCarlo?.summary.successRate ?? null;
 
@@ -128,6 +145,6 @@ export function buildRetirementSummaryData(
       totalSpend: funding.totalSpending,
     },
     liquid, bars, byType, byTaxType, funding, fundingSources, socialSecurity,
-    living, otherExpenses, income, transactions, narrative,
+    living, otherExpenses, income, transactions, narrative, cashFlowChartSpec,
   };
 }
