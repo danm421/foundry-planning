@@ -13,7 +13,7 @@ export default async function ClientDataLayout({
 
   return (
     <div className="grid grid-cols-[220px_1fr] items-start gap-6">
-      <aside className="sticky top-[156px] h-[calc(100vh-156px)] border-r border-hair pr-4">
+      <aside className="sticky top-[100px] h-[calc(100vh-100px)] border-r border-hair pr-4">
         <DetailsSidebar clientId={id} />
       </aside>
       <section className="min-w-0">{children}</section>

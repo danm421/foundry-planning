@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactElement } from "react";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
-import { useScrolledPast } from "@/hooks/use-scrolled-past";
 
 interface AssetsSubtabsProps {
   clientId: string;
@@ -15,7 +14,6 @@ export default function AssetsSubtabs({
 }: AssetsSubtabsProps): ReactElement {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
-  const scrolled = useScrolledPast(40);
 
   const root = `/clients/${clientId}/assets`;
   const tabs: { label: string; href: string }[] = [
@@ -23,13 +21,13 @@ export default function AssetsSubtabs({
     { label: "Investments", href: `${root}/investments` },
   ];
 
+  // top-[100px] = app chrome height (topbar 56px + client header 44px), so the
+  // strip pins flush beneath the now-always-small client header.
   return (
     <nav
       role="tablist"
       aria-label="Assets sections"
-      className={`sticky z-30 -mt-6 mb-2 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)] transition-[top] duration-200 ease-out ${
-        scrolled ? "top-[100px]" : "top-[156px]"
-      }`}
+      className="sticky top-[100px] z-30 -mt-6 mb-2 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
     >
       {tabs.map((tab) => {
         const active = pathname === tab.href || pathname.startsWith(tab.href + "/");

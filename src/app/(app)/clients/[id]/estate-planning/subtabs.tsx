@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactElement } from "react";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
-import { useScrolledPast } from "@/hooks/use-scrolled-past";
 
 interface EstatePlanningSubtabsProps {
   clientId: string;
@@ -15,7 +14,6 @@ export default function EstatePlanningSubtabs({
 }: EstatePlanningSubtabsProps): ReactElement {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
-  const scrolled = useScrolledPast(40);
 
   const root = `/clients/${clientId}/estate-planning`;
   const tabs: { label: string; href: string }[] = [
@@ -26,13 +24,13 @@ export default function EstatePlanningSubtabs({
     { label: "Gift Tax", href: `${root}/gift-tax` },
   ];
 
+  // top-[100px] = app chrome height (topbar 56px + client header 44px), so the
+  // strip pins flush beneath the now-always-small client header.
   return (
     <nav
       role="tablist"
       aria-label="Estate Planning sections"
-      className={`sticky z-30 -mt-6 -mb-4 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)] transition-[top] duration-200 ease-out ${
-        scrolled ? "top-[100px]" : "top-[156px]"
-      }`}
+      className="sticky top-[100px] z-30 -mt-6 -mb-4 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
     >
       {tabs.map((tab) => {
         const active =
