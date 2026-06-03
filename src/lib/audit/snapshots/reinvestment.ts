@@ -5,6 +5,7 @@ import {
   accounts,
   modelPortfolios,
   reinvestmentAccounts,
+  reinvestmentGroups,
   reinvestments,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -22,6 +23,7 @@ export const REINVESTMENT_FIELD_LABELS: FieldLabels = {
     format: "text",
   },
   accountIds: { label: "Accounts", format: "reference" },
+  groupKeys: { label: "Investment groups", format: "text" },
 };
 
 type ReinvestmentRow = typeof reinvestments.$inferSelect;
@@ -35,6 +37,12 @@ export async function toReinvestmentSnapshot(
     .from(reinvestmentAccounts)
     .where(eq(reinvestmentAccounts.reinvestmentId, row.id));
   const accountIds = linkRows.map((r) => r.accountId);
+
+  const groupRows = await db
+    .select({ groupKey: reinvestmentGroups.groupKey })
+    .from(reinvestmentGroups)
+    .where(eq(reinvestmentGroups.reinvestmentId, row.id));
+  const groupKeys = groupRows.map((g) => g.groupKey);
 
   const accountRows = accountIds.length
     ? await db
@@ -71,5 +79,6 @@ export async function toReinvestmentSnapshot(
         display: accountMap.get(id) ?? "(deleted)",
       }),
     ),
+    groupKeys: groupKeys.join(", "),
   };
 }
