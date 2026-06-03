@@ -65,6 +65,23 @@ describe("buildLifeInsuranceSummaryData", () => {
     expect(data.married).toBe(true);
   });
 
+  it("clips the need-over-time chart to the first→last year with a need", () => {
+    const padded: LiSolved = {
+      ...solved,
+      curveRows: [
+        { year: 2030, clientNeed: 0, spouseNeed: 0 },             // before need — dropped
+        { year: 2031, clientNeed: 0, spouseNeed: 0 },             // before need — dropped
+        { year: 2032, clientNeed: 500_000, spouseNeed: 0 },       // first need
+        { year: 2033, clientNeed: 300_000, spouseNeed: 100_000 },
+        { year: 2034, clientNeed: 0, spouseNeed: 200_000 },       // last need (spouse-only)
+        { year: 2035, clientNeed: 0, spouseNeed: 0 },             // after need — dropped
+        { year: 2036, clientNeed: 0, spouseNeed: 0 },             // after need — dropped
+      ],
+    };
+    const data = buildLifeInsuranceSummaryData(ctx(), { ...LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT, solved: padded });
+    expect(data.chart.rows.map((r) => r.year)).toEqual([2032, 2033, 2034]);
+  });
+
   it("flags notSolved when no solved payload is present", () => {
     const data = buildLifeInsuranceSummaryData(ctx(), LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT);
     expect(data.notSolved).toBe(true);

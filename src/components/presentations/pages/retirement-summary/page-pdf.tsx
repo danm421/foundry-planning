@@ -93,12 +93,14 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
         <Text style={s.subtitle}>{data.subtitle}</Text>
 
         <View style={s.kpis}>
+          {/* Row 1: outlook — Monte Carlo, retirement timing, lifetime spend */}
           <Kpi lbl="Monte Carlo" val={data.kpis.monteCarlo} />
+          <Kpi lbl="Retire age" val={`${data.kpis.retirementAge} · ${data.kpis.retirementYear}`} />
+          <Kpi lbl="Total spend" val={fmtUsd(data.kpis.totalSpend)} />
+          {/* Row 2: liquid portfolio at the three checkpoints */}
           <Kpi lbl="Liquid — Now" val={fmtUsd(data.kpis.liquidNow)} />
           <Kpi lbl="Liquid — Retire" val={fmtUsd(data.kpis.liquidRetirement)} />
           <Kpi lbl="Liquid — End" val={fmtUsd(data.kpis.liquidEndOfLife)} />
-          <Kpi lbl="Retire age" val={`${data.kpis.retirementAge} · ${data.kpis.retirementYear}`} />
-          <Kpi lbl="Total spend" val={fmtUsd(data.kpis.totalSpend)} />
         </View>
 
         <View style={s.panel}>

@@ -65,7 +65,7 @@ describe("planScenarioBundles", () => {
   const page = (over: Partial<PlannerPage>): PlannerPage => ({
     supportsScenarioOverride: true,
     scenarioOverride: undefined,
-    isMonteCarlo: false,
+    needsMonteCarloRun: false,
     isScenarioChanges: false,
     ...over,
   });
@@ -95,16 +95,33 @@ describe("planScenarioBundles", () => {
     expect([...plan.distinct.keys()]).toEqual(["scenario:uuid-2"]);
   });
 
-  it("flags needsMonteCarlo per distinct ref only where an MC page uses it", () => {
+  it("flags needsMonteCarlo per distinct ref only where an MC-needing page uses it", () => {
     const plan = planScenarioBundles(
       [
-        page({ isMonteCarlo: true }), // top, MC
+        page({ needsMonteCarloRun: true }), // top, needs MC
         page({ scenarioOverride: "uuid-1" }), // override, not MC
       ],
       "base",
     );
     expect(plan.distinct.get("base")?.needsMonteCarlo).toBe(true);
     expect(plan.distinct.get("scenario:uuid-1")?.needsMonteCarlo).toBe(false);
+  });
+
+  it("dedupes the MC run when two MC-needing pages share a scenario, but splits across scenarios", () => {
+    // MC page + Retirement Summary on the SAME scenario → one bundle, one run.
+    // A second Retirement Summary overridden to another scenario → its own run.
+    const plan = planScenarioBundles(
+      [
+        page({ needsMonteCarloRun: true }), // MC page, top scenario (base)
+        page({ needsMonteCarloRun: true }), // Retirement Summary, top scenario (base)
+        page({ needsMonteCarloRun: true, scenarioOverride: "uuid-1" }), // Retirement Summary, scenario uuid-1
+      ],
+      "base",
+    );
+    expect(plan.distinct.get("base")?.needsMonteCarlo).toBe(true);
+    expect(plan.distinct.get("scenario:uuid-1")?.needsMonteCarlo).toBe(true);
+    const mcCount = [...plan.distinct.values()].filter((d) => d.needsMonteCarlo).length;
+    expect(mcCount).toBe(2); // base (shared by two pages) + uuid-1
   });
 
   it("flags needsScenarioChanges only for live (non-base, non-snapshot) refs", () => {

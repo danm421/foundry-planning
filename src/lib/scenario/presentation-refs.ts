@@ -36,7 +36,11 @@ export function labelForRef(ref: ScenarioRef, names: Map<string, string>): strin
 export interface PlannerPage {
   supportsScenarioOverride: boolean;
   scenarioOverride: string | null | undefined;
-  isMonteCarlo: boolean;
+  /** This page requires a server-side Monte Carlo run for its scenario. True for
+   *  the Monte Carlo page and the Retirement Summary (whose MC KPI needs it).
+   *  Runs are deduped per distinct scenario, so two MC-needing pages on the same
+   *  scenario trigger one run. */
+  needsMonteCarloRun: boolean;
   isScenarioChanges: boolean;
 }
 
@@ -84,12 +88,12 @@ export function planScenarioBundles(
 
     const existing = distinct.get(key);
     if (existing) {
-      existing.needsMonteCarlo ||= p.isMonteCarlo;
+      existing.needsMonteCarlo ||= p.needsMonteCarloRun;
       existing.needsScenarioChanges ||= p.isScenarioChanges && isLive;
     } else {
       distinct.set(key, {
         ref,
-        needsMonteCarlo: p.isMonteCarlo,
+        needsMonteCarlo: p.needsMonteCarloRun,
         needsScenarioChanges: p.isScenarioChanges && isLive,
       });
     }

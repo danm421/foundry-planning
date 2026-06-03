@@ -237,6 +237,7 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
           principalLTCG: 10_000,
           principalBasis: 3_000,
           totalCashIn: 18_000,
+          householdCashIn: 18_000,
         },
       }),
     ]);

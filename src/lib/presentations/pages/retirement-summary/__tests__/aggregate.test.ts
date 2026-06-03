@@ -79,15 +79,23 @@ describe("assetsByTaxType", () => {
 });
 
 describe("livingExpensesTodayVsRetirement", () => {
-  it("compares today's living-expense dollars to the retirement-year living total", () => {
+  it("shows the retirement living expense present value as 'today', excluding the current-living row", () => {
+    // Two seeded living rows: current (anchored at plan start) and retirement
+    // (anchored after plan start, entered in today's dollars). "today" must be
+    // the retirement row's present value only, not current + retirement summed.
     const cd = {
       client: { dateOfBirth: "1966-01-01", retirementAge: 65 },
+      planSettings: { planStartYear: 2025 },
       expenses: [
-        { id: "e1", type: "living", annualAmount: 80_000 },
-        { id: "e2", type: "other", annualAmount: 5_000 },
+        { id: "cur", type: "living", annualAmount: 150_000, startYear: 2025 }, // current — excluded
+        { id: "ret", type: "living", annualAmount: 100_000, startYear: 2035 }, // retirement PV — counted
+        { id: "oth", type: "other", annualAmount: 5_000, startYear: 2025 },
       ],
     } as unknown as ClientData;
-    const years = [yr(2031, { expenses: { living: 110_000 } as never })];
-    expect(livingExpensesTodayVsRetirement(years, cd, 2031)).toEqual({ today: 80_000, retirement: 110_000 });
+    const years = [
+      yr(2025, { expenses: { living: 150_000 } as never }),
+      yr(2035, { expenses: { living: 124_000 } as never }),
+    ];
+    expect(livingExpensesTodayVsRetirement(years, cd, 2035)).toEqual({ today: 100_000, retirement: 124_000 });
   });
 });

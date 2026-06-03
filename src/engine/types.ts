@@ -1293,6 +1293,11 @@ export interface ProjectionYear {
     principalLTCG: number;
     principalBasis: number;
     totalCashIn: number;
+    /** Family-member-owner share of totalCashIn — the cash that actually hits
+     *  household checking and funds household expenses (entity-owner shares route
+     *  to entity checking). Reports use this for the funding/inflow stack so the
+     *  shortfall reconciles. <= totalCashIn. */
+    householdCashIn: number;
   };
 
   /** Technique breakdown for drill-down UI — only present in years where techniques execute. */

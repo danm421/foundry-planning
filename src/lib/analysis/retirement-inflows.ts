@@ -11,7 +11,8 @@ import type { ProjectionYear } from "@/engine/types";
 export interface RetirementInflows {
   socialSecurity: number;
   salaries: number;
-  /** business + deferred + capital gains + trust + other income. */
+  /** business + deferred + capital gains + trust + other income, plus household
+   *  notes-receivable cash (principal + interest credited straight to checking). */
   otherInflows: number;
   /** Required minimum distributions across all account ledgers. */
   rmds: number;
@@ -33,7 +34,11 @@ export function otherInflows(y: ProjectionYear): number {
     y.income.deferred +
     y.income.capitalGains +
     y.income.trust +
-    y.income.other
+    y.income.other +
+    // Notes-receivable cash is credited directly to checking (not income.*), so
+    // it would otherwise be invisible to the funding/inflow stack and surface as
+    // a phantom shortfall. Household-owner share only.
+    (y.notesReceivableTotals?.householdCashIn ?? 0)
   );
 }
 

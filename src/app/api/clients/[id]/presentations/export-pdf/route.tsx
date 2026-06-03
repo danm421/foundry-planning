@@ -97,6 +97,11 @@ const BodySchema = z.object({
 const MAX_DISTINCT_SCENARIOS = 6;
 const MAX_MC_SCENARIOS = 3;
 
+// Pages that require a server-side Monte Carlo run for their scenario. The MC
+// page renders the full simulation; the Retirement Summary needs it only for its
+// Monte Carlo KPI. Runs are deduped per distinct scenario in planScenarioBundles.
+const MONTE_CARLO_PAGE_IDS = new Set<string>(["monteCarlo", "retirementSummary"]);
+
 const slugify = (s: string) =>
   s
     .toLowerCase()
@@ -145,7 +150,7 @@ export async function POST(
     const plannerPages: PlannerPage[] = parsed.data.pages.map((p) => ({
       supportsScenarioOverride: PRESENTATION_PAGES[p.pageId].supportsScenarioOverride,
       scenarioOverride: p.scenarioOverride,
-      isMonteCarlo: p.pageId === "monteCarlo",
+      needsMonteCarloRun: MONTE_CARLO_PAGE_IDS.has(p.pageId),
       isScenarioChanges: p.pageId === "scenarioChanges",
     }));
     const plan = planScenarioBundles(plannerPages, parsed.data.scenarioId);
