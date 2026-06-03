@@ -5,7 +5,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { diffWorkingCopy } from "@/lib/estate/estate-flow-diff";
 import {
-  ScenarioPickerDropdown,
   type ScenarioOption,
   type SnapshotOption,
 } from "@/components/scenario/scenario-picker-dropdown";
@@ -252,21 +251,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
-  const handleScenarioChange = useCallback(
-    (next: string) => {
-      // Unsaved-changes guard: if the sandbox has edits, confirm before navigating
-      // away (the scenario switch discards the working copy).
-      if (isDirty) {
-        const confirmed = window.confirm(
-          "You have unsaved changes. Switching scenarios will discard them. Continue?",
-        );
-        if (!confirmed) return;
-      }
-      router.push(`${pathname}?scenario=${encodeURIComponent(next)}`);
-    },
-    [isDirty, router, pathname],
-  );
-
   const { submit } = writer;
   const handleSaveInPlace = useCallback(async () => {
     if (pendingChanges.length === 0 && giftChanges.length === 0) return;
@@ -505,17 +489,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
               onChange={setOrdering}
               ownerNames={props.ownerNames}
             />
-          )}
-          {props.scenarios && props.snapshots && (
-            <div className="w-48">
-              <ScenarioPickerDropdown
-                value={props.scenarioId}
-                onChange={handleScenarioChange}
-                scenarios={props.scenarios}
-                snapshots={props.snapshots}
-                ariaLabel="Scenario"
-              />
-            </div>
           )}
         </div>
       </div>
