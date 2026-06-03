@@ -46,68 +46,110 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The collapsed trigger is the only button carrying aria-expanded. */
+function getTrigger() {
+  return screen.getByRole("button", { expanded: false });
+}
+
+async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(getTrigger());
+}
+
 describe("ScenarioChipRow", () => {
-  it("renders a button per scenario in order plus the + New scenario chip", () => {
+  it("collapses to a single trigger pill showing the active scenario", () => {
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
-    // Filter out the per-non-base × delete buttons; we just want the main chips.
-    const buttons = screen
-      .getAllByRole("button")
-      .filter((b) => !b.getAttribute("aria-label")?.startsWith("Delete scenario"));
-    // 3 scenarios + the "+ New scenario" button
-    expect(buttons).toHaveLength(4);
-    expect(buttons[0].textContent).toContain("Base case");
-    expect(buttons[1].textContent).toContain("Roth conversion");
-    expect(buttons[2].textContent).toContain("Early retirement");
-    expect(buttons[3].textContent).toContain("+ New scenario");
+    // No menu rows until opened.
+    expect(screen.queryByRole("menu")).toBeNull();
+    const trigger = getTrigger();
+    // scenarioId is null → base case is the effective active scenario.
+    expect(trigger).toHaveAccessibleName("Base case");
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
   });
 
-  it("shows the base-case chip as active when scenarioId is null", () => {
-    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
-    const baseBtn = screen.getByRole("button", { name: /Base case/ });
-    expect(baseBtn.textContent?.startsWith("● ")).toBe(true);
-    const otherBtn = screen.getByRole("button", { name: /^Roth conversion$/ });
-    expect(otherBtn.textContent?.startsWith("○ ")).toBe(true);
-  });
-
-  it("clicking a non-base chip calls setScenario with that scenario id", async () => {
+  it("opening the menu lists every scenario in order plus + New scenario", async () => {
     const user = userEvent.setup();
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
-    await user.click(screen.getByRole("button", { name: /^Roth conversion$/ }));
+    await openMenu(user);
+
+    const rows = screen.getAllByRole("menuitemradio");
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toContain("Base case");
+    expect(rows[1].textContent).toContain("Roth conversion");
+    expect(rows[2].textContent).toContain("Early retirement");
+
+    expect(
+      screen.getByRole("menuitem", { name: /\+ New scenario/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("marks the base-case row active when scenarioId is null", async () => {
+    const user = userEvent.setup();
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+
+    const baseRow = screen.getByRole("menuitemradio", { name: /Base case/ });
+    expect(baseRow.textContent?.startsWith("● ")).toBe(true);
+    expect(baseRow).toHaveAttribute("aria-checked", "true");
+
+    const otherRow = screen.getByRole("menuitemradio", {
+      name: /^Roth conversion$/,
+    });
+    expect(otherRow.textContent?.startsWith("○ ")).toBe(true);
+    expect(otherRow).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("selecting a non-base row calls setScenario with that id and closes the menu", async () => {
+    const user = userEvent.setup();
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    await user.click(
+      screen.getByRole("menuitemradio", { name: /^Roth conversion$/ }),
+    );
     expect(setScenarioSpy).toHaveBeenCalledTimes(1);
     expect(setScenarioSpy).toHaveBeenCalledWith("s1");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("clicking the active base chip calls setScenario(null) to clear the URL", async () => {
+  it("selecting the base-case row calls setScenario(null) to clear the URL", async () => {
     const user = userEvent.setup();
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
-    await user.click(screen.getByRole("button", { name: /Base case/ }));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitemradio", { name: /Base case/ }));
     expect(setScenarioSpy).toHaveBeenCalledTimes(1);
     expect(setScenarioSpy).toHaveBeenCalledWith(null);
   });
 
-  it("active chip carries aria-pressed=true; inactive chips carry aria-pressed=false", () => {
+  it("the trigger reflects the active scenario name when one is set", () => {
     vi.mocked(useScenarioState).mockReturnValue({
       scenarioId: "s1",
       setScenario: setScenarioSpy,
     });
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
-    const activeBtn = screen.getByRole("button", { name: /^Roth conversion$/ });
-    const inactiveBase = screen.getByRole("button", { name: /Base case/ });
-    const inactiveOther = screen.getByRole("button", { name: /^Early retirement$/ });
-    expect(activeBtn).toHaveAttribute("aria-pressed", "true");
-    expect(inactiveBase).toHaveAttribute("aria-pressed", "false");
-    expect(inactiveOther).toHaveAttribute("aria-pressed", "false");
+    expect(getTrigger()).toHaveAccessibleName("Roth conversion");
   });
 
-  it("+ New scenario button calls useScenarioModeUI().openCreate", async () => {
+  it("+ New scenario item calls useScenarioModeUI().openCreate and closes the menu", async () => {
     const user = userEvent.setup();
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
-    await user.click(screen.getByRole("button", { name: /\+ New scenario/ }));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: /\+ New scenario/ }));
     expect(openCreateSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("renders a Delete button per non-base chip and none on the base chip", () => {
+  it("Escape closes the menu", async () => {
+    const user = userEvent.setup();
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("renders a Delete button per non-base row and none on the base row", async () => {
+    const user = userEvent.setup();
+    render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
     expect(
       screen.queryByRole("button", { name: /Delete scenario Base case/ }),
     ).toBeNull();
@@ -119,13 +161,14 @@ describe("ScenarioChipRow", () => {
     ).toBeInTheDocument();
   });
 
-  it("clicking × on an inactive chip confirms, fetches DELETE, and refreshes", async () => {
+  it("clicking × on an inactive row confirms, fetches DELETE, and refreshes", async () => {
     const user = userEvent.setup();
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchSpy);
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
     await user.click(
       screen.getByRole("button", { name: /Delete scenario Roth conversion/ }),
     );
@@ -140,7 +183,7 @@ describe("ScenarioChipRow", () => {
     expect(setScenarioSpy).not.toHaveBeenCalled();
   });
 
-  it("deleting the active chip calls setScenario(null) and refreshes", async () => {
+  it("deleting the active row calls setScenario(null) and refreshes", async () => {
     const user = userEvent.setup();
     vi.mocked(useScenarioState).mockReturnValue({
       scenarioId: "s1",
@@ -151,6 +194,7 @@ describe("ScenarioChipRow", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
     await user.click(
       screen.getByRole("button", { name: /Delete scenario Roth conversion/ }),
     );
@@ -166,6 +210,7 @@ describe("ScenarioChipRow", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
 
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
     await user.click(
       screen.getByRole("button", { name: /Delete scenario Roth conversion/ }),
     );
@@ -174,18 +219,19 @@ describe("ScenarioChipRow", () => {
     expect(refreshSpy).not.toHaveBeenCalled();
   });
 
-  it("clicking × does not propagate to the parent chip's setScenario click", async () => {
+  it("clicking × does not propagate to the row's setScenario click", async () => {
     const user = userEvent.setup();
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchSpy);
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
+    await openMenu(user);
     await user.click(
       screen.getByRole("button", { name: /Delete scenario Early retirement/ }),
     );
 
-    // The chip's main button should not have fired its own onClick.
+    // The row's main button should not have fired its own onClick.
     expect(setScenarioSpy).not.toHaveBeenCalled();
   });
 });
