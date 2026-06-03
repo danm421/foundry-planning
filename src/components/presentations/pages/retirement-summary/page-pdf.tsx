@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
+import { dataLight } from "@/brand";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
@@ -147,7 +148,7 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           <Text style={s.h4}>{`How retirement is funded (${data.kpis.retirementYear}–${data.bars[data.bars.length - 1]?.year ?? data.kpis.retirementYear})`}</Text>
           <SplitBarPdf segments={fundingRows.map((r, i) => ({
             label: r.label, value: r.value,
-            color: [T.steel, T.good, T.accentMuted, "#7a9cc6", T.accent, T.crit, T.good][i % 7],
+            color: [T.steel, T.good, T.accentMuted, dataLight.blue, T.accent, T.crit, T.good][i % 7],
           }))} />
           <StatRow lbl="Total cost of retirement" val={fmtUsd(f.totalSpending)} />
           {f.shortfall > 0 ? <StatRow lbl="Shortfall (unfunded)" val={fmtUsd(f.shortfall)} /> : null}

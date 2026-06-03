@@ -4,6 +4,8 @@
 // on-screen view (via Tailwind classes) and the PDF document (via react-pdf
 // StyleSheet) so the two can't drift apart.
 
+import { colorsLight, dataLight } from "@/brand";
+
 export type AssetCategoryKey =
   | "cash"
   | "taxable"
@@ -32,14 +34,15 @@ export const CATEGORY_ORDER: AssetCategoryKey[] = [
   "lifeInsurance",
 ];
 
-/** Hex palette used by the donut chart (both themes) and PDF rendering. */
+/** Hex palette used by the donut chart (both themes) and PDF rendering.
+ *  Six distinct Deep Jewel light anchors — matches the app's brand charts. */
 export const CATEGORY_HEX: Record<AssetCategoryKey, string> = {
-  cash: "#10b981",        // emerald-500
-  taxable: "#3b82f6",     // blue-500
-  retirement: "#8b5cf6",  // violet-500
-  realEstate: "#f59e0b",  // amber-500
-  business: "#ec4899",    // pink-500
-  lifeInsurance: "#14b8a6", // teal-500
+  cash: dataLight.green,            // #1f8d5f
+  taxable: dataLight.blue,          // #2d61aa
+  retirement: dataLight.purple,     // #6c41a2
+  realEstate: dataLight.orange,     // #cf671d
+  business: dataLight.pink,         // #ab3f6b
+  lifeInsurance: dataLight.teal,    // #198b83
 };
 
 /** Screen theme (dark). */
@@ -66,21 +69,21 @@ export const SCREEN_THEME = {
 export const PDF_THEME = {
   surface: {
     page: "#ffffff",
-    panel: "#f8fafc",           // slate-50
-    panelBorder: "#e2e8f0",     // slate-200
-    panelHeader: "#f1f5f9",     // slate-100
-    divider: "#e2e8f0",
-    netWorthAccent: "#eff6ff",  // blue-50
-    netWorthBorder: "#bfdbfe",  // blue-200
+    panel: colorsLight.card,         // #faf8ef
+    panelBorder: colorsLight.hair,   // #e8e4d6
+    panelHeader: colorsLight.card2,  // #f5f1e6
+    divider: colorsLight.hair,       // #e8e4d6
+    netWorthAccent: "#fbf3e0",       // pale amber wash for the net-worth panel
+    netWorthBorder: "#eccf95",       // soft amber border
   },
   text: {
-    primary: "#0f172a",   // slate-900
-    secondary: "#334155", // slate-700
-    muted: "#64748b",     // slate-500
+    primary: colorsLight.ink,        // #1a1d27
+    secondary: colorsLight.ink2,     // #474c59
+    muted: colorsLight.ink3,         // #767a86
   },
   status: {
-    up: { bg: "#ecfdf5", fg: "#047857", border: "#a7f3d0" },   // emerald
-    down: { bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca" }, // rose
-    flat: { bg: "#f1f5f9", fg: "#475569", border: "#cbd5e1" }, // slate
+    up: { bg: "#ecfdf5", fg: colorsLight.good, border: "#a7f3d0" },   // emerald tint
+    down: { bg: "#fef2f2", fg: colorsLight.crit, border: "#fecaca" }, // rose tint
+    flat: { bg: colorsLight.card2, fg: colorsLight.ink2, border: colorsLight.hair2 }, // neutral
   },
 } as const;

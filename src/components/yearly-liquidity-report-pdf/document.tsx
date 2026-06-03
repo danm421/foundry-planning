@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { YearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
+import { colorsLight } from "@/brand";
 import { YearlyLiquidityPdfTable } from "./table";
 
 interface Props {
@@ -11,20 +12,20 @@ interface Props {
 
 const styles = StyleSheet.create({
   page: {
-    backgroundColor: "#0b1020",
+    backgroundColor: colorsLight.paper,
     padding: 32,
-    color: "#e5e7eb",
+    color: colorsLight.ink,
     fontFamily: "Helvetica",
     fontSize: 10,
   },
   header: {
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: colorsLight.hair,
     paddingBottom: 10,
     marginBottom: 16,
   },
   title: { fontSize: 18, fontWeight: "bold" },
-  subtitle: { color: "#9ca3af", fontSize: 10, marginTop: 2 },
+  subtitle: { color: colorsLight.ink3, fontSize: 10, marginTop: 2 },
   chartImage: { width: "100%", marginTop: 8, marginBottom: 8 },
   footer: {
     position: "absolute",
@@ -32,7 +33,7 @@ const styles = StyleSheet.create({
     left: 32,
     right: 32,
     fontSize: 9,
-    color: "#9ca3af",
+    color: colorsLight.ink3,
     textAlign: "center",
   },
 });

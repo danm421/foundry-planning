@@ -4,6 +4,7 @@
 // gap-fill draw, so the component lists/stacks still sum to the Other total.
 
 import type { ProjectionYear } from "@/engine/types";
+import { dataLight } from "@/brand";
 
 type TaxFlow = NonNullable<ProjectionYear["taxResult"]>["flow"];
 
@@ -11,7 +12,7 @@ type TaxFlow = NonNullable<ProjectionYear["taxResult"]>["flow"];
 export const PENALTY_STACK = {
   key: "earlyWithdrawalPenalty",
   label: "Early Withdrawal Penalty",
-  color: "#db2777",
+  color: dataLight.pink,
   pick: (f: TaxFlow | undefined) => f?.earlyWithdrawalPenalty ?? 0,
 };
 

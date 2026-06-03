@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildCashFlowChartSpec } from "../cashflow-chart-spec";
 import type { CashFlowTableRow, TableMarker } from "../../types";
+import { dataLight, colorsLight } from "@/brand";
 
 const rows: CashFlowTableRow[] = [
   { year: 2031, ageClient: 65, ageSpouse: 61, cells: {
@@ -39,17 +40,17 @@ describe("buildCashFlowChartSpec", () => {
     expect(spec.stacks.map((s) => s.seriesId)).toEqual([
       "ss", "salary", "otherInflows", "rmd", "withdrawals",
     ]);
-    expect(spec.stacks[0].color).toBe("#2563eb"); // social security
-    expect(spec.stacks[1].color).toBe("#16a34a"); // salaries
-    expect(spec.stacks[2].color).toBe("#99f6e4"); // other inflows
-    expect(spec.stacks[3].color).toBe("#f97316"); // rmds
-    expect(spec.stacks[4].color).toBe("#ef4444"); // withdrawals
+    expect(spec.stacks[0].color).toBe(dataLight.blue);   // social security
+    expect(spec.stacks[1].color).toBe(dataLight.green);  // salaries
+    expect(spec.stacks[2].color).toBe(dataLight.teal);   // other inflows
+    expect(spec.stacks[3].color).toBe(dataLight.orange); // rmds
+    expect(spec.stacks[4].color).toBe(dataLight.red);    // withdrawals
   });
 
   it("emits the expenses line", () => {
     expect(spec.lines).toHaveLength(1);
     expect(spec.lines[0].seriesId).toBe("totalExpenses");
-    expect(spec.lines[0].color).toBe("#1a1a1d");
+    expect(spec.lines[0].color).toBe(colorsLight.ink);
     expect(spec.lines[0].values).toEqual([130_000, 140_000]);
   });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildPortfolioActivityDrillData } from "../view-model";
+import { dataLight } from "@/brand";
 import { makeProjectionYears, makeClientData } from "@/lib/presentations/pages/cash-flow/__tests__/fixtures";
 
 function baseInput() {
@@ -20,8 +21,8 @@ describe("buildPortfolioActivityDrillData — chart", () => {
     expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual(["additions", "distributions"]);
     expect(d.chartSpec!.lines.map((l) => l.seriesId)).toEqual(["net"]);
     const byId = Object.fromEntries(d.chartSpec!.stacks.map((s) => [s.seriesId, s.color]));
-    expect(byId.additions).toBe("#16a34a");
-    expect(byId.distributions).toBe("#ef4444");
+    expect(byId.additions).toBe(dataLight.green);
+    expect(byId.distributions).toBe(dataLight.red);
   });
 
   it("passes distributions as negative values and net = additions - distributions", () => {

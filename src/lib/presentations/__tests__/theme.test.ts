@@ -1,28 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { PRESENTATION_THEME } from "../theme";
+import { colorsLight, dataLight } from "@/brand";
 
 describe("PRESENTATION_THEME", () => {
-  it("re-exports Foundry's base palette", () => {
-    expect(PRESENTATION_THEME.paper).toBe("#f6f3ec");
-    expect(PRESENTATION_THEME.accent).toBe("#b87f1f");
-    expect(PRESENTATION_THEME.good).toBe("#2f6b4a");
-    expect(PRESENTATION_THEME.crit).toBe("#a13a3a");
+  it("derives its base palette from the brand light theme", () => {
+    expect(PRESENTATION_THEME.paper).toBe(colorsLight.paper);
+    expect(PRESENTATION_THEME.accent).toBe(colorsLight.accent);
+    expect(PRESENTATION_THEME.good).toBe(colorsLight.good);
+    expect(PRESENTATION_THEME.crit).toBe(colorsLight.crit);
   });
 
-  it("adds the three new presentation tokens", () => {
-    expect(PRESENTATION_THEME.steel).toBe("#3b6ea3");
-    expect(PRESENTATION_THEME.accentMuted).toBe("#d4a86a");
-    expect(PRESENTATION_THEME.accentTint).toBe("#f4e6c8");
+  it("maps steel to the brand data blue and keeps amber-harmonized tints", () => {
+    expect(PRESENTATION_THEME.steel).toBe(dataLight.blue);
+    expect(PRESENTATION_THEME.accentMuted).toBe("#e3a857");
+    expect(PRESENTATION_THEME.accentTint).toBe("#f8e9cf");
   });
 
-  it("defines the cash-flow chart palette in stack-render order", () => {
+  it("defines the cash-flow chart palette in stack-render order (Deep Jewel light)", () => {
     expect(PRESENTATION_THEME.chartStack).toEqual([
-      "#2563eb", // social security
-      "#16a34a", // salaries
-      "#99f6e4", // other inflows
-      "#f97316", // rmds
-      "#ef4444", // withdrawals
+      dataLight.blue,   // social security
+      dataLight.green,  // salaries
+      dataLight.teal,   // other inflows
+      dataLight.orange, // rmds
+      dataLight.red,    // withdrawals
     ]);
-    expect(PRESENTATION_THEME.chartLine).toBe("#1a1a1d"); // total expenses
+    expect(PRESENTATION_THEME.chartLine).toBe(colorsLight.ink);
   });
 });

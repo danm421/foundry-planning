@@ -1,12 +1,13 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { YearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
+import { colorsLight } from "@/brand";
 
 const styles = StyleSheet.create({
   table: { width: "100%", marginTop: 8, fontSize: 8 },
   headerRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: colorsLight.hair,
     paddingBottom: 4,
     marginBottom: 4,
   },
@@ -14,12 +15,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingVertical: 2,
     borderBottomWidth: 0.25,
-    borderBottomColor: "#1f2937",
+    borderBottomColor: colorsLight.hair,
   },
   cellLeft: { flex: 1, textAlign: "left" },
   cellNum: { flex: 1.4, textAlign: "right" },
-  surplus: { color: "#10b981" },
-  deficit: { color: "#ef4444" },
+  surplus: { color: colorsLight.good },
+  deficit: { color: colorsLight.crit },
 });
 
 const fmt = new Intl.NumberFormat("en-US", {

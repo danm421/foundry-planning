@@ -2,6 +2,7 @@
 // "Year-by-Year" sub-tab. Adapter over buildYearlyEstateReport: maps rows to
 // DrillPageData. Death ordering defaults to whoever dies first in the plan.
 
+import { dataLight } from "@/brand";
 import {
   buildYearlyEstateReport,
 } from "@/lib/estate/yearly-estate-report";
@@ -52,9 +53,9 @@ export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPage
   const chartSpec = buildDrillChartSpec({
     years: reportRows.map((r) => r.year),
     stacks: [
-      { seriesId: "netToHeirs",         label: "Net to Heirs",        color: "#16a34a", values: reportRows.map((r) => r.netToHeirs) },
-      { seriesId: "taxesAndExpenses",   label: "Taxes & Expenses",    color: "#dc2626", values: reportRows.map((r) => r.taxesAndExpenses) },
-      { seriesId: "charitableBequests", label: "Charitable Bequests", color: "#f59e0b", values: reportRows.map((r) => r.charitableBequests) },
+      { seriesId: "netToHeirs",         label: "Net to Heirs",        color: dataLight.green, values: reportRows.map((r) => r.netToHeirs) },
+      { seriesId: "taxesAndExpenses",   label: "Taxes & Expenses",    color: dataLight.red, values: reportRows.map((r) => r.taxesAndExpenses) },
+      { seriesId: "charitableBequests", label: "Charitable Bequests", color: dataLight.yellow, values: reportRows.map((r) => r.charitableBequests) },
     ],
     markers,
   });

@@ -11,18 +11,19 @@ import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 import { otherTaxFromFlow } from "@/lib/tax/other-tax";
 import { PENALTY_STACK, hasPenaltyYear } from "../../shared/penalty";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
 
 type TaxFlow = NonNullable<ProjectionYear["taxResult"]>["flow"];
 const OTHER_STACK: Array<{ key: string; label: string; color: string; pick: (f: TaxFlow | undefined) => number }> = [
-  { key: "capitalGainsTax",    label: "Capital Gains", color: "#facc15", pick: (f) => f?.capitalGainsTax ?? 0 },
-  { key: "amt",                label: "AMT",           color: "#7c3aed", pick: (f) => f?.amtAdditional ?? 0 },
-  { key: "niit",               label: "NIIT",          color: "#0891b2", pick: (f) => f?.niit ?? 0 },
-  { key: "additionalMedicare", label: "Add'l Medicare", color: "#ea580c", pick: (f) => f?.additionalMedicare ?? 0 },
-  { key: "fica",               label: "FICA",          color: "#16a34a", pick: (f) => f?.fica ?? 0 },
-  { key: "stateTax",           label: "State Tax",     color: "#9ca3af", pick: (f) => f?.stateTax ?? 0 },
+  { key: "capitalGainsTax",    label: "Capital Gains", color: dataLight.yellow, pick: (f) => f?.capitalGainsTax ?? 0 },
+  { key: "amt",                label: "AMT",           color: dataLight.purple, pick: (f) => f?.amtAdditional ?? 0 },
+  { key: "niit",               label: "NIIT",          color: dataLight.teal, pick: (f) => f?.niit ?? 0 },
+  { key: "additionalMedicare", label: "Add'l Medicare", color: dataLight.orange, pick: (f) => f?.additionalMedicare ?? 0 },
+  { key: "fica",               label: "FICA",          color: dataLight.green, pick: (f) => f?.fica ?? 0 },
+  { key: "stateTax",           label: "State Tax",     color: dataLight.grey, pick: (f) => f?.stateTax ?? 0 },
 ];
 
 export interface BuildTaxOtherTaxesDrillInput {

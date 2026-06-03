@@ -1,3 +1,4 @@
+import { dataLight } from "@/brand";
 import { ticks as d3ticks } from "d3-array";
 import type { ScatterSpec, ScatterPoint } from "./types";
 import type { AnalysisRow, EntityType } from "@/lib/investments/portfolio-analysis";
@@ -9,11 +10,11 @@ const SERIES: Record<
   EntityType,
   { label: string; pointStyle: ScatterPoint["pointStyle"]; color: string }
 > = {
-  asset_class: { label: "Asset Classes", pointStyle: "circle", color: "#3b82f6" },
-  account: { label: "Accounts", pointStyle: "rect", color: "#10b981" },
-  category: { label: "Account Categories", pointStyle: "triangle", color: "#f59e0b" },
-  custom_group: { label: "Custom Groups", pointStyle: "rectRot", color: "#8b5cf6" },
-  model_portfolio: { label: "Model Portfolios", pointStyle: "star", color: "#ec4899" },
+  asset_class: { label: "Asset Classes", pointStyle: "circle", color: dataLight.blue },
+  account: { label: "Accounts", pointStyle: "rect", color: dataLight.green },
+  category: { label: "Account Categories", pointStyle: "triangle", color: dataLight.yellow },
+  custom_group: { label: "Custom Groups", pointStyle: "rectRot", color: dataLight.purple },
+  model_portfolio: { label: "Model Portfolios", pointStyle: "star", color: dataLight.pink },
 };
 
 /** Snap [min,max] to whole percents, padding -4pp below and +1pp above.

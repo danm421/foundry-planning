@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildTaxOtherTaxesDrillData } from "../view-model";
 import { makeTaxYears, makeClientData } from "@/lib/presentations/shared/__tests__/tax-fixtures";
+import { dataLight } from "@/brand";
 
 const base = {
   years: makeTaxYears(),
@@ -28,10 +29,10 @@ describe("buildTaxOtherTaxesDrillData", () => {
     expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual([
       "capitalGainsTax", "amt", "niit", "additionalMedicare", "fica", "stateTax",
     ]);
-    // Reuse the Federal TAX_STACK hexes.
+    // Reuse the Federal TAX_STACK tokens.
     const byId = Object.fromEntries(d.chartSpec!.stacks.map((s) => [s.seriesId, s.color]));
-    expect(byId.capitalGainsTax).toBe("#facc15");
-    expect(byId.fica).toBe("#16a34a");
+    expect(byId.capitalGainsTax).toBe(dataLight.yellow);
+    expect(byId.fica).toBe(dataLight.green);
     const r = d.table.rows.find((row) => row.year === 2026)!;
     const i = d.chartSpec!.xAxis.domain.indexOf(2026);
     const sum = d.chartSpec!.stacks.reduce((a, s) => a + s.values[i], 0);

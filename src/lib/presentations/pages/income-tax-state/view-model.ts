@@ -11,6 +11,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -72,7 +73,7 @@ export function buildTaxStateDrillData(input: BuildTaxStateDrillInput): DrillPag
     stacks: [{
       seriesId: "stateTax",
       label: "State Tax",
-      color: "#2563eb",
+      color: dataLight.blue,
       values: visibleYears.map((y) => y.taxResult?.state?.stateTax ?? 0),
     }],
     markers,

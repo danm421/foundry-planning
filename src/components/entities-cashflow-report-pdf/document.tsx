@@ -1,5 +1,6 @@
 // src/components/entities-cashflow-report-pdf/document.tsx
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { colorsLight } from "@/brand";
 import type { SelectedRows } from "../entities-cashflow-report/view-model";
 import TrustTable from "./trust-table";
 import BusinessTable from "./business-table";
@@ -9,10 +10,10 @@ import BusinessTable from "./business-table";
  * the two reports look like siblings when sent to a client.
  */
 const THEME = {
-  page: "#ffffff",
-  divider: "#e2e8f0", // slate-200
-  textPrimary: "#0f172a", // slate-900
-  textMuted: "#64748b", // slate-500
+  page: colorsLight.paper,
+  divider: colorsLight.hair,
+  textPrimary: colorsLight.ink,
+  textMuted: colorsLight.ink3,
 } as const;
 
 const styles = StyleSheet.create({
