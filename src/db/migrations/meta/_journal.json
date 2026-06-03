@@ -995,6 +995,13 @@
       "when": 1780492836804,
       "tag": "0141_stale_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1780523179376,
+      "tag": "0142_left_lorna_dane",
+      "breakpoints": true
     }
   ]
 }
