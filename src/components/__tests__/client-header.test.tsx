@@ -43,15 +43,17 @@ describe("ClientHeader", () => {
     expect(bar.className).toContain("z-[35]");
   });
 
-  it("renders the identity trigger and the right slot", () => {
+  it("renders the identity trigger, the center slot, and the right slot", () => {
     render(
       <ClientHeader
         clientId="abc"
         people={people}
+        centerSlot={<span>sub-report-tabs</span>}
         rightSlot={<span>chips-here</span>}
       />,
     );
     expect(screen.getByText("Cooper Sample")).toBeInTheDocument();
+    expect(screen.getByText("sub-report-tabs")).toBeInTheDocument();
     expect(screen.getByText("chips-here")).toBeInTheDocument();
   });
 });

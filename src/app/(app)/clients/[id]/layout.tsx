@@ -5,6 +5,7 @@ import { clients, crmHouseholdContacts, scenarios as scenariosTable } from "@/db
 import { and, eq, desc, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import ClientHeader from "@/components/client-header";
+import HeaderSubtabs from "@/components/header-subtabs";
 import type { PersonInfo } from "@/components/client-identity-menu";
 import { ScenarioModeWrapper } from "@/components/scenario/scenario-mode-wrapper";
 import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
@@ -78,6 +79,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
       <ClientHeader
         clientId={id}
         people={people}
+        centerSlot={<HeaderSubtabs clientId={id} />}
         rightSlot={<ScenarioChipRow clientId={id} scenarios={scenarioRows} />}
       />
       <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />

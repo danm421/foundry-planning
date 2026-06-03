@@ -127,13 +127,13 @@ export default function ClientIdentityMenu({
   const ages = householdAges(people);
 
   return (
-    <div ref={wrapperRef} className="relative">
+    <div ref={wrapperRef} className="relative min-w-0">
       <button
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-md py-1 pr-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="flex min-w-0 max-w-full items-center gap-2 rounded-md py-1 pr-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <span
           data-testid="client-portrait"
@@ -142,15 +142,20 @@ export default function ClientIdentityMenu({
         >
           {initialsOf(primary)}
         </span>
-        <span className="text-[14px] font-semibold leading-none tracking-tight text-ink">
+        <span
+          title={title}
+          className="min-w-0 line-clamp-2 text-[14px] font-semibold leading-tight tracking-tight text-ink"
+        >
           {title}
         </span>
         {ages ? (
-          <span className="text-[12px] leading-none text-ink-3">· {ages}</span>
+          <span className="shrink-0 whitespace-nowrap text-[12px] leading-none text-ink-3">
+            · {ages}
+          </span>
         ) : null}
         <span
           aria-hidden="true"
-          className={`text-[10px] text-ink-3 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`shrink-0 text-[10px] text-ink-3 transition-transform ${open ? "rotate-180" : ""}`}
         >
           ▾
         </span>
