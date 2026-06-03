@@ -21,6 +21,7 @@ export interface ReinvestmentInitialData {
   id: string;
   name: string;
   accountIds: string[];
+  groupKeys?: string[];
   year: number;
   yearRef: string | null;
   targetType: "model_portfolio" | "custom";

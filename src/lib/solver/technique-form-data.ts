@@ -113,6 +113,7 @@ export function toReinvestmentInitialData(
     id: ri.id,
     name: ri.name,
     accountIds: ri.accountIds,
+    groupKeys: ri.groupKeys ?? [],
     year: ri.year,
     yearRef: ri.yearRef ?? null,
     targetType: ri.targetType ?? "custom",
