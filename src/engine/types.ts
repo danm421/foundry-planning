@@ -996,6 +996,12 @@ export interface Reinvestment {
   customPctLtCapitalGains?: number | null;
   customPctQualifiedDividends?: number | null;
   customPctTaxExempt?: number | null;
+  /** View/round-trip metadata: the account-group keys this reinvestment
+   *  targets (default keys or custom group UUIDs). Engine math NEVER reads
+   *  this — `accountIds` is the expanded union computed at load time. Carried
+   *  so the form can round-trip the selection and the solver-draft path can
+   *  persist the live group reference. */
+  groupKeys?: string[];
 }
 
 export type RothConversionType =
