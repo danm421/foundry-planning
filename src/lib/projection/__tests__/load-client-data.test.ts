@@ -88,6 +88,9 @@ type DbState = {
   expenseScheduleOverrides: unknown[];
   savingsScheduleOverrides: unknown[];
   trustSplitInterestDetails: unknown[];
+  reinvestmentGroups: unknown[];
+  accountGroups: unknown[];
+  accountGroupMembers: unknown[];
 };
 
 const dbState: DbState = {
@@ -126,6 +129,9 @@ const dbState: DbState = {
   expenseScheduleOverrides: [],
   savingsScheduleOverrides: [],
   trustSplitInterestDetails: [],
+  reinvestmentGroups: [],
+  accountGroups: [],
+  accountGroupMembers: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -179,6 +185,9 @@ vi.mock("@/db", async () => {
     if (t === schema.expenseScheduleOverrides || n === "expense_schedule_overrides") return dbState.expenseScheduleOverrides;
     if (t === schema.savingsScheduleOverrides || n === "savings_schedule_overrides") return dbState.savingsScheduleOverrides;
     if (t === schema.trustSplitInterestDetails || n === "trust_split_interest_details") return dbState.trustSplitInterestDetails;
+    if (t === schema.reinvestmentGroups || n === "reinvestment_groups") return dbState.reinvestmentGroups;
+    if (t === schema.accountGroups || n === "account_groups") return dbState.accountGroups;
+    if (t === schema.accountGroupMembers || n === "account_group_members") return dbState.accountGroupMembers;
     return [];
   };
 
@@ -189,6 +198,7 @@ vi.mock("@/db", async () => {
     then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
     orderBy: (..._args: unknown[]) => makeResult(rows),
     where: (_cond: unknown) => makeResult(rows),
+    innerJoin: (_table: unknown, _cond: unknown) => makeResult(rows),
   });
 
   const db = {
