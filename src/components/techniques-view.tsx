@@ -34,6 +34,7 @@ export interface ReinvestmentRow {
   id: string;
   name: string;
   accountIds: string[];
+  groupKeys: string[];
   year: number;
   yearRef: string | null;
   targetType: "model_portfolio" | "custom";
@@ -545,6 +546,7 @@ function ReinvestmentsTable({
       <ol className="divide-y divide-hair">
         {rows.map((r, idx) => {
           const accountCount = r.accountIds.length;
+          const groupCount = r.groupKeys.length;
           const targetLabel = r.targetType === "model_portfolio" ? "Model" : "Custom";
           return (
             <li key={r.id} className={`${REINVESTMENT_GRID} hover:bg-card-2/40`}>
@@ -560,7 +562,9 @@ function ReinvestmentsTable({
                 )}
               </div>
               <span className="truncate text-xs tabular-nums text-ink-2">
-                {accountCount} {accountCount === 1 ? "account" : "accounts"}
+                {groupCount > 0
+                  ? `${groupCount} ${groupCount === 1 ? "group" : "groups"}`
+                  : `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`}
               </span>
               <span className="truncate text-xs tabular-nums text-ink-3">
                 {formatYear(r.year, r.yearRef)}

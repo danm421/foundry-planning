@@ -34,7 +34,12 @@ export function summarizeAssetTransaction(at: AssetTransaction): string {
 }
 
 export function summarizeReinvestment(ri: Reinvestment): string {
-  const n = ri.accountIds.length;
+  const groupCount = ri.groupKeys?.length ?? 0;
+  const acctCount = ri.accountIds.length;
+  const target =
+    groupCount > 0
+      ? `${groupCount} group${groupCount === 1 ? "" : "s"}`
+      : `${acctCount} account${acctCount === 1 ? "" : "s"}`;
   const rate = `${Math.round(ri.newGrowthRate * 100)}%`;
-  return `${n} account${n === 1 ? "" : "s"} · ${rate} from ${ri.year}`;
+  return `${target} · ${rate} from ${ri.year}`;
 }

@@ -123,6 +123,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     id: r.id,
     name: r.name,
     accountIds: r.accountIds,
+    groupKeys: r.groupKeys ?? [],
     year: r.year,
     yearRef: r.yearRef ?? null,
     targetType: r.targetType ?? "model_portfolio",
