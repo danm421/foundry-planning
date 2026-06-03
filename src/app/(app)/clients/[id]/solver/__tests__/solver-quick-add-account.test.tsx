@@ -11,7 +11,7 @@ const existingAccounts = [
 ];
 
 function renderForm(props: Partial<React.ComponentProps<typeof SolverQuickAddAccount>> = {}) {
-  const onChange = props.onChange ?? vi.fn();
+  const onChange = vi.fn();
   render(
     <SolverQuickAddAccount
       owners={owners}
