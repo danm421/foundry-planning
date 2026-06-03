@@ -12,8 +12,16 @@
 // the EFFECTIVE tree so premiums always match the current account set.
 
 import { describe, it, expect } from "vitest";
-import { withSynthesizedPremiums } from "../premium-expense";
-import type { Account, ClientData, Expense } from "@/engine/types";
+import {
+  synthesizePremiumExpenses,
+  withSynthesizedPremiums,
+} from "../premium-expense";
+import type {
+  Account,
+  ClientData,
+  Expense,
+  LifeInsuranceCashValueScheduleRow,
+} from "@/engine/types";
 
 function liAccount(id: string, premiumAmount: number): Account {
   return {
@@ -42,6 +50,50 @@ function liAccount(id: string, premiumAmount: number): Account {
       premiumAmount,
       premiumYears: 10,
       policyType: "permanent",
+    } as unknown as Account["lifeInsurance"],
+  } as Account;
+}
+
+/**
+ * Builds a full life-insurance `Account` with a `lifeInsurance` policy,
+ * passing `premiumScheduleMode` / `cashValueSchedule` through and defaulting
+ * the other two schedule-mode flags to "off". Used for the direct
+ * `synthesizePremiumExpenses` (input-shape) tests.
+ */
+function makeLifeAccount(opts: {
+  id: string;
+  premiumAmount: number;
+  premiumScheduleMode?: "off" | "scheduled";
+  cashValueSchedule?: LifeInsuranceCashValueScheduleRow[];
+}): Account {
+  return {
+    id: opts.id,
+    name: opts.id,
+    category: "life_insurance",
+    subType: "permanent",
+    value: 0,
+    basis: 0,
+    rothValue: 0,
+    growthRate: 0,
+    rmdEnabled: false,
+    isDefaultChecking: false,
+    annualPropertyTax: 0,
+    propertyTaxGrowthRate: 0,
+    titlingType: "jtwros",
+    owners: [],
+    businessType: null,
+    distributionPolicyPercent: null,
+    businessTaxTreatment: null,
+    parentAccountId: null,
+    insuredPerson: "client",
+    lifeInsurance: {
+      premiumAmount: opts.premiumAmount,
+      premiumYears: 10,
+      policyType: "permanent",
+      premiumScheduleMode: opts.premiumScheduleMode ?? "off",
+      deathBenefitScheduleMode: "off",
+      incomeScheduleMode: "off",
+      cashValueSchedule: opts.cashValueSchedule ?? [],
     } as unknown as Account["lifeInsurance"],
   } as Account;
 }
@@ -133,5 +185,37 @@ describe("withSynthesizedPremiums", () => {
     const result = withSynthesizedPremiums(tree([liAccount("li1", 5000)], [living]));
     expect(result.expenses.find((e) => e.id === "exp1")).toMatchObject({ annualAmount: 40000 });
     expect(policyExpenses(result)).toHaveLength(1);
+  });
+});
+
+describe("synthesizePremiumExpenses — scheduled premium mode", () => {
+  it("uses the schedule's premium column when premiumScheduleMode is scheduled", () => {
+    const acct = makeLifeAccount({
+      id: "pol-1",
+      premiumAmount: 0, // scalar ignored
+      premiumScheduleMode: "scheduled",
+      cashValueSchedule: [
+        { year: 2026, premiumAmount: 87_216 },
+        { year: 2027, premiumAmount: 87_216 },
+        { year: 2028, premiumAmount: 50_000 },
+      ],
+    });
+
+    const [exp] = synthesizePremiumExpenses({
+      currentYear: 2026,
+      accounts: [acct],
+      clientBirthYear: 1970,
+      spouseBirthYear: null,
+      lifeExpectancyClient: 90,
+      lifeExpectancySpouse: null,
+      clientRetirementAge: 65,
+      spouseRetirementAge: null,
+    });
+
+    expect(exp.scheduleOverrides).toEqual({ 2026: 87_216, 2027: 87_216, 2028: 50_000 });
+    expect(exp.startYear).toBe(2026);
+    expect(exp.endYear).toBe(2028);
+    expect(exp.source).toBe("policy");
+    expect(exp.sourcePolicyAccountId).toBe("pol-1");
   });
 });
