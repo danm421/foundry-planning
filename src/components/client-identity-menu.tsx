@@ -77,11 +77,19 @@ function initialsOf(p: PersonInfo): string {
   return `${p.firstName[0] ?? ""}${p.lastName[0] ?? ""}`.toUpperCase();
 }
 
-function ContactRow({ label, value }: { label: string; value: string }): ReactElement {
+function ContactRow({
+  label,
+  value,
+  breakAll,
+}: {
+  label: string;
+  value: string;
+  breakAll?: boolean;
+}): ReactElement {
   return (
     <div className="flex gap-1.5">
       <dt className="text-ink-4">{label}</dt>
-      <dd className={label === "Email" ? "break-all" : undefined}>{value}</dd>
+      <dd className={breakAll ? "break-all" : undefined}>{value}</dd>
     </div>
   );
 }
@@ -167,7 +175,7 @@ export default function ClientIdentityMenu({
                     value={`${formatDob(p.dateOfBirth)} · Age ${ageFromDob(p.dateOfBirth)}`}
                   />
                 ) : null}
-                {p.email ? <ContactRow label="Email" value={p.email} /> : null}
+                {p.email ? <ContactRow label="Email" value={p.email} breakAll /> : null}
                 {p.phone ? <ContactRow label="Phone" value={p.phone} /> : null}
                 {p.mobile ? <ContactRow label="Mobile" value={p.mobile} /> : null}
               </dl>

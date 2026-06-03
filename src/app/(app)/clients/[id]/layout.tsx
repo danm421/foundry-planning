@@ -5,6 +5,7 @@ import { clients, crmHouseholdContacts, scenarios as scenariosTable } from "@/db
 import { and, eq, desc, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import ClientHeader from "@/components/client-header";
+import type { PersonInfo } from "@/components/client-identity-menu";
 import { ScenarioModeWrapper } from "@/components/scenario/scenario-mode-wrapper";
 import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
 import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
@@ -52,29 +53,24 @@ export default async function ClientLayout({ children, params }: Props): Promise
   const spouse = contactRows.find((c) => c.role === "spouse");
   if (!primary?.dateOfBirth) notFound();
 
-  const people = [
-    {
-      role: "primary" as const,
-      firstName: primary.firstName,
-      lastName: primary.lastName,
-      dateOfBirth: primary.dateOfBirth,
-      email: primary.email,
-      phone: primary.phone,
-      mobile: primary.mobile,
-    },
-    ...(spouse
-      ? [
-          {
-            role: "spouse" as const,
-            firstName: spouse.firstName,
-            lastName: spouse.lastName,
-            dateOfBirth: spouse.dateOfBirth,
-            email: spouse.email,
-            phone: spouse.phone,
-            mobile: spouse.mobile,
-          },
-        ]
-      : []),
+  // Single-source the projection so adding a field to PersonInfo is a one-line
+  // change here (the return type makes a missed field a compile error).
+  const toPerson = (
+    c: (typeof contactRows)[number],
+    role: "primary" | "spouse",
+  ): PersonInfo => ({
+    role,
+    firstName: c.firstName,
+    lastName: c.lastName,
+    dateOfBirth: c.dateOfBirth,
+    email: c.email,
+    phone: c.phone,
+    mobile: c.mobile,
+  });
+
+  const people: PersonInfo[] = [
+    toPerson(primary, "primary"),
+    ...(spouse ? [toPerson(spouse, "spouse")] : []),
   ];
 
   return (
