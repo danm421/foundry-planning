@@ -988,6 +988,13 @@
       "when": 1780329214399,
       "tag": "0140_elite_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1780492836804,
+      "tag": "0141_stale_avengers",
+      "breakpoints": true
     }
   ]
 }

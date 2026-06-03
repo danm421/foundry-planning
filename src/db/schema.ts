@@ -2912,6 +2912,19 @@ export const reinvestmentAccounts = pgTable(
   (t) => [uniqueIndex("reinvestment_accounts_unique").on(t.reinvestmentId, t.accountId)],
 );
 
+export const reinvestmentGroups = pgTable(
+  "reinvestment_groups",
+  {
+    reinvestmentId: uuid("reinvestment_id")
+      .notNull()
+      .references(() => reinvestments.id, { onDelete: "cascade" }),
+    // Default key ("all-liquid"/"taxable"/"retirement"/"cash") or custom group UUID.
+    groupKey: text("group_key").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.reinvestmentId, t.groupKey] })],
+);
+
 // ============================================================================
 // Roth Conversions (technique)
 // ============================================================================
