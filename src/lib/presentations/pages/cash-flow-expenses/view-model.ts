@@ -12,6 +12,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -24,13 +25,13 @@ const EXPENSE_SERIES: Array<{
   color: string;
   pick: (y: ProjectionYear) => number;
 }> = [
-  { key: "living",        label: "Living",        color: "#16a34a", pick: (y) => y.expenses.living },
-  { key: "discretionary", label: "Surplus spent", color: "#f59e0b", pick: (y) => y.expenses.discretionary },
-  { key: "liabilities",   label: "Liabilities",   color: "#ef4444", pick: (y) => y.expenses.liabilities },
-  { key: "other",         label: "Other",         color: "#99f6e4", pick: (y) => y.expenses.other },
-  { key: "insurance",     label: "Insurance",     color: "#7c3aed", pick: (y) => y.expenses.insurance },
-  { key: "realEstate",    label: "Real Estate",   color: "#0891b2", pick: (y) => y.expenses.realEstate },
-  { key: "taxes",         label: "Taxes",         color: "#ea580c", pick: (y) => y.expenses.taxes },
+  { key: "living",        label: "Living",        color: dataLight.green,  pick: (y) => y.expenses.living },
+  { key: "discretionary", label: "Surplus spent", color: dataLight.yellow, pick: (y) => y.expenses.discretionary },
+  { key: "liabilities",   label: "Liabilities",   color: dataLight.red,    pick: (y) => y.expenses.liabilities },
+  { key: "other",         label: "Other",         color: dataLight.grey,   pick: (y) => y.expenses.other },
+  { key: "insurance",     label: "Insurance",     color: dataLight.purple, pick: (y) => y.expenses.insurance },
+  { key: "realEstate",    label: "Real Estate",   color: dataLight.teal,   pick: (y) => y.expenses.realEstate },
+  { key: "taxes",         label: "Taxes",         color: dataLight.orange, pick: (y) => y.expenses.taxes },
 ];
 
 const HEADERS: Record<string, string> = {

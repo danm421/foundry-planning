@@ -15,6 +15,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -25,12 +26,12 @@ const CATEGORIES: Array<{
   label: string;
   color: string;      // chart color (matches withdrawals-chart.tsx)
 }> = [
-  { key: "cash",           label: "Cash Assets",    color: "#9ca3af" },
-  { key: "taxable",        label: "Taxable Assets", color: "#facc15" },
-  { key: "retirement",     label: "Retirement",     color: "#f97316" },
-  { key: "real_estate",    label: "Real Estate",    color: "#0891b2" },
-  { key: "business",       label: "Business",       color: "#7c3aed" },
-  { key: "life_insurance", label: "Life Insurance", color: "#16a34a" },
+  { key: "cash",           label: "Cash Assets",    color: dataLight.grey },
+  { key: "taxable",        label: "Taxable Assets", color: dataLight.yellow },
+  { key: "retirement",     label: "Retirement",     color: dataLight.orange },
+  { key: "real_estate",    label: "Real Estate",    color: dataLight.teal },
+  { key: "business",       label: "Business",       color: dataLight.purple },
+  { key: "life_insurance", label: "Life Insurance", color: dataLight.green },
 ];
 
 const HEADERS: Record<string, string> = {
@@ -181,7 +182,7 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
     stacks.push({
       seriesId: "wd:other",
       label: "Other",
-      color: "#6b7280", // gray-500, distinct from Cash (#9ca3af)
+      color: dataLight.blue, // distinct from Cash (grey)
       values: visibleYears.map((y) => uncategorizedWithdrawal(y)),
     });
   }

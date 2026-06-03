@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildPortfolioGrowthDrillData } from "../view-model";
+import { dataLight } from "@/brand";
 import { makeProjectionYears, makeClientData } from "@/lib/presentations/pages/cash-flow/__tests__/fixtures";
 
 const base = {
@@ -24,8 +25,8 @@ describe("buildPortfolioGrowthDrillData — chart", () => {
   it("uses the in-app portfolio category colors", () => {
     const d = buildPortfolioGrowthDrillData(base);
     const byId = Object.fromEntries(d.chartSpec!.stacks.map((s) => [s.seriesId, s.color]));
-    expect(byId.taxable).toBe("#facc15");
-    expect(byId.retirement).toBe("#f97316");
+    expect(byId.taxable).toBe(dataLight.yellow);
+    expect(byId.retirement).toBe(dataLight.orange);
   });
 
   it("chart values per category match the 2026 table row", () => {

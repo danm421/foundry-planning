@@ -15,6 +15,7 @@ import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 import { PRESENTATION_THEME } from "../../theme";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -99,8 +100,8 @@ export function buildPortfolioActivityDrillData(
   const chartSpec = buildDrillChartSpec({
     years: rows.map((r) => r.year),
     stacks: [
-      { seriesId: "additions",     label: "Additions",     color: "#16a34a", values: rows.map((r) => r.cells.additions) },
-      { seriesId: "distributions", label: "Distributions", color: "#ef4444", values: rows.map((r) => -r.cells.distributions) },
+      { seriesId: "additions",     label: "Additions",     color: dataLight.green, values: rows.map((r) => r.cells.additions) },
+      { seriesId: "distributions", label: "Distributions", color: dataLight.red, values: rows.map((r) => -r.cells.distributions) },
     ],
     lines: [{
       seriesId: "net", label: "Net", color: PRESENTATION_THEME.chartLine,

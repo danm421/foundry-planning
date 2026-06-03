@@ -16,6 +16,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -24,14 +25,14 @@ const DISCLAIMER =
 // components/cashflow/charts/portfolio-chart.tsx. Also reused by the Portfolio
 // Growth drill (cash-flow-growth/view-model.ts).
 export const STACK_COLORS = {
-  cash:                 "#9ca3af",
-  taxable:              "#facc15",
-  retirement:           "#f97316",
-  lifeInsurance:        "#16a34a",
-  realEstate:           "#0891b2",
-  business:             "#7c3aed",
-  trustsAndBusinesses:  "#2563eb",
-  accessibleTrustAssets: "#99f6e4",
+  cash:                 dataLight.grey,
+  taxable:              dataLight.yellow,
+  retirement:           dataLight.orange,
+  lifeInsurance:        dataLight.green,
+  realEstate:           dataLight.teal,
+  business:             dataLight.purple,
+  trustsAndBusinesses:  dataLight.blue,
+  accessibleTrustAssets: dataLight.pink,
 } as const;
 
 export interface BuildPortfolioAssetsDrillInput {

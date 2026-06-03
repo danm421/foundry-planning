@@ -13,6 +13,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -32,19 +33,19 @@ const SUB_TYPE_LABELS: Record<string, string> = {
 };
 
 const SUB_TYPE_COLORS: Record<string, string> = {
-  "401k":     "#16a34a",
-  "403b":     "#16a34a",
-  ira:        "#2563eb",
-  roth_ira:   "#7c3aed",
-  roth_401k:  "#7c3aed",
-  brokerage:  "#facc15",
-  hsa:        "#0891b2",
-  "529":      "#ea580c",
-  checking:   "#9ca3af",
-  savings:    "#9ca3af",
+  "401k":     dataLight.green,
+  "403b":     dataLight.green,
+  ira:        dataLight.blue,
+  roth_ira:   dataLight.purple,
+  roth_401k:  dataLight.purple,
+  brokerage:  dataLight.yellow,
+  hsa:        dataLight.teal,
+  "529":      dataLight.orange,
+  checking:   dataLight.grey,
+  savings:    dataLight.grey,
 };
 
-const FALLBACK_COLOR = "#99f6e4";
+const FALLBACK_COLOR = dataLight.pink;
 
 export interface BuildSavingsDrillInput {
   years: ProjectionYear[];

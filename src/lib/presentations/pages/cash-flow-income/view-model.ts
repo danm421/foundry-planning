@@ -13,6 +13,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
+import { dataLight } from "@/brand";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -25,13 +26,13 @@ const INCOME_SERIES: Array<{
   color: string;
   pick: (y: ProjectionYear) => number;
 }> = [
-  { key: "salaries",        label: "Salaries",        color: "#16a34a", pick: (y) => y.income.salaries },
-  { key: "socialSecurity",  label: "Social Security", color: "#2563eb", pick: (y) => y.income.socialSecurity },
-  { key: "business",        label: "Business",        color: "#0891b2", pick: (y) => y.income.business },
-  { key: "trust",           label: "Trust",           color: "#7c3aed", pick: (y) => y.income.trust },
-  { key: "deferred",        label: "Deferred",        color: "#ea580c", pick: (y) => y.income.deferred },
-  { key: "capitalGains",    label: "Capital Gains",   color: "#facc15", pick: (y) => y.income.capitalGains },
-  { key: "other",           label: "Other",           color: "#99f6e4", pick: (y) => y.income.other },
+  { key: "salaries",        label: "Salaries",        color: dataLight.green,  pick: (y) => y.income.salaries },
+  { key: "socialSecurity",  label: "Social Security", color: dataLight.blue,   pick: (y) => y.income.socialSecurity },
+  { key: "business",        label: "Business",        color: dataLight.teal,   pick: (y) => y.income.business },
+  { key: "trust",           label: "Trust",           color: dataLight.purple, pick: (y) => y.income.trust },
+  { key: "deferred",        label: "Deferred",        color: dataLight.orange, pick: (y) => y.income.deferred },
+  { key: "capitalGains",    label: "Capital Gains",   color: dataLight.yellow, pick: (y) => y.income.capitalGains },
+  { key: "other",           label: "Other",           color: dataLight.grey,   pick: (y) => y.income.other },
 ];
 
 // Two-line headers so narrow columns wrap cleanly at the right boundary
