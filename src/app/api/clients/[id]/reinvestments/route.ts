@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, reinvestments, reinvestmentAccounts } from "@/db/schema";
+import { clients, scenarios, reinvestments, reinvestmentAccounts, reinvestmentGroups } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertModelPortfoliosInFirm } from "@/lib/db-scoping";
@@ -9,6 +9,8 @@ import {
   toReinvestmentSnapshot,
   REINVESTMENT_FIELD_LABELS,
 } from "@/lib/audit/snapshots/reinvestment";
+import { DEFAULT_GROUP_KEYS } from "@/lib/account-groups/resolver";
+import { listAccountGroups } from "@/lib/account-groups/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,26 @@ async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<
   if (!client) return null;
 
   return scenario?.id ?? null;
+}
+
+/** Validate group keys: each must be a default key or a custom group owned by
+ *  the client. Returns the list of valid keys, or an error reason. */
+async function validateGroupKeys(
+  clientId: string,
+  groupKeys: unknown,
+): Promise<{ ok: true; keys: string[] } | { ok: false; reason: string }> {
+  if (groupKeys == null) return { ok: true, keys: [] };
+  if (!Array.isArray(groupKeys) || groupKeys.some((k) => typeof k !== "string")) {
+    return { ok: false, reason: "groupKeys must be an array of strings" };
+  }
+  const keys = groupKeys as string[];
+  const customKeys = keys.filter((k) => !(DEFAULT_GROUP_KEYS as Set<string>).has(k));
+  if (customKeys.length > 0) {
+    const owned = new Set((await listAccountGroups(clientId)).map((g) => g.id));
+    const bad = customKeys.find((k) => !owned.has(k));
+    if (bad) return { ok: false, reason: `Unknown account group: ${bad}` };
+  }
+  return { ok: true, keys };
 }
 
 // GET /api/clients/[id]/reinvestments — list reinvestments for base case scenario with accountIds
@@ -49,12 +71,19 @@ export async function GET(
       .where(and(eq(reinvestments.clientId, id), eq(reinvestments.scenarioId, scenarioId)));
 
     let accountRows: (typeof reinvestmentAccounts.$inferSelect)[] = [];
+    let groupRows: (typeof reinvestmentGroups.$inferSelect)[] = [];
     if (rows.length > 0) {
       const reinvestmentIds = rows.map((r) => r.id);
-      accountRows = await db
-        .select()
-        .from(reinvestmentAccounts)
-        .where(inArray(reinvestmentAccounts.reinvestmentId, reinvestmentIds));
+      [accountRows, groupRows] = await Promise.all([
+        db
+          .select()
+          .from(reinvestmentAccounts)
+          .where(inArray(reinvestmentAccounts.reinvestmentId, reinvestmentIds)),
+        db
+          .select()
+          .from(reinvestmentGroups)
+          .where(inArray(reinvestmentGroups.reinvestmentId, reinvestmentIds)),
+      ]);
     }
 
     const result = rows.map((r) => ({
@@ -62,6 +91,9 @@ export async function GET(
       accountIds: accountRows
         .filter((a) => a.reinvestmentId === r.id)
         .map((a) => a.accountId),
+      groupKeys: groupRows
+        .filter((g) => g.reinvestmentId === r.id)
+        .map((g) => g.groupKey),
     }));
 
     return NextResponse.json(result);
@@ -102,13 +134,20 @@ export async function POST(
       customPctTaxExempt,
       realizeTaxesOnSwitch,
       accountIds,
+      groupKeys,
     } = body;
+
+    const groupCheck = await validateGroupKeys(id, groupKeys);
+    if (!groupCheck.ok) {
+      return NextResponse.json({ error: groupCheck.reason }, { status: 400 });
+    }
+    const hasIndividual = Array.isArray(accountIds) && accountIds.length > 0;
+    const hasGroups = groupCheck.keys.length > 0;
 
     if (
       !name ||
       typeof year !== "number" ||
-      !Array.isArray(accountIds) ||
-      accountIds.length === 0 ||
+      (!hasIndividual && !hasGroups) ||
       (targetType === "model_portfolio" && !modelPortfolioId) ||
       (targetType === "custom" && customGrowthRate == null)
     ) {
@@ -116,7 +155,9 @@ export async function POST(
     }
 
     const [acctCheck, mpCheck] = await Promise.all([
-      assertAccountsInClient(id, accountIds),
+      hasIndividual
+        ? assertAccountsInClient(id, accountIds)
+        : Promise.resolve({ ok: true as const }),
       modelPortfolioId != null
         ? assertModelPortfoliosInFirm(firmId, [modelPortfolioId])
         : Promise.resolve(null),
@@ -152,12 +193,22 @@ export async function POST(
         })
         .returning();
 
-      await tx.insert(reinvestmentAccounts).values(
-        accountIds.map((accountId: string) => ({
-          reinvestmentId: row.id,
-          accountId,
-        }))
-      );
+      if (hasIndividual) {
+        await tx.insert(reinvestmentAccounts).values(
+          accountIds.map((accountId: string) => ({
+            reinvestmentId: row.id,
+            accountId,
+          }))
+        );
+      }
+      if (hasGroups) {
+        await tx.insert(reinvestmentGroups).values(
+          groupCheck.keys.map((groupKey) => ({
+            reinvestmentId: row.id,
+            groupKey,
+          }))
+        );
+      }
 
       return row;
     });
@@ -171,7 +222,10 @@ export async function POST(
       snapshot: await toReinvestmentSnapshot(created),
     });
 
-    return NextResponse.json({ ...created, accountIds }, { status: 201 });
+    return NextResponse.json(
+      { ...created, accountIds: accountIds ?? [], groupKeys: groupCheck.keys },
+      { status: 201 },
+    );
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -210,21 +264,33 @@ export async function PUT(
       customPctTaxExempt,
       realizeTaxesOnSwitch,
       accountIds,
+      groupKeys,
     } = body;
 
     if (!reinvestmentId) {
       return NextResponse.json({ error: "Missing reinvestmentId" }, { status: 400 });
     }
 
-    if (Array.isArray(accountIds) && accountIds.length === 0) {
+    const groupCheck = await validateGroupKeys(id, groupKeys);
+    if (!groupCheck.ok) {
+      return NextResponse.json({ error: groupCheck.reason }, { status: 400 });
+    }
+    const accountsProvided = Array.isArray(accountIds);
+    const groupsProvided = Array.isArray(groupKeys);
+    if (
+      accountsProvided &&
+      groupsProvided &&
+      accountIds.length === 0 &&
+      groupCheck.keys.length === 0
+    ) {
       return NextResponse.json(
-        { error: "A reinvestment must target at least one account" },
-        { status: 400 }
+        { error: "A reinvestment must target at least one account or group" },
+        { status: 400 },
       );
     }
 
     const [acctCheck, mpCheck] = await Promise.all([
-      Array.isArray(accountIds) && accountIds.length > 0
+      accountsProvided && accountIds.length > 0
         ? assertAccountsInClient(id, accountIds)
         : Promise.resolve(null),
       modelPortfolioId != null
@@ -280,7 +346,7 @@ export async function PUT(
         .where(and(eq(reinvestments.id, reinvestmentId), eq(reinvestments.clientId, id)))
         .returning();
 
-      if (Array.isArray(accountIds)) {
+      if (accountsProvided) {
         await tx
           .delete(reinvestmentAccounts)
           .where(eq(reinvestmentAccounts.reinvestmentId, reinvestmentId));
@@ -291,6 +357,17 @@ export async function PUT(
               reinvestmentId,
               accountId,
             }))
+          );
+        }
+      }
+
+      if (groupsProvided) {
+        await tx
+          .delete(reinvestmentGroups)
+          .where(eq(reinvestmentGroups.reinvestmentId, reinvestmentId));
+        if (groupCheck.keys.length > 0) {
+          await tx.insert(reinvestmentGroups).values(
+            groupCheck.keys.map((groupKey) => ({ reinvestmentId, groupKey }))
           );
         }
       }
@@ -306,7 +383,7 @@ export async function PUT(
     // array — return it directly. Otherwise the join rows are untouched, so
     // read current state to build the response.
     let responseAccountIds: string[];
-    if (Array.isArray(accountIds)) {
+    if (accountsProvided) {
       responseAccountIds = accountIds;
     } else {
       const updatedAccounts = await db
@@ -315,6 +392,15 @@ export async function PUT(
         .where(eq(reinvestmentAccounts.reinvestmentId, reinvestmentId));
       responseAccountIds = updatedAccounts.map((a) => a.accountId);
     }
+
+    const responseGroupKeys = groupsProvided
+      ? groupCheck.keys
+      : (
+          await db
+            .select()
+            .from(reinvestmentGroups)
+            .where(eq(reinvestmentGroups.reinvestmentId, reinvestmentId))
+        ).map((g) => g.groupKey);
 
     const [beforeSnapshot, afterSnapshot] = await Promise.all([
       toReinvestmentSnapshot(before),
@@ -335,6 +421,7 @@ export async function PUT(
     return NextResponse.json({
       ...updated,
       accountIds: responseAccountIds,
+      groupKeys: responseGroupKeys,
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
