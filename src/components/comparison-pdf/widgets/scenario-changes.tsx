@@ -119,9 +119,9 @@ function unitOpType(unit: ChangeUnit): OpType {
 }
 
 function badgeStyle(op: OpType): { sign: string; color: string } {
-  if (op === "add") return { sign: "+", color: "#34d399" }; // emerald-400
-  if (op === "remove") return { sign: "−", color: "#f87171" }; // red-400
-  return { sign: "~", color: "#fbbf24" }; // amber-400
+  if (op === "add") return { sign: "+", color: PDF_THEME.good };
+  if (op === "remove") return { sign: "−", color: PDF_THEME.crit };
+  return { sign: "~", color: PDF_THEME.warn };
 }
 
 export function ScenarioChangesPdf({ plans, span }: Props) {

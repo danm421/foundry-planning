@@ -37,6 +37,7 @@
 
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PDF_THEME } from "@/components/pdf/theme";
+import { colorsLight } from "@/brand";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { McSharedResult } from "@/lib/comparison/widgets/types";
 import type { CellSpan, YearRange } from "@/lib/comparison/layout-schema";
@@ -143,7 +144,7 @@ const s = StyleSheet.create({
   alignRight: { textAlign: "right" },
   // Drill-down sub-table styles
   drilldownWrap: {
-    backgroundColor: "#f0ead9", // subtle warm tint over paper
+    backgroundColor: colorsLight.card2, // subtle warm tint over paper
     paddingHorizontal: 4,
     paddingVertical: 3,
     marginTop: 1,
