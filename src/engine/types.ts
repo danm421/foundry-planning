@@ -635,7 +635,12 @@ export interface RemainderBeneficiaryRef {
 
 export interface LifeInsuranceCashValueScheduleRow {
   year: number;
-  cashValue: number;
+  /** Optional per-column overrides. A column is honored only when its
+   *  policy-level schedule mode is on. Missing column → see resolver/synthesis. */
+  cashValue?: number;
+  premiumAmount?: number;
+  income?: number;
+  deathBenefit?: number;
 }
 
 export interface LifeInsurancePolicy {
@@ -648,6 +653,9 @@ export interface LifeInsurancePolicy {
   termLengthYears: number | null;
   endsAtInsuredRetirement: boolean;
   cashValueGrowthMode: "basic" | "free_form";
+  premiumScheduleMode: "off" | "scheduled";
+  deathBenefitScheduleMode: "off" | "scheduled";
+  incomeScheduleMode: "off" | "scheduled";
   postPayoutGrowthRate: number;
   /** Model portfolio driving the standalone-mode payout's growth and
    *  realization mix. The loader resolves it into `postPayoutGrowthRate` and
