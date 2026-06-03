@@ -8,7 +8,7 @@ import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { Reinvestment } from "@/engine/types";
-import type { AccountCategory } from "@/lib/account-groups/liquid-filter";
+import { isLiquid, type AccountCategory } from "@/lib/account-groups/liquid-filter";
 import { DEFAULT_GROUP_KEYS, DEFAULT_NAMES } from "@/lib/account-groups/resolver";
 
 /**
@@ -298,9 +298,14 @@ export default function AddReinvestmentForm({
   );
   const realizationBalanced = Math.abs(realizationTotal - 100) < 1e-6;
 
-  // Derive group option list + liquid-category map for expand logic.
+  // Derive group option list + liquid-category map for expand logic. Only
+  // truly-liquid categories (isLiquid: taxable/cash/retirement) belong here so
+  // custom-group member expansion in the solver-draft preview matches the
+  // projection-load path, which strips illiquid members the same way.
   const liquidCategoryById = new Map(
-    liquidAccounts.map((a) => [a.id, a.category as AccountCategory]),
+    liquidAccounts
+      .filter((a) => isLiquid(a.category as AccountCategory))
+      .map((a) => [a.id, a.category as AccountCategory]),
   );
   const customGroupMembersById = new Map(
     customGroups.map((g) => [
