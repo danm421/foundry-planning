@@ -36,7 +36,7 @@ import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
-import { GrowthRateField, parseGrowthSourceSelection } from "./growth-rate-field";
+import { GrowthRateField, parseGrowthSourceSelection, ASSET_MIX_CATEGORIES } from "./growth-rate-field";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
@@ -516,7 +516,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     onAutoSaveStateChange?.({ isDirty, canSave });
   }, [isDirty, canSave, onAutoSaveStateChange]);
 
-  const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
   const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category);
 
   // Resolve category default info for display

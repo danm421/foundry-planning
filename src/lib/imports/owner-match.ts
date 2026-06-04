@@ -8,7 +8,10 @@ export interface OwnerMatchFamilyMember {
   lastName?: string | null;
 }
 
-const JOINT_CUES = ["jtwros", "joint", " jt ", "ten com", "tenants", " & ", " and "];
+// `hint` is space-padded before matching, so space-wrapped cues match whole
+// words only (e.g. " joint " won't fire on "disjoint"). "jtwros"/"ten com" are
+// distinctive enough to match as substrings.
+const JOINT_CUES = ["jtwros", " joint ", " jt ", "ten com", " tenants ", " & ", " and "];
 
 function tokenize(s: string): string[] {
   return s

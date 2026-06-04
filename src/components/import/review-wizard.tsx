@@ -213,6 +213,23 @@ export default function ReviewWizard({
     return opts;
   }, [canonical]);
 
+  // Stable reference so the accounts step's owner-seeding effect (keyed on this
+  // array) only re-runs when the roster actually changes, not on every render.
+  const accountFamilyMembers = useMemo(
+    () =>
+      canonical.familyMembers.map((f) => ({
+        id: f.id,
+        role: (f.householdRole === "spouse"
+          ? "spouse"
+          : f.householdRole === "client"
+            ? "client"
+            : "other") as "client" | "spouse" | "child" | "other",
+        firstName: f.firstName,
+        lastName: f.lastName,
+      })),
+    [canonical.familyMembers],
+  );
+
   const assetOptions: AssetOption[] = useMemo(() => {
     const opts: AssetOption[] = [
       { kind: "asset", id: null, assetMode: "all_assets", label: "All assets (residue)" },
@@ -399,12 +416,7 @@ export default function ReviewWizard({
             modelPortfolios={growthContext.modelPortfolios}
             resolvedInflationRate={growthContext.resolvedInflationRate}
             categoryDefaults={growthContext.categoryDefaults}
-            familyMembers={canonical.familyMembers.map((f) => ({
-              id: f.id,
-              role: f.householdRole === "spouse" ? "spouse" : f.householdRole === "client" ? "client" : "other",
-              firstName: f.firstName,
-              lastName: f.lastName,
-            }))}
+            familyMembers={accountFamilyMembers}
             entities={canonical.entities}
           />
         )}

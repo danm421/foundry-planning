@@ -49,4 +49,12 @@ describe("matchOwnersFromHint", () => {
   it("returns [] when the client family member is missing and no match", () => {
     expect(matchOwnersFromHint("Nobody", undefined, [])).toEqual([]);
   });
+
+  it("does not treat 'disjoint' as a joint cue (word-boundary)", () => {
+    // Only the client name matches; the 'joint' substring inside 'disjoint'
+    // must not trigger 50/50 joint synthesis.
+    expect(matchOwnersFromHint("John Smith disjoint note", undefined, fam)).toEqual([
+      { kind: "family_member", familyMemberId: "c", percent: 1 },
+    ]);
+  });
 });

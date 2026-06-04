@@ -4,7 +4,8 @@ import { PercentInput } from "@/components/percent-input";
 import { fieldLabelClassName, selectClassName, inputClassName } from "./input-styles";
 import type { GrowthSource } from "@/lib/investments/allocation";
 
-const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
+/** Categories whose growth can be driven by a custom asset mix (and that show the asset-mix tab). */
+export const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
 const INFLATION_CATEGORIES = ["cash", "taxable", "retirement"];
 
 export interface GrowthRateModelPortfolio {
@@ -99,7 +100,7 @@ export function GrowthRateField({
             id="growthRate"
             name="growthRate"
             value={growthRatePct}
-            onChange={(raw) => onCustomPctChange(raw)}
+            onChange={onCustomPctChange}
             placeholder={customPlaceholder ?? "7"}
             className={inputClassName}
           />

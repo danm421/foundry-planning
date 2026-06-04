@@ -122,14 +122,14 @@ async function writeImportedOwners(
     if ("owners" in shape) {
       const tenantErr = await validateOwnersTenant(shape.owners, clientId);
       if (!tenantErr) {
-        for (const o of shape.owners) {
-          await tx.insert(accountOwners).values({
+        await tx.insert(accountOwners).values(
+          shape.owners.map((o) => ({
             accountId,
             familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
             entityId: o.kind === "entity" ? o.entityId : null,
             percent: o.percent.toString(),
-          });
-        }
+          })),
+        );
         return;
       }
     }

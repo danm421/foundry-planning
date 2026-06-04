@@ -377,9 +377,11 @@ describe("commitAccounts", () => {
     await commitAccounts(tx, payload, ctx);
     const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
     expect(ownerInserts).toHaveLength(1);
-    const ownerVal = (ownerInserts[0] as { values: Record<string, unknown> }).values;
-    expect(ownerVal.familyMemberId).toBe("fm-c");
-    expect(Number(ownerVal.percent)).toBe(1);
+    // owners[] is written as a single batched insert (array of rows).
+    const rows = (ownerInserts[0] as { values: unknown }).values as Record<string, unknown>[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].familyMemberId).toBe("fm-c");
+    expect(Number(rows[0].percent)).toBe(1);
   });
 
   it("falls back to coarse joint synthesis when owners[] is empty", async () => {
