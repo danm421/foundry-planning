@@ -181,6 +181,19 @@ import { buildScenarioChangesData } from "@/lib/presentations/pages/scenario-cha
 import { ScenarioChangesPagePdf } from "./pages/scenario-changes/page-pdf";
 import { ScenarioChangesOptionsControl } from "./pages/scenario-changes/options-control";
 import {
+  retirementComparisonOptionsSchema,
+  RETIREMENT_COMPARISON_OPTIONS_DEFAULT,
+} from "@/lib/presentations/pages/retirement-comparison/options-schema";
+import { summarizeRetirementComparisonOptions } from "@/lib/presentations/pages/retirement-comparison/summarize-options";
+import { estimateRetirementComparisonPageCount } from "@/lib/presentations/pages/retirement-comparison/estimate-page-count";
+import { buildRetirementComparisonData } from "@/lib/presentations/pages/retirement-comparison/view-model";
+import type {
+  RetirementComparisonOptions,
+  RetirementComparisonPageData,
+} from "@/lib/presentations/pages/retirement-comparison/types";
+import { RetirementComparisonPagePdf } from "./pages/retirement-comparison/page-pdf";
+import { RetirementComparisonOptionsControl } from "./pages/retirement-comparison/options-control";
+import {
   balanceSheetOptionsSchema,
   BALANCE_SHEET_OPTIONS_DEFAULT,
   type BalanceSheetOptions,
@@ -756,6 +769,22 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
   renderPdf: (input) => <ScenarioChangesPagePdf {...input} />,
 };
 
+export const retirementComparisonPage: PresentationPage<RetirementComparisonPageData, RetirementComparisonOptions> = {
+  id: "retirementComparison",
+  title: "Retirement Comparison",
+  description: "How a scenario's changes impact the retirement goal vs. the base case — KPIs, portfolio overlay, changes, Monte Carlo, and an AI summary.",
+  category: "Comparison",
+  defaultOptions: RETIREMENT_COMPARISON_OPTIONS_DEFAULT,
+  optionsSchema: retirementComparisonOptionsSchema,
+  summarizeOptions: summarizeRetirementComparisonOptions,
+  estimatePageCount: () => estimateRetirementComparisonPageCount(),
+  OptionsControl: RetirementComparisonOptionsControl,
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  buildData: (ctx, options) => buildRetirementComparisonData(ctx, options),
+  renderPdf: (input) => <RetirementComparisonPagePdf {...input} />,
+};
+
 export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOptions> = {
   id: "taxSummary",
   title: "Tax Summary",
@@ -837,6 +866,7 @@ export const PRESENTATION_PAGES = {
   balanceSheet: balanceSheetPage,
   entitiesBalanceSheet: entitiesBalanceSheetPage,
   scenarioChanges: scenarioChangesPage,
+  retirementComparison: retirementComparisonPage,
   lifeInsuranceSummary: lifeInsuranceSummaryPage,
 } as const;
 
