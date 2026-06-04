@@ -26,7 +26,10 @@ describe("describe/format", () => {
 
 import { describeFromSpec } from "../describe/generic";
 import { SPEC } from "../describe/specs";
+import { buildResolveContext, EMPTY_RESOLVE_DATA } from "../describe/resolve";
 import type { ScenarioChange } from "@/engine/scenario/types";
+
+const resolve = buildResolveContext(EMPTY_RESOLVE_DATA);
 
 function change(partial: Partial<ScenarioChange>): ScenarioChange {
   return {
@@ -37,7 +40,7 @@ function change(partial: Partial<ScenarioChange>): ScenarioChange {
 }
 
 describe("describeFromSpec", () => {
-  const ctx = { targetNames: { "income:abc": "Rental income" } };
+  const ctx = { targetNames: { "income:abc": "Rental income" }, resolve };
 
   it("builds an add row", () => {
     const row = describeFromSpec(change({ opType: "add", payload: {} }), ctx, SPEC.income);
@@ -60,7 +63,7 @@ describe("describeFromSpec", () => {
   it("builds a single-field edit row in field mode (no entity name)", () => {
     const row = describeFromSpec(
       change({ targetKind: "client", targetId: "p1", opType: "edit", payload: { retirementAge: { from: 65, to: 62 } } }),
-      { targetNames: {} }, SPEC.client,
+      { targetNames: {}, resolve }, SPEC.client,
     );
     expect(row).toMatchObject({ what: "Retirement age", before: "65", after: "62", area: "Plan & Assumptions" });
   });
@@ -75,7 +78,7 @@ describe("describeFromSpec", () => {
   });
 
   it("falls back to a capitalized noun when no name is known", () => {
-    const row = describeFromSpec(change({ targetId: "zzz", opType: "add", payload: {} }), { targetNames: {} }, SPEC.income);
+    const row = describeFromSpec(change({ targetId: "zzz", opType: "add", payload: {} }), { targetNames: {}, resolve }, SPEC.income);
     expect(row.what).toBe("+ Income source");
   });
 });
@@ -86,7 +89,7 @@ describe("describeChange", () => {
   it("dispatches a known kind via the spec table", () => {
     const row = describeChange(
       change({ targetKind: "roth_conversion", targetId: "r1", opType: "add", payload: {} }),
-      { targetNames: { "roth_conversion:r1": "Roth ladder 2026–2030" } },
+      { targetNames: { "roth_conversion:r1": "Roth ladder 2026–2030" }, resolve },
     );
     expect(row).toMatchObject({ area: "Taxes", what: "+ Roth ladder 2026–2030", op: "add" });
   });
@@ -94,7 +97,7 @@ describe("describeChange", () => {
   it("falls back gracefully for an unknown kind", () => {
     const row = describeChange(
       change({ targetKind: "totally_new_kind" as never, targetId: "x", opType: "add", payload: {} }),
-      { targetNames: {} },
+      { targetNames: {}, resolve },
     );
     expect(row.op).toBe("add");
     expect(row.what.length).toBeGreaterThan(0);

@@ -1,10 +1,12 @@
 import type { ScenarioChange } from "@/engine/scenario/types";
 import type { ChangeRow } from "../types";
 import type { KindSpec } from "./specs";
+import type { ResolveContext } from "./resolve";
 import { nameFor, fieldLabel, fmtValue } from "./format";
 
 export interface DescribeContext {
   targetNames: Record<string, string>;
+  resolve: ResolveContext;
 }
 
 type EditPayload = Record<string, { from: unknown; to: unknown }>;
