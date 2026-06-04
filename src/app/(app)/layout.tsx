@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import type { ReactElement } from "react";
+import { BackNavProvider } from "@/components/back-nav-provider";
 import Footer from "@/components/footer";
 import Sidebar from "@/components/sidebar";
 import Topbar from "@/components/topbar";
@@ -29,11 +30,13 @@ export default async function AppLayout({
       >
         <Sidebar collapsed={collapsed} clientsCount={clientsCount} />
       </div>
-      <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
-        <Topbar />
-        <main className="flex-1 bg-paper">{children}</main>
-        <Footer />
-      </div>
+      <BackNavProvider>
+        <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
+          <Topbar />
+          <main className="flex-1 bg-paper">{children}</main>
+          <Footer />
+        </div>
+      </BackNavProvider>
     </div>
   );
 }
