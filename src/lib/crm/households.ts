@@ -1,14 +1,17 @@
 import { db } from "@/db";
 import {
   accounts,
+  clients,
   crmHouseholds,
   crmHouseholdViews,
   scenarios,
 } from "@/db/schema";
-import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
+import { recordDelete } from "@/lib/audit/record-helpers";
+import { toHouseholdSnapshot } from "@/lib/audit/snapshots/household";
 import { recordActivity } from "./activity";
 import type { CreateCrmHouseholdInput } from "./schemas";
 
@@ -17,6 +20,7 @@ type CrmHouseholdStatus = "prospect" | "active" | "inactive" | "archived";
 export async function listCrmHouseholds(opts?: {
   search?: string;
   status?: string;
+  deleted?: boolean;
   limit?: number;
   offset?: number;
 }) {
@@ -24,6 +28,11 @@ export async function listCrmHouseholds(opts?: {
   const limit = opts?.limit ?? 50;
   const offset = opts?.offset ?? 0;
   const conditions = [eq(crmHouseholds.firmId, firmId)];
+  conditions.push(
+    opts?.deleted
+      ? isNotNull(crmHouseholds.deletedAt)
+      : isNull(crmHouseholds.deletedAt),
+  );
   if (opts?.status) {
     conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
   }
@@ -37,7 +46,8 @@ export async function listCrmHouseholds(opts?: {
     },
     limit,
     offset,
-    orderBy: (t, { desc }) => [desc(t.updatedAt)],
+    orderBy: (t, { desc }) =>
+      opts?.deleted ? [desc(t.deletedAt)] : [desc(t.updatedAt)],
   });
 }
 
@@ -77,6 +87,7 @@ export async function listRecentlyOpenedHouseholds(opts: {
   const conditions = [
     eq(crmHouseholds.firmId, firmId),
     inArray(crmHouseholds.id, ids),
+    isNull(crmHouseholds.deletedAt),
   ];
   if (opts.status) {
     conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
@@ -264,6 +275,109 @@ export async function deleteCrmHousehold(id: string) {
     resourceId: id,
     firmId,
   });
+}
+
+/** Move a household to the Trash. Idempotent — returns early if already there. */
+export async function softDeleteCrmHousehold(id: string, deletedBy: string) {
+  const firmId = await requireOrgId();
+  const existing = await db.query.crmHouseholds.findFirst({
+    where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
+  });
+  if (!existing) throw new Error("Household not found");
+  if (existing.deletedAt) return existing;
+
+  const [updated] = await db
+    .update(crmHouseholds)
+    .set({ deletedAt: sql`now()`, deletedBy, updatedAt: sql`now()` })
+    .where(eq(crmHouseholds.id, id))
+    .returning();
+
+  await recordAudit({
+    action: "crm.household.soft_delete",
+    resourceType: "crm_household",
+    resourceId: id,
+    firmId,
+  });
+  await recordActivity({
+    householdId: id,
+    kind: "status_change",
+    title: "Household moved to Trash",
+    occurredAt: new Date(),
+  });
+  return updated;
+}
+
+/** Restore a household from the Trash. Idempotent for already-live rows. */
+export async function restoreCrmHousehold(id: string) {
+  const firmId = await requireOrgId();
+  const existing = await db.query.crmHouseholds.findFirst({
+    where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
+  });
+  if (!existing) throw new Error("Household not found");
+  if (!existing.deletedAt) return existing;
+
+  const [updated] = await db
+    .update(crmHouseholds)
+    .set({ deletedAt: null, deletedBy: null, updatedAt: sql`now()` })
+    .where(eq(crmHouseholds.id, id))
+    .returning();
+
+  await recordAudit({
+    action: "crm.household.restore",
+    resourceType: "crm_household",
+    resourceId: id,
+    firmId,
+  });
+  await recordActivity({
+    householdId: id,
+    kind: "status_change",
+    title: "Household restored from Trash",
+    occurredAt: new Date(),
+  });
+  return updated;
+}
+
+/**
+ * Permanently delete a household and everything under it. RESTRICT-safe: the
+ * planning `clients` row (if any) is deleted first — cascading all planning
+ * children — before the `crm_households` row, which cascades CRM contacts /
+ * views / documents / activity. Firm-agnostic so the purge cron can call it
+ * across firms; the manual-delete endpoint supplies the caller's firmId.
+ */
+export async function purgeCrmHouseholdById(id: string, firmId: string) {
+  const household = await db.query.crmHouseholds.findFirst({
+    where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
+    with: { planningClient: { columns: { id: true } } },
+  });
+  if (!household) throw new Error("Household not found");
+  if (!household.deletedAt) {
+    throw new Error("Household must be trashed before it can be purged");
+  }
+
+  const snapshot = toHouseholdSnapshot(household);
+  const planningClientId = household.planningClient?.id ?? null;
+
+  await db.transaction(async (tx) => {
+    if (planningClientId) {
+      await tx.delete(clients).where(eq(clients.id, planningClientId));
+    }
+    await tx.delete(crmHouseholds).where(eq(crmHouseholds.id, id));
+  });
+
+  await recordDelete({
+    action: "crm.household.delete",
+    resourceType: "crm_household",
+    resourceId: id,
+    clientId: planningClientId,
+    firmId,
+    snapshot,
+  });
+}
+
+/** Manual permanent-delete entry point — org-scoped wrapper over purgeCrmHouseholdById. */
+export async function purgeCrmHousehold(id: string) {
+  const firmId = await requireOrgId();
+  await purgeCrmHouseholdById(id, firmId);
 }
 
 export async function countCrmHouseholdsForFirm(firmId: string): Promise<number> {
