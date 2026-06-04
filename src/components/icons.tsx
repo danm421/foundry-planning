@@ -211,13 +211,23 @@ export function FoundryMark({ width = 30, height = 30, ...props }: IconProps) {
           <stop offset="100%" stopColor="#b45309" suppressHydrationWarning />
         </linearGradient>
       </defs>
-      <path d="M845 351 L393 351 L393 810 L476 888 L477 888 L477 434 L478 433 L762 433 Z" fill={`url(#${front})`} />
-      <path d="M800 504 L764 496 L533 496 L533 581 L757 581 L782 588 L794 596 L804 607 L810 621 L810 638 L803 653 L791 664 L769 672 L535 673 L552 690 L551 691 L533 674 L533 931 L618 998 L618 756 L768 756 L807 749 L834 737 L855 722 L874 701 L883 687 L890 671 L896 647 L897 622 L892 596 L880 569 L864 547 L846 530 L824 515 Z" fill={`url(#${front})`} />
-      <path d="M533 674 L618 756 L618 998 L533 931 Z" fill={`url(#${deep})`} opacity="0.98" />
-      <path d="M393 810 L476 888 L477 433 L393 351 Z" fill={`url(#${front})`} opacity="0.96" />
-      <path d="M533 674 L618 756" fill="none" stroke="#7c3f00" strokeWidth="2" strokeOpacity="0.45" suppressHydrationWarning />
-      <path d="M393 351 H845 L834 362 H402 V798 L393 810 Z" fill="#fbbf24" opacity="0.22" suppressHydrationWarning />
-      <path d="M533 496 H764 C793 496 820 505 846 524 C819 514 794 509 764 509 H546 V568 H533 Z" fill="#fbbf24" opacity="0.20" suppressHydrationWarning />
+      {/* Gold mark — shown in dark theme */}
+      <g className="fp-mark__color">
+        <path d="M845 351 L393 351 L393 810 L476 888 L477 888 L477 434 L478 433 L762 433 Z" fill={`url(#${front})`} />
+        <path d="M800 504 L764 496 L533 496 L533 581 L757 581 L782 588 L794 596 L804 607 L810 621 L810 638 L803 653 L791 664 L769 672 L535 673 L552 690 L551 691 L533 674 L533 931 L618 998 L618 756 L768 756 L807 749 L834 737 L855 722 L874 701 L883 687 L890 671 L896 647 L897 622 L892 596 L880 569 L864 547 L846 530 L824 515 Z" fill={`url(#${front})`} />
+        <path d="M533 674 L618 756 L618 998 L533 931 Z" fill={`url(#${deep})`} opacity="0.98" />
+        <path d="M393 810 L476 888 L477 433 L393 351 Z" fill={`url(#${front})`} opacity="0.96" />
+        <path d="M533 674 L618 756" fill="none" stroke="#7c3f00" strokeWidth="2" strokeOpacity="0.45" suppressHydrationWarning />
+        <path d="M393 351 H845 L834 362 H402 V798 L393 810 Z" fill="#fbbf24" opacity="0.22" suppressHydrationWarning />
+        <path d="M533 496 H764 C793 496 820 505 846 524 C819 514 794 509 764 509 H546 V568 H533 Z" fill="#fbbf24" opacity="0.20" suppressHydrationWarning />
+      </g>
+      {/* Solid-black mark — shown in light theme (canonical fp-mark-black) */}
+      <g className="fp-mark__black" fill="#000000">
+        <path d="M845 351 L393 351 L393 810 L476 888 L477 888 L477 434 L478 433 L762 433 Z" />
+        <path d="M800 504 L764 496 L533 496 L533 581 L757 581 L782 588 L794 596 L804 607 L810 621 L810 638 L803 653 L791 664 L769 672 L535 673 L552 690 L551 691 L533 674 L533 931 L618 998 L618 756 L768 756 L807 749 L834 737 L855 722 L874 701 L883 687 L890 671 L896 647 L897 622 L892 596 L880 569 L864 547 L846 530 L824 515 Z" />
+        <path d="M533 674 L618 756 L618 998 L533 931 Z" />
+        <path d="M393 810 L476 888 L477 433 L393 351 Z" />
+      </g>
     </svg>
   );
 }

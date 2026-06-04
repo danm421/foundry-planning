@@ -163,6 +163,17 @@
   color-scheme: light;
 }
 
+/* Foundry brand mark: gold gradient in dark theme, solid black in light theme. */
+.fp-mark__black {
+  display: none;
+}
+:root[data-theme="light"] .fp-mark__color {
+  display: none;
+}
+:root[data-theme="light"] .fp-mark__black {
+  display: inline;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
