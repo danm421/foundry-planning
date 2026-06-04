@@ -23,7 +23,7 @@ export default function BrandMarkToggle({
     });
   }
 
-  const size = collapsed ? 44 : 56;
+  const size = collapsed ? 66 : 84;
   return (
     <button
       type="button"

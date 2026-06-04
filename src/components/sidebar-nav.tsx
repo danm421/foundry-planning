@@ -7,9 +7,7 @@ import {
   HomeIcon,
   ClientsIcon,
   FolderIcon,
-  FileTextIcon,
   ListCheckIcon,
-  BarChartIcon,
   SettingsIcon,
 } from "./icons";
 
@@ -32,14 +30,12 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: <HomeIcon />, label: "Home", placeholder: true },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
-      { icon: <FileTextIcon />, label: "Presentations", placeholder: true },
       { icon: <ListCheckIcon />, label: "Tasks", href: "/tasks" },
     ],
   },
   {
     label: "FIRM",
     items: [
-      { icon: <BarChartIcon />, label: "Reports", placeholder: true },
       { icon: <FolderIcon />, label: "Documents", placeholder: true },
       { icon: <SettingsIcon />, label: "Settings", href: "/settings" },
     ],
