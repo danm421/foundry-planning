@@ -13,6 +13,16 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Add-row skeleton: "+ Name" / Added, with caller-supplied detail segments. */
+export function addRow(area: ChangeRow["area"], name: string, detail: string[]): ChangeRow {
+  return { area, what: `+ ${name}`, op: "add", before: "—", after: "Added", detail };
+}
+
+/** Remove-row skeleton: name / Removed (name + kind only — no base-plan load). */
+export function removeRow(area: ChangeRow["area"], name: string, detail: string[]): ChangeRow {
+  return { area, what: name, op: "remove", before: "In plan", after: "Removed", detail };
+}
+
 export function editRow(
   c: ScenarioChange,
   spec: KindSpec,
@@ -25,15 +35,16 @@ export function editRow(
     const f = fields[0];
     const { from, to } = payload[f] ?? { from: null, to: null };
     const what = spec.whatMode === "field" ? fieldLabel(f) : `${name} · ${fieldLabel(f)}`;
-    return { area: spec.area, what, op: "edit", before: fmtValue(from), after: fmtValue(to), why: spec.whyEdit };
+    return { area: spec.area, what, op: "edit", before: fmtValue(from), after: fmtValue(to), detail: [spec.whyEdit] };
   }
 
   const what = spec.whatMode === "field" ? capitalize(spec.noun) : name;
-  const why =
+  // One detail segment per changed field: "Label: before → after".
+  const detail =
     fields.length === 0
-      ? spec.whyEdit
-      : `Updates ${fields.map((f) => fieldLabel(f).toLowerCase()).join(", ")}.`;
-  return { area: spec.area, what, op: "edit", before: "—", after: "Updated", why };
+      ? [spec.whyEdit]
+      : fields.map((f) => `${fieldLabel(f)}: ${fmtValue(payload[f]?.from)} → ${fmtValue(payload[f]?.to)}`);
+  return { area: spec.area, what, op: "edit", before: "—", after: "Updated", detail };
 }
 
 export function describeFromSpec(
@@ -44,10 +55,10 @@ export function describeFromSpec(
   const name = nameFor(c, ctx.targetNames) ?? capitalize(spec.noun);
 
   if (c.opType === "add") {
-    return { area: spec.area, what: `+ ${name}`, op: "add", before: "—", after: "Added", why: spec.whyAdd };
+    return addRow(spec.area, name, [spec.whyAdd]);
   }
   if (c.opType === "remove") {
-    return { area: spec.area, what: name, op: "remove", before: "In plan", after: "Removed", why: spec.whyRemove };
+    return removeRow(spec.area, name, [spec.whyRemove]);
   }
   return editRow(c, spec, name);
 }

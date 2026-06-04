@@ -31,7 +31,8 @@ const s = StyleSheet.create({
   mCell: { flex: 1, fontSize: 7.5, color: T.ink, textAlign: "right" },
   mTh: { fontSize: 6, color: T.ink3, fontWeight: 700, textTransform: "uppercase" },
   cRow: { flexDirection: "row", paddingVertical: 2.5, borderBottomWidth: 0.5, borderBottomColor: T.hair },
-  cWhat: { flex: 1, fontSize: 7.5, color: T.ink },
+  cWhat: { fontSize: 7.5, color: T.ink },
+  cDetail: { fontSize: 6.5, color: T.ink3, lineHeight: 1.3, marginTop: 1 },
   cVals: { flexDirection: "row", alignItems: "baseline", gap: 3 },
   cBefore: { fontSize: 7.5, color: T.ink3, textAlign: "right" },
   cArrow: { fontSize: 7, color: T.ink3 },
@@ -83,7 +84,10 @@ function ChangeRowView({ row }: { row: ChangeRow }) {
   const showBefore = row.op === "edit" && row.before !== "—";
   return (
     <View style={s.cRow} wrap={false}>
-      <Text style={s.cWhat}>{row.what}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={s.cWhat}>{row.what}</Text>
+        {row.detail.length > 0 ? <Text style={s.cDetail}>{row.detail.join(" · ")}</Text> : null}
+      </View>
       {showBefore ? (
         <View style={s.cVals}>
           <Text style={s.cBefore}>{row.before}</Text>

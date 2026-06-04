@@ -18,7 +18,8 @@ export interface ChangeRow {
   op: ChangeOp;
   before: string;
   after: string;
-  why: string;
+  /** Ordered fact segments shown in the DETAILS column (one rendered line each). */
+  detail: string[];
 }
 
 /** A flat row, or a labeled cluster of rows sharing a toggle group. */

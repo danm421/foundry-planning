@@ -71,7 +71,7 @@ describe("describeFromSpec", () => {
       ctx, SPEC.income,
     );
     expect(row).toMatchObject({ what: "Rental income", before: "—", after: "Updated" });
-    expect(row.why).toContain("monthly amount");
+    expect(row.detail.join(" ")).toContain("Monthly amount");
   });
 
   it("falls back to a capitalized noun when no name is known", () => {

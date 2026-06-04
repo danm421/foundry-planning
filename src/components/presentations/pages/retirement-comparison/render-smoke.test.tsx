@@ -27,7 +27,7 @@ const data: RetirementComparisonPageData = {
     baseAtEnd: { total: 2_000_000, cash: 200_000, retirement: 900_000, taxable: 900_000 },
     scenarioAtEnd: { total: 5_300_000, cash: 500_000, retirement: 2_600_000, taxable: 2_200_000 },
   },
-  changeUnits: [{ kind: "row", row: { area: "Plan & Assumptions", what: "Retirement age", op: "edit", before: "65", after: "62", why: "" } }],
+  changeUnits: [{ kind: "row", row: { area: "Plan & Assumptions", what: "Retirement age", op: "edit", before: "65", after: "62", detail: [] } }],
   showChanges: true, showPortfolioMatrix: true, showAiSummary: true,
   aiMarkdown: "Delaying real estate and adding Roth conversions lifts your probability of success from 72% to 91%.",
 };
