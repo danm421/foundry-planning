@@ -266,6 +266,41 @@ export function otherExpensePayload(draft: QsOtherExpenseDraft, ctx: QsContext) 
   };
 }
 
+/**
+ * Defensive fallback for the Expenses step when a seeded living-expense stub is
+ * missing — builds the same current/retirement phase row the client seeder makes.
+ */
+export function livingExpensePayload(
+  phase: "current" | "retirement",
+  amount: number,
+  ctx: QsContext,
+) {
+  if (phase === "current") {
+    return {
+      type: "living",
+      name: "Current Living Expenses",
+      annualAmount: amount,
+      startYear: ctx.planStartYear,
+      endYear: resolveMilestone("client_retirement", ctx.milestones, "end") ?? ctx.planEndYear,
+      startYearRef: "plan_start" as const,
+      endYearRef: "client_retirement" as const,
+      growthRate: "0.03",
+      growthSource: "inflation" as const,
+    };
+  }
+  return {
+    type: "living",
+    name: "Retirement Living Expenses",
+    annualAmount: amount,
+    startYear: resolveMilestone("client_retirement", ctx.milestones, "start") ?? ctx.planStartYear,
+    endYear: ctx.planEndYear,
+    startYearRef: "client_retirement" as const,
+    endYearRef: "plan_end" as const,
+    growthRate: "0.03",
+    growthSource: "inflation" as const,
+  };
+}
+
 export function savingsPayload(draft: QsSavingsDraft, ctx: QsContext) {
   const startYear = draft.startYear ?? ctx.planStartYear;
   const endYear =

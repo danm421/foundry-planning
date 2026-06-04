@@ -5,6 +5,7 @@ import {
   ssPatch,
   accountPayload,
   liabilityPayload,
+  livingExpensePayload,
   savingsPayload,
   insurancePayload,
   planSettingsPayload,
@@ -111,6 +112,31 @@ describe("liabilityPayload", () => {
     expect(p.termMonths).toBe(360);
     // 300k @ 6%/30y ≈ 1798.65
     expect(Math.round(Number(p.monthlyPayment))).toBe(1799);
+  });
+});
+
+describe("livingExpensePayload", () => {
+  it("current: plan_start -> client_retirement", () => {
+    const p = livingExpensePayload("current", 80000, ctx);
+    expect(p).toMatchObject({
+      type: "living",
+      name: "Current Living Expenses",
+      annualAmount: 80000,
+      startYearRef: "plan_start",
+      endYearRef: "client_retirement",
+      startYear: 2026,
+    });
+  });
+  it("retirement: client_retirement -> plan_end", () => {
+    const p = livingExpensePayload("retirement", 60000, ctx);
+    expect(p).toMatchObject({
+      type: "living",
+      name: "Retirement Living Expenses",
+      annualAmount: 60000,
+      startYearRef: "client_retirement",
+      endYearRef: "plan_end",
+      endYear: 2060,
+    });
   });
 });
 
