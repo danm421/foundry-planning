@@ -3535,3 +3535,38 @@ export const presentationTemplates = pgTable(
 
 export type PresentationTemplateRow = InferSelectModel<typeof presentationTemplates>;
 export type NewPresentationTemplateRow = InferInsertModel<typeof presentationTemplates>;
+
+// Scenario compute cache: content-addressed store for expensive compute results
+// (Monte Carlo, Life Insurance solve). One row per (scenarioId, kind), keyed by
+// a SHA-256 hash of the normalized inputs. `payload` is intentionally untyped
+// jsonb — helper code in lib/ casts it to the appropriate result type at the
+// read boundary, avoiding a db→lib import cycle.
+export const scenarioComputeCache = pgTable(
+  "scenario_compute_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    scenarioId: uuid("scenario_id")
+      .notNull()
+      .references(() => scenarios.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["monte_carlo", "life_insurance_solve"] }).notNull(),
+    inputHash: text("input_hash").notNull(),
+    trials: integer("trials").notNull(),
+    engineVersion: integer("engine_version").notNull(),
+    payload: jsonb("payload").notNull(),
+    computeMs: integer("compute_ms"),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("scenario_compute_cache_scenario_kind_idx").on(t.scenarioId, t.kind),
+    index("scenario_compute_cache_client_idx").on(t.clientId),
+  ],
+);
+
+export type ScenarioComputeCacheRow = InferSelectModel<typeof scenarioComputeCache>;
+export type NewScenarioComputeCacheRow = InferInsertModel<typeof scenarioComputeCache>;
