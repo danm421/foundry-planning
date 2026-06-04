@@ -28,6 +28,9 @@ const BODY = z.object({
     .min(1)
     .max(60)
     .regex(/\S/, "name must not be empty"),
+  /** MC seed from the canonical solve run. When present, stored on the
+   *  scenario row so its report reproduces the same PoS. */
+  seed: z.number().int().optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations, name } = parsed.data;
+    const { source, mutations, name, seed } = parsed.data;
 
     const { effectiveTree } = await loadEffectiveTree(clientId, firmId, source, {});
     const drafts = mutationsToScenarioChanges(
@@ -69,6 +72,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           clientId,
           name,
           isBaseCase: false,
+          monteCarloSeed: seed ?? null,
         })
         .returning();
 

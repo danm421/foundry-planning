@@ -55,6 +55,7 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   let iteration = 0;
   let lastEvaluatedValue: number | null = null;
   let lastProjection: ProjectionYear[] | null = null;
+  let lastTree: ClientData | null = null;
 
   const evaluate = async (value: number): Promise<number> => {
     if (args.signal?.aborted) throw new Error("aborted");
@@ -86,6 +87,7 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     });
     lastEvaluatedValue = value;
     lastProjection = projection;
+    lastTree = tree;
     args.onProgress?.({ iteration, candidateValue: value, achievedPoS: mc.successRate });
     return mc.successRate;
   };
@@ -109,11 +111,31 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     await evaluate(bisectResult.solvedValue);
   }
 
+  // Canonical 1,000-trial run on the converged tree so the displayed PoS matches
+  // the report/PDF (which use 1,000 trials). The 250-trial search above is for
+  // speed only; this final pass uses the same seed for repeatability.
+  const canonicalEngine = createReturnEngine({
+    indices: args.mcPayload.indices,
+    correlation: args.mcPayload.correlation,
+    seed: args.mcPayload.seed,
+  });
+  const canonical = await runMonteCarlo({
+    data: lastTree!,
+    returnEngine: canonicalEngine,
+    accountMixes,
+    trials: 1000,
+    requiredMinimumAssetLevel: args.mcPayload.requiredMinimumAssetLevel,
+    signal: args.signal,
+    yieldEvery: 50,
+  });
+
   return {
     status: bisectResult.status,
     solvedValue: bisectResult.solvedValue,
     achievedPoS: bisectResult.achievedPoS,
+    canonicalPoS: canonical.successRate,
     iterations: bisectResult.iterations,
     finalProjection: lastProjection!,
+    seed: args.mcPayload.seed,
   };
 }
