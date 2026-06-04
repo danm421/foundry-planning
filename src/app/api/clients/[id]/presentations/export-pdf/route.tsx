@@ -296,10 +296,11 @@ export async function POST(
             // transfer / savings / roth / gift / will changes render rich
             // references instead of terse fallbacks. The reinvestment
             // enrichment (model-portfolio + base-allocation maps) is left empty
-            // here: no describer consumes it yet and production carries no
-            // reinvestment changes, so deriving it from the investments bundle
-            // would be unverifiable plumbing. The describer degrades gracefully
-            // when those maps are empty. See scenario-changes-resolve.ts.
+            // here: the reinvestment describer consumes those maps but degrades
+            // gracefully when they're empty, and production carries no
+            // reinvestment changes, so deriving them from the investments bundle
+            // would be unverifiable plumbing. applyReinvestmentEnrichment() is
+            // the ready-to-wire seam. See scenario-changes-resolve.ts.
             const resolve = buildBaseResolveData(clientData);
             if (hasReinvestmentChange(changes)) {
               console.warn(
