@@ -48,23 +48,39 @@ describe("useSharedMcRun", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("fetches once when enabled=true", async () => {
+  it("fetches the cached result per saved scenario", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({
-        indices: {},
-        correlation: {},
-        seed: 1,
-        accountMixes: [],
-        requiredMinimumAssetLevel: 0.9,
-        startingLiquidBalance: 1_000_000,
+        payload: { summary: { successRate: 0.85 } },
+        raw: {
+          successRate: 0.85,
+          endingLiquidAssets: [],
+          byYearLiquidAssetsPerTrial: [],
+        },
+        meta: {
+          requiredMinimumAssetLevel: 0.9,
+          startingLiquidBalance: 1_000_000,
+          planStartYear: 2026,
+          clientBirthYear: 1970,
+        },
       }),
     });
     const { result } = renderHook(() =>
       useSharedMcRun({ clientId: "c", plans: [makePlan("base"), makePlan("a")], enabled: true }),
     );
     await waitFor(() => expect(result.current.result?.perPlan.length).toBe(2));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // One cache fetch per saved-scenario plan; no monte-carlo-data fetch.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/clients/c/monte-carlo?scenario=base",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/clients/c/monte-carlo?scenario=a",
+    );
+    expect(result.current.result?.threshold).toBe(0.9);
+    expect(result.current.result?.planStartYear).toBe(2026);
+    expect(result.current.result?.clientBirthYear).toBe(1970);
   });
 });
