@@ -25,6 +25,7 @@ import type {
 import { resolveReinvestments } from "@/lib/projection/resolve-reinvestments";
 import { reResolveInflationGrowth } from "@/lib/projection/resolve-inflation-growth";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
+import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { resolveRefYears } from "@/lib/year-refs";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
@@ -143,8 +144,11 @@ export function applyScenarioChangesWithRefs(
   // with missing / orphaned / stale premiums. Idempotent — unchanged policies
   // re-derive to the same expense rows.
   const withPremiums = withSynthesizedPremiums(inflationResolved);
+  // Re-synthesize life-insurance scheduled income over the same effective
+  // accounts. Idempotent — strips prior policy-income rows and re-derives.
+  const withPolicyIncome = withSynthesizedPolicyIncome(withPremiums);
 
-  return { effectiveTree: withPremiums, warnings };
+  return { effectiveTree: withPolicyIncome, warnings };
 }
 
 export const loadEffectiveTree = cache(

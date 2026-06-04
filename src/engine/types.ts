@@ -787,6 +787,12 @@ export interface Income {
    *  serialize to `{}`, which broke client-side projection runs that go
    *  through the projection-data API or a frozen scenario snapshot. */
   scheduleOverrides?: Record<number, number>;
+  /** Provenance. "policy" = synthesized from a life-insurance policy's
+   *  scheduled income column. Mirrors Expense.source. */
+  source?: "manual" | "extracted" | "policy";
+  /** When source = "policy", the life-insurance account whose income
+   *  schedule produced this synthetic income row. */
+  sourcePolicyAccountId?: string;
   /** SS-specific. When unset, engine treats as "manual_amount" (legacy). */
   ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
   /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
