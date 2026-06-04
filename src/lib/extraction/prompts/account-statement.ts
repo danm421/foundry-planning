@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-04-29.2";
+export const ACCOUNT_STATEMENT_VERSION = "2026-06-04.1";
 
 export const ACCOUNT_STATEMENT_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following account/brokerage statement.
@@ -11,6 +11,7 @@ Return a JSON object with this exact structure:
       "category": "one of: taxable, cash, retirement, real_estate, business, life_insurance",
       "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, 403b, 529, trust, other",
       "owner": "one of: client, spouse, joint (infer from account title or registration)",
+      "ownerNameHint": "The exact account registration / title names as written on the statement, e.g. 'John A. Smith & Jane B. Smith JTWROS'. Copy the names verbatim; do not normalize.",
       "value": 0,
       "basis": 0,
       "accountNumberLast4": "Last 4 characters of the account number, digits or alphanumeric",
@@ -41,5 +42,6 @@ Extraction rules:
 - If a margin balance or loan appears, add it to liabilities
 - DO NOT extract the full account number. Capture only the last 4 characters and put them in "accountNumberLast4". If the statement only shows masked digits like "****5678", use "5678".
 - "custodian" is the institution that holds the account — usually visible in the document header or address block. Use a clean, normalized name without LLC/Inc suffixes (e.g. "Fidelity" not "Fidelity Brokerage Services LLC").
+- "ownerNameHint": copy the registration/title line verbatim (all names + any 'JTWROS'/'Joint'/'TOD' wording). This is used to match owners to the client's household. Still also fill the coarse "owner" enum.
 
 Return ONLY valid JSON. No explanation, no markdown.`;
