@@ -77,6 +77,9 @@ function mkPolicy(opts: {
     termLengthYears: 40, // in-force well past every death year tested
     endsAtInsuredRetirement: false,
     cashValueGrowthMode: "basic",
+    premiumScheduleMode: "off",
+    deathBenefitScheduleMode: "off",
+    incomeScheduleMode: "off",
     postPayoutGrowthRate: 0,
     cashValueSchedule: [],
   };
