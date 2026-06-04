@@ -46,13 +46,10 @@ export function PortfolioAnalysisOptionsControl({ value, onChange }: { value: Po
         </div>
       </OptionsGroup>
       <OptionsGroup label="Sort">
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Sort by</span>
-          <select className="rounded border border-hair bg-card-2 px-2 py-1 text-ink"
-            value={value.sortKey} onChange={(e) => onChange({ ...value, sortKey: e.target.value as PortfolioAnalysisOptions["sortKey"] })}>
-            {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-        </label>
+        <select className="rounded border border-hair bg-card-2 px-2 py-1 text-ink"
+          value={value.sortKey} onChange={(e) => onChange({ ...value, sortKey: e.target.value as PortfolioAnalysisOptions["sortKey"] })}>
+          {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
         <label className="flex items-center gap-2 hover:text-ink">
           <input type="checkbox" className="accent-accent" checked={value.sortDir === "desc"} onChange={(e) => onChange({ ...value, sortDir: e.target.checked ? "desc" : "asc" })} />
           <span>Descending</span>
