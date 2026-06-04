@@ -15,16 +15,13 @@ export function ScenarioChangesOptionsControl({ value, onChange }: Props) {
   return (
     <OptionsRow>
       <OptionsGroup label="Title">
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Title</span>
-          <input
-            type="text"
-            aria-label="Page title"
-            className="w-full rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
-            value={value.title}
-            onChange={(e) => onChange({ ...value, title: e.target.value })}
-          />
-        </label>
+        <input
+          type="text"
+          aria-label="Page title"
+          className="w-full rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
+          value={value.title}
+          onChange={(e) => onChange({ ...value, title: e.target.value })}
+        />
       </OptionsGroup>
       <OptionsGroup label="Display">
         <label className="flex items-center gap-2 hover:text-ink">
