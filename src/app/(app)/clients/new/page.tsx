@@ -11,9 +11,9 @@ export default function NewClientPage() {
         >
           <SparkleIcon width={22} height={22} />
         </span>
-        <h1 className="text-[24px] font-semibold leading-tight text-ink">Add a new client</h1>
+        <h1 className="text-[24px] font-semibold leading-tight text-ink">Start planning</h1>
         <p className="mt-2 max-w-sm text-[14px] leading-relaxed text-ink-3">
-          Start with the basics — we&apos;ll walk you through household, accounts, cash flow, and the rest. Everything is editable later.
+          Choose how you&apos;d like to set up this household&apos;s plan. Everything is editable later.
         </p>
       </div>
       <section className="rounded-[10px] border border-hair bg-card p-6 sm:p-7">
