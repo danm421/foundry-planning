@@ -219,14 +219,12 @@ function Editable({
   const [open, setOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const inputId = `s-${workingRule.id}`;
-  const isDollarMode =
-    !workingRule.contributeMax &&
-    !(workingRule.annualPercent != null && workingRule.annualPercent > 0);
-  const altDisplay = workingRule.contributeMax
-    ? "IRS max"
-    : workingRule.annualPercent != null && workingRule.annualPercent > 0
-      ? `${formatPct(workingRule.annualPercent)} of salary`
-      : "";
+  const isMaxMode = !!workingRule.contributeMax;
+  const isPercentMode =
+    !isMaxMode &&
+    workingRule.annualPercent != null &&
+    workingRule.annualPercent > 0;
+  const isDollarMode = !isMaxMode && !isPercentMode;
 
   const target: SolveLeverKey = { kind: "savings-contribution", accountId: workingRule.accountId };
   const isSolvingHere =
@@ -271,15 +269,31 @@ function Editable({
               })
             }
           />
+        ) : isPercentMode ? (
+          <>
+            <PercentAmountInput
+              id={inputId}
+              label={`${label} (% of salary)`}
+              defaultValue={workingRule.annualPercent ?? 0}
+              onCommit={(decimal) =>
+                onChange({
+                  kind: "savings-annual-percent",
+                  accountId: workingRule.accountId,
+                  percent: decimal,
+                })
+              }
+            />
+            <span className="whitespace-nowrap text-[12px] text-ink-3">of salary</span>
+          </>
         ) : (
           <button
             type="button"
             onClick={() => setOpen(true)}
             id={inputId}
-            className="h-9 w-32 rounded-md border border-hair-2 bg-card-2 px-2.5 text-left text-[14px] text-ink tabular border-l-2 border-l-accent/70 hover:bg-card-hover focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            className="h-9 rounded-md border border-hair-2 bg-card-2 px-3 text-left text-[14px] text-ink tabular border-l-2 border-l-accent/70 whitespace-nowrap hover:bg-card-hover focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
             aria-label={`Edit ${label}`}
           >
-            {altDisplay}
+            IRS max
           </button>
         )}
         <button
@@ -384,4 +398,55 @@ function CurrencyAmountInput({
       />
     </div>
   );
+}
+
+/** Compact percent input with a trailing "%", for "% of salary" contributions.
+ *  Stores/emits the value as a decimal (0.10 = 10%). */
+function PercentAmountInput({
+  id,
+  label,
+  defaultValue,
+  onCommit,
+}: {
+  id: string;
+  label: string;
+  defaultValue: number;
+  onCommit: (decimal: number) => void;
+}) {
+  const [display, setDisplay] = useState<string>(formatPercentInput(defaultValue));
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
+    setDisplay(raw);
+    if (raw === "" || raw === ".") {
+      onCommit(0);
+      return;
+    }
+    const n = parseFloat(raw);
+    if (Number.isNaN(n) || n < 0) return;
+    onCommit(n / 100);
+  }
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        value={display}
+        onChange={handleChange}
+        className="h-9 w-20 rounded-md border border-hair-2 bg-card-2 pl-2.5 pr-6 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+        aria-label={label}
+      />
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
+        %
+      </span>
+    </div>
+  );
+}
+
+/** Render a stored decimal percent (0.10) as an editable number string ("10"). */
+function formatPercentInput(decimal: number): string {
+  const pct = Math.round(decimal * 10000) / 100;
+  return pct % 1 === 0 ? String(pct) : pct.toFixed(2);
 }
