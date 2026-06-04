@@ -33,6 +33,13 @@ import { dateLong } from "@/lib/presentations/format";
 import { recordAudit } from "@/lib/audit";
 import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
+import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
+import { getOrComputeLifeInsuranceSolve } from "@/lib/compute-cache/life-insurance";
+import type {
+  LifeInsuranceSummaryOptions,
+  LiSolved,
+} from "@/lib/presentations/pages/life-insurance-summary/options-schema";
+import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
@@ -301,6 +308,73 @@ export async function POST(
     const lifeInsurance = needsLifeInsurance
       ? await loadLifeInsuranceInventory(id, firmId, clientFullName, spouseFirstName)
       : undefined;
+
+    // Life Insurance Summary: solve server-side from the compute cache, mirroring
+    // the (now-removed) client-side pre-solve. For each LI page on a *live*
+    // scenario we build the LiAssumptions from the page options + scenario and
+    // call getOrComputeLifeInsuranceSolve, then inject the result into the page's
+    // options.solved (replacing any client-sent value — we never trust that).
+    // Snapshot refs can't be re-solved against a live seed, so they keep whatever
+    // `solved` the client sent (matching the old launcher's snapshot fallback,
+    // which skipped solving and left the saved/null value in place).
+    if (needsLifeInsurance) {
+      // modelPortfolioId → display label, exactly as the launcher derived it from
+      // the investment catalog (fallback "Plan default rate").
+      const catalog = await listInvestmentOptionCatalog(id, firmId);
+      const portfolioLabelById = new Map(
+        catalog.portfolios.map((p) => [p.id, p.name] as const),
+      );
+      // Dedupe solves per distinct scenario key (one solve covers every LI page
+      // pointing at the same scenario), mirroring the launcher's solvedByScenario.
+      const liSolvedByKey = new Map<string, LiSolved>();
+
+      await Promise.all(
+        parsed.data.pages.map(async (page, idx) => {
+          if (page.pageId !== "lifeInsuranceSummary") return;
+          const key = plan.pageKeys[idx];
+          const ref = plan.distinct.get(key)?.ref;
+          // Snapshot (or unresolved) ref: leave the client-sent solved untouched.
+          if (!ref || ref.kind !== "scenario") return;
+
+          if (!liSolvedByKey.has(key)) {
+            const opts = page.options as LifeInsuranceSummaryOptions;
+            const assumptions: LiAssumptions = {
+              deathYear: opts.deathYear,
+              modelPortfolioId: opts.modelPortfolioId,
+              leaveToHeirsAmount: opts.leaveToHeirsAmount,
+              livingExpenseAtDeath: opts.livingExpenseAtDeath,
+              payoffLiabilityIds: opts.payoffLiabilityIds,
+              mcTargetScore: opts.mcTargetScore,
+              coverEstateTaxes: opts.coverEstateTaxes,
+              scenarioRef: ref.id === "base" ? "base" : ref.id,
+            };
+            const modelPortfolioLabel = opts.modelPortfolioId
+              ? (portfolioLabelById.get(opts.modelPortfolioId) ?? "Plan default rate")
+              : "Plan default rate";
+            try {
+              const solved = await getOrComputeLifeInsuranceSolve({
+                clientId: id,
+                firmId,
+                scenarioId: ref.id,
+                assumptions,
+                modelPortfolioLabel,
+              });
+              liSolvedByKey.set(key, solved);
+            } catch (liErr) {
+              // Non-fatal: leave solved unset so the page renders its
+              // "not solved" frame instead of failing the whole export.
+              console.error("LI solve failed for export", liErr);
+            }
+          }
+
+          const solved = liSolvedByKey.get(key) ?? null;
+          page.options = {
+            ...(page.options as Record<string, unknown>),
+            solved,
+          } as typeof page.options;
+        }),
+      );
+    }
 
     // Firm branding for the cover: name, accent color, and logo. Falls back to
     // the Foundry mark + gold when the firm hasn't set their own.
