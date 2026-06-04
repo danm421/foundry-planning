@@ -289,6 +289,8 @@ export async function POST(
             category === "business" ? (businessTaxTreatment ?? "qbi") : null,
           // parentAccountId allowed on any category — tenant + business-target-validated above.
           parentAccountId: parentAccountId ?? null,
+          custodian: (body.custodian ?? null) || null,
+          accountNumberLast4: (body.accountNumberLast4 ?? null) || null,
         })
         .returning();
       account = inserted;
