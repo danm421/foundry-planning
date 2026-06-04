@@ -8,6 +8,8 @@ import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-ca
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
+import { AccentProvider } from "./shared/accent-context";
+import { SECTION_ACCENTS, DEFAULT_ACCENT } from "@/lib/presentations/theme";
 
 export interface PageScenarioBundle {
   clientData: ClientData;
@@ -94,18 +96,25 @@ export function PresentationDocument(props: PresentationDocumentProps) {
           },
           options as never,
         );
-        return page.renderPdf({
-          // `data` is the union of all page-data types; `renderPdf`'s param is the
-          // intersection (contravariant method on a union of page defs). Same
-          // `as never` escape hatch already used for buildData/estimatePageCount.
-          data: data as never,
-          firmName: props.firmName,
-          clientName: props.clientName,
-          reportDate: props.reportDate,
-          pageIndex: startPages[idx],
-          totalPages,
-          documentSections,
-        });
+        return (
+          <AccentProvider
+            key={p.pageId + idx}
+            accent={SECTION_ACCENTS[page.category] ?? DEFAULT_ACCENT}
+          >
+            {page.renderPdf({
+              // `data` is the union of all page-data types; `renderPdf`'s param is the
+              // intersection (contravariant method on a union of page defs). Same
+              // `as never` escape hatch already used for buildData/estimatePageCount.
+              data: data as never,
+              firmName: props.firmName,
+              clientName: props.clientName,
+              reportDate: props.reportDate,
+              pageIndex: startPages[idx],
+              totalPages,
+              documentSections,
+            })}
+          </AccentProvider>
+        );
       })}
     </Document>
   );

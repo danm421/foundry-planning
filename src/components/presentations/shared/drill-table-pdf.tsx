@@ -10,7 +10,8 @@ import type {
   DrillRow,
 } from "@/lib/presentations/shared/drill-types";
 import type { TableMarker } from "@/lib/presentations/types";
-import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { PRESENTATION_THEME, ZEBRA_FILL } from "@/lib/presentations/theme";
+import { useAccent } from "./accent-context";
 import { compactCurrency, jointAge } from "@/lib/presentations/format";
 
 const styles = StyleSheet.create({
@@ -18,9 +19,7 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: PRESENTATION_THEME.card,
     borderBottomWidth: 1,
-    borderBottomColor: PRESENTATION_THEME.accent,
     paddingVertical: 4,
     paddingHorizontal: 2,
   },
@@ -67,7 +66,6 @@ const styles = StyleSheet.create({
   marker: {
     fontFamily: "Inter",
     fontSize: 7,
-    color: PRESENTATION_THEME.accent,
   },
 });
 
@@ -77,11 +75,15 @@ const COL_AGE_W = 30;
 const flexCell = { flex: 1 } as const;
 
 export function DrillTablePdf({ data }: { data: DrillPageData }) {
+  const { accent, tint } = useAccent();
   const markerByYear = new Map(data.table.markers.map((m) => [m.year, m]));
 
   return (
     <View style={styles.table}>
-      <View style={styles.headerRow} fixed>
+      <View
+        style={[styles.headerRow, { backgroundColor: tint, borderBottomColor: accent }]}
+        fixed
+      >
         <Text style={[styles.th, { width: COL_MARKER_W }, styles.tdLeft]}>
           {""}
         </Text>
@@ -107,12 +109,14 @@ export function DrillTablePdf({ data }: { data: DrillPageData }) {
           );
         })}
       </View>
-      {data.table.rows.map((row) => (
+      {data.table.rows.map((row, i) => (
         <DrillDataRow
           key={row.year}
           row={row}
           columns={data.table.columns}
           marker={markerByYear.get(row.year) ?? null}
+          zebra={i % 2 === 1}
+          accent={accent}
         />
       ))}
     </View>
@@ -123,14 +127,18 @@ function DrillDataRow({
   row,
   columns,
   marker,
+  zebra,
+  accent,
 }: {
   row: DrillRow;
   columns: DrillColumn[];
   marker: TableMarker | null;
+  zebra: boolean;
+  accent: string;
 }) {
   return (
-    <View style={styles.dataRow} wrap={false}>
-      <Text style={[styles.marker, { width: COL_MARKER_W }, styles.tdLeft]}>
+    <View style={[styles.dataRow, zebra ? { backgroundColor: ZEBRA_FILL } : {}]} wrap={false}>
+      <Text style={[styles.marker, { color: accent, width: COL_MARKER_W }, styles.tdLeft]}>
         {marker ? (marker.kind === "retirement" ? "◇" : "△") : ""}
       </Text>
       <Text style={[styles.td, { width: COL_YEAR_W }, styles.tdLeft]}>

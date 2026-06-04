@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { Style } from "@react-pdf/types";
 import type { CashFlowPageData, CashFlowTableRow, TableMarker } from "@/lib/presentations/types";
-import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { PRESENTATION_THEME, ZEBRA_FILL } from "@/lib/presentations/theme";
+import { useAccent } from "@/components/presentations/shared/accent-context";
 import { compactCurrency, jointAge } from "@/lib/presentations/format";
 
 const styles = StyleSheet.create({
@@ -9,9 +10,7 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "flex-end",                 // align single-line headers to the bottom of 2-line ones
-    backgroundColor: PRESENTATION_THEME.card,
     borderBottomWidth: 1,
-    borderBottomColor: PRESENTATION_THEME.accent,
     paddingVertical: 4,
     paddingHorizontal: 2,
   },
@@ -55,7 +54,7 @@ const styles = StyleSheet.create({
   tdLeft: { textAlign: "left" },
   tdNeg: { color: PRESENTATION_THEME.crit, fontWeight: 600 },
   tdPos: { color: PRESENTATION_THEME.good, fontWeight: 600 },
-  marker: { fontFamily: "Inter", fontSize: 7, color: PRESENTATION_THEME.accent },
+  marker: { fontFamily: "Inter", fontSize: 7 },
 });
 
 interface ColDef {
@@ -91,11 +90,12 @@ const COL_LAST_W = 40;
 const flexCell = { flex: 1 } as const;
 
 export function CashflowTablePdf({ data }: { data: CashFlowPageData }) {
+  const { accent, tint } = useAccent();
   const markerByYear = new Map(data.table.markers.map((m) => [m.year, m]));
 
   return (
     <View style={styles.table}>
-      <View style={styles.headerRow} fixed>
+      <View style={[styles.headerRow, { backgroundColor: tint, borderBottomColor: accent }]} fixed>
         <Text style={[styles.th, { width: COL_MARKER_W }, styles.tdLeft]}>{""}</Text>
         <Text style={[styles.th, { width: COL_YEAR_W }, styles.tdLeft]}>Year</Text>
         <Text style={[styles.th, { width: COL_AGE_W }, styles.tdLeft]}>Age(s)</Text>
@@ -115,8 +115,8 @@ export function CashflowTablePdf({ data }: { data: CashFlowPageData }) {
           );
         })}
       </View>
-      {data.table.rows.map((row) => (
-        <CashflowDataRow key={row.year} row={row} marker={markerByYear.get(row.year) ?? null} />
+      {data.table.rows.map((row, i) => (
+        <CashflowDataRow key={row.year} row={row} marker={markerByYear.get(row.year) ?? null} zebra={i % 2 === 1} accent={accent} />
       ))}
     </View>
   );
@@ -125,13 +125,17 @@ export function CashflowTablePdf({ data }: { data: CashFlowPageData }) {
 function CashflowDataRow({
   row,
   marker,
+  zebra,
+  accent,
 }: {
   row: CashFlowTableRow;
   marker: TableMarker | null;
+  zebra: boolean;
+  accent: string;
 }) {
   return (
-    <View style={styles.dataRow} wrap={false}>
-      <Text style={[styles.marker, { width: COL_MARKER_W }, styles.tdLeft]}>
+    <View style={[styles.dataRow, zebra ? { backgroundColor: ZEBRA_FILL } : {}]} wrap={false}>
+      <Text style={[styles.marker, { color: accent, width: COL_MARKER_W }, styles.tdLeft]}>
         {marker ? (marker.kind === "retirement" ? "◇" : "△") : ""}
       </Text>
       <Text style={[styles.td, { width: COL_YEAR_W }, styles.tdLeft]}>{String(row.year)}</Text>
