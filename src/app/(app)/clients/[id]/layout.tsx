@@ -7,6 +7,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import ClientHeader from "@/components/client-header";
 import HeaderSubtabs from "@/components/header-subtabs";
 import type { PersonInfo } from "@/components/client-identity-menu";
+import ReportSectionLabel from "@/components/report-section-label";
 import { ScenarioModeWrapper } from "@/components/scenario/scenario-mode-wrapper";
 import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
 import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
@@ -74,8 +75,15 @@ export default async function ClientLayout({ children, params }: Props): Promise
     ...(spouse ? [toPerson(spouse, "spouse")] : []),
   ];
 
+  const spouseFirst = spouse?.firstName ?? null;
+  const spouseLast = spouse?.lastName ?? primary.lastName;
+  const householdTitle = spouseFirst
+    ? `${primary.firstName} & ${spouseFirst} ${spouseLast}`.trim()
+    : `${primary.firstName} ${primary.lastName}`.trim();
+
   return (
     <ScenarioModeWrapper clientId={id} scenarios={scenarioRows}>
+      <ReportSectionLabel label={householdTitle} />
       <ClientHeader
         clientId={id}
         people={people}
