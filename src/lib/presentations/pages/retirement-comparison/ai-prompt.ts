@@ -40,6 +40,8 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     "Format percentages with at most one decimal place.",
     "Round numbers — the reader does not need cents.",
     "Focus on the impact on the household's total portfolio assets and on the probability of success.",
+    "Connect the scenario's changes to the results: tie the changes listed below to the movement in the KPIs and portfolio totals, and briefly explain the mechanism — why each change pushes the numbers the way it does (e.g., delaying retirement adds earning-and-growth years; a Roth conversion trades tax now for tax-free growth later).",
+    "Reason qualitatively about cause and effect. The data gives only the combined Base→Scenario deltas, not a per-change breakdown, so attribute movement to the changes as a set and never assign a specific dollar or percentage figure to any single change.",
     "Frame observations and risks. Do not give individualized advice or recommendations.",
     "Keep paragraphs short (1-2 sentences). Favor brevity over completeness.",
     TONE[args.tone],
