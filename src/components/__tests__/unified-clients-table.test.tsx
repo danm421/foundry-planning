@@ -13,6 +13,7 @@ const ROWS: UnifiedClientRow[] = [
     hasPlanning: true,
     planningClientId: "C1",
     updatedAt: "2026-05-01T00:00:00.000Z",
+    deletedAt: null,
   },
   {
     householdId: "H2",
@@ -23,6 +24,7 @@ const ROWS: UnifiedClientRow[] = [
     hasPlanning: false,
     planningClientId: null,
     updatedAt: "2026-05-02T00:00:00.000Z",
+    deletedAt: null,
   },
 ];
 

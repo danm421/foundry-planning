@@ -13,12 +13,16 @@ export async function ClientsContent({
   searchParams: Promise<{ search?: string; status?: string; view?: string }>;
 }) {
   const params = await searchParams;
-  // Default to the "Recently opened" view; only an explicit ?view=all opts out.
-  const recentView = params.view !== "all";
-  const { userId } = await auth();
+  const { userId, orgRole } = await auth();
+  const canManage = orgRole === "org:owner" || orgRole === "org:admin";
 
-  const households =
-    recentView && userId
+  const deletedView = params.view === "deleted";
+  // Default to the "Recently opened" view; ?view=all and ?view=deleted opt out.
+  const recentView = !deletedView && params.view !== "all";
+
+  const households = deletedView
+    ? await listCrmHouseholds({ search: params.search, status: params.status, deleted: true })
+    : recentView && userId
       ? await listRecentlyOpenedHouseholds({
           userId,
           search: params.search,
@@ -41,8 +45,12 @@ export async function ClientsContent({
       hasPlanning: Boolean(h.planningClient),
       planningClientId: h.planningClient?.id ?? null,
       updatedAt: h.updatedAt.toISOString(),
+      deletedAt: h.deletedAt ? h.deletedAt.toISOString() : null,
     };
   });
+
+  const tab = "text-sm text-ink-3 hover:text-ink";
+  const tabActive = "text-sm font-medium text-ink";
 
   return (
     <div className="p-6">
@@ -63,13 +71,29 @@ export async function ClientsContent({
           </Link>
         </div>
       </div>
+      <div className="mt-2 flex gap-4">
+        <Link href="/clients" className={recentView ? tabActive : tab}>
+          Recently opened
+        </Link>
+        <Link href="/clients?view=all" className={!recentView && !deletedView ? tabActive : tab}>
+          All
+        </Link>
+        {canManage && (
+          <Link href="/clients?view=deleted" className={deletedView ? tabActive : tab}>
+            Trash
+          </Link>
+        )}
+      </div>
       <CrmHouseholdSearch />
       <UnifiedClientsTable
         rows={rows}
+        canManage={canManage}
         emptyMessage={
-          recentView
-            ? "No recently opened clients yet. Open a client's CRM or Planning to see it here."
-            : undefined
+          deletedView
+            ? "Trash is empty."
+            : recentView
+              ? "No recently opened clients yet. Open a client's CRM or Planning to see it here."
+              : undefined
         }
       />
     </div>

@@ -1,6 +1,8 @@
 "use client";
 
 import { ClientRowActions } from "./client-row-actions";
+import { HouseholdTrashActions } from "./household-trash-actions";
+import { daysUntilPurge } from "@/lib/crm/trash";
 
 export interface UnifiedClientRow {
   householdId: string;
@@ -11,12 +13,15 @@ export interface UnifiedClientRow {
   hasPlanning: boolean;
   planningClientId: string | null;
   updatedAt: string;
+  deletedAt: string | null;
 }
 
 interface UnifiedClientsTableProps {
   rows: UnifiedClientRow[];
   /** Shown when `rows` is empty. Defaults to the "no clients yet" message. */
   emptyMessage?: string;
+  /** Owner/admin — gates the per-row delete/restore menu. */
+  canManage?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -33,7 +38,7 @@ function dash(value: string | null) {
   return value && value.trim() ? value : <span className="text-ink-3">—</span>;
 }
 
-export function UnifiedClientsTable({ rows, emptyMessage }: UnifiedClientsTableProps) {
+export function UnifiedClientsTable({ rows, emptyMessage, canManage }: UnifiedClientsTableProps) {
   if (rows.length === 0) {
     return (
       <div className="mt-4 overflow-hidden rounded-lg border border-hair bg-card shadow-sm">
@@ -60,6 +65,7 @@ export function UnifiedClientsTable({ rows, emptyMessage }: UnifiedClientsTableP
             <th className={TH}>Spouse</th>
             <th className={TH}>Planning</th>
             <th className={TH}>Updated</th>
+            <th className={TH}><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-hair">
@@ -68,6 +74,11 @@ export function UnifiedClientsTable({ rows, emptyMessage }: UnifiedClientsTableP
               <tr key={r.householdId} className="hover:bg-card-2">
                 <td className="whitespace-nowrap px-6 py-4">
                   <span className="font-medium text-ink">{r.name}</span>
+                  {r.deletedAt && (
+                    <span className="mt-0.5 block text-xs text-ink-3">
+                      In Trash · purges in {daysUntilPurge(r.deletedAt)} days
+                    </span>
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-6 py-4">
                   <ClientRowActions
@@ -99,6 +110,15 @@ export function UnifiedClientsTable({ rows, emptyMessage }: UnifiedClientsTableP
                     month: "short",
                     day: "numeric",
                   })}
+                </td>
+                <td className="whitespace-nowrap px-6 py-4 text-right">
+                  {canManage && (
+                    <HouseholdTrashActions
+                      householdId={r.householdId}
+                      householdName={r.name}
+                      deleted={Boolean(r.deletedAt)}
+                    />
+                  )}
                 </td>
               </tr>
             );
