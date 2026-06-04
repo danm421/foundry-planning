@@ -173,6 +173,7 @@ import type {
   ScenarioChangesPageData,
   ScenarioChangesOptions,
 } from "@/lib/presentations/pages/scenario-changes/types";
+import type { PageScenarioBundle } from "./document";
 import { scenarioChangesOptionsSchema, SCENARIO_CHANGES_OPTIONS_DEFAULT } from "@/lib/presentations/pages/scenario-changes/options-schema";
 import { summarizeScenarioChangesOptions } from "@/lib/presentations/pages/scenario-changes/summarize-options";
 import { estimateScenarioChangesPageCount } from "@/lib/presentations/pages/scenario-changes/estimate-page-count";
@@ -240,6 +241,10 @@ export interface BuildDataContext {
   /** Present only when the deck includes the Scenario Changes page and the
    *  active ref is a live scenario; absent for base/snapshot decks. */
   scenarioChanges?: ScenarioChangesContext;
+  /** Present only for multi-scenario pages (those that define
+   *  `requiredScenarioRefs`). Keyed by `keyForRef` — e.g. "base",
+   *  "scenario:<id>". Each entry is the fully-built bundle for that ref. */
+  bundlesByRef?: Record<string, PageScenarioBundle>;
 }
 
 export interface RenderPdfInput<TData> {
@@ -267,6 +272,10 @@ export interface PresentationPage<TData, TOptions> {
   OptionsControl?: ComponentType<{ value: TOptions; onChange: (next: TOptions) => void }>;
   // False for framing pages (Cover, TOC) that don't render scenario-specific data.
   supportsScenarioOverride: boolean;
+  /** Optional: a multi-scenario page declares every scenario ref it needs (raw
+   *  tokens: "base" | "<scenarioId>" | "snap:<id>"). The planner loads each and
+   *  the document exposes them via `BuildDataContext.bundlesByRef`. */
+  requiredScenarioRefs?: (options: TOptions) => string[];
   buildData: (ctx: BuildDataContext, options: TOptions) => TData;
   renderPdf: (input: RenderPdfInput<TData>) => ReactElement;
 }

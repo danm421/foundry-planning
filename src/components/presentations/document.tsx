@@ -10,6 +10,7 @@ import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-in
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import { AccentProvider } from "./shared/accent-context";
 import { SECTION_ACCENTS, DEFAULT_ACCENT } from "@/lib/presentations/theme";
+import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
 
 export interface PageScenarioBundle {
   clientData: ClientData;
@@ -76,6 +77,16 @@ export function PresentationDocument(props: PresentationDocumentProps) {
       {resolved.map(({ p, page, options }, idx) => {
         const bundle =
           props.bundles[p.scenarioKey] ?? props.bundles[props.topScenarioKey];
+        const bundlesByRef: Record<string, PageScenarioBundle> | undefined =
+          page.requiredScenarioRefs
+            ? Object.fromEntries(
+                page
+                  .requiredScenarioRefs(options as never)
+                  .map((raw) => keyForRef(resolveScenarioRef(raw)))
+                  .map((key) => [key, props.bundles[key]])
+                  .filter(([, b]) => b != null) as [string, PageScenarioBundle][],
+              )
+            : undefined;
         const data = page.buildData(
           {
             years: bundle.projection.years,
@@ -93,6 +104,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             investments: props.investments,
             lifeInsurance: props.lifeInsurance,
             scenarioChanges: bundle.scenarioChanges,
+            bundlesByRef,
           },
           options as never,
         );
