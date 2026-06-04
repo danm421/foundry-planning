@@ -58,7 +58,7 @@ export interface BuildIncomeDrillInput {
 
 export function buildIncomeDrillData(input: BuildIncomeDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   // Mirror cashflow-report's all-zero filter: drop a series if every year of
   // the full projection rounds to $0 (use `years`, not `visibleYears`, so the

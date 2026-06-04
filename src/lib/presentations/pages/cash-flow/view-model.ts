@@ -9,6 +9,7 @@ import type {
 } from "../../types";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import { buildCashFlowChartSpec } from "../../charts/cashflow-chart-spec";
+import { filterYearsToRange } from "../../shared/year-filter";
 
 const PORTFOLIO_BUCKETS = [
   "taxable", "cash", "retirement", "realEstate", "business", "lifeInsurance",
@@ -20,7 +21,7 @@ const DISCLAIMER =
 export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
 
-  const visibleYears = filterYearsToRange(years, clientData, options.range);
+  const visibleYears = filterYearsToRange(years, options.range);
 
   const rows: CashFlowTableRow[] = visibleYears.map((py) => {
     const ids = portfolioAccountIds(py);
@@ -67,15 +68,6 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
     table: { rows, markers },
     footnote: DISCLAIMER,
   };
-}
-
-function filterYearsToRange(
-  years: ProjectionYear[],
-  _clientData: ClientData,
-  range: BuildCashFlowInput["options"]["range"],
-): ProjectionYear[] {
-  if (range === "full") return years;
-  return years.filter((y) => y.year >= range.startYear && y.year <= range.endYear);
 }
 
 // Sum the engine's per-ledger `rmdAmount` — set once on the source retirement

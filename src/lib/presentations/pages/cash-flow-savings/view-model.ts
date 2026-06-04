@@ -58,7 +58,7 @@ export interface BuildSavingsDrillInput {
 
 export function buildSavingsDrillData(input: BuildSavingsDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   // Per-account columns: every account that received savings in any year,
   // sorted by display order in clientData.accounts so the column order is

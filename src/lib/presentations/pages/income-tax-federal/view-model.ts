@@ -44,7 +44,7 @@ export interface BuildTaxFederalDrillInput {
 
 export function buildTaxFederalDrillData(input: BuildTaxFederalDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   const columns: DrillColumn[] = [
     { key: "totalIncome",   header: "Total\nIncome",      width: 48 },

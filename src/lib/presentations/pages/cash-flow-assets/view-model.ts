@@ -48,7 +48,7 @@ export function buildPortfolioAssetsDrillData(
   input: BuildPortfolioAssetsDrillInput,
 ): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   const hasAnyAccessible = years.some(
     (y) => Math.abs(y.portfolioAssets.accessibleTrustAssetsTotal) >= 0.5,

@@ -36,7 +36,7 @@ export interface BuildTaxIncomeDrillInput {
 
 export function buildTaxIncomeDrillData(input: BuildTaxIncomeDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   const columns: DrillColumn[] = [
     ...SERIES.map((s) => ({ key: s.key, header: s.header, width: 46 })),

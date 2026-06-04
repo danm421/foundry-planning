@@ -55,7 +55,7 @@ export interface BuildExpensesDrillInput {
 
 export function buildExpensesDrillData(input: BuildExpensesDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   const activeSeries = EXPENSE_SERIES.filter((s) =>
     years.some((y) => Math.abs(s.pick(y)) >= 0.5),

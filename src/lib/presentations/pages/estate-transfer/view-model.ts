@@ -24,7 +24,7 @@ export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPage
     projection, clientData, ordering, ownerNames, ownerDobs,
   });
 
-  const visibleYears = filterYearsToRange(projection.years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(projection.years, options.range as RangeOption);
   const visibleSet = new Set(visibleYears.map((y) => y.year));
   const reportRows = report.rows.filter((r) => visibleSet.has(r.year));
 

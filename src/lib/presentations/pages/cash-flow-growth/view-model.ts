@@ -47,7 +47,7 @@ export function buildPortfolioGrowthDrillData(
   input: BuildPortfolioGrowthDrillInput,
 ): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   function growthByCategorySegment(r: ProjectionYear, bucket: keyof ProjectionYear["portfolioAssets"]): number {
     const byAcct = r.portfolioAssets[bucket] as Record<string, number> | undefined;

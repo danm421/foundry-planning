@@ -27,7 +27,7 @@ export interface BuildTaxStateDrillInput {
 
 export function buildTaxStateDrillData(input: BuildTaxStateDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   const columns: DrillColumn[] = [
     { key: "federalBase",  header: "Federal\nBase",   width: 48 },

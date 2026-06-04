@@ -16,8 +16,6 @@ import {
   TOC_PAGE_OPTIONS_DEFAULT,
 } from "@/lib/presentations/types";
 import { buildCashFlowPageData } from "@/lib/presentations/pages/cash-flow/view-model";
-import { cashFlowOptionsSchema } from "@/lib/presentations/pages/cash-flow/options-schema";
-import { summarizeCashFlowOptions } from "@/lib/presentations/pages/cash-flow/summarize-options";
 import { estimateCashFlowPageCount } from "@/lib/presentations/pages/cash-flow/estimate-page-count";
 import { coverOptionsSchema } from "@/lib/presentations/pages/cover/options-schema";
 import { summarizeCoverOptions } from "@/lib/presentations/pages/cover/summarize-options";
@@ -316,8 +314,8 @@ export const cashFlowPage: PresentationPage<CashFlowPageData, CashFlowPageOption
   description: "Annual income, expenses, withdrawals, and portfolio totals.",
   category: "Cash Flow",
   defaultOptions: CASH_FLOW_PAGE_OPTIONS_DEFAULT,
-  optionsSchema: cashFlowOptionsSchema,
-  summarizeOptions: summarizeCashFlowOptions,
+  optionsSchema: drillOptionsSchema,
+  summarizeOptions: summarizeDrillOptions,
   estimatePageCount: estimateCashFlowPageCount,
   OptionsControl: CashFlowOptionsControl,
   supportsScenarioOverride: true,

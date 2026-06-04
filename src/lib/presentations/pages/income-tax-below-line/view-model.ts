@@ -35,7 +35,7 @@ export interface BuildTaxBelowLineDrillInput {
 
 export function buildTaxBelowLineDrillData(input: BuildTaxBelowLineDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   const columns: DrillColumn[] = [
     { key: "charitable",     header: "Charitable",       width: 48 },

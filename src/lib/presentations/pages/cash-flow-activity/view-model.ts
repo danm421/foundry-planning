@@ -37,7 +37,7 @@ export function buildPortfolioActivityDrillData(
   input: BuildPortfolioActivityDrillInput,
 ): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   function portfolioAccountIds(r: ProjectionYear): Set<string> {
     const ids = new Set<string>();

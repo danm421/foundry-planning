@@ -37,7 +37,7 @@ export interface BuildTaxOtherTaxesDrillInput {
 
 export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
 
   // Zero-suppress the early-withdrawal penalty: it only appears in years with a
   // pre-59½ draw, so hide both the column and the chart series when no visible

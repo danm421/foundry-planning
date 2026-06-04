@@ -27,7 +27,7 @@ export interface BuildTaxBracketStateDrillInput {
 
 export function buildTaxBracketStateDrillData(input: BuildTaxBracketStateDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
-  const visibleYears = filterYearsToRange(years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
   const stateRows = buildStateBracketRows(visibleYears);
 
   const columns: DrillColumn[] = [

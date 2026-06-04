@@ -24,7 +24,7 @@ export function buildEstateLiquidityDrillData(input: EstateDrillInput): DrillPag
     ordering: naturalOrdering(projection),
   });
 
-  const visibleYears = filterYearsToRange(projection.years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(projection.years, options.range as RangeOption);
   const visibleSet = new Set(visibleYears.map((y) => y.year));
   const reportRows = report.rows.filter((r) => visibleSet.has(r.year));
 

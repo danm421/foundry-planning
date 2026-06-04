@@ -13,7 +13,7 @@ export function buildGiftTaxDrillData(input: EstateDrillInput): DrillPageData {
   const { projection, clientData, options, scenarioLabel, clientName, spouseName } = input;
   const ledger = projection.giftLedger ?? [];
 
-  const visibleYears = filterYearsToRange(projection.years, clientData, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(projection.years, options.range as RangeOption);
   const visibleSet = new Set(visibleYears.map((y) => y.year));
   const ledgerRows = ledger.filter((g) => visibleSet.has(g.year));
 
