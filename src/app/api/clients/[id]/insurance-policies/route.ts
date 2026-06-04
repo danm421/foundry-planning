@@ -186,6 +186,9 @@ export async function POST(
         termLengthYears: input.termLengthYears ?? null,
         endsAtInsuredRetirement: input.endsAtInsuredRetirement,
         cashValueGrowthMode: input.cashValueGrowthMode,
+        premiumScheduleMode: input.premiumScheduleMode,
+        deathBenefitScheduleMode: input.deathBenefitScheduleMode,
+        incomeScheduleMode: input.incomeScheduleMode,
         postPayoutGrowthRate: String(input.postPayoutGrowthRate),
         postPayoutModelPortfolioId: input.postPayoutModelPortfolioId ?? null,
       });
@@ -195,7 +198,10 @@ export async function POST(
           input.cashValueSchedule.map((r) => ({
             policyId: acct.id,
             year: r.year,
-            cashValue: String(r.cashValue),
+            cashValue: r.cashValue != null ? String(r.cashValue) : null,
+            premiumAmount: r.premiumAmount != null ? String(r.premiumAmount) : null,
+            income: r.income != null ? String(r.income) : null,
+            deathBenefit: r.deathBenefit != null ? String(r.deathBenefit) : null,
           })),
         );
       }

@@ -52,6 +52,36 @@ export function synthesizePremiumExpenses(
   for (const acct of input.accounts) {
     if (acct.category !== "life_insurance" || !acct.lifeInsurance) continue;
     const policy = acct.lifeInsurance;
+
+    // Scheduled premiums short-circuit the scalar path: the per-year amount
+    // comes from the schedule's `premiumAmount` column, surfaced as
+    // `scheduleOverrides` (amount per year, 0 outside the range).
+    if (policy.premiumScheduleMode === "scheduled") {
+      const overrides: Record<number, number> = {};
+      for (const row of policy.cashValueSchedule) {
+        if (row.premiumAmount != null) overrides[row.year] = row.premiumAmount;
+      }
+      const years = Object.keys(overrides).map(Number);
+      if (years.length === 0) continue;
+      const startYear = Math.max(input.currentYear, Math.min(...years));
+      const endYear = Math.max(...years);
+      if (endYear < startYear) continue;
+      out.push({
+        id: `premium-${acct.id}`,
+        type: "insurance",
+        name: `${acct.name} premium`,
+        annualAmount: 0,
+        startYear,
+        endYear,
+        growthRate: 0,
+        scheduleOverrides: overrides,
+        ownerEntityId: controllingEntity(acct) ?? undefined,
+        source: "policy",
+        sourcePolicyAccountId: acct.id,
+      });
+      continue;
+    }
+
     if (policy.premiumAmount <= 0) continue;
 
     const issueYear = policy.termIssueYear ?? input.currentYear;

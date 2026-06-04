@@ -1,3 +1,4 @@
+import { resolveScheduledColumnForYear } from "../life-insurance-schedule";
 import type { Account, EntitySummary, LifeInsurancePayout } from "../types";
 
 export interface PreparePayoutsInput {
@@ -63,7 +64,12 @@ export function prepareLifeInsurancePayouts(
     }
 
     const policy = account.lifeInsurance;
-    const { faceValue, postPayoutGrowthRate } = policy;
+    const { postPayoutGrowthRate } = policy;
+    const scheduledDb =
+      policy.deathBenefitScheduleMode === "scheduled"
+        ? resolveScheduledColumnForYear(policy.cashValueSchedule, input.year, "deathBenefit")
+        : null;
+    const faceValue = scheduledDb ?? policy.faceValue;
     const policyId = account.id;
 
     // §101(a): proceeds are income-tax-free, so basis = faceValue. The account

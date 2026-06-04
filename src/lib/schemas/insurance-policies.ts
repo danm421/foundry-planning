@@ -22,12 +22,18 @@ const base = {
   termLengthYears: z.number().int().positive().nullable().optional(),
   endsAtInsuredRetirement: z.boolean().optional().default(false),
   cashValueGrowthMode: z.enum(["basic", "free_form"]).default("basic"),
+  premiumScheduleMode: z.enum(["off", "scheduled"]).default("off"),
+  deathBenefitScheduleMode: z.enum(["off", "scheduled"]).default("off"),
+  incomeScheduleMode: z.enum(["off", "scheduled"]).default("off"),
   postPayoutGrowthRate: z.number().gte(0).lte(1).default(0.06),
   postPayoutModelPortfolioId: uuidSchema.nullable().optional(),
   cashValueSchedule: z.array(
     z.object({
       year: z.number().int().gte(1900).lte(2200),
-      cashValue: z.number().gte(0),
+      cashValue: z.number().gte(0).optional(),
+      premiumAmount: z.number().gte(0).optional(),
+      income: z.number().gte(0).optional(),
+      deathBenefit: z.number().gte(0).optional(),
     }),
   ).optional().default([]),
 };
@@ -64,15 +70,25 @@ function validateTermFields(
 }
 
 function validateFreeFormSchedule(
-  d: Partial<{ cashValueGrowthMode: string;
-    cashValueSchedule: { year: number; cashValue: number }[] }>,
+  d: Partial<{
+    cashValueGrowthMode: string;
+    premiumScheduleMode: string;
+    deathBenefitScheduleMode: string;
+    incomeScheduleMode: string;
+    cashValueSchedule: { year: number }[];
+  }>,
   ctx: z.RefinementCtx,
 ): void {
-  if (d.cashValueGrowthMode !== "free_form") return;
+  const needsRows =
+    d.cashValueGrowthMode === "free_form" ||
+    d.premiumScheduleMode === "scheduled" ||
+    d.deathBenefitScheduleMode === "scheduled" ||
+    d.incomeScheduleMode === "scheduled";
+  if (!needsRows) return;
   if (!d.cashValueSchedule || d.cashValueSchedule.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Free-form mode requires at least one schedule row",
+      message: "Schedule-driven modes require at least one schedule row",
       path: ["cashValueSchedule"],
     });
   }

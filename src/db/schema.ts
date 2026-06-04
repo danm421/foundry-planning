@@ -114,6 +114,8 @@ export const cashValueGrowthModeEnum = pgEnum("cash_value_growth_mode", [
   "free_form",
 ]);
 
+export const scheduleModeEnum = pgEnum("li_schedule_mode", ["off", "scheduled"]);
+
 export const entityGrantorEnum = pgEnum("entity_grantor_enum", ["client", "spouse"]);
 
 export const entityFlowModeEnum = pgEnum("entity_flow_mode", ["annual", "schedule"]);
@@ -1595,6 +1597,15 @@ export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
   cashValueGrowthMode: cashValueGrowthModeEnum("cash_value_growth_mode")
     .notNull()
     .default("basic"),
+  premiumScheduleMode: scheduleModeEnum("premium_schedule_mode")
+    .notNull()
+    .default("off"),
+  deathBenefitScheduleMode: scheduleModeEnum("death_benefit_schedule_mode")
+    .notNull()
+    .default("off"),
+  incomeScheduleMode: scheduleModeEnum("income_schedule_mode")
+    .notNull()
+    .default("off"),
   postPayoutGrowthRate: decimal("post_payout_growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.06"),
@@ -1617,7 +1628,10 @@ export const lifeInsuranceCashValueSchedule = pgTable(
       .notNull()
       .references(() => lifeInsurancePolicies.accountId, { onDelete: "cascade" }),
     year: integer("year").notNull(),
-    cashValue: decimal("cash_value", { precision: 15, scale: 2 }).notNull(),
+    cashValue: decimal("cash_value", { precision: 15, scale: 2 }),
+    premiumAmount: decimal("premium_amount", { precision: 15, scale: 2 }),
+    income: decimal("income", { precision: 15, scale: 2 }),
+    deathBenefit: decimal("death_benefit", { precision: 15, scale: 2 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({

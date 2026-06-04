@@ -72,6 +72,7 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
+import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
 import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constants";
@@ -1467,7 +1468,7 @@ export const loadClientDataWithContext = cache(
     };
 
     return {
-      clientData: withSynthesizedPremiums(clientData),
+      clientData: withSynthesizedPolicyIncome(withSynthesizedPremiums(clientData)),
       resolutionContext: resolutionCtx,
     };
   },
