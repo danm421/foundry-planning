@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import {
   getCrmHousehold,
   updateCrmHousehold,
-  deleteCrmHousehold,
+  softDeleteCrmHousehold,
 } from "@/lib/crm/households";
 import { updateCrmHouseholdSchema } from "@/lib/crm/schemas";
+import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -58,12 +60,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    await requireOrgAdminOrOwner();
     const { id } = await params;
-    await deleteCrmHousehold(id);
+    const { userId } = await auth();
+    await softDeleteCrmHousehold(id, userId ?? "system");
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const authErr = authErrorResponse(err);
+    if (authErr) return NextResponse.json(authErr.body, { status: authErr.status });
+    if (err instanceof Error && err.message === "Household not found") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     console.error("DELETE /api/crm/households/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
