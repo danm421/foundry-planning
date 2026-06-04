@@ -83,12 +83,12 @@ function ChangeRowView({ row }: { row: ChangeRow }) {
 }
 
 export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComparisonPageData>) {
-  const { data, firmName, clientName, reportDate, pageIndex, totalPages } = input;
+  const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
 
   if (data.isEmpty) {
     return (
       <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages}>
-        <SectionHead title={data.title} eyebrow="RETIREMENT COMPARISON" />
+        <SectionHead title={data.title} eyebrow="RETIREMENT COMPARISON" accent={accent} />
         <Text style={s.empty}>Select a comparison scenario to populate this page.</Text>
       </PageFrame>
     );
@@ -97,7 +97,7 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
   const m = data.matrix!;
   return (
     <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages}>
-      <SectionHead title={data.title} subtitle={data.subtitle} eyebrow="RETIREMENT COMPARISON" />
+      <SectionHead title={data.title} subtitle={data.subtitle} eyebrow="RETIREMENT COMPARISON" accent={accent} />
 
       <View style={s.kpis}>
         {data.kpis.map((k) => <Kpi key={k.label} k={k} />)}

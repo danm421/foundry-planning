@@ -2,7 +2,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToBuffer, Document } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
-import { AccentProvider } from "@/components/presentations/shared/accent-context";
 import { SECTION_ACCENTS } from "@/lib/presentations/theme";
 import { RetirementComparisonPagePdf } from "./page-pdf";
 import type { RetirementComparisonPageData } from "@/lib/presentations/pages/retirement-comparison/types";
@@ -38,12 +37,10 @@ describe("RetirementComparisonPagePdf render", () => {
     ensureFontsRegistered();
     const buf = await renderToBuffer(
       <Document>
-        <AccentProvider accent={SECTION_ACCENTS.Comparison}>
-          {RetirementComparisonPagePdf({
-            data, firmName: "Acme Advisors", clientName: "Smith", reportDate: "June 4, 2026",
-            pageIndex: 1, totalPages: 1,
-          })}
-        </AccentProvider>
+        {RetirementComparisonPagePdf({
+          data, firmName: "Acme Advisors", clientName: "Smith", reportDate: "June 4, 2026",
+          pageIndex: 1, totalPages: 1, accent: SECTION_ACCENTS.Comparison,
+        })}
       </Document>,
     );
     expect(buf.byteLength).toBeGreaterThan(1000);
@@ -53,12 +50,11 @@ describe("RetirementComparisonPagePdf render", () => {
     ensureFontsRegistered();
     const buf = await renderToBuffer(
       <Document>
-        <AccentProvider accent={SECTION_ACCENTS.Comparison}>
-          {RetirementComparisonPagePdf({
-            data: { ...data, isEmpty: true },
-            firmName: "Acme", clientName: "Smith", reportDate: "June 4, 2026", pageIndex: 1, totalPages: 1,
-          })}
-        </AccentProvider>
+        {RetirementComparisonPagePdf({
+          data: { ...data, isEmpty: true },
+          firmName: "Acme", clientName: "Smith", reportDate: "June 4, 2026",
+          pageIndex: 1, totalPages: 1, accent: SECTION_ACCENTS.Comparison,
+        })}
       </Document>,
     );
     expect(buf.byteLength).toBeGreaterThan(500);
