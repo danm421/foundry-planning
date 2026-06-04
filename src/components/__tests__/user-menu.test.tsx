@@ -9,6 +9,7 @@ vi.mock("@clerk/nextjs", () => ({
 }));
 
 import UserMenu from "../user-menu";
+import { SidebarProvider } from "../sidebar-provider";
 
 describe("UserMenu", () => {
   it("renders the Clerk UserButton", () => {
@@ -23,7 +24,11 @@ describe("UserMenu", () => {
   });
 
   it("hides when collapsed", () => {
-    const { container } = render(<UserMenu collapsed />);
+    const { container } = render(
+      <SidebarProvider initialCollapsed>
+        <UserMenu />
+      </SidebarProvider>,
+    );
     const wrapper = container.firstChild as HTMLElement;
     expect(wrapper.className).toContain("hidden");
   });
