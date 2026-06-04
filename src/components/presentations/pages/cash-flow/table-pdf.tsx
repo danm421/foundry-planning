@@ -135,7 +135,7 @@ function CashflowDataRow({
 }) {
   return (
     <View style={[styles.dataRow, zebra ? { backgroundColor: ZEBRA_FILL } : {}]} wrap={false}>
-      <Text style={[styles.marker, { color: accent }, { width: COL_MARKER_W }, styles.tdLeft]}>
+      <Text style={[styles.marker, { color: accent, width: COL_MARKER_W }, styles.tdLeft]}>
         {marker ? (marker.kind === "retirement" ? "◇" : "△") : ""}
       </Text>
       <Text style={[styles.td, { width: COL_YEAR_W }, styles.tdLeft]}>{String(row.year)}</Text>

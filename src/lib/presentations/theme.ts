@@ -43,17 +43,18 @@ export const DEFAULT_ACCENT: SectionAccent = {
 
 // Keyed by PresentationCategory string (kept decoupled from the registry to
 // preserve theme.ts purity; theme-accents.test.ts asserts full coverage).
-// Tints are hand-picked pale, print-safe washes of each Deep Jewel hue.
+// Accents reference the canonical brand `dataLight` Deep Jewel hues (single
+// source of truth); tints are hand-picked pale, print-safe washes of each.
 export const SECTION_ACCENTS: Record<string, SectionAccent> = {
-  Framing:       DEFAULT_ACCENT,                          // amber (brand)
-  "Cash Flow":   { accent: "#2d61aa", tint: "#e7eef7" },  // blue
-  "Income Tax":  { accent: "#cf671d", tint: "#f8e8db" },  // orange
-  Assets:        { accent: "#198b83", tint: "#dbeeea" },  // teal
-  Insurance:     { accent: "#1f8d5f", tint: "#dcefe4" },  // green
-  Estate:        { accent: "#6c41a2", tint: "#ece4f4" },  // purple
-  "Monte Carlo": { accent: "#ab3f6b", tint: "#f5e3ea" },  // pink
-  Retirement:    { accent: "#c2941b", tint: "#f5ecd2" },  // gold
-  Comparison:    { accent: "#878d99", tint: "#ececef" },  // grey
+  Framing:       DEFAULT_ACCENT,                                 // amber (brand)
+  "Cash Flow":   { accent: dataLight.blue,   tint: "#e7eef7" },  // blue
+  "Income Tax":  { accent: dataLight.orange, tint: "#f8e8db" },  // orange
+  Assets:        { accent: dataLight.teal,   tint: "#dbeeea" },  // teal
+  Insurance:     { accent: dataLight.green,  tint: "#dcefe4" },  // green
+  Estate:        { accent: dataLight.purple, tint: "#ece4f4" },  // purple
+  "Monte Carlo": { accent: dataLight.pink,   tint: "#f5e3ea" },  // pink
+  Retirement:    { accent: dataLight.yellow, tint: "#f5ecd2" },  // gold
+  Comparison:    { accent: dataLight.grey,   tint: "#ececef" },  // grey
 };
 
 // Neutral warm stripe for alternating data rows — color identity lives in the
