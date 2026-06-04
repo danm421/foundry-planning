@@ -101,9 +101,18 @@ export async function PATCH(
       termLengthYears: number | null;
       endsAtInsuredRetirement: boolean;
       cashValueGrowthMode: "basic" | "free_form";
+      premiumScheduleMode: "off" | "scheduled";
+      deathBenefitScheduleMode: "off" | "scheduled";
+      incomeScheduleMode: "off" | "scheduled";
       postPayoutGrowthRate: number;
       postPayoutModelPortfolioId: string | null;
-      cashValueSchedule: { year: number; cashValue: number }[];
+      cashValueSchedule: {
+        year: number;
+        cashValue: number | null;
+        premiumAmount: number | null;
+        income: number | null;
+        deathBenefit: number | null;
+      }[];
     }>;
 
     // Look up FM ids for the OwnerRef → account_owners translation.
@@ -186,6 +195,15 @@ export async function PATCH(
       if (input.cashValueGrowthMode !== undefined) {
         policyUpdates.cashValueGrowthMode = input.cashValueGrowthMode;
       }
+      if (input.premiumScheduleMode !== undefined) {
+        policyUpdates.premiumScheduleMode = input.premiumScheduleMode;
+      }
+      if (input.deathBenefitScheduleMode !== undefined) {
+        policyUpdates.deathBenefitScheduleMode = input.deathBenefitScheduleMode;
+      }
+      if (input.incomeScheduleMode !== undefined) {
+        policyUpdates.incomeScheduleMode = input.incomeScheduleMode;
+      }
       if (input.postPayoutGrowthRate !== undefined) {
         policyUpdates.postPayoutGrowthRate = String(input.postPayoutGrowthRate);
       }
@@ -210,7 +228,10 @@ export async function PATCH(
             input.cashValueSchedule.map((r) => ({
               policyId,
               year: r.year,
-              cashValue: String(r.cashValue),
+              cashValue: r.cashValue != null ? String(r.cashValue) : null,
+              premiumAmount: r.premiumAmount != null ? String(r.premiumAmount) : null,
+              income: r.income != null ? String(r.income) : null,
+              deathBenefit: r.deathBenefit != null ? String(r.deathBenefit) : null,
             })),
           );
         }
