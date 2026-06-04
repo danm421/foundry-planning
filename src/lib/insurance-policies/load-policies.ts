@@ -33,11 +33,24 @@ export async function loadPoliciesByAccountIds(
 
   const scheduleByPolicy = new Map<
     string,
-    { year: number; cashValue: number }[]
+    {
+      year: number;
+      cashValue?: number;
+      premiumAmount?: number;
+      income?: number;
+      deathBenefit?: number;
+    }[]
   >();
+  const num = (v: string | null) => (v == null ? undefined : Number(v));
   for (const r of scheduleRows) {
     const arr = scheduleByPolicy.get(r.policyId) ?? [];
-    arr.push({ year: r.year, cashValue: Number(r.cashValue) });
+    arr.push({
+      year: r.year,
+      cashValue: num(r.cashValue),
+      premiumAmount: num(r.premiumAmount),
+      income: num(r.income),
+      deathBenefit: num(r.deathBenefit),
+    });
     scheduleByPolicy.set(r.policyId, arr);
   }
   // Keep schedule rows ordered — downstream consumers assume ascending year.
@@ -57,6 +70,9 @@ export async function loadPoliciesByAccountIds(
       termLengthYears: p.termLengthYears,
       endsAtInsuredRetirement: p.endsAtInsuredRetirement,
       cashValueGrowthMode: p.cashValueGrowthMode,
+      premiumScheduleMode: p.premiumScheduleMode,
+      deathBenefitScheduleMode: p.deathBenefitScheduleMode,
+      incomeScheduleMode: p.incomeScheduleMode,
       postPayoutGrowthRate: Number(p.postPayoutGrowthRate),
       postPayoutModelPortfolioId: p.postPayoutModelPortfolioId,
       cashValueSchedule: scheduleByPolicy.get(p.accountId) ?? [],
