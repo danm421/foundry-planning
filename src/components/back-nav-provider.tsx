@@ -50,7 +50,7 @@ export function BackNavProvider({ children }: { children: ReactNode }): ReactEle
           trail?: TrailEntry[];
           labels?: Record<string, string>;
         };
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sessionStorage hydration on mount; no cascade risk (hydrated flag gates all other effects)
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sessionStorage hydration on mount; no cascade risk (hydrated flag gates all other effects). The rule fires once per effect, so this covers both setTrail and setLabels below.
         if (Array.isArray(parsed.trail)) setTrail(parsed.trail);
         if (parsed.labels) setLabels(parsed.labels);
       }
