@@ -19,13 +19,8 @@ import {
 } from "@/lib/projection/load-client-data";
 import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
-import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
-import {
-  runMonteCarlo,
-  createReturnEngine,
-} from "@/engine";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
-import { buildMonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/build-payload";
+import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import {
   PresentationDocument,
   type PageScenarioBundle,
@@ -233,47 +228,22 @@ export async function POST(
 
       const projection = runProjectionWithEvents(clientData);
 
-      // Monte Carlo runs server-side only when the deck includes the MC page.
-      // The engine is pure/Node-safe. Each scenario uses its own persisted seed
-      // (snapshots fall back to the base seed) so the PDF is reproducible per
-      // scenario. The effective tree for this bundle drives startingLiquidBalance.
+      // Monte Carlo: served from the compute cache (or computed + stored on miss).
+      // Snapshots have no live scenario row so they fall back to the base seed,
+      // matching the old inline behaviour.
       let monteCarlo: MonteCarloReportPayload | null = null;
       if (d.needsMonteCarlo) {
         try {
-          const mc = await loadMonteCarloData(
-            id,
+          const cached = await getOrComputeMonteCarlo({
+            clientId: id,
             firmId,
-            // Layer 1: per-scenario MC seed + per-scenario cache() key. Snapshots
-            // have no live scenario row, so they fall back to the base seed.
-            d.ref.kind === "scenario" ? d.ref.id : "base",
-            [],
-            // Layer 2 (Depth 1): per-scenario startingLiquidBalance from this
-            // bundle's effective tree.
-            clientData,
-          );
-          const engine = createReturnEngine({
-            indices: mc.indices,
-            correlation: mc.correlation,
-            seed: mc.seed,
+            scenarioId: d.ref.kind === "scenario" ? d.ref.id : "base",
           });
-          const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.mix]));
-          const result = await runMonteCarlo({
-            data: clientData,
-            returnEngine: engine,
-            accountMixes,
-            trials: 1000,
-            requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
-          });
-          monteCarlo = buildMonteCarloReportPayload({
-            result,
-            projection,
-            mcPayload: mc,
-            clientData,
-          });
+          monteCarlo = cached.payload;
         } catch (mcErr) {
           // Non-fatal: leave monteCarlo null so the page renders its graceful
           // "data unavailable" frame instead of failing the whole export.
-          console.error("Monte Carlo server-side run failed for export", mcErr);
+          console.error("Monte Carlo cache fetch failed for export", mcErr);
         }
       }
 
