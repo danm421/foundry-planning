@@ -100,7 +100,7 @@ const MAX_MC_SCENARIOS = 3;
 // Pages that require a server-side Monte Carlo run for their scenario. The MC
 // page renders the full simulation; the Retirement Summary needs it only for its
 // Monte Carlo KPI. Runs are deduped per distinct scenario in planScenarioBundles.
-const MONTE_CARLO_PAGE_IDS = new Set<string>(["monteCarlo", "retirementSummary"]);
+const MONTE_CARLO_PAGE_IDS = new Set<string>(["monteCarlo", "retirementSummary", "retirementComparison"]);
 
 const slugify = (s: string) =>
   s
@@ -147,12 +147,21 @@ export async function POST(
     // Plan the distinct set of scenarios this deck needs. Pages that don't
     // support an override, or whose override is undefined ("Default"), follow
     // the top-level scenario.
-    const plannerPages: PlannerPage[] = parsed.data.pages.map((p) => ({
-      supportsScenarioOverride: PRESENTATION_PAGES[p.pageId].supportsScenarioOverride,
-      scenarioOverride: p.scenarioOverride,
-      needsMonteCarloRun: MONTE_CARLO_PAGE_IDS.has(p.pageId),
-      isScenarioChanges: p.pageId === "scenarioChanges",
-    }));
+    const plannerPages: PlannerPage[] = parsed.data.pages.map((p) => {
+      const page = PRESENTATION_PAGES[p.pageId];
+      const requiredRefs = page.requiredScenarioRefs
+        ? page.requiredScenarioRefs(p.options as never)
+        : undefined;
+      return {
+        supportsScenarioOverride: page.supportsScenarioOverride,
+        scenarioOverride: p.scenarioOverride,
+        needsMonteCarloRun: MONTE_CARLO_PAGE_IDS.has(p.pageId),
+        // The comparison page also needs the chosen scenario's change set loaded.
+        isScenarioChanges:
+          p.pageId === "scenarioChanges" || p.pageId === "retirementComparison",
+        requiredRefs,
+      };
+    });
     const plan = planScenarioBundles(plannerPages, parsed.data.scenarioId);
 
     if (plan.distinct.size > MAX_DISTINCT_SCENARIOS) {
