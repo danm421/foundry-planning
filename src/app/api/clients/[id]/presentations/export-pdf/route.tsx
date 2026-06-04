@@ -207,90 +207,118 @@ export async function POST(
       : undefined;
 
     // Build one bundle per distinct scenario. Projection always; Monte Carlo
-    // and scenario-changes only where the plan says a page needs them.
+    // and scenario-changes only where the plan says a page needs them. The
+    // distinct scenarios are independent and bounded by MAX_DISTINCT_SCENARIOS,
+    // so build them concurrently (the LI block below already does the same).
+    // A load failure surfaces as a sentinel result rather than rejecting the
+    // batch, so we preserve the original first-error-wins 404/422 responses.
+    type BundleResult =
+      | { kind: "ok"; key: string; bundle: PageScenarioBundle }
+      | { kind: "notFound" }
+      | { kind: "invalidInput" };
+
+    const bundleResults = await Promise.all(
+      [...plan.distinct].map(async ([key, d]): Promise<BundleResult> => {
+        let clientData;
+        try {
+          const { effectiveTree } = await loadEffectiveTreeForRef(id, firmId, d.ref);
+          clientData = effectiveTree;
+        } catch (err) {
+          if (err instanceof ClientNotFoundError) {
+            return { kind: "notFound" };
+          }
+          if (err instanceof ProjectionInputError) {
+            // The raw message embeds internal client / CRM-household UUIDs (audit
+            // F4). Keep the detail server-side; return a generic message.
+            console.error(
+              "POST /clients/[id]/presentations/export-pdf projection input error",
+              err,
+            );
+            return { kind: "invalidInput" };
+          }
+          throw err;
+        }
+
+        const projection = runProjectionWithEvents(clientData);
+
+        // Monte Carlo: served from the compute cache (or computed + stored on miss).
+        // Snapshots have no live scenario row so they fall back to the base seed,
+        // matching the old inline behaviour.
+        let monteCarlo: MonteCarloReportPayload | null = null;
+        if (d.needsMonteCarlo) {
+          try {
+            const cached = await getOrComputeMonteCarlo({
+              clientId: id,
+              firmId,
+              scenarioId: d.ref.kind === "scenario" ? d.ref.id : "base",
+            });
+            monteCarlo = cached.payload;
+          } catch (mcErr) {
+            // Non-fatal: leave monteCarlo null so the page renders its graceful
+            // "data unavailable" frame instead of failing the whole export.
+            console.error("Monte Carlo cache fetch failed for export", mcErr);
+          }
+        }
+
+        // Scenario Changes report: load the raw edits for the active scenario, but
+        // only when the deck includes that page AND the active ref is a live
+        // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
+        // only — matching what the overlaid clientData already reflects.
+        //
+        // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
+        // scenarioId alone. The scenarioId is proven to belong to this firm/client by
+        // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
+        // clientId/firmId and throws on a cross-org id before we reach here). Do not
+        // remove or lazily defer that call without adding firm scoping to these reads.
+        let scenarioChanges: ScenarioChangesContext | undefined;
+        if (d.needsScenarioChanges && d.ref.kind === "scenario") {
+          const scenarioId = d.ref.id;
+          try {
+            const [changes, toggleGroups] = await Promise.all([
+              loadScenarioChanges(scenarioId),
+              loadScenarioToggleGroups(scenarioId),
+            ]);
+            scenarioChanges = {
+              changes,
+              toggleGroups,
+              targetNames: buildTargetNames(clientData, id),
+              baseLabel: "your current plan",
+            };
+          } catch (scErr) {
+            // Non-fatal: leave undefined so the page renders its empty state.
+            console.error("Scenario changes load failed for export", scErr);
+          }
+        }
+
+        return {
+          kind: "ok",
+          key,
+          bundle: {
+            clientData,
+            projection,
+            scenarioLabel: labelForRef(d.ref, scenarioNames),
+            monteCarlo,
+            scenarioChanges,
+          },
+        };
+      }),
+    );
+
+    // First-error-wins, matching the original serial loop's early returns.
+    const firstErr = bundleResults.find((r) => r.kind !== "ok");
+    if (firstErr?.kind === "notFound") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (firstErr?.kind === "invalidInput") {
+      return NextResponse.json(
+        { error: "Client data is incomplete or invalid for this projection." },
+        { status: 422 },
+      );
+    }
+
     const bundles: Record<string, PageScenarioBundle> = {};
-    for (const [key, d] of plan.distinct) {
-      let clientData;
-      try {
-        const { effectiveTree } = await loadEffectiveTreeForRef(id, firmId, d.ref);
-        clientData = effectiveTree;
-      } catch (err) {
-        if (err instanceof ClientNotFoundError) {
-          return NextResponse.json({ error: "Not found" }, { status: 404 });
-        }
-        if (err instanceof ProjectionInputError) {
-          // The raw message embeds internal client / CRM-household UUIDs (audit
-          // F4). Keep the detail server-side; return a generic message.
-          console.error(
-            "POST /clients/[id]/presentations/export-pdf projection input error",
-            err,
-          );
-          return NextResponse.json(
-            { error: "Client data is incomplete or invalid for this projection." },
-            { status: 422 },
-          );
-        }
-        throw err;
-      }
-
-      const projection = runProjectionWithEvents(clientData);
-
-      // Monte Carlo: served from the compute cache (or computed + stored on miss).
-      // Snapshots have no live scenario row so they fall back to the base seed,
-      // matching the old inline behaviour.
-      let monteCarlo: MonteCarloReportPayload | null = null;
-      if (d.needsMonteCarlo) {
-        try {
-          const cached = await getOrComputeMonteCarlo({
-            clientId: id,
-            firmId,
-            scenarioId: d.ref.kind === "scenario" ? d.ref.id : "base",
-          });
-          monteCarlo = cached.payload;
-        } catch (mcErr) {
-          // Non-fatal: leave monteCarlo null so the page renders its graceful
-          // "data unavailable" frame instead of failing the whole export.
-          console.error("Monte Carlo cache fetch failed for export", mcErr);
-        }
-      }
-
-      // Scenario Changes report: load the raw edits for the active scenario, but
-      // only when the deck includes that page AND the active ref is a live
-      // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
-      // only — matching what the overlaid clientData already reflects.
-      //
-      // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
-      // scenarioId alone. The scenarioId is proven to belong to this firm/client by
-      // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
-      // clientId/firmId and throws on a cross-org id before we reach here). Do not
-      // remove or lazily defer that call without adding firm scoping to these reads.
-      let scenarioChanges: ScenarioChangesContext | undefined;
-      if (d.needsScenarioChanges && d.ref.kind === "scenario") {
-        const scenarioId = d.ref.id;
-        try {
-          const [changes, toggleGroups] = await Promise.all([
-            loadScenarioChanges(scenarioId),
-            loadScenarioToggleGroups(scenarioId),
-          ]);
-          scenarioChanges = {
-            changes,
-            toggleGroups,
-            targetNames: buildTargetNames(clientData, id),
-            baseLabel: "your current plan",
-          };
-        } catch (scErr) {
-          // Non-fatal: leave undefined so the page renders its empty state.
-          console.error("Scenario changes load failed for export", scErr);
-        }
-      }
-
-      bundles[key] = {
-        clientData,
-        projection,
-        scenarioLabel: labelForRef(d.ref, scenarioNames),
-        monteCarlo,
-        scenarioChanges,
-      };
+    for (const r of bundleResults) {
+      if (r.kind === "ok") bundles[r.key] = r.bundle;
     }
 
     // The cover/client-name fields come from the top-level bundle.

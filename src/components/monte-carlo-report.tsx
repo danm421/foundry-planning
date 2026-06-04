@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useThemeName } from "@/lib/chart-colors";
 import { colors, colorsLight } from "@/brand";
@@ -35,10 +35,11 @@ export default function MonteCarloReport({ clientId }: Props) {
   const brandColors = theme === "light" ? colorsLight : colors;
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Run state
-  const [running, setRunning] = useState(false);
+  // Fetch + reseed state. Nothing runs client-side any more; `loading` covers
+  // both the initial cached fetch and a reseed refetch.
+  const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<MonteCarloSummary | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
+  const [reseedError, setReseedError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<MonteCarloResult | null>(null);
   const [deterministic, setDeterministic] = useState<number[]>([]);
   const [meta, setMeta] = useState<CachedMonteCarloResult["meta"] | null>(null);
@@ -46,28 +47,37 @@ export default function MonteCarloReport({ clientId }: Props) {
 
   // Bumped by "Generate New Seed" to re-trigger the cached fetch after a reseed.
   const [refreshKey, setRefreshKey] = useState(0);
+  // Identifies the current client+scenario so the fetch effect can tell a
+  // navigation (hard-reset stale data) from a reseed (keep the report visible).
+  const scenarioParam = searchParams?.get("scenario") ?? null;
+  const lastDataKeyRef = useRef<string | null>(null);
 
   // Fetch the cached Monte Carlo result. The route computes/caches server-side
   // (no client-side simulation), so revisits are instant and there's no freeze.
   //
   // The Next.js App Router keeps this page component mounted across
-  // /clients/[id]/... param changes, so changing clientId doesn't unmount us.
-  // Reset every piece of per-client state synchronously when clientId changes
-  // — otherwise the previous client's summary, KPIs, and table linger in the UI
-  // until the new fetch resolves.
+  // /clients/[id]/... param changes, so changing client/scenario doesn't
+  // unmount us. On a navigation we hard-reset per-plan state so the previous
+  // plan's summary/KPIs/table don't linger until the new fetch resolves. On a
+  // reseed (same client+scenario, bumped refreshKey) we keep the current report
+  // on screen and just refetch — avoids a full-page skeleton flash.
   useEffect(() => {
-    setSummary(null);
-    setLastResult(null);
-    setDeterministic([]);
-    setMeta(null);
+    const dataKey = `${clientId}::${scenarioParam ?? ""}`;
+    const isReseed = lastDataKeyRef.current === dataKey;
+    lastDataKeyRef.current = dataKey;
+    if (!isReseed) {
+      setSummary(null);
+      setLastResult(null);
+      setDeterministic([]);
+      setMeta(null);
+    }
     setLoadError(null);
-    setRunError(null);
-    setRunning(true);
+    setReseedError(null);
+    setLoading(true);
 
     let cancelled = false;
     (async () => {
       try {
-        const scenarioParam = searchParams?.get("scenario");
         const url = scenarioParam
           ? `/api/clients/${clientId}/monte-carlo?scenario=${encodeURIComponent(scenarioParam)}`
           : `/api/clients/${clientId}/monte-carlo`;
@@ -82,13 +92,13 @@ export default function MonteCarloReport({ clientId }: Props) {
       } catch (e) {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (!cancelled) setRunning(false);
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [clientId, searchParams, refreshKey]);
+  }, [clientId, scenarioParam, refreshKey]);
 
   // "Generate New Seed": persist a fresh seed to the scenario, then re-fetch.
   // The reseed changes the stored seed → input hash changes → next fetch is a
@@ -99,7 +109,7 @@ export default function MonteCarloReport({ clientId }: Props) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setRefreshKey((k) => k + 1);
     } catch (e) {
-      setRunError(e instanceof Error ? e.message : String(e));
+      setReseedError(e instanceof Error ? e.message : String(e));
     }
   }, [clientId]);
 
@@ -197,9 +207,9 @@ export default function MonteCarloReport({ clientId }: Props) {
             <div className="rounded-lg bg-card ring-1 ring-hair h-[440px] animate-pulse" />
           )}
 
-          {runError && (
+          {reseedError && (
             <div className="rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
-              Run failed: {runError}
+              Couldn’t generate a new seed: {reseedError}
             </div>
           )}
 
@@ -213,10 +223,10 @@ export default function MonteCarloReport({ clientId }: Props) {
             <div className="flex justify-center pt-2">
               <button
                 onClick={handleRestart}
-                disabled={running}
+                disabled={loading}
                 className="rounded-lg border border-hair bg-card px-4 py-2 text-sm text-ink-2 hover:border-good/60 hover:text-good disabled:opacity-50"
               >
-                {running ? "Running…" : "Generate New Seed"}
+                {loading ? "Generating…" : "Generate New Seed"}
               </button>
             </div>
           ) : null}

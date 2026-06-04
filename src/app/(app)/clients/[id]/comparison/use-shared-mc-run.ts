@@ -84,8 +84,16 @@ export function useSharedMcRun({ clientId, plans, enabled }: Args): SharedMcCont
 
         const trials = 1000;
         const total = trials * fallbackPlans.length;
-        setState({ status: "loading", phase: "running", done: 0, total });
+        // Only show the "running" phase when there are snapshot plans to run
+        // client-side; an all-cached comparison would otherwise flash a 0/0
+        // progress bar before resolving instantly.
+        if (fallbackPlans.length > 0) {
+          setState({ status: "loading", phase: "running", done: 0, total });
+        }
         const dones = new Array(fallbackPlans.length).fill(0);
+        // Precompute snapshot-plan → progress index once (avoids an O(n²)
+        // indexOf inside the per-plan map below).
+        const fbIndexByPlanId = new Map(fallbackPlans.map((p, i) => [p.id, i]));
         const onTick = () => {
           if (cancelled) return;
           setState((s) => ({
@@ -132,7 +140,7 @@ export function useSharedMcRun({ clientId, plans, enabled }: Args): SharedMcCont
               }
 
               // Fallback: snapshot plan, run Monte Carlo client-side.
-              const fbIndex = fallbackPlans.indexOf(plan);
+              const fbIndex = fbIndexByPlanId.get(plan.id)!;
               const r = await runMonteCarlo({
                 data: plan.tree,
                 returnEngine: engine!,
