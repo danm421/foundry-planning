@@ -57,6 +57,8 @@ export async function commitAccounts(
           accountNumberLast4: row.accountNumberLast4 ?? null,
           custodian: row.custodian ?? null,
           growthRate: row.growthRate != null ? String(row.growthRate) : null,
+          growthSource: row.growthSource ?? "default",
+          modelPortfolioId: row.modelPortfolioId ?? null,
           rmdEnabled: row.rmdEnabled ?? false,
           source: "extracted",
         })
@@ -81,6 +83,8 @@ export async function commitAccounts(
     if (row.accountNumberLast4 !== undefined) updates.accountNumberLast4 = row.accountNumberLast4;
     if (row.custodian !== undefined) updates.custodian = row.custodian;
     if (row.growthRate != null) updates.growthRate = String(row.growthRate);
+    if (row.growthSource !== undefined) updates.growthSource = row.growthSource;
+    if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
     if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
     await tx
       .update(accounts)

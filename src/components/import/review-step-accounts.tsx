@@ -67,6 +67,8 @@ const ACCOUNT_FIELD_MAP: FieldMap<ExtractedAccount> = {
   accountNumberLast4: "replace",
   custodian: "replace",
   growthRate: "replace-if-non-null",
+  growthSource: "replace",
+  modelPortfolioId: "replace",
   rmdEnabled: "replace-if-non-null",
 };
 
@@ -78,6 +80,8 @@ const ACCOUNT_FIELD_LABELS: Partial<Record<keyof ExtractedAccount, string>> = {
   accountNumberLast4: "Account ####",
   custodian: "Custodian",
   growthRate: "Growth rate",
+  growthSource: "Growth source",
+  modelPortfolioId: "Model portfolio",
   rmdEnabled: "RMD",
 };
 
