@@ -12,7 +12,6 @@ interface KpiBandProps {
 export function KpiBand({ summary, startAge, annualIncome }: KpiBandProps) {
   const successPct = summary.successRate;
   const medianEnding = summary.ending.p50;
-  const startAgeVal = startAge;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       <div
@@ -32,7 +31,7 @@ export function KpiBand({ summary, startAge, annualIncome }: KpiBandProps) {
       />
       <KpiCard
         label="Start Age"
-        value={startAgeVal}
+        value={startAge}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import { db } from "@/db";
-import { scenarioComputeCache, scenarios } from "@/db/schema";
+import { scenarioComputeCache } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { resolveScenarioId } from "./resolve-scenario-id";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { runProjectionWithEvents } from "@/engine/projection";
@@ -30,19 +31,6 @@ export interface CachedMonteCarloResult {
 }
 
 const CANONICAL_TRIALS = 1000;
-
-async function resolveScenarioId(
-  clientId: string,
-  scenarioId: string | "base",
-): Promise<string> {
-  if (scenarioId !== "base") return scenarioId;
-  const [base] = await db
-    .select({ id: scenarios.id })
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-  if (!base) throw new Error(`No base scenario for client ${clientId}`);
-  return base.id;
-}
 
 export async function getOrComputeMonteCarlo(args: {
   clientId: string;

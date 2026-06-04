@@ -9,8 +9,9 @@
 // load tree + MC payload, hash, read-through cache (graceful degradation),
 // recompute, upsert (graceful degradation).
 import { db } from "@/db";
-import { scenarioComputeCache, scenarios } from "@/db/schema";
+import { scenarioComputeCache } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { resolveScenarioId } from "./resolve-scenario-id";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { computeNeedOverTime, hasSpouse } from "@/lib/life-insurance/need-over-time";
@@ -29,19 +30,6 @@ import { hashLifeInsuranceInputs, ENGINE_VERSION } from "./hash";
 /** Production Monte Carlo trial count — matches `DEFAULT_TRIALS` in
  *  solve-need-mc.ts, the value the live solve-mc route uses. */
 const CANONICAL_TRIALS = 250;
-
-async function resolveScenarioId(
-  clientId: string,
-  scenarioId: string | "base",
-): Promise<string> {
-  if (scenarioId !== "base") return scenarioId;
-  const [base] = await db
-    .select({ id: scenarios.id })
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-  if (!base) throw new Error(`No base scenario for client ${clientId}`);
-  return base.id;
-}
 
 export async function getOrComputeLifeInsuranceSolve(args: {
   clientId: string;
