@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useScenarioOptions } from "@/components/presentations/options-context";
+import { useScenarioOptions, useClientId } from "@/components/presentations/options-context";
 import type { RetirementComparisonOptions } from "@/lib/presentations/pages/retirement-comparison/types";
 
 interface Props {
@@ -14,15 +14,9 @@ const LENGTHS = ["short", "medium", "long"] as const;
 
 export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
   const scenarios = useScenarioOptions();
+  const clientId = useClientId();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // The export endpoint lives under /api/clients/[id]/...; the launcher renders
-  // under that same client id. Read it from the URL to avoid prop-drilling.
-  const clientId =
-    typeof window !== "undefined"
-      ? (window.location.pathname.match(/clients\/([^/]+)/)?.[1] ?? "")
-      : "";
 
   async function generate(force: boolean) {
     if (!value.scenarioId) {

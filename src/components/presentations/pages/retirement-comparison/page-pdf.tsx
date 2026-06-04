@@ -9,14 +9,8 @@ import type {
   PortfolioMatrixCell,
 } from "@/lib/presentations/pages/retirement-comparison/types";
 import type { ChangeRow, DisplayUnit } from "@/lib/presentations/pages/scenario-changes/types";
+import { fmtUsdCompact as fmtUsd } from "@/lib/presentations/pages/retirement-comparison/format";
 import { OverlayBarsPdf } from "./chart-pdf";
-
-const fmtUsd = (v: number): string => {
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${Math.round(v / 1_000)}K`;
-  return `$${Math.round(v)}`;
-};
 
 const s = StyleSheet.create({
   subtitle: { fontSize: 8, color: T.ink2, marginBottom: 8 },

@@ -27,7 +27,6 @@ import { buildRetirementComparisonAiPrompt } from "@/lib/presentations/pages/ret
 import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/comparison/ai-cache";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
-import type { ClientData } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -134,10 +133,6 @@ async function resolveScenarioLabel(clientId: string, raw: string): Promise<stri
   return "the scenario";
 }
 
-function birthYearOf(tree: ClientData): number {
-  return new Date(tree.client.dateOfBirth).getUTCFullYear();
-}
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -164,7 +159,8 @@ export async function POST(
     ]);
 
     const client = scn.effectiveTree.client;
-    const retirementYear = birthYearOf(scn.effectiveTree) + client.retirementAge;
+    const retirementYear =
+      new Date(client.dateOfBirth).getUTCFullYear() + client.retirementAge;
 
     const metrics = buildRetirementComparisonMetrics({
       baseYears: base.projection.years,

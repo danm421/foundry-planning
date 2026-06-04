@@ -16,7 +16,6 @@ export interface RetirementComparisonAiConfig {
 export interface RetirementComparisonOptions {
   /** The comparison scenario id; baseline is always Base Case. Empty = unset. */
   scenarioId: string;
-  chartYearRange: { start: number; end: number } | null;
   showChanges: boolean;
   showPortfolioMatrix: boolean;
   showAiSummary: boolean;

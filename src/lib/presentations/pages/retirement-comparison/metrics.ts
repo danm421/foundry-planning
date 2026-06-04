@@ -2,6 +2,7 @@
 import type { ProjectionYear } from "@/engine/types";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
 import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
+import { fmtUsdCompact } from "./format";
 import type {
   ComparisonKpi,
   OverlayBar,
@@ -22,13 +23,6 @@ export interface RetirementComparisonMetrics {
   overlay: OverlayBar[];
   matrix: PortfolioMatrix;
 }
-
-const fmtUsdShort = (v: number): string => {
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${Math.round(v / 1_000)}K`;
-  return `$${Math.round(v)}`;
-};
 
 const fmtPct = (v: number | null): string => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
@@ -100,9 +94,9 @@ export function buildRetirementComparisonMetrics(
     },
     {
       label: "Ending Portfolio Assets",
-      base: fmtUsdShort(baseEnd),
-      scenario: fmtUsdShort(scnEnd),
-      deltaLabel: signed(scnEnd - baseEnd, fmtUsdShort),
+      base: fmtUsdCompact(baseEnd),
+      scenario: fmtUsdCompact(scnEnd),
+      deltaLabel: signed(scnEnd - baseEnd, fmtUsdCompact),
       direction: scnEnd - baseEnd >= 0 ? 1 : -1,
     },
     {
@@ -114,9 +108,9 @@ export function buildRetirementComparisonMetrics(
     },
     {
       label: "Lifetime Taxes",
-      base: fmtUsdShort(baseTax),
-      scenario: fmtUsdShort(scnTax),
-      deltaLabel: signed(scnTax - baseTax, fmtUsdShort),
+      base: fmtUsdCompact(baseTax),
+      scenario: fmtUsdCompact(scnTax),
+      deltaLabel: signed(scnTax - baseTax, fmtUsdCompact),
       // Lower taxes are good → invert.
       direction: scnTax - baseTax <= 0 ? 1 : -1,
     },

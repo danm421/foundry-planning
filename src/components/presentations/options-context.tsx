@@ -9,6 +9,7 @@ import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropd
 interface PresentationOptionsValue {
   investmentCatalog: InvestmentOptionCatalog;
   scenarios: ScenarioOption[];
+  clientId: string;
 }
 
 const Ctx = createContext<PresentationOptionsValue | null>(null);
@@ -29,4 +30,8 @@ export function useInvestmentOptionCatalog(): InvestmentOptionCatalog {
 
 export function useScenarioOptions(): ScenarioOption[] {
   return useContext(Ctx)?.scenarios ?? [];
+}
+
+export function useClientId(): string {
+  return useContext(Ctx)?.clientId ?? "";
 }

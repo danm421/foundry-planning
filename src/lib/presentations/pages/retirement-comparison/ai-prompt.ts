@@ -1,4 +1,5 @@
 // src/lib/presentations/pages/retirement-comparison/ai-prompt.ts
+import { fmtUsdCompact as fmtUsd } from "./format";
 import type { ComparisonKpi, PortfolioMatrix } from "./types";
 
 const TONE: Record<"concise" | "detailed" | "plain", string> = {
@@ -12,12 +13,6 @@ const LENGTH: Record<"short" | "medium" | "long", string> = {
   long: "7-10 sentences total. 2-3 short paragraphs.",
 };
 
-const fmtUsd = (v: number): string => {
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${Math.round(v / 1_000)}K`;
-  return `$${Math.round(v)}`;
-};
 
 export interface RetirementComparisonAiArgs {
   householdName: string;

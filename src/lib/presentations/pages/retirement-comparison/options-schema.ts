@@ -4,9 +4,6 @@ import type { RetirementComparisonOptions } from "./types";
 
 export const retirementComparisonOptionsSchema = z.object({
   scenarioId: z.string(),
-  chartYearRange: z
-    .object({ start: z.number(), end: z.number() })
-    .nullable(),
   showChanges: z.boolean(),
   showPortfolioMatrix: z.boolean(),
   showAiSummary: z.boolean(),
@@ -22,7 +19,6 @@ export const retirementComparisonOptionsSchema = z.object({
 
 export const RETIREMENT_COMPARISON_OPTIONS_DEFAULT: RetirementComparisonOptions = {
   scenarioId: "",
-  chartYearRange: null,
   showChanges: true,
   showPortfolioMatrix: true,
   showAiSummary: true,
