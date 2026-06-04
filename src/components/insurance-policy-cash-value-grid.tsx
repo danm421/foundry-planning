@@ -12,20 +12,16 @@ export interface ScheduleRow {
 
 interface InsurancePolicyCashValueGridProps {
   rows: ScheduleRow[];
+  /** First year of the fixed schedule range (the plan start year). */
+  startYear: number;
+  /** Last year of the fixed schedule range (the household's second-to-die
+   *  death year). */
+  endYear: number;
   onChange: (rows: ScheduleRow[]) => void;
-  /** Called after a CSV upload — instructs the parent to activate any modes
-   *  that have at least one non-empty value in the uploaded data. */
-  onCsvPasted?: (rows: ScheduleRow[]) => void;
 }
 
 interface GridRow extends ScheduleRow {
   _id: string;
-}
-
-// Coerce a text input value → integer. Empty string becomes 0.
-function toInt(raw: string): number {
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
 // Coerce an optional numeric cell: "" → undefined, else a number.
@@ -52,6 +48,43 @@ function stripIds(rows: GridRow[]): ScheduleRow[] {
     income,
     deathBenefit,
   }));
+}
+
+/** True when a row carries at least one override value. Empty rows (just a
+ *  year) are display-only scaffolding and are never persisted. */
+function hasValue(r: ScheduleRow): boolean {
+  return (
+    r.cashValue != null ||
+    r.premiumAmount != null ||
+    r.income != null ||
+    r.deathBenefit != null
+  );
+}
+
+/** Build the fixed display range startYear..endYear, merging any saved values
+ *  onto their matching year. Years outside the range are dropped; years with no
+ *  saved value render as blank cells. */
+export function buildRangeRows(
+  startYear: number,
+  endYear: number,
+  saved: ScheduleRow[],
+): ScheduleRow[] {
+  if (!Number.isFinite(startYear) || !Number.isFinite(endYear) || endYear < startYear) {
+    return [];
+  }
+  const byYear = new Map(saved.map((r) => [r.year, r]));
+  const out: ScheduleRow[] = [];
+  for (let y = startYear; y <= endYear; y++) {
+    const s = byYear.get(y);
+    out.push({
+      year: y,
+      cashValue: s?.cashValue,
+      premiumAmount: s?.premiumAmount,
+      income: s?.income,
+      deathBenefit: s?.deathBenefit,
+    });
+  }
+  return out;
 }
 
 function isSameSchedule(a: ScheduleRow[], b: GridRow[]): boolean {
@@ -112,46 +145,46 @@ export function parseScheduleCsv(text: string): ScheduleRow[] {
 
 export default function InsurancePolicyCashValueGrid({
   rows,
+  startYear,
+  endYear,
   onChange,
-  onCsvPasted,
 }: InsurancePolicyCashValueGridProps) {
-  // Internal-state implementation: the grid keeps its own `GridRow[]` with
-  // stable client-side `_id`s so React can key rows by id (not index). This
-  // keeps input DOM/focus attached to the correct row after a middle-row
-  // delete. We reseed ids from `props.rows` only when the external value
-  // actually differs from our current view (e.g. CSV upload, initial mount),
-  // otherwise our self-initiated changes would re-mint ids on every render.
+  // The grid always displays the fixed year range (plan start → second-to-die),
+  // with saved values merged on. We keep a local `GridRow[]` carrying stable
+  // `_id`s so React keys rows by id (not index) and input focus survives
+  // re-renders. Ids are reseeded only when the *desired* display set actually
+  // differs from our current view (range change, CSV upload, mount); the
+  // equality check stops self-initiated edits from re-minting ids every render.
   const [gridRows, setGridRows] = useState<GridRow[]>(() =>
-    rows.map((r) => ({ ...r, _id: makeId() })),
+    buildRangeRows(startYear, endYear, rows).map((r) => ({ ...r, _id: makeId() })),
   );
   const [csvError, setCsvError] = useState<string | null>(null);
 
+  const desired = buildRangeRows(startYear, endYear, rows);
+
   useEffect(() => {
-    if (!isSameSchedule(rows, gridRows)) {
-      setGridRows(rows.map((r) => ({ ...r, _id: makeId() })));
+    if (!isSameSchedule(desired, gridRows)) {
+      setGridRows(desired.map((r) => ({ ...r, _id: makeId() })));
     }
-    // gridRows intentionally not a dep: we only want to sync when the
-    // *external* prop changes. Including gridRows would loop after every
-    // self-initiated update. The equality check guards against false
-    // positives from parent re-renders that pass identical row data.
+    // gridRows/desired intentionally not deps: we resync only when the external
+    // inputs (range bounds, saved rows) change. The equality check guards
+    // against re-seeding on identical parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [startYear, endYear, rows]);
+
+  // Persist only rows that carry a value — the full range is scaffolding and is
+  // rebuilt for display on the next open.
+  function persist(next: GridRow[]) {
+    onChange(stripIds(next.filter(hasValue)));
+  }
 
   function commit(next: GridRow[]) {
     setGridRows(next);
-    onChange(stripIds(next));
+    persist(next);
   }
 
   function updateRow(index: number, patch: Partial<ScheduleRow>) {
     commit(gridRows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-  }
-
-  function removeRow(index: number) {
-    commit(gridRows.filter((_, i) => i !== index));
-  }
-
-  function addRow() {
-    commit([...gridRows, { _id: makeId(), year: 0 }]);
   }
 
   async function handleUploadCsv(e: ChangeEvent<HTMLInputElement>) {
@@ -166,10 +199,11 @@ export default function InsurancePolicyCashValueGrid({
       return;
     }
     setCsvError(null);
-    const next = parsed.map((r) => ({ ...r, _id: makeId() }));
-    setGridRows(next);
-    onChange(stripIds(next));
-    onCsvPasted?.(parsed);
+    const next = buildRangeRows(startYear, endYear, parsed).map((r) => ({
+      ...r,
+      _id: makeId(),
+    }));
+    commit(next);
   }
 
   function downloadTemplate() {
@@ -186,9 +220,25 @@ export default function InsurancePolicyCashValueGrid({
     URL.revokeObjectURL(url);
   }
 
+  function clearSchedule() {
+    if (!gridRows.some(hasValue)) return;
+    if (
+      !window.confirm(
+        "Clear all schedule values? The year rows stay; every entered value is removed.",
+      )
+    ) {
+      return;
+    }
+    commit(
+      buildRangeRows(startYear, endYear, []).map((r) => ({ ...r, _id: makeId() })),
+    );
+  }
+
+  const hasAnyValue = gridRows.some(hasValue);
+
   return (
     <div>
-      {/* CSV upload / template section */}
+      {/* CSV upload / template / clear actions */}
       <div className="mb-3 space-y-1">
         <div className="flex items-center gap-3 text-xs">
           <label className="cursor-pointer text-accent hover:text-accent-ink">
@@ -207,6 +257,14 @@ export default function InsurancePolicyCashValueGrid({
           >
             Download template
           </button>
+          <button
+            type="button"
+            onClick={clearSchedule}
+            disabled={!hasAnyValue}
+            className="ml-auto text-gray-400 hover:text-red-400 disabled:opacity-40 disabled:hover:text-gray-400"
+          >
+            Clear schedule
+          </button>
         </div>
         {csvError ? (
           <p className="text-xs text-red-400">{csvError}</p>
@@ -220,7 +278,7 @@ export default function InsurancePolicyCashValueGrid({
 
       {gridRows.length === 0 ? (
         <p className="mb-3 text-xs text-gray-400">
-          No schedule rows yet. Add rows manually or upload a CSV.
+          No years to show for this schedule.
         </p>
       ) : (
         <div className="mb-3 overflow-x-auto">
@@ -232,24 +290,13 @@ export default function InsurancePolicyCashValueGrid({
                 <th className="py-1 pr-2 text-right font-medium">Income</th>
                 <th className="py-1 pr-2 text-right font-medium">Cash Value</th>
                 <th className="py-1 pr-2 text-right font-medium">Death Benefit</th>
-                <th className="py-1" />
               </tr>
             </thead>
             <tbody>
               {gridRows.map((row, i) => (
                 <tr key={row._id} className="border-t border-gray-800">
-                  <td className="py-1 pr-2">
-                    <input
-                      type="number"
-                      min="1900"
-                      max="2200"
-                      step="1"
-                      value={row.year}
-                      onChange={(e) =>
-                        updateRow(i, { year: toInt(e.target.value) })
-                      }
-                      className="w-20 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
-                    />
+                  <td className="py-1 pr-2 tabular-nums text-gray-300">
+                    {row.year}
                   </td>
                   <td className="py-1 pr-2">
                     <input
@@ -303,30 +350,12 @@ export default function InsurancePolicyCashValueGrid({
                       className="w-28 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 placeholder:text-gray-600 focus:border-accent focus:outline-none"
                     />
                   </td>
-                  <td className="py-1 text-right">
-                    <button
-                      type="button"
-                      onClick={() => removeRow(i)}
-                      aria-label={`Remove year ${row.year}`}
-                      className="px-2 text-white hover:text-white"
-                    >
-                      ×
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={addRow}
-        className="text-xs text-accent hover:text-accent-ink"
-      >
-        + Add row
-      </button>
     </div>
   );
 }

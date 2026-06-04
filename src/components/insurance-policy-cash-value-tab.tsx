@@ -8,28 +8,21 @@ interface InsurancePolicyCashValueTabProps {
   policyType: "term" | "whole" | "universal" | "variable";
   mode: "basic" | "free_form";
   schedule: ScheduleRow[];
-  premiumScheduleMode: "off" | "scheduled";
-  deathBenefitScheduleMode: "off" | "scheduled";
-  incomeScheduleMode: "off" | "scheduled";
+  /** Fixed schedule range: plan start year → household second-to-die year. */
+  scheduleStartYear: number;
+  scheduleEndYear: number;
   onChangeMode: (mode: "basic" | "free_form") => void;
   onChangeSchedule: (rows: ScheduleRow[]) => void;
-  onChangePremiumScheduleMode: (mode: "off" | "scheduled") => void;
-  onChangeDeathBenefitScheduleMode: (mode: "off" | "scheduled") => void;
-  onChangeIncomeScheduleMode: (mode: "off" | "scheduled") => void;
 }
 
 export default function InsurancePolicyCashValueTab({
   policyType,
   mode,
   schedule,
-  premiumScheduleMode,
-  deathBenefitScheduleMode,
-  incomeScheduleMode,
+  scheduleStartYear,
+  scheduleEndYear,
   onChangeMode,
   onChangeSchedule,
-  onChangePremiumScheduleMode,
-  onChangeDeathBenefitScheduleMode,
-  onChangeIncomeScheduleMode,
 }: InsurancePolicyCashValueTabProps) {
   if (policyType === "term") {
     return (
@@ -39,28 +32,6 @@ export default function InsurancePolicyCashValueTab({
         </div>
       </div>
     );
-  }
-
-  const anyOverrideOn =
-    mode === "free_form" ||
-    premiumScheduleMode === "scheduled" ||
-    deathBenefitScheduleMode === "scheduled" ||
-    incomeScheduleMode === "scheduled";
-
-  function handleCsvPasted(rows: ScheduleRow[]) {
-    // Turn on each mode for any column that has at least one non-empty value.
-    if (rows.some((r) => r.premiumAmount != null)) {
-      onChangePremiumScheduleMode("scheduled");
-    }
-    if (rows.some((r) => r.deathBenefit != null)) {
-      onChangeDeathBenefitScheduleMode("scheduled");
-    }
-    if (rows.some((r) => r.income != null)) {
-      onChangeIncomeScheduleMode("scheduled");
-    }
-    if (rows.some((r) => r.cashValue != null)) {
-      onChangeMode("free_form");
-    }
   }
 
   return (
@@ -99,61 +70,19 @@ export default function InsurancePolicyCashValueTab({
         </div>
       </fieldset>
 
-      {mode === "basic" && !anyOverrideOn && (
+      {mode === "basic" ? (
         <p className="text-xs text-ink-4">
           Cash value grows at the default life-insurance growth rate configured
-          in plan settings. Switch to free-form mode if you need to specify
-          exact values per year.
+          in plan settings. Switch to free-form mode to set premium, income,
+          cash value, and death benefit per year — every value you enter
+          overrides the policy defaults for that year.
         </p>
-      )}
-
-      {/* Per-column override checkboxes */}
-      <fieldset>
-        <legend className="mb-2 text-xs font-medium text-ink-3">
-          Additional per-year overrides
-        </legend>
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm text-ink-2">
-            <input
-              type="checkbox"
-              checked={premiumScheduleMode === "scheduled"}
-              onChange={(e) =>
-                onChangePremiumScheduleMode(e.target.checked ? "scheduled" : "off")
-              }
-              className="rounded"
-            />
-            Override premium by year
-          </label>
-          <label className="flex items-center gap-2 text-sm text-ink-2">
-            <input
-              type="checkbox"
-              checked={deathBenefitScheduleMode === "scheduled"}
-              onChange={(e) =>
-                onChangeDeathBenefitScheduleMode(e.target.checked ? "scheduled" : "off")
-              }
-              className="rounded"
-            />
-            Override death benefit by year
-          </label>
-          <label className="flex items-center gap-2 text-sm text-ink-2">
-            <input
-              type="checkbox"
-              checked={incomeScheduleMode === "scheduled"}
-              onChange={(e) =>
-                onChangeIncomeScheduleMode(e.target.checked ? "scheduled" : "off")
-              }
-              className="rounded"
-            />
-            Override income by year
-          </label>
-        </div>
-      </fieldset>
-
-      {anyOverrideOn && (
+      ) : (
         <InsurancePolicyCashValueGrid
           rows={schedule}
+          startYear={scheduleStartYear}
+          endYear={scheduleEndYear}
           onChange={onChangeSchedule}
-          onCsvPasted={handleCsvPasted}
         />
       )}
     </div>

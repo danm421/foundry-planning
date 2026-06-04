@@ -42,9 +42,6 @@ export interface PolicyFormState {
   /** UI-only: drives the post-payout growth-rate dropdown. Not persisted directly;
    *  derived back into postPayoutGrowthRate / postPayoutModelPortfolioId on save. */
   postPayoutGrowthSource: PostPayoutGrowthSource;
-  premiumScheduleMode: "off" | "scheduled";
-  deathBenefitScheduleMode: "off" | "scheduled";
-  incomeScheduleMode: "off" | "scheduled";
   cashValueSchedule: {
     year: number;
     cashValue?: number;
@@ -65,6 +62,10 @@ export interface InsurancePolicyDialogProps {
   externalBeneficiaries: InsurancePanelExternal[];
   modelPortfolios: InsurancePanelModelPortfolio[];
   resolvedInflationRate: number;
+  /** Fixed schedule range for the cash-value/schedule grid:
+   *  plan start year → household second-to-die year. */
+  scheduleStartYear: number;
+  scheduleEndYear: number;
   mode: "create" | "edit";
   policyId?: string;
   onClose: () => void;
@@ -126,9 +127,6 @@ const DEFAULT_STATE: PolicyFormState = {
   termLengthYears: null,
   endsAtInsuredRetirement: false,
   cashValueGrowthMode: "basic",
-  premiumScheduleMode: "off",
-  deathBenefitScheduleMode: "off",
-  incomeScheduleMode: "off",
   postPayoutGrowthRate: 0.06,
   postPayoutModelPortfolioId: null,
   postPayoutGrowthSource: "custom",
@@ -153,9 +151,6 @@ function seedStateFromRecord(
     termLengthYears: policy.termLengthYears,
     endsAtInsuredRetirement: policy.endsAtInsuredRetirement,
     cashValueGrowthMode: policy.cashValueGrowthMode,
-    premiumScheduleMode: policy.premiumScheduleMode ?? "off",
-    deathBenefitScheduleMode: policy.deathBenefitScheduleMode ?? "off",
-    incomeScheduleMode: policy.incomeScheduleMode ?? "off",
     postPayoutGrowthRate: policy.postPayoutGrowthRate,
     postPayoutModelPortfolioId: policy.postPayoutModelPortfolioId ?? null,
     postPayoutGrowthSource: policy.postPayoutModelPortfolioId
@@ -193,9 +188,6 @@ function applyPolicyTypeTransition(
       cashValue: 0,
       costBasis: 0,
       cashValueGrowthMode: "basic",
-      premiumScheduleMode: "off",
-      deathBenefitScheduleMode: "off",
-      incomeScheduleMode: "off",
       cashValueSchedule: [],
     };
   }
@@ -207,6 +199,10 @@ function applyPolicyTypeTransition(
 // simplicity — the server only writes what's provided and our state always
 // carries a complete snapshot.
 function buildPayload(state: PolicyFormState): Record<string, unknown> {
+  // Free-form makes the per-year grid authoritative for every column, so the
+  // three schedule modes are no longer chosen independently — they're simply
+  // on in free-form mode and off in basic mode.
+  const scheduleMode = state.cashValueGrowthMode === "free_form" ? "scheduled" : "off";
   const payload: Record<string, unknown> = {
     name: state.name.trim(),
     policyType: state.policyType,
@@ -221,18 +217,17 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     termLengthYears: state.termLengthYears,
     endsAtInsuredRetirement: state.endsAtInsuredRetirement,
     cashValueGrowthMode: state.cashValueGrowthMode,
-    premiumScheduleMode: state.premiumScheduleMode,
-    deathBenefitScheduleMode: state.deathBenefitScheduleMode,
-    incomeScheduleMode: state.incomeScheduleMode,
+    premiumScheduleMode: scheduleMode,
+    deathBenefitScheduleMode: scheduleMode,
+    incomeScheduleMode: scheduleMode,
     postPayoutGrowthRate: state.postPayoutGrowthRate,
     postPayoutModelPortfolioId:
       state.postPayoutGrowthSource === "model_portfolio"
         ? state.postPayoutModelPortfolioId
         : null,
-    // Always send the schedule — the Zod schema no longer gates on free-form
-    // mode, and premium/income/DB rows must persist even in basic cash-value
-    // mode. Full-replacement semantics: sending [] on a policy where all
-    // overrides are off wipes orphan rows.
+    // Always send the schedule (full-replacement semantics): in free-form mode
+    // these rows are authoritative for every column; in basic mode all schedule
+    // modes are off so the rows are inert, and sending [] wipes orphan rows.
     cashValueSchedule: state.cashValueSchedule,
   };
   return payload;
@@ -583,14 +578,10 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               policyType={state.policyType}
               mode={state.cashValueGrowthMode}
               schedule={state.cashValueSchedule}
-              premiumScheduleMode={state.premiumScheduleMode}
-              deathBenefitScheduleMode={state.deathBenefitScheduleMode}
-              incomeScheduleMode={state.incomeScheduleMode}
+              scheduleStartYear={props.scheduleStartYear}
+              scheduleEndYear={props.scheduleEndYear}
               onChangeMode={(m) => handlePatch({ cashValueGrowthMode: m })}
               onChangeSchedule={(s) => handlePatch({ cashValueSchedule: s })}
-              onChangePremiumScheduleMode={(m) => handlePatch({ premiumScheduleMode: m })}
-              onChangeDeathBenefitScheduleMode={(m) => handlePatch({ deathBenefitScheduleMode: m })}
-              onChangeIncomeScheduleMode={(m) => handlePatch({ incomeScheduleMode: m })}
             />
           </div>
         )}

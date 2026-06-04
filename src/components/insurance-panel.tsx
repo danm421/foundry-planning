@@ -66,6 +66,10 @@ export interface InsurancePanelProps {
   externalBeneficiaries: InsurancePanelExternal[];
   modelPortfolios: InsurancePanelModelPortfolio[];
   resolvedInflationRate: number;
+  /** Fixed schedule range for the policy schedule grid:
+   *  plan start year → household second-to-die year. */
+  scheduleStartYear: number;
+  scheduleEndYear: number;
   embed?: "page" | "wizard";
 }
 
@@ -237,6 +241,8 @@ export default function InsurancePanel(props: InsurancePanelProps) {
           externalBeneficiaries={props.externalBeneficiaries}
           modelPortfolios={props.modelPortfolios}
           resolvedInflationRate={props.resolvedInflationRate}
+          scheduleStartYear={props.scheduleStartYear}
+          scheduleEndYear={props.scheduleEndYear}
           mode={dialogState.mode}
           policyId={dialogState.mode === "edit" ? dialogState.policyId : undefined}
           onClose={() => setDialogState(null)}

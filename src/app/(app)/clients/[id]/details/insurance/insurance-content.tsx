@@ -15,6 +15,7 @@ import {
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { computeScheduleYearRange } from "@/lib/insurance-policies/schedule-years";
 import { resolveInflationRate } from "@/lib/inflation";
 import InsurancePanel, {
   type InsurancePanelAccount,
@@ -179,6 +180,17 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
     blendedReturn: blendedByPortfolio.get(p.id) ?? 0,
   }));
 
+  // Policy schedule grid range: plan start year → household second-to-die year.
+  const { startYear: scheduleStartYear, endYear: scheduleEndYear } =
+    computeScheduleYearRange({
+      clientDob: effectiveTree.client.dateOfBirth,
+      lifeExpectancy: effectiveTree.client.lifeExpectancy ?? 95,
+      spouseDob: effectiveTree.client.spouseDob ?? null,
+      spouseLifeExpectancy: effectiveTree.client.spouseLifeExpectancy ?? null,
+      planStartYear: settings?.planStartYear ?? new Date().getFullYear(),
+      planEndYear: settings?.planEndYear ?? new Date().getFullYear() + 30,
+    });
+
   return (
     <InsurancePanel
       clientId={id}
@@ -191,6 +203,8 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
       externalBeneficiaries={exts}
       modelPortfolios={portfolios}
       resolvedInflationRate={resolvedInflationRate}
+      scheduleStartYear={scheduleStartYear}
+      scheduleEndYear={scheduleEndYear}
     />
   );
 }
