@@ -4,6 +4,7 @@
 // engine — just maps a small form payload onto engine Account + SavingsRule.
 
 import type { Account, SavingsRule } from "@/engine/types";
+import { DEDUCTIBLE_ELIGIBLE_SUBTYPES } from "@/lib/tax/derive-deductions";
 
 export type QuickAddType = "taxable" | "ira" | "roth_ira" | "cash";
 
@@ -105,4 +106,46 @@ export function buildAdditionalSavingsAccount(args: AdditionalSavingsArgs): { ac
     fundFromExpenseReduction: true,
   };
   return { account, rule };
+}
+
+/**
+ * True when a contribution to this account defaults to above-the-line
+ * deductible (pre-tax). Mirrors the engine's gate in derive-deductions:
+ * retirement category AND a deduction-eligible subtype, with "other" left
+ * unchecked because deductibility there depends on advisor assertion.
+ */
+export function deductibleForSubType(category: string, subType: string): boolean {
+  if (category !== "retirement") return false;
+  if (!DEDUCTIBLE_ELIGIBLE_SUBTYPES.has(subType)) return false; // roth_ira, 529, brokerage…
+  if (subType === "other") return false;
+  return true; // traditional_ira, 401k, 403b
+}
+
+export interface ExistingAccountRuleArgs {
+  account: { id: string; category: string; subType: string };
+  annualAmount: number;
+  startYear: number;
+  endYear: number;
+  ruleId: string;
+}
+
+/**
+ * Builds a SavingsRule for an account that already exists on the balance
+ * sheet (no account-upsert needed — the account is unchanged). Deductibility
+ * and Roth designation are derived from the account's category/subType; the
+ * Roth split for 401(k)/403(b) is left to the row's RothSplitControl. Rule
+ * growth is intentionally unset so the engine inherits the account's growth.
+ */
+export function buildSavingsRuleForAccount(args: ExistingAccountRuleArgs): SavingsRule {
+  const { account } = args;
+  const rule: SavingsRule = {
+    id: args.ruleId,
+    accountId: account.id,
+    annualAmount: args.annualAmount,
+    isDeductible: deductibleForSubType(account.category, account.subType),
+    startYear: args.startYear,
+    endYear: args.endYear,
+  };
+  if (account.subType === "roth_ira") rule.rothPercent = 1;
+  return rule;
 }

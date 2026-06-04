@@ -207,6 +207,23 @@ export function LiveSolverWorkspace({
     [initialSourceClientData, mutations],
   );
 
+  const existingAddable = useMemo(() => {
+    const withRule = new Set(workingTree.savingsRules.map((r) => r.accountId));
+    return (baseClientData.accounts ?? [])
+      .filter(
+        (a) =>
+          (a.category === "taxable" || a.category === "cash" || a.category === "retirement") &&
+          !withRule.has(a.id),
+      )
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        subType: a.subType ?? "",
+        ownerFamilyMemberId: controllingFamilyMember(a) ?? "",
+      }));
+  }, [baseClientData.accounts, workingTree.savingsRules]);
+
   const mcPlans = useMemo(
     () => [
       buildSolverComparisonPlan({
@@ -732,6 +749,7 @@ export function LiveSolverWorkspace({
               <SolverWorkingOnly>
                 <SolverQuickAddAccount
                   owners={ownerOptions}
+                  existingAccounts={existingAddable}
                   currentYear={currentYear}
                   retirementYearForOwner={retirementYearForOwner}
                   growthForType={(t) => growthForType(t, categoryGrowthDefaults)}

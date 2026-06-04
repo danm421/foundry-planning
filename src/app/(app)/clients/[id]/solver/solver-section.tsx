@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 type SolverSide = "base" | "working";
-const SolverSideContext = createContext<SolverSide>("base");
+export const SolverSideContext = createContext<SolverSide>("base");
 
 export function useSolverSide(): SolverSide {
   return useContext(SolverSideContext);
