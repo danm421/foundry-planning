@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { accountOwners, accounts } from "@/db/schema";
+import { validateOwnersShape, validateOwnersTenant } from "@/lib/ownership";
 
 import { getExistingId, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
@@ -64,7 +65,7 @@ export async function commitAccounts(
         })
         .returning({ id: accounts.id });
 
-      await synthesizeAccountOwners(tx, inserted.id, row.owner, family);
+      await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family);
       result.created += 1;
       continue;
     }
@@ -100,6 +101,41 @@ export async function commitAccounts(
   }
 
   return result;
+}
+
+/**
+ * Persist the advisor-confirmed `owners[]` from the review step, validated for
+ * shape + tenant ownership. Any validation/tenant failure (e.g. a family member
+ * not yet visible) falls back to coarse synthesis from the `owner` enum so the
+ * account is never left silently ownerless.
+ */
+async function writeImportedOwners(
+  tx: Tx,
+  accountId: string,
+  row: ImportPayload["accounts"][number],
+  clientId: string,
+  family: FamilyRoleIds,
+): Promise<void> {
+  const owners = row.owners;
+  if (Array.isArray(owners) && owners.length > 0) {
+    const shape = validateOwnersShape(owners);
+    if ("owners" in shape) {
+      const tenantErr = await validateOwnersTenant(shape.owners, clientId);
+      if (!tenantErr) {
+        for (const o of shape.owners) {
+          await tx.insert(accountOwners).values({
+            accountId,
+            familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
+            entityId: o.kind === "entity" ? o.entityId : null,
+            percent: o.percent.toString(),
+          });
+        }
+        return;
+      }
+    }
+    // validation/tenant failure → fall through to coarse synthesis below.
+  }
+  await synthesizeAccountOwners(tx, accountId, row.owner, family);
 }
 
 async function synthesizeAccountOwners(
