@@ -110,7 +110,7 @@ function makeDefaultPolicyName(
   return `${ownerLabel(ownerRef)} - ${POLICY_TYPE_LABELS[policyType]}`;
 }
 
-type TabKey = "details" | "beneficiaries" | "cash_value";
+type TabKey = "details" | "beneficiaries" | "schedule";
 
 const DEFAULT_STATE: PolicyFormState = {
   name: "",
@@ -511,7 +511,7 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
       tabs={[
         { id: "details", label: "Details" },
         { id: "beneficiaries", label: "Beneficiaries" },
-        { id: "cash_value", label: "Cash Value" },
+        { id: "schedule", label: "Schedule" },
       ]}
       activeTab={tab}
       onTabChange={(id) => autoSave.interceptTabChange(id, (next) => setTab(next as TabKey))}
@@ -577,8 +577,8 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
             />
           </div>
         )}
-        {tab === "cash_value" && (
-          <div role="tabpanel" id="panel-cash_value" aria-labelledby="tab-cash_value">
+        {tab === "schedule" && (
+          <div role="tabpanel" id="panel-schedule" aria-labelledby="tab-schedule">
             <InsurancePolicyCashValueTab
               policyType={state.policyType}
               mode={state.cashValueGrowthMode}

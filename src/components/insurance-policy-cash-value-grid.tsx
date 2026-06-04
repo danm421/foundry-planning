@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useState } from "react";
 
 export interface ScheduleRow {
   year: number;
@@ -13,8 +13,8 @@ export interface ScheduleRow {
 interface InsurancePolicyCashValueGridProps {
   rows: ScheduleRow[];
   onChange: (rows: ScheduleRow[]) => void;
-  /** Called by CSV paste — instructs the parent to activate any modes that
-   *  have at least one non-empty value in the pasted data. */
+  /** Called after a CSV upload — instructs the parent to activate any modes
+   *  that have at least one non-empty value in the uploaded data. */
   onCsvPasted?: (rows: ScheduleRow[]) => void;
 }
 
@@ -70,6 +70,20 @@ function isSameSchedule(a: ScheduleRow[], b: GridRow[]): boolean {
   return true;
 }
 
+// Column order shared by the parser, the downloadable template, and the
+// on-screen hint. Keep all three in sync.
+export const SCHEDULE_CSV_HEADER = "Year,Premium,Income,Cash Value,Death Benefit";
+
+/** A starter CSV (header + two example rows) for advisors to fill in and
+ *  re-upload. Blank cells (e.g. Income) are left empty on purpose. */
+export function buildScheduleCsvTemplate(): string {
+  return (
+    [SCHEDULE_CSV_HEADER, "2025,12000,,250000,500000", "2026,12000,,265000,510000"].join(
+      "\n",
+    ) + "\n"
+  );
+}
+
 export function parseScheduleCsv(text: string): ScheduleRow[] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
   const start = /year/i.test(lines[0]) ? 1 : 0; // tolerate header or not
@@ -110,8 +124,7 @@ export default function InsurancePolicyCashValueGrid({
   const [gridRows, setGridRows] = useState<GridRow[]>(() =>
     rows.map((r) => ({ ...r, _id: makeId() })),
   );
-  const [csvText, setCsvText] = useState("");
-  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isSameSchedule(rows, gridRows)) {
@@ -141,68 +154,73 @@ export default function InsurancePolicyCashValueGrid({
     commit([...gridRows, { _id: makeId(), year: 0 }]);
   }
 
-  function handlePasteCsv() {
-    const parsed = parseScheduleCsv(csvText);
-    if (parsed.length === 0) return;
+  async function handleUploadCsv(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Reset the input so re-selecting the same file fires onChange again.
+    e.target.value = "";
+    if (!file) return;
+    const text = await file.text();
+    const parsed = parseScheduleCsv(text);
+    if (parsed.length === 0) {
+      setCsvError("No valid rows found. Use the template and try again.");
+      return;
+    }
+    setCsvError(null);
     const next = parsed.map((r) => ({ ...r, _id: makeId() }));
     setGridRows(next);
     onChange(stripIds(next));
     onCsvPasted?.(parsed);
-    setCsvText("");
-    setCsvOpen(false);
+  }
+
+  function downloadTemplate() {
+    const blob = new Blob([buildScheduleCsvTemplate()], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cash-value-schedule-template.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   return (
     <div>
-      {/* CSV paste section */}
-      <div className="mb-3">
-        {csvOpen ? (
-          <div className="space-y-2 rounded-md border border-gray-700 bg-gray-800/50 p-3">
-            <p className="text-xs text-gray-400">
-              Paste CSV with header:{" "}
-              <code className="text-gray-300">
-                Year,Premium,Income,Cash Value,Death Benefit
-              </code>
-            </p>
-            <textarea
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              rows={6}
-              placeholder={"Year,Premium,Income,Cash Value,Death Benefit\n2025,12000,,250000,500000"}
-              className="w-full rounded-md border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-100 focus:border-accent focus:outline-none"
+      {/* CSV upload / template section */}
+      <div className="mb-3 space-y-1">
+        <div className="flex items-center gap-3 text-xs">
+          <label className="cursor-pointer text-accent hover:text-accent-ink">
+            Upload CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleUploadCsv}
+              className="sr-only"
             />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handlePasteCsv}
-                disabled={!csvText.trim()}
-                className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent/80 disabled:opacity-40"
-              >
-                Import
-              </button>
-              <button
-                type="button"
-                onClick={() => { setCsvOpen(false); setCsvText(""); }}
-                className="text-xs text-gray-400 hover:text-gray-200"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
+          </label>
           <button
             type="button"
-            onClick={() => setCsvOpen(true)}
-            className="text-xs text-accent hover:text-accent-ink"
+            onClick={downloadTemplate}
+            className="text-accent hover:text-accent-ink"
           >
-            Paste from CSV
+            Download template
           </button>
+        </div>
+        {csvError ? (
+          <p className="text-xs text-red-400">{csvError}</p>
+        ) : (
+          <p className="text-xs text-gray-400">
+            CSV columns:{" "}
+            <code className="text-gray-300">{SCHEDULE_CSV_HEADER}</code>
+          </p>
         )}
       </div>
 
       {gridRows.length === 0 ? (
         <p className="mb-3 text-xs text-gray-400">
-          No schedule rows yet. Add rows manually or paste from CSV.
+          No schedule rows yet. Add rows manually or upload a CSV.
         </p>
       ) : (
         <div className="mb-3 overflow-x-auto">
