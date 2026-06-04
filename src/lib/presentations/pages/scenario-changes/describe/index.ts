@@ -18,3 +18,4 @@ import "./kinds/assets";
 import "./kinds/taxes";
 import "./kinds/cashflow";
 import "./kinds/estate";
+import "./kinds/savings-reinvestment";
