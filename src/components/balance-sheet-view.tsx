@@ -22,6 +22,8 @@ import {
   buildNoteReceivableSchedule,
   type NoteReceivable,
 } from "@/engine/notes-receivable";
+import { useToast } from "@/components/toast";
+import { refreshClientHoldingPrices } from "@/lib/investments/holdings-client";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
@@ -410,6 +412,29 @@ export default function BalanceSheetView({
   const showAssetsCol = !isWizard || section === "accounts";
   const showLiabilitiesCol = !isWizard || section === "liabilities";
   const router = useRouter();
+  const { showToast } = useToast();
+  const [refreshingPrices, setRefreshingPrices] = useState(false);
+
+  async function handleRefreshPrices() {
+    setRefreshingPrices(true);
+    try {
+      const s = await refreshClientHoldingPrices(clientId);
+      const msg =
+        s.holdingsConsidered === 0
+          ? "No tickered holdings to refresh."
+          : s.holdingsUpdated === 0
+            ? "Prices already current."
+            : `Updated ${s.holdingsUpdated} holding${s.holdingsUpdated === 1 ? "" : "s"}.` +
+              (s.tickersMissing.length ? ` Couldn't price: ${s.tickersMissing.join(", ")}.` : "");
+      showToast({ message: msg });
+      router.refresh();
+    } catch (err) {
+      showToast({ message: err instanceof Error ? err.message : "Price refresh failed." });
+    } finally {
+      setRefreshingPrices(false);
+    }
+  }
+
   const writer = useScenarioWriter(clientId);
   const withScenario = useScenarioPreservingHref();
 
@@ -740,6 +765,16 @@ export default function BalanceSheetView({
             <div className="flex items-center gap-2">
               {(nonNoteAccounts.length > 0 || noteRows.length > 0) && (
                 <EditToggle on={assetsEdit} onToggle={() => setAssetsEdit((v) => !v)} />
+              )}
+              {nonNoteAccounts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRefreshPrices}
+                  disabled={refreshingPrices}
+                  className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover disabled:opacity-50"
+                >
+                  {refreshingPrices ? "Refreshing…" : "Refresh prices"}
+                </button>
               )}
               <AddAssetMenu onPick={(cat) => cat === "business" ? openAddBusiness() : setAddCategory(cat)} />
             </div>
