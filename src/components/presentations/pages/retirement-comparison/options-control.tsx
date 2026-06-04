@@ -15,6 +15,12 @@ const LENGTHS = ["short", "medium", "long"] as const;
 export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
   const scenarios = useScenarioOptions();
   const clientId = useClientId();
+  // Orphan integration-test scenarios (changes-writer.test.ts mints
+  // `writer-test-<uuid>` rows and deletes them in afterEach; crashes leak them)
+  // pile up in the picker. Hide them in the UI; leave DB rows alone.
+  const liveScenarios = scenarios.filter(
+    (s) => !s.name.startsWith("writer-test-"),
+  );
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,7 +70,7 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
           onChange={(e) => onChange({ ...value, scenarioId: e.target.value })}
         >
           <option value="">— Select a scenario —</option>
-          {scenarios.map((sc) => (
+          {liveScenarios.map((sc) => (
             <option key={sc.id} value={sc.id}>{sc.name}</option>
           ))}
         </select>
