@@ -13,7 +13,7 @@ describe("scenario-changes options + estimate", () => {
   });
 
   it("summarize reflects the explanations toggle", () => {
-    expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: true })).toBe("With explanations");
+    expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: true })).toBe("With details");
     expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: false })).toBe("Changes only");
   });
 });

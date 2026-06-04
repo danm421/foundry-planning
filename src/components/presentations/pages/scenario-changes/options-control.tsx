@@ -31,7 +31,7 @@ export function ScenarioChangesOptionsControl({ value, onChange }: Props) {
             checked={value.showExplanations}
             onChange={(e) => onChange({ ...value, showExplanations: e.target.checked })}
           />
-          <span>Show &ldquo;Why it matters&rdquo; column</span>
+          <span>Show change details</span>
         </label>
       </OptionsGroup>
     </OptionsRow>
