@@ -22,12 +22,18 @@ import { buildHouseholdName } from "@/lib/crm/household-name";
 import { USPS_STATE_CODES, USPS_STATE_NAMES } from "@/lib/usps-states";
 
 /**
- * Two-step new-client flow:
+ * Two-step "Start planning" flow:
  *   1. Either pick an existing CRM household OR check "Create a new household"
  *      and fill in identity (name/DOB, optional spouse) inline. Mirrors the
  *      dual-mode Add Client modal so advisors get the same selector either way.
- *   2. Fill in planning-only fields (retirement, life expectancy, filing
- *      status, spouse retirement params).
+ *   2. Choose one of four start paths from a 2×2 picker, which reveals only
+ *      that path's fields:
+ *        - Quick Start: planning fields + residence state + children, then the
+ *          quick-start wizard.
+ *        - Detailed setup: planning fields, then the guided onboarding wizard.
+ *        - AI import / Empty client: no fields — the client is created with
+ *          sensible defaults (filing status follows whether the household has a
+ *          spouse) and the user lands on document import or the overview.
  *
  * The selected household id can also arrive via `?crmHouseholdId=...` when
  * the user round-trips through /crm/new. That mirror keeps the flow safe to
