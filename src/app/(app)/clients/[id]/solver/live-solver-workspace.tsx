@@ -127,6 +127,12 @@ export function LiveSolverWorkspace({
   const [mcRequested, setMcRequested] = useState(false);
   const [mcVersion, setMcVersion] = useState(0);
 
+  // Canonical 1,000-trial PoS from the most recent converged solve, on the
+  // converged tree. Shown on the working gauge until the shared MC run produces
+  // a fresh result for the current edits (which then supersedes it). Cleared on
+  // any further edit so it can't go stale.
+  const [solvedPoS, setSolvedPoS] = useState<number | null>(null);
+
   type ActiveSolve = {
     target: SolveLeverKey;
     targetPoS: number;
@@ -193,6 +199,10 @@ export function LiveSolverWorkspace({
       });
       if (isMinSavings) setMinSavings(null);
       setCurrentProjection(e.finalProjection);
+      // Surface the canonical 1,000-trial PoS (computed on the converged tree)
+      // as the advisor-facing solved result so it matches the MC report/PDF,
+      // which also use 1,000 trials — not the noisier 250-trial search value.
+      setSolvedPoS(e.canonicalPoS);
       setComputeStatus("fresh");
       setActiveSolve(null);
     },
@@ -269,11 +279,17 @@ export function LiveSolverWorkspace({
 
   const workingState: "idle" | "computing" | "ready" | "stale" = mcReady
     ? workingChangedSinceMc
-      ? "stale"
+      ? // A fresh solve's canonical PoS counts as a current "ready" value even
+        // though the shared MC run predates the latest edits.
+        solvedPoS !== null
+        ? "ready"
+        : "stale"
       : "ready"
     : mcRunning
       ? "computing"
-      : "idle";
+      : solvedPoS !== null
+        ? "ready"
+        : "idle";
 
   // Liquid portfolio (taxable + cash + retirement + life insurance), matching
   // the bar chart and cash-flow report. `portfolioAssets.total` also rolls in
@@ -301,12 +317,17 @@ export function LiveSolverWorkspace({
       ? (mcController.result?.perPlan.find((p) => p.planId.startsWith("base:"))
           ?.successRate ?? null)
       : null;
-  const workingSuccess =
+  const mcWorkingSuccess =
     mcReady
       ? (mcController.result?.perPlan.find((p) =>
           p.planId.startsWith("working:"),
         )?.successRate ?? null)
       : null;
+  // Prefer a fresh shared-MC result for the current edits; otherwise fall back
+  // to the converged solve's canonical 1,000-trial PoS (same trial count as the
+  // report) so the working gauge isn't blank after a solve.
+  const workingSuccess =
+    mcReady && !workingChangedSinceMc ? mcWorkingSuccess : (solvedPoS ?? mcWorkingSuccess);
 
   // Name of the plan shown in the right ("Scenario") column. Selection now lives
   // in the top-right ScenarioChipRow (client header), so the column only labels
@@ -327,6 +348,7 @@ export function LiveSolverWorkspace({
     setMutationMap(new Map());
     setComputeStatus("fresh");
     setCurrentProjection(initialSourceProjection);
+    setSolvedPoS(null);
   }, [initialSourceProjection]);
 
   const [saveOpen, setSaveOpen] = useState(false);
@@ -409,6 +431,8 @@ export function LiveSolverWorkspace({
       return next;
     });
     setComputeStatus("stale");
+    // Any manual edit invalidates the prior solve's canonical PoS.
+    setSolvedPoS(null);
   }
 
   const handleSolveStart = useCallback(
