@@ -16,5 +16,9 @@ export const config: VercelConfig = {
       path: "/api/cron/refresh-holding-prices",
       schedule: "0 9 * * *",
     },
+    {
+      path: "/api/cron/purge-deleted-households",
+      schedule: "0 4 * * *",
+    },
   ],
 };
