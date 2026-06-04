@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
@@ -11,6 +11,7 @@ import {
   fieldLabelClassName,
 } from "@/components/forms/input-styles";
 import { AlertCircleIcon, ArrowRightIcon } from "@/components/icons";
+import { buildHouseholdName } from "@/lib/crm/household-name";
 
 interface CrmHouseholdFormProps {
   mode: "create";
@@ -40,6 +41,30 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Contacts (primary + optional spouse). Controlled so the household name
+  // can derive live from them via buildHouseholdName.
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [addSpouse, setAddSpouse] = useState(false);
+  const [spouseFirstName, setSpouseFirstName] = useState("");
+  const [spouseLastName, setSpouseLastName] = useState("");
+
+  // Household name: auto-derived from the contacts until the advisor edits it.
+  const [name, setName] = useState("");
+  const [nameTouched, setNameTouched] = useState(false);
+
+  useEffect(() => {
+    if (nameTouched) return;
+    setName(
+      buildHouseholdName({
+        firstName,
+        lastName,
+        spouseFirstName: addSpouse ? spouseFirstName : "",
+        spouseLastName: addSpouse ? spouseLastName : "",
+      }),
+    );
+  }, [firstName, lastName, addSpouse, spouseFirstName, spouseLastName, nameTouched]);
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!user?.id) {
@@ -50,15 +75,41 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
     setError(null);
     const data = new FormData(e.currentTarget);
     const notes = String(data.get("notes") ?? "").trim();
+    const dob = String(data.get("dob") ?? "").trim();
+    const spouseDob = String(data.get("spouseDob") ?? "").trim();
+
+    const contacts: Array<{
+      role: "primary" | "spouse";
+      firstName: string;
+      lastName: string;
+      dateOfBirth?: string;
+    }> = [
+      {
+        role: "primary",
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        ...(dob ? { dateOfBirth: dob } : {}),
+      },
+    ];
+    if (addSpouse && spouseFirstName.trim()) {
+      contacts.push({
+        role: "spouse",
+        firstName: spouseFirstName.trim(),
+        lastName: spouseLastName.trim() || lastName.trim(),
+        ...(spouseDob ? { dateOfBirth: spouseDob } : {}),
+      });
+    }
+
     try {
       const res = await fetch("/api/crm/households", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          name: data.get("name"),
+          name: name.trim(),
           status: data.get("status"),
           advisorId: user.id,
           notes: notes ? notes : undefined,
+          contacts,
         }),
       });
       if (!res.ok) {
@@ -70,8 +121,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
       const { household } = await res.json();
       if (returnTo) {
         // Bounce back to the caller (e.g. /clients/new) with the new household
-        // id so they can resume their flow. We append crmHouseholdId rather
-        // than embedding it in the URL so the caller controls how it's read.
+        // id so they can resume their flow.
         const sep = returnTo.includes("?") ? "&" : "?";
         router.push(`${returnTo}${sep}crmHouseholdId=${household.id}`);
       } else {
@@ -85,11 +135,115 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <div>
+      {/* Client contact */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label className={fieldLabelClassName} htmlFor="firstName">
+            First name
+          </label>
+          <input
+            id="firstName"
+            name="firstName"
+            required
+            maxLength={100}
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            className={inputClassName}
+          />
+        </div>
+        <div>
+          <label className={fieldLabelClassName} htmlFor="lastName">
+            Last name
+          </label>
+          <input
+            id="lastName"
+            name="lastName"
+            required
+            maxLength={100}
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            className={inputClassName}
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={fieldLabelClassName} htmlFor="dob">
+            Date of birth <span className="text-ink-4">(optional)</span>
+          </label>
+          <input id="dob" name="dob" type="date" min="1910-01-01" className={inputClassName} />
+        </div>
+      </div>
+
+      {/* Spouse */}
+      <div className="border-t border-hair pt-4">
+        <label htmlFor="addSpouse" className="flex items-center gap-2 cursor-pointer">
+          <input
+            id="addSpouse"
+            type="checkbox"
+            checked={addSpouse}
+            onChange={(e) => setAddSpouse(e.target.checked)}
+            className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+          />
+          <span className="text-[13px] font-medium text-ink-2">Add spouse</span>
+        </label>
+        {addSpouse && (
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={fieldLabelClassName} htmlFor="spouseFirstName">
+                Spouse first name
+              </label>
+              <input
+                id="spouseFirstName"
+                name="spouseFirstName"
+                maxLength={100}
+                value={spouseFirstName}
+                onChange={(e) => setSpouseFirstName(e.target.value)}
+                className={inputClassName}
+              />
+            </div>
+            <div>
+              <label className={fieldLabelClassName} htmlFor="spouseLastName">
+                Spouse last name
+              </label>
+              <input
+                id="spouseLastName"
+                name="spouseLastName"
+                maxLength={100}
+                placeholder="Leave blank to inherit client's"
+                value={spouseLastName}
+                onChange={(e) => setSpouseLastName(e.target.value)}
+                className={inputClassName}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={fieldLabelClassName} htmlFor="spouseDob">
+                Spouse date of birth <span className="text-ink-4">(optional)</span>
+              </label>
+              <input id="spouseDob" name="spouseDob" type="date" min="1910-01-01" className={inputClassName} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Household name — auto, editable */}
+      <div className="border-t border-hair pt-4">
         <label className={fieldLabelClassName} htmlFor="name">
           Household name
         </label>
-        <input id="name" name="name" required maxLength={200} className={inputClassName} />
+        <input
+          id="name"
+          name="name"
+          required
+          maxLength={200}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            setNameTouched(e.target.value !== "");
+          }}
+          className={inputClassName}
+        />
+        <p className="mt-1 text-[12px] text-ink-4">
+          Auto-generated from the contacts above. Edit to override.
+        </p>
       </div>
 
       <div>
