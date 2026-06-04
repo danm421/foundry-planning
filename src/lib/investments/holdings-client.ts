@@ -115,6 +115,26 @@ export async function getQuote(
   }
 }
 
+export interface HoldingRefreshSummary {
+  holdingsConsidered: number;
+  holdingsUpdated: number;
+  uniqueTickers: number;
+  tickersPriced: number;
+  tickersMissing: string[];
+  accountsResynced: number;
+  resyncFailures: { accountId: string; message: string }[];
+}
+
+/** Manually refresh stored prices for ALL of a client's tickered holdings
+ *  (across every account/scenario). Throws on transport/non-2xx via json(). */
+export async function refreshClientHoldingPrices(
+  clientId: string,
+): Promise<HoldingRefreshSummary> {
+  return json(
+    await fetch(`/api/clients/${clientId}/holdings/refresh`, { method: "POST" }),
+  );
+}
+
 export async function setAccountGrowthSource(
   clientId: string, accountId: string, growthSource: GrowthSource,
 ): Promise<void> {
