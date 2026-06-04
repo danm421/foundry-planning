@@ -16,6 +16,7 @@ import type {
 } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
 import type { CommitTab } from "@/lib/imports/commit/types";
+import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { AssetOption, RecipientOption } from "./will-bequest-mapper";
 import { seedWizardBequest } from "./will-bequest-mapper";
 import ReviewStepAccounts from "./review-step-accounts";
@@ -50,6 +51,7 @@ interface ReviewWizardProps {
   perTabCommittedAt: Record<string, string> | null;
   defaultStartYear: number;
   defaultEndYear: number;
+  growthContext: GrowthContext;
 }
 
 interface CanonicalRows {
@@ -101,6 +103,7 @@ export default function ReviewWizard({
   perTabCommittedAt,
   defaultStartYear,
   defaultEndYear,
+  growthContext,
 }: ReviewWizardProps) {
   const router = useRouter();
 
@@ -393,6 +396,9 @@ export default function ReviewWizard({
             onMatchChange={onAccountMatchChange}
             candidates={accountCandidates}
             existingAccountsById={existingAccountsById}
+            modelPortfolios={growthContext.modelPortfolios}
+            resolvedInflationRate={growthContext.resolvedInflationRate}
+            categoryDefaults={growthContext.categoryDefaults}
           />
         )}
         {currentTab === "incomes" && (

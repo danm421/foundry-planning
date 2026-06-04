@@ -8,6 +8,7 @@ import {
 } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import { loadImportGrowthContext } from "@/lib/investments/growth-context";
 import ImportFlow from "./import-flow";
 
 interface ImportFlowContentProps {
@@ -54,6 +55,8 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
 
   const payloadJson = imp.payloadJson as ImportPayloadJson | null;
 
+  const growthContext = await loadImportGrowthContext(id, firmId, imp.scenarioId);
+
   return (
     <ImportFlow
       clientId={id}
@@ -62,6 +65,7 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
       status={imp.status}
       scenarioId={imp.scenarioId}
       notes={imp.notes}
+      growthContext={growthContext}
       files={files.map((f) => ({
         id: f.id,
         originalFilename: f.originalFilename,

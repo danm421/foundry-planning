@@ -8,6 +8,7 @@ import UploadZone from "@/components/import/upload-zone";
 import ExtractionProgress from "@/components/import/extraction-progress";
 import ReviewWizard from "@/components/import/review-wizard";
 import type { ImportPayload } from "@/lib/imports/types";
+import type { GrowthContext } from "@/lib/investments/growth-context";
 
 export interface ImportFlowFile {
   id: string;
@@ -27,6 +28,7 @@ interface ImportFlowProps {
   files: ImportFlowFile[];
   payload: ImportPayload | null;
   perTabCommittedAt: Record<string, string> | null;
+  growthContext: GrowthContext;
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -255,6 +257,7 @@ function ReviewStage(props: ImportFlowProps) {
           perTabCommittedAt={props.perTabCommittedAt}
           defaultStartYear={currentYear}
           defaultEndYear={currentYear + 30}
+          growthContext={props.growthContext}
         />
       </CardBody>
     </Card>
