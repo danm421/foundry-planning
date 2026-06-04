@@ -1,25 +1,18 @@
-import type { MonteCarloSummary, ClientData, PlanSettings } from "@/engine";
+import type { MonteCarloSummary } from "@/engine";
 import { KpiCard } from "./kpi-card";
 import { SuccessGauge } from "./success-gauge";
 import { formatShortCurrency } from "./lib/format";
-import { annualIncomeAtStart } from "@/lib/monte-carlo/annual-income";
 
 interface KpiBandProps {
   summary: MonteCarloSummary;
-  clientData: ClientData;
-  planSettings: PlanSettings;
+  startAge: number;
+  annualIncome: number;
 }
 
-function startAge(dateOfBirth: string, planStartYear: number): number {
-  const birthYear = new Date(dateOfBirth).getFullYear();
-  return planStartYear - birthYear;
-}
-
-export function KpiBand({ summary, clientData, planSettings }: KpiBandProps) {
+export function KpiBand({ summary, startAge, annualIncome }: KpiBandProps) {
   const successPct = summary.successRate;
   const medianEnding = summary.ending.p50;
-  const annualIncome = annualIncomeAtStart(clientData, planSettings.planStartYear);
-  const startAgeVal = startAge(clientData.client.dateOfBirth, planSettings.planStartYear);
+  const startAgeVal = startAge;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       <div
