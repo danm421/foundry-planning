@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createCrmHouseholdSchema } from "../schemas";
+import { createCrmHouseholdSchema, updateCrmHouseholdSchema } from "../schemas";
 
 describe("createCrmHouseholdSchema contacts", () => {
   it("accepts an optional contacts array", () => {
@@ -41,5 +41,21 @@ describe("createCrmHouseholdSchema contacts", () => {
       contacts: [{ role: "primary", firstName: "", lastName: "Smith" }],
     });
     expect(r.success).toBe(false);
+  });
+
+  it("updateCrmHouseholdSchema does not carry inline contacts through to the patch", () => {
+    const r = updateCrmHouseholdSchema.safeParse({
+      name: "Renamed",
+      contacts: [{ role: "primary", firstName: "John", lastName: "Smith" }],
+    });
+    expect(r.success).toBe(true);
+    // `contacts` must be stripped — it's a create-only field and must never
+    // reach the household update .set().
+    expect(r.success && "contacts" in r.data).toBe(false);
+  });
+
+  it("updateCrmHouseholdSchema still allows partial household edits", () => {
+    const r = updateCrmHouseholdSchema.safeParse({ status: "active" });
+    expect(r.success).toBe(true);
   });
 });

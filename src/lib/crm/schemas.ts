@@ -25,7 +25,10 @@ export const createCrmHouseholdSchema = z.object({
   contacts: z.array(createCrmHouseholdContactSchema).optional(),
 });
 
-export const updateCrmHouseholdSchema = createCrmHouseholdSchema.partial();
+// `contacts` is a create-only concern (inline contacts on first creation).
+// Exclude it from the update schema so the PATCH surface can never carry an
+// inline-contacts array into the household .set() (which would be an invalid column).
+export const updateCrmHouseholdSchema = createCrmHouseholdSchema.omit({ contacts: true }).partial();
 
 export const createCrmContactSchema = z.object({
   role: crmContactRoleSchema,
