@@ -7,11 +7,22 @@ export const crmActivityKindSchema = z.enum([
   "contact_change", "account_change", "document_uploaded", "planning_link",
 ]);
 
+// Minimal contact captured inline when a household is first created
+// (primary + optional spouse). Fuller contact details are added later on
+// the household's Contacts tab via createCrmContactSchema.
+export const createCrmHouseholdContactSchema = z.object({
+  role: crmContactRoleSchema,
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  dateOfBirth: z.iso.date().optional(),
+});
+
 export const createCrmHouseholdSchema = z.object({
   name: z.string().min(1).max(200),
   status: crmHouseholdStatusSchema.default("prospect"),
   advisorId: z.string().min(1),
   notes: z.string().max(5000).optional(),
+  contacts: z.array(createCrmHouseholdContactSchema).optional(),
 });
 
 export const updateCrmHouseholdSchema = createCrmHouseholdSchema.partial();
@@ -61,6 +72,7 @@ export const createCrmActivitySchema = z.object({
   occurredAt: z.iso.datetime().optional(),
 });
 
+export type CreateCrmHouseholdContactInput = z.infer<typeof createCrmHouseholdContactSchema>;
 export type CreateCrmHouseholdInput = z.infer<typeof createCrmHouseholdSchema>;
 export type CreateCrmContactInput = z.infer<typeof createCrmContactSchema>;
 export type CreateCrmAccountInput = z.infer<typeof createCrmAccountSchema>;
