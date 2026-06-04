@@ -427,7 +427,7 @@ export default function BalanceSheetView({
             : `Updated ${s.holdingsUpdated} holding${s.holdingsUpdated === 1 ? "" : "s"}.` +
               (s.tickersMissing.length ? ` Couldn't price: ${s.tickersMissing.join(", ")}.` : "");
       showToast({ message: msg });
-      router.refresh();
+      if (s.holdingsUpdated > 0) router.refresh();
     } catch (err) {
       showToast({ message: err instanceof Error ? err.message : "Price refresh failed." });
     } finally {

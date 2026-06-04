@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { accountHoldings, accounts, clients } from "@/db/schema";
+import { accountHoldings, accounts } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { findClientInFirm } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { refreshHoldings } from "@/lib/investments/refresh-holdings";
 
@@ -23,10 +24,7 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const [client] = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+    const client = await findClientInFirm(id, firmId);
     if (!client) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

@@ -57,12 +57,13 @@ export async function refreshHoldings(
   holdings: readonly RefreshHoldingInput[],
   deps: QuoteDeps = {},
 ): Promise<RefreshSummary> {
-  const tickers = holdings
-    .map((h) => h.displayTicker?.trim())
-    .filter((t): t is string => !!t);
-  const uniqueTickers = [...new Set(tickers)];
+  const uniqueTickers = [
+    ...new Set(
+      holdings.map((h) => h.displayTicker?.trim()).filter((t): t is string => !!t),
+    ),
+  ];
 
-  const quotes = await fetchEodCloses(tickers, deps);
+  const quotes = await fetchEodCloses(uniqueTickers, deps);
   const { holdingUpdates, accountsToResync } = planPriceUpdates({ holdings, quotes });
   await applyPriceUpdates(holdingUpdates);
 
