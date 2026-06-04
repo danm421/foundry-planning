@@ -305,6 +305,52 @@ describe("commitAccounts", () => {
     const result = await commitAccounts(tx, payload, ctx);
     expect(result.skipped).toBe(1);
   });
+
+  it("writes growthSource + modelPortfolioId on a new account insert", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Brokerage",
+          category: "taxable",
+          owner: "client",
+          growthSource: "model_portfolio",
+          modelPortfolioId: "mp-1",
+          match: { kind: "new" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const accountInserts = callsForTable(calls, "accounts").filter((c) => c.op === "insert");
+    expect(accountInserts).toHaveLength(1);
+    const values = (accountInserts[0] as { values: Record<string, unknown> }).values;
+    expect(values.growthSource).toBe("model_portfolio");
+    expect(values.modelPortfolioId).toBe("mp-1");
+  });
+
+  it("sets growthSource + modelPortfolioId on an exact update", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Brokerage",
+          category: "taxable",
+          growthSource: "inflation",
+          modelPortfolioId: null,
+          match: { kind: "exact", existingId: "acct-1" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const updates = callsForTable(calls, "accounts").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    const setValues = (updates[0] as { values: Record<string, unknown> }).values;
+    expect(setValues.growthSource).toBe("inflation");
+    expect(setValues.modelPortfolioId).toBeNull();
+  });
 });
 
 describe("commitIncomes", () => {
