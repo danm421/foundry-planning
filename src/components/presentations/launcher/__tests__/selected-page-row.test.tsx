@@ -35,10 +35,12 @@ describe("SelectedPageRow", () => {
     const onOptionsChange = vi.fn();
     render(<SelectedPageRow {...baseProps} onOptionsChange={onOptionsChange} />);
     fireEvent.click(screen.getByText("Options"));
-    fireEvent.click(screen.getByLabelText("Lifetime"));
-    expect(onOptionsChange).toHaveBeenCalledWith({
-      range: "lifetime",
-      showCallout: true,
-    });
+    fireEvent.click(screen.getByLabelText("Custom"));
+    expect(onOptionsChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        showCallout: true,
+        range: expect.objectContaining({ startYear: expect.any(Number), endYear: expect.any(Number) }),
+      }),
+    );
   });
 });
