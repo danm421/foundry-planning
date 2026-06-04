@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ClientData } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
+import type { LiAssumptions } from "@/lib/life-insurance/schema";
 
 /**
  * Bump when MC/LI engine logic or the cached payload shape changes. Folded into
@@ -48,6 +49,26 @@ export function hashMonteCarloInputs(input: {
       requiredMinimumAssetLevel: input.mcPayload.requiredMinimumAssetLevel,
       startingLiquidBalance: input.mcPayload.startingLiquidBalance,
     },
+  });
+  return createHash("sha256").update(material).digest("hex");
+}
+
+export function hashLifeInsuranceInputs(input: {
+  tree: ClientData;
+  mcPayload: MonteCarloPayload;
+  assumptions: LiAssumptions;
+}): string {
+  const material = stableStringify({
+    engineVersion: ENGINE_VERSION,
+    kind: "life_insurance_solve",
+    tree: input.tree,
+    mc: {
+      indices: input.mcPayload.indices,
+      correlation: input.mcPayload.correlation,
+      accountMixes: input.mcPayload.accountMixes,
+      seed: input.mcPayload.seed,
+    },
+    assumptions: input.assumptions,
   });
   return createHash("sha256").update(material).digest("hex");
 }
