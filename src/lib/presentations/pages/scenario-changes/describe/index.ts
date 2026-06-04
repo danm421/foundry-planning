@@ -13,3 +13,4 @@ export function describeChange(c: ScenarioChange, ctx: DescribeContext): ChangeR
 // avoid a circular import: kinds/*.ts import DESCRIBERS from ./registry, and
 // resolveDescriber/describeChange must be defined before they run.
 import "./kinds/savings";
+import "./kinds/plan";
