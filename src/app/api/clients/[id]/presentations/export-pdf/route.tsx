@@ -19,16 +19,8 @@ import {
 } from "@/lib/projection/load-client-data";
 import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
-import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
-import {
-  runMonteCarlo,
-  summarizeMonteCarlo,
-  createReturnEngine,
-  liquidPortfolioTotal,
-} from "@/engine";
-import { buildHistogramSeries } from "@/lib/monte-carlo/histogram-series";
-import { successByYear } from "@/lib/comparison/success-by-year";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
+import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import {
   PresentationDocument,
   type PageScenarioBundle,
@@ -41,6 +33,13 @@ import { dateLong } from "@/lib/presentations/format";
 import { recordAudit } from "@/lib/audit";
 import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
+import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
+import { getOrComputeLifeInsuranceSolve } from "@/lib/compute-cache/life-insurance";
+import type {
+  LifeInsuranceSummaryOptions,
+  LiSolved,
+} from "@/lib/presentations/pages/life-insurance-summary/options-schema";
+import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
@@ -217,123 +216,118 @@ export async function POST(
       : undefined;
 
     // Build one bundle per distinct scenario. Projection always; Monte Carlo
-    // and scenario-changes only where the plan says a page needs them.
-    const bundles: Record<string, PageScenarioBundle> = {};
-    for (const [key, d] of plan.distinct) {
-      let clientData;
-      try {
-        const { effectiveTree } = await loadEffectiveTreeForRef(id, firmId, d.ref);
-        clientData = effectiveTree;
-      } catch (err) {
-        if (err instanceof ClientNotFoundError) {
-          return NextResponse.json({ error: "Not found" }, { status: 404 });
-        }
-        if (err instanceof ProjectionInputError) {
-          // The raw message embeds internal client / CRM-household UUIDs (audit
-          // F4). Keep the detail server-side; return a generic message.
-          console.error(
-            "POST /clients/[id]/presentations/export-pdf projection input error",
-            err,
-          );
-          return NextResponse.json(
-            { error: "Client data is incomplete or invalid for this projection." },
-            { status: 422 },
-          );
-        }
-        throw err;
-      }
+    // and scenario-changes only where the plan says a page needs them. The
+    // distinct scenarios are independent and bounded by MAX_DISTINCT_SCENARIOS,
+    // so build them concurrently (the LI block below already does the same).
+    // A load failure surfaces as a sentinel result rather than rejecting the
+    // batch, so we preserve the original first-error-wins 404/422 responses.
+    type BundleResult =
+      | { kind: "ok"; key: string; bundle: PageScenarioBundle }
+      | { kind: "notFound" }
+      | { kind: "invalidInput" };
 
-      const projection = runProjectionWithEvents(clientData);
-
-      // Monte Carlo runs server-side only when the deck includes the MC page.
-      // The engine is pure/Node-safe. Each scenario uses its own persisted seed
-      // (snapshots fall back to the base seed) so the PDF is reproducible per
-      // scenario. The effective tree for this bundle drives startingLiquidBalance.
-      let monteCarlo: MonteCarloReportPayload | null = null;
-      if (d.needsMonteCarlo) {
+    const bundleResults = await Promise.all(
+      [...plan.distinct].map(async ([key, d]): Promise<BundleResult> => {
+        let clientData;
         try {
-          const mc = await loadMonteCarloData(
-            id,
-            firmId,
-            // Layer 1: per-scenario MC seed + per-scenario cache() key. Snapshots
-            // have no live scenario row, so they fall back to the base seed.
-            d.ref.kind === "scenario" ? d.ref.id : "base",
-            [],
-            // Layer 2 (Depth 1): per-scenario startingLiquidBalance from this
-            // bundle's effective tree.
+          const { effectiveTree } = await loadEffectiveTreeForRef(id, firmId, d.ref);
+          clientData = effectiveTree;
+        } catch (err) {
+          if (err instanceof ClientNotFoundError) {
+            return { kind: "notFound" };
+          }
+          if (err instanceof ProjectionInputError) {
+            // The raw message embeds internal client / CRM-household UUIDs (audit
+            // F4). Keep the detail server-side; return a generic message.
+            console.error(
+              "POST /clients/[id]/presentations/export-pdf projection input error",
+              err,
+            );
+            return { kind: "invalidInput" };
+          }
+          throw err;
+        }
+
+        const projection = runProjectionWithEvents(clientData);
+
+        // Monte Carlo: served from the compute cache (or computed + stored on miss).
+        // Snapshots have no live scenario row so they fall back to the base seed,
+        // matching the old inline behaviour.
+        let monteCarlo: MonteCarloReportPayload | null = null;
+        if (d.needsMonteCarlo) {
+          try {
+            const cached = await getOrComputeMonteCarlo({
+              clientId: id,
+              firmId,
+              scenarioId: d.ref.kind === "scenario" ? d.ref.id : "base",
+            });
+            monteCarlo = cached.payload;
+          } catch (mcErr) {
+            // Non-fatal: leave monteCarlo null so the page renders its graceful
+            // "data unavailable" frame instead of failing the whole export.
+            console.error("Monte Carlo cache fetch failed for export", mcErr);
+          }
+        }
+
+        // Scenario Changes report: load the raw edits for the active scenario, but
+        // only when the deck includes that page AND the active ref is a live
+        // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
+        // only — matching what the overlaid clientData already reflects.
+        //
+        // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
+        // scenarioId alone. The scenarioId is proven to belong to this firm/client by
+        // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
+        // clientId/firmId and throws on a cross-org id before we reach here). Do not
+        // remove or lazily defer that call without adding firm scoping to these reads.
+        let scenarioChanges: ScenarioChangesContext | undefined;
+        if (d.needsScenarioChanges && d.ref.kind === "scenario") {
+          const scenarioId = d.ref.id;
+          try {
+            const [changes, toggleGroups] = await Promise.all([
+              loadScenarioChanges(scenarioId),
+              loadScenarioToggleGroups(scenarioId),
+            ]);
+            scenarioChanges = {
+              changes,
+              toggleGroups,
+              targetNames: buildTargetNames(clientData, id),
+              baseLabel: "your current plan",
+            };
+          } catch (scErr) {
+            // Non-fatal: leave undefined so the page renders its empty state.
+            console.error("Scenario changes load failed for export", scErr);
+          }
+        }
+
+        return {
+          kind: "ok",
+          key,
+          bundle: {
             clientData,
-          );
-          const engine = createReturnEngine({
-            indices: mc.indices,
-            correlation: mc.correlation,
-            seed: mc.seed,
-          });
-          const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.mix]));
-          const result = await runMonteCarlo({
-            data: clientData,
-            returnEngine: engine,
-            accountMixes,
-            trials: 1000,
-            requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
-          });
-          const summary = summarizeMonteCarlo(result, {
-            client: clientData.client,
-            planSettings: clientData.planSettings,
-            startingLiquidBalance: mc.startingLiquidBalance,
-          });
-          monteCarlo = {
-            summary,
-            histogram: buildHistogramSeries(result.endingLiquidAssets),
-            successRates: successByYear(
-              result.byYearLiquidAssetsPerTrial,
-              mc.requiredMinimumAssetLevel,
-            ),
-            deterministic: projection.years.map(liquidPortfolioTotal),
-          };
-        } catch (mcErr) {
-          // Non-fatal: leave monteCarlo null so the page renders its graceful
-          // "data unavailable" frame instead of failing the whole export.
-          console.error("Monte Carlo server-side run failed for export", mcErr);
-        }
-      }
+            projection,
+            scenarioLabel: labelForRef(d.ref, scenarioNames),
+            monteCarlo,
+            scenarioChanges,
+          },
+        };
+      }),
+    );
 
-      // Scenario Changes report: load the raw edits for the active scenario, but
-      // only when the deck includes that page AND the active ref is a live
-      // scenario (not base / snapshot). loadScenarioChanges returns enabled rows
-      // only — matching what the overlaid clientData already reflects.
-      //
-      // Org-scoping note: loadScenarioChanges/loadScenarioToggleGroups read by
-      // scenarioId alone. The scenarioId is proven to belong to this firm/client by
-      // the earlier loadEffectiveTreeForRef() call (it loads the scenario scoped to
-      // clientId/firmId and throws on a cross-org id before we reach here). Do not
-      // remove or lazily defer that call without adding firm scoping to these reads.
-      let scenarioChanges: ScenarioChangesContext | undefined;
-      if (d.needsScenarioChanges && d.ref.kind === "scenario") {
-        const scenarioId = d.ref.id;
-        try {
-          const [changes, toggleGroups] = await Promise.all([
-            loadScenarioChanges(scenarioId),
-            loadScenarioToggleGroups(scenarioId),
-          ]);
-          scenarioChanges = {
-            changes,
-            toggleGroups,
-            targetNames: buildTargetNames(clientData, id),
-            baseLabel: "your current plan",
-          };
-        } catch (scErr) {
-          // Non-fatal: leave undefined so the page renders its empty state.
-          console.error("Scenario changes load failed for export", scErr);
-        }
-      }
+    // First-error-wins, matching the original serial loop's early returns.
+    const firstErr = bundleResults.find((r) => r.kind !== "ok");
+    if (firstErr?.kind === "notFound") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (firstErr?.kind === "invalidInput") {
+      return NextResponse.json(
+        { error: "Client data is incomplete or invalid for this projection." },
+        { status: 422 },
+      );
+    }
 
-      bundles[key] = {
-        clientData,
-        projection,
-        scenarioLabel: labelForRef(d.ref, scenarioNames),
-        monteCarlo,
-        scenarioChanges,
-      };
+    const bundles: Record<string, PageScenarioBundle> = {};
+    for (const r of bundleResults) {
+      if (r.kind === "ok") bundles[r.key] = r.bundle;
     }
 
     // The cover/client-name fields come from the top-level bundle.
@@ -351,6 +345,73 @@ export async function POST(
     const lifeInsurance = needsLifeInsurance
       ? await loadLifeInsuranceInventory(id, firmId, clientFullName, spouseFirstName)
       : undefined;
+
+    // Life Insurance Summary: solve server-side from the compute cache, mirroring
+    // the (now-removed) client-side pre-solve. For each LI page on a *live*
+    // scenario we build the LiAssumptions from the page options + scenario and
+    // call getOrComputeLifeInsuranceSolve, then inject the result into the page's
+    // options.solved (replacing any client-sent value — we never trust that).
+    // Snapshot refs can't be re-solved against a live seed, so they keep whatever
+    // `solved` the client sent (matching the old launcher's snapshot fallback,
+    // which skipped solving and left the saved/null value in place).
+    if (needsLifeInsurance) {
+      // modelPortfolioId → display label, exactly as the launcher derived it from
+      // the investment catalog (fallback "Plan default rate").
+      const catalog = await listInvestmentOptionCatalog(id, firmId);
+      const portfolioLabelById = new Map(
+        catalog.portfolios.map((p) => [p.id, p.name] as const),
+      );
+      // Dedupe solves per distinct scenario key (one solve covers every LI page
+      // pointing at the same scenario), mirroring the launcher's solvedByScenario.
+      const liSolvedByKey = new Map<string, LiSolved>();
+
+      await Promise.all(
+        parsed.data.pages.map(async (page, idx) => {
+          if (page.pageId !== "lifeInsuranceSummary") return;
+          const key = plan.pageKeys[idx];
+          const ref = plan.distinct.get(key)?.ref;
+          // Snapshot (or unresolved) ref: leave the client-sent solved untouched.
+          if (!ref || ref.kind !== "scenario") return;
+
+          if (!liSolvedByKey.has(key)) {
+            const opts = page.options as LifeInsuranceSummaryOptions;
+            const assumptions: LiAssumptions = {
+              deathYear: opts.deathYear,
+              modelPortfolioId: opts.modelPortfolioId,
+              leaveToHeirsAmount: opts.leaveToHeirsAmount,
+              livingExpenseAtDeath: opts.livingExpenseAtDeath,
+              payoffLiabilityIds: opts.payoffLiabilityIds,
+              mcTargetScore: opts.mcTargetScore,
+              coverEstateTaxes: opts.coverEstateTaxes,
+              scenarioRef: ref.id === "base" ? "base" : ref.id,
+            };
+            const modelPortfolioLabel = opts.modelPortfolioId
+              ? (portfolioLabelById.get(opts.modelPortfolioId) ?? "Plan default rate")
+              : "Plan default rate";
+            try {
+              const solved = await getOrComputeLifeInsuranceSolve({
+                clientId: id,
+                firmId,
+                scenarioId: ref.id,
+                assumptions,
+                modelPortfolioLabel,
+              });
+              liSolvedByKey.set(key, solved);
+            } catch (liErr) {
+              // Non-fatal: leave solved unset so the page renders its
+              // "not solved" frame instead of failing the whole export.
+              console.error("LI solve failed for export", liErr);
+            }
+          }
+
+          const solved = liSolvedByKey.get(key) ?? null;
+          page.options = {
+            ...(page.options as Record<string, unknown>),
+            solved,
+          } as typeof page.options;
+        }),
+      );
+    }
 
     // Firm branding for the cover: name, accent color, and logo. Falls back to
     // the Foundry mark + gold when the firm hasn't set their own.

@@ -39,9 +39,16 @@ export interface SolveProgressEvent {
 export interface SolveResultEvent {
   status: "converged" | "unreachable" | "max-iterations";
   solvedValue: number;
+  /** From the 250-trial search (kept for continuity / debug). */
   achievedPoS: number;
+  /** 1,000-trial run on the converged tree — matches the MC report/PDF. */
+  canonicalPoS: number;
   iterations: number;
   finalProjection: ProjectionYear[];
+  /** MC seed used for both the 250-trial search and the canonical 1,000-trial
+   *  run. Returned so the client can persist it when saving the scenario, which
+   *  lets the saved scenario's report reproduce the exact same PoS. */
+  seed: number;
 }
 
 /** Server-side fatal error. */

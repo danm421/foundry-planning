@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
+import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 
 // Mock auth, loaders, projection runner, and audit BEFORE importing the route.
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -65,6 +65,13 @@ vi.mock("@/lib/presentations/default-logo", () => ({
 
 vi.mock("@/lib/projection/load-monte-carlo-data", () => ({
   loadMonteCarloData: vi.fn().mockRejectedValue(new Error("stub: skip MC body")),
+}));
+
+// The route now delegates MC computation to getOrComputeMonteCarlo (Task 8
+// cache refactor). Default to reject so MC stays non-fatal and the other 16
+// tests behave exactly as before (route catches, renders "unavailable" frame).
+vi.mock("@/lib/compute-cache/monte-carlo", () => ({
+  getOrComputeMonteCarlo: vi.fn().mockRejectedValue(new Error("stub: skip MC body")),
 }));
 
 // Keep a benign @/db mock so importing the route doesn't open a real connection.
@@ -266,7 +273,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     );
   });
 
-  it("threads the active scenario id + effective tree into loadMonteCarloData", async () => {
+  it("passes the active scenario id to the Monte Carlo cache helper", async () => {
     const { POST } = await import("../route");
     const res = await POST(
       makeReq({
@@ -277,14 +284,11 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     );
     // MC failure is non-fatal → route still succeeds.
     expect(res.status).toBe(200);
-    // Layer 1: per-scenario seed/cache key — NOT the defaulted "base".
-    // 4th arg is extraAccountMixes ([]); 5th is the per-scenario effective tree.
-    expect(loadMonteCarloData).toHaveBeenCalledWith(
-      "client-1",
-      "firm-1",
-      "moderate",
-      [],
-      expect.anything(),
+    // The per-scenario id ("moderate") must reach the cache helper — NOT the
+    // defaulted "base". This is what Task 8 transferred from loadMonteCarloData
+    // (called directly) to getOrComputeMonteCarlo (the cache wrapper).
+    expect(getOrComputeMonteCarlo).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "client-1", firmId: "firm-1", scenarioId: "moderate" }),
     );
   });
 

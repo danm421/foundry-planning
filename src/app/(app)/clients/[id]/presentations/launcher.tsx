@@ -25,7 +25,7 @@ import {
   type PresentationPageId,
 } from "@/components/presentations/registry";
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
-import { PdfPreviewDialog, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
+import { PdfPreviewDialog, slug, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
@@ -36,10 +36,6 @@ import {
 } from "@/components/presentations/launcher/use-launcher-state";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
-import { useLiPresolve } from "@/app/(app)/clients/[id]/presentations/use-li-presolve";
-import { LiPresolveDialog } from "@/components/presentations/launcher/li-presolve-dialog";
-import type { LifeInsuranceSummaryOptions, LiSolved } from "@/lib/presentations/pages/life-insurance-summary/options-schema";
-import type { LiAssumptions } from "@/lib/life-insurance/schema";
 
 interface Props {
   clientId: string;
@@ -84,9 +80,6 @@ export function PresentationsLauncher(props: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
-
-  const { solveScenario, progress, cancel, setProgress } = useLiPresolve(props.clientId);
-  const [presolving, setPresolving] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -221,64 +214,10 @@ export function PresentationsLauncher(props: Props) {
     }));
   }
 
-  async function presolveLifeInsurancePages(
-    pages: LauncherState["pages"],
-  ): Promise<LauncherState["pages"]> {
-    const liPages = pages.filter((p) => p.pageId === "lifeInsuranceSummary");
-    if (liPages.length === 0) return pages;
-
-    // undefined override = inherit the deck scenario; null = base.
-    const resolveRef = (override: string | null | undefined) =>
-      override === undefined ? (resolvedScenarioId ?? "base") : (override ?? "base");
-    // Snapshots are frozen trees with no live seed, so the need solve (which
-    // runs Monte Carlo) can't be run against them — those pages fall back to
-    // the report's "not solved" state instead of failing the whole export.
-    const isSolvable = (ref: string) => !ref.startsWith("snap:");
-
-    setPresolving(true);
-    try {
-      const solvedByScenario = new Map<string, LiSolved>();
-      for (const page of liPages) {
-        const opts = page.options as LifeInsuranceSummaryOptions;
-        const scenarioRef = resolveRef(page.scenarioOverride);
-
-        if (isSolvable(scenarioRef) && !solvedByScenario.has(scenarioRef)) {
-          const portfolioLabel =
-            props.investmentCatalog.portfolios.find(
-              (m) => m.id === opts.modelPortfolioId,
-            )?.name ?? "Plan default rate";
-          const assumptions: LiAssumptions = {
-            deathYear: opts.deathYear,
-            modelPortfolioId: opts.modelPortfolioId,
-            leaveToHeirsAmount: opts.leaveToHeirsAmount,
-            livingExpenseAtDeath: opts.livingExpenseAtDeath,
-            payoffLiabilityIds: opts.payoffLiabilityIds,
-            mcTargetScore: opts.mcTargetScore,
-            coverEstateTaxes: opts.coverEstateTaxes,
-            scenarioRef,
-          };
-          const scenarioLabel = scenarioRef === "base" ? "Base plan" : "Scenario";
-          const solved = await solveScenario(assumptions, scenarioLabel, portfolioLabel);
-          solvedByScenario.set(scenarioRef, solved);
-        }
-      }
-
-      return pages.map((p) => {
-        if (p.pageId !== "lifeInsuranceSummary") return p;
-        const solved = solvedByScenario.get(resolveRef(p.scenarioOverride)) ?? null;
-        return { ...p, options: { ...(p.options as object), solved } };
-      });
-    } finally {
-      setPresolving(false);
-      setProgress(null);
-    }
-  }
-
   async function handleGenerate() {
     setError(null);
     setGenerating(true);
     try {
-      const pagesToExport = await presolveLifeInsurancePages(state.pages);
       const res = await fetch(
         `/api/clients/${props.clientId}/presentations/export-pdf`,
         {
@@ -287,7 +226,7 @@ export function PresentationsLauncher(props: Props) {
           body: JSON.stringify({
             scenarioId: resolvedScenarioId,
             filename: state.filename || undefined,
-            pages: descriptorsFor(pagesToExport),
+            pages: descriptorsFor(state.pages),
           }),
         },
       );
@@ -305,11 +244,7 @@ export function PresentationsLauncher(props: Props) {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        setError("Solve cancelled.");
-      } else {
-        setError(e instanceof Error ? e.message : String(e));
-      }
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setGenerating(false);
     }
@@ -442,6 +377,33 @@ export function PresentationsLauncher(props: Props) {
                           pages: descriptorsFor([p]),
                         })
                       }
+                      onDownload={async () => {
+                        const pageTitle = PRESENTATION_PAGES[p.pageId].title;
+                        const res = await fetch(
+                          `/api/clients/${props.clientId}/presentations/export-pdf`,
+                          {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({
+                              scenarioId: resolvedScenarioId,
+                              filename: `${slug(pageTitle)}.pdf`,
+                              pages: descriptorsFor([p]),
+                            }),
+                          },
+                        );
+                        if (!res.ok) {
+                          const j = await res.json().catch(() => ({}));
+                          setError(j.error ?? `Download failed: HTTP ${res.status}`);
+                          return;
+                        }
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${slug(pageTitle)}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
                       scenarios={props.scenarios}
                       snapshots={props.snapshots}
                     />
@@ -498,7 +460,6 @@ export function PresentationsLauncher(props: Props) {
         clientId={props.clientId}
         onClose={() => setPreviewRequest(null)}
       />
-      <LiPresolveDialog open={presolving} progress={progress} onCancel={cancel} />
     </div>
     </PresentationOptionsProvider>
   );

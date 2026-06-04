@@ -12,6 +12,7 @@ const baseProps = {
   onScenarioOverrideChange: vi.fn(),
   onRemove: vi.fn(),
   onPreview: vi.fn(),
+  onDownload: vi.fn(),
   scenarios: [],
   snapshots: [],
 };

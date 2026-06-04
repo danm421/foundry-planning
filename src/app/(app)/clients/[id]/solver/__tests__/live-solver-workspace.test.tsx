@@ -157,6 +157,7 @@ describe("LiveSolverWorkspace — solve lifecycle", () => {
               status: "converged",
               solvedValue: 67,
               achievedPoS: 0.85,
+              canonicalPoS: 0.83,
               iterations: 4,
               finalProjection: [{ year: 2026, portfolioAssets: { total: 1_200_000 } }],
             },
