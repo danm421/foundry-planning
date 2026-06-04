@@ -83,6 +83,8 @@ export interface AccountFormInitial {
   isDefaultChecking?: boolean;
   /** Parent business account when this account is a sub-asset of a business. */
   parentAccountId?: string | null;
+  custodian?: string | null;
+  accountNumberLast4?: string | null;
 }
 
 export interface BusinessOption {
@@ -455,6 +457,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [turnoverPct, setTurnoverPct] = useState<string>(
     initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0",
   );
+  const [custodian, setCustodian] = useState<string>(initial?.custodian ?? "");
+  const [accountNumberLast4, setAccountNumberLast4] = useState<string>(
+    initial?.accountNumberLast4 ?? "",
+  );
 
   // ── Dirty-tracking for autosave ─────────────────────────────────────────────
   // Serialize every controlled field into a snapshot string so tab-switch
@@ -485,13 +491,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     overridePctTaxExempt,
     turnoverPct,
     customAllocations,
+    custodian,
+    accountNumberLast4,
   }), [
     name, category, subType, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
     realEstateGrowthRatePct, modelPortfolioId, rmdEnabled, priorYearEndValue,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
-    turnoverPct, customAllocations,
+    turnoverPct, customAllocations, custodian, accountNumberLast4,
   ]);
 
   const baselineRef = useRef<string>("");
@@ -711,6 +719,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? String(Number(propertyTaxGrowthRate) / 100)
           : undefined,
       propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
+      custodian: custodian.trim() === "" ? null : custodian.trim(),
+      accountNumberLast4: accountNumberLast4.trim() === "" ? null : accountNumberLast4.trim(),
     };
 
     setLoading(true);
@@ -798,7 +808,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
-    currentSerialized, onAutoSaved,
+    currentSerialized, onAutoSaved, custodian, accountNumberLast4,
   ]);
 
   useImperativeHandle(ref, () => ({ saveAsync: saveAsyncImpl }), [saveAsyncImpl]);
@@ -874,6 +884,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? String(Number(propertyTaxGrowthRate) / 100)
           : undefined,
       propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
+      custodian: custodian.trim() === "" ? null : custodian.trim(),
+      accountNumberLast4: accountNumberLast4.trim() === "" ? null : accountNumberLast4.trim(),
     };
 
     try {
@@ -1452,6 +1464,38 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </>
               )}
             </div>
+
+            <details className="col-span-2 mt-2 rounded-[var(--radius-sm)] border border-hair bg-card-2/40">
+              <summary className="cursor-pointer select-none px-3 py-2 text-[13px] text-ink-3 hover:text-ink">
+                Account identification
+              </summary>
+              <div className="grid grid-cols-2 gap-4 px-3 pb-3 pt-1">
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="custodian">Custodian</label>
+                  <input
+                    id="custodian"
+                    type="text"
+                    value={custodian}
+                    onChange={(e) => setCustodian(e.target.value)}
+                    placeholder="e.g. Fidelity"
+                    className={inputClassName}
+                  />
+                </div>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="accountNumberLast4">Acct # (last 4)</label>
+                  <input
+                    id="accountNumberLast4"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={accountNumberLast4}
+                    onChange={(e) => setAccountNumberLast4(e.target.value)}
+                    placeholder="Last 4"
+                    className={inputClassName}
+                  />
+                </div>
+              </div>
+            </details>
           </div>
         </div>
       </div>
