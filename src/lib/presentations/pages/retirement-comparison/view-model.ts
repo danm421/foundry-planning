@@ -5,6 +5,7 @@ import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs"
 import { buildRetirementComparisonMetrics } from "./metrics";
 import { describeChange } from "@/lib/presentations/pages/scenario-changes/describe";
 import { groupUnits } from "@/lib/presentations/pages/scenario-changes/group";
+import { buildResolveContext, EMPTY_RESOLVE_DATA } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 import type { RetirementComparisonOptions, RetirementComparisonPageData } from "./types";
 
 function retirementYearOf(clientData: ClientData): number | null {
@@ -55,9 +56,10 @@ export function buildRetirementComparisonData(
   const sc = scnBundle.scenarioChanges;
   let changeUnits: RetirementComparisonPageData["changeUnits"] = [];
   if (sc && sc.changes.length > 0) {
+    const resolve = buildResolveContext(sc.resolve ?? EMPTY_RESOLVE_DATA);
     const described = sc.changes.map((change) => ({
       change,
-      row: describeChange(change, { targetNames: sc.targetNames }),
+      row: describeChange(change, { targetNames: sc.targetNames, resolve }),
     }));
     changeUnits = groupUnits(described, sc.toggleGroups);
   }

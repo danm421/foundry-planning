@@ -4,5 +4,5 @@
 // drills). Takes no params, matching every sibling estimate*PageCount — the
 // registry's (data, options) => number slot accepts a zero-arg function.
 export function estimateScenarioChangesPageCount(): number {
-  return 1;
+  return 2; // detail rows wrap taller than the old single-line rows
 }

@@ -7,7 +7,7 @@ function ch(id: string, toggleGroupId: string | null, orderIndex: number): Scena
   return { id, scenarioId: "s", opType: "edit", targetKind: "income", targetId: id, payload: {}, toggleGroupId, orderIndex };
 }
 function row(area: ChangeRow["area"], what: string): ChangeRow {
-  return { area, what, op: "edit", before: "—", after: "—", why: "" };
+  return { area, what, op: "edit", before: "—", after: "—", detail: [] };
 }
 
 describe("groupUnits", () => {
