@@ -22,13 +22,10 @@ import { runProjectionWithEvents } from "@/engine/projection";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import {
   runMonteCarlo,
-  summarizeMonteCarlo,
   createReturnEngine,
-  liquidPortfolioTotal,
 } from "@/engine";
-import { buildHistogramSeries } from "@/lib/monte-carlo/histogram-series";
-import { successByYear } from "@/lib/comparison/success-by-year";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
+import { buildMonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/build-payload";
 import {
   PresentationDocument,
   type PageScenarioBundle,
@@ -267,20 +264,12 @@ export async function POST(
             trials: 1000,
             requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
           });
-          const summary = summarizeMonteCarlo(result, {
-            client: clientData.client,
-            planSettings: clientData.planSettings,
-            startingLiquidBalance: mc.startingLiquidBalance,
+          monteCarlo = buildMonteCarloReportPayload({
+            result,
+            projection,
+            mcPayload: mc,
+            clientData,
           });
-          monteCarlo = {
-            summary,
-            histogram: buildHistogramSeries(result.endingLiquidAssets),
-            successRates: successByYear(
-              result.byYearLiquidAssetsPerTrial,
-              mc.requiredMinimumAssetLevel,
-            ),
-            deterministic: projection.years.map(liquidPortfolioTotal),
-          };
         } catch (mcErr) {
           // Non-fatal: leave monteCarlo null so the page renders its graceful
           // "data unavailable" frame instead of failing the whole export.
