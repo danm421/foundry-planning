@@ -14,7 +14,7 @@ function startAge(dateOfBirth: string, planStartYear: number): number {
   return planStartYear - birthYear;
 }
 
-function annualIncomeAtStart(clientData: ClientData, planStartYear: number): number {
+export function annualIncomeAtStart(clientData: ClientData, planStartYear: number): number {
   const incomes = (clientData.incomes ?? []) as Array<{
     annualAmount: number | string;
     startYear?: number | null;

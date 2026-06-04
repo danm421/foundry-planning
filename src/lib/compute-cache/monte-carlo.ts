@@ -12,6 +12,7 @@ import {
 import { buildMonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/build-payload";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import { hashMonteCarloInputs, ENGINE_VERSION } from "./hash";
+import { annualIncomeAtStart } from "@/components/monte-carlo/kpi-band";
 
 export interface CachedMonteCarloResult {
   payload: MonteCarloReportPayload;
@@ -21,6 +22,8 @@ export interface CachedMonteCarloResult {
     startingLiquidBalance: number;
     planStartYear: number;
     clientBirthYear: number | undefined;
+    clientDisplayName: string;
+    annualIncomeAtStart: number;
   };
 }
 
@@ -112,14 +115,22 @@ export async function getOrComputeMonteCarlo(args: {
   const clientBirthYear = effectiveTree.client.dateOfBirth
     ? parseInt(effectiveTree.client.dateOfBirth.slice(0, 4), 10) || undefined
     : undefined;
+  const planStartYear = projection.years[0]?.year ?? new Date().getFullYear();
+  // Mirror ReportHeader's display-name formatting (monte-carlo-report.tsx).
+  const client = effectiveTree.client;
+  const clientDisplayName = client.spouseName
+    ? `${client.firstName} & ${client.spouseName} ${client.lastName}`
+    : `${client.firstName} ${client.lastName}`;
   const cached: CachedMonteCarloResult = {
     payload,
     raw,
     meta: {
       requiredMinimumAssetLevel: mcPayload.requiredMinimumAssetLevel,
       startingLiquidBalance: mcPayload.startingLiquidBalance,
-      planStartYear: projection.years[0]?.year ?? new Date().getFullYear(),
+      planStartYear,
       clientBirthYear,
+      clientDisplayName,
+      annualIncomeAtStart: annualIncomeAtStart(effectiveTree, planStartYear),
     },
   };
   const computeMs = Date.now() - start;

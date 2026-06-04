@@ -14,7 +14,12 @@ vi.mock("@/db/schema", () => ({ scenarioComputeCache: {}, scenarios: {} }));
 vi.mock("drizzle-orm", () => ({ and: () => ({}), eq: () => ({}) }));
 vi.mock("@/lib/scenario/loader", () => ({
   loadEffectiveTree: vi.fn(async () => ({
-    effectiveTree: { client: {}, planSettings: {}, accounts: [] },
+    effectiveTree: {
+      client: { firstName: "T", lastName: "U" },
+      planSettings: {},
+      accounts: [],
+      incomes: [],
+    },
   })),
 }));
 vi.mock("@/lib/projection/load-monte-carlo-data", () => ({
