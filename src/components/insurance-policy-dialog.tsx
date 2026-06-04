@@ -42,7 +42,16 @@ export interface PolicyFormState {
   /** UI-only: drives the post-payout growth-rate dropdown. Not persisted directly;
    *  derived back into postPayoutGrowthRate / postPayoutModelPortfolioId on save. */
   postPayoutGrowthSource: PostPayoutGrowthSource;
-  cashValueSchedule: { year: number; cashValue: number }[];
+  premiumScheduleMode: "off" | "scheduled";
+  deathBenefitScheduleMode: "off" | "scheduled";
+  incomeScheduleMode: "off" | "scheduled";
+  cashValueSchedule: {
+    year: number;
+    cashValue?: number;
+    premiumAmount?: number;
+    income?: number;
+    deathBenefit?: number;
+  }[];
 }
 
 export interface InsurancePolicyDialogProps {
@@ -117,6 +126,9 @@ const DEFAULT_STATE: PolicyFormState = {
   termLengthYears: null,
   endsAtInsuredRetirement: false,
   cashValueGrowthMode: "basic",
+  premiumScheduleMode: "off",
+  deathBenefitScheduleMode: "off",
+  incomeScheduleMode: "off",
   postPayoutGrowthRate: 0.06,
   postPayoutModelPortfolioId: null,
   postPayoutGrowthSource: "custom",
@@ -141,6 +153,9 @@ function seedStateFromRecord(
     termLengthYears: policy.termLengthYears,
     endsAtInsuredRetirement: policy.endsAtInsuredRetirement,
     cashValueGrowthMode: policy.cashValueGrowthMode,
+    premiumScheduleMode: policy.premiumScheduleMode ?? "off",
+    deathBenefitScheduleMode: policy.deathBenefitScheduleMode ?? "off",
+    incomeScheduleMode: policy.incomeScheduleMode ?? "off",
     postPayoutGrowthRate: policy.postPayoutGrowthRate,
     postPayoutModelPortfolioId: policy.postPayoutModelPortfolioId ?? null,
     postPayoutGrowthSource: policy.postPayoutModelPortfolioId
@@ -178,6 +193,9 @@ function applyPolicyTypeTransition(
       cashValue: 0,
       costBasis: 0,
       cashValueGrowthMode: "basic",
+      premiumScheduleMode: "off",
+      deathBenefitScheduleMode: "off",
+      incomeScheduleMode: "off",
       cashValueSchedule: [],
     };
   }
@@ -203,18 +221,19 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     termLengthYears: state.termLengthYears,
     endsAtInsuredRetirement: state.endsAtInsuredRetirement,
     cashValueGrowthMode: state.cashValueGrowthMode,
+    premiumScheduleMode: state.premiumScheduleMode,
+    deathBenefitScheduleMode: state.deathBenefitScheduleMode,
+    incomeScheduleMode: state.incomeScheduleMode,
     postPayoutGrowthRate: state.postPayoutGrowthRate,
     postPayoutModelPortfolioId:
       state.postPayoutGrowthSource === "model_portfolio"
         ? state.postPayoutModelPortfolioId
         : null,
-    // Only persist the schedule when the user has opted into free-form mode.
-    // Sending `[]` in basic mode wipes any previously-persisted rows on
-    // PATCH (full-replacement semantics), which is what we want — otherwise
-    // a user who populated free-form, then switched back to basic, would
-    // leave orphan rows in `life_insurance_cash_value_schedule`.
-    cashValueSchedule:
-      state.cashValueGrowthMode === "free_form" ? state.cashValueSchedule : [],
+    // Always send the schedule — the Zod schema no longer gates on free-form
+    // mode, and premium/income/DB rows must persist even in basic cash-value
+    // mode. Full-replacement semantics: sending [] on a policy where all
+    // overrides are off wipes orphan rows.
+    cashValueSchedule: state.cashValueSchedule,
   };
   return payload;
 }
@@ -564,8 +583,14 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               policyType={state.policyType}
               mode={state.cashValueGrowthMode}
               schedule={state.cashValueSchedule}
+              premiumScheduleMode={state.premiumScheduleMode}
+              deathBenefitScheduleMode={state.deathBenefitScheduleMode}
+              incomeScheduleMode={state.incomeScheduleMode}
               onChangeMode={(m) => handlePatch({ cashValueGrowthMode: m })}
               onChangeSchedule={(s) => handlePatch({ cashValueSchedule: s })}
+              onChangePremiumScheduleMode={(m) => handlePatch({ premiumScheduleMode: m })}
+              onChangeDeathBenefitScheduleMode={(m) => handlePatch({ deathBenefitScheduleMode: m })}
+              onChangeIncomeScheduleMode={(m) => handlePatch({ incomeScheduleMode: m })}
             />
           </div>
         )}
