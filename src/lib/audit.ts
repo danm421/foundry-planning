@@ -34,6 +34,7 @@ export type AuditAction =
   | "account.holding.update"
   | "account.holding.delete"
   | "account.holding.override.update"
+  | "client.holdings.refresh"
   // Liabilities
   | "liability.create"
   | "liability.update"
