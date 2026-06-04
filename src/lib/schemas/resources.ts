@@ -93,6 +93,8 @@ export const accountCreateSchema = z
     annualPropertyTax: money.optional(),
     propertyTaxGrowthRate: growthRate.optional().nullable(),
     propertyTaxGrowthSource: z.enum(["custom", "inflation"]).optional(),
+    custodian: z.string().max(120).optional().nullable(),
+    accountNumberLast4: z.string().max(4).optional().nullable(),
   })
   .passthrough(); // prompts evolve; don't lock out novel fields
 
