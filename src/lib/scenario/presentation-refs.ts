@@ -42,6 +42,10 @@ export interface PlannerPage {
    *  scenario trigger one run. */
   needsMonteCarloRun: boolean;
   isScenarioChanges: boolean;
+  /** When set, this page is multi-scenario: it requires exactly these refs (raw
+   *  tokens). Its top/override ref is ignored for data; `needsMonteCarloRun` and
+   *  `isScenarioChanges` apply to each required ref (the latter only to live ones). */
+  requiredRefs?: string[];
 }
 
 export interface DistinctBundlePlan {
@@ -78,14 +82,9 @@ export function planScenarioBundles(
     needsScenarioChanges: false,
   });
 
-  const pageKeys = pages.map((p) => {
-    const ref =
-      p.supportsScenarioOverride && p.scenarioOverride !== undefined
-        ? resolveScenarioRef(p.scenarioOverride)
-        : topRef;
+  const register = (ref: ScenarioRef, p: PlannerPage): string => {
     const key = keyForRef(ref);
     const isLive = ref.kind === "scenario" && ref.id !== "base";
-
     const existing = distinct.get(key);
     if (existing) {
       existing.needsMonteCarlo ||= p.needsMonteCarloRun;
@@ -98,6 +97,22 @@ export function planScenarioBundles(
       });
     }
     return key;
+  };
+
+  const pageKeys = pages.map((p) => {
+    if (p.requiredRefs && p.requiredRefs.length > 0) {
+      let firstKey = "";
+      for (const raw of p.requiredRefs) {
+        const key = register(resolveScenarioRef(raw), p);
+        if (!firstKey) firstKey = key;
+      }
+      return firstKey;
+    }
+    const ref =
+      p.supportsScenarioOverride && p.scenarioOverride !== undefined
+        ? resolveScenarioRef(p.scenarioOverride)
+        : topRef;
+    return register(ref, p);
   });
 
   return { distinct, pageKeys, topKey };

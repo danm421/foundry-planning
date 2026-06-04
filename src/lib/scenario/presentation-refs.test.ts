@@ -61,6 +61,45 @@ describe("labelForRef", () => {
   });
 });
 
+describe("planScenarioBundles — multi-scenario pages", () => {
+  it("registers each required ref, applying MC + changes per ref", () => {
+    const pages: PlannerPage[] = [
+      {
+        supportsScenarioOverride: false,
+        scenarioOverride: undefined,
+        needsMonteCarloRun: true,
+        isScenarioChanges: true,
+        requiredRefs: ["base", "scn-1"],
+      },
+    ];
+    // Top-level is base; the page itself pulls base + scn-1.
+    const plan = planScenarioBundles(pages, null);
+
+    const base = plan.distinct.get("base");
+    const scn = plan.distinct.get("scenario:scn-1");
+    expect(base?.needsMonteCarlo).toBe(true);
+    expect(base?.needsScenarioChanges).toBe(false); // base is not a live scenario
+    expect(scn?.needsMonteCarlo).toBe(true);
+    expect(scn?.needsScenarioChanges).toBe(true);
+    // The page's own key is the first required ref.
+    expect(plan.pageKeys[0]).toBe("base");
+  });
+
+  it("leaves single-scenario pages unchanged", () => {
+    const pages: PlannerPage[] = [
+      {
+        supportsScenarioOverride: true,
+        scenarioOverride: "scn-9",
+        needsMonteCarloRun: false,
+        isScenarioChanges: false,
+      },
+    ];
+    const plan = planScenarioBundles(pages, null);
+    expect(plan.pageKeys[0]).toBe("scenario:scn-9");
+    expect(plan.distinct.has("scenario:scn-9")).toBe(true);
+  });
+});
+
 describe("planScenarioBundles", () => {
   const page = (over: Partial<PlannerPage>): PlannerPage => ({
     supportsScenarioOverride: true,
