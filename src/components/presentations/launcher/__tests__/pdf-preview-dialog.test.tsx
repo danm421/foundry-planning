@@ -9,7 +9,7 @@ import {
 const REQUEST: PreviewRequest = {
   title: "Cash Flow",
   scenarioId: null,
-  pages: [{ pageId: "cashFlow", options: { range: "retirement" } }],
+  pages: [{ pageId: "cashFlow", options: { range: "full" } }],
 };
 
 const originalFetch = global.fetch;

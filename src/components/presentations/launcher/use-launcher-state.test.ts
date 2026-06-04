@@ -9,7 +9,7 @@ describe("launcherReducer", () => {
     const next = launcherReducer(base, {
       type: "addPage",
       pageId: "cashFlow",
-      options: { range: "retirement", showCallout: true },
+      options: { range: "full", showCallout: true },
     });
     expect(next.pages).toHaveLength(1);
     expect(next.pages[0].pageId).toBe("cashFlow");
@@ -19,48 +19,50 @@ describe("launcherReducer", () => {
     const s1 = launcherReducer(base, {
       type: "addPage",
       pageId: "cashFlow",
-      options: { range: "retirement", showCallout: true },
+      options: { range: "full", showCallout: true },
     });
     const s2 = launcherReducer(s1, { type: "removePage", index: 0 });
     expect(s2.pages).toHaveLength(0);
   });
 
   it("reorder moves a page", () => {
+    const customRange = { startYear: 2031, endYear: 2036 };
     let s: LauncherState = base;
     s = launcherReducer(s, {
       type: "addPage",
       pageId: "cashFlow",
-      options: { range: "retirement", showCallout: true },
+      options: { range: "full", showCallout: true },
     });
     s = launcherReducer(s, {
       type: "addPage",
       pageId: "cashFlow",
-      options: { range: "lifetime", showCallout: true },
+      options: { range: customRange, showCallout: true },
     });
     const moved = launcherReducer(s, { type: "reorder", from: 0, to: 1 });
-    expect((moved.pages[0].options as { range: string }).range).toBe("lifetime");
-    expect((moved.pages[1].options as { range: string }).range).toBe("retirement");
+    expect((moved.pages[0].options as { range: unknown }).range).toEqual(customRange);
+    expect((moved.pages[1].options as { range: string }).range).toBe("full");
   });
 
   it("updatePageOptions changes one page's options", () => {
+    const customRange = { startYear: 2031, endYear: 2036 };
     const s1 = launcherReducer(base, {
       type: "addPage",
       pageId: "cashFlow",
-      options: { range: "retirement", showCallout: true },
+      options: { range: "full", showCallout: true },
     });
     const s2 = launcherReducer(s1, {
       type: "updatePageOptions",
       index: 0,
-      options: { range: "lifetime", showCallout: true },
+      options: { range: customRange, showCallout: true },
     });
-    expect((s2.pages[0].options as { range: string }).range).toBe("lifetime");
+    expect((s2.pages[0].options as { range: unknown }).range).toEqual(customRange);
   });
 
   it("setScenarioOverride sets a per-page override and supports reset to undefined", () => {
     const s1 = launcherReducer(base, {
       type: "addPage",
       pageId: "cashFlow",
-      options: { range: "retirement", showCallout: true },
+      options: { range: "full", showCallout: true },
     });
     const s2 = launcherReducer(s1, {
       type: "setScenarioOverride",
@@ -85,7 +87,7 @@ describe("launcherReducer", () => {
       pages: [
         {
           pageId: "cashFlow" as const,
-          options: { range: "lifetime", showCallout: false },
+          options: { range: "full", showCallout: false },
         },
       ],
     };
@@ -95,6 +97,7 @@ describe("launcherReducer", () => {
   });
 
   it("isModified is false right after loadTemplate and true after editing", () => {
+    const customRange = { startYear: 2031, endYear: 2036 };
     const tpl = {
       id: "t",
       name: "T",
@@ -103,7 +106,7 @@ describe("launcherReducer", () => {
       pages: [
         {
           pageId: "cashFlow" as const,
-          options: { range: "retirement", showCallout: true },
+          options: { range: "full", showCallout: true },
         },
       ],
     };
@@ -112,7 +115,7 @@ describe("launcherReducer", () => {
     const s2 = launcherReducer(s1, {
       type: "updatePageOptions",
       index: 0,
-      options: { range: "lifetime", showCallout: true },
+      options: { range: customRange, showCallout: true },
     });
     expect(s2.isModified).toBe(true);
   });

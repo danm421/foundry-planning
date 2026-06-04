@@ -8,9 +8,9 @@ describe("registry — Cash Flow page", () => {
       .not.toThrow();
   });
 
-  it("summarizes its default options to 'Retirement only'", () => {
+  it("summarizes its default options to 'Full range'", () => {
     expect(cashFlowPage.summarizeOptions(CASH_FLOW_PAGE_OPTIONS_DEFAULT))
-      .toBe("Retirement only");
+      .toBe("Full range");
   });
 
   it("estimates one PDF page", () => {

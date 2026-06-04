@@ -204,7 +204,5 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
 
 function computeCallout(options: DrillPageOptions): string | undefined {
   if (!options.showCallout) return undefined;
-  if (options.calloutText != null) return options.calloutText;
-  if (options.range === "retirement") return "Supplemental withdrawals begin at Retirement.";
-  return undefined;
+  return options.calloutText ?? undefined;
 }

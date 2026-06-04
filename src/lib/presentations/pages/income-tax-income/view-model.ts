@@ -69,16 +69,14 @@ export function buildTaxIncomeDrillData(input: BuildTaxIncomeDrillInput): DrillP
   return {
     title: "Income Tax — Income",
     subtitle: scenarioLabel,
-    callout: computeCallout(options, "Income detail begins at Retirement."),
+    callout: computeCallout(options),
     chartSpec,
     table: { columns, rows, markers },
     footnote: DISCLAIMER,
   };
 }
 
-function computeCallout(options: DrillPageOptions, retirementText: string): string | undefined {
+function computeCallout(options: DrillPageOptions): string | undefined {
   if (!options.showCallout) return undefined;
-  if (options.calloutText != null) return options.calloutText;
-  if (options.range === "retirement") return retirementText;
-  return undefined;
+  return options.calloutText ?? undefined;
 }

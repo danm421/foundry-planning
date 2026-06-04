@@ -41,7 +41,7 @@ afterAll(async () => {
 });
 
 const validPages = [
-  { pageId: "cashFlow" as const, options: { range: "retirement" as const, showCallout: true } },
+  { pageId: "cashFlow" as const, options: { range: "full" as const, showCallout: true } },
 ];
 
 describe("templates-repo", () => {

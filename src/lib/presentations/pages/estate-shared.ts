@@ -49,12 +49,9 @@ export function naturalOrdering(projection: ProjectionResult): Ordering {
 
 export function estateCallout(
   options: DrillPageOptions,
-  retirementText: string,
 ): string | undefined {
   if (!options.showCallout) return undefined;
-  if (options.calloutText != null) return options.calloutText;
-  if (options.range === "retirement") return retirementText;
-  return undefined;
+  return options.calloutText ?? undefined;
 }
 
 export function parseBirthYear(dob: string | null): number | null {

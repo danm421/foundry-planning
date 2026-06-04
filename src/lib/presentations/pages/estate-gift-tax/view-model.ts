@@ -73,7 +73,7 @@ export function buildGiftTaxDrillData(input: EstateDrillInput): DrillPageData {
   return {
     title: "Gift Tax",
     subtitle: scenarioLabel,
-    callout: estateCallout(options, "Cumulative lifetime gifting and gift-tax exposure."),
+    callout: estateCallout(options),
     // No chart — table-only, like Portfolio Growth/Activity.
     table: { columns, rows, markers },
     footnote: ESTATE_DISCLAIMER,

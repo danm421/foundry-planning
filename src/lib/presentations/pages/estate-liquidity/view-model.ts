@@ -67,7 +67,7 @@ export function buildEstateLiquidityDrillData(input: EstateDrillInput): DrillPag
   return {
     title: "Estate Liquidity",
     subtitle: scenarioLabel,
-    callout: estateCallout(options, "Liquidity shown assuming both die in that year (hypothetical)."),
+    callout: estateCallout(options),
     chartSpec,
     table: { columns, rows, markers },
     footnote: ESTATE_DISCLAIMER,

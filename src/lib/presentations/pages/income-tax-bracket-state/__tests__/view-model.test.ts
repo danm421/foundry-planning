@@ -12,7 +12,7 @@ const base = {
 
 describe("buildTaxBracketStateDrillData", () => {
   it("maps state bracket-stacking columns from buildStateBracketRows", () => {
-    const d = buildTaxBracketStateDrillData({ ...base, options: { range: "lifetime", showCallout: false } });
+    const d = buildTaxBracketStateDrillData({ ...base, options: { range: "full", showCallout: false } });
     const r = d.table.rows.find((row) => row.year === 2026)!;
     // PA flat 3.07% top tier [0, null]: base 450_000 → into 450_000, remaining null→0.
     expect(r.cells.stateTaxable).toBe(450_000);
@@ -23,7 +23,7 @@ describe("buildTaxBracketStateDrillData", () => {
   });
 
   it("emits an Into/Remaining bracket-fill chart (no line)", () => {
-    const d = buildTaxBracketStateDrillData({ ...base, options: { range: "lifetime", showCallout: false } });
+    const d = buildTaxBracketStateDrillData({ ...base, options: { range: "full", showCallout: false } });
     expect(d.chartSpec).toBeDefined();
     expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual(["intoBracket", "remainingInBracket"]);
     expect(d.chartSpec!.lines).toHaveLength(0);

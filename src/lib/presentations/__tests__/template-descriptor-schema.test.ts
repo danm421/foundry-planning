@@ -4,7 +4,7 @@ import { templatePagesSchema } from "../template-descriptor-schema";
 describe("templatePagesSchema", () => {
   it("accepts a valid cashFlow descriptor", () => {
     const valid = [
-      { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
+      { pageId: "cashFlow", options: { range: "full", showCallout: true } },
     ];
     expect(() => templatePagesSchema.parse(valid)).not.toThrow();
   });

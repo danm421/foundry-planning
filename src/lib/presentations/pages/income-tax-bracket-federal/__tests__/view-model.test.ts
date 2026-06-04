@@ -12,7 +12,7 @@ const base = {
 
 describe("buildTaxBracketFederalDrillData", () => {
   it("maps bracket-stacking columns from buildTaxBracketRows", () => {
-    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "lifetime", showCallout: false } });
+    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "full", showCallout: false } });
     const r = d.table.rows.find((row) => row.year === 2026)!;
     // incomeTaxBase 384_200 sits in the 24% tier [383_900, 487_450].
     expect(r.cells.incomeTaxBase).toBe(384_200);
@@ -24,7 +24,7 @@ describe("buildTaxBracketFederalDrillData", () => {
   });
 
   it("emits an Into/Remaining bracket-fill chart with a conversion line", () => {
-    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "lifetime", showCallout: false } });
+    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "full", showCallout: false } });
     expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual(["intoBracket", "remainingInBracket"]);
     expect(d.chartSpec!.lines.map((l) => l.seriesId)).toEqual(["conversionTaxable"]);
     const i = d.chartSpec!.xAxis.domain.indexOf(2026);
@@ -35,7 +35,7 @@ describe("buildTaxBracketFederalDrillData", () => {
   });
 
   it("first visible year has changeInBase 0; later years show the delta", () => {
-    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "lifetime", showCallout: false } });
+    const d = buildTaxBracketFederalDrillData({ ...base, options: { range: "full", showCallout: false } });
     expect(d.table.rows[0].cells.changeInBase).toBe(0);
   });
 });

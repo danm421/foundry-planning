@@ -9,7 +9,7 @@ const base = {
   scenarioLabel: "Base Case",
   clientName: "Cooper",
   spouseName: "Susan" as string | null,
-  options: { range: "lifetime" as const, showCallout: false },
+  options: { range: "full" as const, showCallout: false },
 };
 
 describe("buildPortfolioGrowthDrillData — chart", () => {

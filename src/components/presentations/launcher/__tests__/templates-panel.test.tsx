@@ -16,7 +16,7 @@ const t = (
   pages: [
     {
       pageId: "cashFlow" as const,
-      options: { range: "retirement", showCallout: true },
+      options: { range: "full", showCallout: true },
     },
   ],
 });

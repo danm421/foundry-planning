@@ -31,7 +31,7 @@ const base = {
   scenarioLabel: "Base Case",
   clientName: "Cooper",
   spouseName: "Susan" as string | null,
-  options: { range: "lifetime" as const, showCallout: false },
+  options: { range: "full" as const, showCallout: false },
 };
 
 // F82: the Withdrawal % numerator adds RMDs to supplemental withdrawals. The

@@ -9,7 +9,7 @@ const base = {
   scenarioLabel: "Base Case",
   clientName: "Cooper",
   spouseName: "Susan" as string | null,
-  options: { range: "lifetime" as const, showCallout: false },
+  options: { range: "full" as const, showCallout: false },
 };
 
 describe("buildTaxOtherTaxesDrillData", () => {
@@ -47,7 +47,7 @@ describe("buildTaxOtherTaxesDrillData", () => {
     } } } as never;
     const data = buildTaxOtherTaxesDrillData({
       years: [y], clientData: makeClientData(),
-      options: { range: "lifetime", showCallout: false } as never,
+      options: { range: "full", showCallout: false } as never,
       scenarioLabel: "B", clientName: "T", spouseName: null,
     });
     const r = data.table.rows[0].cells;

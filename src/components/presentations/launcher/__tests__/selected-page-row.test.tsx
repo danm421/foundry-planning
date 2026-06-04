@@ -6,7 +6,7 @@ import { SelectedPageRow } from "../selected-page-row";
 const baseProps = {
   index: 0,
   pageId: "cashFlow" as const,
-  options: { range: "retirement", showCallout: true },
+  options: { range: "full", showCallout: true },
   scenarioOverride: undefined as string | null | undefined,
   onOptionsChange: vi.fn(),
   onScenarioOverrideChange: vi.fn(),
@@ -21,7 +21,7 @@ describe("SelectedPageRow", () => {
   it("shows the page title and summary chip", () => {
     render(<SelectedPageRow {...baseProps} />);
     expect(screen.getByText("Cash Flow")).toBeInTheDocument();
-    expect(screen.getByText("Retirement only")).toBeInTheDocument();
+    expect(screen.getByText("Full range")).toBeInTheDocument();
   });
 
   it("calls onRemove when remove button clicked", () => {

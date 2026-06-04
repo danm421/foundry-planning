@@ -28,7 +28,7 @@ function baseInput(over: { spouseName?: string | null; giftLedger?: GiftLedgerYe
     scenarioLabel: "Base Case",
     clientName: "Cooper",
     spouseName: "spouseName" in over ? over.spouseName! : ("Susan" as string | null),
-    options: { range: "lifetime" as const, showCallout: false },
+    options: { range: "full" as const, showCallout: false },
   };
 }
 

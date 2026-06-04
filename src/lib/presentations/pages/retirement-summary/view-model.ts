@@ -92,13 +92,13 @@ export function buildRetirementSummaryData(
   const transactions = assetTransactionsInRetirement(years, retYear);
 
   // Cash-flow chart for page 2: reuse the standalone Cash Flow page builder
-  // (range "retirement" slices to the first retirement year + carries the RMD
-  // double-count logic) and take just its chart spec, fitted to the portrait
-  // page-2 panel.
+  // sliced to [retirementYear..endOfProjection] so the chart mirrors the
+  // "retirement-onward" view the old range:"retirement" produced.
+  const lastYear = years[years.length - 1]?.year ?? retYear;
   const cf = buildCashFlowPageData({
     years,
     clientData,
-    options: { range: "retirement", showCallout: false },
+    options: { range: { startYear: retYear, endYear: lastYear }, showCallout: false },
     scenarioLabel: ctx.scenarioLabel,
     clientName: ctx.clientName,
     spouseName: ctx.spouseName ?? null,

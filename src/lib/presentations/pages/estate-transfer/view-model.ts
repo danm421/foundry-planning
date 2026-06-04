@@ -65,7 +65,7 @@ export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPage
   return {
     title: "Estate Transfer",
     subtitle: scenarioLabel,
-    callout: estateCallout(options, `Hypothetical · ${decedentName} dies first.`),
+    callout: estateCallout(options),
     chartSpec,
     table: { columns, rows, markers },
     footnote: ESTATE_DISCLAIMER,
