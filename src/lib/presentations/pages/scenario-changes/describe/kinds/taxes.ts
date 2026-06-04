@@ -1,10 +1,8 @@
 import { addRow, removeRow, editRow } from "../generic";
 import { nameFor } from "../format";
-import { money, yearWithRef, joinSegments } from "../labels";
+import { money, yearWithRef, joinSegments, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
-
-const num = (v: unknown) => (typeof v === "string" ? Number(v) : (v as number));
 
 const rothConversion: Describer = (c, ctx) => {
   const name = nameFor(c, ctx.targetNames) ?? "Roth conversion";
@@ -16,9 +14,9 @@ const rothConversion: Describer = (c, ctx) => {
     ? srcIds.map((id) => ctx.resolve.accountName(id)).join(", ")
     : "source accounts";
   const dest = ctx.resolve.accountName(p.destinationAccountId as string);
-  const start = num(p.startYear);
-  const end = num(p.endYear);
-  const window = Number.isFinite(end)
+  const start = toNum(p.startYear);
+  const end = toNum(p.endYear);
+  const window = end != null
     ? `${yearWithRef(start, p.startYearRef as string)}–${end}`
     : yearWithRef(start, p.startYearRef as string);
   let amount: string;
@@ -30,7 +28,7 @@ const rothConversion: Describer = (c, ctx) => {
       amount = `Deplete ${sources}`;
       break;
     case "fill_up_bracket":
-      amount = `Fill ${Math.round((num(p.fillUpBracket) || 0) * 100)}% bracket from ${sources}`;
+      amount = `Fill ${Math.round((toNum(p.fillUpBracket) ?? 0) * 100)}% bracket from ${sources}`;
       break;
     default:
       amount = `${money(p.fixedAmount)}/yr from ${sources}`;

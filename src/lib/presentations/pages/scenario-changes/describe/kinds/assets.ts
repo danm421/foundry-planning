@@ -1,17 +1,16 @@
 import { addRow, removeRow, editRow } from "../generic";
 import { nameFor } from "../format";
-import { money, yearWithRef, joinSegments, label } from "../labels";
+import { money, yearWithRef, joinSegments, label, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
 
-const num = (v: unknown) => (typeof v === "string" ? Number(v) : (v as number));
-
 const timing = (p: Record<string, unknown>): string | null => {
-  const start = num(p.startYear);
-  if (!Number.isFinite(start)) return null;
+  const start = toNum(p.startYear);
+  if (start == null) return null;
   const startStr = yearWithRef(start, p.startYearRef as string);
-  if (p.mode === "recurring" && Number.isFinite(num(p.endYear)))
-    return `${startStr} → ${yearWithRef(num(p.endYear), p.endYearRef as string)}`;
+  const end = toNum(p.endYear);
+  if (p.mode === "recurring" && end != null)
+    return `${startStr} → ${yearWithRef(end, p.endYearRef as string)}`;
   return startStr;
 };
 
@@ -47,26 +46,29 @@ const assetTransaction: Describer = (c, ctx) => {
   if (c.opType === "edit") return editRow(c, { ...SPEC.asset_transaction }, name ?? "Asset transaction");
   if (c.opType === "remove") return removeRow("Assets", name ?? "Asset transaction", ["No longer in this plan"]);
   const p = (c.payload ?? {}) as Record<string, unknown>;
-  const yr = yearWithRef(num(p.year), null);
+  const yr = yearWithRef(toNum(p.year), null);
   if (p.type === "buy") {
+    const mortgageAmt = toNum(p.mortgageAmount);
+    const mortgageRate = toNum(p.mortgageRate);
     const line = joinSegments([
       `Buy ${p.assetName ?? name ?? "asset"}`,
       p.purchasePrice != null ? `for ${money(p.purchasePrice)}` : null,
       yr,
       p.fundingAccountId ? `funded from ${ctx.resolve.accountName(p.fundingAccountId as string)}` : null,
-      num(p.mortgageAmount) ? `${money(p.mortgageAmount)} mortgage${num(p.mortgageRate) ? ` @ ${(Number(num(p.mortgageRate)) * 100).toFixed(1)}%` : ""}` : null,
+      mortgageAmt ? `${money(p.mortgageAmount)} mortgage${mortgageRate ? ` @ ${(mortgageRate * 100).toFixed(1)}%` : ""}` : null,
     ]);
     return addRow("Assets", name ?? `Buy ${p.assetName ?? "asset"}`, [line]);
   }
   // sell
   const soldLabel = p.accountId ? ctx.resolve.accountName(p.accountId as string) : (name ?? "holding");
+  const fractionSold = toNum(p.fractionSold);
   const line = joinSegments([
     `Sell ${soldLabel}`,
     yr,
     p.overrideSaleValue != null ? `for ~${money(p.overrideSaleValue)}` : null,
     p.proceedsAccountId ? `proceeds → ${ctx.resolve.accountName(p.proceedsAccountId as string)}` : null,
     p.qualifiesForHomeSaleExclusion ? "home-sale exclusion applied" : null,
-    num(p.fractionSold) && num(p.fractionSold) < 1 ? `${Math.round(num(p.fractionSold) * 100)}% partial` : null,
+    fractionSold && fractionSold < 1 ? `${Math.round(fractionSold * 100)}% partial` : null,
   ]);
   return addRow("Assets", name ?? "Asset sale", [line]);
 };

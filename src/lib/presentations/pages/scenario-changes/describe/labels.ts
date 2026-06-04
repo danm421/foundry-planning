@@ -1,7 +1,7 @@
 import { compactCurrency } from "@/lib/presentations/format";
 import { YEAR_REF_LABELS, type YearRef } from "@/lib/milestones";
 
-const toNum = (v: unknown): number | null => {
+export const toNum = (v: unknown): number | null => {
   if (v == null || v === "") return null;
   const n = typeof v === "string" ? Number(v) : (v as number);
   return Number.isFinite(n) ? n : null;

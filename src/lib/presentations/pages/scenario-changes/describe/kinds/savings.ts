@@ -1,13 +1,8 @@
 import { addRow, removeRow } from "../generic";
 import { nameFor, fieldLabel, fmtValue } from "../format";
-import { money, pct, yearWithRef, joinSegments } from "../labels";
+import { money, pct, yearWithRef, joinSegments, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
-
-const num = (v: unknown): number | null => {
-  const n = typeof v === "string" ? Number(v) : (v as number);
-  return Number.isFinite(n) ? n : null;
-};
 
 /** Payload fields that carry a dollar amount — rendered compactly via money(). */
 const DOLLAR_FIELDS = new Set(["annualAmount", "employerMatchAmount", "employerMatchCap"]);
@@ -44,15 +39,15 @@ const savingsRule: Describer = (c, ctx) => {
     p.annualAmount != null ? `${money(p.annualAmount)}/yr`
     : p.annualPercent != null ? `${pct(p.annualPercent)} of salary`
     : null;
-  const roth = num(p.rothPercent) ? `${pct(p.rothPercent)} Roth` : null;
-  const matchPct = num(p.employerMatchPct);
+  const roth = toNum(p.rothPercent) ? `${pct(p.rothPercent)} Roth` : null;
+  const matchPct = toNum(p.employerMatchPct);
   const match = matchPct
-    ? `match ${pct(p.employerMatchPct)}${num(p.employerMatchCap) ? ` to ${pct(p.employerMatchCap)}` : ""}`
-    : num(p.employerMatchAmount) ? `match ${money(p.employerMatchAmount)}` : null;
+    ? `match ${pct(p.employerMatchPct)}${toNum(p.employerMatchCap) ? ` to ${pct(p.employerMatchCap)}` : ""}`
+    : toNum(p.employerMatchAmount) ? `match ${money(p.employerMatchAmount)}` : null;
   const max = p.contributeMax ? "IRS max" : null;
-  const window = num(p.startYear)
-    ? `${yearWithRef(num(p.startYear), p.startYearRef as string)} → ${
-        num(p.endYear) ? yearWithRef(num(p.endYear), p.endYearRef as string) : "retirement"}`
+  const window = toNum(p.startYear)
+    ? `${yearWithRef(toNum(p.startYear), p.startYearRef as string)} → ${
+        toNum(p.endYear) ? yearWithRef(toNum(p.endYear), p.endYearRef as string) : "retirement"}`
     : null;
   return addRow("Savings", name, [joinSegments([acct, amount, roth, match, max, window])]);
 };

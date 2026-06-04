@@ -1,14 +1,9 @@
 import { addRow, removeRow, editRow, type DescribeContext } from "../generic";
 import { nameFor } from "../format";
-import { pct } from "../labels";
+import { pct, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, type Describer } from "../registry";
 import { DEFAULT_NAMES, isDefaultKey } from "@/lib/account-groups/resolver";
-
-const num = (v: unknown): number | null => {
-  const n = typeof v === "string" ? Number(v) : (v as number);
-  return Number.isFinite(n) ? n : null;
-};
 
 const scope = (p: Record<string, unknown>, ctx: DescribeContext): string => {
   const groups = Array.isArray(p.groupKeys) ? (p.groupKeys as string[]) : [];
@@ -37,7 +32,7 @@ const reinvestment: Describer = (c, ctx) => {
   const priorLine = prior ? `Were: ~${prior.mix}, ${pct(prior.blendedRate)}/yr` : null;
 
   const model = ctx.resolve.modelPortfolio(p.modelPortfolioId as string);
-  const newRate = num(p.customGrowthRate); // CORRECTED: customGrowthRate (string-coerced), not newGrowthRate
+  const newRate = toNum(p.customGrowthRate); // CORRECTED: customGrowthRate (string-coerced), not newGrowthRate
   const newLine = model
     ? `New model: ${model.name} (${pct(model.rate)}/yr)`
     : newRate != null

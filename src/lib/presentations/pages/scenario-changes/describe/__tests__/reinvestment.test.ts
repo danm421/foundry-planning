@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
 import { describeChange } from "../index";
 import { buildResolveContext } from "../resolve";
 

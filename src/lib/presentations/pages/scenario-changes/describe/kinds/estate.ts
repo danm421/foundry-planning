@@ -1,11 +1,9 @@
 import { addRow, removeRow, editRow } from "../generic";
 import { nameFor } from "../format";
-import { money, label, pct } from "../labels";
+import { money, label, pct, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
 import type { ResolveContext, RecipientKind } from "../resolve";
-
-const num = (v: unknown) => (typeof v === "string" ? Number(v) : (v as number));
 
 const gift: Describer = (c, ctx) => {
   const name = nameFor(c, ctx.targetNames) ?? "Gift";
@@ -19,7 +17,7 @@ const gift: Describer = (c, ctx) => {
     : p.recipientEntityId
     ? ctx.resolve.entityName(p.recipientEntityId as string)
     : "a recipient";
-  return addRow("Estate", name, [`${money(p.amount)} in ${num(p.year)} → ${recip}`]);
+  return addRow("Estate", name, [`${money(p.amount)} in ${toNum(p.year) ?? p.year ?? "—"} → ${recip}`]);
 };
 
 DESCRIBERS.gift = gift;

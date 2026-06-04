@@ -28,7 +28,7 @@ const familyMember = simpleDescriber({
   segments: [(p) => (typeof p.relationship === "string" ? String(p.relationship).replace(/_/g, " ") : null)],
 });
 
-const withdrawalStrategy: Describer = (c, _ctx) => {
+const withdrawalStrategy: Describer = (c) => {
   if (c.opType === "add") return addRow("Plan & Assumptions", "Withdrawal strategy", ["Sets the account draw-down order"]);
   if (c.opType === "remove") return removeRow("Plan & Assumptions", "Withdrawal strategy", ["Reverts to default draw-down order"]);
   return editRow(c, { ...SPEC.withdrawal_strategy }, "Withdrawal strategy");

@@ -1,14 +1,12 @@
-import { money, yearWithRef, label } from "../labels";
+import { money, yearWithRef, label, toNum } from "../labels";
 import { DESCRIBERS, simpleDescriber } from "../registry";
 
-const num = (v: unknown) => (typeof v === "string" ? Number(v) : (v as number));
-
 const window = (p: Record<string, unknown>): string | null => {
-  const start = num(p.startYear);
-  if (!Number.isFinite(start)) return null;
+  const start = toNum(p.startYear);
+  if (start == null) return null;
   const startStr = yearWithRef(start, p.startYearRef as string);
-  const end = num(p.endYear);
-  return `${startStr}–${Number.isFinite(end) ? end : "end"}`;
+  const end = toNum(p.endYear);
+  return `${startStr}–${end != null ? end : "end"}`;
 };
 
 DESCRIBERS.income = simpleDescriber({
@@ -34,7 +32,7 @@ DESCRIBERS.liability = simpleDescriber({
   area: "Liabilities", noun: "liability", whatMode: "name",
   segments: [
     (p) => (p.balance != null ? money(p.balance) : null),
-    (p) => (Number.isFinite(num(p.interestRate)) && num(p.interestRate) ? `${(num(p.interestRate) * 100).toFixed(2)}%` : null),
+    (p) => { const r = toNum(p.interestRate); return r ? `${(r * 100).toFixed(2)}%` : null; },
     (p) => (p.monthlyPayment != null ? `${money(p.monthlyPayment)}/mo` : null),
   ],
 });
@@ -43,7 +41,7 @@ DESCRIBERS.extra_payment = simpleDescriber({
   area: "Liabilities", noun: "extra payment", whatMode: "name",
   segments: [
     (p) => (p.amount != null ? money(p.amount) : null),
-    (p) => (Number.isFinite(num(p.year)) && num(p.year) ? String(num(p.year)) : null),
+    (p) => { const y = toNum(p.year); return y ? String(y) : null; },
   ],
 });
 
