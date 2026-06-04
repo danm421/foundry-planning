@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactElement } from "react";
+import BackButton from "./back-button";
 import Breadcrumb from "./breadcrumb";
 import { ThemeToggle } from "./theme-toggle";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -69,7 +70,8 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
 
   return (
     <header className="sticky top-0 z-40 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-hair bg-paper px-[var(--pad-card)]">
-      <div className="justify-self-start">
+      <div className="flex items-center gap-2 justify-self-start">
+        <BackButton />
         <Breadcrumb clientHouseholdTitle={clientHouseholdTitle} />
       </div>
       {clientId ? (
