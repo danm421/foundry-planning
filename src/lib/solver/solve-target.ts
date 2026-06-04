@@ -136,5 +136,6 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     canonicalPoS: canonical.successRate,
     iterations: bisectResult.iterations,
     finalProjection: lastProjection!,
+    seed: args.mcPayload.seed,
   };
 }

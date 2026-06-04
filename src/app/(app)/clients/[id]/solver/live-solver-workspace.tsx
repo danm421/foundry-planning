@@ -132,6 +132,9 @@ export function LiveSolverWorkspace({
   // a fresh result for the current edits (which then supersedes it). Cleared on
   // any further edit so it can't go stale.
   const [solvedPoS, setSolvedPoS] = useState<number | null>(null);
+  // MC seed used for the canonical solve run — persisted when saving the
+  // scenario so its report reproduces the same PoS.
+  const [solvedSeed, setSolvedSeed] = useState<number | null>(null);
 
   type ActiveSolve = {
     target: SolveLeverKey;
@@ -203,6 +206,9 @@ export function LiveSolverWorkspace({
       // as the advisor-facing solved result so it matches the MC report/PDF,
       // which also use 1,000 trials — not the noisier 250-trial search value.
       setSolvedPoS(e.canonicalPoS);
+      // Capture the seed so save-as-scenario can persist it, letting the saved
+      // scenario's report reproduce the same PoS byte-for-byte.
+      setSolvedSeed(e.seed);
       setComputeStatus("fresh");
       setActiveSolve(null);
     },
@@ -349,6 +355,7 @@ export function LiveSolverWorkspace({
     setComputeStatus("fresh");
     setCurrentProjection(initialSourceProjection);
     setSolvedPoS(null);
+    setSolvedSeed(null);
   }, [initialSourceProjection]);
 
   const [saveOpen, setSaveOpen] = useState(false);
@@ -405,6 +412,9 @@ export function LiveSolverWorkspace({
           source: initialSource,
           mutations,
           name: args.name,
+          // Pass the seed from the canonical solve so the saved scenario's
+          // report can reproduce the exact same PoS via getOrComputeMonteCarlo.
+          ...(solvedSeed !== null ? { seed: solvedSeed } : {}),
         }),
       });
       if (!res.ok) {
@@ -432,8 +442,9 @@ export function LiveSolverWorkspace({
       return next;
     });
     setComputeStatus("stale");
-    // Any manual edit invalidates the prior solve's canonical PoS.
+    // Any manual edit invalidates the prior solve's canonical PoS and seed.
     setSolvedPoS(null);
+    setSolvedSeed(null);
   }
 
   const handleSolveStart = useCallback(
