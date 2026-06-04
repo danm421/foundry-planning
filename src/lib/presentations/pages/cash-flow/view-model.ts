@@ -7,7 +7,7 @@ import type {
   CashFlowTableRow,
   TableMarker,
 } from "../../types";
-import type { ClientData, ClientInfo, ProjectionYear } from "@/engine/types";
+import type { ClientData, ProjectionYear } from "@/engine/types";
 import { buildCashFlowChartSpec } from "../../charts/cashflow-chart-spec";
 
 const PORTFOLIO_BUCKETS = [
@@ -71,28 +71,11 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
 
 function filterYearsToRange(
   years: ProjectionYear[],
-  clientData: ClientData,
+  _clientData: ClientData,
   range: BuildCashFlowInput["options"]["range"],
 ): ProjectionYear[] {
-  if (range === "lifetime") return years;
-  if (typeof range === "object") {
-    return years.filter((y) => y.year >= range.startYear && y.year <= range.endYear);
-  }
-  // "retirement" — filter to first-retirement-year onward
-  const firstRetirementYear = computeFirstRetirementYear(clientData.client);
-  if (firstRetirementYear == null) return years;
-  return years.filter((y) => y.year >= firstRetirementYear);
-}
-
-function computeFirstRetirementYear(client: ClientInfo): number | null {
-  const candidates: number[] = [];
-  if (client.dateOfBirth && client.retirementAge != null) {
-    candidates.push(new Date(client.dateOfBirth).getUTCFullYear() + client.retirementAge);
-  }
-  if (client.spouseDob && client.spouseRetirementAge != null) {
-    candidates.push(new Date(client.spouseDob).getUTCFullYear() + client.spouseRetirementAge);
-  }
-  return candidates.length ? Math.min(...candidates) : null;
+  if (range === "full") return years;
+  return years.filter((y) => y.year >= range.startYear && y.year <= range.endYear);
 }
 
 // Sum the engine's per-ledger `rmdAmount` — set once on the source retirement
@@ -235,7 +218,5 @@ function collapseJointMarkers(
 
 function computeCallout(options: BuildCashFlowInput["options"]): string | undefined {
   if (!options.showCallout) return undefined;
-  if (options.calloutText != null) return options.calloutText;
-  if (options.range === "retirement") return "Cash flow begins at Retirement.";
-  return undefined;
+  return options.calloutText ?? undefined;
 }

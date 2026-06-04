@@ -2,13 +2,13 @@ import { describe, it, expect } from "vitest";
 import { buildCashFlowPageData } from "../view-model";
 import { makeProjectionYears, makeClientData } from "./fixtures";
 
-describe("buildCashFlowPageData — retirement-onward range (default)", () => {
+describe("buildCashFlowPageData — retirement-onward range (custom span)", () => {
   const years = makeProjectionYears();
   const clientData = makeClientData();
   const data = buildCashFlowPageData({
     years,
     clientData,
-    options: { range: "retirement", showCallout: true },
+    options: { range: { startYear: 2031, endYear: 2071 }, showCallout: true },
     scenarioLabel: "Base Case",
     clientName: "Cooper",
     spouseName: "Susan",
@@ -45,15 +45,15 @@ describe("buildCashFlowPageData — retirement-onward range (default)", () => {
 
   it("computes portfolio growth and activity from ledgers in years that have portfolio buckets populated", () => {
     // 2026 is the only fixture year with populated portfolioAssets buckets.
-    const lifetime = buildCashFlowPageData({
+    const full = buildCashFlowPageData({
       years,
       clientData,
-      options: { range: "lifetime", showCallout: false },
+      options: { range: "full", showCallout: false },
       scenarioLabel: "Base Case",
       clientName: "Cooper",
       spouseName: "Susan",
     });
-    const r2026 = lifetime.table.rows.find((r) => r.year === 2026);
+    const r2026 = full.table.rows.find((r) => r.year === 2026);
     // growth = 12_000 (brokerage) + 8_000 (ira)
     expect(r2026?.cells.portfolioGrowth).toBe(20_000);
     // activity = external contributions − external distributions
@@ -61,16 +61,16 @@ describe("buildCashFlowPageData — retirement-onward range (default)", () => {
     expect(r2026?.cells.portfolioActivity).toBe(50_000);
   });
 
-  it("includes the default callout when range = retirement", () => {
-    expect(data.callout).toBe("Cash flow begins at Retirement.");
+  it("showCallout with no calloutText yields undefined callout", () => {
+    expect(data.callout).toBeUndefined();
   });
 });
 
-describe("buildCashFlowPageData — lifetime range", () => {
+describe("buildCashFlowPageData — full range", () => {
   const data = buildCashFlowPageData({
     years: makeProjectionYears(),
     clientData: makeClientData(),
-    options: { range: "lifetime", showCallout: true },
+    options: { range: "full", showCallout: true },
     scenarioLabel: "Base Case",
     clientName: "Cooper",
     spouseName: "Susan",
@@ -85,7 +85,7 @@ describe("buildCashFlowPageData — lifetime range", () => {
     expect(r2026?.cells.salary).toBe(200_000);
   });
 
-  it("suppresses the callout in lifetime mode by default", () => {
+  it("suppresses the callout when no calloutText", () => {
     expect(data.callout).toBeUndefined();
   });
 });
@@ -109,7 +109,7 @@ describe("buildCashFlowPageData — RMD splitting", () => {
   const data = buildCashFlowPageData({
     years: makeProjectionYears(),
     clientData: makeClientData(),
-    options: { range: "retirement", showCallout: false },
+    options: { range: { startYear: 2031, endYear: 2071 }, showCallout: false },
     scenarioLabel: "Base Case",
     clientName: "Cooper",
     spouseName: "Susan",
@@ -147,7 +147,7 @@ describe("buildCashFlowPageData — chart stack vs Total Expenses line", () => {
   const data = buildCashFlowPageData({
     years: makeProjectionYears(),
     clientData: makeClientData(),
-    options: { range: "lifetime", showCallout: false },
+    options: { range: "full", showCallout: false },
     scenarioLabel: "Base Case",
     clientName: "Cooper",
     spouseName: "Susan",
@@ -170,7 +170,7 @@ describe("buildCashFlowPageData — markers", () => {
   const data = buildCashFlowPageData({
     years: makeProjectionYears(),
     clientData: makeClientData(),
-    options: { range: "lifetime", showCallout: false },
+    options: { range: "full", showCallout: false },
     scenarioLabel: "Base Case",
     clientName: "Cooper",
     spouseName: "Susan",
@@ -206,7 +206,7 @@ describe("buildCashFlowPageData — explicit callout text", () => {
     const data = buildCashFlowPageData({
       years: makeProjectionYears(),
       clientData: makeClientData(),
-      options: { range: "lifetime", showCallout: true, calloutText: "Custom note." },
+      options: { range: "full", showCallout: true, calloutText: "Custom note." },
       scenarioLabel: "Base Case",
       clientName: "Cooper",
       spouseName: "Susan",
