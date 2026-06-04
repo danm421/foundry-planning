@@ -25,7 +25,7 @@ import {
   type PresentationPageId,
 } from "@/components/presentations/registry";
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
-import { PdfPreviewDialog, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
+import { PdfPreviewDialog, slug, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
@@ -377,6 +377,33 @@ export function PresentationsLauncher(props: Props) {
                           pages: descriptorsFor([p]),
                         })
                       }
+                      onDownload={async () => {
+                        const pageTitle = PRESENTATION_PAGES[p.pageId].title;
+                        const res = await fetch(
+                          `/api/clients/${props.clientId}/presentations/export-pdf`,
+                          {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({
+                              scenarioId: resolvedScenarioId,
+                              filename: `${slug(pageTitle)}.pdf`,
+                              pages: descriptorsFor([p]),
+                            }),
+                          },
+                        );
+                        if (!res.ok) {
+                          const j = await res.json().catch(() => ({}));
+                          setError(j.error ?? `Download failed: HTTP ${res.status}`);
+                          return;
+                        }
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${slug(pageTitle)}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
                       scenarios={props.scenarios}
                       snapshots={props.snapshots}
                     />
