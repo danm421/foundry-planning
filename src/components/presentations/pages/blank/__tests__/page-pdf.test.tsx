@@ -3,6 +3,7 @@ import { Document, renderToBuffer } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { BlankPagePdf } from "../page-pdf";
 import { buildBlankPageData } from "@/lib/presentations/pages/blank/view-model";
+import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 
 describe("BlankPagePdf", () => {
   it("renders formatted markdown to a non-empty PDF buffer", async () => {
@@ -19,6 +20,7 @@ describe("BlankPagePdf", () => {
           reportDate="June 4, 2026"
           pageIndex={0}
           totalPages={1}
+          accent={DEFAULT_ACCENT}
         />
       </Document>,
     );
@@ -43,6 +45,7 @@ describe("BlankPagePdf", () => {
           reportDate="June 4, 2026"
           pageIndex={0}
           totalPages={1}
+          accent={DEFAULT_ACCENT}
         />
       </Document>,
     );
