@@ -9,7 +9,14 @@ import {
   selectClassName,
   fieldLabelClassName,
 } from "@/components/forms/input-styles";
-import { ArrowRightIcon, AlertCircleIcon, CheckCircleIcon } from "@/components/icons";
+import {
+  ArrowRightIcon,
+  AlertCircleIcon,
+  CheckCircleIcon,
+  FlowIcon,
+  ClipboardCheckIcon,
+  SparkleIcon,
+} from "@/components/icons";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
 import { buildHouseholdName } from "@/lib/crm/household-name";
 import { USPS_STATE_CODES, USPS_STATE_NAMES } from "@/lib/usps-states";
@@ -67,6 +74,46 @@ interface PreviewHousehold {
   contacts: PreviewContact[];
 }
 
+type StartPath = "quick" | "detailed" | "import" | "empty";
+
+function PathCard({
+  icon,
+  title,
+  subtitle,
+  selected,
+  onSelect,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`flex items-start gap-3 rounded-[var(--radius-sm)] border px-3.5 py-3 text-left transition-colors ${
+        selected
+          ? "border-accent bg-accent/10"
+          : "border-hair bg-card-2 hover:border-ink-4"
+      }`}
+    >
+      <span
+        className={`mt-0.5 shrink-0 ${selected ? "text-accent-ink" : "text-ink-3"}`}
+        aria-hidden="true"
+      >
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[13px] font-semibold text-ink">{title}</span>
+        <span className="block text-[12px] text-ink-3">{subtitle}</span>
+      </span>
+    </button>
+  );
+}
+
 export default function QuickCreateForm() {
   const router = useRouter();
   const { user } = useUser();
@@ -79,9 +126,7 @@ export default function QuickCreateForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Quick Start vs. the full 10-step onboarding. Quick Start collects a couple
-  // extra Basics fields (residence state, children) and drops into the wizard.
-  const [setupStyle, setSetupStyle] = useState<"quick" | "detailed">("quick");
+  const [path, setPath] = useState<StartPath | null>(null);
   const [residenceState, setResidenceState] = useState<string>("");
   const [children, setChildren] = useState<{ firstName: string; dob: string }[]>([]);
 
@@ -207,24 +252,46 @@ export default function QuickCreateForm() {
       setError("Pick a CRM household first.");
       return;
     }
+    if (!path) {
+      setError("Choose how you'd like to start.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
-    const data = new FormData(e.currentTarget);
-    const payload: Record<string, unknown> = {
-      crmHouseholdId: householdId,
-      retirementAge: Number(data.get("retirementAge")),
-      retirementMonth: Number(data.get("retirementMonth") ?? 1),
-      lifeExpectancy: Number(data.get("lifeExpectancy")),
-      filingStatus: data.get("filingStatus") as FilingStatus,
-    };
-    if (showSpouse) {
-      const spouseRA = data.get("spouseRetirementAge") as string;
-      const spouseRM = data.get("spouseRetirementMonth") as string;
-      const spouseLE = data.get("spouseLifeExpectancy") as string;
-      if (spouseRA) payload.spouseRetirementAge = Number(spouseRA);
-      if (spouseRM) payload.spouseRetirementMonth = Number(spouseRM);
-      if (spouseLE) payload.spouseLifeExpectancy = Number(spouseLE);
+
+    // For AI-import / empty paths the planning form is never shown, so we
+    // create the client with sensible defaults. Filing status follows whether
+    // the linked household has a spouse contact. Everything is editable later.
+    const householdHasSpouse =
+      preview?.contacts.some((c) => c.role === "spouse") ?? false;
+
+    let payload: Record<string, unknown>;
+    if (path === "import" || path === "empty") {
+      payload = {
+        crmHouseholdId: householdId,
+        retirementAge: 65,
+        lifeExpectancy: 95,
+        filingStatus: householdHasSpouse ? "married_joint" : "single",
+      };
+    } else {
+      const data = new FormData(e.currentTarget);
+      payload = {
+        crmHouseholdId: householdId,
+        retirementAge: Number(data.get("retirementAge")),
+        retirementMonth: Number(data.get("retirementMonth") ?? 1),
+        lifeExpectancy: Number(data.get("lifeExpectancy")),
+        filingStatus: data.get("filingStatus") as FilingStatus,
+      };
+      if (showSpouse) {
+        const spouseRA = data.get("spouseRetirementAge") as string;
+        const spouseRM = data.get("spouseRetirementMonth") as string;
+        const spouseLE = data.get("spouseLifeExpectancy") as string;
+        if (spouseRA) payload.spouseRetirementAge = Number(spouseRA);
+        if (spouseRM) payload.spouseRetirementMonth = Number(spouseRM);
+        if (spouseLE) payload.spouseLifeExpectancy = Number(spouseLE);
+      }
     }
+
     try {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -238,8 +305,17 @@ export default function QuickCreateForm() {
         );
       }
       const created = await res.json();
-      if (setupStyle === "detailed") {
+
+      if (path === "detailed") {
         router.push(`/clients/${created.id}/onboarding/household`);
+        return;
+      }
+      if (path === "import") {
+        router.push(`/clients/${created.id}/details/import/new`);
+        return;
+      }
+      if (path === "empty") {
+        router.push(`/clients/${created.id}/overview`);
         return;
       }
       // Quick Start: best-effort residence + children writes, then enter the
@@ -442,9 +518,19 @@ export default function QuickCreateForm() {
         ? `${primary.firstName} ${primary.lastName}`
         : (preview?.name ?? "Selected household");
 
-  // Step 2: planning-only fields.
+  const submitLabel = submitting
+    ? "Creating…"
+    : path === "quick"
+      ? "Start Quick Start"
+      : path === "detailed"
+        ? "Start guided setup"
+        : path === "import"
+          ? "Continue to import"
+          : "Create client";
+
+  // Step 2: path picker + conditional planning fields.
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <div className="space-y-5">
       <div className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-ok/30 bg-ok/10 px-3 py-2.5 text-[13px] text-ink">
         <CheckCircleIcon width={16} height={16} className="mt-0.5 shrink-0 text-ok" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -459,6 +545,7 @@ export default function QuickCreateForm() {
             setCreateNewHousehold(false);
             setCreateSpouse(false);
             setCreateError(null);
+            setPath(null);
           }}
           className="shrink-0 text-[12px] text-ink-3 transition-colors hover:text-ink-2"
         >
@@ -476,275 +563,297 @@ export default function QuickCreateForm() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className={fieldLabelClassName} htmlFor="retirementAge">
-            Retirement age
-          </label>
-          <input
-            id="retirementAge"
-            name="retirementAge"
-            type="number"
-            min={50}
-            max={85}
-            defaultValue={65}
-            required
-            className={inputClassName}
-          />
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="retirementMonth">
-            Retirement month
-          </label>
-          <select
-            id="retirementMonth"
-            name="retirementMonth"
-            defaultValue={1}
-            className={selectClassName}
-          >
-            {MONTH_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
-            Life expectancy
-          </label>
-          <input
-            id="lifeExpectancy"
-            name="lifeExpectancy"
-            type="number"
-            min={1}
-            max={120}
-            defaultValue={95}
-            required
-            className={inputClassName}
-          />
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="filingStatus">
-            Filing status
-          </label>
-          <select
-            id="filingStatus"
-            name="filingStatus"
-            defaultValue="single"
-            required
-            className={selectClassName}
-          >
-            {FILING_STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       <div className="border-t border-hair pt-4">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showSpouse}
-            onChange={(e) => setShowSpouse(e.target.checked)}
-            className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+        <span className={fieldLabelClassName}>How do you want to start?</span>
+        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <PathCard
+            icon={<FlowIcon width={18} height={18} />}
+            title="Quick Start"
+            subtitle="Fast retirement intake"
+            selected={path === "quick"}
+            onSelect={() => setPath("quick")}
           />
-          <span className="text-[13px] font-medium text-ink-2">Add spouse planning fields</span>
-        </label>
-        {showSpouse && (
-          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">
-                Spouse retirement age
-              </label>
-              <input
-                id="spouseRetirementAge"
-                name="spouseRetirementAge"
-                type="number"
-                min={50}
-                max={85}
-                defaultValue={65}
-                className={inputClassName}
-              />
-            </div>
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">
-                Spouse retirement month
-              </label>
-              <select
-                id="spouseRetirementMonth"
-                name="spouseRetirementMonth"
-                defaultValue={1}
-                className={selectClassName}
-              >
-                {MONTH_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={fieldLabelClassName} htmlFor="spouseLifeExpectancy">
-                Spouse life expectancy
-              </label>
-              <input
-                id="spouseLifeExpectancy"
-                name="spouseLifeExpectancy"
-                type="number"
-                min={1}
-                max={120}
-                defaultValue={95}
-                className={inputClassName}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-hair pt-4">
-        <span className={fieldLabelClassName}>Setup style</span>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:gap-6">
-          <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-2">
-            <input
-              type="radio"
-              name="setupStyle"
-              checked={setupStyle === "quick"}
-              onChange={() => setSetupStyle("quick")}
-              className="h-4 w-4 border-hair bg-card-2 text-accent focus:ring-accent"
-            />
-            <span>
-              Quick Start
-              <span className="text-ink-4"> · fast retirement intake</span>
-            </span>
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-2">
-            <input
-              type="radio"
-              name="setupStyle"
-              checked={setupStyle === "detailed"}
-              onChange={() => setSetupStyle("detailed")}
-              className="h-4 w-4 border-hair bg-card-2 text-accent focus:ring-accent"
-            />
-            <span>
-              Detailed setup
-              <span className="text-ink-4"> · full onboarding</span>
-            </span>
-          </label>
+          <PathCard
+            icon={<ClipboardCheckIcon width={18} height={18} />}
+            title="Detailed setup"
+            subtitle="Full guided wizard"
+            selected={path === "detailed"}
+            onSelect={() => setPath("detailed")}
+          />
+          <PathCard
+            icon={<SparkleIcon width={18} height={18} />}
+            title="AI import"
+            subtitle="Extract from documents"
+            selected={path === "import"}
+            onSelect={() => setPath("import")}
+          />
+          <PathCard
+            icon={<ArrowRightIcon width={18} height={18} />}
+            title="Empty client"
+            subtitle="Skip the wizard, start blank"
+            selected={path === "empty"}
+            onSelect={() => setPath("empty")}
+          />
         </div>
       </div>
 
-      {setupStyle === "quick" && (
-        <div className="space-y-4">
-          <div>
-            <label className={fieldLabelClassName} htmlFor="residenceState">
-              State of residence
-            </label>
-            <select
-              id="residenceState"
-              value={residenceState}
-              onChange={(e) => setResidenceState(e.target.value)}
-              className={selectClassName}
-            >
-              <option value="">Select a state…</option>
-              {USPS_STATE_CODES.map((code) => (
-                <option key={code} value={code}>
-                  {USPS_STATE_NAMES[code]}
-                </option>
-              ))}
-            </select>
-          </div>
+      {path && (
+        <form onSubmit={onSubmit} className="space-y-5 border-t border-hair pt-4">
+          {(path === "quick" || path === "detailed") && (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="retirementAge">
+                    Retirement age
+                  </label>
+                  <input
+                    id="retirementAge"
+                    name="retirementAge"
+                    type="number"
+                    min={50}
+                    max={85}
+                    defaultValue={65}
+                    required
+                    className={inputClassName}
+                  />
+                </div>
 
-          <div>
-            <div className="flex items-center justify-between">
-              <span className={fieldLabelClassName}>Children (optional)</span>
-              <button
-                type="button"
-                onClick={() => setChildren((c) => [...c, { firstName: "", dob: "" }])}
-                className="text-[12px] font-medium text-accent transition-colors hover:text-accent-deep"
-              >
-                + Add child
-              </button>
-            </div>
-            {children.length > 0 && (
-              <div className="mt-2 space-y-2">
-                {children.map((child, i) => (
-                  <div
-                    key={i}
-                    className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center"
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="retirementMonth">
+                    Retirement month
+                  </label>
+                  <select
+                    id="retirementMonth"
+                    name="retirementMonth"
+                    defaultValue={1}
+                    className={selectClassName}
                   >
-                    <input
-                      type="text"
-                      aria-label={`Child ${i + 1} first name`}
-                      placeholder="First name"
-                      value={child.firstName}
-                      onChange={(e) =>
-                        setChildren((arr) =>
-                          arr.map((c, j) => (j === i ? { ...c, firstName: e.target.value } : c)),
-                        )
-                      }
-                      className={inputClassName}
-                    />
-                    <input
-                      type="date"
-                      aria-label={`Child ${i + 1} date of birth`}
-                      min="1910-01-01"
-                      value={child.dob}
-                      onChange={(e) =>
-                        setChildren((arr) =>
-                          arr.map((c, j) => (j === i ? { ...c, dob: e.target.value } : c)),
-                        )
-                      }
-                      className={inputClassName}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setChildren((arr) => arr.filter((_, j) => j !== i))}
-                      className="text-[12px] text-ink-3 transition-colors hover:text-crit"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
+                    {MONTH_OPTIONS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
+                    Life expectancy
+                  </label>
+                  <input
+                    id="lifeExpectancy"
+                    name="lifeExpectancy"
+                    type="number"
+                    min={1}
+                    max={120}
+                    defaultValue={95}
+                    required
+                    className={inputClassName}
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="filingStatus">
+                    Filing status
+                  </label>
+                  <select
+                    id="filingStatus"
+                    name="filingStatus"
+                    defaultValue="single"
+                    required
+                    className={selectClassName}
+                  >
+                    {FILING_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            )}
+
+              <div className="border-t border-hair pt-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showSpouse}
+                    onChange={(e) => setShowSpouse(e.target.checked)}
+                    className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+                  />
+                  <span className="text-[13px] font-medium text-ink-2">Add spouse planning fields</span>
+                </label>
+                {showSpouse && (
+                  <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">
+                        Spouse retirement age
+                      </label>
+                      <input
+                        id="spouseRetirementAge"
+                        name="spouseRetirementAge"
+                        type="number"
+                        min={50}
+                        max={85}
+                        defaultValue={65}
+                        className={inputClassName}
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">
+                        Spouse retirement month
+                      </label>
+                      <select
+                        id="spouseRetirementMonth"
+                        name="spouseRetirementMonth"
+                        defaultValue={1}
+                        className={selectClassName}
+                      >
+                        {MONTH_OPTIONS.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="spouseLifeExpectancy">
+                        Spouse life expectancy
+                      </label>
+                      <input
+                        id="spouseLifeExpectancy"
+                        name="spouseLifeExpectancy"
+                        type="number"
+                        min={1}
+                        max={120}
+                        defaultValue={95}
+                        className={inputClassName}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {path === "quick" && (
+            <div className="space-y-4">
+              <div>
+                <label className={fieldLabelClassName} htmlFor="residenceState">
+                  State of residence
+                </label>
+                <select
+                  id="residenceState"
+                  value={residenceState}
+                  onChange={(e) => setResidenceState(e.target.value)}
+                  className={selectClassName}
+                >
+                  <option value="">Select a state…</option>
+                  {USPS_STATE_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {USPS_STATE_NAMES[code]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className={fieldLabelClassName}>Children (optional)</span>
+                  <button
+                    type="button"
+                    onClick={() => setChildren((c) => [...c, { firstName: "", dob: "" }])}
+                    className="text-[12px] font-medium text-accent transition-colors hover:text-accent-deep"
+                  >
+                    + Add child
+                  </button>
+                </div>
+                {children.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {children.map((child, i) => (
+                      <div
+                        key={i}
+                        className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center"
+                      >
+                        <input
+                          type="text"
+                          aria-label={`Child ${i + 1} first name`}
+                          placeholder="First name"
+                          value={child.firstName}
+                          onChange={(e) =>
+                            setChildren((arr) =>
+                              arr.map((c, j) => (j === i ? { ...c, firstName: e.target.value } : c)),
+                            )
+                          }
+                          className={inputClassName}
+                        />
+                        <input
+                          type="date"
+                          aria-label={`Child ${i + 1} date of birth`}
+                          min="1910-01-01"
+                          value={child.dob}
+                          onChange={(e) =>
+                            setChildren((arr) =>
+                              arr.map((c, j) => (j === i ? { ...c, dob: e.target.value } : c)),
+                            )
+                          }
+                          className={inputClassName}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setChildren((arr) => arr.filter((_, j) => j !== i))}
+                          className="text-[12px] text-ink-3 transition-colors hover:text-crit"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(path === "import" || path === "empty") && (
+            <p className="text-[13px] leading-relaxed text-ink-3">
+              {path === "import"
+                ? "We'll create the client, then take you to document import to extract their data. Retirement and tax assumptions start at sensible defaults — all editable later."
+                : "We'll create a blank client with default assumptions. You can fill in everything from the client's pages whenever you're ready."}
+            </p>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-crit/30 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+            >
+              <AlertCircleIcon width={16} height={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <Link href="/clients" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
+            >
+              {submitLabel}
+              <ArrowRightIcon width={14} height={14} aria-hidden="true" />
+            </button>
           </div>
-        </div>
+        </form>
       )}
 
-      {error && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-crit/30 bg-crit/10 px-3 py-2 text-[13px] text-crit"
-        >
-          <AlertCircleIcon width={16} height={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>{error}</span>
+      {!path && (
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <Link href="/clients" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
+            Cancel
+          </Link>
         </div>
       )}
-
-      <div className="flex items-center justify-between gap-3 pt-1">
-        <Link href="/clients" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
-          Cancel
-        </Link>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
-        >
-          {submitting
-            ? "Creating…"
-            : setupStyle === "quick"
-              ? "Start Quick Start"
-              : "Start guided setup"}
-          <ArrowRightIcon width={14} height={14} aria-hidden="true" />
-        </button>
-      </div>
-    </form>
+    </div>
   );
 }
