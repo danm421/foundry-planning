@@ -5,7 +5,8 @@ import type { ExtractedAccount, AccountCategory, AccountSubType } from "@/lib/ex
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
 import { CurrencyInput } from "@/components/currency-input";
-import { PercentInput } from "@/components/percent-input";
+import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
+import type { GrowthSource } from "@/lib/investments/allocation";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import DiffPreview from "./diff-preview";
@@ -99,6 +100,9 @@ interface ReviewStepAccountsProps {
    * row is matched exact. Only the fields in ACCOUNT_FIELD_MAP are read.
    */
   existingAccountsById?: Record<string, Partial<ExtractedAccount> & { name?: string }>;
+  modelPortfolios?: { id: string; name: string; blendedReturn: number }[];
+  resolvedInflationRate?: number;
+  categoryDefaults?: Record<string, { portfolioName?: string | null; blendedReturnPct: number | null }>;
 }
 
 const INPUT_CLASS =
@@ -116,6 +120,9 @@ export default function ReviewStepAccounts({
   onMatchChange,
   candidates = [],
   existingAccountsById,
+  modelPortfolios = [],
+  resolvedInflationRate = 0.025,
+  categoryDefaults = {},
 }: ReviewStepAccountsProps) {
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -308,12 +315,35 @@ export default function ReviewStepAccounts({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
-                  <PercentInput
-                    value={account.growthRate != null ? (account.growthRate * 100).toFixed(2) : ""}
-                    onChange={(raw) => updateField(i, "growthRate", raw === "" ? null : Number(raw) / 100)}
-                    className={TINT_EMPTY}
-                    placeholder="Use default"
+                  <GrowthRateField
+                    category={account.category ?? "taxable"}
+                    growthSource={(account.growthSource as GrowthSource) ?? (account.growthRate != null ? "custom" : "default")}
+                    modelPortfolioId={account.modelPortfolioId ?? ""}
+                    growthRatePct={account.growthRate != null ? (account.growthRate * 100).toFixed(2) : ""}
+                    modelPortfolios={modelPortfolios}
+                    defaultPctForCategory={categoryDefaults[account.category ?? "taxable"]?.blendedReturnPct ?? null}
+                    catDefaultPortfolioName={categoryDefaults[account.category ?? "taxable"]?.portfolioName ?? null}
+                    resolvedInflationRate={resolvedInflationRate}
+                    assetMixBlendedPct={null}
+                    customPlaceholder="Use default"
+                    onSourceChange={(raw) => {
+                      const { growthSource, modelPortfolioId } = parseGrowthSourceSelection(raw);
+                      const updated = accounts.map((a, idx) =>
+                        idx === i
+                          ? {
+                              ...a,
+                              growthSource,
+                              modelPortfolioId,
+                              // Clearing to non-custom drops the explicit % (commit treats null = use default).
+                              growthRate: growthSource === "custom" ? a.growthRate : null,
+                            }
+                          : a,
+                      );
+                      onChange(updated);
+                    }}
+                    onCustomPctChange={(raw) =>
+                      updateField(i, "growthRate", raw === "" ? null : Number(raw) / 100)
+                    }
                   />
                 </div>
                 <div>
