@@ -12,7 +12,7 @@ import {
 import { buildMonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/build-payload";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import { hashMonteCarloInputs, ENGINE_VERSION } from "./hash";
-import { annualIncomeAtStart } from "@/components/monte-carlo/kpi-band";
+import { annualIncomeAtStart } from "@/lib/monte-carlo/annual-income";
 
 export interface CachedMonteCarloResult {
   payload: MonteCarloReportPayload;

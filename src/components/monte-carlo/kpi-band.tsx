@@ -2,6 +2,7 @@ import type { MonteCarloSummary, ClientData, PlanSettings } from "@/engine";
 import { KpiCard } from "./kpi-card";
 import { SuccessGauge } from "./success-gauge";
 import { formatShortCurrency } from "./lib/format";
+import { annualIncomeAtStart } from "@/lib/monte-carlo/annual-income";
 
 interface KpiBandProps {
   summary: MonteCarloSummary;
@@ -12,24 +13,6 @@ interface KpiBandProps {
 function startAge(dateOfBirth: string, planStartYear: number): number {
   const birthYear = new Date(dateOfBirth).getFullYear();
   return planStartYear - birthYear;
-}
-
-export function annualIncomeAtStart(clientData: ClientData, planStartYear: number): number {
-  const incomes = (clientData.incomes ?? []) as Array<{
-    annualAmount: number | string;
-    startYear?: number | null;
-    endYear?: number | null;
-  }>;
-  let total = 0;
-  for (const inc of incomes) {
-    const starts = inc.startYear ?? -Infinity;
-    const ends = inc.endYear ?? Infinity;
-    if (planStartYear >= starts && planStartYear <= ends) {
-      const amt = typeof inc.annualAmount === "string" ? parseFloat(inc.annualAmount) : inc.annualAmount;
-      if (Number.isFinite(amt)) total += amt;
-    }
-  }
-  return total;
 }
 
 export function KpiBand({ summary, clientData, planSettings }: KpiBandProps) {
