@@ -1,4 +1,5 @@
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
+import type { ResolveContextData } from "./describe/resolve";
 
 export type ChangeArea =
   | "Plan & Assumptions"
@@ -52,4 +53,6 @@ export interface ScenarioChangesContext {
   targetNames: Record<string, string>;
   /** e.g. "your current plan" */
   baseLabel: string;
+  /** Resolution maps for rich detail; omitted → describers fall back to terse copy. */
+  resolve?: ResolveContextData;
 }
