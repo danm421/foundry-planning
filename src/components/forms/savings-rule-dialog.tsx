@@ -39,6 +39,23 @@ export interface SavingsRuleAccount {
   name: string;
   category: string;
   subType: string;
+  /** Sole controlling entity (trust/business) when the account is fully
+   *  entity-owned; null when household-owned. Used to keep out-of-estate
+   *  accounts out of the savings-target dropdown. */
+  ownerEntityId?: string | null;
+}
+
+// Savings contributions can only flow into liquid accounts the household owns
+// directly. Illiquid assets (real estate, businesses, life insurance, notes)
+// and trust/entity-owned accounts are out of the estate and not valid targets.
+const SAVINGS_LIQUID_CATEGORIES: ReadonlySet<string> = new Set([
+  "taxable",
+  "cash",
+  "retirement",
+]);
+
+export function isSavingsEligibleAccount(a: SavingsRuleAccount): boolean {
+  return SAVINGS_LIQUID_CATEGORIES.has(a.category) && !a.ownerEntityId;
 }
 
 export interface SavingsRuleRow {
@@ -151,8 +168,14 @@ export default function SavingsRuleDialog({
   const srClientFirstName = ownerNames?.clientName?.split(" ")[0];
   const srSpouseFirstName = ownerNames?.spouseName?.split(" ")[0];
 
+  // Only liquid, in-estate accounts are valid savings targets. Keep the
+  // account an existing rule already points at, even if it'd otherwise be
+  // filtered out, so editing legacy rules doesn't silently reassign them.
+  const accountOptions = accounts.filter(
+    (a) => isSavingsEligibleAccount(a) || a.id === editing?.accountId
+  );
   const [accountId, setAccountId] = useState<string>(
-    editing?.accountId ?? (accounts[0]?.id ?? "")
+    editing?.accountId ?? (accountOptions[0]?.id ?? "")
   );
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const showEmployerMatch = supportsEmployerMatch(
@@ -439,7 +462,7 @@ export default function SavingsRuleDialog({
               onChange={(e) => setAccountId(e.target.value)}
               className={selectClassName}
             >
-              {accounts.map((a) => (
+              {accountOptions.map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
