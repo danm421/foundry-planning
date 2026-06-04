@@ -14,3 +14,4 @@ export function describeChange(c: ScenarioChange, ctx: DescribeContext): ChangeR
 // resolveDescriber/describeChange must be defined before they run.
 import "./kinds/savings";
 import "./kinds/plan";
+import "./kinds/assets";
