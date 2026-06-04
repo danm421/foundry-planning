@@ -42,6 +42,10 @@ import type {
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
+import {
+  buildBaseResolveData,
+  hasReinvestmentChange,
+} from "@/lib/scenario/scenario-changes-resolve";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import {
   planScenarioBundles,
@@ -287,11 +291,28 @@ export async function POST(
               loadScenarioChanges(scenarioId),
               loadScenarioToggleGroups(scenarioId),
             ]);
+            // Always build the base resolve maps (account / recipient / entity /
+            // spouse names) off the effective tree — this is what makes
+            // transfer / savings / roth / gift / will changes render rich
+            // references instead of terse fallbacks. The reinvestment
+            // enrichment (model-portfolio + base-allocation maps) is left empty
+            // here: no describer consumes it yet and production carries no
+            // reinvestment changes, so deriving it from the investments bundle
+            // would be unverifiable plumbing. The describer degrades gracefully
+            // when those maps are empty. See scenario-changes-resolve.ts.
+            const resolve = buildBaseResolveData(clientData);
+            if (hasReinvestmentChange(changes)) {
+              console.warn(
+                `[export-pdf] reinvestment change present in scenario ${scenarioId}; ` +
+                  "model-portfolio/base-allocation enrichment is not derived (describer degrades to blended-rate-only).",
+              );
+            }
             scenarioChanges = {
               changes,
               toggleGroups,
               targetNames: buildTargetNames(clientData, id),
               baseLabel: "your current plan",
+              resolve,
             };
           } catch (scErr) {
             // Non-fatal: leave undefined so the page renders its empty state.
