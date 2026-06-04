@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// commitAccounts' owner-writing path calls validateOwnersTenant, which queries
+// the real db. Stub only the tenant check (keep validateOwnersShape real) so
+// these unit tests stay pure and never touch a database.
+vi.mock("@/lib/ownership", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ownership")>();
+  return { ...actual, validateOwnersTenant: vi.fn().mockResolvedValue(null) };
+});
 
 import { commitAccounts } from "@/lib/imports/commit/accounts";
 import { commitClientsIdentity } from "@/lib/imports/commit/clients-identity";
@@ -350,6 +358,54 @@ describe("commitAccounts", () => {
     const setValues = (updates[0] as { values: Record<string, unknown> }).values;
     expect(setValues.growthSource).toBe("inflation");
     expect(setValues.modelPortfolioId).toBeNull();
+  });
+
+  it("writes the advisor-confirmed owners[] when tenant validation passes", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-c", role: "client" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Brokerage",
+          category: "taxable",
+          owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }],
+          match: { kind: "new" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
+    expect(ownerInserts).toHaveLength(1);
+    const ownerVal = (ownerInserts[0] as { values: Record<string, unknown> }).values;
+    expect(ownerVal.familyMemberId).toBe("fm-c");
+    expect(Number(ownerVal.percent)).toBe(1);
+  });
+
+  it("falls back to coarse joint synthesis when owners[] is empty", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [
+      { id: "fm-client", role: "client" },
+      { id: "fm-spouse", role: "spouse" },
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Joint Brokerage",
+          category: "taxable",
+          owner: "joint",
+          owners: [],
+          match: { kind: "new" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
+    expect(ownerInserts).toHaveLength(1);
+    const values = (ownerInserts[0] as { values: unknown }).values as unknown[];
+    expect(values).toHaveLength(2);
+    expect((values[0] as Record<string, unknown>).percent).toBe("0.5000");
   });
 });
 
