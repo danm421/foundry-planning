@@ -47,9 +47,11 @@
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
     "stripe": "^22.1.0",
     "svix": "^1.91.1",
     "tiptap-markdown": "^0.9.0",
+    "unified": "^11.0.5",
     "unpdf": "^1.6.0",
     "zod": "^4.3.6"
   },
