@@ -206,6 +206,18 @@ export function PresentationsLauncher(props: Props) {
   const resolvedScenarioId =
     state.topScenarioPickerValue === "base" ? null : state.topScenarioPickerValue;
 
+  // Human-readable name of the deck's scenario, shown in each page row's
+  // "Default (…)" inline-picker option so advisors see what "default" inherits.
+  const deckScenarioLabel =
+    state.topScenarioPickerValue === "base"
+      ? "Base case"
+      : (props.scenarios.find((s) => s.id === state.topScenarioPickerValue)
+          ?.name ??
+        props.snapshots.find(
+          (s) => `snap:${s.id}` === state.topScenarioPickerValue,
+        )?.name ??
+        state.topScenarioPickerValue);
+
   function descriptorsFor(pages: LauncherState["pages"]) {
     return pages.map((p) => ({
       pageId: p.pageId,
@@ -353,6 +365,7 @@ export function PresentationsLauncher(props: Props) {
                       pageId={p.pageId}
                       options={p.options}
                       scenarioOverride={p.scenarioOverride}
+                      deckScenarioLabel={deckScenarioLabel}
                       onOptionsChange={(opts) =>
                         dispatch({
                           type: "updatePageOptions",

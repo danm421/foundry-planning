@@ -8,6 +8,7 @@ const baseProps = {
   pageId: "cashFlow" as const,
   options: { range: "full", showCallout: true },
   scenarioOverride: undefined as string | null | undefined,
+  deckScenarioLabel: "Base case",
   onOptionsChange: vi.fn(),
   onScenarioOverrideChange: vi.fn(),
   onRemove: vi.fn(),
@@ -42,5 +43,51 @@ describe("SelectedPageRow", () => {
         range: expect.objectContaining({ startYear: expect.any(Number), endYear: expect.any(Number) }),
       }),
     );
+  });
+
+  it("shows an inline scenario picker that defaults to the deck scenario", () => {
+    render(<SelectedPageRow {...baseProps} deckScenarioLabel="Aggressive" />);
+    const select = screen.getByLabelText(
+      "Scenario for Cash Flow",
+    ) as HTMLSelectElement;
+    const defaultOption = screen.getByRole("option", {
+      name: "Default (Aggressive)",
+    }) as HTMLOptionElement;
+    // No override → the picker rests on the leading "Default (…)" option.
+    expect(select.value).toBe(defaultOption.value);
+  });
+
+  it("emits the scenario id when a scenario is picked", () => {
+    const onScenarioOverrideChange = vi.fn();
+    render(
+      <SelectedPageRow
+        {...baseProps}
+        onScenarioOverrideChange={onScenarioOverrideChange}
+        scenarios={[{ id: "sc-1", name: "Aggressive", isBaseCase: false }]}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Scenario for Cash Flow"), {
+      target: { value: "sc-1" },
+    });
+    expect(onScenarioOverrideChange).toHaveBeenCalledWith("sc-1");
+  });
+
+  it("emits undefined when the leading 'Default' option is re-selected", () => {
+    const onScenarioOverrideChange = vi.fn();
+    render(
+      <SelectedPageRow
+        {...baseProps}
+        scenarioOverride="sc-1"
+        onScenarioOverrideChange={onScenarioOverrideChange}
+        scenarios={[{ id: "sc-1", name: "Aggressive", isBaseCase: false }]}
+      />,
+    );
+    const defaultOption = screen.getByRole("option", {
+      name: "Default (Base case)",
+    }) as HTMLOptionElement;
+    fireEvent.change(screen.getByLabelText("Scenario for Cash Flow"), {
+      target: { value: defaultOption.value },
+    });
+    expect(onScenarioOverrideChange).toHaveBeenCalledWith(undefined);
   });
 });

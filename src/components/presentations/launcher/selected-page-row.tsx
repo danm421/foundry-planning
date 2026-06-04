@@ -11,11 +11,17 @@ import type {
 } from "@/components/scenario/scenario-picker-dropdown";
 import { ScenarioPickerDropdown } from "@/components/scenario/scenario-picker-dropdown";
 
+// Sentinel for the inline picker's leading "Default (…)" option, which maps
+// back to a `scenarioOverride` of `undefined` (inherit the deck's scenario).
+const DEFAULT_OVERRIDE = "__default__";
+
 interface Props {
   index: number;
   pageId: PresentationPageId;
   options: unknown;
   scenarioOverride: string | null | undefined;
+  /** Resolved name of the deck's top-level scenario, shown as "Default (…)". */
+  deckScenarioLabel: string;
   onOptionsChange: (next: unknown) => void;
   onScenarioOverrideChange: (next: string | null | undefined) => void;
   onRemove: () => void;
@@ -28,19 +34,17 @@ interface Props {
 export function SelectedPageRow(props: Props) {
   const page = PRESENTATION_PAGES[props.pageId];
   const [showOptions, setShowOptions] = useState(false);
-  const [showScenario, setShowScenario] = useState(false);
   const summary = page.summarizeOptions(props.options as never);
   const Options = page.OptionsControl;
 
-  const scenarioLabel =
-    props.scenarioOverride === undefined
-      ? "Default scenario"
-      : props.scenarioOverride === null
-        ? "Base case"
-        : (props.scenarios.find((s) => s.id === props.scenarioOverride)?.name ??
-          props.scenarioOverride);
-
   const hasOverride = props.scenarioOverride !== undefined;
+
+  // The inline picker's leading sentinel means "Default" (inherit the deck).
+  // `null` and the string "base" both surface as the explicit "Base case".
+  const scenarioSelectValue =
+    props.scenarioOverride === undefined
+      ? DEFAULT_OVERRIDE
+      : (props.scenarioOverride ?? "base");
 
   return (
     <div className="rounded border border-hair bg-card-2 p-3 space-y-2 transition-colors hover:border-hair-2">
@@ -85,17 +89,26 @@ export function SelectedPageRow(props: Props) {
           </button>
         )}
         {page.supportsScenarioOverride && (
-          <button
-            type="button"
-            className={`rounded px-2 py-1 text-xs transition-colors ${
+          <ScenarioPickerDropdown
+            value={scenarioSelectValue}
+            onChange={(v) =>
+              props.onScenarioOverrideChange(
+                v === DEFAULT_OVERRIDE ? undefined : v,
+              )
+            }
+            scenarios={props.scenarios}
+            snapshots={props.snapshots}
+            ariaLabel={`Scenario for ${page.title}`}
+            leadingOption={{
+              value: DEFAULT_OVERRIDE,
+              label: `Default (${props.deckScenarioLabel})`,
+            }}
+            className={`max-w-[13rem] rounded border bg-paper px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
               hasOverride
-                ? "text-accent hover:bg-card-hover"
-                : "text-ink-3 hover:bg-card-hover hover:text-ink"
+                ? "border-accent text-accent"
+                : "border-hair text-ink-3 hover:border-hair-2 hover:text-ink"
             }`}
-            onClick={() => setShowScenario((v) => !v)}
-          >
-            {scenarioLabel}
-          </button>
+          />
         )}
         <button
           type="button"
@@ -112,28 +125,6 @@ export function SelectedPageRow(props: Props) {
             value={props.options as never}
             onChange={(v) => props.onOptionsChange(v)}
           />
-        </div>
-      )}
-      {showScenario && page.supportsScenarioOverride && (
-        <div className="border-t border-hair pt-2 space-y-2">
-          <ScenarioPickerDropdown
-            value={
-              props.scenarioOverride === undefined
-                ? "base"
-                : (props.scenarioOverride ?? "base")
-            }
-            onChange={(v) => props.onScenarioOverrideChange(v)}
-            scenarios={props.scenarios}
-            snapshots={props.snapshots}
-            ariaLabel={`Scenario override for ${page.title}`}
-          />
-          <button
-            type="button"
-            className="text-xs text-ink-3 underline-offset-2 hover:text-ink hover:underline"
-            onClick={() => props.onScenarioOverrideChange(undefined)}
-          >
-            Use default scenario
-          </button>
         </div>
       )}
     </div>

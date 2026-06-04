@@ -27,6 +27,8 @@ export function ScenarioPickerDropdown({
   snapshots,
   ariaLabel,
   includeDoNothing = false,
+  leadingOption,
+  className,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -34,6 +36,12 @@ export function ScenarioPickerDropdown({
   snapshots: SnapshotOption[];
   ariaLabel?: string;
   includeDoNothing?: boolean;
+  // An extra option rendered above "Base case" — e.g. the launcher's
+  // "Default (…)" inherit choice, which has its own sentinel value.
+  leadingOption?: { value: string; label: string };
+  // Override the default control styling (the launcher uses a compact inline
+  // variant in the page-action row instead of the full-width compare picker).
+  className?: string;
 }) {
   // Orphan integration-test scenarios (changes-writer.test.ts mints
   // `writer-test-<uuid>` rows and deletes them in afterEach; crashes leak them)
@@ -48,8 +56,14 @@ export function ScenarioPickerDropdown({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       aria-label={ariaLabel ?? "Scenario"}
-      className="w-full bg-paper border border-hair rounded h-9 px-2 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className={
+        className ??
+        "w-full bg-paper border border-hair rounded h-9 px-2 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      }
     >
+      {leadingOption && (
+        <option value={leadingOption.value}>{leadingOption.label}</option>
+      )}
       <option value="base">Base case</option>
       {liveScenarios.length > 0 && (
         <optgroup label="Scenarios">
