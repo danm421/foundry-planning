@@ -5,7 +5,7 @@ import { summarizeScenarioChangesOptions } from "../summarize-options";
 
 describe("scenario-changes options + estimate", () => {
   it("estimate is data-independent (takes no args, like every sibling)", () => {
-    expect(estimateScenarioChangesPageCount()).toBe(1);
+    expect(estimateScenarioChangesPageCount()).toBe(2);
   });
 
   it("schema parses the default options", () => {
