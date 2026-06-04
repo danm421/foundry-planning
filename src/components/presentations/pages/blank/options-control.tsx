@@ -26,15 +26,16 @@ export function BlankOptionsControl({ value, onChange }: Props) {
             Edit content…
           </button>
         </div>
-        <BlankEditDialog
-          open={open}
-          initialMarkdown={value.markdown}
-          onClose={() => setOpen(false)}
-          onSave={(markdown) => {
-            onChange({ ...value, markdown });
-            setOpen(false);
-          }}
-        />
+        {open && (
+          <BlankEditDialog
+            initialMarkdown={value.markdown}
+            onClose={() => setOpen(false)}
+            onSave={(markdown) => {
+              onChange({ ...value, markdown });
+              setOpen(false);
+            }}
+          />
+        )}
       </OptionsGroup>
     </OptionsRow>
   );

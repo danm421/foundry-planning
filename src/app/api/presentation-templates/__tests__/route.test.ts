@@ -37,8 +37,8 @@ describe("GET /api/presentation-templates", () => {
 
   it("returns { shared, mine } for the firm", async () => {
     const { createTemplate } = await import("@/lib/presentations/templates-repo");
-    await createTemplate({ firmId: FIRM, createdByUserId: "user_test", name: "S", visibility: "shared", pages: [{ pageId: "cashFlow", options: { range: "retirement", showCallout: true } }] });
-    await createTemplate({ firmId: FIRM, createdByUserId: "user_test", name: "P", visibility: "private", pages: [{ pageId: "cashFlow", options: { range: "lifetime", showCallout: false } }] });
+    await createTemplate({ firmId: FIRM, createdByUserId: "user_test", name: "S", visibility: "shared", pages: [{ pageId: "cashFlow", options: { range: "full", showCallout: true } }] });
+    await createTemplate({ firmId: FIRM, createdByUserId: "user_test", name: "P", visibility: "private", pages: [{ pageId: "cashFlow", options: { range: "full", showCallout: false } }] });
 
     const { GET } = await import("../route");
     const res = await GET(new Request("http://x/api/presentation-templates"));

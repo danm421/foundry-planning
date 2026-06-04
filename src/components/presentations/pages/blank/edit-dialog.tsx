@@ -1,23 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { RichTextEditor } from "@/components/comparison/rich-text-editor";
 
 interface Props {
-  open: boolean;
   initialMarkdown: string;
   onClose: () => void;
   onSave: (markdown: string) => void;
 }
 
-export function BlankEditDialog({ open, initialMarkdown, onClose, onSave }: Props) {
+export function BlankEditDialog({ initialMarkdown, onClose, onSave }: Props) {
   const [markdown, setMarkdown] = useState(initialMarkdown);
-
-  useEffect(() => {
-    if (open) setMarkdown(initialMarkdown);
-  }, [open, initialMarkdown]);
-
-  if (!open) return null;
 
   return (
     <div
