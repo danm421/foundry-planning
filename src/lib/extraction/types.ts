@@ -1,3 +1,5 @@
+import type { GrowthSource } from "@/lib/investments/allocation";
+
 export const DOCUMENT_TYPES = [
   "account_statement",
   "pay_stub",
@@ -84,6 +86,8 @@ export interface ExtractedAccount {
   rmdEnabled?: boolean;
   accountNumberLast4?: string;
   custodian?: string;
+  growthSource?: GrowthSource;
+  modelPortfolioId?: string | null;
 }
 
 export interface ExtractedIncome {
