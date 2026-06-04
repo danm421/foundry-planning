@@ -1009,6 +1009,13 @@
       "when": 1780583120984,
       "tag": "0143_loose_mephistopheles",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1780613726338,
+      "tag": "0144_sturdy_sunspot",
+      "breakpoints": true
     }
   ]
 }

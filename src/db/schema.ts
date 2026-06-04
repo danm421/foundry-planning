@@ -398,9 +398,14 @@ export const crmHouseholds = pgTable("crm_households", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  // Soft-delete (Trash). null = live; set = in Trash, recoverable until the
+  // daily purge cron removes it 60 days after deletedAt.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: text("deleted_by"),
 }, (t) => [
   index("crm_households_firm_idx").on(t.firmId),
   index("crm_households_firm_status_idx").on(t.firmId, t.status),
+  index("crm_households_firm_deleted_idx").on(t.firmId, t.deletedAt),
 ]);
 
 export const crmHouseholdContacts = pgTable("crm_household_contacts", {
