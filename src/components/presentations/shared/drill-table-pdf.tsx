@@ -10,8 +10,7 @@ import type {
   DrillRow,
 } from "@/lib/presentations/shared/drill-types";
 import type { TableMarker } from "@/lib/presentations/types";
-import { PRESENTATION_THEME, ZEBRA_FILL } from "@/lib/presentations/theme";
-import { useAccent } from "./accent-context";
+import { PRESENTATION_THEME, ZEBRA_FILL, type SectionAccent } from "@/lib/presentations/theme";
 import { compactCurrency, jointAge } from "@/lib/presentations/format";
 
 const styles = StyleSheet.create({
@@ -74,14 +73,13 @@ const COL_YEAR_W = 26;
 const COL_AGE_W = 30;
 const flexCell = { flex: 1 } as const;
 
-export function DrillTablePdf({ data }: { data: DrillPageData }) {
-  const { accent, tint } = useAccent();
+export function DrillTablePdf({ data, accent }: { data: DrillPageData; accent: SectionAccent }) {
   const markerByYear = new Map(data.table.markers.map((m) => [m.year, m]));
 
   return (
     <View style={styles.table}>
       <View
-        style={[styles.headerRow, { backgroundColor: tint, borderBottomColor: accent }]}
+        style={[styles.headerRow, { backgroundColor: accent.tint, borderBottomColor: accent.accent }]}
         fixed
       >
         <Text style={[styles.th, { width: COL_MARKER_W }, styles.tdLeft]}>
@@ -116,7 +114,7 @@ export function DrillTablePdf({ data }: { data: DrillPageData }) {
           columns={data.table.columns}
           marker={markerByYear.get(row.year) ?? null}
           zebra={i % 2 === 1}
-          accent={accent}
+          accent={accent.accent}
         />
       ))}
     </View>

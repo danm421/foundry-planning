@@ -16,7 +16,7 @@ const S = StyleSheet.create({
 });
 
 export function AssetAllocationPagePdf({
-  data, firmName, clientName, reportDate, pageIndex, totalPages,
+  data, firmName, clientName, reportDate, pageIndex, totalPages, accent,
 }: RenderPdfInput<AssetAllocationData>) {
   const hasRight = data.rightDonut !== null;
   const hasDiff = !!(data.diffRows && data.diffRows.length > 0);
@@ -29,7 +29,7 @@ export function AssetAllocationPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title="Asset Allocation" subtitle={data.subtitle} />
+      <SectionHead title="Asset Allocation" subtitle={data.subtitle} accent={accent} />
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 14 }}>
         <DonutPdf spec={data.leftDonut} title={data.leftName} />
         {/* rightName is non-null whenever rightDonut is (both derive from `right` in the view-model) */}
@@ -80,7 +80,7 @@ export function AssetAllocationPagePdf({
           )}
         </View>
       )}
-      <Callout>{data.disclosure}</Callout>
+      <Callout accent={accent}>{data.disclosure}</Callout>
     </PageFrame>
   );
 }

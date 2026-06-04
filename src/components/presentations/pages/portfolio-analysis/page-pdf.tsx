@@ -23,6 +23,7 @@ export function PortfolioAnalysisPagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: RenderPdfInput<PortfolioAnalysisData>) {
   return (
     <PageFrame
@@ -32,7 +33,7 @@ export function PortfolioAnalysisPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title="Portfolio Analysis" subtitle="Risk &amp; return" />
+      <SectionHead title="Portfolio Analysis" subtitle="Risk &amp; return" accent={accent} />
       <View style={{ alignItems: "center", marginBottom: 14 }}>
         <ScatterPdf spec={data.scatter} />
       </View>
@@ -58,7 +59,7 @@ export function PortfolioAnalysisPagePdf({
       </View>
       {data.unplottable.length > 0 && (
         <View style={{ marginTop: 10 }}>
-          <Callout>
+          <Callout accent={accent}>
             {`Not shown (no asset-class mix): ${data.unplottable.map((u) => u.name).join(", ")}.`}
           </Callout>
         </View>

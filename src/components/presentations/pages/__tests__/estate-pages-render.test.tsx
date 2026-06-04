@@ -5,6 +5,7 @@ import { EstateFlowChartPagePdf } from "../estate-flow-chart/page-pdf";
 import { EstateFlowReportPagePdf } from "../estate-flow/page-pdf";
 import type { EstateFlowChartData } from "@/lib/presentations/pages/estate-flow-chart/view-model";
 import type { EstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
+import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 
 ensureFontsRegistered();
 
@@ -14,6 +15,7 @@ const framing = {
   reportDate: "May 28, 2026",
   pageIndex: 1,
   totalPages: 1,
+  accent: DEFAULT_ACCENT,
 };
 
 const emptyChart: EstateFlowChartData = {

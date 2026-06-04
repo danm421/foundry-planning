@@ -4,6 +4,7 @@ import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { AssetAllocationPagePdf } from "../page-pdf";
 import type { AssetAllocationData } from "@/lib/presentations/pages/asset-allocation/view-model";
 import type { DonutSpec } from "@/lib/presentations/charts/types";
+import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 
 ensureFontsRegistered();
 
@@ -64,6 +65,7 @@ const framing = {
   reportDate: "June 1, 2026",
   pageIndex: 1,
   totalPages: 1,
+  accent: DEFAULT_ACCENT,
 };
 
 function countPages(buf: Buffer): number {

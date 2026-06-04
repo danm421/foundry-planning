@@ -4,7 +4,7 @@
 
 import { Text, StyleSheet } from "@react-pdf/renderer";
 import type { DrillPageData } from "@/lib/presentations/shared/drill-types";
-import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { PRESENTATION_THEME, type SectionAccent } from "@/lib/presentations/theme";
 import { PageFrame } from "./page-frame";
 import { SectionHead } from "./section-head";
 import { Callout } from "./callout";
@@ -27,6 +27,7 @@ export function DrillPagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: {
   data: DrillPageData;
   firmName: string;
@@ -34,6 +35,7 @@ export function DrillPagePdf({
   reportDate: string;
   pageIndex: number;
   totalPages: number;
+  accent: SectionAccent;
 }) {
   return (
     <PageFrame
@@ -43,10 +45,10 @@ export function DrillPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title={data.title} subtitle={data.subtitle} />
-      {data.callout && <Callout>{data.callout}</Callout>}
+      <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
+      {data.callout && <Callout accent={accent}>{data.callout}</Callout>}
       {data.chartSpec && <CashflowChartPdf spec={data.chartSpec} />}
-      <DrillTablePdf data={data} />
+      <DrillTablePdf data={data} accent={accent} />
       <Text style={styles.footnote}>{data.footnote}</Text>
     </PageFrame>
   );

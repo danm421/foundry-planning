@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Document, Page, renderToBuffer } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
-import { AccentProvider } from "@/components/presentations/shared/accent-context";
 import { CashflowTablePdf } from "../table-pdf";
 import { SECTION_ACCENTS } from "@/lib/presentations/theme";
 import type { CashFlowPageData } from "@/lib/presentations/types";
@@ -52,9 +51,7 @@ describe("CashflowTablePdf", () => {
     const buf = await renderToBuffer(
       <Document>
         <Page>
-          <AccentProvider accent={SECTION_ACCENTS["Cash Flow"]}>
-            <CashflowTablePdf data={data} />
-          </AccentProvider>
+          <CashflowTablePdf data={data} accent={SECTION_ACCENTS["Cash Flow"]} />
         </Page>
       </Document>,
     );

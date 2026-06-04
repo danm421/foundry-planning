@@ -1,6 +1,5 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
-import { PRESENTATION_THEME } from "@/lib/presentations/theme";
-import { useAccent } from "./accent-context";
+import { PRESENTATION_THEME, type SectionAccent } from "@/lib/presentations/theme";
 
 const styles = StyleSheet.create({
   wrap: {
@@ -16,10 +15,9 @@ const styles = StyleSheet.create({
   },
 });
 
-export function Callout({ children }: { children: string }) {
-  const { tint } = useAccent();
+export function Callout({ children, accent }: { children: string; accent: SectionAccent }) {
   return (
-    <View style={[styles.wrap, { backgroundColor: tint }]}>
+    <View style={[styles.wrap, { backgroundColor: accent.tint }]}>
       <Text style={styles.text}>{children}</Text>
     </View>
   );

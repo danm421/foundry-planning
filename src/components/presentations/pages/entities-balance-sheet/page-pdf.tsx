@@ -79,6 +79,7 @@ export function EntitiesBalanceSheetPagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: RenderPdfInput<BalanceSheetPageData>) {
   const groups = prepareEntityGroups(data.viewModel.entityGroups ?? []);
   return (
@@ -89,7 +90,7 @@ export function EntitiesBalanceSheetPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title="Balance Sheet — Entities" subtitle={data.asOfLabel} />
+      <SectionHead title="Balance Sheet — Entities" subtitle={data.asOfLabel} accent={accent} />
 
       {groups.length === 0 ? (
         <Text style={S.empty}>No entities for this household.</Text>

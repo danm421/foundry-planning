@@ -1,6 +1,5 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
-import { PRESENTATION_THEME } from "@/lib/presentations/theme";
-import { useAccent } from "./accent-context";
+import { PRESENTATION_THEME, type SectionAccent } from "@/lib/presentations/theme";
 
 const styles = StyleSheet.create({
   wrap: { marginBottom: 12 },
@@ -27,15 +26,16 @@ export function SectionHead({
   title,
   subtitle,
   eyebrow,
+  accent,
 }: {
   title: string;
   subtitle?: string;
   eyebrow?: string;
+  accent: SectionAccent;
 }) {
-  const { accent } = useAccent();
   return (
     <View style={styles.wrap}>
-      {eyebrow && <Text style={[styles.eyebrow, { color: accent }]}>{eyebrow}</Text>}
+      {eyebrow && <Text style={[styles.eyebrow, { color: accent.accent }]}>{eyebrow}</Text>}
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10 }}>
         <Text style={styles.title}>{title}</Text>
         {subtitle && (
@@ -44,7 +44,7 @@ export function SectionHead({
           </Text>
         )}
       </View>
-      <View style={[styles.rule, { backgroundColor: accent }]} />
+      <View style={[styles.rule, { backgroundColor: accent.accent }]} />
     </View>
   );
 }

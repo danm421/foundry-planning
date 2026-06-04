@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { ComponentType, ReactElement } from "react";
+import type { SectionAccent } from "@/lib/presentations/theme";
 import type {
   CashFlowPageData,
   CashFlowPageOptions,
@@ -249,6 +250,13 @@ export interface RenderPdfInput<TData> {
   reportDate: string;
   pageIndex: number;
   totalPages: number;
+  /**
+   * Section accent for this page. Threaded as an explicit prop (not React
+   * context): the PDF tree is rendered via `renderToStream` from a route
+   * handler, which runs against React's `react-server` build where
+   * `createContext` does not exist.
+   */
+  accent: SectionAccent;
   // Only populated for pages that need cross-page layout (TOC). Other pages
   // ignore this field.
   documentSections?: TocSection[];

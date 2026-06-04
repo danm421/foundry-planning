@@ -1,5 +1,5 @@
 import { Text, View, StyleSheet } from "@react-pdf/renderer";
-import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
+import { PRESENTATION_THEME as T, type SectionAccent } from "@/lib/presentations/theme";
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
 import { DrillTablePdf } from "../../shared/drill-table-pdf";
@@ -41,6 +41,7 @@ export function MonteCarloPagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: {
   data: MonteCarloPageData;
   firmName: string;
@@ -48,6 +49,7 @@ export function MonteCarloPagePdf({
   reportDate: string;
   pageIndex: number;
   totalPages: number;
+  accent: SectionAccent;
 }) {
   const others = MONTE_CARLO_CHART_KINDS.filter((k) => k !== data.heroKind);
 
@@ -60,7 +62,7 @@ export function MonteCarloPagePdf({
       totalPages={totalPages}
       orientation="portrait"
     >
-      <SectionHead title={data.title} subtitle={data.subtitle} eyebrow="Monte Carlo" />
+      <SectionHead title={data.title} subtitle={data.subtitle} eyebrow="Monte Carlo" accent={accent} />
 
       {!data.available ? (
         <Text style={styles.empty}>Monte Carlo data unavailable for this scenario.</Text>
@@ -96,6 +98,7 @@ export function MonteCarloPagePdf({
               table: data.table,
               footnote: "",
             }}
+            accent={accent}
           />
 
           <Text style={styles.footnote}>{data.footnote}</Text>

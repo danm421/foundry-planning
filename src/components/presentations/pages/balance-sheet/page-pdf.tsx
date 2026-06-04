@@ -93,6 +93,7 @@ export function BalanceSheetPagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: RenderPdfInput<BalanceSheetPageData>) {
   const vm = data.viewModel;
   const showOutOfEstate = data.showOutOfEstate && vm.outOfEstateOwnerRows.length > 0;
@@ -104,7 +105,7 @@ export function BalanceSheetPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title="Balance Sheet" subtitle={data.asOfLabel} />
+      <SectionHead title="Balance Sheet" subtitle={data.asOfLabel} accent={accent} />
 
       <View style={S.kpiRow}>
         <Kpi label="Net Worth" value={vm.netWorth} yoy={vm.yoy.netWorth} />

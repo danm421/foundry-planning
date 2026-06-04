@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { Document } from "@react-pdf/renderer";
 import { PRESENTATION_PAGES, type PresentationPageId } from "./registry";
 import type { ClientData } from "@/engine/types";
@@ -8,7 +9,6 @@ import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-ca
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
-import { AccentProvider } from "./shared/accent-context";
 import { SECTION_ACCENTS, DEFAULT_ACCENT } from "@/lib/presentations/theme";
 
 export interface PageScenarioBundle {
@@ -97,10 +97,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
           options as never,
         );
         return (
-          <AccentProvider
-            key={p.pageId + idx}
-            accent={SECTION_ACCENTS[page.category] ?? DEFAULT_ACCENT}
-          >
+          <Fragment key={p.pageId + idx}>
             {page.renderPdf({
               // `data` is the union of all page-data types; `renderPdf`'s param is the
               // intersection (contravariant method on a union of page defs). Same
@@ -112,8 +109,9 @@ export function PresentationDocument(props: PresentationDocumentProps) {
               pageIndex: startPages[idx],
               totalPages,
               documentSections,
+              accent: SECTION_ACCENTS[page.category] ?? DEFAULT_ACCENT,
             })}
-          </AccentProvider>
+          </Fragment>
         );
       })}
     </Document>
