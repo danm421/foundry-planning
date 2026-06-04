@@ -384,6 +384,7 @@ export function LiveSolverWorkspace({
         for (const [k, m] of prev) if (!isBaseSavableMutation(m)) next.set(k, m);
         return next;
       });
+      setSolvedPoS(null);
       setComputeStatus("fresh");
       router.refresh();
     } catch (err) {
