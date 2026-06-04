@@ -1,0 +1,88 @@
+import { View, Text, StyleSheet } from "@react-pdf/renderer";
+import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import type { Block, Run } from "@/lib/presentations/pages/blank/markdown-blocks";
+
+const s = StyleSheet.create({
+  h1: { fontFamily: "Inter", fontSize: 18, fontWeight: 700, color: PRESENTATION_THEME.ink, marginTop: 10, marginBottom: 6 },
+  h2: { fontFamily: "Inter", fontSize: 14, fontWeight: 700, color: PRESENTATION_THEME.ink, marginTop: 8, marginBottom: 5 },
+  h3: { fontFamily: "Inter", fontSize: 11.5, fontWeight: 700, color: PRESENTATION_THEME.ink, marginTop: 6, marginBottom: 4 },
+  para: { fontFamily: "Inter", fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink, marginBottom: 6 },
+  listRow: { flexDirection: "row", marginBottom: 3 },
+  bullet: { fontFamily: "Inter", fontSize: 10, color: PRESENTATION_THEME.ink, width: 16 },
+  listText: { fontFamily: "Inter", fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink, flex: 1 },
+  quote: { borderLeftWidth: 2, borderLeftColor: PRESENTATION_THEME.accent, paddingLeft: 8, marginBottom: 6 },
+  // fontStyle: "italic" omitted — no italic face registered for Inter yet.
+  // ink2 color provides visual distinction for block quotes.
+  quoteText: { fontFamily: "Inter", fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink2 },
+  empty: { fontFamily: "JetBrains Mono", fontSize: 9, color: PRESENTATION_THEME.ink3 },
+});
+
+function runStyle(r: Run) {
+  return {
+    fontWeight: r.bold ? (700 as const) : undefined,
+    // fontStyle: "italic" omitted — no italic Inter face registered yet.
+    // Italic runs fall back to ink2 color for visual distinction.
+    color: r.italic ? PRESENTATION_THEME.ink2 : undefined,
+    fontFamily: r.code ? "JetBrains Mono" : "Inter",
+  };
+}
+
+function Runs({ runs }: { runs: Run[] }) {
+  return (
+    <>
+      {runs.map((r, i) => (
+        <Text key={i} style={runStyle(r)}>
+          {r.text}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+export function MarkdownPdf({ blocks }: { blocks: Block[] }) {
+  if (blocks.length === 0) {
+    return <Text style={s.empty}>(empty page)</Text>;
+  }
+  return (
+    <View>
+      {blocks.map((b, i) => {
+        if (b.type === "heading") {
+          const style = b.level === 1 ? s.h1 : b.level === 2 ? s.h2 : s.h3;
+          return (
+            <Text key={i} style={style}>
+              <Runs runs={b.runs} />
+            </Text>
+          );
+        }
+        if (b.type === "paragraph") {
+          return (
+            <Text key={i} style={s.para}>
+              <Runs runs={b.runs} />
+            </Text>
+          );
+        }
+        if (b.type === "quote") {
+          return (
+            <View key={i} style={s.quote}>
+              <Text style={s.quoteText}>
+                <Runs runs={b.runs} />
+              </Text>
+            </View>
+          );
+        }
+        return (
+          <View key={i}>
+            {b.items.map((item, j) => (
+              <View key={j} style={s.listRow}>
+                <Text style={s.bullet}>{b.ordered ? `${j + 1}.` : "•"}</Text>
+                <Text style={s.listText}>
+                  <Runs runs={item} />
+                </Text>
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
