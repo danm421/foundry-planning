@@ -1,6 +1,7 @@
 "use client";
 
 import type { EstatePageOptions } from "@/lib/presentations/pages/estate-shared/options-schema";
+import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 
 interface Props {
   value: EstatePageOptions;
@@ -14,9 +15,8 @@ export function EstateOptionsControl({ value, onChange }: Props) {
   const year = isYear ? (value.asOf as { year: number }).year : CURRENT_YEAR + 10;
 
   return (
-    <div className="space-y-3 text-sm text-ink-2">
-      <fieldset className="space-y-1">
-        <legend className="sr-only">As of</legend>
+    <OptionsRow>
+      <OptionsGroup label="As of">
         <label className="flex items-center gap-2 hover:text-ink">
           <input
             type="radio"
@@ -44,13 +44,9 @@ export function EstateOptionsControl({ value, onChange }: Props) {
           />
           <span>Specific year</span>
         </label>
-      </fieldset>
-      {isYear && (
-        <div className="pl-6">
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
-              Year
-            </span>
+        {isYear && (
+          <label className="flex flex-col gap-1 pl-6 pt-1">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Year</span>
             <input
               type="number"
               aria-label="As-of year"
@@ -61,17 +57,19 @@ export function EstateOptionsControl({ value, onChange }: Props) {
               }
             />
           </label>
-        </div>
-      )}
-      <label className="flex items-center gap-2 hover:text-ink">
-        <input
-          type="checkbox"
-          className="accent-accent"
-          checked={value.showHeirDetail}
-          onChange={(e) => onChange({ ...value, showHeirDetail: e.target.checked })}
-        />
-        <span>Show per-heir line-item detail</span>
-      </label>
-    </div>
+        )}
+      </OptionsGroup>
+      <OptionsGroup label="Detail">
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={value.showHeirDetail}
+            onChange={(e) => onChange({ ...value, showHeirDetail: e.target.checked })}
+          />
+          <span>Show per-heir line-item detail</span>
+        </label>
+      </OptionsGroup>
+    </OptionsRow>
   );
 }
