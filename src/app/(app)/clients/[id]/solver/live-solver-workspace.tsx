@@ -212,9 +212,9 @@ export function LiveSolverWorkspace({
     return (baseClientData.accounts ?? [])
       .filter(
         (a) =>
-          a.category === "taxable" || a.category === "cash" || a.category === "retirement",
+          (a.category === "taxable" || a.category === "cash" || a.category === "retirement") &&
+          !withRule.has(a.id),
       )
-      .filter((a) => !withRule.has(a.id))
       .map((a) => ({
         id: a.id,
         name: a.name,

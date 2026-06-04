@@ -48,8 +48,7 @@ export function SolverRowSavingsContributions({
 
   const baseRuleIds = new Set(baseClientData.savingsRules.map((r) => r.id));
   const workingAdded = activeSavingsRules(workingClientData.savingsRules, currentYear)
-    .filter((r) => !baseRuleIds.has(r.id))
-    .filter((r) => !r.fundFromExpenseReduction);
+    .filter((r) => !baseRuleIds.has(r.id) && !r.fundFromExpenseReduction);
 
   if (baseActive.length === 0 && (side === "base" || workingAdded.length === 0)) return null;
 

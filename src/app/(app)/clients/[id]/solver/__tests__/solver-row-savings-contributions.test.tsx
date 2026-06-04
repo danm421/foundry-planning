@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import type { ClientData } from "@/engine";
 import { SolverRowSavingsContributions } from "../solver-row-savings-contributions";
 import { SolverSideContext } from "../solver-section";
 
-function clientData(overrides: any = {}) {
+function clientData(overrides: Partial<ClientData> = {}): ClientData {
   return {
     accounts: [
       { id: "acct-1", name: "John 401(k)", category: "retirement", subType: "401k", value: 0, basis: 0, growthRate: 0.06, rmdEnabled: true, titlingType: "jtwros", owners: [] },
@@ -14,14 +15,14 @@ function clientData(overrides: any = {}) {
     savingsRules: [],
     planSettings: { inflationRate: 0.03 },
     ...overrides,
-  };
+  } as unknown as ClientData;
 }
 
 const baseRule = { id: "rule-base", accountId: "acct-1", annualAmount: 5000, isDeductible: true, startYear: 2020, endYear: 2045 };
 const addedRule = { id: "rule-added", accountId: "acct-2", annualAmount: 8000, isDeductible: false, startYear: 2026, endYear: 2045 };
 const minSavingsRule = { id: "rule-min", accountId: "acct-min", annualAmount: 3000, isDeductible: false, startYear: 2026, endYear: 2045, fundFromExpenseReduction: true };
 
-function renderWorking(base: any, working: any) {
+function renderWorking(base: ClientData, working: ClientData) {
   render(
     <SolverSideContext.Provider value="working">
       <SolverRowSavingsContributions
