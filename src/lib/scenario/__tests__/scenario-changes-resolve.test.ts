@@ -1,12 +1,15 @@
 import { describe, it, expect } from "vitest";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import {
   buildBaseResolveData,
+  buildAssetTxResolveData,
+  buildReinvestmentEnrichmentDeps,
   hasReinvestmentChange,
   applyReinvestmentEnrichment,
   type ReinvestmentEnrichmentDeps,
 } from "../scenario-changes-resolve";
+import type { Reinvestment } from "@/engine/types";
 
 /** Minimal ClientData fixture exercising every collection buildBaseResolveData reads. */
 function fixtureTree(overrides: Partial<ClientData> = {}): ClientData {
@@ -129,6 +132,94 @@ describe("buildBaseResolveData", () => {
     expect(r.entitiesById).toEqual({});
     expect(r.spouseName).toBeNull();
     expect(Object.keys(r.accountsById)).toHaveLength(2);
+  });
+});
+
+describe("buildAssetTxResolveData", () => {
+  // Only the fields buildAssetTxResolveData reads are populated; cast keeps the
+  // fixture terse.
+  const years = [
+    {
+      year: 2030,
+      techniqueBreakdown: {
+        sales: [],
+        purchases: [
+          { transactionId: "buy-1", name: "Rental", purchasePrice: 600000, mortgageAmount: 400000, equity: 200000 },
+        ],
+      },
+    },
+    {
+      year: 2035,
+      techniqueBreakdown: {
+        sales: [
+          { transactionId: "sell-1", name: "Rental", saleValue: 650000, transactionCosts: 40000, mortgagePaidOff: 0, netProceeds: 610000, capitalGain: 300000 },
+        ],
+        purchases: [],
+      },
+    },
+    { year: 2040 }, // no techniqueBreakdown
+  ] as unknown as ProjectionYear[];
+
+  it("maps sell breakdown by transaction id", () => {
+    const m = buildAssetTxResolveData(years);
+    expect(m["sell-1"]).toMatchObject({
+      type: "sell", saleValue: 650000, netProceeds: 610000,
+      capitalGain: 300000, transactionCosts: 40000, mortgagePaidOff: 0,
+    });
+  });
+
+  it("maps buy breakdown by transaction id", () => {
+    const m = buildAssetTxResolveData(years);
+    expect(m["buy-1"]).toMatchObject({
+      type: "buy", purchasePrice: 600000, mortgageAmount: 400000, equity: 200000,
+    });
+  });
+
+  it("skips years with no techniqueBreakdown and returns {} when none execute", () => {
+    expect(buildAssetTxResolveData([{ year: 2041 } as unknown as ProjectionYear])).toEqual({});
+  });
+});
+
+describe("buildReinvestmentEnrichmentDeps", () => {
+  const reinvestments = [
+    { id: "ri-1", modelPortfolioId: "mp-1", newGrowthRate: 0.072, accountIds: [], year: 2030 },
+    { id: "ri-2", modelPortfolioId: null, newGrowthRate: 0.05, accountIds: [], year: 2031 },
+  ] as unknown as Reinvestment[];
+
+  it("maps name (catalog) + resolved rate (effective tree) for referenced portfolios", () => {
+    const deps = buildReinvestmentEnrichmentDeps(
+      [change({ targetKind: "reinvestment", payload: { modelPortfolioId: "mp-1" } })],
+      { "mp-1": "Aggressive (100/0)", "mp-9": "Unreferenced" },
+      reinvestments,
+    );
+    expect(deps.modelPortfolioNamesById).toEqual({ "mp-1": "Aggressive (100/0)" });
+    expect(deps.modelPortfolioRatesById).toEqual({ "mp-1": 0.072 });
+    // Base-allocation maps are intentionally left empty.
+    expect(deps.baseAllocationMixById).toEqual({});
+    expect(deps.baseAllocationBlendedRateById).toEqual({});
+  });
+
+  it("ignores non-reinvestment changes and payloads without a model portfolio id", () => {
+    const deps = buildReinvestmentEnrichmentDeps(
+      [
+        change({ targetKind: "income", payload: { modelPortfolioId: "mp-1" } }),
+        change({ targetKind: "reinvestment", payload: { modelPortfolioId: null } }),
+      ],
+      { "mp-1": "Aggressive (100/0)" },
+      reinvestments,
+    );
+    expect(deps.modelPortfolioNamesById).toEqual({});
+    expect(deps.modelPortfolioRatesById).toEqual({});
+  });
+
+  it("omits the rate when the effective tree has no resolved reinvestment for the portfolio", () => {
+    const deps = buildReinvestmentEnrichmentDeps(
+      [change({ targetKind: "reinvestment", payload: { modelPortfolioId: "mp-7" } })],
+      { "mp-7": "Conservative (40/60)" },
+      reinvestments,
+    );
+    expect(deps.modelPortfolioNamesById).toEqual({ "mp-7": "Conservative (40/60)" });
+    expect(deps.modelPortfolioRatesById).toEqual({}); // applyReinvestmentEnrichment defaults it to 0
   });
 });
 

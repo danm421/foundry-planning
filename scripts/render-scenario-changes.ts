@@ -61,6 +61,18 @@ const ctx: ScenarioChangesContext = {
     baseAllocationsById: {
       brk: { mix: "80/20 stock/bond", blendedRate: 0.072 },
     },
+    // Projection-derived buy/sell figures, keyed by transaction id. Mirrors what
+    // the export route injects from `projection.years[].techniqueBreakdown`.
+    assetTxById: {
+      at: {
+        type: "sell",
+        saleValue: 920000,
+        netProceeds: 612000,
+        capitalGain: 540000,
+        transactionCosts: 18000,
+        mortgagePaidOff: 290000,
+      },
+    },
   },
   changes: [
     mk({
@@ -110,9 +122,9 @@ const ctx: ScenarioChangesContext = {
       targetId: "at",
       opType: "add",
       payload: {
+        // No overrideSaleValue — value + net come from the projection (assetTxById).
         type: "sell",
         accountId: "home",
-        overrideSaleValue: 850000,
         proceedsAccountId: "jb",
         year: 2030,
         qualifiesForHomeSaleExclusion: true,

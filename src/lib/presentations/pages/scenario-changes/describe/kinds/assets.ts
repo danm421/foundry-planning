@@ -47,25 +47,40 @@ const assetTransaction: Describer = (c, ctx) => {
   if (c.opType === "remove") return removeRow("Assets", name ?? "Asset transaction", ["No longer in this plan"]);
   const p = (c.payload ?? {}) as Record<string, unknown>;
   const yr = yearWithRef(toNum(p.year), null);
+  // Projection-derived figures (actual value bought/sold + net cash received),
+  // keyed by transaction id. Absent for transactions outside the projection
+  // window or when the engine skipped the sale — fall back to payload values.
+  const computed = ctx.resolve.assetTx(c.targetId);
   if (p.type === "buy") {
-    const mortgageAmt = toNum(p.mortgageAmount);
+    const buy = computed?.type === "buy" ? computed : null;
+    const hasComputedBuy = (buy?.purchasePrice ?? 0) > 0;
+    const price = hasComputedBuy ? buy?.purchasePrice : toNum(p.purchasePrice);
+    const mortgageAmt = buy ? buy.mortgageAmount : toNum(p.mortgageAmount);
     const mortgageRate = toNum(p.mortgageRate);
     const line = joinSegments([
       `Buy ${p.assetName ?? name ?? "asset"}`,
-      p.purchasePrice != null ? `for ${money(p.purchasePrice)}` : null,
+      price != null ? `for ${money(price)}` : null,
       yr,
       p.fundingAccountId ? `funded from ${ctx.resolve.accountName(p.fundingAccountId as string)}` : null,
-      mortgageAmt ? `${money(p.mortgageAmount)} mortgage${mortgageRate ? ` @ ${(mortgageRate * 100).toFixed(1)}%` : ""}` : null,
+      mortgageAmt ? `${money(mortgageAmt)} mortgage${mortgageRate ? ` @ ${(mortgageRate * 100).toFixed(1)}%` : ""}` : null,
     ]);
     return addRow("Assets", name ?? `Buy ${p.assetName ?? "asset"}`, [line]);
   }
   // sell
   const soldLabel = p.accountId ? ctx.resolve.accountName(p.accountId as string) : (name ?? "holding");
   const fractionSold = toNum(p.fractionSold);
+  // Prefer the projected sale value; fall back to a manual override. A skipped
+  // sale yields 0 — treat that as "no computed value" (don't print "$0 sale" /
+  // "$0 net") and fall back to the override. One boolean drives both lines.
+  const sell = computed?.type === "sell" ? computed : null;
+  const hasComputedSale = (sell?.saleValue ?? 0) > 0;
+  const saleValue = hasComputedSale ? sell?.saleValue : toNum(p.overrideSaleValue);
+  const netProceeds = hasComputedSale ? sell?.netProceeds : null;
   const line = joinSegments([
     `Sell ${soldLabel}`,
     yr,
-    p.overrideSaleValue != null ? `for ~${money(p.overrideSaleValue)}` : null,
+    saleValue != null ? `${money(saleValue)} sale` : null,
+    netProceeds != null ? `${money(netProceeds)} net` : null,
     p.proceedsAccountId ? `proceeds → ${ctx.resolve.accountName(p.proceedsAccountId as string)}` : null,
     p.qualifiesForHomeSaleExclusion ? "home-sale exclusion applied" : null,
     fractionSold && fractionSold < 1 ? `${Math.round(fractionSold * 100)}% partial` : null,

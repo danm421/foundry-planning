@@ -44,7 +44,10 @@ import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/ch
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import {
   buildBaseResolveData,
+  buildAssetTxResolveData,
+  buildReinvestmentEnrichmentDeps,
   hasReinvestmentChange,
+  applyReinvestmentEnrichment,
 } from "@/lib/scenario/scenario-changes-resolve";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import {
@@ -219,6 +222,13 @@ export async function POST(
       ? (await loadInvestmentsBundle(id, firmId)) ?? undefined
       : undefined;
 
+    // Memoize the firm's investment-option catalog across the request — both the
+    // per-scenario reinvestment enrichment and the Life Insurance block below
+    // consume it, and it's a multi-query bundle load. Lazily loaded on first use.
+    let investmentCatalog: ReturnType<typeof listInvestmentOptionCatalog> | null = null;
+    const getInvestmentCatalog = () =>
+      (investmentCatalog ??= listInvestmentOptionCatalog(id, firmId));
+
     // Build one bundle per distinct scenario. Projection always; Monte Carlo
     // and scenario-changes only where the plan says a page needs them. The
     // distinct scenarios are independent and bounded by MAX_DISTINCT_SCENARIOS,
@@ -294,20 +304,36 @@ export async function POST(
             // Always build the base resolve maps (account / recipient / entity /
             // spouse names) off the effective tree — this is what makes
             // transfer / savings / roth / gift / will changes render rich
-            // references instead of terse fallbacks. The reinvestment
-            // enrichment (model-portfolio + base-allocation maps) is left empty
-            // here: the reinvestment describer consumes those maps but degrades
-            // gracefully when they're empty, and production carries no
-            // reinvestment changes, so deriving them from the investments bundle
-            // would be unverifiable plumbing. applyReinvestmentEnrichment() is
-            // the ready-to-wire seam. See scenario-changes-resolve.ts.
-            const resolve = buildBaseResolveData(clientData);
+            // references instead of terse fallbacks.
+            let resolve = buildBaseResolveData(clientData);
+
+            // Reinvestment enrichment: surface the NEW model portfolio (name +
+            // resolved growth rate) the switched accounts grow at. Names come
+            // from the firm's investment-option catalog (memoized per request);
+            // rates from the effective tree's already-resolved reinvestments.
+            // Gated on a reinvestment change so the catalog query only loads when
+            // it can matter.
             if (hasReinvestmentChange(changes)) {
-              console.warn(
-                `[export-pdf] reinvestment change present in scenario ${scenarioId}; ` +
-                  "model-portfolio/base-allocation enrichment is not derived (describer degrades to blended-rate-only).",
-              );
+              try {
+                const catalog = await getInvestmentCatalog();
+                const portfolioNamesById = Object.fromEntries(
+                  catalog.portfolios.map((p) => [p.id, p.name] as const),
+                );
+                resolve = applyReinvestmentEnrichment(
+                  resolve,
+                  buildReinvestmentEnrichmentDeps(changes, portfolioNamesById, clientData.reinvestments ?? []),
+                );
+              } catch (riErr) {
+                // Non-fatal: the describer degrades to a blended-rate-only line.
+                console.error("Reinvestment enrichment failed for export", riErr);
+              }
             }
+
+            // Asset-transaction enrichment: projection-derived value bought/sold
+            // and net cash received, keyed by transaction id. Always safe — a
+            // pure reshape of the already-computed projection breakdown.
+            resolve = { ...resolve, assetTxById: buildAssetTxResolveData(projection.years) };
+
             scenarioChanges = {
               changes,
               toggleGroups,
@@ -378,8 +404,9 @@ export async function POST(
     // which skipped solving and left the saved/null value in place).
     if (needsLifeInsurance) {
       // modelPortfolioId → display label, exactly as the launcher derived it from
-      // the investment catalog (fallback "Plan default rate").
-      const catalog = await listInvestmentOptionCatalog(id, firmId);
+      // the investment catalog (fallback "Plan default rate"). Shares the
+      // request-memoized catalog with the reinvestment enrichment above.
+      const catalog = await getInvestmentCatalog();
       const portfolioLabelById = new Map(
         catalog.portfolios.map((p) => [p.id, p.name] as const),
       );

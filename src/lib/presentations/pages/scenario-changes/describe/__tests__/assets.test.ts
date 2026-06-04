@@ -130,6 +130,79 @@ describe("transfer/account describers", () => {
     expect(d).toContain("2030"); expect(d.toLowerCase()).toContain("exclusion");
   });
 
+  it("asset_transaction sell shows computed sale value + net proceeds from the projection", () => {
+    const resolve = buildResolveContext({
+      accountsById: {
+        acc: { name: "Rental Home", category: "real_estate" },
+        pr: { name: "Schwab Ind. Account", category: "taxable" },
+      },
+      recipientsById: {}, entitiesById: {}, spouseName: null,
+      modelPortfoliosById: {}, baseAllocationsById: {},
+      assetTxById: {
+        x: {
+          type: "sell", saleValue: 650000, netProceeds: 610000,
+          capitalGain: 300000, transactionCosts: 40000, mortgagePaidOff: 0,
+        },
+      },
+    });
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "add", targetKind: "asset_transaction",
+        targetId: "x", toggleGroupId: null, orderIndex: 0,
+        // No overrideSaleValue — the value must come from the projection.
+        payload: { type: "sell", accountId: "acc", proceedsAccountId: "pr", year: 2035, qualifiesForHomeSaleExclusion: false },
+      },
+      { targetNames: { "asset_transaction:x": "Sell Real Estate" }, resolve },
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("$650k");                 // computed sale value
+    expect(d).toContain("$610k");                 // net proceeds
+    expect(d.toLowerCase()).toContain("net");
+    expect(d).toContain("Schwab Ind. Account");
+    expect(d).toContain("2035");
+  });
+
+  it("asset_transaction sell falls back to overrideSaleValue when no computed data", () => {
+    const resolve = buildResolveContext({
+      accountsById: {
+        acc: { name: "Rental Home", category: "real_estate" },
+        pr: { name: "Joint Brokerage", category: "taxable" },
+      },
+      recipientsById: {}, entitiesById: {}, spouseName: null,
+      modelPortfoliosById: {}, baseAllocationsById: {},
+    });
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "add", targetKind: "asset_transaction",
+        targetId: "x", toggleGroupId: null, orderIndex: 0,
+        payload: { type: "sell", accountId: "acc", overrideSaleValue: 850000, proceedsAccountId: "pr", year: 2030 },
+      },
+      { targetNames: {}, resolve },
+    );
+    expect(row.detail.join(" ")).toContain("$850k");
+  });
+
+  it("asset_transaction buy shows computed purchase price + mortgage from the projection", () => {
+    const resolve = buildResolveContext({
+      accountsById: { f: { name: "Cash", category: "cash" } },
+      recipientsById: {}, entitiesById: {}, spouseName: null,
+      modelPortfoliosById: {}, baseAllocationsById: {},
+      assetTxById: { y: { type: "buy", purchasePrice: 600000, mortgageAmount: 400000, equity: 200000 } },
+    });
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "add", targetKind: "asset_transaction",
+        targetId: "y", toggleGroupId: null, orderIndex: 0,
+        // No purchasePrice/mortgageAmount in payload — both come from the projection.
+        payload: { type: "buy", assetName: "Rental Property", year: 2028, fundingAccountId: "f", mortgageRate: 0.065 },
+      },
+      { targetNames: {}, resolve },
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("Buy"); expect(d).toContain("Rental Property");
+    expect(d).toContain("$600k"); expect(d).toContain("$400k"); expect(d).toContain("Cash");
+  });
+
   it("asset_transaction buy shows asset, price, year, funding, mortgage", () => {
     const resolve = buildResolveContext({
       accountsById: { f: { name: "Cash", category: "cash" } },

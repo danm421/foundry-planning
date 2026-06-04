@@ -6,16 +6,19 @@
 // "Jane Doe", "Family Trust") instead of terse fallbacks ("an account",
 // "a recipient", "an entity").
 //
-// `buildBaseResolveData` / `hasReinvestmentChange` / `applyReinvestmentEnrichment`
-// are PURE (no DB / no engine math) so they are unit-testable in plain vitest.
-// Any DB-backed derivation of the reinvestment deps happens in the export route.
+// Every exported helper here is PURE (no DB, no I/O) so it is unit-testable in
+// plain vitest. Some accept engine *output* types (e.g. ProjectionYear in
+// buildAssetTxResolveData) and reshape them — a value-level transform, not
+// engine math. DB-backed derivation (catalog loads etc.) stays in the export
+// route, which feeds the loaded data into buildReinvestmentEnrichmentDeps.
 
-import type { ClientData } from "@/engine/types";
+import type { ClientData, ProjectionYear, Reinvestment } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import {
   EMPTY_RESOLVE_DATA,
   type ResolveContextData,
   type AccountInfo,
+  type AssetTxInfo,
 } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 
 /**
@@ -68,6 +71,43 @@ export function hasReinvestmentChange(changes: ScenarioChange[]): boolean {
 }
 
 /**
+ * Pure reshape of the projection's per-year technique breakdown into a
+ * `transactionId → AssetTxInfo` map for the asset_transaction describer. The
+ * raw scenario-change payload only carries the *intent* of a buy/sell (which
+ * account, which year, where proceeds land) — the actual value sold and the
+ * net cash received are projection outputs (a sale at a projected market value,
+ * netted of transaction costs / mortgage payoff / §121 exclusion). A
+ * transaction executes in exactly one year, so the last writer wins is moot;
+ * skipped sales surface as a 0-value entry and the describer ignores those.
+ */
+export function buildAssetTxResolveData(years: ProjectionYear[]): Record<string, AssetTxInfo> {
+  const out: Record<string, AssetTxInfo> = {};
+  for (const y of years) {
+    const tb = y.techniqueBreakdown;
+    if (!tb) continue;
+    for (const s of tb.sales) {
+      out[s.transactionId] = {
+        type: "sell",
+        saleValue: s.saleValue,
+        netProceeds: s.netProceeds,
+        capitalGain: s.capitalGain,
+        transactionCosts: s.transactionCosts,
+        mortgagePaidOff: s.mortgagePaidOff,
+      };
+    }
+    for (const p of tb.purchases) {
+      out[p.transactionId] = {
+        type: "buy",
+        purchasePrice: p.purchasePrice,
+        mortgageAmount: p.mortgageAmount,
+        equity: p.equity,
+      };
+    }
+  }
+  return out;
+}
+
+/**
  * Deps for the reinvestment enrichment, derived (best-effort) from the
  * investments bundle in the export route.
  *
@@ -116,4 +156,50 @@ export function applyReinvestmentEnrichment(
   }
 
   return { ...base, modelPortfoliosById, baseAllocationsById };
+}
+
+/**
+ * Assemble the model-portfolio half of `ReinvestmentEnrichmentDeps` from the
+ * three inputs the export route already has on hand:
+ *  - `changes`           — the scenario edits (the model-portfolio ids the
+ *                          report actually references live in their payloads).
+ *  - `portfolioNamesById` — model-portfolio id → display name, from the firm's
+ *                          investment-option catalog.
+ *  - `reinvestments`     — the effective tree's already-resolved reinvestments,
+ *                          which carry the blended `newGrowthRate` per portfolio.
+ *
+ * Scoped to the portfolios referenced by reinvestment changes so the enrichment
+ * map stays small. Base-allocation maps are left empty (the describer renders
+ * the new-portfolio line without the "before" mix). Never throws.
+ */
+export function buildReinvestmentEnrichmentDeps(
+  changes: ScenarioChange[],
+  portfolioNamesById: Record<string, string>,
+  reinvestments: readonly Reinvestment[],
+): ReinvestmentEnrichmentDeps {
+  const rateByPortfolio = new Map<string, number>();
+  for (const r of reinvestments) {
+    if (r.modelPortfolioId != null && typeof r.newGrowthRate === "number") {
+      rateByPortfolio.set(r.modelPortfolioId, r.newGrowthRate);
+    }
+  }
+
+  const modelPortfolioNamesById: Record<string, string> = {};
+  const modelPortfolioRatesById: Record<string, number> = {};
+  for (const c of changes) {
+    if (c.targetKind !== "reinvestment") continue;
+    const pid = (c.payload as { modelPortfolioId?: string | null } | null)?.modelPortfolioId;
+    if (!pid) continue;
+    const name = portfolioNamesById[pid];
+    if (name != null) modelPortfolioNamesById[pid] = name;
+    const rate = rateByPortfolio.get(pid);
+    if (rate != null) modelPortfolioRatesById[pid] = rate;
+  }
+
+  return {
+    modelPortfolioNamesById,
+    modelPortfolioRatesById,
+    baseAllocationMixById: {},
+    baseAllocationBlendedRateById: {},
+  };
 }
