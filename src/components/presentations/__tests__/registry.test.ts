@@ -37,6 +37,14 @@ describe("PRESENTATION_PAGES", () => {
   });
 });
 
+describe("blank page registration", () => {
+  it("registers the blank page under Framing with no scenario override", () => {
+    expect(PRESENTATION_PAGES.blank.category).toBe("Framing");
+    expect(PRESENTATION_PAGES.blank.supportsScenarioOverride).toBe(false);
+    expect(PRESENTATION_PAGES.blank.defaultOptions).toEqual({ markdown: "" });
+  });
+});
+
 describe("estateSummary registration", () => {
   it("is registered in the Estate category", () => {
     const page = PRESENTATION_PAGES.estateSummary;

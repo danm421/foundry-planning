@@ -29,6 +29,7 @@ describe("registry — Cash Flow page", () => {
       [
         "assetAllocation",
         "balanceSheet",
+        "blank",
         "cashFlow",
         "cashFlowActivity",
         "cashFlowAssets",

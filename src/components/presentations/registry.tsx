@@ -211,6 +211,15 @@ import {
 import { BalanceSheetOptionsControl } from "./pages/balance-sheet/options-control";
 import { BalanceSheetPagePdf } from "./pages/balance-sheet/page-pdf";
 import { EntitiesBalanceSheetPagePdf } from "./pages/entities-balance-sheet/page-pdf";
+import {
+  blankOptionsSchema,
+  BLANK_PAGE_OPTIONS_DEFAULT,
+  type BlankPageOptions,
+} from "@/lib/presentations/pages/blank/options-schema";
+import { summarizeBlankOptions } from "@/lib/presentations/pages/blank/summarize-options";
+import { buildBlankPageData, type BlankPageData } from "@/lib/presentations/pages/blank/view-model";
+import { BlankOptionsControl } from "./pages/blank/options-control";
+import { BlankPagePdf } from "./pages/blank/page-pdf";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -396,6 +405,21 @@ export const clientProfilePage: PresentationPage<ClientProfilePageData, ClientPr
       spouseName: ctx.spouseName,
     }),
   renderPdf: (input) => <ClientProfilePagePdf {...input} />,
+};
+
+export const blankPage: PresentationPage<BlankPageData, BlankPageOptions> = {
+  id: "blank",
+  title: "Blank Page",
+  description: "Free-form page with your own formatted text.",
+  category: "Framing",
+  defaultOptions: BLANK_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: blankOptionsSchema,
+  summarizeOptions: summarizeBlankOptions,
+  estimatePageCount: () => 1,
+  OptionsControl: BlankOptionsControl,
+  supportsScenarioOverride: false,
+  buildData: (_ctx, options) => buildBlankPageData(options),
+  renderPdf: (input) => <BlankPagePdf {...input} />,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -844,6 +868,7 @@ export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
   clientProfile: clientProfilePage,
+  blank: blankPage,
   cashFlow: cashFlowPage,
   cashFlowIncome: cashFlowIncomePage,
   cashFlowExpenses: cashFlowExpensesPage,
