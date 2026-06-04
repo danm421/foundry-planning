@@ -4,13 +4,29 @@ import {
   type InvestmentOptionCatalog,
   EMPTY_INVESTMENT_OPTION_CATALOG,
 } from "@/lib/presentations/investment-option-catalog";
+import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropdown";
 
-const Ctx = createContext<InvestmentOptionCatalog | null>(null);
+interface PresentationOptionsValue {
+  investmentCatalog: InvestmentOptionCatalog;
+  scenarios: ScenarioOption[];
+}
 
-export function PresentationOptionsProvider({ value, children }: { value: InvestmentOptionCatalog; children: ReactNode }) {
+const Ctx = createContext<PresentationOptionsValue | null>(null);
+
+export function PresentationOptionsProvider({
+  value,
+  children,
+}: {
+  value: PresentationOptionsValue;
+  children: ReactNode;
+}) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useInvestmentOptionCatalog(): InvestmentOptionCatalog {
-  return useContext(Ctx) ?? EMPTY_INVESTMENT_OPTION_CATALOG;
+  return useContext(Ctx)?.investmentCatalog ?? EMPTY_INVESTMENT_OPTION_CATALOG;
+}
+
+export function useScenarioOptions(): ScenarioOption[] {
+  return useContext(Ctx)?.scenarios ?? [];
 }

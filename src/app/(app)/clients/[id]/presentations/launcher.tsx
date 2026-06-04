@@ -320,7 +320,7 @@ export function PresentationsLauncher(props: Props) {
     state.loadedTemplate?.createdByUserId === props.currentUserId;
 
   return (
-    <PresentationOptionsProvider value={props.investmentCatalog}>
+    <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios }}>
     <div className="p-6">
       <h1 className="text-2xl font-semibold text-ink mb-4">
         Presentations<span className="dot">.</span>
