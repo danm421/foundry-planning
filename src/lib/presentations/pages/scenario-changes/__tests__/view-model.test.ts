@@ -15,6 +15,13 @@ describe("buildScenarioChangesData", () => {
     expect(data.units).toEqual([]);
   });
 
+  it("passes showExplanations through to page data", () => {
+    const withDetails = buildScenarioChangesData(undefined, { ...SCENARIO_CHANGES_OPTIONS_DEFAULT, showExplanations: true });
+    expect(withDetails.showExplanations).toBe(true);
+    const withoutDetails = buildScenarioChangesData(undefined, { ...SCENARIO_CHANGES_OPTIONS_DEFAULT, showExplanations: false });
+    expect(withoutDetails.showExplanations).toBe(false);
+  });
+
   it("returns the empty state when the scenario has no changes", () => {
     const data = buildScenarioChangesData(
       { changes: [], toggleGroups: [], targetNames: {}, baseLabel: "your current plan" },

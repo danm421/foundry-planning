@@ -5,7 +5,7 @@ import { summarizeScenarioChangesOptions } from "../summarize-options";
 
 describe("scenario-changes options + estimate", () => {
   it("estimate is data-independent (takes no args, like every sibling)", () => {
-    expect(estimateScenarioChangesPageCount()).toBe(1);
+    expect(estimateScenarioChangesPageCount()).toBe(2);
   });
 
   it("schema parses the default options", () => {
@@ -13,7 +13,7 @@ describe("scenario-changes options + estimate", () => {
   });
 
   it("summarize reflects the explanations toggle", () => {
-    expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: true })).toBe("With explanations");
+    expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: true })).toBe("With details");
     expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: false })).toBe("Changes only");
   });
 });

@@ -1,4 +1,5 @@
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
+import type { ResolveContextData } from "./describe/resolve";
 
 export type ChangeArea =
   | "Plan & Assumptions"
@@ -18,7 +19,8 @@ export interface ChangeRow {
   op: ChangeOp;
   before: string;
   after: string;
-  why: string;
+  /** Ordered fact segments shown in the DETAILS column (one rendered line each). */
+  detail: string[];
 }
 
 /** A flat row, or a labeled cluster of rows sharing a toggle group. */
@@ -51,4 +53,6 @@ export interface ScenarioChangesContext {
   targetNames: Record<string, string>;
   /** e.g. "your current plan" */
   baseLabel: string;
+  /** Resolution maps for rich detail; omitted → describers fall back to terse copy. */
+  resolve?: ResolveContextData;
 }

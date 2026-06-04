@@ -12,6 +12,7 @@ import {
 import { ArrowRightIcon, AlertCircleIcon, CheckCircleIcon } from "@/components/icons";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
 import { buildHouseholdName } from "@/lib/crm/household-name";
+import { USPS_STATE_CODES, USPS_STATE_NAMES } from "@/lib/usps-states";
 
 /**
  * Two-step new-client flow:
@@ -77,6 +78,12 @@ export default function QuickCreateForm() {
   const [showSpouse, setShowSpouse] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Quick Start vs. the full 10-step onboarding. Quick Start collects a couple
+  // extra Basics fields (residence state, children) and drops into the wizard.
+  const [setupStyle, setSetupStyle] = useState<"quick" | "detailed">("quick");
+  const [residenceState, setResidenceState] = useState<string>("");
+  const [children, setChildren] = useState<{ firstName: string; dob: string }[]>([]);
 
   // Step 1 dual-mode: pick existing household, or create a new one inline.
   const [createNewHousehold, setCreateNewHousehold] = useState(false);
@@ -231,7 +238,37 @@ export default function QuickCreateForm() {
         );
       }
       const created = await res.json();
-      router.push(`/clients/${created.id}/onboarding/household`);
+      if (setupStyle === "detailed") {
+        router.push(`/clients/${created.id}/onboarding/household`);
+        return;
+      }
+      // Quick Start: best-effort residence + children writes, then enter the
+      // wizard. These are non-fatal — the wizard can still set them — so a
+      // failure here never strands the (already created) client on this form.
+      try {
+        if (residenceState) {
+          await fetch(`/api/clients/${created.id}/plan-settings`, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ residenceState }),
+          });
+        }
+        for (const child of children) {
+          if (!child.firstName.trim()) continue;
+          await fetch(`/api/clients/${created.id}/family-members`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              firstName: child.firstName.trim(),
+              relationship: "child",
+              dateOfBirth: child.dob || null,
+            }),
+          });
+        }
+      } catch {
+        // Non-fatal — fall through to the wizard.
+      }
+      router.push(`/clients/${created.id}/quick-start?step=income`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
       setSubmitting(false);
@@ -571,6 +608,116 @@ export default function QuickCreateForm() {
         )}
       </div>
 
+      <div className="border-t border-hair pt-4">
+        <span className={fieldLabelClassName}>Setup style</span>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:gap-6">
+          <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-2">
+            <input
+              type="radio"
+              name="setupStyle"
+              checked={setupStyle === "quick"}
+              onChange={() => setSetupStyle("quick")}
+              className="h-4 w-4 border-hair bg-card-2 text-accent focus:ring-accent"
+            />
+            <span>
+              Quick Start
+              <span className="text-ink-4"> · fast retirement intake</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-2">
+            <input
+              type="radio"
+              name="setupStyle"
+              checked={setupStyle === "detailed"}
+              onChange={() => setSetupStyle("detailed")}
+              className="h-4 w-4 border-hair bg-card-2 text-accent focus:ring-accent"
+            />
+            <span>
+              Detailed setup
+              <span className="text-ink-4"> · full onboarding</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {setupStyle === "quick" && (
+        <div className="space-y-4">
+          <div>
+            <label className={fieldLabelClassName} htmlFor="residenceState">
+              State of residence
+            </label>
+            <select
+              id="residenceState"
+              value={residenceState}
+              onChange={(e) => setResidenceState(e.target.value)}
+              className={selectClassName}
+            >
+              <option value="">Select a state…</option>
+              {USPS_STATE_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {USPS_STATE_NAMES[code]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <span className={fieldLabelClassName}>Children (optional)</span>
+              <button
+                type="button"
+                onClick={() => setChildren((c) => [...c, { firstName: "", dob: "" }])}
+                className="text-[12px] font-medium text-accent transition-colors hover:text-accent-deep"
+              >
+                + Add child
+              </button>
+            </div>
+            {children.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {children.map((child, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center"
+                  >
+                    <input
+                      type="text"
+                      aria-label={`Child ${i + 1} first name`}
+                      placeholder="First name"
+                      value={child.firstName}
+                      onChange={(e) =>
+                        setChildren((arr) =>
+                          arr.map((c, j) => (j === i ? { ...c, firstName: e.target.value } : c)),
+                        )
+                      }
+                      className={inputClassName}
+                    />
+                    <input
+                      type="date"
+                      aria-label={`Child ${i + 1} date of birth`}
+                      min="1910-01-01"
+                      value={child.dob}
+                      onChange={(e) =>
+                        setChildren((arr) =>
+                          arr.map((c, j) => (j === i ? { ...c, dob: e.target.value } : c)),
+                        )
+                      }
+                      className={inputClassName}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setChildren((arr) => arr.filter((_, j) => j !== i))}
+                      className="text-[12px] text-ink-3 transition-colors hover:text-crit"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {error && (
         <div
           role="alert"
@@ -590,7 +737,11 @@ export default function QuickCreateForm() {
           disabled={submitting}
           className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
         >
-          {submitting ? "Creating…" : "Start guided setup"}
+          {submitting
+            ? "Creating…"
+            : setupStyle === "quick"
+              ? "Start Quick Start"
+              : "Start guided setup"}
           <ArrowRightIcon width={14} height={14} aria-hidden="true" />
         </button>
       </div>
