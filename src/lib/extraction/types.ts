@@ -1,4 +1,5 @@
 import type { GrowthSource } from "@/lib/investments/allocation";
+import type { AccountOwner } from "@/engine/ownership";
 
 export const DOCUMENT_TYPES = [
   "account_statement",
@@ -88,6 +89,8 @@ export interface ExtractedAccount {
   custodian?: string;
   growthSource?: GrowthSource;
   modelPortfolioId?: string | null;
+  ownerNameHint?: string;
+  owners?: AccountOwner[];
 }
 
 export interface ExtractedIncome {
