@@ -32,6 +32,9 @@ const s = StyleSheet.create({
   mTh: { fontSize: 6, color: T.ink3, fontWeight: 700, textTransform: "uppercase" },
   cRow: { flexDirection: "row", paddingVertical: 2.5, borderBottomWidth: 0.5, borderBottomColor: T.hair },
   cWhat: { flex: 1, fontSize: 7.5, color: T.ink },
+  cVals: { flexDirection: "row", alignItems: "baseline", gap: 3 },
+  cBefore: { fontSize: 7.5, color: T.ink3, textAlign: "right" },
+  cArrow: { fontSize: 7, color: T.ink3 },
   cAfter: { fontSize: 7.5, fontWeight: 700, color: T.good, textAlign: "right" },
   cAfterRemove: { color: T.crit },
   pill: { fontSize: 5.5, fontWeight: 700, color: T.card, backgroundColor: T.steel, paddingVertical: 1, paddingHorizontal: 3, borderRadius: 2, marginBottom: 2, alignSelf: "flex-start" },
@@ -74,10 +77,22 @@ function MatrixSide({ title, cell }: { title: string; cell: PortfolioMatrixCell 
 }
 
 function ChangeRowView({ row }: { row: ChangeRow }) {
+  const afterStyle = row.op === "remove" ? [s.cAfter, s.cAfterRemove] : s.cAfter;
+  // Show before → after only when a meaningful prior value applies (edits).
+  // Adds/removes have no real "before", so they keep the single Added/Removed label.
+  const showBefore = row.op === "edit" && row.before !== "—";
   return (
     <View style={s.cRow} wrap={false}>
       <Text style={s.cWhat}>{row.what}</Text>
-      <Text style={row.op === "remove" ? [s.cAfter, s.cAfterRemove] : s.cAfter}>{row.after}</Text>
+      {showBefore ? (
+        <View style={s.cVals}>
+          <Text style={s.cBefore}>{row.before}</Text>
+          <Text style={s.cArrow}>→</Text>
+          <Text style={afterStyle}>{row.after}</Text>
+        </View>
+      ) : (
+        <Text style={afterStyle}>{row.after}</Text>
+      )}
     </View>
   );
 }
