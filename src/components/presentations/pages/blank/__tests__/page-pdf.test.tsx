@@ -24,4 +24,28 @@ describe("BlankPagePdf", () => {
     );
     expect(buf.length).toBeGreaterThan(1000);
   });
+
+  it("renders inline code combined with italics and inside a blockquote without throwing", async () => {
+    // JetBrains Mono (used for code) has no italic face. A code run that is also
+    // italic — directly via *`x`* or by inheriting the italic blockquote style —
+    // must not ask @react-pdf for the missing variant, which would throw and
+    // abort the whole deck.
+    ensureFontsRegistered();
+    const data = buildBlankPageData({
+      markdown: "Try *`npm test`* and **`build`** now.\n\n> Run `deploy` first",
+    });
+    const buf = await renderToBuffer(
+      <Document>
+        <BlankPagePdf
+          data={data}
+          firmName="Acme Advisors"
+          clientName="Jane Cooper"
+          reportDate="June 4, 2026"
+          pageIndex={0}
+          totalPages={1}
+        />
+      </Document>,
+    );
+    expect(buf.length).toBeGreaterThan(1000);
+  });
 });

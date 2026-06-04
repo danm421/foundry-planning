@@ -16,10 +16,18 @@ const s = StyleSheet.create({
 });
 
 function runStyle(r: Run) {
+  // Inline code renders in JetBrains Mono, which ships only upright weights
+  // (400–600) — no italic or bold face. Pin code runs to a normal style so they
+  // never request an unregistered italic variant, either directly (e.g. *`x`*)
+  // or by inheriting the italic blockquote style. @react-pdf throws on a missing
+  // style and that aborts rendering of the whole deck.
+  if (r.code) {
+    return { fontFamily: "JetBrains Mono", fontStyle: "normal" as const };
+  }
   return {
     fontWeight: r.bold ? (700 as const) : undefined,
     fontStyle: r.italic ? ("italic" as const) : undefined,
-    fontFamily: r.code ? "JetBrains Mono" : "Inter",
+    fontFamily: "Inter",
   };
 }
 
