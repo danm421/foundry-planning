@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useThemeName } from "@/lib/chart-colors";
+import { colors, colorsLight } from "@/brand";
 import MonteCarloSkeleton from "@/app/(app)/clients/[id]/cashflow/monte-carlo/loading-skeleton";
 import { ReportHeader } from "./monte-carlo/report-header";
 import { KpiBand } from "./monte-carlo/kpi-band";
@@ -29,6 +31,8 @@ interface Props {
 
 export default function MonteCarloReport({ clientId }: Props) {
   const searchParams = useSearchParams();
+  const theme = useThemeName();
+  const brandColors = theme === "light" ? colorsLight : colors;
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Run state
@@ -99,12 +103,20 @@ export default function MonteCarloReport({ clientId }: Props) {
     }
   }, [clientId]);
 
-  // Retirement age-markers are dropped now that the report renders from the
-  // cached payload — retirementAge / spouseRetirementAge aren't carried in
-  // payload/raw/meta. FanChart's ageMarkers plugin no-ops on an empty array,
-  // so the fan chart still renders; only the cosmetic retirement dashed line
-  // is absent. (Deferred: thread retirement ages through meta if wanted.)
-  const ageMarkers: Array<{ age: number; label: string; color: string }> = useMemo(() => [], []);
+  const ageMarkers = useMemo(() => {
+    if (!meta) return [];
+    const markers: Array<{ age: number; label: string; color: string }> = [
+      { age: meta.retirementAge, label: `Retire ${meta.retirementAge}`, color: brandColors.cat.income },
+    ];
+    if (meta.spouseRetirementAge != null && meta.spouseRetirementAge !== meta.retirementAge) {
+      markers.push({
+        age: meta.spouseRetirementAge,
+        label: `Spouse ${meta.spouseRetirementAge}`,
+        color: brandColors.cat.life,
+      });
+    }
+    return markers;
+  }, [meta, brandColors]);
 
   // byYearLiquidAssetsPerTrial is trial-major ([trial][year]), so map each
   // trial to its last year's value to get the per-trial terminal balance array.

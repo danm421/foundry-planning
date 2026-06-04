@@ -24,6 +24,8 @@ export interface CachedMonteCarloResult {
     clientBirthYear: number | undefined;
     clientDisplayName: string;
     annualIncomeAtStart: number;
+    retirementAge: number;
+    spouseRetirementAge: number | undefined;
   };
 }
 
@@ -131,6 +133,8 @@ export async function getOrComputeMonteCarlo(args: {
       clientBirthYear,
       clientDisplayName,
       annualIncomeAtStart: annualIncomeAtStart(effectiveTree, planStartYear),
+      retirementAge: effectiveTree.client.retirementAge,
+      spouseRetirementAge: effectiveTree.client.spouseRetirementAge,
     },
   };
   const computeMs = Date.now() - start;

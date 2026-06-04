@@ -6,7 +6,7 @@ import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
  * Bump when MC/LI engine logic or the cached payload shape changes. Folded into
  * every hash, so a bump invalidates all existing cache rows automatically.
  */
-export const ENGINE_VERSION = 2;
+export const ENGINE_VERSION = 3;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

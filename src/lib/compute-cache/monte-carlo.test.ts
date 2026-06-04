@@ -15,7 +15,7 @@ vi.mock("drizzle-orm", () => ({ and: () => ({}), eq: () => ({}) }));
 vi.mock("@/lib/scenario/loader", () => ({
   loadEffectiveTree: vi.fn(async () => ({
     effectiveTree: {
-      client: { firstName: "T", lastName: "U" },
+      client: { firstName: "T", lastName: "U", retirementAge: 65 },
       planSettings: {},
       accounts: [],
       incomes: [],
