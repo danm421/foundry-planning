@@ -8,7 +8,7 @@ describe("BlankPagePdf", () => {
   it("renders formatted markdown to a non-empty PDF buffer", async () => {
     ensureFontsRegistered();
     const data = buildBlankPageData({
-      markdown: "# Heading\n\nSome **bold** and a list:\n\n- one\n- two\n\n> a quote",
+      markdown: "# Heading\n\nSome **bold**, *italic*, and ***bold-italic*** text plus `code` and a list:\n\n- one\n- two\n\n> a quote",
     });
     const buf = await renderToBuffer(
       <Document>

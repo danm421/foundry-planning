@@ -15,6 +15,8 @@ export function ensureFontsRegistered(): void {
       { src: `${process.cwd()}/public/fonts/Inter-Medium.ttf`, fontWeight: 500 },
       { src: `${process.cwd()}/public/fonts/Inter-SemiBold.ttf`, fontWeight: 600 },
       { src: `${process.cwd()}/public/fonts/Inter-Bold.ttf`, fontWeight: 700 },
+      { src: `${process.cwd()}/public/fonts/Inter-Italic.ttf`, fontWeight: 400, fontStyle: "italic" },
+      { src: `${process.cwd()}/public/fonts/Inter-BoldItalic.ttf`, fontWeight: 700, fontStyle: "italic" },
     ],
   });
   Font.register({

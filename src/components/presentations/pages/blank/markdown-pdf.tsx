@@ -11,18 +11,14 @@ const s = StyleSheet.create({
   bullet: { fontFamily: "Inter", fontSize: 10, color: PRESENTATION_THEME.ink, width: 16 },
   listText: { fontFamily: "Inter", fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink, flex: 1 },
   quote: { borderLeftWidth: 2, borderLeftColor: PRESENTATION_THEME.accent, paddingLeft: 8, marginBottom: 6 },
-  // fontStyle: "italic" omitted — no italic face registered for Inter yet.
-  // ink2 color provides visual distinction for block quotes.
-  quoteText: { fontFamily: "Inter", fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink2 },
+  quoteText: { fontFamily: "Inter", fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink2, fontStyle: "italic" as const },
   empty: { fontFamily: "JetBrains Mono", fontSize: 9, color: PRESENTATION_THEME.ink3 },
 });
 
 function runStyle(r: Run) {
   return {
     fontWeight: r.bold ? (700 as const) : undefined,
-    // fontStyle: "italic" omitted — no italic Inter face registered yet.
-    // Italic runs fall back to ink2 color for visual distinction.
-    color: r.italic ? PRESENTATION_THEME.ink2 : undefined,
+    fontStyle: r.italic ? ("italic" as const) : undefined,
     fontFamily: r.code ? "JetBrains Mono" : "Inter",
   };
 }
