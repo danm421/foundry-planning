@@ -6,6 +6,10 @@ import {
   normalizeAssetAllocationOptions,
 } from "@/lib/presentations/pages/asset-allocation/options-schema";
 import { useInvestmentOptionCatalog } from "@/components/presentations/options-context";
+import {
+  OptionsRow,
+  OptionsGroup,
+} from "@/components/presentations/shared/options-layout";
 
 const VIEWS: { key: AssetAllocationOptions["view"]; label: string }[] = [
   { key: "high_level", label: "By type" },
@@ -68,40 +72,43 @@ export function AssetAllocationOptionsControl({
   // Tolerate legacy/partial option blobs loaded from older templates.
   const v = normalizeAssetAllocationOptions(value);
   return (
-    <div className="space-y-3 text-sm text-ink-2">
-      <SourceSelect
-        label="Left"
-        value={v.left}
-        groups={groups}
-        portfolios={portfolios}
-        allowNone={false}
-        onChange={(next) => onChange({ ...v, left: next ?? ASSET_ALLOCATION_OPTIONS_DEFAULT.left })}
-      />
-      <SourceSelect
-        label="Right (comparison)"
-        value={v.right}
-        groups={groups}
-        portfolios={portfolios}
-        allowNone
-        onChange={(next) => onChange({ ...v, right: next })}
-      />
-      <fieldset className="space-y-1">
-        <legend className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Breakdown</legend>
+    <OptionsRow>
+      <OptionsGroup label="Portfolios">
+        <SourceSelect
+          label="Left"
+          value={v.left}
+          groups={groups}
+          portfolios={portfolios}
+          allowNone={false}
+          onChange={(next) => onChange({ ...v, left: next ?? ASSET_ALLOCATION_OPTIONS_DEFAULT.left })}
+        />
+        <SourceSelect
+          label="Right (comparison)"
+          value={v.right}
+          groups={groups}
+          portfolios={portfolios}
+          allowNone
+          onChange={(next) => onChange({ ...v, right: next })}
+        />
+      </OptionsGroup>
+      <OptionsGroup label="Breakdown">
         {VIEWS.map((view) => (
           <label key={view.key} className="flex items-center gap-2 hover:text-ink">
             <input type="radio" className="accent-accent" checked={v.view === view.key} onChange={() => onChange({ ...v, view: view.key })} />
             <span>{view.label}</span>
           </label>
         ))}
-      </fieldset>
-      <label className="flex items-center gap-2 hover:text-ink">
-        <input type="checkbox" className="accent-accent" checked={v.includeOutOfEstate} onChange={(e) => onChange({ ...v, includeOutOfEstate: e.target.checked })} />
-        <span>Include out-of-estate accounts</span>
-      </label>
-      <label className="flex items-center gap-2 hover:text-ink">
-        <input type="checkbox" className="accent-accent" checked={v.showTable} onChange={(e) => onChange({ ...v, showTable: e.target.checked })} />
-        <span>Show allocation table</span>
-      </label>
-    </div>
+      </OptionsGroup>
+      <OptionsGroup label="Display">
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input type="checkbox" className="accent-accent" checked={v.includeOutOfEstate} onChange={(e) => onChange({ ...v, includeOutOfEstate: e.target.checked })} />
+          <span>Include out-of-estate accounts</span>
+        </label>
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input type="checkbox" className="accent-accent" checked={v.showTable} onChange={(e) => onChange({ ...v, showTable: e.target.checked })} />
+          <span>Show allocation table</span>
+        </label>
+      </OptionsGroup>
+    </OptionsRow>
   );
 }

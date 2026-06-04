@@ -1,6 +1,10 @@
 "use client";
 
 import type { MonteCarloPageOptions } from "@/lib/presentations/pages/monte-carlo/options-schema";
+import {
+  OptionsRow,
+  OptionsGroup,
+} from "@/components/presentations/shared/options-layout";
 
 interface Props {
   value: MonteCarloPageOptions;
@@ -15,11 +19,8 @@ const CHOICES: Array<{ key: MonteCarloPageOptions["highlight"]; label: string }>
 
 export function MonteCarloOptionsControl({ value, onChange }: Props) {
   return (
-    <div className="space-y-3 text-sm text-ink-2">
-      <fieldset className="space-y-1">
-        <legend className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
-          Highlighted chart
-        </legend>
+    <OptionsRow>
+      <OptionsGroup label="Highlighted chart">
         {CHOICES.map((c) => (
           <label key={c.key} className="flex items-center gap-2 hover:text-ink">
             <input
@@ -31,7 +32,7 @@ export function MonteCarloOptionsControl({ value, onChange }: Props) {
             <span>{c.label}</span>
           </label>
         ))}
-      </fieldset>
-    </div>
+      </OptionsGroup>
+    </OptionsRow>
   );
 }
