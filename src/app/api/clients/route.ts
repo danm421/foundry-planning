@@ -12,7 +12,7 @@ import {
   crmHouseholds,
   crmHouseholdContacts,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, isNull } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription } from "@/lib/authz";
 import { computePlanEndAge } from "@/lib/plan-horizon";
@@ -55,6 +55,7 @@ export async function GET() {
         crmHouseholdId: clients.crmHouseholdId,
       })
       .from(clients)
+      .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
       .leftJoin(
         primaryContact,
         and(
@@ -62,7 +63,7 @@ export async function GET() {
           eq(primaryContact.role, "primary"),
         ),
       )
-      .where(eq(clients.firmId, firmId))
+      .where(and(eq(clients.firmId, firmId), isNull(crmHouseholds.deletedAt)))
       .orderBy(asc(primaryContact.lastName), asc(primaryContact.firstName));
 
     return NextResponse.json(rows);
