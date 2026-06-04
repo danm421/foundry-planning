@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import DialogShell from "@/components/dialog-shell";
 import {
   PRESENTATION_PAGES,
   type PresentationPageId,
@@ -119,13 +120,19 @@ export function SelectedPageRow(props: Props) {
           ✕
         </button>
       </div>
-      {showOptions && Options && (
-        <div className="border-t border-hair pt-2">
+      {Options && (
+        <DialogShell
+          open={showOptions}
+          onOpenChange={setShowOptions}
+          title={`${page.title} options`}
+          size="md"
+          primaryAction={{ label: "Done", onClick: () => setShowOptions(false) }}
+        >
           <Options
             value={props.options as never}
             onChange={(v) => props.onOptionsChange(v)}
           />
-        </div>
+        </DialogShell>
       )}
     </div>
   );
