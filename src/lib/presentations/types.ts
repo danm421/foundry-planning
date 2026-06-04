@@ -55,13 +55,13 @@ export type TocPageData = Record<string, never>;
 // ── Cash-flow page ─────────────────────────────────────────────────────────
 
 export interface CashFlowPageOptions {
-  range: "retirement" | "lifetime" | { startYear: number; endYear: number };
+  range: "full" | { startYear: number; endYear: number };
   showCallout: boolean;
   calloutText?: string;
 }
 
 export const CASH_FLOW_PAGE_OPTIONS_DEFAULT: CashFlowPageOptions = {
-  range: "retirement",
+  range: "full",
   showCallout: true,
 };
 

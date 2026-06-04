@@ -1,17 +1,10 @@
+// src/lib/presentations/pages/cash-flow/options-schema.ts
 import { z } from "zod";
 import type { CashFlowPageOptions } from "@/lib/presentations/types";
-
-const customRange = z
-  .object({
-    startYear: z.number().int(),
-    endYear: z.number().int(),
-  })
-  .refine((r) => r.endYear >= r.startYear, {
-    message: "endYear must be >= startYear",
-  });
+import { rangeSchema } from "@/lib/presentations/shared/drill-options";
 
 export const cashFlowOptionsSchema = z.object({
-  range: z.union([z.literal("retirement"), z.literal("lifetime"), customRange]),
+  range: rangeSchema,
   showCallout: z.boolean(),
   calloutText: z.string().optional(),
 }) satisfies z.ZodType<CashFlowPageOptions>;

@@ -2,12 +2,8 @@ import { describe, it, expect } from "vitest";
 import { summarizeCashFlowOptions } from "../summarize-options";
 
 describe("summarizeCashFlowOptions", () => {
-  it("returns 'Retirement only' for the retirement preset", () => {
-    expect(summarizeCashFlowOptions({ range: "retirement", showCallout: true })).toBe("Retirement only");
-  });
-
-  it("returns 'Lifetime' for the lifetime preset", () => {
-    expect(summarizeCashFlowOptions({ range: "lifetime", showCallout: false })).toBe("Lifetime");
+  it("returns 'Full range' for the full preset", () => {
+    expect(summarizeCashFlowOptions({ range: "full", showCallout: true })).toBe("Full range");
   });
 
   it("renders a custom year range", () => {

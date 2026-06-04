@@ -7,6 +7,10 @@ describe("cashFlowOptionsSchema", () => {
     expect(() => cashFlowOptionsSchema.parse(CASH_FLOW_PAGE_OPTIONS_DEFAULT)).not.toThrow();
   });
 
+  it("accepts 'full' range", () => {
+    expect(cashFlowOptionsSchema.parse({ range: "full", showCallout: false }).range).toBe("full");
+  });
+
   it("accepts a custom-range options bag", () => {
     const value = {
       range: { startYear: 2030, endYear: 2050 },
@@ -31,6 +35,14 @@ describe("cashFlowOptionsSchema", () => {
   });
 
   it("requires showCallout", () => {
-    expect(() => cashFlowOptionsSchema.parse({ range: "retirement" })).toThrow();
+    expect(() => cashFlowOptionsSchema.parse({ range: "full" })).toThrow();
+  });
+
+  it("coerces a legacy retirement range to full", () => {
+    expect(cashFlowOptionsSchema.parse({ range: "retirement", showCallout: true }).range).toBe("full");
+  });
+
+  it("coerces a legacy lifetime range to full", () => {
+    expect(cashFlowOptionsSchema.parse({ range: "lifetime", showCallout: true }).range).toBe("full");
   });
 });
