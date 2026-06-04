@@ -19,9 +19,9 @@ const s = StyleSheet.create({
   panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 10, marginBottom: 8 },
   twoCol: { flexDirection: "row", gap: 10 },
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 },
-  row: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair },
-  lbl: { fontSize: 8, color: T.ink },
-  val: { fontSize: 8.5, fontWeight: 700, color: T.ink },
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 6, paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair },
+  lbl: { flex: 1, fontSize: 8, color: T.ink },
+  val: { flexShrink: 0, fontSize: 8.5, fontWeight: 700, color: T.ink, textAlign: "right" },
   ssMeta: { fontSize: 7, color: T.ink3, marginBottom: 4 },
   ssName: { fontSize: 9, fontWeight: 700, color: T.ink },
   ssRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 1.5, paddingHorizontal: 3, borderBottomWidth: 0.5, borderBottomColor: T.hair },
@@ -52,7 +52,7 @@ function Narrative({ lines }: { lines: string[] }) {
 
 function SsColumn({ c }: { c: SsClient }) {
   return (
-    <View style={{ flex: 1 }}>
+    <View>
       <Text style={s.ssName}>{c.name}</Text>
       <Text style={s.ssMeta}>{`PIA ${fmtUsdMonthly(c.piaMonthly)}/mo · claims at ${c.claimAge} · COLA ${Math.round(c.colaPct * 100)}%`}</Text>
       {c.alreadyClaiming ? (
@@ -154,18 +154,19 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           {f.shortfall > 0 ? <StatRow lbl="Shortfall (unfunded)" val={fmtUsd(f.shortfall)} /> : null}
         </View>
 
-        {data.socialSecurity.client || data.socialSecurity.spouse ? (
-          <View style={s.panel}>
-            <Text style={s.h4}>Social Security</Text>
-            <View style={s.twoCol}>
-              {data.socialSecurity.client ? <SsColumn c={data.socialSecurity.client} /> : null}
-              {data.socialSecurity.spouse ? <SsColumn c={data.socialSecurity.spouse} /> : null}
-            </View>
-            <Text style={s.note}>Highlighted row = the age the plan has them claiming. Amounts in today&apos;s dollars.</Text>
-          </View>
-        ) : null}
-
         <View style={s.twoCol}>
+          {data.socialSecurity.client ? (
+            <View style={[s.panel, { flex: 1 }]}>
+              <Text style={s.h4}>Social Security</Text>
+              <SsColumn c={data.socialSecurity.client} />
+            </View>
+          ) : null}
+          {data.socialSecurity.spouse ? (
+            <View style={[s.panel, { flex: 1 }]}>
+              <Text style={s.h4}>Social Security</Text>
+              <SsColumn c={data.socialSecurity.spouse} />
+            </View>
+          ) : null}
           <View style={[s.panel, { flex: 1 }]}>
             <Text style={s.h4}>Retirement spending</Text>
             <StatRow lbl="Living — today" val={fmtUsd(data.living.today)} />
@@ -188,6 +189,9 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
             ) : null}
           </View>
         </View>
+        {data.socialSecurity.client || data.socialSecurity.spouse ? (
+          <Text style={s.note}>Highlighted row = the age the plan has them claiming. Amounts in today&apos;s dollars.</Text>
+        ) : null}
 
         <Narrative lines={[data.narrative[0]]} />
       </PageFrame>
