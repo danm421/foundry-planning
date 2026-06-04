@@ -399,6 +399,13 @@ export default function ReviewWizard({
             modelPortfolios={growthContext.modelPortfolios}
             resolvedInflationRate={growthContext.resolvedInflationRate}
             categoryDefaults={growthContext.categoryDefaults}
+            familyMembers={canonical.familyMembers.map((f) => ({
+              id: f.id,
+              role: f.householdRole === "spouse" ? "spouse" : f.householdRole === "client" ? "client" : "other",
+              firstName: f.firstName,
+              lastName: f.lastName,
+            }))}
+            entities={canonical.entities}
           />
         )}
         {currentTab === "incomes" && (

@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ExtractedAccount, AccountCategory, AccountSubType } from "@/lib/extraction/types";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
 import { CurrencyInput } from "@/components/currency-input";
 import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
+import { OwnershipEditor } from "@/components/forms/ownership-editor";
+import { matchOwnersFromHint } from "@/lib/imports/owner-match";
 import type { GrowthSource } from "@/lib/investments/allocation";
+import type { AccountOwner } from "@/engine/ownership";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import DiffPreview from "./diff-preview";
@@ -48,12 +51,6 @@ const SUB_TYPE_OPTIONS: { value: AccountSubType; label: string }[] = [
   { value: "whole_life", label: "Whole Life" },
   { value: "universal_life", label: "Universal Life" },
   { value: "variable_life", label: "Variable Life" },
-];
-
-const OWNER_OPTIONS = [
-  { value: "client", label: "Client" },
-  { value: "spouse", label: "Spouse" },
-  { value: "joint", label: "Joint" },
 ];
 
 // Mirrors the field map in src/lib/imports/commit/accounts.ts so the diff
@@ -107,6 +104,8 @@ interface ReviewStepAccountsProps {
   modelPortfolios?: { id: string; name: string; blendedReturn: number }[];
   resolvedInflationRate?: number;
   categoryDefaults?: Record<string, { portfolioName?: string | null; blendedReturnPct: number | null }>;
+  familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string; lastName?: string | null }[];
+  entities?: { id: string; name: string }[];
 }
 
 const INPUT_CLASS =
@@ -127,11 +126,30 @@ export default function ReviewStepAccounts({
   modelPortfolios = [],
   resolvedInflationRate = 0.025,
   categoryDefaults = {},
+  familyMembers = [],
+  entities = [],
 }: ReviewStepAccountsProps) {
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   const matchingEnabled = Boolean(matches && onMatchChange);
+
+  // Seed each row's owners[] from the AI name hint + coarse owner enum once the
+  // family roster loads. Rows the advisor has already given owners are left
+  // untouched. Re-runs only when the roster identity changes, not on row edits.
+  useEffect(() => {
+    if (familyMembers.length === 0) return;
+    let changed = false;
+    const next = accounts.map((a) => {
+      if (a.owners && a.owners.length > 0) return a;
+      const seeded = matchOwnersFromHint(a.ownerNameHint, a.owner, familyMembers);
+      if (seeded.length === 0) return a;
+      changed = true;
+      return { ...a, owners: seeded };
+    });
+    if (changed) onChange(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [familyMembers]);
 
   const updateField = (index: number, field: keyof ExtractedAccount, value: unknown) => {
     const updated = accounts.map((a, i) =>
@@ -289,17 +307,16 @@ export default function ReviewStepAccounts({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-gray-300">Owner</label>
-                  <select
-                    value={account.owner ?? "client"}
-                    onChange={(e) => updateField(i, "owner", e.target.value)}
-                    className={SELECT_CLASS}
-                  >
-                    {OWNER_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                <div className="col-span-2">
+                  <OwnershipEditor
+                    familyMembers={familyMembers}
+                    entities={entities}
+                    value={(account.owners as AccountOwner[]) ?? []}
+                    onChange={(next) => updateField(i, "owners", next)}
+                    titlingType="jtwros"
+                    onTitlingTypeChange={() => {}}
+                    label="Owner(s)"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Value</label>
