@@ -36,8 +36,9 @@ export default async function CrmHouseholdPage({
   // Always load tasks-tab bootstrap so the tab switch is instant — these
   // queries are scoped to a single firm/household and stay cheap.
   const firmId = await requireOrgId();
-  const { userId } = await auth();
+  const { userId, orgRole } = await auth();
   if (!userId) throw new Error("Unauthorized");
+  const canManage = orgRole === "org:owner" || orgRole === "org:admin";
 
   const filters = normalizeQuickFilters({
     quick: null,
@@ -136,6 +137,7 @@ export default async function CrmHouseholdPage({
       initialTab={tab ?? "overview"}
       initialTaskId={task}
       tasksBootstrap={tasksBootstrap}
+      canManage={canManage}
     />
   );
 }

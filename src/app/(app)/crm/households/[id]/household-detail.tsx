@@ -5,6 +5,7 @@ import type { getCrmHousehold } from "@/lib/crm/households";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import type { FirmMember } from "@/lib/crm-tasks/members";
 import type { TaskDetailBundle } from "@/app/(app)/tasks/_components/tasks-page";
+import { HouseholdTrashActions } from "@/components/household-trash-actions";
 import { OverviewTab } from "./tabs/overview-tab";
 import { ContactsTab } from "./tabs/contacts-tab";
 import { AccountsTab } from "./tabs/accounts-tab";
@@ -38,12 +39,14 @@ export function HouseholdDetail({
   initialTab,
   initialTaskId,
   tasksBootstrap,
+  canManage,
 }: {
   household: Household;
   advisorName: string;
   initialTab: string;
   initialTaskId?: string;
   tasksBootstrap: HouseholdDetailTasksBootstrap;
+  canManage: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(
     (TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "overview"),
@@ -51,10 +54,27 @@ export function HouseholdDetail({
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold text-ink">{household.name}</h1>
-      <div className="mt-1 text-sm text-ink-3">
-        Status: {STATUS_LABELS[household.status] ?? household.status}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink">{household.name}</h1>
+          <div className="mt-1 text-sm text-ink-3">
+            Status: {STATUS_LABELS[household.status] ?? household.status}
+          </div>
+        </div>
+        {canManage && (
+          <HouseholdTrashActions
+            householdId={household.id}
+            householdName={household.name}
+            deleted={Boolean(household.deletedAt)}
+          />
+        )}
       </div>
+
+      {household.deletedAt && (
+        <div className="mt-4 rounded-lg border border-hair bg-card-2 px-4 py-3 text-sm text-ink-2">
+          This household is in the Trash. Use the ⋯ menu to restore it or delete it permanently.
+        </div>
+      )}
 
       <div role="tablist" className="mt-6 flex gap-0.5 border-b border-hair">
         {TABS.map((t) => (

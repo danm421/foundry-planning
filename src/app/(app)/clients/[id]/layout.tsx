@@ -1,7 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { ReactElement } from "react";
 import { db } from "@/db";
-import { clients, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
+import { clients, crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
 import { and, eq, desc, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import ClientHeader from "@/components/client-header";
@@ -25,6 +25,13 @@ export default async function ClientLayout({ children, params }: Props): Promise
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
     .limit(1);
   if (!clientRow) notFound();
+
+  const [household] = await db
+    .select({ deletedAt: crmHouseholds.deletedAt })
+    .from(crmHouseholds)
+    .where(eq(crmHouseholds.id, clientRow.crmHouseholdId))
+    .limit(1);
+  if (household?.deletedAt) redirect("/clients?view=deleted");
 
   // The client lookup above enforced firm scoping, so the two follow-up
   // queries — CRM contacts (identity source for the header) and the scenario
