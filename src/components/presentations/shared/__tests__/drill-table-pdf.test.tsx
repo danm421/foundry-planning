@@ -2,7 +2,6 @@
 import { describe, it, expect } from "vitest";
 import { Document, Page, renderToBuffer } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "../fonts";
-import { AccentProvider } from "../accent-context";
 import { DrillTablePdf } from "../drill-table-pdf";
 import { SECTION_ACCENTS } from "@/lib/presentations/theme";
 import type { DrillPageData } from "@/lib/presentations/shared/drill-types";
@@ -32,9 +31,7 @@ describe("DrillTablePdf", () => {
     const buf = await renderToBuffer(
       <Document>
         <Page>
-          <AccentProvider accent={SECTION_ACCENTS["Cash Flow"]}>
-            <DrillTablePdf data={data} />
-          </AccentProvider>
+          <DrillTablePdf data={data} accent={SECTION_ACCENTS["Cash Flow"]} />
         </Page>
       </Document>,
     );

@@ -6,7 +6,7 @@ import type {
   ProfileIncomeRow,
   ProfilePersonCard,
 } from "@/lib/presentations/pages/client-profile/types";
-import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { PRESENTATION_THEME, type SectionAccent } from "@/lib/presentations/theme";
 import { exactCurrency } from "@/lib/presentations/format";
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
@@ -165,6 +165,7 @@ export function ClientProfilePagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: {
   data: ClientProfilePageData;
   firmName: string;
@@ -172,6 +173,7 @@ export function ClientProfilePagePdf({
   reportDate: string;
   pageIndex: number;
   totalPages: number;
+  accent: SectionAccent;
 }) {
   const single = data.persons.length === 1;
   return (
@@ -182,7 +184,7 @@ export function ClientProfilePagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title={data.title} subtitle={data.subtitle} />
+      <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
 
       <View style={single ? styles.personRowSingle : styles.personRow}>
         {data.persons.map((p, i) => (

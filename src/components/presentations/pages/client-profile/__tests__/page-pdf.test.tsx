@@ -3,6 +3,7 @@ import { renderToBuffer, Document } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { ClientProfilePagePdf } from "../page-pdf";
 import type { ClientProfilePageData } from "@/lib/presentations/pages/client-profile/types";
+import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 
 const couple: ClientProfilePageData = {
   title: "Client Profile",
@@ -47,6 +48,7 @@ describe("ClientProfilePagePdf", () => {
           reportDate="June 1, 2026"
           pageIndex={0}
           totalPages={1}
+          accent={DEFAULT_ACCENT}
         />
       </Document>,
     );
@@ -64,6 +66,7 @@ describe("ClientProfilePagePdf", () => {
           reportDate="June 1, 2026"
           pageIndex={0}
           totalPages={1}
+          accent={DEFAULT_ACCENT}
         />
       </Document>,
     );

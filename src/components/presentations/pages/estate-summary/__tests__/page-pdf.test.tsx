@@ -5,6 +5,7 @@ import { EstateSummaryPagePdf } from "../page-pdf";
 import type { EstateSummaryPageData, EstateSummaryChartBar } from "@/lib/presentations/pages/estate-summary/view-model";
 import type { EstateSummaryDeathRow } from "@/lib/presentations/pages/estate-summary/aggregate";
 import type { EstateSummaryHeirRow } from "@/lib/presentations/pages/estate-summary/heirs";
+import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 
 ensureFontsRegistered();
 
@@ -14,6 +15,7 @@ const framing = {
   reportDate: "June 1, 2026",
   pageIndex: 1,
   totalPages: 1,
+  accent: DEFAULT_ACCENT,
 };
 
 const chartBars: EstateSummaryChartBar[] = [

@@ -1,5 +1,5 @@
 import { Text, View, StyleSheet } from "@react-pdf/renderer";
-import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
+import { PRESENTATION_THEME as T, type SectionAccent } from "@/lib/presentations/theme";
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
 import type { EstateFlowChartData } from "@/lib/presentations/pages/estate-flow-chart/view-model";
@@ -123,6 +123,7 @@ export function EstateFlowChartPagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: {
   data: EstateFlowChartData;
   firmName: string;
@@ -130,6 +131,7 @@ export function EstateFlowChartPagePdf({
   reportDate: string;
   pageIndex: number;
   totalPages: number;
+  accent: SectionAccent;
 }) {
   const s: EstateFlowSummary | null = data.summary;
   return (
@@ -140,7 +142,7 @@ export function EstateFlowChartPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title={data.title} subtitle={data.subtitle} />
+      <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
       {!s ? (
         <Text style={styles.empty}>No estate data available for this scenario.</Text>
       ) : (

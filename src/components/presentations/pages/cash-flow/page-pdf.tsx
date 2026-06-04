@@ -1,6 +1,6 @@
 import { Text, StyleSheet } from "@react-pdf/renderer";
 import type { CashFlowPageData } from "@/lib/presentations/types";
-import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { PRESENTATION_THEME, type SectionAccent } from "@/lib/presentations/theme";
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
 import { Callout } from "../../shared/callout";
@@ -23,6 +23,7 @@ export function CashflowPagePdf({
   reportDate,
   pageIndex,
   totalPages,
+  accent,
 }: {
   data: CashFlowPageData;
   firmName: string;
@@ -30,6 +31,7 @@ export function CashflowPagePdf({
   reportDate: string;
   pageIndex: number;
   totalPages: number;
+  accent: SectionAccent;
 }) {
   return (
     <PageFrame
@@ -39,10 +41,10 @@ export function CashflowPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title={data.title} subtitle={data.subtitle} />
-      {data.callout && <Callout>{data.callout}</Callout>}
+      <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
+      {data.callout && <Callout accent={accent}>{data.callout}</Callout>}
       <CashflowChartPdf spec={data.chartSpec} />
-      <CashflowTablePdf data={data} />
+      <CashflowTablePdf data={data} accent={accent} />
       <Text style={styles.footnote}>{data.footnote}</Text>
     </PageFrame>
   );

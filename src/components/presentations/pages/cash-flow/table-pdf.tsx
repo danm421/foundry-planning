@@ -1,8 +1,7 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { Style } from "@react-pdf/types";
 import type { CashFlowPageData, CashFlowTableRow, TableMarker } from "@/lib/presentations/types";
-import { PRESENTATION_THEME, ZEBRA_FILL } from "@/lib/presentations/theme";
-import { useAccent } from "@/components/presentations/shared/accent-context";
+import { PRESENTATION_THEME, ZEBRA_FILL, type SectionAccent } from "@/lib/presentations/theme";
 import { compactCurrency, jointAge } from "@/lib/presentations/format";
 
 const styles = StyleSheet.create({
@@ -89,13 +88,12 @@ const COL_AGE_W = 30;
 const COL_LAST_W = 40;
 const flexCell = { flex: 1 } as const;
 
-export function CashflowTablePdf({ data }: { data: CashFlowPageData }) {
-  const { accent, tint } = useAccent();
+export function CashflowTablePdf({ data, accent }: { data: CashFlowPageData; accent: SectionAccent }) {
   const markerByYear = new Map(data.table.markers.map((m) => [m.year, m]));
 
   return (
     <View style={styles.table}>
-      <View style={[styles.headerRow, { backgroundColor: tint, borderBottomColor: accent }]} fixed>
+      <View style={[styles.headerRow, { backgroundColor: accent.tint, borderBottomColor: accent.accent }]} fixed>
         <Text style={[styles.th, { width: COL_MARKER_W }, styles.tdLeft]}>{""}</Text>
         <Text style={[styles.th, { width: COL_YEAR_W }, styles.tdLeft]}>Year</Text>
         <Text style={[styles.th, { width: COL_AGE_W }, styles.tdLeft]}>Age(s)</Text>
@@ -116,7 +114,7 @@ export function CashflowTablePdf({ data }: { data: CashFlowPageData }) {
         })}
       </View>
       {data.table.rows.map((row, i) => (
-        <CashflowDataRow key={row.year} row={row} marker={markerByYear.get(row.year) ?? null} zebra={i % 2 === 1} accent={accent} />
+        <CashflowDataRow key={row.year} row={row} marker={markerByYear.get(row.year) ?? null} zebra={i % 2 === 1} accent={accent.accent} />
       ))}
     </View>
   );
