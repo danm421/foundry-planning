@@ -36,6 +36,7 @@ import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
+import { GrowthRateField, parseGrowthSourceSelection } from "./growth-rate-field";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
@@ -640,25 +641,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       setDeriveFromHoldings(false);
       void setAccountDeriveFromHoldings(clientId, effectiveAccountId, false);
     }
-    if (v.startsWith("mp:")) {
-      const newId = v.slice(3);
-      setGrowthSource("model_portfolio");
-      setModelPortfolioId(newId);
-      // Pre-fill allocations from the selected model portfolio
-      const portfolioAllocs = portfolioAllocationsMap?.[newId] ?? [];
+    const { growthSource: gs, modelPortfolioId: mp } = parseGrowthSourceSelection(v);
+    setGrowthSource(gs);
+    setModelPortfolioId(mp ?? "");
+    if (gs === "model_portfolio" && mp) {
+      const portfolioAllocs = portfolioAllocationsMap?.[mp] ?? [];
       if (portfolioAllocs.length > 0) setCustomAllocations(portfolioAllocs);
-    } else if (v === "asset_mix") {
-      setGrowthSource("asset_mix");
-      setModelPortfolioId("");
-    } else if (v === "inflation") {
-      setGrowthSource("inflation");
-      setModelPortfolioId("");
-    } else if (v === "custom") {
-      setGrowthSource("custom");
-      setModelPortfolioId("");
-    } else {
-      setGrowthSource("default");
-      setModelPortfolioId("");
     }
   }
 
@@ -1341,51 +1329,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
             <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
               {isInvestable ? (
-                <div>
-                  <label className={fieldLabelClassName}>Growth Rate</label>
-                  <select
-                    value={growthSource === "model_portfolio" ? `mp:${modelPortfolioId}` : growthSource}
-                    onChange={(e) => handleGrowthSourceChange(e.target.value)}
-                    className={selectClassName}
-                  >
-                    <option value="default">
-                      {defaultPctForCategory !== null ? `${defaultPctForCategory}% — ` : ""}{catDefaultSource?.portfolioName ?? "Category default"} (default)
-                    </option>
-                    {modelPortfolios?.map((mp) => (
-                      <option key={mp.id} value={`mp:${mp.id}`}>
-                        {(mp.blendedReturn * 100).toFixed(2)}% — {mp.name}
-                      </option>
-                    ))}
-                    {ASSET_MIX_CATEGORIES.includes(category) && (
-                      <option value="asset_mix">
-                        {assetMixBlendedPct !== null ? `${assetMixBlendedPct.toFixed(2)}% — ` : ""}Asset mix (custom)
-                      </option>
-                    )}
-                    {(category === "cash" || category === "taxable" || category === "retirement") && (
-                      <option value="inflation">
-                        {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
-                      </option>
-                    )}
-                    <option value="custom">Custom %</option>
-                  </select>
-                  {growthSource === "inflation" && (
-                    <p className="mt-1 text-xs text-gray-400">
-                      Growth tracks plan inflation rate: {(resolvedInflationRate * 100).toFixed(2)}%
-                    </p>
-                  )}
-                  {growthSource === "custom" && (
-                    <div className="mt-2">
-                      <PercentInput
-                        id="growthRate"
-                        name="growthRate"
-                        value={growthRatePct}
-                        onChange={(raw) => setGrowthRatePct(raw)}
-                        placeholder={String(hasExplicitGrowth ? initialGrowthPct : 7)}
-                        className={inputClassName}
-                      />
-                    </div>
-                  )}
-                </div>
+                <GrowthRateField
+                  category={category}
+                  growthSource={growthSource}
+                  modelPortfolioId={modelPortfolioId}
+                  growthRatePct={growthRatePct}
+                  modelPortfolios={modelPortfolios}
+                  defaultPctForCategory={defaultPctForCategory}
+                  catDefaultPortfolioName={catDefaultSource?.portfolioName ?? null}
+                  resolvedInflationRate={resolvedInflationRate}
+                  assetMixBlendedPct={assetMixBlendedPct}
+                  customPlaceholder={String(hasExplicitGrowth ? initialGrowthPct : 7)}
+                  onSourceChange={handleGrowthSourceChange}
+                  onCustomPctChange={(raw) => setGrowthRatePct(raw)}
+                />
               ) : category === "real_estate" ? (
                 <div>
                   <label className={fieldLabelClassName}>Growth Rate</label>
