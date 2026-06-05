@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import GrantCard, { type GrantDisplay } from "./grant-card";
+import VestingGrid, { type TrancheRow, newTrancheKey } from "./vesting-grid";
 
 interface GrantsTabProps {
   clientId: string;
@@ -21,6 +22,15 @@ interface GrantEditorState {
   strikeDiscountPct: string;
   expirationDate: string;
   notes: string;
+  // Task 19: vesting tranches
+  tranches: TrancheRow[];
+  // Task 19: grant-level strategy overrides (""=inherit → null on save)
+  exerciseTiming: string;
+  exerciseYear: string;
+  sellTiming: string;
+  sellYear: string;
+  sellPercentPerYear: string;
+  sellStartYear: string;
 }
 
 function emptyEditor(): GrantEditorState {
@@ -35,12 +45,20 @@ function emptyEditor(): GrantEditorState {
     strikeDiscountPct: "",
     expirationDate: "",
     notes: "",
+    tranches: [],
+    exerciseTiming: "",
+    exerciseYear: "",
+    sellTiming: "",
+    sellYear: "",
+    sellPercentPerYear: "",
+    sellStartYear: "",
   };
 }
 
 /** Parse decimal strings from API into numbers for display. */
 function parseGrant(raw: Record<string, unknown>): GrantDisplay {
   const parseNum = (v: unknown) => (v != null ? parseFloat(String(v)) : null);
+  const parseInt2 = (v: unknown) => (v != null ? parseInt(String(v), 10) : null);
   const parseTranches = (arr: unknown[]): GrantDisplay["tranches"] =>
     arr.map((t) => {
       const tr = t as Record<string, unknown>;
@@ -65,6 +83,13 @@ function parseGrant(raw: Record<string, unknown>): GrantDisplay {
     expirationDate: raw.expirationDate ? String(raw.expirationDate) : null,
     notes: raw.notes ? String(raw.notes) : null,
     tranches: Array.isArray(raw.tranches) ? parseTranches(raw.tranches) : [],
+    // Grant-level strategy fields (null = inherit account default)
+    exerciseTiming: raw.exerciseTiming ? String(raw.exerciseTiming) : null,
+    exerciseYear: parseInt2(raw.exerciseYear),
+    sellTiming: raw.sellTiming ? String(raw.sellTiming) : null,
+    sellYear: parseInt2(raw.sellYear),
+    sellPercentPerYear: parseNum(raw.sellPercentPerYear),
+    sellStartYear: parseInt2(raw.sellStartYear),
   };
 }
 
@@ -80,11 +105,44 @@ function validateEditor(state: GrantEditorState): string | null {
     }
     if (!state.expirationDate) return "Expiration date is required for NQSO/ISO grants.";
   }
+  // Validate tranches: each non-empty row must have a vestDate and shares > 0
+  for (let i = 0; i < state.tranches.length; i++) {
+    const row = state.tranches[i];
+    const hasAny = row.vestDate || row.shares || row.sharesExercised || row.sharesSold;
+    if (!hasAny) continue;
+    if (!row.vestDate) return `Tranche ${i + 1}: vest date is required.`;
+    const s = parseFloat(row.shares);
+    if (isNaN(s) || s <= 0) return `Tranche ${i + 1}: shares must be a positive number.`;
+  }
   return null;
 }
 
-/** Build the POST/PUT body from editor state. Always sends tranches: [], plannedEvents: []. */
+/** Build the POST/PUT body from editor state. */
 function buildBody(state: GrantEditorState) {
+  // Strategy fields: "" → null (inherit account default)
+  const exerciseTiming = state.exerciseTiming || null;
+  const sellTiming = state.sellTiming || null;
+
+  const exerciseYear =
+    exerciseTiming === "specific_year" && state.exerciseYear
+      ? parseInt(state.exerciseYear, 10)
+      : null;
+
+  const sellYear =
+    sellTiming === "hold_then_sell_year" && state.sellYear
+      ? parseInt(state.sellYear, 10)
+      : null;
+
+  const sellPercentPerYear =
+    sellTiming === "percent_per_year" && state.sellPercentPerYear
+      ? Number(state.sellPercentPerYear) / 100
+      : null;
+
+  const sellStartYear =
+    sellTiming === "percent_per_year" && state.sellStartYear
+      ? parseInt(state.sellStartYear, 10)
+      : null;
+
   return {
     grantNumber: state.grantNumber.trim() || null,
     grantType: state.grantType,
@@ -96,7 +154,21 @@ function buildBody(state: GrantEditorState) {
     strikeDiscountPct: state.strikeDiscountPct ? parseFloat(state.strikeDiscountPct) / 100 : null,
     expirationDate: state.expirationDate || null,
     notes: state.notes.trim() || null,
-    tranches: [],
+    tranches: state.tranches
+      .filter((r) => r.vestDate || r.shares || r.sharesExercised || r.sharesSold)
+      .map((r) => ({
+        vestDate: r.vestDate,
+        shares: parseFloat(r.shares) || 0,
+        sharesExercised: parseFloat(r.sharesExercised) || 0,
+        sharesSold: parseFloat(r.sharesSold) || 0,
+      })),
+    // Grant-level strategy overrides
+    exerciseTiming,
+    exerciseYear,
+    sellTiming,
+    sellYear,
+    sellPercentPerYear,
+    sellStartYear,
     plannedEvents: [],
   };
 }
@@ -283,6 +355,120 @@ function GrantEditor({
         />
       </div>
 
+      {/* Vesting schedule grid */}
+      <div>
+        <label className={labelCls + " mb-2"}>Vesting Schedule</label>
+        <VestingGrid
+          rows={state.tranches}
+          grantType={state.grantType}
+          onChange={(tranches) => set({ tranches })}
+        />
+      </div>
+
+      {/* Grant-level strategy overrides */}
+      <div className="rounded-md border border-gray-700 bg-gray-800/40 p-3 space-y-3">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+          Strategy (overrides account default)
+        </p>
+
+        {/* Exercise timing — hidden for RSU */}
+        {(state.grantType === "nqso" || state.grantType === "iso") && (
+          <div className="space-y-2">
+            <div>
+              <label className={labelCls}>Exercise Timing</label>
+              <select
+                value={state.exerciseTiming}
+                onChange={(e) => set({ exerciseTiming: e.target.value, exerciseYear: "" })}
+                className={inputCls}
+              >
+                <option value="">Inherit account default</option>
+                <option value="at_vest">At vest</option>
+                <option value="specific_year">Specific year</option>
+                <option value="year_before_expiration">Year before expiration</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+            {state.exerciseTiming === "specific_year" && (
+              <div>
+                <label className={labelCls}>Exercise Year</label>
+                <input
+                  type="number"
+                  min={1900}
+                  max={2200}
+                  value={state.exerciseYear}
+                  onChange={(e) => set({ exerciseYear: e.target.value })}
+                  placeholder="e.g. 2028"
+                  className={inputCls}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sell timing */}
+        <div className="space-y-2">
+          <div>
+            <label className={labelCls}>Sell Timing</label>
+            <select
+              value={state.sellTiming}
+              onChange={(e) =>
+                set({ sellTiming: e.target.value, sellYear: "", sellPercentPerYear: "", sellStartYear: "" })
+              }
+              className={inputCls}
+            >
+              <option value="">Inherit account default</option>
+              <option value="immediately">Immediately</option>
+              <option value="hold_then_sell_year">Hold then sell in year</option>
+              <option value="percent_per_year">Percent per year</option>
+              <option value="hold">Hold</option>
+            </select>
+          </div>
+          {state.sellTiming === "hold_then_sell_year" && (
+            <div>
+              <label className={labelCls}>Sell Year</label>
+              <input
+                type="number"
+                min={1900}
+                max={2200}
+                value={state.sellYear}
+                onChange={(e) => set({ sellYear: e.target.value })}
+                placeholder="e.g. 2030"
+                className={inputCls}
+              />
+            </div>
+          )}
+          {state.sellTiming === "percent_per_year" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Sell % Per Year</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  value={state.sellPercentPerYear}
+                  onChange={(e) => set({ sellPercentPerYear: e.target.value })}
+                  placeholder="e.g. 25"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Sell Start Year</label>
+                <input
+                  type="number"
+                  min={1900}
+                  max={2200}
+                  value={state.sellStartYear}
+                  onChange={(e) => set({ sellStartYear: e.target.value })}
+                  placeholder="e.g. 2026"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Validation error */}
       {validationError && (
         <p className="text-xs text-amber-400">{validationError}</p>
@@ -382,6 +568,20 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
 
   function editorInitialState(): GrantEditorState {
     if (!editingGrant) return emptyEditor();
+
+    // Seed tranches: numbers → strings; vestDate as-is
+    const tranches: TrancheRow[] = editingGrant.tranches.map((t) => ({
+      _key: newTrancheKey(),
+      vestDate: t.vestDate,
+      shares: String(t.shares),
+      sharesExercised: String(t.sharesExercised),
+      sharesSold: String(t.sharesSold),
+    }));
+
+    // Seed strategy: null → ""; sellPercentPerYear ×100 for display
+    const { exerciseTiming, exerciseYear, sellTiming, sellYear, sellPercentPerYear, sellStartYear } =
+      editingGrant;
+
     return {
       grantNumber: editingGrant.grantNumber ?? "",
       grantType: editingGrant.grantType,
@@ -396,6 +596,17 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
           : "",
       expirationDate: editingGrant.expirationDate ?? "",
       notes: editingGrant.notes ?? "",
+      tranches,
+      exerciseTiming: exerciseTiming ?? "",
+      exerciseYear: exerciseYear != null ? String(exerciseYear) : "",
+      sellTiming: sellTiming ?? "",
+      sellYear: sellYear != null ? String(sellYear) : "",
+      // Multiply by 100 for display; round-trip via toFixed(6) to avoid float noise
+      sellPercentPerYear:
+        sellPercentPerYear != null
+          ? String(+(sellPercentPerYear * 100).toFixed(6))
+          : "",
+      sellStartYear: sellStartYear != null ? String(sellStartYear) : "",
     };
   }
 
@@ -479,6 +690,7 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
       {/* Grant editor (inline) */}
       {editorOpen && (
         <GrantEditor
+          key={editingGrant?.id ?? "new"}
           initial={editorInitialState()}
           onSave={handleSave}
           onCancel={closeEditor}

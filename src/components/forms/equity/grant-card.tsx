@@ -21,6 +21,13 @@ export interface GrantDisplay {
     sharesExercised: number;
     sharesSold: number;
   }>;
+  // Grant-level strategy overrides (null = inherit account default)
+  exerciseTiming: string | null;
+  exerciseYear: number | null;
+  sellTiming: string | null;
+  sellYear: number | null;
+  sellPercentPerYear: number | null;
+  sellStartYear: number | null;
 }
 
 interface GrantCardProps {
@@ -147,7 +154,6 @@ export default function GrantCard({ grant, currentYear, onEdit, onDelete }: Gran
         </span>
       </div>
 
-      {/* Task 19: vesting grid + grant-level strategy override controls render here */}
     </div>
   );
 }
