@@ -11,7 +11,7 @@ import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
 
 type ActiveSolve = {
   target: SolveLeverKey;
-  targetPoS: number;
+  targetPoS?: number;
   iteration: number;
   candidateValue: number | null;
   achievedPoS: number | null;
@@ -78,7 +78,7 @@ export function SolverRowLivingExpenseScale({
       </div>
       {side === "working" && isSolvingHere ? (
         <SolverSolveProgressStrip
-          title={`Solving Living Expense Scale for ${Math.round(activeSolve.targetPoS * 100)}% PoS`}
+          title={`Solving Living Expense Scale for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
           iteration={activeSolve.iteration}
           // Wider 0.5–10× range solved to tolerance:0 collapses in ~12–13 steps.
           maxIterations={14}

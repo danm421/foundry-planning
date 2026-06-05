@@ -11,7 +11,7 @@ import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
 
 type ActiveSolve = {
   target: SolveLeverKey;
-  targetPoS: number;
+  targetPoS?: number;
   iteration: number;
   candidateValue: number | null;
   achievedPoS: number | null;
@@ -138,7 +138,7 @@ function EditableWithSolve({
       <div>
         <div className="text-[11px] text-ink-3 mb-1">{label}</div>
         <SolverSolveProgressStrip
-          title={`Solving ${label} for ${Math.round(activeSolve.targetPoS * 100)}% PoS`}
+          title={`Solving ${label} for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
           iteration={activeSolve.iteration}
           maxIterations={8}
           candidateValue={activeSolve.candidateValue}
