@@ -59,7 +59,7 @@ import {
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
 import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
-import { executeWithdrawals, planSupplementalWithdrawal } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal, isHsaWithdrawalLocked } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
@@ -4238,9 +4238,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const purchaseEquity = purchaseBreakdown.reduce((sum, p) => sum + p.equity, 0);
       const legacyNetFlow = householdInflows - householdNonSavingsOutflows - savings.total - purchaseEquity;
       if (legacyNetFlow < 0) {
+        // Filter pre-65 HSA entries: the legacy no-checking path is age-blind,
+        // so we must enforce the 65-gate here before handing it the strategy.
+        const legacyStrategy = effectiveWithdrawalStrategy.filter((s) => {
+          const acct = workingAccounts.find((a) => a.id === s.accountId);
+          if (!acct) return true;
+          const ownerAge = isSpouseAccount(acct) && ages.spouse != null ? ages.spouse : ages.client;
+          return !isHsaWithdrawalLocked(acct, ownerAge);
+        });
         withdrawals = executeWithdrawals(
           -legacyNetFlow,
-          effectiveWithdrawalStrategy,
+          legacyStrategy,
           householdWithdrawBalances,
           year
         );

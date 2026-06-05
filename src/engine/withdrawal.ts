@@ -5,6 +5,13 @@ interface WithdrawalResult {
   total: number;
 }
 
+/** HSA withdrawals are penalty-free only at 65+. Before 65 the engine never
+ *  draws from an HSA (we don't model voluntarily incurring the 20% penalty).
+ *  Keyed off the account OWNER's age — callers pass the resolved owner age. */
+export function isHsaWithdrawalLocked(account: Account, ownerAge: number): boolean {
+  return account.category === "retirement" && account.subType === "hsa" && ownerAge < 65;
+}
+
 export interface SupplementalDraw {
   accountId: string;
   amount: number;                 // gross amount drawn from this account
@@ -85,7 +92,9 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
 
   // Retirement: traditional vs Roth vs HSA
   if (account.category === "retirement") {
-    // HSA: v1 — assume qualified-medical, treat as tax-free
+    // HSA: tax-free at 65+ (assumed qualified-medical). Pre-65 is locked —
+    // the strategy walk filters it out, so a draw here means a caller bug;
+    // return empty (no draw recognized) defensively.
     if (account.subType === "hsa") return empty;
 
     const isRoth = account.subType === "roth_ira";
@@ -172,8 +181,10 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
     const available = householdBalances[entry.accountId] ?? 0;
     if (available <= 0) continue;
 
-    const drawAmount = Math.min(remaining, available);
     const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
+    if (isHsaWithdrawalLocked(account, ownerAge)) continue;   // pre-65 HSA is locked
+
+    const drawAmount = Math.min(remaining, available);
     const draw = categorizeDraw({
       account, amount: drawAmount, balance: available,
       basisMap, rothValueMap, ownerAge,
