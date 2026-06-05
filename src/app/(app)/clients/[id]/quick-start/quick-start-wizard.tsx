@@ -14,6 +14,7 @@ import type { CreatedAccount } from "@/components/quick-start/step-props";
 import { useLiftedList } from "@/lib/quick-start/use-lifted-list";
 import type { IncomeRow } from "@/lib/quick-start/income-save";
 import type { AccountRow } from "@/lib/quick-start/account-save";
+import type { InsuranceRow } from "@/lib/quick-start/insurance-save";
 
 import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
 export type { QsBootstrap };
@@ -65,6 +66,7 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
   });
 
   const accountList = useLiftedList<AccountRow>();
+  const insuranceList = useLiftedList<InsuranceRow>();
 
   const labels = QS_STEPS.map((s) => s.label);
   const idxInAll = QS_STEPS.findIndex((s) => s.slug === current);
@@ -129,7 +131,7 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
       {current === "savings" && (
         <SavingsStep {...common} createdAccounts={createdAccounts} />
       )}
-      {current === "insurance" && <InsuranceStep {...common} />}
+      {current === "insurance" && <InsuranceStep {...common} list={insuranceList} />}
       {current === "assumptions" && <AssumptionsStep {...common} />}
     </WizardChrome>
   );
