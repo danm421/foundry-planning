@@ -1361,13 +1361,13 @@ function Row({
       className="flex cursor-pointer items-center justify-between px-4 py-2 hover:bg-gray-800/60"
     >
       <div className="min-w-0">
-        <div className="flex items-center gap-1.5 text-sm font-medium text-gray-100">
+        <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-gray-100">
           <span className="truncate">{label}</span>
           {labelBadge}
         </div>
         {subLabel && <div className="truncate text-xs text-gray-400">{subLabel}</div>}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         <span className={`text-sm font-medium ${valueClassName ?? "text-gray-100"}`}>{value}</span>
         {editMode && deletable && (
           <button
