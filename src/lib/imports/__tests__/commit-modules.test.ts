@@ -538,6 +538,43 @@ describe("commitAccounts", () => {
     expect(rows[0].familyMemberId).toBe("fm-spouse");
     expect(Number(rows[0].percent)).toBe(1);
   });
+
+  it("synthesizes a life-insurance policy row for a new life_insurance account", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Old Whole Life",
+          category: "life_insurance",
+          subType: "whole_life",
+          value: 25000,
+          owner: "client",
+          match: { kind: "new" },
+        },
+      ],
+    };
+    const result = await commitAccounts(tx, payload, ctx);
+    expect(result.created).toBe(1);
+    const policyInserts = callsForTable(calls, "life_insurance_policies").filter((c) => c.op === "insert");
+    expect(policyInserts).toHaveLength(1);
+    const v = (policyInserts[0] as { values: Record<string, unknown> }).values;
+    expect(v.policyType).toBe("whole");
+  });
+
+  it("does NOT synthesize a policy row for a non-life account", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        { name: "Brokerage", category: "taxable", value: 1000, owner: "client", match: { kind: "new" } },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    expect(callsForTable(calls, "life_insurance_policies")).toHaveLength(0);
+  });
 });
 
 describe("commitIncomes", () => {
