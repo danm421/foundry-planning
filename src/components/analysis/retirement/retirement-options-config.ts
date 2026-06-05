@@ -392,15 +392,9 @@ export const SOLVED_COLUMNS: SolvedColumnConfig[] = [
     id: "max-spending",
     title: "Maximum Retirement Spending",
     highlightRow: "retirement-expenses",
-    // Solved lever is a MULTIPLIER in [0.5, 1.5] (living-expense-scale), not a
-    // dollar figure. The displayed value is the resulting spend:
-    // currentRetirementExpense * multiplier, formatted like the expense row.
-    formatSolved: (multiplier, rows) => {
-      const base = rows.find((r) => r.key === "retirement-expenses")
-        ?.currentValue;
-      if (base == null) return null;
-      return formatLikeRow(rows, "retirement-expenses", base * multiplier);
-    },
+    // Solved lever is the absolute annual retirement spend in dollars.
+    formatSolved: (dollars, rows) =>
+      formatLikeRow(rows, "retirement-expenses", dollars),
   },
   {
     id: "earliest-retirement",
