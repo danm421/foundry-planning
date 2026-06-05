@@ -22,8 +22,11 @@
 //     growthSource/modelPortfolioId the base columns need, so they can't
 //     round-trip; the others need junction-table writes. Deferred.
 
-import type { ClientData, Account, SavingsRule } from "@/engine/types";
-import { isRetirementLivingExpense } from "./living-expense";
+import type { ClientData, Account, SavingsRule, Expense } from "@/engine/types";
+import {
+  isRetirementLivingExpense,
+  synthesizeRetirementLivingExpense,
+} from "./living-expense";
 import type { SolverMutation, SolverPerson } from "./types";
 
 /** A pre-coerced partial column update for one row. */
@@ -57,6 +60,8 @@ export interface BaseUpdates {
   clientUpdate: ColumnPatch | null;
   incomeUpdates: { id: string; set: ColumnPatch }[];
   expenseUpdates: { id: string; set: ColumnPatch }[];
+  /** Full new expense rows (e.g. a synthesized retirement living expense). */
+  expenseInserts: Expense[];
 }
 
 /** number → DB decimal string; null/undefined → null. */
@@ -79,6 +84,7 @@ export function mutationsToBaseUpdates(
     clientUpdate: null,
     incomeUpdates: [],
     expenseUpdates: [],
+    expenseInserts: [],
   };
 
   const existingAccounts = new Set((source.accounts ?? []).map((a) => a.id));
@@ -145,6 +151,26 @@ export function mutationsToBaseUpdates(
           const next = e.annualAmount * m.multiplier;
           if (next === e.annualAmount) continue;
           expensePatch(e.id).annualAmount = dec(next);
+        }
+        break;
+      }
+      case "living-expense-amount": {
+        const planStartYear = source.planSettings.planStartYear;
+        const retirement = (source.expenses ?? []).filter((e) =>
+          isRetirementLivingExpense(e, planStartYear),
+        );
+        const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
+        if (retirement.length === 0) {
+          out.expenseInserts.push(synthesizeRetirementLivingExpense(source, m.amount));
+        } else {
+          for (const e of retirement) {
+            const next =
+              baseSum > 0
+                ? e.annualAmount * (m.amount / baseSum)
+                : m.amount / retirement.length;
+            if (next === e.annualAmount) continue;
+            expensePatch(e.id).annualAmount = dec(next);
+          }
         }
         break;
       }
