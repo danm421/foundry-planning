@@ -22,6 +22,7 @@ import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import { applyMutations } from "./apply-mutations";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
+import { memoizeByValue } from "./eval-cache";
 import { buildLeverMutation, leverSearchConfig } from "./lever-search-config";
 import {
   retirementLivingExpenseTotal,
@@ -61,9 +62,13 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   let lastProjection: ProjectionYear[] | null = null;
   let lastTree: ClientData | null = null;
 
-  const evaluate = async (value: number): Promise<number> => {
-    if (args.signal?.aborted) throw new Error("aborted");
-    iteration += 1;
+  interface EvalEntry {
+    pos: number;
+    projection: ProjectionYear[];
+    tree: ClientData;
+  }
+
+  const compute = memoizeByValue<EvalEntry>(async (value: number) => {
     const allMutations = [
       ...args.baselineMutations,
       buildLeverMutation(args.target, value, args.effectiveTree),
@@ -89,11 +94,18 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
       signal: args.signal,
       yieldEvery: 50,
     });
+    return { pos: mc.successRate, projection, tree };
+  });
+
+  const evaluate = async (value: number): Promise<number> => {
+    if (args.signal?.aborted) throw new Error("aborted");
+    iteration += 1;
+    const entry = await compute(value);
     lastEvaluatedValue = value;
-    lastProjection = projection;
-    lastTree = tree;
-    args.onProgress?.({ iteration, candidateValue: value, achievedPoS: mc.successRate });
-    return mc.successRate;
+    lastProjection = entry.projection;
+    lastTree = entry.tree;
+    args.onProgress?.({ iteration, candidateValue: value, achievedPoS: entry.pos });
+    return entry.pos;
   };
 
   const bisectResult = await bisect({
