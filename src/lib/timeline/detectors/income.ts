@@ -27,13 +27,17 @@ export function detectIncomeEvents(
   projection: ProjectionYear[],
 ): TimelineEvent[] {
   const out: TimelineEvent[] = [];
+  const planStartYear = projection[0]?.year;
 
   for (const inc of data.incomes) {
     const subject = subjectFor(inc.owner);
     const dob = subject === "primary" ? data.client.dateOfBirth : subject === "spouse" ? data.client.spouseDob : undefined;
 
     if (inc.type === "salary") {
-      if (inRange(inc.startYear, projection)) {
+      // Salaries that start in the plan's first year have typically been running
+      // for years before the plan began, so flagging them as "beginning" in year
+      // one is misleading. Suppress the start milestone; the "ends" one still fires.
+      if (inc.startYear !== planStartYear && inRange(inc.startYear, projection)) {
         out.push({
           id: `income:salary_start:${subject}:${inc.id}`,
           year: inc.startYear,
