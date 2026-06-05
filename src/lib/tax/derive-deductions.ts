@@ -57,6 +57,7 @@ export const DEDUCTIBLE_ELIGIBLE_SUBTYPES = new Set([
   "traditional_ira",
   "401k",
   "403b",
+  "hsa",
   "other",
 ]);
 
@@ -104,11 +105,14 @@ export function deriveAboveLineFromSavings(
   let total = 0;
   for (const rule of savingsRules) {
     if (year < rule.startYear || year > rule.endYear) continue;
-    if (!rule.isDeductible) continue;
     const acct = accountById.get(rule.accountId);
     if (!acct) continue;
     if (acct.category !== "retirement") continue;
     if (!DEDUCTIBLE_ELIGIBLE_SUBTYPES.has(acct.subType)) continue;
+    // HSA contributions are above-the-line deductible by statute — there is no
+    // per-account toggle for them. Other subtypes still gate on the rule flag.
+    const isHsa = acct.subType === "hsa";
+    if (!isHsa && !rule.isDeductible) continue;
     if (acct.ownerEntityId != null && !isGrantorEntity(acct.ownerEntityId)) continue;
     const overridden = overriddenAmountByRuleId?.[rule.id];
     let amount: number;
