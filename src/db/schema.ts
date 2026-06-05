@@ -615,6 +615,10 @@ export const scenarioChanges = pgTable("scenario_changes", {
   // When false the loader skips this change before applying overlays; the row
   // stays in place so the user can flip it back without re-creating.
   enabled: boolean("enabled").notNull().default(true),
+  // User-supplied display label for this change. Null = render the computed
+  // smart label; non-null = show verbatim (replaces the whole "Kind — name"
+  // title). Display-only; never reaches the projection engine.
+  label: text("label"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

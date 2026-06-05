@@ -1,6 +1,6 @@
 // src/app/api/clients/[id]/scenarios/[sid]/changes/[cid]/route.ts
 //
-// PATCH a single scenario_change row. Two independent operations share this
+// PATCH a single scenario_change row. Three independent operations share this
 // route:
 //   1. Reassign `toggleGroupId` — used by the Changes-panel GroupEditor's
 //      stage-then-Done flow (toggling a row's checkbox stages the membership
@@ -8,11 +8,16 @@
 //   2. Flip `enabled` — used by the per-change toggle on each leaf row.
 //      Disabled rows are filtered out by `loadScenarioChanges` so they never
 //      reach the engine; the panel still shows them so the toggle is visible.
+//   3. Set/clear `label` — lets the advisor rename a change to something more
+//      meaningful than the computed smart label, or reset back to computed by
+//      sending null.
 //
-// Body shape (one or both fields, at least one required):
-//   { toggleGroupId: <uuid> }     // move into the group
-//   { toggleGroupId: null }       // clear group assignment (back to ungrouped)
-//   { enabled: boolean }          // flip the per-change enabled flag
+// Body shape (one or more fields, at least one required):
+//   { toggleGroupId: <uuid> }          // move into the group
+//   { toggleGroupId: null }            // clear group assignment (back to ungrouped)
+//   { enabled: boolean }               // flip the per-change enabled flag
+//   { label: "Max out 401(k)" }        // rename this change
+//   { label: null }                    // reset to computed smart label
 //
 // Auth model: same as the sibling /changes route — `requireOrgId` then
 // `assertScenarioRouteScope` (client-in-firm AND scenario-in-client). The
@@ -41,10 +46,15 @@ const PATCH_BODY = z
   .object({
     toggleGroupId: z.string().uuid().nullable().optional(),
     enabled: z.boolean().optional(),
+    // Set: 1–80 char trimmed string. Reset to computed label: null.
+    label: z.string().trim().min(1).max(80).nullable().optional(),
   })
   .refine(
-    (v) => v.toggleGroupId !== undefined || v.enabled !== undefined,
-    { message: "Must provide toggleGroupId or enabled" },
+    (v) =>
+      v.toggleGroupId !== undefined ||
+      v.enabled !== undefined ||
+      v.label !== undefined,
+    { message: "Must provide toggleGroupId, enabled, or label" },
   );
 
 type RouteCtx = {
@@ -117,6 +127,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     if (body.enabled !== undefined) {
       updates.enabled = body.enabled;
     }
+    if (body.label !== undefined) {
+      updates.label = body.label;
+    }
 
     await db
       .update(scenarioChanges)
@@ -141,6 +154,16 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
         clientId,
         firmId,
         metadata: { scenarioId, enabled: body.enabled },
+      });
+    }
+    if (body.label !== undefined) {
+      await recordAudit({
+        action: "scenario_change.rename",
+        resourceType: "scenario_change",
+        resourceId: changeId,
+        clientId,
+        firmId,
+        metadata: { scenarioId, label: body.label },
       });
     }
 
