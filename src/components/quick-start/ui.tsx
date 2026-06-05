@@ -3,6 +3,10 @@
 import type { ReactNode } from "react";
 import type { QsOwner } from "@/lib/quick-start/types";
 
+/** Whole-dollar display, em-dash for nullish. */
+export const fmtMoney = (n?: number) =>
+  n == null ? "—" : `$${Math.round(n).toLocaleString("en-US")}`;
+
 /** POST/PUT a JSON body and throw a friendly error on a non-2xx response. */
 export async function sendJson(url: string, method: string, body: unknown): Promise<unknown> {
   const res = await fetch(url, {

@@ -2,12 +2,12 @@
 "use client";
 import { CurrencyInput } from "@/components/currency-input";
 import { selectClassName } from "@/components/forms/input-styles";
-import { accountPayload } from "@/lib/quick-start/derive";
-import { saveAccountRows, type AccountRow } from "@/lib/quick-start/account-save";
+import { accountPayload, ACCOUNT_LABEL, RETIREMENT_LABEL } from "@/lib/quick-start/derive";
+import { saveAccountRows, isEmptyAccount, type AccountRow } from "@/lib/quick-start/account-save";
 import type { QsAccountKind, QsRetirementSubtype } from "@/lib/quick-start/types";
 import type { QsAccountsStepProps } from "./step-props";
 import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
-import { Labeled, OwnerPills, sendJson } from "./ui";
+import { Labeled, OwnerPills, sendJson, fmtMoney } from "./ui";
 
 const KIND_OPTIONS: { value: QsAccountKind; label: string }[] = [
   { value: "cash", label: "Cash" },
@@ -23,29 +23,12 @@ const SUBTYPE_OPTIONS: { value: QsRetirementSubtype; label: string }[] = [
   { value: "403b", label: "403(b)" },
 ];
 
-const KIND_LABEL: Record<QsAccountKind, string> = {
-  cash: "Cash",
-  taxable: "Taxable",
-  retirement: "Retirement",
-  real_estate: "Real estate",
-};
-
-const SUBTYPE_LABEL: Record<QsRetirementSubtype, string> = {
-  traditional_ira: "Traditional IRA",
-  roth_ira: "Roth IRA",
-  "401k": "401(k)",
-  "403b": "403(b)",
-};
-
 const COLUMNS: ListColumn[] = [
   { key: "type", label: "Type" },
   { key: "owner", label: "Owner" },
   { key: "value", label: "Value", align: "right" },
   { key: "detail", label: "Detail" },
 ];
-
-const fmtMoney = (n?: number) =>
-  n == null ? "—" : `$${Math.round(n).toLocaleString("en-US")}`;
 
 export function AccountsStep({
   ctx,
@@ -103,7 +86,7 @@ export function AccountsStep({
       <CollapsibleListEditor<AccountRow>
         rows={rows}
         columns={COLUMNS}
-        isEmpty={(r) => !r.value}
+        isEmpty={isEmptyAccount}
         update={update}
         onChange={setRows}
         onRemove={(r) => {
@@ -111,14 +94,14 @@ export function AccountsStep({
           setRows((rs) => rs.filter((x) => x._id !== r._id));
         }}
         newRow={() => ({ _id: makeId(), kind: "cash", owner: "client", value: 0 })}
-        rowLabel={(r) => `${KIND_LABEL[r.kind]} · ${ownerLabel(r)}`}
+        rowLabel={(r) => `${ACCOUNT_LABEL[r.kind]} · ${ownerLabel(r)}`}
         addLabel="+ Add account"
         renderSummary={(r) => [
-          <span key="t">{KIND_LABEL[r.kind]}</span>,
+          <span key="t">{ACCOUNT_LABEL[r.kind]}</span>,
           <span key="o">{ownerLabel(r)}</span>,
           <span key="v">{fmtMoney(r.value)}</span>,
           <span key="d">
-            {r.kind === "retirement" && r.subType ? SUBTYPE_LABEL[r.subType] : "—"}
+            {r.kind === "retirement" && r.subType ? RETIREMENT_LABEL[r.subType] : "—"}
           </span>,
         ]}
         renderEditor={(r, upd) => (
