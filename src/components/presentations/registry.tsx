@@ -804,7 +804,7 @@ export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, Scen
 export const retirementComparisonPage: PresentationPage<RetirementComparisonPageData, RetirementComparisonOptions> = {
   id: "retirementComparison",
   title: "Retirement Comparison",
-  description: "How a scenario's changes impact the retirement goal vs. the base case — KPIs, portfolio overlay, changes, Monte Carlo, and an AI summary.",
+  description: "Why the proposed plan wins vs. the base case — verdict, portfolio overlay, maximum sustainable spending, confidence range, and an AI summary.",
   category: "Comparison",
   defaultOptions: RETIREMENT_COMPARISON_OPTIONS_DEFAULT,
   optionsSchema: retirementComparisonOptionsSchema,

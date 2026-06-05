@@ -165,6 +165,7 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
         <label className="flex items-center justify-between gap-2">
           <span>Confidence target</span>
           <select
+            aria-label="Max-spending confidence target"
             className="rounded border border-hair bg-card-2 px-2 py-1 text-ink"
             value={String(value.maxSpend.targetConfidence)}
             onChange={(e) =>
