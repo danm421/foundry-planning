@@ -62,6 +62,7 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "401k",
   "403b",
   "529",
+  "hsa",
   "trust",
   "other",
   // real_estate sub types
@@ -80,6 +81,8 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "universal_life",
   "variable_life",
 ]);
+
+export const hsaCoverageEnum = pgEnum("hsa_coverage", ["self", "family"]);
 
 export const accountBusinessTypeEnum = pgEnum("account_business_type", [
   "sole_prop",
@@ -1414,6 +1417,9 @@ export const accounts = pgTable("accounts", {
   // comes out tax-free on withdrawal / Roth conversion (pro-rata). Defaults
   // to 0 — a plain pre-tax 401(k). Ignored for non-401k/403b subtypes.
   rothValue: decimal("roth_value", { precision: 15, scale: 2 }).notNull().default("0"),
+  // HSA coverage tier (self-only vs family). NULL for every non-HSA account.
+  // Drives the contribution cap (self vs family limit) in the engine.
+  hsaCoverage: hsaCoverageEnum("hsa_coverage"),
   // Null means: inherit the default for this category from plan_settings.
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 }),
   rmdEnabled: boolean("rmd_enabled").notNull().default(false),
