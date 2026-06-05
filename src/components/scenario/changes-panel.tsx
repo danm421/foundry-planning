@@ -38,6 +38,8 @@ import { GroupEditor } from "./changes-panel-group-editor";
 export type ChangesPanelChange = ScenarioChange & {
   updatedAt: Date | string;
   enabled: boolean;
+  /** User rename; null = use computed smart label. */
+  label: string | null;
 };
 
 export interface ChangesPanelProps {

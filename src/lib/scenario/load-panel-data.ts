@@ -23,6 +23,7 @@ import type {
   TargetKind,
   ToggleGroup,
 } from "@/engine/scenario/types";
+import { describeChangeTarget } from "@/lib/scenario/describe-change-target";
 
 export interface PanelData {
   scenarioId: string;
@@ -77,6 +78,7 @@ export async function loadPanelData(
     orderIndex: r.orderIndex,
     updatedAt: r.updatedAt,
     enabled: r.enabled,
+    label: r.label,
   }));
 
   const toggleGroups: ToggleGroup[] = groupRows.map((r) => ({
@@ -103,39 +105,34 @@ export function buildTargetNames(
   clientId: string,
 ): Record<string, string> {
   const names: Record<string, string> = {};
-  const put = (
-    kind: TargetKind,
-    items: { id: string; name?: string | null }[],
-  ) => {
-    for (const it of items) {
-      if (it.name) names[`${kind}:${it.id}`] = it.name;
+  const accountsById = new Map<string, { name: string }>(
+    (tree.accounts ?? []).map((a) => [a.id, { name: a.name }]),
+  );
+  const clientFirstName = tree.client?.firstName ?? null;
+
+  const put = (kind: TargetKind, items: ReadonlyArray<{ id: string }> | undefined) => {
+    for (const it of items ?? []) {
+      const label = describeChangeTarget(kind, it, accountsById, clientFirstName);
+      if (label) names[`${kind}:${it.id}`] = label;
     }
   };
+
   put("account", tree.accounts);
   put("income", tree.incomes);
   put("expense", tree.expenses);
   put("liability", tree.liabilities);
   put("savings_rule", tree.savingsRules);
-  if (tree.transfers) {
-    put("transfer", tree.transfers as { id: string; name?: string }[]);
-  }
-  if (tree.assetTransactions) {
-    put("asset_transaction", tree.assetTransactions as { id: string; name?: string }[]);
-  }
-  if (tree.gifts) put("gift", tree.gifts as { id: string; name?: string }[]);
-  if (tree.wills) put("will", tree.wills as { id: string; name?: string }[]);
-  if (tree.familyMembers) put("family_member", tree.familyMembers);
-  if (tree.externalBeneficiaries) {
-    put("external_beneficiary", tree.externalBeneficiaries);
-  }
-  if (tree.entities) {
-    put("entity", tree.entities as unknown as { id: string; name?: string }[]);
-  }
-  if (tree.deductions) {
-    put("client_deduction", tree.deductions as unknown as { id: string; name?: string }[]);
-  }
-  if (tree.client?.firstName) {
-    names[`client:${clientId}`] = tree.client.firstName;
-  }
+  put("transfer", tree.transfers);
+  put("asset_transaction", tree.assetTransactions);
+  put("reinvestment", tree.reinvestments);
+  put("roth_conversion", tree.rothConversions);
+  put("gift", tree.gifts);
+  put("will", tree.wills);
+  put("family_member", tree.familyMembers);
+  put("external_beneficiary", tree.externalBeneficiaries);
+  put("entity", tree.entities);
+  put("client_deduction", tree.deductions as unknown as ReadonlyArray<{ id: string }>);
+
+  if (clientFirstName) names[`client:${clientId}`] = clientFirstName;
   return names;
 }
