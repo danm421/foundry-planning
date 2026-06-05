@@ -4,7 +4,7 @@ import { RETIREMENT_COMPARISON_OPTIONS_DEFAULT } from "@/lib/presentations/pages
 import type { RetirementComparisonOptions } from "@/lib/presentations/pages/retirement-comparison/types";
 
 function opts(
-  partial: Partial<RetirementComparisonOptions> & {
+  partial: Omit<Partial<RetirementComparisonOptions>, "ai"> & {
     ai?: Partial<RetirementComparisonOptions["ai"]>;
   } = {},
 ): RetirementComparisonOptions {
@@ -34,6 +34,7 @@ describe("ensureFreshSummaries", () => {
     expect(r.updates).toHaveLength(1);
     expect((r.pages[0].options as RetirementComparisonOptions).ai.generatedText).toBe("fresh text");
     expect((r.pages[0].options as RetirementComparisonOptions).ai.sourceHash).toBe("new-hash");
+    expect((r.pages[0].options as RetirementComparisonOptions).ai.generatedAt).toBe("2026-06-05T00:00:00.000Z");
     expect(r.error).toBeNull();
   });
 
