@@ -90,6 +90,7 @@
 
   /* Radii */
   --radius-sm: 6px;
+  --radius-md: 8px;
   --radius: 10px;
 
   /* Fonts — wired to next/font vars set on <html> by layout.tsx */
@@ -239,6 +240,7 @@
 
   /* Radii — Tailwind v4: --radius maps to `rounded`, --radius-sm to `rounded-sm` */
   --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
   --radius: var(--radius);
 
   /* Fonts */
