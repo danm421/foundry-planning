@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 
 import { db } from "@/db";
+import { scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import {
     claimAiImportCredit,
@@ -96,7 +98,24 @@ export async function POST(request: NextRequest, { params }: Params) {
                 { status: 400 },
             );
         }
-        if (!imp.scenarioId) {
+        // Onboarding imports aren't tied to a chosen scenario — they capture the
+        // client's base facts, so they land in the base-case scenario. Resolve it
+        // lazily here (the picker and match route both leave scenarioId null for
+        // onboarding) so older null-scenario drafts still commit.
+        let scenarioId = imp.scenarioId;
+        if (!scenarioId && imp.mode === "onboarding") {
+            const [base] = await db
+                .select({ id: scenarios.id })
+                .from(scenarios)
+                .where(
+                    and(
+                        eq(scenarios.clientId, clientId),
+                        eq(scenarios.isBaseCase, true),
+                    ),
+                );
+            scenarioId = base?.id ?? null;
+        }
+        if (!scenarioId) {
             return NextResponse.json(
                 { error: "Import has no scenarioId; matching/commit not possible." },
                 { status: 400 },
@@ -126,7 +145,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             tabs,
             ctx: {
                 clientId,
-                scenarioId: imp.scenarioId,
+                scenarioId,
                 orgId: firmId,
                 userId,
             },
