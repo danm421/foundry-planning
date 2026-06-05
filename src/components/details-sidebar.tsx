@@ -158,7 +158,7 @@ function GuidedWalkthroughMenu({
           <circle cx="20" cy="19" r="2" />
         </svg>
         <span className="flex-1 text-left">Guided Walkthrough</span>
-        <span aria-hidden="true" className={`text-[10px] transition-transform ${open ? "" : "rotate-180"}`}>
+        <span aria-hidden="true" className={`text-[10px] transition-transform ${open ? "rotate-180" : ""}`}>
           ▾
         </span>
       </button>
@@ -166,7 +166,7 @@ function GuidedWalkthroughMenu({
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 z-40 mb-1.5 w-full rounded-xl border border-hair bg-paper p-1.5 shadow-lg"
+          className="absolute top-full left-0 z-40 mt-1.5 w-full rounded-xl border border-hair bg-paper p-1.5 shadow-lg"
         >
           <Link
             role="menuitem"
