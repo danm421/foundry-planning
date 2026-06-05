@@ -127,7 +127,10 @@ export function ChangesPanelLeafRow({
             initial={labelFor(change, targetName, customLabel)}
             canReset={Boolean(customLabel?.trim())}
             onCancel={() => setMenuState("idle")}
-            onSave={(value) => void handleRename(value.trim() ? value.trim() : null)}
+            onSave={(value) => {
+              const trimmed = value.trim();
+              void handleRename(trimmed || null);
+            }}
             onReset={() => void handleRename(null)}
           />
         ) : (
