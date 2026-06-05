@@ -136,7 +136,7 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
       </div>
 
       <div className="flex flex-col gap-1">
-        {([["showChanges", "Show changes made"], ["showPortfolioMatrix", "Show portfolio matrix"], ["showAiSummary", "Show AI summary"]] as const).map(
+        {([["showPortfolioMatrix", "Show portfolio matrix"], ["showAiSummary", "Show AI summary"], ["showConfidenceRange", "Show range of outcomes"]] as const).map(
           ([key, lbl]) => (
             <label key={key} className="flex items-center gap-2 hover:text-ink">
               <input
@@ -149,6 +149,33 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
             </label>
           ),
         )}
+      </div>
+
+      <div className="flex flex-col gap-2 rounded border border-hair p-2">
+        <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Max spending</span>
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={value.maxSpend.show}
+            onChange={(e) => onChange({ ...value, maxSpend: { ...value.maxSpend, show: e.target.checked } })}
+          />
+          <span>Show max spending</span>
+        </label>
+        <label className="flex items-center justify-between gap-2">
+          <span>Confidence target</span>
+          <select
+            className="rounded border border-hair bg-card-2 px-2 py-1 text-ink"
+            value={String(value.maxSpend.targetConfidence)}
+            onChange={(e) =>
+              onChange({ ...value, maxSpend: { ...value.maxSpend, targetConfidence: Number(e.target.value) } })
+            }
+          >
+            {["0.75", "0.8", "0.85", "0.9"].map((v) => (
+              <option key={v} value={v}>{`${Math.round(Number(v) * 100)}%`}</option>
+            ))}
+          </select>
+        </label>
       </div>
     </div>
   );
