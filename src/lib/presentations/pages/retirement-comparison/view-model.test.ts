@@ -4,45 +4,77 @@ import { RETIREMENT_COMPARISON_OPTIONS_DEFAULT } from "./options-schema";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type { ProjectionYear } from "@/engine/types";
 
-function yr(year: number, liquid: number, age: number): ProjectionYear {
+// Minimal ProjectionYear factory (only fields the view-model reads).
+function py(year: number, liquid: number, tax: number, clientAge: number): ProjectionYear {
   return {
-    year, ages: { client: age }, expenses: { taxes: 1000 },
-    portfolioAssets: { liquidTotal: liquid, cashTotal: 10, retirementTotal: 50, taxableTotal: 40 },
+    year,
+    ages: { client: clientAge, spouse: null },
+    portfolioAssets: { liquidTotal: liquid, cashTotal: liquid, retirementTotal: 0, taxableTotal: 0 },
+    expenses: { taxes: tax },
+    income: { total: 0 },
+    withdrawals: { total: 0 },
+    totalExpenses: 0,
   } as unknown as ProjectionYear;
 }
 
-function bundle(years: ProjectionYear[], success: number, label: string) {
+function byYearRow(year: number, p20: number, p50: number, p80: number) {
+  return { year, age: { client: 70 }, balance: { p5: 0, p20, p50, p80, p95: 0, min: 0, max: 0 }, cagrFromStart: null };
+}
+
+function bundle(years: ProjectionYear[], success: number, maxSpend: number) {
   return {
-    clientData: { client: { retirementAge: 62, dob: "1963-01-01" } },
+    clientData: {
+      client: { dateOfBirth: "1965-01-01", retirementAge: 65 },
+      planSettings: { planStartYear: 2026, inflationRate: 0.0 }, // 0% inflation → flat series
+    },
     projection: { years },
-    scenarioLabel: label,
-    monteCarlo: { summary: { successRate: success } },
+    scenarioLabel: "Delay + Roth",
+    monteCarlo: { summary: { successRate: success, byYear: years.map((y) => byYearRow(y.year, 100, 200, 300)) } },
+    maxSpend: { realAnnualSpend: maxSpend, scaleFactor: 1, achievedPoS: success, status: "converged" },
   } as never;
 }
 
-describe("buildRetirementComparisonData", () => {
-  const ctx = {
-    clientName: "Smith",
-    spouseName: null,
-    scenarioLabel: "Base Case",
-    bundlesByRef: {
-      base: bundle([yr(2025, 100, 60), yr(2026, 90, 61), yr(2027, 80, 62)], 0.72, "Base Case"),
-      "scenario:scn-1": bundle([yr(2025, 100, 60), yr(2026, 120, 61), yr(2027, 150, 62)], 0.91, "Roth + Delay"),
-    },
-  } as unknown as BuildDataContext;
+const baseYears = [py(2030, 1_000_000, 50_000, 65), py(2031, -10_000, 40_000, 66)]; // base depletes yr2
+const scnYears = [py(2030, 1_200_000, 30_000, 65), py(2031, 900_000, 25_000, 66)]; // scenario funded
 
-  it("returns non-empty data with KPIs and a subtitle naming the scenario", () => {
-    const data = buildRetirementComparisonData(ctx, {
-      ...RETIREMENT_COMPARISON_OPTIONS_DEFAULT, scenarioId: "scn-1",
-    });
-    expect(data.isEmpty).toBe(false);
-    expect(data.subtitle).toContain("Roth + Delay");
-    expect(data.kpis.length).toBe(4);
-    expect(data.overlay.length).toBe(3);
+const ctx = {
+  bundlesByRef: {
+    base: bundle(baseYears, 0.73, 90_000),
+    "scenario:s1": bundle(scnYears, 0.91, 110_000),
+  },
+} as unknown as BuildDataContext;
+
+const opts = { ...RETIREMENT_COMPARISON_OPTIONS_DEFAULT, scenarioId: "s1" };
+
+describe("buildRetirementComparisonData", () => {
+  it("builds the verdict headline from success rates", () => {
+    const d = buildRetirementComparisonData(ctx, opts);
+    expect(d.isEmpty).toBe(false);
+    expect(d.verdict.headline).toContain("91%");
+    expect(d.verdict.headline).toContain("73%");
   });
 
-  it("returns the empty state when no scenario is selected", () => {
-    const data = buildRetirementComparisonData(ctx, RETIREMENT_COMPARISON_OPTIONS_DEFAULT);
-    expect(data.isEmpty).toBe(true);
+  it("exposes both plans' max spend (today's $) and a series", () => {
+    const d = buildRetirementComparisonData(ctx, opts);
+    expect(d.maxSpend.show).toBe(true);
+    expect(d.maxSpend.baseToday).toBe(90_000);
+    expect(d.maxSpend.scenarioToday).toBe(110_000);
+    expect(d.maxSpend.series.length).toBeGreaterThan(0);
+  });
+
+  it("shows tax-saved only when favorable, with the saving", () => {
+    const d = buildRetirementComparisonData(ctx, opts);
+    // base tax 90k vs scn 55k → favorable.
+    expect(d.taxSaved.show).toBe(true);
+  });
+
+  it("shows lasts-to-age when the scenario funds longer", () => {
+    const d = buildRetirementComparisonData(ctx, opts);
+    expect(d.lastsToAge.show).toBe(true);
+  });
+
+  it("always shows legacy", () => {
+    const d = buildRetirementComparisonData(ctx, opts);
+    expect(d.legacy.show).toBe(true);
   });
 });
