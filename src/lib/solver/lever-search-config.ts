@@ -12,12 +12,6 @@ export const ROTH_AMOUNT_HARD_CAP = 1_000_000;
 export const SAVINGS_ZERO_DEFAULT_HI = 50_000;
 export const SAVINGS_SOURCE_MULTIPLIER = 4;
 
-/** Upper bound for the living-expense-scale search: 10× the plan's stated
- *  retirement living spend. Effectively uncapped — no realistic plan sustains
- *  more than this — while keeping the bisection bracket finite (~12 iterations
- *  at the 0.01 step, well under WIDE_LEVER_MAX_ITERATIONS). */
-export const MAX_LIVING_EXPENSE_SCALE = 10;
-
 export interface LeverSearchConfig {
   lo: number;
   hi: number;
@@ -40,12 +34,13 @@ export function leverSearchConfig(
     case "retirement-age":
       return { lo: 50, hi: 80, step: 1, direction: 1 };
     case "living-expense-scale":
-      // Wide, effectively-uncapped range with tolerance:0 so the solver returns
-      // the maximum sustainable spend, not the first scale within ±2% of target.
+      // Absolute-dollar search over annual retirement living spend. tolerance:0
+      // so the solve returns the MAXIMUM sustainable spend; direction -1 because
+      // more spending lowers PoS. Interpolation makes the wide range cheap.
       return {
-        lo: 0.5,
-        hi: MAX_LIVING_EXPENSE_SCALE,
-        step: 0.01,
+        lo: 0,
+        hi: livingExpenseSearchCeiling(tree),
+        step: 2000,
         direction: -1,
         tolerance: 0,
       };
@@ -93,6 +88,20 @@ export function leverSearchConfig(
   }
 }
 
+/** Upper bound for the absolute-dollar living-expense search. A generous,
+ *  resource-aware estimate — it only needs to comfortably exceed the answer,
+ *  since interpolation homes in regardless of how wide the bracket is. Clamped
+ *  to [300k, 3M]. */
+export function livingExpenseSearchCeiling(tree: ClientData): number {
+  const living = tree.expenses
+    .filter((e) => e.type === "living")
+    .reduce((s, e) => s + e.annualAmount, 0);
+  const income = tree.incomes.reduce((s, i) => s + i.annualAmount, 0);
+  const assets = tree.accounts.reduce((s, a) => s + (a.value ?? 0), 0);
+  const estimate = Math.max(living * 3, income + 0.1 * assets, 300_000);
+  return Math.min(3_000_000, Math.max(300_000, estimate));
+}
+
 /** Build a SolverMutation for a candidate value at the targeted lever. */
 export function buildLeverMutation(
   target: SolveLeverKey,
@@ -103,7 +112,7 @@ export function buildLeverMutation(
     case "retirement-age":
       return { kind: "retirement-age", person: target.person, age: value };
     case "living-expense-scale":
-      return { kind: "living-expense-scale", multiplier: value };
+      return { kind: "living-expense-amount", amount: value };
     case "ss-claim-age":
       return { kind: "ss-claim-age", person: target.person, age: value };
     case "savings-contribution":
