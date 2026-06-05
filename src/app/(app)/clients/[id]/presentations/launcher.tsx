@@ -324,7 +324,7 @@ export function PresentationsLauncher(props: Props) {
             ariaLabel="Scenario for presentation"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm flex-1 min-w-[16rem]">
+        <label className="flex w-80 max-w-full flex-col gap-1 text-sm">
           <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-2">
             Filename
           </span>
@@ -352,7 +352,7 @@ export function PresentationsLauncher(props: Props) {
             })
           }
         />
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {state.loadedTemplate && state.isModified && isLoadedTemplateMine && (
             <button
               type="button"
