@@ -125,10 +125,10 @@ describe("ChangesPanelLeafRow", () => {
       fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
       await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
       const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(String(url)).toContain(
-        "/api/clients/client-x/scenarios/scenario-y/changes?",
+      expect(String(url)).toBe(
+        "/api/clients/client-x/scenarios/scenario-y/changes?kind=income&target=target-uuid&op=edit",
       );
-      expect(init).toMatchObject({ method: "DELETE" });
+      expect(init).toEqual({ method: "DELETE" });
       await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
     });
   });
@@ -253,6 +253,65 @@ describe("ChangesPanelLeafRow", () => {
     );
     const toggle = screen.getByLabelText("Enable change");
     expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  describe("rename", () => {
+    it("opens an editor prefilled with the current title and saves a label", async () => {
+      render(
+        <ChangesPanelLeafRow
+          clientId="cli-1"
+          scenarioId="scn-1"
+          enabled={true}
+          targetName="401(k) · max"
+          change={makeChange({
+            id: "chg-1",
+            opType: "edit",
+            targetKind: "savings_rule",
+            payload: { rothPercent: { from: null, to: 1 } },
+          })}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Rename change"));
+      const input = screen.getByRole("textbox", { name: /change label/i }) as HTMLInputElement;
+      expect(input.value).toBe("Savings Rule — 401(k) · max");
+      fireEvent.change(input, { target: { value: "Max out 401(k)" } });
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+      const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(String(url)).toBe("/api/clients/cli-1/scenarios/scn-1/changes/chg-1");
+      expect(init).toMatchObject({ method: "PATCH" });
+      expect(JSON.parse((init as RequestInit).body as string)).toEqual({ label: "Max out 401(k)" });
+      await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+    });
+
+    it("Escape cancels without saving", () => {
+      render(
+        <ChangesPanelLeafRow clientId="cli-1" scenarioId="scn-1" enabled={true} change={makeChange()} />,
+      );
+      fireEvent.click(screen.getByLabelText("Rename change"));
+      const input = screen.getByRole("textbox", { name: /change label/i });
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(screen.queryByRole("textbox", { name: /change label/i })).toBeNull();
+    });
+
+    it("Reset to default sends label:null when a custom label is set", async () => {
+      render(
+        <ChangesPanelLeafRow
+          clientId="cli-1"
+          scenarioId="scn-1"
+          enabled={true}
+          customLabel="Max out 401(k)"
+          change={makeChange({ id: "chg-1" })}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Rename change"));
+      fireEvent.click(screen.getByRole("button", { name: /reset to default/i }));
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+      const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(JSON.parse((init as RequestInit).body as string)).toEqual({ label: null });
+    });
   });
 
 });

@@ -4,7 +4,7 @@
 //
 // Single change row inside <ChangesPanel>'s ungrouped (and, in Task 19,
 // toggle-group) sections. Shows op glyph + per-change toggle + label + subtext
-// + a hover-revealed delete button with a confirm popover.
+// + a hover-revealed rename button (inline editor, set or reset label) + delete button with confirm popover.
 //
 // The toggle PATCHes `{ enabled }` against
 // `/api/clients/[id]/scenarios/[sid]/changes/[cid]` and calls `router.refresh()`
@@ -19,7 +19,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TrashIcon } from "@/components/icons";
+import { PencilIcon, TrashIcon } from "@/components/icons";
 import type { ScenarioChange } from "@/engine/scenario/types";
 
 const OP_ICON: Record<ScenarioChange["opType"], { glyph: string; color: string }> = {
@@ -76,6 +76,19 @@ export function ChangesPanelLeafRow({
     }
   }
 
+  async function handleRename(nextLabel: string | null) {
+    setMenuState("idle");
+    const res = await fetch(
+      `/api/clients/${clientId}/scenarios/${scenarioId}/changes/${change.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: nextLabel }),
+      },
+    );
+    if (res.ok) router.refresh();
+  }
+
   async function handleToggleEnabled(next: boolean) {
     setEnabledLocal(next);
     const res = await fetch(
@@ -109,9 +122,30 @@ export function ChangesPanelLeafRow({
         {op.glyph}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-ink truncate">{labelFor(change, targetName, customLabel)}</div>
-        <div className="text-xs text-ink-3 truncate">{subtextFor(change)}</div>
+        {menuState === "renaming" ? (
+          <RenameEditor
+            initial={labelFor(change, targetName, customLabel)}
+            canReset={Boolean(customLabel?.trim())}
+            onCancel={() => setMenuState("idle")}
+            onSave={(value) => void handleRename(value.trim() ? value.trim() : null)}
+            onReset={() => void handleRename(null)}
+          />
+        ) : (
+          <>
+            <div className="text-sm text-ink truncate">{labelFor(change, targetName, customLabel)}</div>
+            <div className="text-xs text-ink-3 truncate">{subtextFor(change)}</div>
+          </>
+        )}
       </div>
+      <button
+        type="button"
+        onClick={() => setMenuState("renaming")}
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded p-1 shrink-0"
+        aria-label="Rename change"
+        title="Rename this change"
+      >
+        <PencilIcon width={13} height={13} aria-hidden="true" />
+      </button>
       <div className="relative shrink-0">
         <button
           type="button"
@@ -214,6 +248,51 @@ function ConfirmDeletePopover({
         >
           Delete
         </button>
+      </div>
+    </div>
+  );
+}
+
+function RenameEditor({
+  initial,
+  canReset,
+  onCancel,
+  onSave,
+  onReset,
+}: {
+  initial: string;
+  canReset: boolean;
+  onCancel: () => void;
+  onSave: (value: string) => void;
+  onReset: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        autoFocus
+        aria-label="Change label"
+        value={value}
+        maxLength={80}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSave(value);
+          if (e.key === "Escape") onCancel();
+        }}
+        className="w-full bg-paper border border-hair rounded px-2 py-1 text-sm text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+      />
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => onSave(value)} className="px-2 h-6 rounded bg-accent text-accent-on text-[11px] font-medium hover:bg-accent-deep">
+          Save
+        </button>
+        <button type="button" onClick={onCancel} className="px-2 h-6 rounded text-[11px] text-ink-3 hover:text-ink">
+          Cancel
+        </button>
+        {canReset && (
+          <button type="button" onClick={onReset} className="ml-auto text-[11px] text-ink-3 hover:text-ink underline">
+            Reset to default
+          </button>
+        )}
       </div>
     </div>
   );
