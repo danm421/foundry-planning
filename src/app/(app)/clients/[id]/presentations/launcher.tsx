@@ -253,6 +253,13 @@ export function PresentationsLauncher(props: Props) {
     }));
   }
 
+  // Map every page in the current deck to the { descriptor, index } shape
+  // expected by withFreshSummaries. Used by the two full-deck export/preview
+  // sites; per-page sites build a one-element array inline.
+  function allPageDescriptors() {
+    return state.pages.map((p, i) => ({ descriptor: descriptorsFor([p])[0], index: i }));
+  }
+
   // Before any export/preview, ensure each Retirement Comparison page carries a
   // fresh AI summary. Writes refreshed text back into options state and returns
   // the descriptors to send to the export route (with fresh text already
@@ -285,9 +292,7 @@ export function PresentationsLauncher(props: Props) {
     setError(null);
     setGenerating(true);
     try {
-      const fresh = await withFreshSummaries(
-        state.pages.map((p, i) => ({ descriptor: descriptorsFor([p])[0], index: i })),
-      );
+      const fresh = await withFreshSummaries(allPageDescriptors());
       const res = await fetch(
         `/api/clients/${props.clientId}/presentations/export-pdf`,
         {
@@ -406,9 +411,7 @@ export function PresentationsLauncher(props: Props) {
             type="button"
             disabled={state.pages.length === 0 || preparing}
             onClick={async () => {
-              const fresh = await withFreshSummaries(
-                state.pages.map((p, i) => ({ descriptor: descriptorsFor([p])[0], index: i })),
-              );
+              const fresh = await withFreshSummaries(allPageDescriptors());
               setPreviewRequest({
                 title: "Full presentation",
                 scenarioId: resolvedScenarioId,
