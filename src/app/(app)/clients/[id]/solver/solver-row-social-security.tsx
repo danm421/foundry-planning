@@ -7,19 +7,17 @@ import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { useSolverSide } from "./solver-section";
 import { SolverSsEditDialog } from "./solver-ss-edit-dialog";
 import { SolverSolveIcon } from "./solver-solve-icon";
-import { SolverSolvePopover } from "./solver-solve-popover";
-import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
 
 type ActiveSolve = {
   target: SolveLeverKey;
-  targetPoS: number;
+  targetPoS?: number;
   iteration: number;
   candidateValue: number | null;
   achievedPoS: number | null;
 };
 
 const SS_CLAIM_AGE_SOLVE_DESCRIPTION =
-  "Finds the Social Security claiming age that reaches your target probability of success.";
+  "Finds the Social Security claiming age that leaves the most money in the portfolio at the end of the plan (deterministic projection — no Monte Carlo).";
 
 interface Props {
   baseIncomes: ClientData["incomes"];
@@ -28,7 +26,7 @@ interface Props {
   workingClient: ClientData["client"];
   onChange(m: SolverMutation): void;
   activeSolve: ActiveSolve | null;
-  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+  onSolveStart: (target: SolveLeverKey, targetPoS?: number) => void;
   onSolveCancel: () => void;
 }
 
@@ -142,12 +140,11 @@ function EditableSummary({
   client: ClientData["client"];
   person: SolverPerson;
   activeSolve: ActiveSolve | null;
-  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+  onSolveStart: (target: SolveLeverKey, targetPoS?: number) => void;
   onSolveCancel: () => void;
   onChange(m: SolverMutation): void;
 }) {
   const [open, setOpen] = useState(false);
-  const [popoverOpen, setPopoverOpen] = useState(false);
   const target: SolveLeverKey = { kind: "ss-claim-age", person };
   const isSolvingHere =
     activeSolve?.target.kind === "ss-claim-age" &&
@@ -158,16 +155,19 @@ function EditableSummary({
     return (
       <div>
         <div className="text-[11px] text-ink-3">{label}</div>
-        <div className="mt-0.5">
-          <SolverSolveProgressStrip
-            title={`Solving ${label} Claim Age for ${Math.round(activeSolve.targetPoS * 100)}% PoS`}
-            iteration={activeSolve.iteration}
-            maxIterations={8}
-            candidateValue={activeSolve.candidateValue}
-            achievedPoS={activeSolve.achievedPoS}
-            valueFormatter={(v) => `${v}`}
-            onCancel={onSolveCancel}
+        <div className="mt-0.5 flex items-center gap-2 rounded-md border border-hair-2 bg-card-2 px-2.5 py-1.5 text-[13px] text-ink-2">
+          <span
+            className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-3 border-t-transparent"
+            aria-hidden="true"
           />
+          <span>Solving claim age…</span>
+          <button
+            type="button"
+            onClick={onSolveCancel}
+            className="ml-auto text-[12px] text-ink-3 underline hover:text-ink"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     );
@@ -195,26 +195,13 @@ function EditableSummary({
             <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474L4.42 15.14a.75.75 0 0 1-.36.198l-3.25.75a.75.75 0 0 1-.902-.901l.75-3.25a.75.75 0 0 1 .198-.36L11.013 1.427Z" />
           </svg>
         </button>
-        <div className="relative shrink-0">
+        <div className="shrink-0">
           <SolverSolveIcon
             label={`Solve ${label} Claim Age`}
             tooltip={SS_CLAIM_AGE_SOLVE_DESCRIPTION}
             disabled={otherSolveActive}
-            onClick={() => setPopoverOpen(true)}
+            onClick={() => onSolveStart(target)}
           />
-          {popoverOpen ? (
-            <SolverSolvePopover
-              title={`Solve ${label} Claim Age`}
-              rangeLabel="62–70"
-              defaultTargetPct={85}
-              open={popoverOpen}
-              onClose={() => setPopoverOpen(false)}
-              onSubmit={(targetPoS) => {
-                setPopoverOpen(false);
-                onSolveStart(target, targetPoS);
-              }}
-            />
-          ) : null}
         </div>
       </div>
       {open ? (
