@@ -124,6 +124,10 @@ export type AuditAction =
   | "comparison_template.delete"
   // Document extraction (LLM call)
   | "client.extract"
+  // Stock options (equity accounts)
+  | "account.stock_options.create"
+  | "account.stock_options.update"
+  | "account.stock_options.delete"
   // Life insurance
   | "insurance_policy.create"
   | "insurance_policy.update"
