@@ -35,6 +35,11 @@ export function ExpensesStep({
   const missingCurrent = !current;
   const missingRetirement = !retirement;
 
+  const updateLiability = (id: number, patch: Partial<LiabilityRow>) =>
+    liabilityList.setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)));
+  const updateOtherExpense = (id: number, patch: Partial<OtherExpenseRow>) =>
+    otherExpenseList.setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)));
+
   registerSave(async () => {
     if (!current || !retirement) {
       throw new Error("Enter both current and retirement annual expenses.");
@@ -113,9 +118,7 @@ export function ExpensesStep({
           rows={liabilityList.rows}
           columns={LIABILITY_COLUMNS}
           isEmpty={isEmptyLiability}
-          update={(id, patch) =>
-            liabilityList.setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)))
-          }
+          update={updateLiability}
           onChange={liabilityList.setRows}
           onRemove={(r) => {
             liabilityList.pushDeleted(r.serverId);
@@ -187,9 +190,7 @@ export function ExpensesStep({
           rows={otherExpenseList.rows}
           columns={OTHER_EXPENSE_COLUMNS}
           isEmpty={isEmptyOtherExpense}
-          update={(id, patch) =>
-            otherExpenseList.setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)))
-          }
+          update={updateOtherExpense}
           onChange={otherExpenseList.setRows}
           onRemove={(r) => {
             otherExpenseList.pushDeleted(r.serverId);

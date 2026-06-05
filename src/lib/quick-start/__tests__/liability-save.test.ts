@@ -19,7 +19,10 @@ function deps() {
   let n = 0;
   return {
     ctx,
-    post: vi.fn(async (_body: unknown) => ({ id: `srv-${++n}` })),
+    post: vi.fn(async (_body: unknown) => {
+      void _body;
+      return { id: `srv-${++n}` };
+    }),
     put: vi.fn(async () => ({})),
     del: vi.fn(async () => ({})),
   };
@@ -50,11 +53,11 @@ describe("saveLiabilityRows", () => {
     const body = d.post.mock.calls[0][0] as {
       termMonths: number;
       interestRate: number;
-      monthlyPayment: unknown;
+      monthlyPayment: number;
     };
     expect(body.termMonths).toBe(360);
     expect(body.interestRate).toBe(0.06);
-    expect(Math.round(Number(body.monthlyPayment))).toBe(1799);
+    expect(Math.round(body.monthlyPayment)).toBe(1799);
   });
 
   it("skips an empty row (no write, row kept)", async () => {
