@@ -8,9 +8,14 @@ import {
   expenses as expensesTable,
   incomes as incomesTable,
   familyMembers as familyTable,
+  modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
 } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import { loadClientIdentity } from "@/lib/quick-start/load-identity";
+import { buildModelPortfolioOptions } from "@/lib/cma/model-portfolio-options";
+import type { GrowthCategorySource, FlatGrowthSource } from "@/lib/quick-start/types";
 import { QuickStartWizard, type QsBootstrap } from "./quick-start-wizard";
 
 export default async function QuickStartPage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,6 +67,34 @@ export default async function QuickStartPage({ params }: { params: Promise<{ id:
   const famClient = fam.find((f) => f.role === "client") ?? null;
   const famSpouse = fam.find((f) => f.role === "spouse") ?? null;
 
+  const [portfolioRows, allocationRows, assetClassRows] = await Promise.all([
+    db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+    db.select().from(modelPortfolioAllocations),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+  ]);
+  const modelPortfolioList = buildModelPortfolioOptions(
+    portfolioRows,
+    allocationRows,
+    assetClassRows,
+  );
+
+  // Map a stored planSettings growth source onto the picker's vocabulary.
+  // Investable categories collapse anything that isn't model_portfolio/inflation
+  // (e.g. "default", "asset_mix", "holdings") to "custom" — the quick-start
+  // picker only offers model_portfolio / inflation / custom.
+  const investableSeed = (
+    source: string | null | undefined,
+    portfolioId: string | null | undefined,
+  ): { source: GrowthCategorySource; portfolioId: string | null } => {
+    if (source === "model_portfolio" && portfolioId) {
+      return { source: "model_portfolio", portfolioId };
+    }
+    if (source === "inflation") return { source: "inflation", portfolioId: null };
+    return { source: "custom", portfolioId: null };
+  };
+  const flatSeed = (source: string | null | undefined): FlatGrowthSource =>
+    source === "inflation" ? "inflation" : "custom";
+
   const currentYear = new Date().getFullYear();
   const bootstrap: QsBootstrap = {
     clientId: id,
@@ -105,6 +138,17 @@ export default async function QuickStartPage({ params }: { params: Promise<{ id:
       realEstate: Number(settings?.defaultGrowthRealEstate ?? 0.04),
       lifeInsurance: Number(settings?.defaultGrowthLifeInsurance ?? 0.03),
       inflation: Number(settings?.inflationRate ?? 0.03),
+    },
+    modelPortfolios: modelPortfolioList,
+    growthSource: {
+      taxable: investableSeed(settings?.growthSourceTaxable, settings?.modelPortfolioIdTaxable),
+      cash: investableSeed(settings?.growthSourceCash, settings?.modelPortfolioIdCash),
+      retirement: investableSeed(
+        settings?.growthSourceRetirement,
+        settings?.modelPortfolioIdRetirement,
+      ),
+      realEstate: flatSeed(settings?.growthSourceRealEstate),
+      lifeInsurance: flatSeed(settings?.growthSourceLifeInsurance),
     },
   };
   return <QuickStartWizard bootstrap={bootstrap} />;
