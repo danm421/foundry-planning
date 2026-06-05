@@ -9,7 +9,10 @@
 // Returns an empty array (not null) when every mutation is a no-op vs base.
 
 import type { ClientData } from "@/engine/types";
-import { isRetirementLivingExpense } from "./living-expense";
+import {
+  isRetirementLivingExpense,
+  synthesizeRetirementLivingExpense,
+} from "./living-expense";
 import type {
   SolverMutation,
   SolverPerson,
@@ -166,6 +169,32 @@ export function mutationsToScenarioChanges(
             e.annualAmount,
             e.annualAmount * m.multiplier,
           );
+        }
+        break;
+      }
+      case "living-expense-amount": {
+        const planStartYear = source.planSettings.planStartYear;
+        const retirement = source.expenses.filter((e) =>
+          isRetirementLivingExpense(e, planStartYear),
+        );
+        const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
+        if (retirement.length === 0) {
+          const synth = synthesizeRetirementLivingExpense(source, m.amount);
+          pushTechniqueUpsert(
+            nonClientDrafts,
+            "expense",
+            undefined,
+            synth.id,
+            synth as unknown as Record<string, unknown>,
+          );
+        } else {
+          for (const e of retirement) {
+            const next =
+              baseSum > 0
+                ? e.annualAmount * (m.amount / baseSum)
+                : m.amount / retirement.length;
+            accumulateExpense(e.id, "annualAmount", e.annualAmount, next);
+          }
         }
         break;
       }
@@ -554,7 +583,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment",
+  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "expense",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,
