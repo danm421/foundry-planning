@@ -1,9 +1,14 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { scenarios as scenariosTable, scenarioSnapshots } from "@/db/schema";
+import {
+  clients,
+  crmHouseholdContacts,
+  scenarios as scenariosTable,
+  scenarioSnapshots,
+} from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
 import { listTemplatesForUser } from "@/lib/presentations/templates-repo";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { PresentationsLauncher } from "./launcher";
@@ -17,9 +22,17 @@ export default async function PresentationsPage({
   const firmId = await requireOrgId();
   const { userId } = await auth();
   if (!userId) throw new UnauthorizedError();
-  await findClientInFirm(clientId, firmId);
 
-  const [scenarioRows, snapshotRows, templates, investmentCatalog] = await Promise.all([
+  // Firm-scope gate + the household id we need for the primary contact's last
+  // name (drives the auto filename in the launcher).
+  const [clientRow] = await db
+    .select({ id: clients.id, crmHouseholdId: clients.crmHouseholdId })
+    .from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
+    .limit(1);
+  if (!clientRow) notFound();
+
+  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -38,12 +51,25 @@ export default async function PresentationsPage({
       .where(eq(scenarioSnapshots.clientId, clientId)),
     listTemplatesForUser(firmId, userId),
     listInvestmentOptionCatalog(clientId, firmId),
+    db
+      .select({ lastName: crmHouseholdContacts.lastName })
+      .from(crmHouseholdContacts)
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId),
+          eq(crmHouseholdContacts.role, "primary"),
+        ),
+      )
+      .limit(1),
   ]);
+
+  const clientLastName = primaryContactRows[0]?.lastName ?? "";
 
   return (
     <PresentationsLauncher
       clientId={clientId}
       currentUserId={userId}
+      clientLastName={clientLastName}
       scenarios={scenarioRows}
       snapshots={snapshotRows}
       initialTemplates={templates}
