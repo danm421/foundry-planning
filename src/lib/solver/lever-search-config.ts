@@ -99,7 +99,7 @@ export function livingExpenseSearchCeiling(tree: ClientData): number {
   const income = tree.incomes.reduce((s, i) => s + i.annualAmount, 0);
   const assets = tree.accounts.reduce((s, a) => s + (a.value ?? 0), 0);
   const estimate = Math.max(living * 3, income + 0.1 * assets, 300_000);
-  return Math.min(3_000_000, Math.max(300_000, estimate));
+  return Math.min(3_000_000, estimate); // estimate already ≥ 300k via the max above
 }
 
 /** Build a SolverMutation for a candidate value at the targeted lever. */

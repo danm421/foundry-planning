@@ -39,6 +39,16 @@ describe("leverSearchConfig", () => {
     expect(cfg.hi).toBeLessThanOrEqual(3_000_000);
   });
 
+  it("living-expense-scale ceiling rises above the 300k floor for a resource-rich tree", () => {
+    // assets 5M → income + 0.1*assets = 500k → estimate drives hi past the floor.
+    const richTree = {
+      ...emptyTree,
+      accounts: [{ value: 5_000_000 }],
+    } as unknown as ClientData;
+    const cfg = leverSearchConfig({ kind: "living-expense-scale" }, richTree);
+    expect(cfg.hi).toBe(500_000);
+  });
+
   it("ss-claim-age: range 62-70 step 1 d=+1", () => {
     expect(
       leverSearchConfig({ kind: "ss-claim-age", person: "spouse" }, emptyTree),
