@@ -71,6 +71,10 @@ import {
   _resetSyntheticIdCounter,
 } from "./asset-transactions";
 import type { BusinessSalesResult } from "./asset-transactions";
+import { createEquityState, computeEquityYear } from "./equity/tax-events";
+import { applyEquityYear } from "./equity/apply";
+import { remainingGrantValue } from "./equity/valuation";
+import type { StockOptionPlan } from "./equity/types";
 import {
   computeFirstDeathYear,
   computeFinalDeathYear,
@@ -143,9 +147,9 @@ function legacyTaxType(
 
 // Tax-efficiency ranking by category alone — Cash → Taxable → Tax-Deferred → Roth.
 // Returns null for categories that can't be cleanly liquidated at year boundaries
-// (real estate, business, life insurance). Shared by household and entity-scoped
-// withdrawal strategies; callers layer on their own ownership / default-checking
-// exclusions before consulting it.
+// (real estate, business, life insurance, stock_options). Shared by household and
+// entity-scoped withdrawal strategies; callers layer on their own ownership /
+// default-checking exclusions before consulting it.
 function categoryWithdrawalPriority(acct: Account): number | null {
   if (acct.category === "cash") return 1;
   if (acct.category === "taxable") return 2;
@@ -155,6 +159,7 @@ function categoryWithdrawalPriority(acct: Account): number | null {
     return 3;
   }
   if (acct.category === "notes_receivable") return null; // notes amortize themselves
+  if (acct.category === "stock_options") return null; // illiquid grants — not a drawdown source
   return null;
 }
 
@@ -758,6 +763,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const normalSavingsRules = data.savingsRules.filter((r) => !r.fundFromExpenseReduction);
   const selfFundingRules = data.savingsRules.filter((r) => r.fundFromExpenseReduction);
 
+  // Equity compensation. Build the per-plan action timeline once (loop-
+  // invariant); per-year vest/exercise/sell tax events are computed inside the
+  // year loop. Opt-in: when `stockOptionPlans` is empty the whole equity phase
+  // is a no-op, so plans without stock_options accounts are unaffected.
+  const equityPlans: StockOptionPlan[] = data.stockOptionPlans ?? [];
+  const equityState = createEquityState(equityPlans, planSettings.planStartYear);
+  // Destination taxable-account id per plan, created lazily on first acquisition.
+  const equityDestByPlan = new Map<string, string>();
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -1004,6 +1018,89 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
     }
+
+    // ── Equity compensation: vest / exercise / sell events for this year ──────
+    // The equity module is authoritative over equity tax + share movement.
+    // Acquisitions land in-kind in a destination taxable account (auto-created
+    // on first acquisition); sells drain it; the destination's generic growth
+    // keeps appreciation unrealized so only the module books the gain. Runs
+    // AFTER BoY purchases/sales but BEFORE the growth loop so the destination
+    // account participates in this year's growth.
+    let equityOrdinaryIncome = 0;
+    let equityCapitalGains = 0;
+    let equityStCapitalGains = 0;
+    let equityIsoSpread = 0;
+    if (equityPlans.length > 0) {
+      const checkingId = defaultChecking?.id ?? "";
+      for (const plan of equityPlans) {
+        const result = computeEquityYear(plan, equityState, year);
+        const hasActivity =
+          result.acquisitions.length > 0 ||
+          result.sellProceeds > 0 ||
+          result.ordinaryIncome !== 0 ||
+          result.isoSpread !== 0 ||
+          result.strikeCashOutflow !== 0;
+        if (!hasActivity) continue;
+
+        // Resolve / lazily create the destination taxable account.
+        let destId =
+          plan.destinationAccountId ?? equityDestByPlan.get(plan.accountId) ?? null;
+        if (!destId && plan.autoCreateDestination) {
+          destId = `equity-dest-${plan.accountId}`;
+          equityDestByPlan.set(plan.accountId, destId);
+          // Mirror applyAssetPurchases' synthetic-account creation. The
+          // realization mix is pure LTCG with no turnover so the generic
+          // growth loop keeps appreciation unrealized — the equity module is
+          // the sole gain-booker, avoiding double tax.
+          const destAccount: Account = {
+            id: destId,
+            name: `${plan.ticker ?? "Equity"} shares`,
+            category: "taxable",
+            subType: "brokerage",
+            value: 0,
+            basis: 0,
+            growthRate: plan.growthRate,
+            rmdEnabled: false,
+            titlingType: "jtwros",
+            realization: {
+              pctOrdinaryIncome: 0,
+              pctLtCapitalGains: 1,
+              pctQualifiedDividends: 0,
+              pctTaxExempt: 0,
+              turnoverPct: 0,
+            },
+            // Household-owned (single client), mirroring applyAssetPurchases.
+            owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+          };
+          workingAccounts.push(destAccount);
+          accountBalances[destId] = 0;
+          basisMap[destId] = 0;
+          accountLedgers[destId] = {
+            beginningValue: 0,
+            growth: 0,
+            contributions: 0,
+            distributions: 0,
+            internalContributions: 0,
+            internalDistributions: 0,
+            rmdAmount: 0,
+            fees: 0,
+            endingValue: 0,
+            entries: [],
+            basisBoY: 0,
+          };
+        }
+        if (!destId) destId = checkingId; // fallback: no destination → land value in checking
+
+        const applied = applyEquityYear(result, destId, accountBalances, basisMap, checkingId);
+        equityOrdinaryIncome += applied.taxDeltas.ordinaryIncome;
+        equityCapitalGains += applied.taxDeltas.capitalGains;
+        equityStCapitalGains += applied.taxDeltas.stCapitalGains;
+        equityIsoSpread += applied.taxDeltas.isoSpread;
+      }
+    }
+    // ISO bargain element is an AMT-preference item, not regular-taxable.
+    // Threaded into computeTaxForYear below as the AMTI add-back; accumulated
+    // here so the wiring lands in one place.
 
     // Inject synthetic property-tax expenses for real estate accounts. Built
     // after BoY sales/purchases so a sold property is excluded and a newly-
@@ -1325,6 +1422,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // stock_options base accounts hold only not-yet-acquired value (the equity
+    // module already moved acquired shares into the destination taxable account).
+    // Overwrite AFTER the growth loop so the value isn't double-grown — the
+    // valuation projects FMV/intrinsic from the start-year price itself.
+    for (const plan of equityPlans) {
+      accountBalances[plan.accountId] = remainingGrantValue(plan, year, planSettings.planStartYear);
+    }
+
     // Per-account cash deltas plus per-account entry lists for this year. A "credit"
     // with a positive amount is an inflow; negative is an outflow. The entries list
     // gives the ledger modal something to show beyond the summed totals.
@@ -1488,11 +1593,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
-      earnedIncome: 0,
+      // Equity W-2 ordinary income (RSU vest FMV, NQSO/disqualifying-ISO
+      // bargain element) is FICA-bearing earned income.
+      earnedIncome: equityOrdinaryIncome,
       ordinaryIncome: realizationOI,
       dividends: realizationQDiv,
-      capitalGains: 0,
-      stCapitalGains: realizationSTCG,
+      // Equity capital gains booked on sale by the equity module. Asset-sale
+      // and entity gains still add via taxDetail.capitalGains += ... later.
+      capitalGains: equityCapitalGains,
+      stCapitalGains: realizationSTCG + equityStCapitalGains,
       qbi: 0,
       taxExempt: 0,
       // Subset of taxExempt — muni-bond interest only (needed for IRMAA MAGI).
@@ -2849,6 +2958,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: 0,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          isoSpread: equityIsoSpread,
         });
         return trial.taxResult.flow.incomeTaxBase;
       };
@@ -3010,6 +3120,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       retirementBreakdown,
       primaryAge: ages.client,
       spouseAge: ages.spouse,
+      isoSpread: equityIsoSpread,
     });
 
     // `taxes` is the pre-supplemental tax. The legacy no-checking path (else branch
@@ -3828,6 +3939,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          isoSpread: equityIsoSpread,
         });
       }
     }
@@ -3966,6 +4078,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          isoSpread: equityIsoSpread,
         });
 
         const taxAndPenalty =
@@ -5265,7 +5378,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       year.portfolioAssets.retirementTotal +
       year.portfolioAssets.realEstateTotal +
       year.portfolioAssets.businessTotal +
-      year.portfolioAssets.lifeInsuranceTotal;
+      year.portfolioAssets.lifeInsuranceTotal +
+      year.portfolioAssets.stockOptionsTotal;
     // H1: keep the canonical liquid total in sync after the re-bucket — it feeds
     // the chart/cell/BoY and includes accessibleTrustAssetsTotal, which this pass
     // can change. Mirrors computePortfolioSnapshot.

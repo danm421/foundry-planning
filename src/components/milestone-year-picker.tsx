@@ -209,10 +209,11 @@ export default function MilestoneYearPicker({
             className={`${INPUT_CLASS} ${currentRef ? "text-gray-300" : ""}`}
           />
           {currentRef && (
-            <span className="absolute inset-y-0 right-2 flex items-center">
-              <span className="rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent">
-                {labels[currentRef]}
-              </span>
+            <span
+              title={labels[currentRef]}
+              className="pointer-events-none absolute right-2 top-1/2 max-w-[58%] -translate-y-1/2 truncate rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent"
+            >
+              {labels[currentRef]}
             </span>
           )}
         </div>

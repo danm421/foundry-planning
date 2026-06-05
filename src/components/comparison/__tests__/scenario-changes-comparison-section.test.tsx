@@ -35,8 +35,8 @@ describe("ScenarioChangesComparisonSection", () => {
       scenarioName: "Push Retirement",
       label: "Push Retirement",
       changes: [
-        { id: "c1", scenarioId: "s1", opType: "edit", targetKind: "income", targetId: "i1", payload: { endYear: { from: 2040, to: 2042 } }, toggleGroupId: null, orderIndex: 0, enabled: true, updatedAt: new Date() },
-        { id: "c2", scenarioId: "s1", opType: "edit", targetKind: "income", targetId: "i2", payload: { endYear: { from: 2040, to: 2042 } }, toggleGroupId: "g1", orderIndex: 0, enabled: true, updatedAt: new Date() },
+        { id: "c1", scenarioId: "s1", opType: "edit", targetKind: "income", targetId: "i1", payload: { endYear: { from: 2040, to: 2042 } }, toggleGroupId: null, orderIndex: 0, enabled: true, updatedAt: new Date(), label: null },
+        { id: "c2", scenarioId: "s1", opType: "edit", targetKind: "income", targetId: "i2", payload: { endYear: { from: 2040, to: 2042 } }, toggleGroupId: "g1", orderIndex: 0, enabled: true, updatedAt: new Date(), label: null },
       ],
       toggleGroups: [{ id: "g1", scenarioId: "s1", name: "Spouse Push", defaultOn: true, requiresGroupId: null, orderIndex: 0 } as unknown as NonNullable<ComparisonPlan["panelData"]>["toggleGroups"][number]],
       cascadeWarnings: [],

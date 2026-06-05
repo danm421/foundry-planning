@@ -276,3 +276,24 @@ describe("calcTaxableSocialSecurity — pia_at_fra-derived gross integration", (
     expect(taxable).toBeCloseTo(14280, 2);
   });
 });
+
+describe("calculateTaxYear — ISO spread as an AMT preference item", () => {
+  // Single filer with enough ordinary income that AMTI sits well above the
+  // exemption edge, so an ISO bargain element pushes tentative AMT past regular.
+  const base = makeInput({
+    filingStatus: "single",
+    ordinaryIncome: 250_000,
+    flatStateRate: 0,
+  });
+
+  it("ISO spread increases AMTI and can produce additional AMT", () => {
+    const withoutIso = calculateTaxYear(base);
+    const withIso = calculateTaxYear({ ...base, isoSpread: 100_000 });
+
+    // ISO bargain element is added to AMTI → tentative AMT rises → additional AMT.
+    expect(withIso.flow.amtAdditional).toBeGreaterThan(withoutIso.flow.amtAdditional);
+
+    // ISO spread is NOT regular taxable income — regular tax is unchanged.
+    expect(withIso.flow.regularTaxCalc).toBeCloseTo(withoutIso.flow.regularTaxCalc, 2);
+  });
+});

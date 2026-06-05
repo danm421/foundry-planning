@@ -72,29 +72,29 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
   return (
     <div className="mt-8">
       <h3 className="text-sm font-semibold mb-2">Social Security</h3>
-      <div className="border rounded divide-y">
+      <div className="border border-gray-800 rounded divide-y divide-gray-800">
         <button
           type="button"
           onClick={() => setEditing("client")}
-          className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center justify-between"
+          className="w-full text-left px-4 py-3 hover:bg-gray-800/60 flex items-center justify-between"
         >
           <span className="text-sm">
-            <span className="font-medium">{clientInfo.firstName}</span>
-            <span className="text-slate-400 ml-2">{summaryLabel(clientRow, clientInfo, "client")}</span>
+            <span className="font-medium text-gray-100">{clientInfo.firstName}</span>
+            <span className="text-gray-400 ml-2">{summaryLabel(clientRow, clientInfo, "client")}</span>
           </span>
-          <span className="text-slate-300">›</span>
+          <span className="text-gray-500">›</span>
         </button>
         {hasSpouse && (
           <button
             type="button"
             onClick={() => setEditing("spouse")}
-            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center justify-between"
+            className="w-full text-left px-4 py-3 hover:bg-gray-800/60 flex items-center justify-between"
           >
             <span className="text-sm">
-              <span className="font-medium">{clientInfo.spouseName ?? "Spouse"}</span>
-              <span className="text-slate-400 ml-2">{summaryLabel(spouseRow, clientInfo, "spouse")}</span>
+              <span className="font-medium text-gray-100">{clientInfo.spouseName ?? "Spouse"}</span>
+              <span className="text-gray-400 ml-2">{summaryLabel(spouseRow, clientInfo, "spouse")}</span>
             </span>
-            <span className="text-slate-300">›</span>
+            <span className="text-gray-500">›</span>
           </button>
         )}
       </div>

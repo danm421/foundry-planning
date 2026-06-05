@@ -7,7 +7,7 @@ import SavingsRulesList from "./forms/savings-rules-list";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
-import { CurrencyInput } from "./currency-input";
+import { CurrencyInput, cleanInput, formatDisplay } from "./currency-input";
 import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
@@ -250,6 +250,14 @@ function PlusMiniIcon() {
   return (
     <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
       <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793 3 14.172V17h2.828l8.379-8.379-2.828-2.828z" />
     </svg>
   );
 }
@@ -1403,6 +1411,47 @@ export default function IncomeExpensesView({
     }
   }
 
+  // Inline amount edit for an expense row. Reconstructs the full field set from
+  // the current expense (overriding only the amount) so scenario-mode edits
+  // diff against base correctly and don't clobber other overrides on the same
+  // row — the unified writer replaces the change payload with whatever fields we
+  // send. Optimistically updates the list, reverting if the write fails.
+  async function saveExpenseAmount(expense: Expense, nextAmount: number): Promise<boolean> {
+    const body = {
+      type: expense.type,
+      name: expense.name,
+      annualAmount: String(nextAmount),
+      startYear: String(expense.startYear),
+      endYear: String(expense.endYear),
+      growthRate: expense.growthRate,
+      growthSource: expense.growthSource ?? "custom",
+      cashAccountId: expense.cashAccountId ?? null,
+      ownerAccountId: expense.ownerAccountId ?? null,
+      inflationStartYear: expense.inflationStartYear ?? null,
+      startYearRef: expense.startYearRef ?? null,
+      endYearRef: expense.endYearRef ?? null,
+      deductionType: expense.deductionType ?? null,
+      endsAtMedicareEligibilityOwner: expense.endsAtMedicareEligibilityOwner ?? null,
+    };
+    const prevAmount = expense.annualAmount;
+    setExpenseList((list) =>
+      list.map((e) => (e.id === expense.id ? { ...e, annualAmount: String(nextAmount) } : e)),
+    );
+    try {
+      const res = await writer.submit(
+        { op: "edit", targetKind: "expense", targetId: expense.id, desiredFields: body },
+        { url: `/api/clients/${clientId}/expenses/${expense.id}`, method: "PUT", body },
+      );
+      if (!res.ok) throw new Error("Failed to save expense amount");
+      return true;
+    } catch {
+      setExpenseList((list) =>
+        list.map((e) => (e.id === expense.id ? { ...e, annualAmount: prevAmount } : e)),
+      );
+      return false;
+    }
+  }
+
   const planStart = clientInfo?.planStartYear;
   const planEnd = clientInfo?.planEndYear;
 
@@ -1724,6 +1773,9 @@ export default function IncomeExpensesView({
               );
               if (items.length === 0) return null;
               const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
+              // Living-expense rows edit their amount inline; the pencil opens the
+              // full editor. Other groups keep the click-row-to-open behavior.
+              const isLiving = group.types.includes("living");
               return (
                 <Group
                   key={group.label}
@@ -1739,7 +1791,14 @@ export default function IncomeExpensesView({
                     return (
                       <Row
                         key={expense.id}
-                        onClick={() => !expenseEdit && setExpenseDialog({ open: true, editing: expense })}
+                        onClick={
+                          isLiving
+                            ? undefined
+                            : () => !expenseEdit && setExpenseDialog({ open: true, editing: expense })
+                        }
+                        onEdit={isLiving ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
+                        amount={isLiving ? Number(expense.annualAmount) : undefined}
+                        onSaveAmount={isLiving ? (next) => saveExpenseAmount(expense, next) : undefined}
                         editMode={expenseEdit}
                         onDelete={expense.isDefault ? undefined : () => setDeletingExpense(expense)}
                         label={expense.name}
@@ -1970,27 +2029,122 @@ function Group({
   );
 }
 
+// Inline amount editor for a row. Renders the formatted value as a click-to-edit
+// button; on activation swaps in a compact currency input that commits on Enter
+// or blur and cancels on Escape. `onSave` returns whether the write succeeded so
+// we can keep the field calm on success and let the parent revert on failure.
+function InlineAmount({
+  amount,
+  onSave,
+  label,
+}: {
+  amount: number;
+  onSave: (next: number) => Promise<boolean>;
+  label: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  function begin() {
+    setDraft(amount ? String(amount) : "");
+    setEditing(true);
+  }
+
+  async function commit() {
+    if (saving) return;
+    const next = Number(cleanInput(draft) || "0");
+    if (!Number.isFinite(next) || next === amount) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    await onSave(next);
+    setSaving(false);
+    setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          begin();
+        }}
+        className="min-w-[88px] rounded-sm px-1.5 py-0.5 text-right text-sm font-medium text-gray-100 hover:bg-gray-800 hover:ring-1 hover:ring-inset hover:ring-gray-600"
+        aria-label={`Edit amount for ${label}`}
+      >
+        {fmt(amount)}
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative w-[104px]" onClick={(e) => e.stopPropagation()}>
+      <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
+      <input
+        ref={inputRef}
+        inputMode="decimal"
+        value={formatDisplay(draft)}
+        disabled={saving}
+        onChange={(e) => setDraft(cleanInput(e.target.value))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setEditing(false);
+          }
+        }}
+        className="w-full rounded-sm border border-gray-600 bg-gray-800 py-0.5 pl-4 pr-1.5 text-right text-sm text-gray-100 outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 disabled:opacity-60"
+        aria-label={`Amount for ${label}`}
+      />
+    </div>
+  );
+}
+
 function Row({
   onClick,
   editMode,
   onDelete,
+  onEdit,
   label,
   meta,
   starts,
   value,
+  amount,
+  onSaveAmount,
   outOfEstate,
 }: {
   onClick?: () => void;
   editMode: boolean;
   onDelete?: () => void;
+  /** When set, renders a pencil button that opens the full editor. */
+  onEdit?: () => void;
   label: string;
   meta?: (string | null | undefined)[];
   starts?: string;
   value: string;
+  /** Raw numeric amount — required alongside `onSaveAmount` for inline editing. */
+  amount?: number;
+  /** When set (with `amount`), the value becomes an inline-editable field. */
+  onSaveAmount?: (next: number) => Promise<boolean>;
   outOfEstate?: boolean;
 }) {
   const metaLine = (meta ?? []).filter(Boolean).join(" · ");
   const interactive = Boolean(onClick);
+  const inlineEditable = onSaveAmount != null && amount != null;
   return (
     <div
       onClick={onClick}
@@ -2013,8 +2167,12 @@ function Row({
         {starts && (
           <span className="min-w-[72px] text-right text-xs text-gray-400">{starts}</span>
         )}
-        <span className="min-w-[88px] text-right text-sm font-medium text-gray-100">{value}</span>
-        {editMode && onDelete && (
+        {inlineEditable ? (
+          <InlineAmount amount={amount} onSave={onSaveAmount} label={label} />
+        ) : (
+          <span className="min-w-[88px] text-right text-sm font-medium text-gray-100">{value}</span>
+        )}
+        {editMode && onDelete ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -2025,7 +2183,19 @@ function Row({
           >
             <TrashIcon />
           </button>
-        )}
+        ) : onEdit && !editMode ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="text-gray-500 hover:text-accent"
+            aria-label={`Edit ${label}`}
+            title={`Edit ${label}`}
+          >
+            <PencilIcon />
+          </button>
+        ) : null}
       </div>
     </div>
   );

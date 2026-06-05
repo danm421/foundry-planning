@@ -211,6 +211,7 @@ export function ToggleGroupCard({
                 change={c}
                 enabled={c.enabled}
                 targetName={targetNames?.[`${c.targetKind}:${c.targetId}`]}
+                customLabel={c.label}
               />
             ))
           )}

@@ -2,6 +2,7 @@
 
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import { FieldTooltip } from "./field-tooltip";
 import { supportsContributionCap } from "./contribution-cap-checkbox";
 
 /** Retirement subtypes on which the employee's contribution can be entered as a
@@ -124,6 +125,11 @@ export default function ContributionAmountFields({
         <label className="block text-sm font-medium text-gray-300" {...(primaryInputId ? { htmlFor: primaryInputId } : {})}>
           {label}
           {required && mode !== "max" && <span className="text-red-500"> *</span>}
+          {mode === "max" && (
+            <span className="ml-1.5 align-middle">
+              <FieldTooltip text="Contributes the IRS limit each year for the account owner's age (base + age-50 catch-up + SECURE 2.0 60-63 super catch-up when applicable)." />
+            </span>
+          )}
         </label>
         {showAnyToggle && (
           <div className="flex gap-1 text-xs">
@@ -217,26 +223,17 @@ export default function ContributionAmountFields({
           </p>
         </>
       ))}
-      {mode === "max" && (
-        <>
-          <div className="mt-1 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
-            Contributes the IRS limit each year for the account owner&rsquo;s age
-            (base + age-50 catch-up + SECURE 2.0 60-63 super catch-up when
-            applicable).
-          </div>
-          {rothSplit && (
-            <div className="mt-2">
-              <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-share`}>Roth share of max contribution (%)</label>
-              <PercentInput
-                id={`${idPrefix}-roth-share`}
-                name="rothShareOfMax"
-                placeholder="0"
-                defaultValue={rothRatio ? rothRatio * 100 : ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </div>
-          )}
-        </>
+      {mode === "max" && rothSplit && (
+        <div className="mt-2">
+          <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-share`}>Roth share of max contribution (%)</label>
+          <PercentInput
+            id={`${idPrefix}-roth-share`}
+            name="rothShareOfMax"
+            placeholder="0"
+            defaultValue={rothRatio ? rothRatio * 100 : ""}
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </div>
       )}
     </div>
   );

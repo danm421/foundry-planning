@@ -80,7 +80,8 @@ export function SolverRowLivingExpenseScale({
         <SolverSolveProgressStrip
           title={`Solving Living Expense Scale for ${Math.round(activeSolve.targetPoS * 100)}% PoS`}
           iteration={activeSolve.iteration}
-          maxIterations={8}
+          // Wider 0.5–10× range solved to tolerance:0 collapses in ~12–13 steps.
+          maxIterations={14}
           candidateValue={activeSolve.candidateValue}
           achievedPoS={activeSolve.achievedPoS}
           valueFormatter={(v) => `${Math.round(v * 100)}%`}

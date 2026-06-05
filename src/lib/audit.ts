@@ -124,6 +124,13 @@ export type AuditAction =
   | "comparison_template.delete"
   // Document extraction (LLM call)
   | "client.extract"
+  // Stock options (equity accounts)
+  | "account.stock_options.create"
+  | "account.stock_options.update"
+  | "account.stock_options.delete"
+  | "account.stock_options.grant.create"
+  | "account.stock_options.grant.update"
+  | "account.stock_options.grant.delete"
   // Life insurance
   | "insurance_policy.create"
   | "insurance_policy.update"
@@ -169,6 +176,8 @@ export type AuditAction =
   | "toggle_group.move_change"
   // Per-change enable/disable toggle on the comparison-page Changes drawer.
   | "scenario_change.set_enabled"
+  // Per-change custom label (rename) or reset to computed smart label (null).
+  | "scenario_change.rename"
   // Scenario snapshots (frozen comparisons; survive scenario deletion).
   | "snapshot.create"
   | "snapshot.delete"
