@@ -359,8 +359,8 @@ export interface SolvedColumnConfig {
   /**
    * Turns the raw `solvedValue` the SSE returns into the display string for the
    * highlighted cell. `rows` is the same source of truth the grid renders, so
-   * formatting (and any base value, e.g. the retirement-expense the multiplier
-   * scales) comes from one place. Returns null when it can't be formatted.
+   * formatting (and any reference value off the highlighted row) comes from one
+   * place. Returns null when it can't be formatted.
    */
   formatSolved: (solvedValue: number, rows: ExploreRow[]) => string | null;
 }

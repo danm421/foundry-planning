@@ -474,7 +474,16 @@ describe("living-expense-amount → scenario changes", () => {
     ]);
     const add = drafts.find((d) => d.targetKind === "expense" && d.opType === "add");
     expect(add).toBeTruthy();
-    expect((add?.payload as { annualAmount: number }).annualAmount).toBe(70_000);
+    const payload = add?.payload as {
+      annualAmount: number;
+      startYearRef: string;
+      endYearRef: string;
+    };
+    expect(payload.annualAmount).toBe(70_000);
+    // The year-refs anchor the synthesized row to retirement on reload — the
+    // load-bearing fields that resolveRefYears re-resolves. Guard them.
+    expect(payload.startYearRef).toBe("client_retirement");
+    expect(payload.endYearRef).toBe("plan_end");
   });
 });
 

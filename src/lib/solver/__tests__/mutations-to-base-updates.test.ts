@@ -145,6 +145,9 @@ describe("living-expense-amount → base updates", () => {
     ]);
     expect(out.expenseInserts).toHaveLength(1);
     expect(out.expenseInserts[0].annualAmount).toBe(70_000);
+    // Year-refs anchor the inserted row to retirement on reload (resolveRefYears).
+    expect(out.expenseInserts[0].startYearRef).toBe("client_retirement");
+    expect(out.expenseInserts[0].endYearRef).toBe("plan_end");
   });
 });
 
