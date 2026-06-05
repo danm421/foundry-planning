@@ -328,3 +328,56 @@ describe("LiveSolverWorkspace — right-column source change", () => {
     expect(screen.getByTestId("chart-current-total")).toHaveTextContent("2500000");
   });
 });
+
+describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
+  it("auto-runs MC with both plans on first mount", async () => {
+    render(<LiveSolverWorkspace {...baseProps} />);
+    await waitFor(() => {
+      expect(
+        mcCalls.some((c) => c.enabled && c.planIds.length === 2),
+      ).toBe(true);
+    });
+    const autoRun = mcCalls.find((c) => c.enabled && c.planIds.length === 2)!;
+    expect(autoRun.planIds.some((id) => id.startsWith("base:"))).toBe(true);
+    expect(autoRun.planIds.some((id) => id.startsWith("working:"))).toBe(true);
+  });
+
+  it("shows the Recalculate overlay after an edit and re-runs the working plan only", async () => {
+    // Hook reports a ready result so the Scenario gauge starts fresh.
+    mcStateRef.current = {
+      status: "ready",
+      result: {
+        perPlan: [
+          { planId: "base:v1", successRate: 0.8 },
+          { planId: "working:v1", successRate: 0.85 },
+        ],
+      },
+    };
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        projection: [{ year: 2026, portfolioAssets: { total: 900_000 } }],
+      }),
+    });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // No overlay while fresh.
+    expect(screen.queryByRole("button", { name: /recalculate/i })).toBeNull();
+
+    // Edit an input below → Scenario goes stale → overlay appears.
+    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
+    fireEvent.change(cooper, { target: { value: "67" } });
+
+    const recalc = await screen.findByRole("button", { name: /recalculate/i });
+    const callsBefore = mcCalls.length;
+    fireEvent.click(recalc);
+
+    // The Recalculate launch passes a single (working-only) plan.
+    await waitFor(() => {
+      const launched = mcCalls.slice(callsBefore).find((c) => c.enabled);
+      expect(launched?.planIds).toHaveLength(1);
+      expect(launched?.planIds[0]?.startsWith("working:")).toBe(true);
+    });
+  });
+});
