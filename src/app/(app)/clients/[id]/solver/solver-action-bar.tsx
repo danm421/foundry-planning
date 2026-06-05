@@ -6,11 +6,9 @@ interface Props {
    *  upserts (roth / asset-transaction / reinvestment) aren't base-writable, so
    *  gating on this prevents a save that silently writes nothing. */
   canSaveToBase: boolean;
-  mcRunning: boolean;
   solveActive?: boolean;
   savingToBase?: boolean;
   onReset(): void;
-  onGenerateMc(): void;
   onSave(): void;
   onSaveToBase(): void;
 }
@@ -18,11 +16,9 @@ interface Props {
 export function SolverActionBar({
   hasMutations,
   canSaveToBase,
-  mcRunning,
   solveActive,
   savingToBase,
   onReset,
-  onGenerateMc,
   onSave,
   onSaveToBase,
 }: Props) {
@@ -36,24 +32,6 @@ export function SolverActionBar({
           className="h-9 px-3 text-[13px] font-medium rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink hover:border-hair-2 disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
         >
           Reset
-        </button>
-        <button
-          type="button"
-          onClick={onGenerateMc}
-          disabled={solveActive || mcRunning}
-          className="h-9 px-3 text-[13px] font-medium rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 inline-flex items-center gap-2"
-        >
-          {mcRunning ? (
-            <>
-              <span
-                aria-hidden="true"
-                className="h-3 w-3 rounded-full border-2 border-ink-3 border-t-transparent animate-spin"
-              />
-              Generating…
-            </>
-          ) : (
-            "Generate Monte Carlo"
-          )}
         </button>
       </div>
       <div className="flex items-center gap-2">
