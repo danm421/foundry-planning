@@ -17,6 +17,7 @@ const row: typeof clients.$inferSelect = {
   filingStatus: "married_joint",
   onboardingState: {},
   onboardingCompletedAt: null,
+  quickStartState: {},
   createdAt: new Date(),
   updatedAt: new Date(),
   crmHouseholdId: "00000000-0000-0000-0000-000000000000",

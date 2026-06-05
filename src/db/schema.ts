@@ -542,6 +542,7 @@ export const clients = pgTable("clients", {
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
   onboardingState: jsonb("onboarding_state").notNull().default({}),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
+  quickStartState: jsonb("quick_start_state").notNull().default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   crmHouseholdId: uuid("crm_household_id")
