@@ -15,6 +15,8 @@ import { useLiftedList } from "@/lib/quick-start/use-lifted-list";
 import type { IncomeRow } from "@/lib/quick-start/income-save";
 import type { AccountRow } from "@/lib/quick-start/account-save";
 import type { InsuranceRow } from "@/lib/quick-start/insurance-save";
+import type { LiabilityRow } from "@/lib/quick-start/liability-save";
+import type { OtherExpenseRow } from "@/lib/quick-start/other-expense-save";
 
 import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
 export type { QsBootstrap };
@@ -67,6 +69,8 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
 
   const accountList = useLiftedList<AccountRow>();
   const insuranceList = useLiftedList<InsuranceRow>();
+  const liabilityList = useLiftedList<LiabilityRow>();
+  const otherExpenseList = useLiftedList<OtherExpenseRow>();
 
   const labels = QS_STEPS.map((s) => s.label);
   const idxInAll = QS_STEPS.findIndex((s) => s.slug === current);
@@ -124,7 +128,7 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
     >
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {current === "income" && <IncomeStep {...common} list={incomeList} />}
-      {current === "expenses" && <ExpensesStep {...common} />}
+      {current === "expenses" && <ExpensesStep {...common} liabilityList={liabilityList} otherExpenseList={otherExpenseList} />}
       {current === "accounts" && (
         <AccountsStep {...common} list={accountList} setCreatedAccounts={setCreatedAccounts} />
       )}

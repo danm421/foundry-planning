@@ -5,6 +5,8 @@ import type { LiftedList } from "@/lib/quick-start/use-lifted-list";
 import type { IncomeRow } from "@/lib/quick-start/income-save";
 import type { AccountRow } from "@/lib/quick-start/account-save";
 import type { InsuranceRow } from "@/lib/quick-start/insurance-save";
+import type { LiabilityRow } from "@/lib/quick-start/liability-save";
+import type { OtherExpenseRow } from "@/lib/quick-start/other-expense-save";
 
 /** An account created during the Accounts step, forwarded to the Savings step. */
 export interface CreatedAccount {
@@ -37,4 +39,9 @@ export interface QsIncomeStepProps extends QsStepProps {
 
 export interface QsInsuranceStepProps extends QsStepProps {
   list: LiftedList<InsuranceRow>;
+}
+
+export interface QsExpensesStepProps extends QsStepProps {
+  liabilityList: LiftedList<LiabilityRow>;
+  otherExpenseList: LiftedList<OtherExpenseRow>;
 }
