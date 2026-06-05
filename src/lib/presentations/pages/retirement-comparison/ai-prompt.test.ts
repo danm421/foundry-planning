@@ -1,6 +1,7 @@
 // src/lib/presentations/pages/retirement-comparison/ai-prompt.test.ts
 import { describe, it, expect } from "vitest";
 import { buildRetirementComparisonAiPrompt } from "./ai-prompt";
+import type { ComparisonKpi, PortfolioMatrix } from "./types";
 
 describe("buildRetirementComparisonAiPrompt", () => {
   const args = {
@@ -36,5 +37,40 @@ describe("buildRetirementComparisonAiPrompt", () => {
   it("appends advisor instructions when present", () => {
     const { system } = buildRetirementComparisonAiPrompt({ ...args, customInstructions: "Mention the legacy goal." });
     expect(system).toContain("Advisor instructions: Mention the legacy goal.");
+  });
+});
+
+const kpis: ComparisonKpi[] = [
+  { label: "Probability of Success", base: "73%", scenario: "91%", deltaLabel: "+18 pts", direction: 1 },
+];
+const matrix: PortfolioMatrix = {
+  retirementYear: 2040, endOfLifeYear: 2070,
+  baseAtRetirement: { total: 1, cash: 0, retirement: 0, taxable: 0 },
+  scenarioAtRetirement: { total: 1, cash: 0, retirement: 0, taxable: 0 },
+  baseAtEnd: { total: 1, cash: 0, retirement: 0, taxable: 0 },
+  scenarioAtEnd: { total: 1, cash: 0, retirement: 0, taxable: 0 },
+};
+
+describe("buildRetirementComparisonAiPrompt — max-spend & downside", () => {
+  it("includes max-spend and downside lines when provided", () => {
+    const { user } = buildRetirementComparisonAiPrompt({
+      householdName: "the Smith household", firstNames: "Pat",
+      scenarioLabel: "Delay + Roth", kpis, matrix,
+      changeLines: ["Delay retirement to 67"],
+      maxSpend: { base: 90_000, scenario: 110_000 },
+      downside: { baseEndP20: 100_000, scnEndP20: 400_000 },
+      tone: "detailed", length: "medium", customInstructions: "",
+    });
+    expect(user).toContain("Maximum sustainable retirement spending");
+    expect(user).toContain("Downside (poor-market) ending balance");
+    expect(user).toContain("Delay retirement to 67");
+  });
+
+  it("omits the new lines when not provided (back-compat)", () => {
+    const { user } = buildRetirementComparisonAiPrompt({
+      householdName: "h", firstNames: "p", scenarioLabel: "s", kpis, matrix,
+      changeLines: [], tone: "concise", length: "short", customInstructions: "",
+    });
+    expect(user).not.toContain("Maximum sustainable retirement spending");
   });
 });

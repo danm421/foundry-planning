@@ -24,6 +24,7 @@ import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import { describeChangeUnit, type ChangeUnit } from "@/lib/comparison/scenario-change-describe";
 import { buildRetirementComparisonMetrics } from "@/lib/presentations/pages/retirement-comparison/metrics";
 import { buildRetirementComparisonAiPrompt } from "@/lib/presentations/pages/retirement-comparison/ai-prompt";
+import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/comparison/ai-cache";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
@@ -37,6 +38,7 @@ const Body = z.object({
   length: z.enum(["short", "medium", "long"]),
   customInstructions: z.string().max(2000).default(""),
   force: z.boolean().default(false),
+  targetConfidence: z.number().min(0.5).max(0.99).default(0.85),
 });
 
 // Load the effective tree + deterministic projection for one ref, then run a
@@ -48,6 +50,7 @@ async function projectAndMc(clientId: string, firmId: string, raw: string) {
   const { effectiveTree } = await loadEffectiveTreeForRef(clientId, firmId, ref);
   const projection = runProjectionWithEvents(effectiveTree);
   let successRate: number | null = null;
+  let summary: ReturnType<typeof summarizeMonteCarlo> | null = null;
   try {
     const mc = await loadMonteCarloData(
       clientId,
@@ -69,7 +72,7 @@ async function projectAndMc(clientId: string, firmId: string, raw: string) {
       trials: 1000,
       requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
     });
-    const summary = summarizeMonteCarlo(result, {
+    summary = summarizeMonteCarlo(result, {
       client: effectiveTree.client,
       planSettings: effectiveTree.planSettings,
       startingLiquidBalance: mc.startingLiquidBalance,
@@ -78,7 +81,7 @@ async function projectAndMc(clientId: string, firmId: string, raw: string) {
   } catch (err) {
     console.error("retirement-comparison-ai MC failed", err);
   }
-  return { effectiveTree, projection, successRate };
+  return { effectiveTree, projection, successRate, summary };
 }
 
 // Group enabled changes the way the comparison tool does — singles stay loose,
@@ -183,6 +186,15 @@ export async function POST(
     const firstNames = spouseFirst ? `${firstName} and ${spouseFirst}` : firstName;
     const householdName = `the ${client.lastName ?? firstName} household`;
 
+    const [baseMs, scnMs] = await Promise.all([
+      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: "base", targetPoS: body.targetConfidence }).catch(() => null),
+      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: body.scenarioId, targetPoS: body.targetConfidence }).catch(() => null),
+    ]);
+    const maxSpend = baseMs && scnMs ? { base: baseMs.realAnnualSpend, scenario: scnMs.realAnnualSpend } : undefined;
+    const downside = base.summary && scn.summary
+      ? { baseEndP20: base.summary.ending.p20, scnEndP20: scn.summary.ending.p20 }
+      : undefined;
+
     const { system, user } = buildRetirementComparisonAiPrompt({
       householdName,
       firstNames,
@@ -193,6 +205,8 @@ export async function POST(
       tone: body.tone,
       length: body.length,
       customInstructions: body.customInstructions,
+      maxSpend,
+      downside,
     });
 
     const hash = hashAiRequest({ system, user });

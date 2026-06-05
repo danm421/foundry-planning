@@ -24,6 +24,8 @@ export interface RetirementComparisonAiArgs {
   tone: "concise" | "detailed" | "plain";
   length: "short" | "medium" | "long";
   customInstructions: string;
+  maxSpend?: { base: number; scenario: number };
+  downside?: { baseEndP20: number; scnEndP20: number };
 }
 
 export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiArgs): {
@@ -64,6 +66,13 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     ? args.changeLines.map((l) => `- ${l}`).join("\n")
     : "- (No changes vs. the base plan.)";
 
+  const maxSpendBlock = args.maxSpend
+    ? `Maximum sustainable retirement spending (today's dollars, same confidence target): Base ${fmtUsd(args.maxSpend.base)}/yr → Scenario ${fmtUsd(args.maxSpend.scenario)}/yr.`
+    : null;
+  const downsideBlock = args.downside
+    ? `Downside (poor-market) ending balance — 20th percentile: Base ${fmtUsd(args.downside.baseEndP20)} → Scenario ${fmtUsd(args.downside.scnEndP20)}.`
+    : null;
+
   const user = [
     `Household: ${args.householdName}.`,
     `Comparison: Base Case vs. "${args.scenarioLabel}".`,
@@ -73,6 +82,8 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     "",
     "Total portfolio assets:",
     matrixLines,
+    ...(maxSpendBlock ? ["", maxSpendBlock] : []),
+    ...(downsideBlock ? ["", downsideBlock] : []),
     "",
     "Changes made in the scenario vs. the base plan:",
     changeBlock,
