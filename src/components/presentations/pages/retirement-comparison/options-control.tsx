@@ -12,6 +12,10 @@ interface Props {
 const TONES = ["concise", "detailed", "plain"] as const;
 const LENGTHS = ["short", "medium", "long"] as const;
 
+const label = "text-[11px] uppercase tracking-[0.1em] text-ink-3";
+const field =
+  "rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
+
 export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
   const scenarios = useScenarioOptions();
   const clientId = useClientId();
@@ -60,9 +64,6 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
     }
   }
 
-  const label = "text-[11px] uppercase tracking-[0.1em] text-ink-3";
-  const field = "rounded border border-hair bg-card-2 px-2 py-1 text-ink";
-
   return (
     <div className="space-y-3 text-sm text-ink-2">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -72,7 +73,7 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
             <span className={label}>Comparison scenario (vs Base Case)</span>
             <select
               aria-label="Comparison scenario"
-              className={`w-full ${field} focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40`}
+              className={`w-full ${field}`}
               value={value.scenarioId}
               onChange={(e) => onChange({ ...value, scenarioId: e.target.value })}
             >
