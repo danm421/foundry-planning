@@ -334,6 +334,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
         annuity: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
         real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
         business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
+        stock_options: flatRate(settings.defaultGrowthStockOptions, settings.growthSourceStockOptions),
         life_insurance: flatRate(settings.defaultGrowthLifeInsurance, settings.growthSourceLifeInsurance),
         notes_receivable: "0",
       }
@@ -344,6 +345,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
         annuity: "0.04",
         real_estate: "0.04",
         business: "0.05",
+        stock_options: "0.07",
         life_insurance: "0.03",
         notes_receivable: "0",
       };
