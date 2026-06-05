@@ -9,7 +9,7 @@
 
 import type { ClientData } from "@/engine/types";
 import { resolveRefYears } from "@/lib/year-refs";
-import { isRetirementLivingExpense } from "./living-expense";
+import { isRetirementLivingExpense, synthesizeRetirementLivingExpense } from "./living-expense";
 import type { SolverMutation } from "./types";
 
 export function applyMutations(
@@ -36,6 +36,37 @@ export function applyMutations(
             ? { ...e, annualAmount: e.annualAmount * m.multiplier }
             : e,
         );
+        break;
+      }
+      case "living-expense-amount": {
+        const planStartYear = result.planSettings.planStartYear;
+        const retirement = result.expenses.filter((e) =>
+          isRetirementLivingExpense(e, planStartYear),
+        );
+        const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
+        if (retirement.length === 0) {
+          // No retirement living row → synthesize one at the full amount.
+          result.expenses = [
+            ...result.expenses,
+            synthesizeRetirementLivingExpense(result, m.amount),
+          ];
+        } else if (baseSum > 0) {
+          // Scale existing rows proportionally so they sum to the amount.
+          const factor = m.amount / baseSum;
+          result.expenses = result.expenses.map((e) =>
+            isRetirementLivingExpense(e, planStartYear)
+              ? { ...e, annualAmount: e.annualAmount * factor }
+              : e,
+          );
+        } else {
+          // Rows exist but all $0 → even-split.
+          const share = m.amount / retirement.length;
+          result.expenses = result.expenses.map((e) =>
+            isRetirementLivingExpense(e, planStartYear)
+              ? { ...e, annualAmount: share }
+              : e,
+          );
+        }
         break;
       }
       case "expense-annual-amount": {

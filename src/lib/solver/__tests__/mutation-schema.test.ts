@@ -17,6 +17,7 @@ const SAMPLES: SolverMutation[] = [
   { kind: "ss-annual-amount", person: "client", amount: 30000 },
   { kind: "ss-cola", person: "client", rate: 0.025 },
   { kind: "living-expense-scale", multiplier: 1.1 },
+  { kind: "living-expense-amount", amount: 80_000 },
   {
     kind: "expense-annual-amount",
     expenseId: "00000000-0000-4000-8000-000000000001",

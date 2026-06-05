@@ -46,3 +46,30 @@ export function snapScaleToNearest2k(scale: number, baseTotal: number): number {
   if (baseTotal <= 0) return scale;
   return roundToNearest2k(scale * baseTotal) / baseTotal;
 }
+
+/**
+ * Build a fresh retirement-phase "living" expense for the given annual amount.
+ * Used by the absolute-dollar living-expense solve when the plan has no
+ * retirement living-expense row to scale. Year windows are expressed as refs
+ * (`client_retirement` → `plan_end`); applyMutations runs resolveRefYears at the
+ * end, which fills concrete startYear/endYear. Concrete years are seeded here as
+ * a best-effort fallback for any consumer that reads them before resolution.
+ */
+export function synthesizeRetirementLivingExpense(
+  tree: ClientData,
+  amount: number,
+): Expense {
+  const { planStartYear, planEndYear, inflationRate } = tree.planSettings;
+  return {
+    id: crypto.randomUUID(),
+    type: "living",
+    name: "Retirement Living Expenses",
+    annualAmount: amount,
+    startYear: planStartYear + 1,
+    endYear: planEndYear,
+    growthRate: inflationRate,
+    startYearRef: "client_retirement",
+    endYearRef: "plan_end",
+    source: "manual",
+  };
+}

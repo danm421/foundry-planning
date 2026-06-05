@@ -622,6 +622,73 @@ describe("applyMutations — milestone-ref re-resolution", () => {
   });
 });
 
+describe("living-expense-amount", () => {
+  it("scales existing retirement rows proportionally to sum to the amount", () => {
+    const tree = {
+      ...makeBase(),
+      planSettings: {
+        planStartYear: 2026,
+        planEndYear: 2070,
+        inflationRate: 0.025,
+      } as ClientData["planSettings"],
+      expenses: [
+        { id: "r1", type: "living", name: "Base", annualAmount: 30_000, startYear: 2040, endYear: 2070, growthRate: 0 },
+        { id: "r2", type: "living", name: "Travel", annualAmount: 10_000, startYear: 2040, endYear: 2070, growthRate: 0 },
+        { id: "c1", type: "living", name: "Current", annualAmount: 50_000, startYear: 2026, endYear: 2039, growthRate: 0 },
+      ],
+    } as unknown as ClientData;
+    const out = applyMutations(tree, [{ kind: "living-expense-amount", amount: 80_000 }]);
+    const r1 = out.expenses.find((e) => e.id === "r1")!;
+    const r2 = out.expenses.find((e) => e.id === "r2")!;
+    const c1 = out.expenses.find((e) => e.id === "c1")!;
+    expect(r1.annualAmount + r2.annualAmount).toBe(80_000); // total hits target
+    expect(r1.annualAmount).toBe(60_000); // 30k/40k * 80k
+    expect(r2.annualAmount).toBe(20_000);
+    expect(c1.annualAmount).toBe(50_000); // current phase untouched
+  });
+
+  it("even-splits the amount across all-zero retirement rows", () => {
+    const tree = {
+      ...makeBase(),
+      planSettings: {
+        planStartYear: 2026,
+        planEndYear: 2070,
+        inflationRate: 0.025,
+      } as ClientData["planSettings"],
+      expenses: [
+        { id: "r1", type: "living", name: "A", annualAmount: 0, startYear: 2040, endYear: 2070, growthRate: 0 },
+        { id: "r2", type: "living", name: "B", annualAmount: 0, startYear: 2040, endYear: 2070, growthRate: 0 },
+      ],
+    } as unknown as ClientData;
+    const out = applyMutations(tree, [{ kind: "living-expense-amount", amount: 60_000 }]);
+    expect(out.expenses.find((e) => e.id === "r1")!.annualAmount).toBe(30_000);
+    expect(out.expenses.find((e) => e.id === "r2")!.annualAmount).toBe(30_000);
+  });
+
+  it("synthesizes a retirement row when none exists", () => {
+    const tree = {
+      ...makeBase(),
+      planSettings: {
+        planStartYear: 2026,
+        planEndYear: 2070,
+        inflationRate: 0.025,
+      } as ClientData["planSettings"],
+      client: {
+        ...makeBase().client,
+        retirementAge: 65,
+      },
+      expenses: [
+        { id: "c1", type: "living", name: "Current", annualAmount: 50_000, startYear: 2026, endYear: 2039, growthRate: 0 },
+      ],
+    } as unknown as ClientData;
+    const out = applyMutations(tree, [{ kind: "living-expense-amount", amount: 70_000 }]);
+    const retirement = out.expenses.filter((e) => e.type === "living" && e.startYear > 2026);
+    expect(retirement).toHaveLength(1);
+    expect(retirement[0].annualAmount).toBe(70_000);
+    expect(retirement[0].name).toBe("Retirement Living Expenses");
+  });
+});
+
 describe("applyMutations — technique upserts", () => {
   const rc = {
     id: "rc-1",
