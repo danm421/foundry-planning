@@ -318,8 +318,6 @@ export function LiveSolverWorkspace({
     enabled: mcRequested,
   });
 
-  const mcRunning = mcController.status === "loading";
-
   // Base facts can't change in the solver, so the Base PoS is computed once on
   // the first (Base-inclusive) run and retained — a working-only Recalculate
   // returns no Base entry, so we keep the cached value instead of overwriting.
@@ -927,11 +925,9 @@ export function LiveSolverWorkspace({
       <SolverActionBar
         hasMutations={mutations.length > 0}
         canSaveToBase={mutations.some(isBaseSavableMutation)}
-        mcRunning={mcRunning}
         solveActive={activeSolve !== null}
         savingToBase={savingToBase}
         onReset={handleReset}
-        onGenerateMc={handleGenerateMc}
         onSave={() => setSaveOpen(true)}
         onSaveToBase={handleSaveToBase}
       />
