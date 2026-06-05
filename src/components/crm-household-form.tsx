@@ -7,7 +7,6 @@ import { useUser } from "@clerk/nextjs";
 import {
   inputClassName,
   selectClassName,
-  textareaClassName,
   fieldLabelClassName,
 } from "@/components/forms/input-styles";
 import { AlertCircleIcon, ArrowRightIcon } from "@/components/icons";
@@ -74,7 +73,6 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
     setSubmitting(true);
     setError(null);
     const data = new FormData(e.currentTarget);
-    const notes = String(data.get("notes") ?? "").trim();
     const dob = String(data.get("dob") ?? "").trim();
     const spouseDob = String(data.get("spouseDob") ?? "").trim();
 
@@ -108,7 +106,6 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
           name: name.trim(),
           status: data.get("status"),
           advisorId: user.id,
-          notes: notes ? notes : undefined,
           contacts,
         }),
       });
@@ -165,11 +162,23 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
             className={inputClassName}
           />
         </div>
-        <div className="sm:col-span-2">
+        <div>
           <label className={fieldLabelClassName} htmlFor="dob">
             Date of birth <span className="text-ink-4">(optional)</span>
           </label>
           <input id="dob" name="dob" type="date" min="1910-01-01" className={inputClassName} />
+        </div>
+        <div>
+          <label className={fieldLabelClassName} htmlFor="status">
+            Status
+          </label>
+          <select id="status" name="status" defaultValue="prospect" className={selectClassName}>
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -244,32 +253,6 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         <p className="mt-1 text-[12px] text-ink-4">
           Auto-generated from the contacts above. Edit to override.
         </p>
-      </div>
-
-      <div>
-        <label className={fieldLabelClassName} htmlFor="status">
-          Status
-        </label>
-        <select id="status" name="status" defaultValue="prospect" className={selectClassName}>
-          {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className={fieldLabelClassName} htmlFor="notes">
-          Notes
-        </label>
-        <textarea
-          id="notes"
-          name="notes"
-          rows={4}
-          maxLength={5000}
-          className={textareaClassName}
-        />
       </div>
 
       {error && (
