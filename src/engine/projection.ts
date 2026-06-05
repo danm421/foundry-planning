@@ -1097,9 +1097,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
     // ISO bargain element is an AMT-preference item, not regular-taxable.
-    // Threaded into computeTaxForYear's AMTI add-back in Task 12; accumulated
+    // Threaded into computeTaxForYear below as the AMTI add-back; accumulated
     // here so the wiring lands in one place.
-    void equityIsoSpread;
 
     // Inject synthetic property-tax expenses for real estate accounts. Built
     // after BoY sales/purchases so a sold property is excluded and a newly-
@@ -2949,6 +2948,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: 0,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          isoSpread: equityIsoSpread,
         });
         return trial.taxResult.flow.incomeTaxBase;
       };
@@ -3110,6 +3110,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       retirementBreakdown,
       primaryAge: ages.client,
       spouseAge: ages.spouse,
+      isoSpread: equityIsoSpread,
     });
 
     // `taxes` is the pre-supplemental tax. The legacy no-checking path (else branch
@@ -3928,6 +3929,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          isoSpread: equityIsoSpread,
         });
       }
     }
@@ -4066,6 +4068,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          isoSpread: equityIsoSpread,
         });
 
         const taxAndPenalty =

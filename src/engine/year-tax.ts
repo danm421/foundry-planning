@@ -51,6 +51,8 @@ export interface YearTaxInput {
   /** Ages at projection year, for state retirement-exclusion age thresholds. */
   primaryAge?: number;
   spouseAge?: number;
+  /** ISO exercise bargain element for the year — flows to AMTI (bracket mode). */
+  isoSpread?: number;
 }
 
 export interface YearTaxOutput {
@@ -77,7 +79,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     aboveLineDeductions, itemizedDeductions: itemizedIn,
     charityCarryforwardIn, charityGiftsThisYear, secaResult,
     transferEarlyWithdrawalPenalty, interestIncomeForTax, deductionBreakdownIn,
-    retirementBreakdown, primaryAge, spouseAge,
+    retirementBreakdown, primaryAge, spouseAge, isoSpread,
   } = input;
 
   // Deductible-half-of-SE-tax is an above-the-line adjustment per §164(f).
@@ -136,6 +138,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         residenceState: planSettings.residenceState,
         primaryAge,
         spouseAge,
+        isoSpread: isoSpread ?? 0,
       })
     : calculateTaxYearFlat({
         taxableIncome,
