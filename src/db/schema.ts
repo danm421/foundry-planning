@@ -51,7 +51,23 @@ export const accountCategoryEnum = pgEnum("account_category", [
   "business",
   "life_insurance",
   "notes_receivable",
+  "stock_options",
 ]);
+
+export const grantTypeEnum = pgEnum("grant_type", ["rsu", "nqso", "iso"]);
+export const equityExerciseTimingEnum = pgEnum("equity_exercise_timing", [
+  "at_vest",
+  "specific_year",
+  "year_before_expiration",
+  "manual",
+]);
+export const equitySellTimingEnum = pgEnum("equity_sell_timing", [
+  "immediately",
+  "hold_then_sell_year",
+  "percent_per_year",
+  "hold",
+]);
+export const equityPlannedActionEnum = pgEnum("equity_planned_action", ["exercise", "sell"]);
 
 export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "brokerage",
@@ -719,6 +735,9 @@ export const planSettings = pgTable("plan_settings", {
   defaultGrowthLifeInsurance: decimal("default_growth_life_insurance", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  defaultGrowthStockOptions: decimal("default_growth_stock_options", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.07"),
   growthSourceTaxable: growthSourceEnum("growth_source_taxable").notNull().default("inflation"),
   modelPortfolioIdTaxable: uuid("model_portfolio_id_taxable").references(() => modelPortfolios.id, { onDelete: "set null" }),
   growthSourceCash: growthSourceEnum("growth_source_cash").notNull().default("inflation"),
@@ -728,6 +747,7 @@ export const planSettings = pgTable("plan_settings", {
   growthSourceRealEstate: growthSourceEnum("growth_source_real_estate").notNull().default("inflation"),
   growthSourceBusiness: growthSourceEnum("growth_source_business").notNull().default("inflation"),
   growthSourceLifeInsurance: growthSourceEnum("growth_source_life_insurance").notNull().default("inflation"),
+  growthSourceStockOptions: growthSourceEnum("growth_source_stock_options").notNull().default("inflation"),
   selectedBenchmarkPortfolioId: uuid("selected_benchmark_portfolio_id").references(() => modelPortfolios.id, { onDelete: "set null" }),
   inflationRateSource: inflationRateSourceEnum("inflation_rate_source").notNull().default("asset_class"),
   useCustomCma: boolean("use_custom_cma").notNull().default(false),
@@ -1655,6 +1675,97 @@ export const lifeInsuranceCashValueSchedule = pgTable(
     policyYearUnique: unique().on(table.policyId, table.year),
   }),
 );
+
+// ── Stock options (equity compensation) ──────────────────────────────────
+// 1:1 extension on a stock_options account. Mirrors lifeInsurancePolicies.
+export const stockOptionAccounts = pgTable("stock_option_accounts", {
+  accountId: uuid("account_id")
+    .primaryKey()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  ticker: text("ticker"),
+  isPublic: boolean("is_public").notNull().default(false),
+  // Current FMV per share. Public: snapshot of the pulled quote. Private: manual 409A FMV.
+  pricePerShare: decimal("price_per_share", { precision: 15, scale: 4 }).notNull().default("0"),
+  // Where acquired (vested/exercised-and-held) shares land. Null + autoCreate → engine
+  // auto-creates a per-ticker brokerage account on first acquisition.
+  destinationAccountId: uuid("destination_account_id").references((): AnyPgColumn => accounts.id, {
+    onDelete: "set null",
+  }),
+  autoCreateDestination: boolean("auto_create_destination").notNull().default(true),
+  sellToCover: boolean("sell_to_cover").notNull().default(true),
+  withholdingRate: decimal("withholding_rate", { precision: 5, scale: 4 }).notNull().default("0.22"),
+  // Account-level DEFAULT strategy (grant/tranche may override; null on those = inherit).
+  defaultExerciseTiming: equityExerciseTimingEnum("default_exercise_timing").notNull().default("at_vest"),
+  defaultExerciseYear: integer("default_exercise_year"),
+  defaultSellTiming: equitySellTimingEnum("default_sell_timing").notNull().default("hold"),
+  defaultSellYear: integer("default_sell_year"),
+  defaultSellPercentPerYear: decimal("default_sell_percent_per_year", { precision: 5, scale: 4 }),
+  defaultSellStartYear: integer("default_sell_start_year"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const stockOptionGrants = pgTable("stock_option_grants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  grantNumber: text("grant_number"),
+  grantType: grantTypeEnum("grant_type").notNull(),
+  grantDate: date("grant_date").notNull(),
+  sharesGranted: decimal("shares_granted", { precision: 18, scale: 6 }).notNull().default("0"),
+  has83bElection: boolean("has_83b_election").notNull().default(false),
+  // FMV/share at grant — required when has83bElection (the income base). Null otherwise.
+  fmvAtGrant: decimal("fmv_at_grant", { precision: 15, scale: 4 }),
+  // NQSO/ISO only. strikePrice OR strikeDiscountPct (a % off FMV in the exercise year).
+  strikePrice: decimal("strike_price", { precision: 15, scale: 4 }),
+  strikeDiscountPct: decimal("strike_discount_pct", { precision: 5, scale: 4 }),
+  expirationDate: date("expiration_date"),
+  // Grant-level strategy override (null = inherit account default).
+  exerciseTiming: equityExerciseTimingEnum("exercise_timing"),
+  exerciseYear: integer("exercise_year"),
+  sellTiming: equitySellTimingEnum("sell_timing"),
+  sellYear: integer("sell_year"),
+  sellPercentPerYear: decimal("sell_percent_per_year", { precision: 5, scale: 4 }),
+  sellStartYear: integer("sell_start_year"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const stockOptionVestTranches = pgTable("stock_option_vest_tranches", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  grantId: uuid("grant_id")
+    .notNull()
+    .references(() => stockOptionGrants.id, { onDelete: "cascade" }),
+  vestDate: date("vest_date").notNull(),
+  shares: decimal("shares", { precision: 18, scale: 6 }).notNull().default("0"),
+  // Actuals (already happened, entered by the advisor).
+  sharesExercised: decimal("shares_exercised", { precision: 18, scale: 6 }).notNull().default("0"),
+  sharesSold: decimal("shares_sold", { precision: 18, scale: 6 }).notNull().default("0"),
+  // Tranche-level strategy override (null = inherit grant/account).
+  exerciseTiming: equityExerciseTimingEnum("exercise_timing"),
+  exerciseYear: integer("exercise_year"),
+  sellTiming: equitySellTimingEnum("sell_timing"),
+  sellYear: integer("sell_year"),
+  sellPercentPerYear: decimal("sell_percent_per_year", { precision: 5, scale: 4 }),
+  sellStartYear: integer("sell_start_year"),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+// Escape hatch for the `manual` exercise/sell timing: explicit dated events.
+export const stockOptionPlannedEvents = pgTable("stock_option_planned_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  grantId: uuid("grant_id")
+    .notNull()
+    .references(() => stockOptionGrants.id, { onDelete: "cascade" }),
+  trancheId: uuid("tranche_id").references(() => stockOptionVestTranches.id, { onDelete: "set null" }),
+  year: integer("year").notNull(),
+  action: equityPlannedActionEnum("action").notNull(),
+  shares: decimal("shares", { precision: 18, scale: 6 }),
+  pct: decimal("pct", { precision: 5, scale: 4 }),
+});
 
 export const incomes = pgTable("incomes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -2601,6 +2712,12 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
     references: [lifeInsurancePolicies.accountId],
     relationName: "policyAccount",
   }),
+  stockOptionAccount: one(stockOptionAccounts, {
+    fields: [accounts.id],
+    references: [stockOptionAccounts.accountId],
+    relationName: "stockOptionAccount",
+  }),
+  stockOptionGrants: many(stockOptionGrants),
 }));
 
 export const accountOwnersRelations = relations(accountOwners, ({ one }) => ({
@@ -2640,6 +2757,37 @@ export const lifeInsuranceCashValueScheduleRelations = relations(
     }),
   }),
 );
+
+export const stockOptionAccountsRelations = relations(stockOptionAccounts, ({ one }) => ({
+  account: one(accounts, {
+    fields: [stockOptionAccounts.accountId],
+    references: [accounts.id],
+    relationName: "stockOptionAccount",
+  }),
+}));
+
+export const stockOptionGrantsRelations = relations(stockOptionGrants, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [stockOptionGrants.accountId],
+    references: [accounts.id],
+  }),
+  tranches: many(stockOptionVestTranches),
+  plannedEvents: many(stockOptionPlannedEvents),
+}));
+
+export const stockOptionVestTranchesRelations = relations(stockOptionVestTranches, ({ one }) => ({
+  grant: one(stockOptionGrants, {
+    fields: [stockOptionVestTranches.grantId],
+    references: [stockOptionGrants.id],
+  }),
+}));
+
+export const stockOptionPlannedEventsRelations = relations(stockOptionPlannedEvents, ({ one }) => ({
+  grant: one(stockOptionGrants, {
+    fields: [stockOptionPlannedEvents.grantId],
+    references: [stockOptionGrants.id],
+  }),
+}));
 
 export const incomesRelations = relations(incomes, ({ one }) => ({
   client: one(clients, {
