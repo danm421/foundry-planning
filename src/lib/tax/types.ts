@@ -132,6 +132,10 @@ export interface CalcInput {
   residenceState?: import("@/lib/usps-states").USPSStateCode | null;
   primaryAge?: number;
   spouseAge?: number;
+  /** ISO exercise bargain element (FMV − strike at exercise). An AMT preference
+   *  item: added to AMTI but NOT to regular taxable income. v1: no dual-basis /
+   *  AMT credit carryforward. */
+  isoSpread?: number;
 }
 
 export interface TaxResult {

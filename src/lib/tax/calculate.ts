@@ -88,12 +88,12 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   );
 
   // 10. AMT
-  // Simplified AMTI: taxable income before QBI + nothing else added back in v1.
-  // Real AMTI requires preference items. v1 uses taxable income before QBI as proxy.
+  // Simplified AMTI: taxable income before QBI + ISO bargain element (the one
+  // AMT preference item wired in v1). Other preference items are still omitted.
   // Form 6251 Part III: LTCG + qualified dividends inside AMTI are taxed at
   // 0/15/20% (the same preferential rates as regular), not 26/28%. Passing
   // them through so calcAmtTentative can split the base.
-  const amti = taxableIncomeBeforeQbi;
+  const amti = taxableIncomeBeforeQbi + (input.isoSpread ?? 0);
   const amtParams = filingAmtParams(fs, p);
   const tentativeAmt = calcAmtTentative(amti, amtParams, {
     year: input.year,

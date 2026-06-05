@@ -9,13 +9,14 @@ type PortfolioEntityMeta = {
   accessibleToClient?: boolean;
 };
 
-const categoryToKey: Record<string, "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance"> = {
+const categoryToKey: Record<string, "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance" | "stockOptions"> = {
   taxable: "taxable",
   cash: "cash",
   retirement: "retirement",
   real_estate: "realEstate",
   business: "business",
   life_insurance: "lifeInsurance",
+  stock_options: "stockOptions",
 };
 
 /**
@@ -42,6 +43,7 @@ export function computePortfolioSnapshot(args: {
     realEstate: {} as Record<string, number>,
     business: {} as Record<string, number>,
     lifeInsurance: {} as Record<string, number>,
+    stockOptions: {} as Record<string, number>,
     trustsAndBusinesses: {} as Record<string, number>,
     accessibleTrustAssets: {} as Record<string, number>,
     taxableTotal: 0,
@@ -50,6 +52,7 @@ export function computePortfolioSnapshot(args: {
     realEstateTotal: 0,
     businessTotal: 0,
     lifeInsuranceTotal: 0,
+    stockOptionsTotal: 0,
     trustsAndBusinessesTotal: 0,
     accessibleTrustAssetsTotal: 0,
     total: 0,
@@ -130,7 +133,8 @@ export function computePortfolioSnapshot(args: {
     portfolioAssets.retirementTotal +
     portfolioAssets.realEstateTotal +
     portfolioAssets.businessTotal +
-    portfolioAssets.lifeInsuranceTotal;
+    portfolioAssets.lifeInsuranceTotal +
+    portfolioAssets.stockOptionsTotal;
 
   // H1: canonical liquid investable total — the reconciling "Portfolio Assets"
   // figure consumed by the chart, the summary cell, and next-year BoY.

@@ -13,6 +13,7 @@ export type AssetCategoryKey =
   | "annuity"
   | "realEstate"
   | "business"
+  | "stockOptions"
   | "lifeInsurance";
 
 /** Human-readable category labels shown in the UI. */
@@ -23,6 +24,7 @@ export const CATEGORY_LABELS: Record<AssetCategoryKey, string> = {
   annuity: "Annuity",
   realEstate: "Real Estate",
   business: "Business",
+  stockOptions: "Stock Options",
   lifeInsurance: "Life Insurance",
 };
 
@@ -34,6 +36,7 @@ export const CATEGORY_ORDER: AssetCategoryKey[] = [
   "annuity",
   "realEstate",
   "business",
+  "stockOptions",
   "lifeInsurance",
 ];
 
@@ -46,6 +49,7 @@ export const CATEGORY_HEX: Record<AssetCategoryKey, string> = {
   annuity: dataLight.yellow,        // #c2941b
   realEstate: dataLight.orange,     // #cf671d
   business: dataLight.pink,         // #ab3f6b
+  stockOptions: dataLight.red,      // #c5392b
   lifeInsurance: dataLight.teal,    // #198b83
 };
 

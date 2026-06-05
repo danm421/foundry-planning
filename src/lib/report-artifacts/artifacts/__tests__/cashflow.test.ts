@@ -200,9 +200,9 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
       fixtureYear({
         portfolioAssets: {
           taxable: { acct1: 500_000 }, cash: {}, retirement: { acct2: 300_000 },
-          realEstate: { acct3: 800_000 }, business: {}, lifeInsurance: {},
+          realEstate: { acct3: 800_000 }, business: {}, lifeInsurance: {}, stockOptions: {},
           taxableTotal: 500_000, cashTotal: 0, retirementTotal: 300_000,
-          realEstateTotal: 800_000, businessTotal: 0, lifeInsuranceTotal: 0,
+          realEstateTotal: 800_000, businessTotal: 0, lifeInsuranceTotal: 0, stockOptionsTotal: 0,
           trustsAndBusinesses: {}, trustsAndBusinessesTotal: 0,
           accessibleTrustAssets: {}, accessibleTrustAssetsTotal: 0,
           total: 1_600_000,

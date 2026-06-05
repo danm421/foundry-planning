@@ -74,6 +74,7 @@ import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
+import { loadStockOptionPlans } from "./load-equity";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
 import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constants";
 import { type HoldingInput } from "@/lib/investments/holdings-rollup";
@@ -1437,6 +1438,26 @@ export const loadClientDataWithContext = cache(
         r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
     }));
 
+    // ── Stock-option plans (equity comp) ───────────────────────────────────
+    // Resolve the spouse's family member id (role = 'spouse') so we can detect
+    // which stock_options accounts belong to the spouse vs. the client.
+    const spouseFamilyMemberId = familyMemberRows.find((f) => f.role === "spouse")?.id ?? null;
+    const soOwnerByAccount: Record<string, "client" | "spouse"> = {};
+    const soGrowthByAccount: Record<string, number> = {};
+    for (const a of mappedAccounts) {
+      if (a.category !== "stock_options") continue;
+      soGrowthByAccount[a.id] = a.growthRate;
+      // Equity is single-owner; first family_member owner wins.
+      const firstOwner = a.owners.find((o) => o.kind === "family_member");
+      soOwnerByAccount[a.id] =
+        spouseFamilyMemberId != null &&
+        firstOwner?.kind === "family_member" &&
+        firstOwner.familyMemberId === spouseFamilyMemberId
+          ? "spouse"
+          : "client";
+    }
+    const stockOptionPlans = await loadStockOptionPlans(id, scenario.id, soGrowthByAccount, soOwnerByAccount);
+
     const clientData: ClientData = {
       client: clientInfo,
       accounts: mappedAccounts,
@@ -1456,6 +1477,7 @@ export const loadClientDataWithContext = cache(
       reinvestments: mappedReinvestments,
       rothConversions: mappedRothConversions,
       assetTransactions: mappedAssetTransactions,
+      stockOptionPlans,
       gifts: mappedGifts,
       giftEvents,
       wills: engineWills,

@@ -19,13 +19,14 @@ describe("buildPortfolioDatasets", () => {
     const y = makeYear({
       year: 2026,
       portfolioAssets: {
-        taxable: {}, cash: {}, retirement: {}, realEstate: {}, business: {}, lifeInsurance: {},
+        taxable: {}, cash: {}, retirement: {}, realEstate: {}, business: {}, lifeInsurance: {}, stockOptions: {},
         taxableTotal: 200_000,
         cashTotal: 50_000,
         retirementTotal: 800_000,
         realEstateTotal: 0,
         businessTotal: 0,
         lifeInsuranceTotal: 25_000,
+        stockOptionsTotal: 0,
         trustsAndBusinesses: {},
         trustsAndBusinessesTotal: 0,
         accessibleTrustAssets: {},
