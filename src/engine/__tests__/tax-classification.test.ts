@@ -271,3 +271,20 @@ describe("classifyTransferTax — HSA source", () => {
     expect(r.label).toBe("qualified_hsa_distribution");
   });
 });
+
+describe("classifyTransferTax — HSA is not a Roth-conversion source", () => {
+  it("an HSA → Roth move is a qualified HSA distribution, not a roth_conversion", () => {
+    const r = classifyTransferTax({
+      sourceCategory: "retirement", sourceSubType: "hsa",
+      targetCategory: "retirement", targetSubType: "roth_ira", ownerAge: 70,
+      amount: 10000,
+      sourceAccountValue: 50000,
+      sourceAccountBasis: 0,
+      allTraditionalIraBasis: 0,
+      allTraditionalIraBalance: 0,
+      rothBasis: 0,
+    });
+    expect(r.label).toBe("qualified_hsa_distribution");
+    expect(r.taxableOrdinaryIncome).toBe(0);
+  });
+});
