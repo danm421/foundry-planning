@@ -1,5 +1,7 @@
 "use client";
 
+import { FieldTooltip } from "./field-tooltip";
+
 /** Retirement subtypes that have IRS contribution limits the engine
  *  enforces: payroll-deduction plans, both IRA flavors, and HSAs. */
 export const CONTRIBUTION_LIMIT_SUB_TYPES = new Set([
@@ -34,21 +36,17 @@ export default function ContributionCapCheckbox({
   idPrefix = "sr",
 }: Props) {
   return (
-    <label className="flex items-start gap-2 rounded-md border border-gray-800 bg-gray-900/60 p-3 text-sm text-gray-300">
+    <label className="flex items-center gap-2 rounded-md border border-gray-800 bg-gray-900/60 p-3 text-sm text-gray-300">
       <input
         id={`${idPrefix}-apply-limit`}
         name="applyContributionLimit"
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-1 focus:ring-accent"
+        className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-1 focus:ring-accent"
       />
-      <span>
-        <span className="font-medium text-gray-200">Apply IRS contribution limit</span>
-        <span className="block text-xs text-gray-400">
-          When on, the engine caps this contribution at the applicable IRS limit (401(k)/403(b) deferral, IRA, or HSA — including any age-based catch-up). Uncheck to let the entered amount pass through uncapped.
-        </span>
-      </span>
+      <span className="font-medium text-gray-200">Apply IRS contribution limit</span>
+      <FieldTooltip text="When on, the engine caps this contribution at the applicable IRS limit (401(k)/403(b) deferral, IRA, or HSA — including any age-based catch-up). Uncheck to let the entered amount pass through uncapped." />
     </label>
   );
 }

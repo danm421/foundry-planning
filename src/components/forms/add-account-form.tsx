@@ -610,7 +610,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [savingsEndYearRef, setSavingsEndYearRef] = useState<YearRef | null>(
     milestones ? defaultSavingsRefs.endYearRef : null,
   );
-  const [savingsGrowthSource, setSavingsGrowthSource] = useState<"custom" | "inflation">("custom");
+  const [savingsGrowthSource, setSavingsGrowthSource] = useState<"custom" | "inflation">("inflation");
   const [savingsGrowthRateDisplay, setSavingsGrowthRateDisplay] = useState<string>("0");
   const [matchMode, setMatchMode] = useState<MatchMode>("none");
   const [contribMode, setContribMode] = useState<ContributionMode>("amount");
@@ -1506,8 +1506,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       ) : (
       <div className="">
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-4 gap-4">
+              <div className="col-span-2">
                 <ContributionAmountFields
                   mode={contribMode}
                   onModeChange={setContribMode}
@@ -1589,25 +1589,26 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </div>
               )}
 
-              {/* Growth has no effect in percent-of-salary mode — the
-                  contribution is recomputed from each year's salary. */}
-              {contribMode !== "percent" && (
-                <div className="col-span-2">
-                  <label className={fieldLabelClassName}>Growth</label>
-                  <div className="mt-1">
-                    <GrowthSourceRadio
-                      value={savingsGrowthSource}
-                      customRate={savingsGrowthRateDisplay}
-                      resolvedInflationRate={resolvedInflationRate}
-                      onChange={(next) => {
-                        setSavingsGrowthSource(next.value);
-                        setSavingsGrowthRateDisplay(next.customRate);
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
+
+            {/* Growth has no effect in percent-of-salary mode — the
+                contribution is recomputed from each year's salary. */}
+            {contribMode !== "percent" && (
+              <div>
+                <label className={fieldLabelClassName}>Growth</label>
+                <div className="mt-1">
+                  <GrowthSourceRadio
+                    value={savingsGrowthSource}
+                    customRate={savingsGrowthRateDisplay}
+                    resolvedInflationRate={resolvedInflationRate}
+                    onChange={(next) => {
+                      setSavingsGrowthSource(next.value);
+                      setSavingsGrowthRateDisplay(next.customRate);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             {showDeductibleCheckbox && (
               <DeductibleContributionCheckbox
