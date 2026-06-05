@@ -4,6 +4,11 @@ import { useEffect } from "react";
 import { ChangesPanel, type ChangesPanelProps } from "./changes-panel";
 import { useScenarioDrawer } from "./scenario-drawer-provider";
 
+// Drawer width in px. The CSS transition needs an explicit translateX start
+// value, so the width can't live in Tailwind alone — keep this in sync with
+// ChangesPanel's `w-[360px]` root aside.
+const DRAWER_WIDTH = 360;
+
 /**
  * Right-edge slide-out that hosts <ChangesPanel> on every non-Details scenario
  * page. Overlays the page (does NOT reflow it) and has no backdrop — the page
@@ -30,8 +35,8 @@ export function ScenarioDrawer(props: ChangesPanelProps) {
       // (z-40) and client header (z-[35]) so tabs + scenario pill stay clickable.
       className="fixed right-0 top-[100px] z-30 h-[calc(100vh-100px)]"
       style={{
-        width: 360,
-        transform: open ? "translateX(0)" : "translateX(360px)",
+        width: DRAWER_WIDTH,
+        transform: open ? "translateX(0)" : `translateX(${DRAWER_WIDTH}px)`,
         transition: "transform 0.22s ease",
       }}
     >
