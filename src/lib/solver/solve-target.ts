@@ -151,6 +151,7 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   });
 
   return {
+    objective: "pos",
     status: bisectResult.status,
     solvedValue,
     achievedPoS,

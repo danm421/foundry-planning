@@ -7,11 +7,11 @@
 // terminal `result` or `error` event. Read-only on the DB; no audit row.
 
 import { NextRequest } from "next/server";
-import { z } from "zod";
-import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
+import { SOLVE_REQUEST_SCHEMA } from "@/lib/solver/solve-request-schema";
 import { solveTarget } from "@/lib/solver/solve-target";
+import { solveSsClaimAgeByPortfolio } from "@/lib/solver/solve-ss-portfolio";
 import type { SolverMutation } from "@/lib/solver/types";
-import type { SolveLeverKey, SolveSseEventName } from "@/lib/solver/solve-types";
+import type { SolveLeverKey, SolveResultEvent, SolveSseEventName } from "@/lib/solver/solve-types";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -23,24 +23,6 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 
 export const dynamic = "force-dynamic";
-
-const TARGET = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("retirement-age"), person: z.enum(["client", "spouse"]) }),
-  z.object({ kind: z.literal("living-expense-scale") }),
-  z.object({ kind: z.literal("savings-contribution"), accountId: z.string().min(1) }),
-  z.object({ kind: z.literal("ss-claim-age"), person: z.enum(["client", "spouse"]) }),
-  z.object({
-    kind: z.literal("roth-conversion-amount"),
-    techniqueId: z.string().min(1),
-  }),
-]);
-
-const BODY = z.object({
-  source: z.union([z.literal("base"), z.string().uuid()]),
-  mutations: z.array(SOLVER_MUTATION_SCHEMA),
-  target: TARGET,
-  targetPoS: z.number().min(0.01).max(0.99),
-});
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -84,7 +66,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   }
 
   const raw = await req.json();
-  const parsed = BODY.safeParse(raw);
+  const parsed = SOLVE_REQUEST_SCHEMA.safeParse(raw);
   if (!parsed.success) {
     return new Response(
       JSON.stringify({ error: "Invalid body", details: parsed.error.flatten() }),
@@ -104,17 +86,30 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       };
       try {
         const { effectiveTree, resolutionContext } = await loadEffectiveTree(clientId, firmId, source, {});
-        const mcPayload = await loadMonteCarloData(clientId, firmId);
-        const result = await solveTarget({
-          effectiveTree,
-          mcPayload,
-          baselineMutations: mutations as SolverMutation[],
-          target: target as SolveLeverKey,
-          targetPoS,
-          resolutionContext,
-          onProgress: (p) => emit("progress", p),
-          signal: abortController.signal,
-        });
+        let result: SolveResultEvent;
+        if (target.kind === "ss-claim-age") {
+          // Deterministic argmax over claim ages 62–70 on the straight-line
+          // projection. No Monte Carlo → skip the MC payload load entirely.
+          result = solveSsClaimAgeByPortfolio({
+            effectiveTree,
+            baselineMutations: mutations as SolverMutation[],
+            person: target.person,
+            resolutionContext,
+            signal: abortController.signal,
+          });
+        } else {
+          const mcPayload = await loadMonteCarloData(clientId, firmId);
+          result = await solveTarget({
+            effectiveTree,
+            mcPayload,
+            baselineMutations: mutations as SolverMutation[],
+            target: target as SolveLeverKey,
+            targetPoS: targetPoS!,
+            resolutionContext,
+            onProgress: (p) => emit("progress", p),
+            signal: abortController.signal,
+          });
+        }
         emit("result", result);
       } catch (err) {
         console.error("POST /api/clients/[id]/solver/solve error:", err);
