@@ -138,7 +138,7 @@ export function LiveSolverWorkspace({
 
   type ActiveSolve = {
     target: SolveLeverKey;
-    targetPoS: number;
+    targetPoS?: number;
     iteration: number;
     candidateValue: number | null;
     achievedPoS: number | null;
@@ -478,7 +478,7 @@ export function LiveSolverWorkspace({
   }
 
   const handleSolveStart = useCallback(
-    (target: SolveLeverKey, targetPoS: number, extraMutations: SolverMutation[] = []) => {
+    (target: SolveLeverKey, targetPoS?: number, extraMutations: SolverMutation[] = []) => {
       if (activeSolve) return;
       setSolveError(null);
       setActiveSolve({

@@ -26,7 +26,8 @@ export interface StartArgs {
   source: SolverSource;
   mutations: SolverMutation[];
   target: SolveLeverKey;
-  targetPoS: number;
+  /** Omitted for the deterministic ss-claim-age solve. */
+  targetPoS?: number;
 }
 
 export interface SolverSolveController {
