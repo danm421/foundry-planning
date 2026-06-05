@@ -43,7 +43,7 @@ describe("extractWithMultiPass", () => {
                     expenses: [[23, 25]],
                 });
             }
-            if (systemPrompt.includes("account/brokerage statement")) {
+            if (systemPrompt.includes("account / net-worth statement")) {
                 return JSON.stringify({ accounts: FIVE_ACCOUNTS });
             }
             if (systemPrompt.includes("expense worksheet")) {

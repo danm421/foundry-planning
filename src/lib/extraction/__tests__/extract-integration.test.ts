@@ -113,7 +113,7 @@ describe("extraction pipeline integration", () => {
           expenses: [[20, 22]],
         });
       }
-      if (systemPrompt.includes("account/brokerage statement")) {
+      if (systemPrompt.includes("account / net-worth statement")) {
         return JSON.stringify({
           accounts: [
             { name: "FF Account 1", category: "taxable", subType: "brokerage", value: 100 },
