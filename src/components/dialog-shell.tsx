@@ -147,7 +147,7 @@ export default function DialogShell({
         tabIndex={-1}
         className={`relative z-10 w-full ${sizeClass[size]} ${
           contentFill ? "h-[min(90vh,940px)]" : "max-h-[min(80vh,720px)]"
-        } flex flex-col rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
+        } flex flex-col whitespace-normal rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
       >
         {/* Header */}
         <div
