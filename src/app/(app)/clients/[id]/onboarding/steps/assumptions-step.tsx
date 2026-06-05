@@ -18,6 +18,7 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { buildModelPortfolioOptions } from "@/lib/cma/model-portfolio-options";
 
 interface AssumptionsStepProps {
   clientId: string;
@@ -108,16 +109,11 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
     clientInflationOverride,
   );
 
-  const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
-  const modelPortfolioOptions = portfolioRows.map((p) => {
-    const allocs = allocationRows.filter((a) => a.modelPortfolioId === p.id);
-    let blendedReturn = 0;
-    for (const alloc of allocs) {
-      const ac = acMap.get(alloc.assetClassId);
-      if (ac) blendedReturn += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
-    }
-    return { id: p.id, name: p.name, blendedReturn };
-  });
+  const modelPortfolioOptions = buildModelPortfolioOptions(
+    portfolioRows,
+    allocationRows,
+    assetClassRows,
+  );
 
   const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
 
