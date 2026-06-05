@@ -9,6 +9,25 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
 }));
 
+// Mock the shared MC hook so the workspace's auto-run never hits the network /
+// engine in tests. `mcStateRef.current` lets individual tests drive the gauge
+// state; `mcCalls` records every invocation's enabled flag + plan ids.
+const { mcStateRef, mcCalls } = vi.hoisted(() => ({
+  mcStateRef: {
+    current: { status: "idle" } as {
+      status: "idle" | "loading" | "ready" | "error";
+      result?: { perPlan: Array<{ planId: string; successRate: number }> };
+    },
+  },
+  mcCalls: [] as Array<{ enabled: boolean; planIds: string[] }>,
+}));
+vi.mock("@/app/(app)/clients/[id]/comparison/use-shared-mc-run", () => ({
+  useSharedMcRun: (args: { enabled: boolean; plans: Array<{ id: string }> }) => {
+    mcCalls.push({ enabled: args.enabled, planIds: args.plans.map((p) => p.id) });
+    return { ...mcStateRef.current, retry: vi.fn() };
+  },
+}));
+
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({
   PortfolioBarsChart: ({ current }: { current: Array<{ portfolioAssets: { total: number } }> }) => (
     <div data-testid="chart-current-total">
@@ -28,6 +47,8 @@ beforeEach(() => {
   routerPush.mockReset();
   routerRefresh.mockReset();
   vi.stubGlobal("fetch", fetchMock);
+  mcCalls.length = 0;
+  mcStateRef.current = { status: "idle" };
 });
 
 const baseProps = {
