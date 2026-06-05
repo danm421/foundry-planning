@@ -7,6 +7,13 @@ import type { QsAssumptionsDraft, QsTaxMode } from "@/lib/quick-start/types";
 import type { USPSStateCode } from "@/lib/usps-states";
 import type { QsStepProps } from "./step-props";
 import { Labeled, sendJson } from "./ui";
+import {
+  GrowthRateRows,
+  type InvestableRow,
+  type InvestableKey,
+  type FlatRow,
+  type FlatKey,
+} from "./growth-rate-rows";
 
 /** Convert a fraction to a clean percent display string (avoids floating-point noise). */
 function toDisplayPct(fraction: number): string {
@@ -15,18 +22,27 @@ function toDisplayPct(fraction: number): string {
 
 export function AssumptionsStep({ bootstrap, registerSave }: QsStepProps) {
   const dg = bootstrap.defaultGrowth;
+  const gs = bootstrap.growthSource;
 
   const [taxMode, setTaxMode] = useState<QsTaxMode>("brackets");
   const [flatFedDisplay, setFlatFedDisplay] = useState("22");
   const [flatStateDisplay, setFlatStateDisplay] = useState("5");
   const [inflationDisplay, setInflationDisplay] = useState(toDisplayPct(dg.inflation));
-  const [taxableDisplay, setTaxableDisplay] = useState(toDisplayPct(dg.taxable));
-  const [cashDisplay, setCashDisplay] = useState(toDisplayPct(dg.cash));
-  const [retirementDisplay, setRetirementDisplay] = useState(toDisplayPct(dg.retirement));
-  const [realEstateDisplay, setRealEstateDisplay] = useState(toDisplayPct(dg.realEstate));
-  const [lifeInsuranceDisplay, setLifeInsuranceDisplay] = useState(
-    toDisplayPct(dg.lifeInsurance),
-  );
+
+  const [investable, setInvestable] = useState<Record<InvestableKey, InvestableRow>>({
+    taxable: { ...gs.taxable, customDisplay: toDisplayPct(dg.taxable) },
+    cash: { ...gs.cash, customDisplay: toDisplayPct(dg.cash) },
+    retirement: { ...gs.retirement, customDisplay: toDisplayPct(dg.retirement) },
+  });
+  const [flat, setFlat] = useState<Record<FlatKey, FlatRow>>({
+    realEstate: { source: gs.realEstate, customDisplay: toDisplayPct(dg.realEstate) },
+    lifeInsurance: { source: gs.lifeInsurance, customDisplay: toDisplayPct(dg.lifeInsurance) },
+  });
+
+  const onInvestableChange = (key: InvestableKey, next: InvestableRow) =>
+    setInvestable((prev) => ({ ...prev, [key]: next }));
+  const onFlatChange = (key: FlatKey, next: FlatRow) =>
+    setFlat((prev) => ({ ...prev, [key]: next }));
 
   registerSave(async () => {
     const draft: QsAssumptionsDraft = {
@@ -34,11 +50,19 @@ export function AssumptionsStep({ bootstrap, registerSave }: QsStepProps) {
       flatFederalRate: taxMode === "flat" ? Number(flatFedDisplay) / 100 : undefined,
       flatStateRate: taxMode === "flat" ? Number(flatStateDisplay) / 100 : undefined,
       inflationRate: Number(inflationDisplay) / 100,
-      growthTaxable: Number(taxableDisplay) / 100,
-      growthCash: Number(cashDisplay) / 100,
-      growthRetirement: Number(retirementDisplay) / 100,
-      growthRealEstate: Number(realEstateDisplay) / 100,
-      growthLifeInsurance: Number(lifeInsuranceDisplay) / 100,
+      growthTaxable: Number(investable.taxable.customDisplay) / 100,
+      growthCash: Number(investable.cash.customDisplay) / 100,
+      growthRetirement: Number(investable.retirement.customDisplay) / 100,
+      growthRealEstate: Number(flat.realEstate.customDisplay) / 100,
+      growthLifeInsurance: Number(flat.lifeInsurance.customDisplay) / 100,
+      growthSourceTaxable: investable.taxable.source,
+      growthSourceCash: investable.cash.source,
+      growthSourceRetirement: investable.retirement.source,
+      modelPortfolioIdTaxable: investable.taxable.portfolioId,
+      modelPortfolioIdCash: investable.cash.portfolioId,
+      modelPortfolioIdRetirement: investable.retirement.portfolioId,
+      growthSourceRealEstate: flat.realEstate.source,
+      growthSourceLifeInsurance: flat.lifeInsurance.source,
     };
     await sendJson(
       `/api/clients/${bootstrap.clientId}/plan-settings`,
@@ -115,57 +139,15 @@ export function AssumptionsStep({ bootstrap, registerSave }: QsStepProps) {
         </Labeled>
       </div>
 
-      {/* Growth rates */}
-      <div>
-        <div className="mb-2 text-[12px] font-medium text-ink-3">Growth rates (%)</div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Labeled label="Taxable">
-            <input
-              type="number"
-              aria-label="Taxable growth"
-              value={taxableDisplay}
-              onChange={(e) => setTaxableDisplay(e.target.value)}
-              className={inputClassName}
-            />
-          </Labeled>
-          <Labeled label="Cash">
-            <input
-              type="number"
-              aria-label="Cash growth"
-              value={cashDisplay}
-              onChange={(e) => setCashDisplay(e.target.value)}
-              className={inputClassName}
-            />
-          </Labeled>
-          <Labeled label="Retirement">
-            <input
-              type="number"
-              aria-label="Retirement growth"
-              value={retirementDisplay}
-              onChange={(e) => setRetirementDisplay(e.target.value)}
-              className={inputClassName}
-            />
-          </Labeled>
-          <Labeled label="Real estate">
-            <input
-              type="number"
-              aria-label="Real estate growth"
-              value={realEstateDisplay}
-              onChange={(e) => setRealEstateDisplay(e.target.value)}
-              className={inputClassName}
-            />
-          </Labeled>
-          <Labeled label="Life insurance">
-            <input
-              type="number"
-              aria-label="Life insurance growth"
-              value={lifeInsuranceDisplay}
-              onChange={(e) => setLifeInsuranceDisplay(e.target.value)}
-              className={inputClassName}
-            />
-          </Labeled>
-        </div>
-      </div>
+      {/* Growth rates — source picker per category */}
+      <GrowthRateRows
+        modelPortfolios={bootstrap.modelPortfolios}
+        inflationPct={Number(inflationDisplay) || 0}
+        investable={investable}
+        flat={flat}
+        onInvestableChange={onInvestableChange}
+        onFlatChange={onFlatChange}
+      />
     </div>
   );
 }
