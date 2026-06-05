@@ -383,8 +383,10 @@ export async function POST(
 
     // Max sustainable spending: solve per (scenario, target) for each Retirement
     // Comparison page and attach to both the base and scenario bundles it reads.
+    // Unlike the Life-Insurance pass below (whose solve is page-specific and is
+    // injected into page.options), max-spend depends only on (scenario, target),
+    // so it attaches to the shared bundle — one solve serves every RC page on it.
     // Cached (kind="max_spending") so repeated decks / the AI route are cheap.
-    // Mirrors the Life-Insurance solve pass below.
     const maxSpendDone = new Set<string>(); // `${key}:${target}`
     await Promise.all(
       parsed.data.pages.flatMap((page) => {

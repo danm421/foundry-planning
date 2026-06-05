@@ -95,19 +95,21 @@ export function buildRetirementComparisonData(
   }
 
   // ── Confidence band from per-year MC percentiles (no new simulation). ──
-  const baseByYear = new Map((baseBundle.monteCarlo?.summary.byYear ?? []).map((r) => [r.year, r]));
-  const scnByYear = new Map((scnBundle.monteCarlo?.summary.byYear ?? []).map((r) => [r.year, r]));
+  // Only assembled when the band is shown — skip the per-year work otherwise.
   const points: ConfidencePoint[] = [];
-  for (const [year, sRow] of scnByYear) {
-    const bRow = baseByYear.get(year);
-    if (!bRow) continue;
-    points.push({
-      year,
-      baseP20: bRow.balance.p20, baseP50: bRow.balance.p50, baseP80: bRow.balance.p80,
-      scnP20: sRow.balance.p20, scnP50: sRow.balance.p50, scnP80: sRow.balance.p80,
-    });
+  if (options.showConfidenceRange) {
+    const baseByYear = new Map((baseBundle.monteCarlo?.summary.byYear ?? []).map((r) => [r.year, r]));
+    for (const sRow of scnBundle.monteCarlo?.summary.byYear ?? []) {
+      const bRow = baseByYear.get(sRow.year);
+      if (!bRow) continue;
+      points.push({
+        year: sRow.year,
+        baseP20: bRow.balance.p20, baseP50: bRow.balance.p50, baseP80: bRow.balance.p80,
+        scnP20: sRow.balance.p20, scnP50: sRow.balance.p50, scnP80: sRow.balance.p80,
+      });
+    }
   }
-  const confidenceShow = options.showConfidenceRange && points.length > 0;
+  const confidenceShow = points.length > 0;
 
   // ── Stat cards ──
   const legacyDelta = metrics.matrix.scenarioAtEnd.total - metrics.matrix.baseAtEnd.total;

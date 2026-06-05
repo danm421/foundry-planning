@@ -173,10 +173,14 @@ export async function POST(
       retirementYear,
     });
 
-    const [changes, toggleGroups, scenarioLabel] = await Promise.all([
+    // Change descriptions and the (cold-cache-expensive) max-spend solves are
+    // independent of each other, so resolve them in one parallel batch.
+    const [changes, toggleGroups, scenarioLabel, baseMs, scnMs] = await Promise.all([
       loadScenarioChanges(body.scenarioId),
       loadScenarioToggleGroups(body.scenarioId),
       resolveScenarioLabel(id, body.scenarioId),
+      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: "base", targetPoS: body.targetConfidence }).catch(() => null),
+      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: body.scenarioId, targetPoS: body.targetConfidence }).catch(() => null),
     ]);
     const targetNames = buildTargetNames(scn.effectiveTree, id);
     const changeLines = changeLinesFor(changes, toggleGroups, targetNames);
@@ -186,10 +190,6 @@ export async function POST(
     const firstNames = spouseFirst ? `${firstName} and ${spouseFirst}` : firstName;
     const householdName = `the ${client.lastName ?? firstName} household`;
 
-    const [baseMs, scnMs] = await Promise.all([
-      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: "base", targetPoS: body.targetConfidence }).catch(() => null),
-      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: body.scenarioId, targetPoS: body.targetConfidence }).catch(() => null),
-    ]);
     const maxSpend = baseMs && scnMs ? { base: baseMs.realAnnualSpend, scenario: scnMs.realAnnualSpend } : undefined;
     const downside = base.summary && scn.summary
       ? { baseEndP20: base.summary.ending.p20, scnEndP20: scn.summary.ending.p20 }
