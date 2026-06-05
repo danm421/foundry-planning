@@ -4,14 +4,17 @@ import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import YearlyLiquidityReportView from "@/components/yearly-liquidity-report-view";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function EstateLiquidityPage({ params }: PageProps) {
+export default async function EstateLiquidityPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -44,11 +47,13 @@ export default async function EstateLiquidityPage({ params }: PageProps) {
   };
 
   return (
-    <YearlyLiquidityReportView
-      clientId={id}
-      isMarried={isMarried}
-      ownerNames={ownerNames}
-      ownerDobs={ownerDobs}
-    />
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <YearlyLiquidityReportView
+        clientId={id}
+        isMarried={isMarried}
+        ownerNames={ownerNames}
+        ownerDobs={ownerDobs}
+      />
+    </ScenarioDrawerShell>
   );
 }

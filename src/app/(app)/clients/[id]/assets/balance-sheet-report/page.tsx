@@ -7,6 +7,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { BalanceSheetReportContent } from "./balance-sheet-report-content";
 import BalanceSheetReportSkeleton from "./loading-skeleton";
 import BalanceSheetPdfButton from "@/components/balance-sheet-pdf-button";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -26,13 +27,15 @@ export default async function BalanceSheetReportPage({ params, searchParams }: P
   if (!client) notFound();
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
-        <BalanceSheetPdfButton clientId={id} />
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <div className="flex flex-col gap-4">
+        <div className="flex justify-end">
+          <BalanceSheetPdfButton clientId={id} />
+        </div>
+        <Suspense fallback={<BalanceSheetReportSkeleton />}>
+          <BalanceSheetReportContent clientId={id} scenarioParam={sp.scenario} />
+        </Suspense>
       </div>
-      <Suspense fallback={<BalanceSheetReportSkeleton />}>
-        <BalanceSheetReportContent clientId={id} scenarioParam={sp.scenario} />
-      </Suspense>
-    </div>
+    </ScenarioDrawerShell>
   );
 }

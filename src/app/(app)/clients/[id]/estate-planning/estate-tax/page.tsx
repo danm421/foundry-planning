@@ -4,14 +4,17 @@ import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import EstateTaxTabbedView from "@/components/estate-tax-tabbed-view";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function EstateTaxReportPage({ params }: PageProps) {
+export default async function EstateTaxReportPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -65,12 +68,14 @@ export default async function EstateTaxReportPage({ params }: PageProps) {
       : clientRetirementYear;
 
   return (
-    <EstateTaxTabbedView
-      clientId={id}
-      isMarried={isMarried}
-      ownerNames={ownerNames}
-      ownerDobs={ownerDobs}
-      retirementYear={retirementYear}
-    />
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <EstateTaxTabbedView
+        clientId={id}
+        isMarried={isMarried}
+        ownerNames={ownerNames}
+        ownerDobs={ownerDobs}
+        retirementYear={retirementYear}
+      />
+    </ScenarioDrawerShell>
   );
 }

@@ -12,13 +12,17 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { listTemplatesForUser } from "@/lib/presentations/templates-repo";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { PresentationsLauncher } from "./launcher";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 export default async function PresentationsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }) {
   const { id: clientId } = await params;
+  const sp = await searchParams;
   const firmId = await requireOrgId();
   const { userId } = await auth();
   if (!userId) throw new UnauthorizedError();
@@ -66,14 +70,16 @@ export default async function PresentationsPage({
   const clientLastName = primaryContactRows[0]?.lastName ?? "";
 
   return (
-    <PresentationsLauncher
-      clientId={clientId}
-      currentUserId={userId}
-      clientLastName={clientLastName}
-      scenarios={scenarioRows}
-      snapshots={snapshotRows}
-      initialTemplates={templates}
-      investmentCatalog={investmentCatalog}
-    />
+    <ScenarioDrawerShell clientId={clientId} scenarioId={sp.scenario}>
+      <PresentationsLauncher
+        clientId={clientId}
+        currentUserId={userId}
+        clientLastName={clientLastName}
+        scenarios={scenarioRows}
+        snapshots={snapshotRows}
+        initialTemplates={templates}
+        investmentCatalog={investmentCatalog}
+      />
+    </ScenarioDrawerShell>
   );
 }

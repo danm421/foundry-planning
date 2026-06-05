@@ -4,6 +4,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { OverviewContent } from "./overview-content";
 import OverviewSkeleton from "./loading-skeleton";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,10 @@ export default async function ClientOverviewPage({
   if (!(await findClientInFirm(id, firmId))) notFound();
 
   return (
-    <Suspense fallback={<OverviewSkeleton />}>
-      <OverviewContent clientId={id} firmId={firmId} scenarioId={scenarioId} />
-    </Suspense>
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<OverviewSkeleton />}>
+        <OverviewContent clientId={id} firmId={firmId} scenarioId={scenarioId} />
+      </Suspense>
+    </ScenarioDrawerShell>
   );
 }

@@ -1,6 +1,7 @@
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import IncomeTaxReport from "@/components/income-tax-report";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface IncomeTaxPageProps {
   params: Promise<{ id: string }>;
@@ -16,5 +17,9 @@ export default async function IncomeTaxPage({
   const firmId = await requireOrgId();
   await findClientInFirm(id, firmId);
   const scenarioId = sp.scenario ?? "base";
-  return <IncomeTaxReport clientId={id} scenarioId={scenarioId} />;
+  return (
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <IncomeTaxReport clientId={id} scenarioId={scenarioId} />
+    </ScenarioDrawerShell>
+  );
 }

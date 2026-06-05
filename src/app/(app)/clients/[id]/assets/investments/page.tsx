@@ -6,16 +6,17 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { InvestmentsContent } from "./investments-content";
 import InvestmentsSkeleton from "./loading-skeleton";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ group?: string }>;
+  searchParams: Promise<{ group?: string; scenario?: string }>;
 }
 
 export default async function InvestmentsPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id: clientId } = await params;
-  const { group } = await searchParams;
+  const { group, scenario } = await searchParams;
 
   const [client] = await db
     .select()
@@ -24,12 +25,14 @@ export default async function InvestmentsPage({ params, searchParams }: PageProp
   if (!client) notFound();
 
   return (
-    <Suspense fallback={<InvestmentsSkeleton />}>
-      <InvestmentsContent
-        clientId={clientId}
-        firmId={firmId}
-        groupKey={group ?? "all-liquid"}
-      />
-    </Suspense>
+    <ScenarioDrawerShell clientId={clientId} scenarioId={scenario}>
+      <Suspense fallback={<InvestmentsSkeleton />}>
+        <InvestmentsContent
+          clientId={clientId}
+          firmId={firmId}
+          groupKey={group ?? "all-liquid"}
+        />
+      </Suspense>
+    </ScenarioDrawerShell>
   );
 }

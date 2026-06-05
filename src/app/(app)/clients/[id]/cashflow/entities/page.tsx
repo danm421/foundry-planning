@@ -4,6 +4,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { EntitiesCashFlowContent } from "./entities-cashflow-content";
 import EntitiesCashFlowSkeleton from "./loading-skeleton";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -19,8 +20,10 @@ export default async function EntitiesCashFlowReportPage({ params, searchParams 
   if (!inFirm) notFound();
 
   return (
-    <Suspense fallback={<EntitiesCashFlowSkeleton />}>
-      <EntitiesCashFlowContent id={id} firmId={firmId} scenarioParam={sp.scenario} />
-    </Suspense>
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<EntitiesCashFlowSkeleton />}>
+        <EntitiesCashFlowContent id={id} firmId={firmId} scenarioParam={sp.scenario} />
+      </Suspense>
+    </ScenarioDrawerShell>
   );
 }
