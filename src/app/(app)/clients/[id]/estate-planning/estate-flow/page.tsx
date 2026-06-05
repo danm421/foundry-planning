@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { EstateFlowContent } from "./estate-flow-content";
 import EstateFlowSkeleton from "./loading-skeleton";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -38,15 +39,17 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
   const scenarioId = sp.scenario ?? "base";
 
   return (
-    <Suspense fallback={<EstateFlowSkeleton />}>
-      <EstateFlowContent
-        clientId={id}
-        firmId={firmId}
-        filingStatus={client.filingStatus}
-        firstName={primaryContact.firstName}
-        spouseName={spouseContact?.firstName ?? null}
-        scenarioId={scenarioId}
-      />
-    </Suspense>
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<EstateFlowSkeleton />}>
+        <EstateFlowContent
+          clientId={id}
+          firmId={firmId}
+          filingStatus={client.filingStatus}
+          firstName={primaryContact.firstName}
+          spouseName={spouseContact?.firstName ?? null}
+          scenarioId={scenarioId}
+        />
+      </Suspense>
+    </ScenarioDrawerShell>
   );
 }

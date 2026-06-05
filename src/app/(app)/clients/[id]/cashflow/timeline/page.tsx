@@ -4,21 +4,26 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { TimelineContent } from "./timeline-content";
 import TimelineSkeleton from "./loading-skeleton";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function TimelineReportPage({ params }: PageProps) {
+export default async function TimelineReportPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const inFirm = await findClientInFirm(id, firmId);
   if (!inFirm) notFound();
 
   return (
-    <Suspense fallback={<TimelineSkeleton />}>
-      <TimelineContent id={id} firmId={firmId} />
-    </Suspense>
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<TimelineSkeleton />}>
+        <TimelineContent id={id} firmId={firmId} />
+      </Suspense>
+    </ScenarioDrawerShell>
   );
 }

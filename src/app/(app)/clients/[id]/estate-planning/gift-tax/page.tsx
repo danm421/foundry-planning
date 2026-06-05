@@ -4,14 +4,17 @@ import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import GiftTaxReportView from "@/components/gift-tax-report-view";
+import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function GiftTaxReportPage({ params }: PageProps) {
+export default async function GiftTaxReportPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -30,16 +33,18 @@ export default async function GiftTaxReportPage({ params }: PageProps) {
   if (!primaryContact?.dateOfBirth) notFound();
 
   return (
-    <GiftTaxReportView
-      clientId={id}
-      ownerNames={{
-        clientName: primaryContact.firstName,
-        spouseName: spouseContact?.firstName ?? null,
-      }}
-      ownerDobs={{
-        clientDob: primaryContact.dateOfBirth,
-        spouseDob: spouseContact?.dateOfBirth ?? null,
-      }}
-    />
+    <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
+      <GiftTaxReportView
+        clientId={id}
+        ownerNames={{
+          clientName: primaryContact.firstName,
+          spouseName: spouseContact?.firstName ?? null,
+        }}
+        ownerDobs={{
+          clientDob: primaryContact.dateOfBirth,
+          spouseDob: spouseContact?.dateOfBirth ?? null,
+        }}
+      />
+    </ScenarioDrawerShell>
   );
 }
