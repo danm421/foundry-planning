@@ -35,6 +35,7 @@ import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { getOrComputeLifeInsuranceSolve } from "@/lib/compute-cache/life-insurance";
+import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import type {
   LifeInsuranceSummaryOptions,
   LiSolved,
@@ -53,6 +54,8 @@ import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-
 import {
   planScenarioBundles,
   labelForRef,
+  keyForRef,
+  resolveScenarioRef,
   type PlannerPage,
 } from "@/lib/scenario/presentation-refs";
 import React from "react";
@@ -377,6 +380,42 @@ export async function POST(
     for (const r of bundleResults) {
       if (r.kind === "ok") bundles[r.key] = r.bundle;
     }
+
+    // Max sustainable spending: solve per (scenario, target) for each Retirement
+    // Comparison page and attach to both the base and scenario bundles it reads.
+    // Cached (kind="max_spending") so repeated decks / the AI route are cheap.
+    // Mirrors the Life-Insurance solve pass below.
+    const maxSpendDone = new Set<string>(); // `${key}:${target}`
+    await Promise.all(
+      parsed.data.pages.flatMap((page) => {
+        if (page.pageId !== "retirementComparison") return [];
+        const opts = page.options as { scenarioId: string; maxSpend: { show: boolean; targetConfidence: number } };
+        if (!opts.maxSpend.show) return [];
+        const target = opts.maxSpend.targetConfidence;
+        // The retirement comparison page always reads "base" plus the chosen
+        // scenario. Resolve to the same keys planScenarioBundles registered so
+        // we attach to the exact bundle objects the PDF renderer will read.
+        const refs: Array<{ key: string; scenarioId: string | "base" }> = [
+          { key: keyForRef(resolveScenarioRef("base")), scenarioId: "base" },
+          ...(opts.scenarioId
+            ? [{ key: keyForRef(resolveScenarioRef(opts.scenarioId)), scenarioId: opts.scenarioId }]
+            : []),
+        ];
+        return refs.map(async ({ key, scenarioId }) => {
+          const dedupe = `${key}:${target}`;
+          if (maxSpendDone.has(dedupe) || !bundles[key]) return;
+          maxSpendDone.add(dedupe);
+          try {
+            bundles[key].maxSpend = await getOrComputeMaxSpending({
+              clientId: id, firmId, scenarioId, targetPoS: target,
+            });
+          } catch (msErr) {
+            console.error("Max-spend solve failed for export", msErr);
+            bundles[key].maxSpend = null; // page degrades to hidden block
+          }
+        });
+      }),
+    );
 
     // The cover/client-name fields come from the top-level bundle.
     const topBundle = bundles[plan.topKey];

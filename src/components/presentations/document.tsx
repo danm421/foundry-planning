@@ -11,6 +11,7 @@ import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-in
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import { SECTION_ACCENTS, DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
+import type { MaxSpendResult } from "@/lib/solver/solve-max-spending";
 
 export interface PageScenarioBundle {
   clientData: ClientData;
@@ -18,6 +19,7 @@ export interface PageScenarioBundle {
   scenarioLabel: string;
   monteCarlo?: MonteCarloReportPayload | null;
   scenarioChanges?: ScenarioChangesContext;
+  maxSpend?: MaxSpendResult | null;
 }
 
 interface PresentationDocumentProps {
