@@ -77,10 +77,10 @@ function formatPercent(fraction: number): string {
 }
 
 function formatCompactUsd(n: number): string {
-  if (n >= 1000) {
-    const k = n / 1000;
-    const rounded = Number.isInteger(k) ? k : Math.round(k * 10) / 10;
-    return `$${rounded}k`;
+  const rounded = Math.round(n);
+  if (rounded >= 1000) {
+    const k = rounded / 1000;
+    return `$${Number.isInteger(k) ? k : Math.round(k * 10) / 10}k`;
   }
-  return `$${Math.round(n)}`;
+  return `$${rounded}`;
 }

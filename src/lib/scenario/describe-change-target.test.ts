@@ -38,6 +38,16 @@ describe("describeChangeTarget", () => {
     ).toBe("401(k) · 6% of salary");
   });
 
+  it("savings_rule: fractional percent (non-integer)", () => {
+    expect(
+      describeChangeTarget(
+        "savings_rule",
+        { id: "s1", accountId: "acc-401k", annualPercent: 0.065 },
+        accounts,
+      ),
+    ).toBe("401(k) · 6.5% of salary");
+  });
+
   it("savings_rule: account + compact annual amount", () => {
     expect(
       describeChangeTarget(
