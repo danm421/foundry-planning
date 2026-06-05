@@ -8,6 +8,7 @@ import { HoldingsTab } from "./holdings-tab";
 import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab from "./beneficiaries-tab";
+import GrantsTab from "./equity/grants-tab";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
@@ -152,7 +153,7 @@ interface AddAccountFormProps {
   /** Existing account names for auto-increment default naming on create. */
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
-  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings";
+  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants";
   /**
    * When true, only the Beneficiaries tab button renders and all other panels
    * are unmounted. Prevents accidental overwrite when `initial` is a lite shape
@@ -365,7 +366,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [accountRothValue, setAccountRothValue] = useState<string>(
     initial?.rothValue != null ? String(initial.rothValue) : "",
   );
-  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings">(
+  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants">(
     initialTab ?? "details",
   );
   const [subType, setSubType] = useState(
@@ -1324,7 +1325,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               RMD
             </button>
           )}
-          {/* Grants tab added in Task 18 */}
+          {/* Grants tab — stock options only (Task 18) */}
+          {!lockTab && category === "stock_options" && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("grants")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "grants"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              Grants
+            </button>
+          )}
           <button
             type="button"
             onClick={() => handleTabClick("beneficiaries")}
@@ -2148,6 +2162,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Grants tab — stock options only (Task 18) */}
+      {!lockTab && category === "stock_options" && (
+        <div className={activeTab === "grants" ? "" : "hidden"}>
+          <GrantsTab clientId={clientId} accountId={effectiveAccountId} />
         </div>
       )}
 
