@@ -41,7 +41,7 @@ export function SolverSolveProgressStrip({
           <span>Starting…</span>
         ) : (
           <span>
-            Iteration {iteration}/{maxIterations}
+            Iteration {Math.min(iteration, maxIterations)}/{maxIterations}
             {candidateValue !== null ? (
               <>
                 {" — trying "}

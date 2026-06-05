@@ -12,6 +12,12 @@ export const ROTH_AMOUNT_HARD_CAP = 1_000_000;
 export const SAVINGS_ZERO_DEFAULT_HI = 50_000;
 export const SAVINGS_SOURCE_MULTIPLIER = 4;
 
+/** Upper bound for the living-expense-scale search: 10× the plan's stated
+ *  retirement living spend. Effectively uncapped — no realistic plan sustains
+ *  more than this — while keeping the bisection bracket finite (~12 iterations
+ *  at the 0.01 step, well under WIDE_LEVER_MAX_ITERATIONS). */
+export const MAX_LIVING_EXPENSE_SCALE = 10;
+
 export interface LeverSearchConfig {
   lo: number;
   hi: number;
@@ -19,6 +25,11 @@ export interface LeverSearchConfig {
   /** +1 if increasing lever value increases PoS, -1 if decreasing. Used only
    *  for the "both endpoints beat target → return cheaper endpoint" case. */
   direction: 1 | -1;
+  /** Optional bisect tolerance override (±PoS). Omitted ⟹ bisect default 0.02.
+   *  Set to 0 for "maximize the lever" solves so the search collapses to the
+   *  HIGHEST value that still beats the target instead of exiting early at the
+   *  first midpoint within ±2% (which under-reports sustainable spending). */
+  tolerance?: number;
 }
 
 export function leverSearchConfig(
@@ -29,7 +40,15 @@ export function leverSearchConfig(
     case "retirement-age":
       return { lo: 50, hi: 80, step: 1, direction: 1 };
     case "living-expense-scale":
-      return { lo: 0.5, hi: 1.5, step: 0.01, direction: -1 };
+      // Wide, effectively-uncapped range with tolerance:0 so the solver returns
+      // the maximum sustainable spend, not the first scale within ±2% of target.
+      return {
+        lo: 0.5,
+        hi: MAX_LIVING_EXPENSE_SCALE,
+        step: 0.01,
+        direction: -1,
+        tolerance: 0,
+      };
     case "ss-claim-age":
       return { lo: 62, hi: 70, step: 1, direction: 1 };
     case "savings-contribution": {
