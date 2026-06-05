@@ -260,6 +260,7 @@ export function PresentationsLauncher(props: Props) {
   async function withFreshSummaries(
     selected: { descriptor: PageDescriptor; index: number }[],
   ): Promise<PageDescriptor[]> {
+    setError(null);
     setPreparing(true);
     try {
       const { pages, updates, error } = await ensureFreshSummaries(
