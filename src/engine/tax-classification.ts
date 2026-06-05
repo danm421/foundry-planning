@@ -30,7 +30,7 @@ export interface TransferTaxResult {
    *  source liquidations only; 0 for retirement-source transfers. */
   basisReturn: number;
   earlyWithdrawalPenalty: number;
-  label: "tax_free_rollover" | "roth_conversion" | "taxable_distribution" | "early_distribution" | "taxable_liquidation";
+  label: "tax_free_rollover" | "roth_conversion" | "taxable_distribution" | "early_distribution" | "taxable_liquidation" | "qualified_hsa_distribution";
 }
 
 // 401k/403b are mixed accounts: pre-tax by default, Roth via the per-account
@@ -62,6 +62,20 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
     rothBasis,
     sourceRothValue = 0,
   } = input;
+
+  // HSA source: any transfer out is a qualified (medical) distribution —
+  // tax-free, no penalty, at any age, regardless of target. The pre-65 lock
+  // applies only to the engine's deficit-driven liquidation, not to explicit
+  // advisor transfers. Must precede all category branches below.
+  if (sourceCategory === "retirement" && sourceSubType === "hsa") {
+    return {
+      taxableOrdinaryIncome: 0,
+      capitalGain: 0,
+      basisReturn: amount,
+      earlyWithdrawalPenalty: 0,
+      label: "qualified_hsa_distribution",
+    };
+  }
 
   // ── Retirement → Retirement ──────────────────────────────────────────────
   if (sourceCategory === "retirement" && targetCategory === "retirement") {

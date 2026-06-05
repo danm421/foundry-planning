@@ -238,3 +238,53 @@ describe("classifyTransferTax taxable source — fresh-basis-first (spec 2026-05
     expect(r.basisReturn).toBeCloseTo(150, 2);
   });
 });
+
+describe("classifyTransferTax — HSA source", () => {
+  const hsaBase = {
+    targetCategory: "cash" as const,
+    targetSubType: "checking",
+    amount: 10000,
+    sourceAccountValue: 50000,
+    sourceAccountBasis: 0,
+    allTraditionalIraBasis: 0,
+    allTraditionalIraBalance: 0,
+    rothBasis: 0,
+  };
+
+  it("is tax-free with no penalty at 70", () => {
+    const r = classifyTransferTax({
+      ...hsaBase, sourceCategory: "retirement", sourceSubType: "hsa", ownerAge: 70,
+    });
+    expect(r.taxableOrdinaryIncome).toBe(0);
+    expect(r.capitalGain).toBe(0);
+    expect(r.earlyWithdrawalPenalty).toBe(0);
+    expect(r.basisReturn).toBe(10000);
+    expect(r.label).toBe("qualified_hsa_distribution");
+  });
+
+  it("is tax-free with no penalty even before 65 (explicit qualified reimbursement)", () => {
+    const r = classifyTransferTax({
+      ...hsaBase, sourceCategory: "retirement", sourceSubType: "hsa", ownerAge: 50,
+    });
+    expect(r.taxableOrdinaryIncome).toBe(0);
+    expect(r.earlyWithdrawalPenalty).toBe(0);
+    expect(r.label).toBe("qualified_hsa_distribution");
+  });
+});
+
+describe("classifyTransferTax — HSA is not a Roth-conversion source", () => {
+  it("an HSA → Roth move is a qualified HSA distribution, not a roth_conversion", () => {
+    const r = classifyTransferTax({
+      sourceCategory: "retirement", sourceSubType: "hsa",
+      targetCategory: "retirement", targetSubType: "roth_ira", ownerAge: 70,
+      amount: 10000,
+      sourceAccountValue: 50000,
+      sourceAccountBasis: 0,
+      allTraditionalIraBasis: 0,
+      allTraditionalIraBalance: 0,
+      rothBasis: 0,
+    });
+    expect(r.label).toBe("qualified_hsa_distribution");
+    expect(r.taxableOrdinaryIncome).toBe(0);
+  });
+});

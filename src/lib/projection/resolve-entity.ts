@@ -68,6 +68,7 @@ type RawAccount = {
   value: string | number;
   basis: string | number;
   rothValue?: string | number | null;
+  hsaCoverage?: "self" | "family" | null;
   growthSource: string | null;
   growthRate: string | number | null;
   turnoverPct: string | null;
@@ -197,6 +198,7 @@ export function resolveAccountFromRaw(
     value: ctx.holdingsTotalsByAccountId?.get(raw.id)?.value ?? n(raw.value),
     basis: ctx.holdingsTotalsByAccountId?.get(raw.id)?.basis ?? n(raw.basis),
     rothValue: raw.rothValue != null ? n(raw.rothValue) : 0,
+    hsaCoverage: raw.hsaCoverage ?? undefined,
     growthRate,
     rmdEnabled: raw.rmdEnabled,
     priorYearEndValue: nNullable(raw.priorYearEndValue),

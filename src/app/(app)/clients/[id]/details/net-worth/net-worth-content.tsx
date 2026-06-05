@@ -204,6 +204,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       value: String(a.value),
       basis: String(a.basis),
       rothValue: a.rothValue != null ? String(a.rothValue) : null,
+      hsaCoverage: a.hsaCoverage ?? null,
       growthRate: a.growthRate == null ? null : String(a.growthRate),
       rmdEnabled: a.rmdEnabled ?? null,
       priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,

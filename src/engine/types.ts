@@ -696,6 +696,12 @@ export interface Account {
    * subtypes (the engine ignores it there).
    */
   rothValue?: number;
+  /**
+   * HSA coverage tier. Present only when `subType === "hsa"`; drives the
+   * contribution cap (self vs family limit). Undefined → treated as "self"
+   * (the conservative lower cap) by the engine.
+   */
+  hsaCoverage?: "self" | "family";
   growthRate: number;
   rmdEnabled: boolean;
   /**

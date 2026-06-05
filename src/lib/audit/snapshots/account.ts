@@ -38,6 +38,7 @@ export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot
     propertyTaxGrowthRate: Number(row.propertyTaxGrowthRate),
     propertyTaxGrowthSource: row.propertyTaxGrowthSource,
     titlingType: row.titlingType,
+    hsaCoverage: row.hsaCoverage,
     source: row.source,
   };
 }

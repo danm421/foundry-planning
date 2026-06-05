@@ -1,6 +1,6 @@
 // src/engine/__tests__/planSupplementalWithdrawal.test.ts
 import { describe, it, expect } from "vitest";
-import { planSupplementalWithdrawal } from "../withdrawal";
+import { planSupplementalWithdrawal, isHsaWithdrawalLocked } from "../withdrawal";
 import type { Account, WithdrawalPriority } from "../types";
 
 const acct = (id: string, overrides: Partial<Account>): Account => ({
@@ -131,5 +131,55 @@ describe("planSupplementalWithdrawal", () => {
     expect(plan.total).toBe(40_000);
     // 40_000 × (1 − 50/200) = 40_000 × 0.75 = 30_000
     expect(plan.recognizedIncome.capitalGains).toBeCloseTo(30_000, 6);
+  });
+});
+
+describe("HSA 65 gate", () => {
+  const hsa = acct("h1", { category: "retirement", subType: "hsa", value: 100_000 });
+  const ira = acct("i1", { category: "retirement", subType: "traditional_ira", value: 100_000 });
+
+  it("locks an HSA before 65", () => {
+    expect(isHsaWithdrawalLocked(hsa, 64)).toBe(true);
+  });
+  it("unlocks an HSA at 65", () => {
+    expect(isHsaWithdrawalLocked(hsa, 65)).toBe(false);
+  });
+  it("never locks a non-HSA account", () => {
+    expect(isHsaWithdrawalLocked(ira, 40)).toBe(false);
+  });
+
+  it("skips a pre-65 HSA in the supplemental plan and draws the IRA instead", () => {
+    const accounts = [hsa, ira];
+    const plan = planSupplementalWithdrawal({
+      shortfall: 5000,
+      strategy: [
+        { accountId: "h1", priorityOrder: 1, startYear: 2026, endYear: 2099 },
+        { accountId: "i1", priorityOrder: 2, startYear: 2026, endYear: 2099 },
+      ],
+      householdBalances: { h1: 100000, i1: 100000 },
+      basisMap: {},
+      accounts,
+      ages: { client: 64, spouse: null },
+      isSpouseAccount: () => false,
+      year: 2026,
+    });
+    expect(plan.byAccount.h1 ?? 0).toBe(0);
+    expect(plan.byAccount.i1).toBeCloseTo(5000, 2);
+  });
+
+  it("draws a 65-year-old's HSA tax-free", () => {
+    const plan = planSupplementalWithdrawal({
+      shortfall: 5000,
+      strategy: [{ accountId: "h1", priorityOrder: 1, startYear: 2026, endYear: 2099 }],
+      householdBalances: { h1: 100000 },
+      basisMap: {},
+      accounts: [hsa],
+      ages: { client: 65, spouse: null },
+      isSpouseAccount: () => false,
+      year: 2026,
+    });
+    expect(plan.byAccount.h1).toBeCloseTo(5000, 2);
+    expect(plan.recognizedIncome.ordinaryIncome).toBe(0);
+    expect(plan.recognizedIncome.earlyWithdrawalPenalty).toBe(0);
   });
 });

@@ -87,7 +87,7 @@ export const FLOW_COLUMNS: Column[] = [
     key: "aboveLineDeductions",
     label: "Above-Line Deduct",
     tooltip:
-      "HSA, traditional IRA, self-employment tax half, etc. Subtracted to get AGI. (v1: always $0)",
+      "HSA + deductible traditional IRA / 401(k) contributions, self-employment tax half, etc. Subtracted to get AGI.",
     value: (y) => y.taxResult?.flow.aboveLineDeductions ?? 0,
   },
   {

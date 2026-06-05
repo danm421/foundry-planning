@@ -79,6 +79,7 @@ function accountInsertValues(
     value: decOrZero(a.value),
     basis: decOrZero(a.basis),
     rothValue: decOrZero(a.rothValue),
+    hsaCoverage: a.hsaCoverage ?? null,
     // null = inherit the default growth rate for this category from plan_settings.
     growthRate: a.growthRate != null ? String(a.growthRate) : null,
     rmdEnabled: a.rmdEnabled ?? false,
@@ -208,6 +209,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             value: decOrZero(a.value),
             basis: decOrZero(a.basis),
             rothValue: decOrZero(a.rothValue),
+            hsaCoverage: a.hsaCoverage ?? null,
             growthRate: a.growthRate != null ? String(a.growthRate) : null,
             rmdEnabled: a.rmdEnabled ?? false,
             priorYearEndValue:

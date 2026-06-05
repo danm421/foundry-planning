@@ -475,3 +475,42 @@ describe("aggregateDeductions", () => {
     expect(result.itemized).toBe(40000);
   });
 });
+
+describe("deriveAboveLineFromSavings — HSA", () => {
+  const noEntity = () => true;
+  const hsaAcct: AccountForDeduction[] = [
+    { id: "h1", subType: "hsa", category: "retirement" },
+  ];
+
+  it("deducts an HSA contribution even when the rule isDeductible flag is false", () => {
+    const rules: SavingsRuleForDeduction[] = [
+      {
+        id: "r1",
+        accountId: "h1",
+        annualAmount: 4000,
+        isDeductible: false,
+        startYear: 2020,
+        endYear: 2099,
+      },
+    ];
+    const res = deriveAboveLineFromSavings(2026, rules, hsaAcct, noEntity);
+    expect(res.aboveLine).toBe(4000);
+  });
+
+  it("reflects the capped amount when an override is supplied", () => {
+    const rules: SavingsRuleForDeduction[] = [
+      {
+        id: "r1",
+        accountId: "h1",
+        annualAmount: 6000,
+        isDeductible: false,
+        startYear: 2020,
+        endYear: 2099,
+      },
+    ];
+    const res = deriveAboveLineFromSavings(2026, rules, hsaAcct, noEntity, undefined, {
+      r1: 4400,
+    });
+    expect(res.aboveLine).toBe(4400);
+  });
+});

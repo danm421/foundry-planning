@@ -153,6 +153,7 @@ export async function POST(
       flowMode,
       businessTaxTreatment,
       parentAccountId,
+      hsaCoverage,
     } = body;
 
     if (!name || !category) {
@@ -289,6 +290,11 @@ export async function POST(
             category === "business" ? (businessTaxTreatment ?? "qbi") : null,
           // parentAccountId allowed on any category — tenant + business-target-validated above.
           parentAccountId: parentAccountId ?? null,
+          // hsaCoverage is only meaningful for HSA retirement accounts; null otherwise.
+          hsaCoverage:
+            category === "retirement" && subType === "hsa"
+              ? (hsaCoverage === "family" ? "family" : "self")
+              : null,
           custodian: (body.custodian ?? null) || null,
           accountNumberLast4: (body.accountNumberLast4 ?? null) || null,
         })
