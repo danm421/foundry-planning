@@ -3,6 +3,7 @@ import type { QsContext } from "@/lib/quick-start/derive";
 import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
 import type { LiftedList } from "@/lib/quick-start/use-lifted-list";
 import type { IncomeRow } from "@/lib/quick-start/income-save";
+import type { AccountRow } from "@/lib/quick-start/account-save";
 
 /** An account created during the Accounts step, forwarded to the Savings step. */
 export interface CreatedAccount {
@@ -21,6 +22,7 @@ export interface QsStepProps {
 }
 
 export interface QsAccountsStepProps extends QsStepProps {
+  list: LiftedList<AccountRow>;
   setCreatedAccounts: (accounts: CreatedAccount[]) => void;
 }
 

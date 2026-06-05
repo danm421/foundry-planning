@@ -2,6 +2,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AccountsStep } from "../accounts-step";
+import { useLiftedList } from "@/lib/quick-start/use-lifted-list";
+import type { AccountRow } from "@/lib/quick-start/account-save";
 import { buildQsContext } from "@/lib/quick-start/derive";
 import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
 import { mockFetch, fetchCalls } from "./fetch-mock";
@@ -22,6 +24,26 @@ const ctx = buildQsContext({
 });
 const bootstrap = { clientId: "c1" } as unknown as QsBootstrap;
 
+function Mount({
+  onRegisterSave,
+}: {
+  onRegisterSave?: (fn: () => Promise<void>) => void;
+}) {
+  const list = useLiftedList<AccountRow>();
+  return (
+    <AccountsStep
+      ctx={ctx}
+      bootstrap={bootstrap}
+      busy={false}
+      registerSave={(fn) => {
+        onRegisterSave?.(fn);
+      }}
+      setCreatedAccounts={vi.fn()}
+      list={list}
+    />
+  );
+}
+
 describe("AccountsStep", () => {
   let saveFn: () => Promise<void>;
   beforeEach(() => {
@@ -30,39 +52,27 @@ describe("AccountsStep", () => {
   });
 
   function renderStep() {
-    render(
-      <AccountsStep
-        ctx={ctx}
-        bootstrap={bootstrap}
-        busy={false}
-        registerSave={(fn) => {
-          saveFn = fn;
-        }}
-        setCreatedAccounts={vi.fn()}
-      />,
-    );
+    render(<Mount onRegisterSave={(fn) => { saveFn = fn; }} />);
   }
 
   it("adds a cash and a 401k account", async () => {
     renderStep();
 
-    // Add account 1 (cash by default)
+    // Add account 1 — it auto-opens (cash by default)
     fireEvent.click(screen.getByRole("button", { name: /add account/i }));
-    // Set value for first account
-    const valueInputs1 = screen.getAllByLabelText("Value");
-    fireEvent.change(valueInputs1[0], { target: { value: "50000" } });
+    // Row 1 is open; set its value
+    fireEvent.change(screen.getByLabelText("Value"), { target: { value: "50000" } });
+    // Close row 1 by clicking Done
+    fireEvent.click(screen.getByRole("button", { name: /done/i }));
 
-    // Add account 2
+    // Add account 2 — it auto-opens
     fireEvent.click(screen.getByRole("button", { name: /add account/i }));
-    // Change type of second account to retirement
-    const typeSelects = screen.getAllByLabelText("Type");
-    fireEvent.change(typeSelects[1], { target: { value: "retirement" } });
+    // Change type to retirement
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "retirement" } });
     // Change subtype to 401k
-    const subtypeSelect = screen.getByLabelText("Account type");
-    fireEvent.change(subtypeSelect, { target: { value: "401k" } });
-    // Set value for second account
-    const valueInputs2 = screen.getAllByLabelText("Value");
-    fireEvent.change(valueInputs2[1], { target: { value: "250000" } });
+    fireEvent.change(screen.getByLabelText("Account type"), { target: { value: "401k" } });
+    // Set value
+    fireEvent.change(screen.getByLabelText("Value"), { target: { value: "250000" } });
 
     await saveFn();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
