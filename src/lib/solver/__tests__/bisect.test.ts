@@ -181,6 +181,39 @@ describe("bisect", () => {
     expect(deep.solvedValue).toBe(73_000);
   });
 
+  it("interpolation reaches a linear root in fewer evals than bisection would", async () => {
+    // pos(v) = v/100, target 0.65 → exact root at v=65. Regula-falsi nails a
+    // linear curve almost immediately; pure bisection on [50,80] step-1 needs ~6+.
+    const evaluate = vi.fn(async (v: number) => v / 100);
+    const result = await bisect({
+      lo: 50, hi: 80, step: 1, direction: 1, target: 0.65, evaluate,
+    });
+    expect(result.status).toBe("converged");
+    expect(Math.abs(result.solvedValue - 65)).toBeLessThanOrEqual(1);
+    expect(result.iterations).toBeLessThanOrEqual(4); // 2 endpoints + ≤2 interp
+  });
+
+  it("flat curve (zero slope) does not divide-by-zero; resolves via bisection", async () => {
+    // posLo beats, posHi misses, but the middle is perfectly flat at target-ish:
+    // a step function that is constant on each side. No NaN, returns a finite value.
+    const evaluate = vi.fn(async (v: number) => (v < 65 ? 0.9 : 0.5));
+    const result = await bisect({
+      lo: 50, hi: 80, step: 1, direction: 1, target: 0.85, evaluate,
+    });
+    expect(Number.isFinite(result.solvedValue)).toBe(true);
+    expect(result.achievedPoS).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("interpolation keeps the bracket: never returns a value the search never beat", async () => {
+    const evaluate = vi.fn(async (v: number) => (v >= 73_000 ? 0.9 : 0.5));
+    const result = await bisect({
+      lo: 0, hi: 100_000, step: 1000, direction: 1, target: 0.85,
+      maxIterations: 24, evaluate,
+    });
+    expect(result.status).toBe("converged");
+    expect(result.solvedValue).toBe(73_000);
+  });
+
   it("tolerance:0 returns the HIGHEST scale beating target where the default under-solves", async () => {
     // The living-expense under-solve bug: PoS sits flat just above target across
     // a wide band, then cliffs below it. True max scale with PoS ≥ 0.85 is 1.30.
@@ -202,5 +235,18 @@ describe("bisect", () => {
     expect(full.solvedValue).toBeCloseTo(1.3, 2);
     expect(full.achievedPoS).toBeGreaterThanOrEqual(0.85);
     expect(full.solvedValue).toBeGreaterThan(early.solvedValue);
+  });
+
+  it("interpolation reaches a linear root on a descending (d=-1) bracket", async () => {
+    // pos(v) = 2 - v: descending, crosses target 1.30 at v=0.70. tight=lo here
+    // (low v beats), loose=hi. Confirms the interpolation + floor-guard sign
+    // logic works for the loose>tight orientation the living-expense lever uses.
+    const evaluate = vi.fn(async (v: number) => 2 - v);
+    const result = await bisect({
+      lo: 0.5, hi: 1.5, step: 0.01, direction: -1, target: 1.3, evaluate,
+    });
+    expect(result.status).toBe("converged");
+    expect(Math.abs(result.solvedValue - 0.7)).toBeLessThanOrEqual(0.02);
+    expect(result.achievedPoS).toBeGreaterThanOrEqual(1.3);
   });
 });

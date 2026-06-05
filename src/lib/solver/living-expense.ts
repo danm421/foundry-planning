@@ -38,11 +38,59 @@ export function retirementLivingExpenseTotal(tree: ClientData): number {
 }
 
 /**
- * Adjust a solved scale factor so the resulting annual retirement living-expense
- * total (`scale * baseTotal`) lands on the nearest $2,000. Returns the scale
- * unchanged when `baseTotal` is 0 (nothing to scale; avoids divide-by-zero).
+ * Build a fresh retirement-phase "living" expense for the given annual amount.
+ * Used by the absolute-dollar living-expense solve when the plan has no
+ * retirement living-expense row to scale. Year windows are expressed as refs
+ * (`client_retirement` → `plan_end`); applyMutations runs resolveRefYears at the
+ * end, which fills concrete startYear/endYear. Concrete years are seeded here as
+ * a best-effort fallback for any consumer that reads them before resolution.
  */
-export function snapScaleToNearest2k(scale: number, baseTotal: number): number {
-  if (baseTotal <= 0) return scale;
-  return roundToNearest2k(scale * baseTotal) / baseTotal;
+export function synthesizeRetirementLivingExpense(
+  tree: ClientData,
+  amount: number,
+): Expense {
+  const { planStartYear, planEndYear, inflationRate } = tree.planSettings;
+  return {
+    id: crypto.randomUUID(),
+    type: "living",
+    name: "Retirement Living Expenses",
+    annualAmount: amount,
+    startYear: planStartYear + 1,
+    endYear: planEndYear,
+    growthRate: inflationRate,
+    startYearRef: "client_retirement",
+    endYearRef: "plan_end",
+    source: "manual",
+  };
+}
+
+/** A consumer-agnostic plan for applying a `living-expense-amount` mutation:
+ *  either update existing retirement rows to new annual amounts, or synthesize
+ *  a fresh retirement row when none exist. The three consumers (apply-mutations,
+ *  base-updates, scenario-changes) each render this plan into their own output. */
+export type LivingExpenseAmountPlan =
+  | { kind: "update"; rows: { id: string; from: number; to: number }[] }
+  | { kind: "synthesize"; expense: Expense };
+
+/** Decide how to reach an absolute annual retirement living-expense `amount`:
+ *  proportional scale when retirement rows exist with positive sum, even-split
+ *  when they exist but sum to $0, or synthesize one row when none exist. */
+export function planLivingExpenseAmount(
+  tree: ClientData,
+  amount: number,
+): LivingExpenseAmountPlan {
+  const planStartYear = tree.planSettings.planStartYear;
+  const retirement = (tree.expenses ?? []).filter((e) =>
+    isRetirementLivingExpense(e, planStartYear),
+  );
+  if (retirement.length === 0) {
+    return { kind: "synthesize", expense: synthesizeRetirementLivingExpense(tree, amount) };
+  }
+  const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
+  const rows = retirement.map((e) => ({
+    id: e.id,
+    from: e.annualAmount,
+    to: baseSum > 0 ? e.annualAmount * (amount / baseSum) : amount / retirement.length,
+  }));
+  return { kind: "update", rows };
 }

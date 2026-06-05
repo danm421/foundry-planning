@@ -22,8 +22,8 @@
 //     growthSource/modelPortfolioId the base columns need, so they can't
 //     round-trip; the others need junction-table writes. Deferred.
 
-import type { ClientData, Account, SavingsRule } from "@/engine/types";
-import { isRetirementLivingExpense } from "./living-expense";
+import type { ClientData, Account, SavingsRule, Expense } from "@/engine/types";
+import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation, SolverPerson } from "./types";
 
 /** A pre-coerced partial column update for one row. */
@@ -57,6 +57,8 @@ export interface BaseUpdates {
   clientUpdate: ColumnPatch | null;
   incomeUpdates: { id: string; set: ColumnPatch }[];
   expenseUpdates: { id: string; set: ColumnPatch }[];
+  /** Full new expense rows (e.g. a synthesized retirement living expense). */
+  expenseInserts: Expense[];
 }
 
 /** number → DB decimal string; null/undefined → null. */
@@ -79,6 +81,7 @@ export function mutationsToBaseUpdates(
     clientUpdate: null,
     incomeUpdates: [],
     expenseUpdates: [],
+    expenseInserts: [],
   };
 
   const existingAccounts = new Set((source.accounts ?? []).map((a) => a.id));
@@ -145,6 +148,18 @@ export function mutationsToBaseUpdates(
           const next = e.annualAmount * m.multiplier;
           if (next === e.annualAmount) continue;
           expensePatch(e.id).annualAmount = dec(next);
+        }
+        break;
+      }
+      case "living-expense-amount": {
+        const plan = planLivingExpenseAmount(source, m.amount);
+        if (plan.kind === "synthesize") {
+          out.expenseInserts.push(plan.expense);
+        } else {
+          for (const row of plan.rows) {
+            if (row.to === row.from) continue;
+            expensePatch(row.id).annualAmount = dec(row.to);
+          }
         }
         break;
       }

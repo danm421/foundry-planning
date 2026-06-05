@@ -6,7 +6,6 @@ import {
   SAVINGS_HARD_CAP,
   SAVINGS_ZERO_DEFAULT_HI,
   SAVINGS_SOURCE_MULTIPLIER,
-  MAX_LIVING_EXPENSE_SCALE,
 } from "../lever-search-config";
 import { SYNTHETIC_SAVINGS_ACCOUNT_ID } from "@/lib/analysis/hypothetical-savings";
 import { applyMutations } from "../apply-mutations";
@@ -30,14 +29,24 @@ describe("leverSearchConfig", () => {
     ).toEqual({ lo: 50, hi: 80, step: 1, direction: 1 });
   });
 
-  it("living-expense-scale: wide range step 0.01 d=-1 tolerance 0 (maximize spend)", () => {
-    expect(leverSearchConfig({ kind: "living-expense-scale" }, emptyTree)).toEqual({
-      lo: 0.5,
-      hi: MAX_LIVING_EXPENSE_SCALE,
-      step: 0.01,
-      direction: -1,
-      tolerance: 0,
-    });
+  it("living-expense-scale searches dollars: lo 0, descending, $2k step", () => {
+    const cfg = leverSearchConfig({ kind: "living-expense-scale" }, emptyTree);
+    expect(cfg.lo).toBe(0);
+    expect(cfg.direction).toBe(-1);
+    expect(cfg.step).toBe(2000);
+    expect(cfg.tolerance).toBe(0);
+    expect(cfg.hi).toBeGreaterThanOrEqual(300_000);
+    expect(cfg.hi).toBeLessThanOrEqual(3_000_000);
+  });
+
+  it("living-expense-scale ceiling rises above the 300k floor for a resource-rich tree", () => {
+    // assets 5M → income + 0.1*assets = 500k → estimate drives hi past the floor.
+    const richTree = {
+      ...emptyTree,
+      accounts: [{ value: 5_000_000 }],
+    } as unknown as ClientData;
+    const cfg = leverSearchConfig({ kind: "living-expense-scale" }, richTree);
+    expect(cfg.hi).toBe(500_000);
   });
 
   it("ss-claim-age: range 62-70 step 1 d=+1", () => {
@@ -141,10 +150,10 @@ describe("buildLeverMutation", () => {
     });
   });
 
-  it("living-expense-scale", () => {
-    expect(buildLeverMutation({ kind: "living-expense-scale" }, 1.1, emptyTree)).toEqual({
-      kind: "living-expense-scale",
-      multiplier: 1.1,
+  it("living-expense-scale builds a living-expense-amount mutation in dollars", () => {
+    expect(buildLeverMutation({ kind: "living-expense-scale" }, 84_000, emptyTree)).toEqual({
+      kind: "living-expense-amount",
+      amount: 84_000,
     });
   });
 

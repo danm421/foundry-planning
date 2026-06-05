@@ -32,6 +32,7 @@ export type IncomeTaxType =
 export type SolverMutation =
   | { kind: "retirement-age"; person: SolverPerson; age: number; month?: number }
   | { kind: "living-expense-scale"; multiplier: number }
+  | { kind: "living-expense-amount"; amount: number }
   | { kind: "expense-annual-amount"; expenseId: string; annualAmount: number }
   | { kind: "income-annual-amount"; incomeId: string; annualAmount: number }
   | { kind: "income-growth-rate"; incomeId: string; rate: number }
@@ -74,6 +75,7 @@ export type SolverMutation =
 export type SolverMutationKey =
   | `retirement-age:${SolverPerson}`
   | "living-expense-scale"
+  | "living-expense-amount"
   | `expense-annual-amount:${string}`
   | `income-annual-amount:${string}`
   | `income-growth-rate:${string}`
@@ -113,6 +115,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `retirement-age:${m.person}`;
     case "living-expense-scale":
       return "living-expense-scale";
+    case "living-expense-amount":
+      return "living-expense-amount";
     case "expense-annual-amount":
       return `expense-annual-amount:${m.expenseId}`;
     case "income-annual-amount":

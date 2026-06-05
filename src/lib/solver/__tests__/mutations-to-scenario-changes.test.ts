@@ -431,6 +431,62 @@ describe("mutationsToScenarioChanges", () => {
   });
 });
 
+describe("living-expense-amount → scenario changes", () => {
+  it("emits per-row edit diffs when retirement rows exist", () => {
+    const source = {
+      ...makeSource(),
+      planSettings: { planStartYear: 2026 } as ClientData["planSettings"],
+      expenses: [
+        {
+          id: "r1",
+          type: "living" as const,
+          name: "Retirement Living",
+          annualAmount: 40_000,
+          startYear: 2040,
+          endYear: 2070,
+          growthRate: 0.025,
+        },
+      ],
+    };
+    const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [
+      { kind: "living-expense-amount", amount: 80_000 },
+    ]);
+    const edit = drafts.find((d) => d.targetKind === "expense" && d.targetId === "r1");
+    expect(edit?.opType).toBe("edit");
+    expect((edit?.payload as Record<string, { from: number; to: number }>).annualAmount).toEqual({
+      from: 40_000,
+      to: 80_000,
+    });
+  });
+
+  it("emits an add draft when synthesizing a retirement row (no existing retirement expenses)", () => {
+    const source = {
+      ...makeSource(),
+      planSettings: {
+        planStartYear: 2026,
+        planEndYear: 2070,
+        inflationRate: 0.025,
+      } as ClientData["planSettings"],
+      expenses: [] as ClientData["expenses"],
+    };
+    const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [
+      { kind: "living-expense-amount", amount: 70_000 },
+    ]);
+    const add = drafts.find((d) => d.targetKind === "expense" && d.opType === "add");
+    expect(add).toBeTruthy();
+    const payload = add?.payload as {
+      annualAmount: number;
+      startYearRef: string;
+      endYearRef: string;
+    };
+    expect(payload.annualAmount).toBe(70_000);
+    // The year-refs anchor the synthesized row to retirement on reload — the
+    // load-bearing fields that resolveRefYears re-resolves. Guard them.
+    expect(payload.startYearRef).toBe("client_retirement");
+    expect(payload.endYearRef).toBe("plan_end");
+  });
+});
+
 describe("mutationsToScenarioChanges — technique upserts", () => {
   const rc = {
     id: "rc-1",

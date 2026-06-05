@@ -42,7 +42,7 @@ export function SolverRowLivingExpenseScale({
   const side = useSolverSide();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const baseLiving = baseExpenses.filter((e) => e.type === "living");
-  if (baseLiving.length === 0) return null;
+  const hasLivingRows = baseLiving.length > 0;
 
   const isSolvingHere = activeSolve?.target.kind === "living-expense-scale";
   const otherSolveActive = activeSolve !== null && !isSolvingHere;
@@ -63,7 +63,7 @@ export function SolverRowLivingExpenseScale({
             {popoverOpen ? (
               <SolverSolvePopover
                 title="Solve Living Expense Scale"
-                rangeLabel="50–150%"
+                rangeLabel="$0 – resource cap"
                 defaultTargetPct={85}
                 open={popoverOpen}
                 onClose={() => setPopoverOpen(false)}
@@ -78,41 +78,46 @@ export function SolverRowLivingExpenseScale({
       </div>
       {side === "working" && isSolvingHere ? (
         <SolverSolveProgressStrip
-          title={`Solving Living Expense Scale for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
+          title={`Solving Living Expense for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
           iteration={activeSolve.iteration}
-          // Wider 0.5–10× range solved to tolerance:0 collapses in ~12–13 steps.
           maxIterations={14}
           candidateValue={activeSolve.candidateValue}
           achievedPoS={activeSolve.achievedPoS}
-          valueFormatter={(v) => `${Math.round(v * 100)}%`}
+          valueFormatter={formatCurrency}
           onCancel={onSolveCancel}
         />
       ) : (
         <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-          {baseLiving.map((baseExpense) => {
-            const label = labelFor(baseExpense, currentYear);
-            if (side === "base") {
+          {hasLivingRows ? (
+            baseLiving.map((baseExpense) => {
+              const label = labelFor(baseExpense, currentYear);
+              if (side === "base") {
+                return (
+                  <ReadOnly key={baseExpense.id} label={label} expense={baseExpense} />
+                );
+              }
+              const workingExpense =
+                workingExpenses.find((e) => e.id === baseExpense.id) ?? baseExpense;
               return (
-                <ReadOnly key={baseExpense.id} label={label} expense={baseExpense} />
+                <Editable
+                  key={baseExpense.id}
+                  label={label}
+                  expense={workingExpense}
+                  onCommit={(n) =>
+                    onChange({
+                      kind: "expense-annual-amount",
+                      expenseId: baseExpense.id,
+                      annualAmount: n,
+                    })
+                  }
+                />
               );
-            }
-            const workingExpense =
-              workingExpenses.find((e) => e.id === baseExpense.id) ?? baseExpense;
-            return (
-              <Editable
-                key={baseExpense.id}
-                label={label}
-                expense={workingExpense}
-                onCommit={(n) =>
-                  onChange({
-                    kind: "expense-annual-amount",
-                    expenseId: baseExpense.id,
-                    annualAmount: n,
-                  })
-                }
-              />
-            );
-          })}
+            })
+          ) : (
+            <div className="col-span-2 text-[12px] text-ink-3">
+              No retirement expenses entered — solve to find the sustainable spend.
+            </div>
+          )}
         </div>
       )}
     </div>

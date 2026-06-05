@@ -162,6 +162,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       clientUpdate,
       incomeUpdates,
       expenseUpdates,
+      expenseInserts,
     } = mutationsToBaseUpdates(sourceTree, mutations as SolverMutation[]);
 
     // Validate any savings-rule accountId that is NOT satisfied by an account
@@ -300,6 +301,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           );
       }
 
+      // Insert synthesized expense rows (e.g. a retirement living expense that
+      // didn't previously exist in the base facts).
+      for (const e of expenseInserts) {
+        await tx.insert(expenses).values({
+          clientId,
+          scenarioId: baseScenarioId,
+          type: e.type,
+          name: e.name,
+          annualAmount: String(e.annualAmount),
+          startYear: e.startYear,
+          endYear: e.endYear,
+          growthRate: String(e.growthRate),
+          startYearRef: (e.startYearRef ?? null) as typeof expenses.$inferInsert.startYearRef,
+          endYearRef: (e.endYearRef ?? null) as typeof expenses.$inferInsert.endYearRef,
+          source: (e.source ?? "manual") as typeof expenses.$inferInsert.source,
+        });
+      }
+
       // Removes — savings rules before accounts (FK: rules reference accounts).
       for (const id of savingsRemoves) {
         await tx
@@ -353,6 +372,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         clientUpdate: clientUpdate ? 1 : 0,
         incomeUpdates: incomeUpdates.length,
         expenseUpdates: expenseUpdates.length,
+        expenseInserts: expenseInserts.length,
       },
     });
 
@@ -368,6 +388,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       clientUpdate: clientUpdate ? 1 : 0,
       incomeUpdates: incomeUpdates.length,
       expenseUpdates: expenseUpdates.length,
+      expenseInserts: expenseInserts.length,
     });
   } catch (err) {
     const authResp = authErrorResponse(err);

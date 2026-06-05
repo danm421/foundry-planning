@@ -121,6 +121,36 @@ describe("mutationsToBaseUpdates", () => {
   });
 });
 
+describe("living-expense-amount → base updates", () => {
+  it("emits expense field updates for existing retirement rows", () => {
+    const source = {
+      planSettings: { planStartYear: 2026 },
+      expenses: [{ id: "r1", type: "living", annualAmount: 40_000, startYear: 2040, endYear: 2070 }],
+    } as unknown as ClientData;
+    const out = mutationsToBaseUpdates(source, [
+      { kind: "living-expense-amount", amount: 80_000 },
+    ]);
+    expect(out.expenseUpdates).toContainEqual({ id: "r1", set: { annualAmount: "80000" } });
+    expect(out.expenseInserts).toHaveLength(0);
+  });
+
+  it("emits an expense insert when synthesizing (no retirement rows)", () => {
+    const source = {
+      planSettings: { planStartYear: 2026, planEndYear: 2070, inflationRate: 0.025 },
+      client: { retirementAge: 65 },
+      expenses: [],
+    } as unknown as ClientData;
+    const out = mutationsToBaseUpdates(source, [
+      { kind: "living-expense-amount", amount: 70_000 },
+    ]);
+    expect(out.expenseInserts).toHaveLength(1);
+    expect(out.expenseInserts[0].annualAmount).toBe(70_000);
+    // Year-refs anchor the inserted row to retirement on reload (resolveRefYears).
+    expect(out.expenseInserts[0].startYearRef).toBe("client_retirement");
+    expect(out.expenseInserts[0].endYearRef).toBe("plan_end");
+  });
+});
+
 describe("isBaseSavableMutation", () => {
   it("is true for retirement-tab levers", () => {
     expect(isBaseSavableMutation({ kind: "retirement-age", person: "client", age: 67 })).toBe(true);

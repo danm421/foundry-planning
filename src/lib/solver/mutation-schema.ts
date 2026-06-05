@@ -169,6 +169,10 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     multiplier: z.number().min(0.1).max(3),
   }),
   z.object({
+    kind: z.literal("living-expense-amount"),
+    amount: MONEY,
+  }),
+  z.object({
     kind: z.literal("expense-annual-amount"),
     expenseId: z.string().uuid(),
     annualAmount: MONEY,

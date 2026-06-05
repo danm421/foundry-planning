@@ -9,7 +9,7 @@
 // Returns an empty array (not null) when every mutation is a no-op vs base.
 
 import type { ClientData } from "@/engine/types";
-import { isRetirementLivingExpense } from "./living-expense";
+import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type {
   SolverMutation,
   SolverPerson,
@@ -166,6 +166,23 @@ export function mutationsToScenarioChanges(
             e.annualAmount,
             e.annualAmount * m.multiplier,
           );
+        }
+        break;
+      }
+      case "living-expense-amount": {
+        const plan = planLivingExpenseAmount(source, m.amount);
+        if (plan.kind === "synthesize") {
+          pushTechniqueUpsert(
+            nonClientDrafts,
+            "expense",
+            undefined,
+            plan.expense.id,
+            plan.expense as unknown as Record<string, unknown>,
+          );
+        } else {
+          for (const row of plan.rows) {
+            accumulateExpense(row.id, "annualAmount", row.from, row.to);
+          }
         }
         break;
       }
@@ -554,7 +571,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment",
+  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "expense",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,

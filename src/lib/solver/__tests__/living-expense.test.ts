@@ -4,7 +4,7 @@ import {
   isRetirementLivingExpense,
   roundToNearest2k,
   retirementLivingExpenseTotal,
-  snapScaleToNearest2k,
+  synthesizeRetirementLivingExpense,
 } from "../living-expense";
 
 function expense(over: Partial<Expense>): Expense {
@@ -64,22 +64,21 @@ describe("retirementLivingExpenseTotal", () => {
   });
 });
 
-describe("snapScaleToNearest2k", () => {
-  it("adjusts the scale so scale*total lands on the nearest $2,000", () => {
-    // 1.137 * 100_000 = 113_700 → rounds to 114_000 → scale 1.14
-    expect(snapScaleToNearest2k(1.137, 100_000)).toBeCloseTo(1.14, 10);
-    // already on a $2k boundary
-    expect(snapScaleToNearest2k(1.2, 100_000)).toBeCloseTo(1.2, 10);
-  });
+describe("synthesizeRetirementLivingExpense", () => {
+  it("builds a retirement-anchored living expense at the given amount", () => {
+    const tree = {
+      planSettings: { planStartYear: 2026, planEndYear: 2070, inflationRate: 0.025 },
+      client: { retirementAge: 65 },
+      expenses: [],
+    } as unknown as ClientData;
 
-  it("snapped scale * total lands on a $2,000 multiple", () => {
-    const total = 87_500;
-    const snapped = snapScaleToNearest2k(1.333, total);
-    // snapped*total reconstructs the $2k-rounded amount (modulo float drift).
-    expect(snapped * total).toBeCloseTo(roundToNearest2k(1.333 * total), 6);
-  });
-
-  it("returns the scale unchanged when base total is 0 (no divide-by-zero)", () => {
-    expect(snapScaleToNearest2k(1.42, 0)).toBe(1.42);
+    const e = synthesizeRetirementLivingExpense(tree, 80_000);
+    expect(e.type).toBe("living");
+    expect(e.annualAmount).toBe(80_000);
+    expect(e.startYearRef).toBe("client_retirement");
+    expect(e.endYearRef).toBe("plan_end");
+    expect(e.growthRate).toBe(0.025);
+    expect(typeof e.id).toBe("string");
+    expect(e.id.length).toBeGreaterThan(0);
   });
 });
