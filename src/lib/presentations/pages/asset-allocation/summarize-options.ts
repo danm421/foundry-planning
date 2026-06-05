@@ -15,5 +15,7 @@ export function summarizeAssetAllocationOptions(o: AssetAllocationOptions): stri
   const parts = [`${sourceLabel(o.left)} vs ${sourceLabel(o.right)}`, VIEW_LABEL[o.view]];
   if (o.includeOutOfEstate) parts.push("incl. out-of-estate");
   parts.push(o.showTable ? "with table" : "no table");
+  // Excluded accounts show by default; only flag the non-default hidden state.
+  if (!o.showExcluded) parts.push("no excluded accounts");
   return parts.join(" · ");
 }

@@ -58,9 +58,17 @@ describe("summarizeAssetAllocationOptions", () => {
   it("summarizes sources + view + table", () => {
     const s = summarizeAssetAllocationOptions({
       left: { kind: "group", id: "all-liquid" }, right: { kind: "recommended" },
-      view: "detailed", includeOutOfEstate: false, showTable: true,
+      view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true,
     });
     expect(s).toContain("By class");
     expect(s.toLowerCase()).toContain("table");
+    expect(s).not.toContain("excluded");
+  });
+  it("flags hidden excluded accounts only when showExcluded is off", () => {
+    const s = summarizeAssetAllocationOptions({
+      left: { kind: "group", id: "all-liquid" }, right: { kind: "recommended" },
+      view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: false,
+    });
+    expect(s).toContain("no excluded accounts");
   });
 });

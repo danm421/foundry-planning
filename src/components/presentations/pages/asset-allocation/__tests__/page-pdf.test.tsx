@@ -56,6 +56,8 @@ const data: AssetAllocationData = {
   tableRows: CLASSES.map((c) => ({ id: c.id, name: c.name, leftPct: c.l, rightPct: c.r })),
   diffRows: CLASSES.map((c) => ({ id: c.id, name: c.name, diffPct: c.l - c.r }))
     .sort((a, b) => Math.abs(b.diffPct) - Math.abs(a.diffPct)),
+  excludedRows: [],
+  excludedTotal: 0,
   disclosure: "Investable assets only.",
 };
 
@@ -79,6 +81,22 @@ describe("AssetAllocationPagePdf render smoke", () => {
   it("comparison (table + diff) fits on one page", async () => {
     const buf = await renderToBuffer(
       <Document>{AssetAllocationPagePdf({ data, ...framing })}</Document>,
+    );
+    expect(countPages(buf)).toBe(1);
+  });
+
+  // The excluded-accounts table renders below the comparison and still fits.
+  it("comparison + excluded-accounts table fits on one page", async () => {
+    const withExcluded: AssetAllocationData = {
+      ...data,
+      excludedRows: [
+        { id: "x1", name: "Checking", value: 55_000 },
+        { id: "x2", name: "Old 401(k)", value: 1_050_000 },
+      ],
+      excludedTotal: 1_105_000,
+    };
+    const buf = await renderToBuffer(
+      <Document>{AssetAllocationPagePdf({ data: withExcluded, ...framing })}</Document>,
     );
     expect(countPages(buf)).toBe(1);
   });

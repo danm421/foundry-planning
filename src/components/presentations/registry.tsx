@@ -713,6 +713,8 @@ const EMPTY_ALLOCATION_DATA: AssetAllocationData = {
   rightDonut: null,
   tableRows: [],
   diffRows: null,
+  excludedRows: [],
+  excludedTotal: 0,
   disclosure: "",
 };
 

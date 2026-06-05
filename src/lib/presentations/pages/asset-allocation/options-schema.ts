@@ -13,6 +13,9 @@ const baseSchema = z.object({
   view: z.enum(["high_level", "detailed", "combined"]),
   includeOutOfEstate: z.boolean(),
   showTable: z.boolean(),
+  // Itemize investable accounts that have no asset mix below the donuts.
+  // Defaulted so option blobs saved before this field still parse.
+  showExcluded: z.boolean().default(true),
 });
 export type AssetAllocationOptions = z.infer<typeof baseSchema>;
 
@@ -22,6 +25,7 @@ export const ASSET_ALLOCATION_OPTIONS_DEFAULT: AssetAllocationOptions = {
   view: "detailed",
   includeOutOfEstate: false,
   showTable: true,
+  showExcluded: true,
 };
 
 /**
@@ -37,6 +41,7 @@ function migrateRawOptions(raw: unknown): unknown {
       view: o.view ?? "detailed",
       includeOutOfEstate: o.includeOutOfEstate ?? false,
       showTable: o.showTable ?? true,
+      showExcluded: o.showExcluded ?? true,
     };
   }
   return raw;

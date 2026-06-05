@@ -8,6 +8,7 @@ import type { AssetAllocationData } from "@/lib/presentations/pages/asset-alloca
 import { DonutPdf } from "./donut-pdf";
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+const money = (v: number) => `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 const S = StyleSheet.create({
   headCell: { fontSize: 7, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.5 },
@@ -21,6 +22,7 @@ export function AssetAllocationPagePdf({
   const hasRight = data.rightDonut !== null;
   const hasDiff = !!(data.diffRows && data.diffRows.length > 0);
   const showTable = data.tableRows.length > 0;
+  const hasExcluded = data.excludedRows.length > 0;
   return (
     <PageFrame
       firmName={firmName}
@@ -78,6 +80,24 @@ export function AssetAllocationPagePdf({
               ))}
             </View>
           )}
+        </View>
+      )}
+      {hasExcluded && (
+        // Itemizes the "accounts without an asset mix" portion of the disclosure.
+        <View style={{ width: "58%", marginBottom: 12 }}>
+          <Text style={{ fontSize: 9, fontFamily: "Fraunces", color: T.ink, marginBottom: 4 }}>
+            Accounts without an asset mix
+          </Text>
+          {data.excludedRows.map((r) => (
+            <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
+              <Text style={S.bodyName}>{r.name}</Text>
+              <Text style={S.bodyNum}>{money(r.value)}</Text>
+            </View>
+          ))}
+          <View style={{ flexDirection: "row", paddingTop: 3, borderTopWidth: 0.5, borderTopColor: T.hair }}>
+            <Text style={[S.bodyName, { fontFamily: "Fraunces" }]}>Total</Text>
+            <Text style={[S.bodyNum, { color: T.ink }]}>{money(data.excludedTotal)}</Text>
+          </View>
         </View>
       )}
       <Callout accent={accent}>{data.disclosure}</Callout>
