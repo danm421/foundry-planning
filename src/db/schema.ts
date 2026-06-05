@@ -3567,7 +3567,7 @@ export const scenarioComputeCache = pgTable(
     scenarioId: uuid("scenario_id")
       .notNull()
       .references(() => scenarios.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["monte_carlo", "life_insurance_solve"] }).notNull(),
+    kind: text("kind", { enum: ["monte_carlo", "life_insurance_solve", "max_spending"] }).notNull(),
     inputHash: text("input_hash").notNull(),
     trials: integer("trials").notNull(),
     engineVersion: integer("engine_version").notNull(),

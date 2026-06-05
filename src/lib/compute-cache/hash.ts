@@ -72,3 +72,25 @@ export function hashLifeInsuranceInputs(input: {
   });
   return createHash("sha256").update(material).digest("hex");
 }
+
+export function hashMaxSpendingInputs(input: {
+  tree: ClientData;
+  mcPayload: MonteCarloPayload;
+  targetPoS: number;
+}): string {
+  const material = stableStringify({
+    engineVersion: ENGINE_VERSION,
+    kind: "max_spending",
+    targetPoS: input.targetPoS,
+    tree: input.tree,
+    mc: {
+      indices: input.mcPayload.indices,
+      correlation: input.mcPayload.correlation,
+      accountMixes: input.mcPayload.accountMixes,
+      seed: input.mcPayload.seed,
+      requiredMinimumAssetLevel: input.mcPayload.requiredMinimumAssetLevel,
+      startingLiquidBalance: input.mcPayload.startingLiquidBalance,
+    },
+  });
+  return createHash("sha256").update(material).digest("hex");
+}

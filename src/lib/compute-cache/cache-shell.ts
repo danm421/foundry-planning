@@ -14,7 +14,7 @@ import { scenarioComputeCache } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { ENGINE_VERSION } from "./hash";
 
-type CacheKind = "monte_carlo" | "life_insurance_solve";
+type CacheKind = "monte_carlo" | "life_insurance_solve" | "max_spending";
 
 export async function withComputeCache<T>(args: {
   firmId: string;

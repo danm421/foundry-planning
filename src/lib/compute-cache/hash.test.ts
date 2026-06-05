@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stableStringify, hashMonteCarloInputs } from "./hash";
+import { stableStringify, hashMonteCarloInputs, hashMaxSpendingInputs } from "./hash";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import type { ClientData } from "@/engine/types";
 
@@ -43,5 +43,15 @@ describe("hashMonteCarloInputs", () => {
     const t2 = { ...tree, accounts: [{ id: "a", value: 200 }] } as unknown as ClientData;
     const b = hashMonteCarloInputs({ tree: t2, mcPayload: mc, trials: 1000 });
     expect(a).not.toBe(b);
+  });
+});
+
+describe("hashMaxSpendingInputs", () => {
+  it("is stable for identical inputs and varies with target", () => {
+    const a = hashMaxSpendingInputs({ tree, mcPayload: mc, targetPoS: 0.85 });
+    const b = hashMaxSpendingInputs({ tree, mcPayload: mc, targetPoS: 0.85 });
+    const c = hashMaxSpendingInputs({ tree, mcPayload: mc, targetPoS: 0.80 });
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
   });
 });
