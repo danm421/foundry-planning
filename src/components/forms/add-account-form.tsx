@@ -476,6 +476,76 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     initial?.accountNumberLast4 ?? "",
   );
 
+  // ── Stock Options equity state (gated: only used when category === "stock_options") ──
+  const [ticker, setTicker] = useState<string>("");
+  const [isPublic, setIsPublic] = useState<boolean>(false);
+  const [pricePerShare, setPricePerShare] = useState<string>("0");
+  const [destinationAccountId] = useState<string | null>(null); // forward-compat; picker deferred
+  const [autoCreateDestination, setAutoCreateDestination] = useState<boolean>(true);
+  const [sellToCover, setSellToCover] = useState<boolean>(true);
+  const [withholdingRate, setWithholdingRate] = useState<string>("22"); // percent display (22 = 22%)
+  const [defaultExerciseTiming, setDefaultExerciseTiming] = useState<string>("at_vest");
+  const [defaultExerciseYear, setDefaultExerciseYear] = useState<string>("");
+  const [defaultSellTiming, setDefaultSellTiming] = useState<string>("hold");
+  const [defaultSellYear, setDefaultSellYear] = useState<string>("");
+  const [defaultSellPercentPerYear, setDefaultSellPercentPerYear] = useState<string>("");
+  const [defaultSellStartYear, setDefaultSellStartYear] = useState<string>("");
+
+  // Edit-mode seeding for equity fields — fetch the stock-option-accounts list
+  // and seed from the extension matching initial.id.
+  useEffect(() => {
+    if (mode !== "edit" || !initial?.id || initial.category !== "stock_options") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/clients/${clientId}/stock-option-accounts`);
+        if (!res.ok) return;
+        const { stockOptionAccounts: rows = [] } = (await res.json()) as {
+          stockOptionAccounts: Array<{
+          account: { id: string };
+          extension: {
+            ticker?: string | null;
+            isPublic?: boolean | null;
+            pricePerShare?: string | null;
+            autoCreateDestination?: boolean | null;
+            sellToCover?: boolean | null;
+            withholdingRate?: string | null;
+            defaultExerciseTiming?: string | null;
+            defaultExerciseYear?: number | string | null;
+            defaultSellTiming?: string | null;
+            defaultSellYear?: number | string | null;
+            defaultSellPercentPerYear?: string | null;
+            defaultSellStartYear?: number | string | null;
+          };
+        }>;
+        };
+        if (cancelled) return;
+        const match = rows.find((r) => r.account.id === initial.id);
+        if (!match) return;
+        const ext = match.extension;
+        if (ext.ticker != null) setTicker(ext.ticker);
+        if (ext.isPublic != null) setIsPublic(ext.isPublic);
+        if (ext.pricePerShare != null) setPricePerShare(ext.pricePerShare);
+        if (ext.autoCreateDestination != null) setAutoCreateDestination(ext.autoCreateDestination);
+        if (ext.sellToCover != null) setSellToCover(ext.sellToCover);
+        if (ext.withholdingRate != null)
+          setWithholdingRate(String(+(Number(ext.withholdingRate) * 100).toFixed(6)));
+        if (ext.defaultExerciseTiming != null) setDefaultExerciseTiming(ext.defaultExerciseTiming);
+        if (ext.defaultExerciseYear != null) setDefaultExerciseYear(String(ext.defaultExerciseYear));
+        if (ext.defaultSellTiming != null) setDefaultSellTiming(ext.defaultSellTiming);
+        if (ext.defaultSellYear != null) setDefaultSellYear(String(ext.defaultSellYear));
+        if (ext.defaultSellPercentPerYear != null)
+          setDefaultSellPercentPerYear(String(+(Number(ext.defaultSellPercentPerYear) * 100).toFixed(6)));
+        if (ext.defaultSellStartYear != null)
+          setDefaultSellStartYear(String(ext.defaultSellStartYear));
+      } catch {
+        // silent; fields remain at defaults
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Dirty-tracking for autosave ─────────────────────────────────────────────
   // Serialize every controlled field into a snapshot string so tab-switch
   // autosave can tell whether there are unsaved changes.
@@ -503,6 +573,19 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     overridePctOi,
     overridePctLtCg,
     overridePctQdiv,
+    // stock_options equity fields (included for all categories — value is constant for non-equity)
+    ticker,
+    isPublic,
+    pricePerShare,
+    autoCreateDestination,
+    sellToCover,
+    withholdingRate,
+    defaultExerciseTiming,
+    defaultExerciseYear,
+    defaultSellTiming,
+    defaultSellYear,
+    defaultSellPercentPerYear,
+    defaultSellStartYear,
     overridePctTaxExempt,
     turnoverPct,
     customAllocations,
@@ -515,6 +598,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     turnoverPct, customAllocations, custodian, accountNumberLast4,
+    ticker, isPublic, pricePerShare, autoCreateDestination, sellToCover,
+    withholdingRate, defaultExerciseTiming, defaultExerciseYear, defaultSellTiming,
+    defaultSellYear, defaultSellPercentPerYear, defaultSellStartYear,
   ]);
 
   const baselineRef = useRef<string>("");
@@ -664,6 +750,72 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     }
   }
 
+  // ── saveEquityAccount ────────────────────────────────────────────────────────
+  // Shared equity save helper used by both saveAsyncImpl and handleSubmit.
+  // Only called when category === "stock_options". Bypasses the scenario writer
+  // and hits the dedicated stock-option-accounts route directly.
+  const saveEquityAccount = useCallback(async (): Promise<{ ok: true; id: string } | { ok: false; error: string }> => {
+    const firstOwner = owners[0];
+    const firstOwnerFmId =
+      firstOwner?.kind === "family_member" ? firstOwner.familyMemberId : undefined;
+    const ownerFm = familyMembers.find((fm) => fm.id === firstOwnerFmId);
+    const owner = ownerFm?.role === "spouse" ? "spouse" : "client";
+    const equityBody = {
+      name,
+      ticker: ticker.trim() === "" ? null : ticker.trim(),
+      isPublic,
+      pricePerShare: Number(pricePerShare) || 0,
+      owner,
+      growthRate: null,
+      destinationAccountId,
+      autoCreateDestination,
+      sellToCover,
+      withholdingRate: Number(withholdingRate) / 100,
+      defaultExerciseTiming,
+      defaultExerciseYear:
+        defaultExerciseTiming === "specific_year" ? Number(defaultExerciseYear) || null : null,
+      defaultSellTiming,
+      defaultSellYear:
+        defaultSellTiming === "hold_then_sell_year" ? Number(defaultSellYear) || null : null,
+      defaultSellPercentPerYear:
+        defaultSellTiming === "percent_per_year"
+          ? (defaultSellPercentPerYear !== "" ? Number(defaultSellPercentPerYear) / 100 : null)
+          : null,
+      defaultSellStartYear:
+        defaultSellTiming === "percent_per_year" ? Number(defaultSellStartYear) || null : null,
+    };
+    const targetId = effectiveAccountId;
+    const url = targetId
+      ? `/api/clients/${clientId}/stock-option-accounts/${targetId}`
+      : `/api/clients/${clientId}/stock-option-accounts`;
+    try {
+      const res = await fetch(url, {
+        method: targetId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(equityBody),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({})) as { error?: string };
+        return { ok: false, error: j.error ?? "Failed to save stock options account" };
+      }
+      let id = targetId;
+      if (!targetId) {
+        const saved = (await res.json()) as { id: string };
+        id = saved.id;
+        setEffectiveAccountId(saved.id);
+        onAutoSaved?.(saved.id);
+      }
+      return { ok: true, id: id! };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+    }
+  }, [
+    name, ticker, isPublic, pricePerShare, owners, familyMembers, destinationAccountId,
+    autoCreateDestination, sellToCover, withholdingRate, defaultExerciseTiming,
+    defaultExerciseYear, defaultSellTiming, defaultSellYear, defaultSellPercentPerYear,
+    defaultSellStartYear, effectiveAccountId, clientId, onAutoSaved,
+  ]);
+
   // ── saveAsyncImpl ────────────────────────────────────────────────────────────
   // Shared between the explicit-submit path and tab-switch autosave. Builds the
   // account body from React state (no FormData dependency) and POST/PUTs it.
@@ -671,6 +823,23 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // FormData values — it stays in handleSubmit below, not here.
   const saveAsyncImpl = useCallback(async (): Promise<SaveResult & { recordId?: string }> => {
     if (!canSave) return { ok: false, error: "Please complete required fields before saving." };
+
+    // ── stock_options: bypass the generic accounts route ────────────────────
+    if (category === "stock_options") {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await saveEquityAccount();
+        if (!result.ok) {
+          setError(result.error);
+          return { ok: false, error: result.error };
+        }
+        baselineRef.current = currentSerialized;
+        return { ok: true, recordId: result.id };
+      } finally {
+        setLoading(false);
+      }
+    }
 
     let growthRate: string | null;
     if (category === "real_estate") {
@@ -812,6 +981,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
+    saveEquityAccount,
   ]);
 
   useImperativeHandle(ref, () => ({ saveAsync: saveAsyncImpl }), [saveAsyncImpl]);
@@ -819,6 +989,30 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (lockTab) return;
+
+    // ── stock_options: bypass the generic accounts route ────────────────────
+    if (category === "stock_options") {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await saveEquityAccount();
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        // Reset the dirty baseline so a still-mounted form doesn't fire a
+        // redundant autosave on the next tab change (mirrors saveAsyncImpl).
+        baselineRef.current = currentSerialized;
+        router.refresh();
+        onSuccess?.();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -1065,7 +1259,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               Account Details
             </button>
           )}
-          {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && category !== "notes_receivable" && (
+          {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && category !== "notes_receivable" && category !== "stock_options" && (
             <button
               type="button"
               onClick={() => handleTabClick("savings")}
@@ -1130,6 +1324,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               RMD
             </button>
           )}
+          {/* Grants tab added in Task 18 */}
           <button
             type="button"
             onClick={() => handleTabClick("beneficiaries")}
@@ -1197,9 +1392,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     if (!userEditedName) {
                       setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
                     }
-                    // Savings tab is not available for real-estate, business, life_insurance, or
-                    // notes_receivable categories — snap back to Details if it was active.
-                    if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance" || newCat === "notes_receivable") && (activeTab === "savings" || activeTab === "realization")) {
+                    // Savings tab is not available for real-estate, business, life_insurance,
+                    // notes_receivable, or stock_options categories — snap back to Details if active.
+                    if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance" || newCat === "notes_receivable" || newCat === "stock_options") && (activeTab === "savings" || activeTab === "realization")) {
                       setActiveTab("details");
                     }
                   }}
@@ -1214,7 +1409,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </div>
             )}
 
-            {!isSystemManagedCash && (
+            {!isSystemManagedCash && category !== "stock_options" && (
               <div>
                 <label className={fieldLabelClassName} htmlFor="subType">
                   Account Type
@@ -1257,7 +1452,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 onChange={setOwners}
                 titlingType={titlingType}
                 onTitlingTypeChange={setTitlingType}
-                retirementMode={isRetirementSubType(subType)}
+                retirementMode={isRetirementSubType(subType) || category === "stock_options"}
                 locked={isSystemManagedCash}
                 lockedReason={
                   isSystemManagedCash
@@ -1278,6 +1473,187 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               />
             </div>
 
+            {/* ── Stock Options equity fields — only visible for stock_options ── */}
+            {category === "stock_options" && (
+              <>
+                {/* Row 1: Ticker + Public flag */}
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="equity-ticker">
+                    Ticker Symbol
+                  </label>
+                  <input
+                    id="equity-ticker"
+                    type="text"
+                    value={ticker}
+                    onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                    placeholder="e.g. AAPL"
+                    className={inputClassName}
+                  />
+                </div>
+                <div className="flex flex-col justify-end gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPublic}
+                      onChange={(e) => setIsPublic(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                    />
+                    <span className={fieldLabelClassName}>Publicly traded</span>
+                  </label>
+                  {isPublic && (
+                    <p className="text-xs text-gray-400">
+                      Public ticker — price can be refreshed from market data (auto-refresh coming soon).
+                    </p>
+                  )}
+                </div>
+
+                {/* Row 2: Price per share */}
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="equity-pricePerShare">
+                    Price Per Share ($)
+                  </label>
+                  <CurrencyInput
+                    id="equity-pricePerShare"
+                    value={pricePerShare}
+                    onChange={(raw) => setPricePerShare(raw)}
+                    className={inputClassName}
+                  />
+                </div>
+
+                {/* Row 3: Withholding rate */}
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="equity-withholdingRate">
+                    Withholding Rate (%)
+                  </label>
+                  <PercentInput
+                    id="equity-withholdingRate"
+                    value={withholdingRate}
+                    onChange={(raw) => setWithholdingRate(raw)}
+                    className={inputClassName}
+                  />
+                </div>
+
+                {/* Row 4: Sell to cover + auto-create destination */}
+                <div className="flex flex-col justify-end gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sellToCover}
+                      onChange={(e) => setSellToCover(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                    />
+                    <span className={fieldLabelClassName}>Sell to cover taxes</span>
+                  </label>
+                </div>
+                <div className="flex flex-col justify-end gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoCreateDestination}
+                      onChange={(e) => setAutoCreateDestination(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                    />
+                    <span className={fieldLabelClassName}>Auto-create destination account</span>
+                  </label>
+                </div>
+
+                {/* Row 5: Default exercise timing */}
+                <div className="col-span-2">
+                  <label className={fieldLabelClassName} htmlFor="equity-defaultExerciseTiming">
+                    Default Exercise Timing
+                  </label>
+                  <select
+                    id="equity-defaultExerciseTiming"
+                    value={defaultExerciseTiming}
+                    onChange={(e) => setDefaultExerciseTiming(e.target.value)}
+                    className={selectClassName}
+                  >
+                    <option value="at_vest">At vest</option>
+                    <option value="specific_year">Specific year</option>
+                    <option value="year_before_expiration">Year before expiration</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                  {defaultExerciseTiming === "specific_year" && (
+                    <div className="mt-2">
+                      <label className={fieldLabelClassName} htmlFor="equity-defaultExerciseYear">
+                        Exercise Year
+                      </label>
+                      <input
+                        id="equity-defaultExerciseYear"
+                        type="number"
+                        value={defaultExerciseYear}
+                        onChange={(e) => setDefaultExerciseYear(e.target.value)}
+                        placeholder={String(new Date().getFullYear())}
+                        className={inputClassName}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Row 6: Default sell timing */}
+                <div className="col-span-2">
+                  <label className={fieldLabelClassName} htmlFor="equity-defaultSellTiming">
+                    Default Sell Timing
+                  </label>
+                  <select
+                    id="equity-defaultSellTiming"
+                    value={defaultSellTiming}
+                    onChange={(e) => setDefaultSellTiming(e.target.value)}
+                    className={selectClassName}
+                  >
+                    <option value="immediately">Sell immediately</option>
+                    <option value="hold_then_sell_year">Hold, then sell in year</option>
+                    <option value="percent_per_year">Sell % per year</option>
+                    <option value="hold">Hold</option>
+                  </select>
+                  {defaultSellTiming === "hold_then_sell_year" && (
+                    <div className="mt-2">
+                      <label className={fieldLabelClassName} htmlFor="equity-defaultSellYear">
+                        Sell Year
+                      </label>
+                      <input
+                        id="equity-defaultSellYear"
+                        type="number"
+                        value={defaultSellYear}
+                        onChange={(e) => setDefaultSellYear(e.target.value)}
+                        placeholder={String(new Date().getFullYear())}
+                        className={inputClassName}
+                      />
+                    </div>
+                  )}
+                  {defaultSellTiming === "percent_per_year" && (
+                    <div className="mt-2 grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={fieldLabelClassName} htmlFor="equity-defaultSellPercentPerYear">
+                          Sell % Per Year
+                        </label>
+                        <PercentInput
+                          id="equity-defaultSellPercentPerYear"
+                          value={defaultSellPercentPerYear}
+                          onChange={(raw) => setDefaultSellPercentPerYear(raw)}
+                          className={inputClassName}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabelClassName} htmlFor="equity-defaultSellStartYear">
+                          Start Year
+                        </label>
+                        <input
+                          id="equity-defaultSellStartYear"
+                          type="number"
+                          value={defaultSellStartYear}
+                          onChange={(e) => setDefaultSellStartYear(e.target.value)}
+                          placeholder={String(new Date().getFullYear())}
+                          className={inputClassName}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {category !== "stock_options" && (
             <div>
               <label className={fieldLabelClassName} htmlFor="value">
                 Current Value ($)
@@ -1306,8 +1682,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </p>
               )}
             </div>
+            )}
 
-            {category === "retirement" && (subType === "401k" || subType === "403b") ? (
+            {category !== "stock_options" && (category === "retirement" && (subType === "401k" || subType === "403b") ? (
               <div>
                 <label className={fieldLabelClassName} htmlFor="rothValue">
                   Roth Value ($)
@@ -1341,9 +1718,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   className={inputClassName}
                 />
               </div>
-            )}
+            ))}
 
-            <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
+            {category !== "stock_options" && <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
               {isInvestable ? (
                 <GrowthRateField
                   category={category}
@@ -1436,7 +1813,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   </div>
                 </>
               )}
-            </div>
+            </div>}
 
             {isHsa && (
               <div className="col-span-2">
