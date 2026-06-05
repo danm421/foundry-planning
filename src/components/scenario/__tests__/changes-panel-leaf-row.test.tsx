@@ -147,7 +147,7 @@ describe("ChangesPanelLeafRow", () => {
         })}
       />,
     );
-    expect(screen.getByText("Income — Salary")).toBeInTheDocument();
+    expect(screen.getByText("Salary")).toBeInTheDocument();
   });
 
   it("falls back to payload.name when targetName is undefined and op=add", () => {
@@ -163,7 +163,7 @@ describe("ChangesPanelLeafRow", () => {
         })}
       />,
     );
-    expect(screen.getByText("Income — Consulting income")).toBeInTheDocument();
+    expect(screen.getByText("Consulting income")).toBeInTheDocument();
   });
 
   it("shows bare humanized kind (never a UUID) when targetName and payload.name are both unavailable", () => {
@@ -273,7 +273,7 @@ describe("ChangesPanelLeafRow", () => {
       );
       fireEvent.click(screen.getByLabelText("Rename change"));
       const input = screen.getByRole("textbox", { name: /change label/i }) as HTMLInputElement;
-      expect(input.value).toBe("Savings Rule — 401(k) · max");
+      expect(input.value).toBe("401(k) · max");
       fireEvent.change(input, { target: { value: "Max out 401(k)" } });
       fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 

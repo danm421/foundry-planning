@@ -310,7 +310,10 @@ function labelFor(
   if (custom) return custom;
 
   // Resolution order: caller-provided name (from effective tree) → payload.name
-  // (op=add where payload IS the entity) → bare humanized kind (never a UUID).
+  // (op=add where payload IS the entity) → bare humanized kind. The descriptor is
+  // shown on its own (no "Kind — " prefix — it just repeats the op context and,
+  // for nameless kinds like will, the descriptor itself); the humanized kind is
+  // only the fallback when no name resolves, and never a UUID.
   const payloadName =
     change.payload &&
     typeof change.payload === "object" &&
@@ -318,7 +321,7 @@ function labelFor(
       ? ((change.payload as Record<string, unknown>).name as string).trim()
       : "";
   const name = targetName ?? (payloadName || null);
-  return name ? `${humanizeKind(change.targetKind)} — ${name}` : humanizeKind(change.targetKind);
+  return name ?? humanizeKind(change.targetKind);
 }
 
 function subtextFor(change: ScenarioChange): string {
