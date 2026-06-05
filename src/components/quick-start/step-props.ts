@@ -1,6 +1,8 @@
 // src/components/quick-start/step-props.ts
 import type { QsContext } from "@/lib/quick-start/derive";
 import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
+import type { LiftedList } from "@/lib/quick-start/use-lifted-list";
+import type { IncomeRow } from "@/lib/quick-start/income-save";
 
 /** An account created during the Accounts step, forwarded to the Savings step. */
 export interface CreatedAccount {
@@ -24,4 +26,8 @@ export interface QsAccountsStepProps extends QsStepProps {
 
 export interface QsSavingsStepProps extends QsStepProps {
   createdAccounts: CreatedAccount[];
+}
+
+export interface QsIncomeStepProps extends QsStepProps {
+  list: LiftedList<IncomeRow>;
 }

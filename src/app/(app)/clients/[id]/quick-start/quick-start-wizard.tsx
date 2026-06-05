@@ -11,6 +11,8 @@ import { SavingsStep } from "@/components/quick-start/savings-step";
 import { InsuranceStep } from "@/components/quick-start/insurance-step";
 import { AssumptionsStep } from "@/components/quick-start/assumptions-step";
 import type { CreatedAccount } from "@/components/quick-start/step-props";
+import { useLiftedList } from "@/lib/quick-start/use-lifted-list";
+import type { IncomeRow } from "@/lib/quick-start/income-save";
 
 import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
 export type { QsBootstrap };
@@ -36,6 +38,31 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
   const [error, setError] = useState<string | null>(null);
 
   const ctx = useMemo(() => buildQsContext(bootstrap.ctxInput), [bootstrap]);
+
+  const incomeList = useLiftedList<IncomeRow>((makeId) => {
+    const seed: IncomeRow[] = [
+      {
+        _id: makeId(),
+        kind: "social_security",
+        owner: "client",
+        serverId: bootstrap.ssStubs.client?.id,
+        monthlyBenefit: bootstrap.ssStubs.client?.monthlyBenefit ?? undefined,
+        claimingAge: bootstrap.ssStubs.client?.claimingAge ?? undefined,
+      },
+    ];
+    if (ctx.hasSpouse) {
+      seed.push({
+        _id: makeId(),
+        kind: "social_security",
+        owner: "spouse",
+        serverId: bootstrap.ssStubs.spouse?.id,
+        monthlyBenefit: bootstrap.ssStubs.spouse?.monthlyBenefit ?? undefined,
+        claimingAge: bootstrap.ssStubs.spouse?.claimingAge ?? undefined,
+      });
+    }
+    return seed;
+  });
+
   const labels = QS_STEPS.map((s) => s.label);
   const idxInAll = QS_STEPS.findIndex((s) => s.slug === current);
   const orderIdx = ORDER.indexOf(current);
@@ -91,7 +118,7 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
       onNext={handleNext}
     >
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {current === "income" && <IncomeStep {...common} />}
+      {current === "income" && <IncomeStep {...common} list={incomeList} />}
       {current === "expenses" && <ExpensesStep {...common} />}
       {current === "accounts" && (
         <AccountsStep {...common} setCreatedAccounts={setCreatedAccounts} />
