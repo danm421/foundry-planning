@@ -8,7 +8,7 @@ const PROPOSED = dataLight.green; // proposed plan (teal/green)
 
 /** Two inflated max-spend lines, current (grey) vs proposed (green). */
 export function MaxSpendChartPdf({ series }: { series: MaxSpendPoint[] }) {
-  const width = 500, height = 150, padL = 6, padB = 16;
+  const width = 500, height = 112, padL = 6, padB = 16;
   const plotH = height - padB;
   if (series.length === 0) return null;
   const maxY = Math.max(1, ...series.map((p) => Math.max(p.base, p.scenario)));

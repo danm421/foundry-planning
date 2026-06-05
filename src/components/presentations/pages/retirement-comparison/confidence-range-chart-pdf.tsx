@@ -8,7 +8,7 @@ const CURRENT = dataLight.grey;
 
 /** p20–p80 bands + p50 lines per plan. Proposed (green) over current (grey). */
 export function ConfidenceRangeChartPdf({ points }: { points: ConfidencePoint[] }) {
-  const width = 500, height = 150, padL = 6, padB = 16;
+  const width = 500, height = 112, padL = 6, padB = 16;
   const plotH = height - padB;
   if (points.length === 0) return null;
   const maxY = Math.max(

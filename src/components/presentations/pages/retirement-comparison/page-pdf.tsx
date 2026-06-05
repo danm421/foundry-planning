@@ -15,10 +15,9 @@ import { MaxSpendChartPdf } from "./max-spend-chart-pdf";
 import { ConfidenceRangeChartPdf } from "./confidence-range-chart-pdf";
 
 const s = StyleSheet.create({
-  subtitle: { fontSize: 8, color: T.ink2, marginBottom: 8 },
   verdict: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderLeftWidth: 3, borderLeftColor: T.good, borderRadius: 3, padding: 10, marginBottom: 10 },
   verdictText: { fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.3 },
-  panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 10, marginBottom: 8 },
+  panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8, marginBottom: 6 },
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 },
   cards: { flexDirection: "row", gap: 6, marginTop: 2 },
   card: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8 },
