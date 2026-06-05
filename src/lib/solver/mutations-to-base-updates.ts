@@ -23,10 +23,7 @@
 //     round-trip; the others need junction-table writes. Deferred.
 
 import type { ClientData, Account, SavingsRule, Expense } from "@/engine/types";
-import {
-  isRetirementLivingExpense,
-  synthesizeRetirementLivingExpense,
-} from "./living-expense";
+import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation, SolverPerson } from "./types";
 
 /** A pre-coerced partial column update for one row. */
@@ -155,21 +152,13 @@ export function mutationsToBaseUpdates(
         break;
       }
       case "living-expense-amount": {
-        const planStartYear = source.planSettings.planStartYear;
-        const retirement = (source.expenses ?? []).filter((e) =>
-          isRetirementLivingExpense(e, planStartYear),
-        );
-        const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
-        if (retirement.length === 0) {
-          out.expenseInserts.push(synthesizeRetirementLivingExpense(source, m.amount));
+        const plan = planLivingExpenseAmount(source, m.amount);
+        if (plan.kind === "synthesize") {
+          out.expenseInserts.push(plan.expense);
         } else {
-          for (const e of retirement) {
-            const next =
-              baseSum > 0
-                ? e.annualAmount * (m.amount / baseSum)
-                : m.amount / retirement.length;
-            if (next === e.annualAmount) continue;
-            expensePatch(e.id).annualAmount = dec(next);
+          for (const row of plan.rows) {
+            if (row.to === row.from) continue;
+            expensePatch(row.id).annualAmount = dec(row.to);
           }
         }
         break;

@@ -9,10 +9,7 @@
 // Returns an empty array (not null) when every mutation is a no-op vs base.
 
 import type { ClientData } from "@/engine/types";
-import {
-  isRetirementLivingExpense,
-  synthesizeRetirementLivingExpense,
-} from "./living-expense";
+import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type {
   SolverMutation,
   SolverPerson,
@@ -173,27 +170,18 @@ export function mutationsToScenarioChanges(
         break;
       }
       case "living-expense-amount": {
-        const planStartYear = source.planSettings.planStartYear;
-        const retirement = source.expenses.filter((e) =>
-          isRetirementLivingExpense(e, planStartYear),
-        );
-        const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
-        if (retirement.length === 0) {
-          const synth = synthesizeRetirementLivingExpense(source, m.amount);
+        const plan = planLivingExpenseAmount(source, m.amount);
+        if (plan.kind === "synthesize") {
           pushTechniqueUpsert(
             nonClientDrafts,
             "expense",
             undefined,
-            synth.id,
-            synth as unknown as Record<string, unknown>,
+            plan.expense.id,
+            plan.expense as unknown as Record<string, unknown>,
           );
         } else {
-          for (const e of retirement) {
-            const next =
-              baseSum > 0
-                ? e.annualAmount * (m.amount / baseSum)
-                : m.amount / retirement.length;
-            accumulateExpense(e.id, "annualAmount", e.annualAmount, next);
+          for (const row of plan.rows) {
+            accumulateExpense(row.id, "annualAmount", row.from, row.to);
           }
         }
         break;

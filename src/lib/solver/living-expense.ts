@@ -63,3 +63,34 @@ export function synthesizeRetirementLivingExpense(
     source: "manual",
   };
 }
+
+/** A consumer-agnostic plan for applying a `living-expense-amount` mutation:
+ *  either update existing retirement rows to new annual amounts, or synthesize
+ *  a fresh retirement row when none exist. The three consumers (apply-mutations,
+ *  base-updates, scenario-changes) each render this plan into their own output. */
+export type LivingExpenseAmountPlan =
+  | { kind: "update"; rows: { id: string; from: number; to: number }[] }
+  | { kind: "synthesize"; expense: Expense };
+
+/** Decide how to reach an absolute annual retirement living-expense `amount`:
+ *  proportional scale when retirement rows exist with positive sum, even-split
+ *  when they exist but sum to $0, or synthesize one row when none exist. */
+export function planLivingExpenseAmount(
+  tree: ClientData,
+  amount: number,
+): LivingExpenseAmountPlan {
+  const planStartYear = tree.planSettings.planStartYear;
+  const retirement = (tree.expenses ?? []).filter((e) =>
+    isRetirementLivingExpense(e, planStartYear),
+  );
+  if (retirement.length === 0) {
+    return { kind: "synthesize", expense: synthesizeRetirementLivingExpense(tree, amount) };
+  }
+  const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
+  const rows = retirement.map((e) => ({
+    id: e.id,
+    from: e.annualAmount,
+    to: baseSum > 0 ? e.annualAmount * (amount / baseSum) : amount / retirement.length,
+  }));
+  return { kind: "update", rows };
+}

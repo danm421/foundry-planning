@@ -9,7 +9,7 @@
 
 import type { ClientData } from "@/engine/types";
 import { resolveRefYears } from "@/lib/year-refs";
-import { isRetirementLivingExpense, synthesizeRetirementLivingExpense } from "./living-expense";
+import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation } from "./types";
 
 export function applyMutations(
@@ -39,32 +39,13 @@ export function applyMutations(
         break;
       }
       case "living-expense-amount": {
-        const planStartYear = result.planSettings.planStartYear;
-        const retirement = result.expenses.filter((e) =>
-          isRetirementLivingExpense(e, planStartYear),
-        );
-        const baseSum = retirement.reduce((s, e) => s + e.annualAmount, 0);
-        if (retirement.length === 0) {
-          // No retirement living row → synthesize one at the full amount.
-          result.expenses = [
-            ...result.expenses,
-            synthesizeRetirementLivingExpense(result, m.amount),
-          ];
-        } else if (baseSum > 0) {
-          // Scale existing rows proportionally so they sum to the amount.
-          const factor = m.amount / baseSum;
-          result.expenses = result.expenses.map((e) =>
-            isRetirementLivingExpense(e, planStartYear)
-              ? { ...e, annualAmount: e.annualAmount * factor }
-              : e,
-          );
+        const plan = planLivingExpenseAmount(result, m.amount);
+        if (plan.kind === "synthesize") {
+          result.expenses = [...result.expenses, plan.expense];
         } else {
-          // Rows exist but all $0 → even-split.
-          const share = m.amount / retirement.length;
+          const next = new Map(plan.rows.map((r) => [r.id, r.to]));
           result.expenses = result.expenses.map((e) =>
-            isRetirementLivingExpense(e, planStartYear)
-              ? { ...e, annualAmount: share }
-              : e,
+            next.has(e.id) ? { ...e, annualAmount: next.get(e.id)! } : e,
           );
         }
         break;

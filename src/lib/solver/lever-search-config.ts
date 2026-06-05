@@ -112,6 +112,8 @@ export function buildLeverMutation(
     case "retirement-age":
       return { kind: "retirement-age", person: target.person, age: value };
     case "living-expense-scale":
+      // Lever key stays "living-expense-scale" for API stability; the search runs
+      // in dollars and emits a living-expense-amount mutation.
       return { kind: "living-expense-amount", amount: value };
     case "ss-claim-age":
       return { kind: "ss-claim-age", person: target.person, age: value };
