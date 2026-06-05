@@ -241,6 +241,7 @@ const DB_TO_KEY: Record<string, AssetCategoryKey> = {
   cash: "cash",
   taxable: "taxable",
   retirement: "retirement",
+  annuity: "annuity",
   real_estate: "realEstate",
   business: "business",
   life_insurance: "lifeInsurance",

@@ -44,7 +44,7 @@ import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 const isRetirementSubType = (st: string) =>
   (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
+type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 export interface AccountFormInitial {
   id: string;
@@ -116,6 +116,7 @@ export interface CategoryDefaults {
   taxable: string;
   cash: string;
   retirement: string;
+  annuity: string;
   real_estate: string;
   business: string;
   life_insurance: string;
@@ -174,6 +175,7 @@ const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
+  annuity: ["fixed", "variable", "indexed", "other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
@@ -212,6 +214,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   taxable: "Taxable",
   cash: "Cash",
   retirement: "Retirement",
+  annuity: "Annuity",
   real_estate: "Real Estate",
   business: "Business",
   life_insurance: "Life Insurance",
@@ -225,6 +228,7 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   taxable: "Taxable Account",
   cash: "Cash Account",
   retirement: "Retirement Account",
+  annuity: "Annuity",
   real_estate: "Real Estate",
   business: "Business Interest",
   life_insurance: "Life Insurance Policy",

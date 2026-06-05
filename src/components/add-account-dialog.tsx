@@ -8,7 +8,7 @@ import AddNoteReceivableForm, { NoteReceivableFormInitial } from "./forms/add-no
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
+type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 interface AddAccountDialogProps {
   clientId: string;

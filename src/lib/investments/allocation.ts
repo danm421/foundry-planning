@@ -25,6 +25,7 @@ export type AccountCategory =
   | "taxable"
   | "cash"
   | "retirement"
+  | "annuity"
   | "real_estate"
   | "business"
   | "life_insurance"
