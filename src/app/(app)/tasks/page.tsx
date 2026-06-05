@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db";
 import { crmHouseholds } from "@/db/schema";
@@ -57,7 +57,7 @@ export default async function TasksRoute({
     db
       .select({ id: crmHouseholds.id, name: crmHouseholds.name })
       .from(crmHouseholds)
-      .where(eq(crmHouseholds.firmId, firmId))
+      .where(and(eq(crmHouseholds.firmId, firmId), isNull(crmHouseholds.deletedAt)))
       .orderBy(crmHouseholds.name),
   ]);
 
