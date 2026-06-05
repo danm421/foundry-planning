@@ -92,9 +92,10 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
 
   // Retirement: traditional vs Roth vs HSA
   if (account.category === "retirement") {
-    // HSA: tax-free at 65+ (assumed qualified-medical). Pre-65 is locked —
-    // the strategy walk filters it out, so a draw here means a caller bug;
-    // return empty (no draw recognized) defensively.
+    // HSA: every draw that reaches here is tax-free — a qualified-medical /
+    // post-65 distribution (zero ordinary income, zero penalty). The pre-65
+    // lock is enforced upstream by the strategy walk (isHsaWithdrawalLocked),
+    // so a pre-65 HSA draw never reaches this branch.
     if (account.subType === "hsa") return empty;
 
     const isRoth = account.subType === "roth_ira";

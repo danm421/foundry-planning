@@ -1,12 +1,13 @@
 "use client";
 
 /** Retirement subtypes that have IRS contribution limits the engine
- *  enforces: payroll-deduction plans and both IRA flavors. */
+ *  enforces: payroll-deduction plans, both IRA flavors, and HSAs. */
 export const CONTRIBUTION_LIMIT_SUB_TYPES = new Set([
   "401k",
   "403b",
   "traditional_ira",
   "roth_ira",
+  "hsa",
 ]);
 
 /** True if this account's contributions are subject to an IRS cap we
@@ -45,7 +46,7 @@ export default function ContributionCapCheckbox({
       <span>
         <span className="font-medium text-gray-200">Apply IRS contribution limit</span>
         <span className="block text-xs text-gray-400">
-          When on, the engine caps this contribution at the applicable IRS limit (401(k)/403(b) deferral or IRA, including age-50+ catch-up and age 60–63 super catch-up). Uncheck to let the entered amount pass through uncapped.
+          When on, the engine caps this contribution at the applicable IRS limit (401(k)/403(b) deferral, IRA, or HSA — including any age-based catch-up). Uncheck to let the entered amount pass through uncapped.
         </span>
       </span>
     </label>
