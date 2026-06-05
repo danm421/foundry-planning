@@ -216,6 +216,18 @@ export async function POST(request: NextRequest, { params }: Params) {
             "POST /api/clients/[id]/imports/[importId]/commit failed:",
             safeMessage,
         );
+        // Drizzle wraps the real driver error in `.cause`; `err.message` alone
+        // is the opaque "Failed query: commit". Surface the underlying
+        // Postgres/Neon code + message so commit failures — e.g. a deferred
+        // constraint trigger firing at COMMIT — stay diagnosable from logs.
+        if (err instanceof Error && err.cause) {
+            const cause = err.cause as { message?: string; code?: string };
+            console.error(
+                "  ↳ commit cause:",
+                cause?.code ?? "",
+                cause?.message ?? cause,
+            );
+        }
         return NextResponse.json(
             { error: "Commit failed. Please try again." },
             { status: 500 },

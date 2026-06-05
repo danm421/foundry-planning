@@ -1,7 +1,11 @@
 import { and, eq } from "drizzle-orm";
 
 import { accountOwners, accounts } from "@/db/schema";
-import { validateOwnersShape, validateOwnersTenant } from "@/lib/ownership";
+import {
+  RETIREMENT_SUBTYPES,
+  validateOwnersShape,
+  validateOwnersTenant,
+} from "@/lib/ownership";
 
 import { getExistingId, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
@@ -45,6 +49,7 @@ export async function commitAccounts(
     if (kind === "new") {
       // category is required by the schema; default to "taxable" when the
       // extraction failed to classify so the row is still committable.
+      const subType = row.subType ?? "other";
       const [inserted] = await tx
         .insert(accounts)
         .values({
@@ -52,7 +57,7 @@ export async function commitAccounts(
           scenarioId: ctx.scenarioId,
           name: row.name,
           category: row.category ?? "taxable",
-          subType: row.subType ?? "other",
+          subType,
           value: row.value != null ? String(row.value) : "0",
           basis: row.basis != null ? String(row.basis) : "0",
           accountNumberLast4: row.accountNumberLast4 ?? null,
@@ -65,7 +70,10 @@ export async function commitAccounts(
         })
         .returning({ id: accounts.id });
 
-      await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family);
+      const isRetirement = (RETIREMENT_SUBTYPES as readonly string[]).includes(
+        subType,
+      );
+      await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family, isRetirement);
       result.created += 1;
       continue;
     }
@@ -108,6 +116,16 @@ export async function commitAccounts(
  * shape + tenant ownership. Any validation/tenant failure (e.g. a family member
  * not yet visible) falls back to coarse synthesis from the `owner` enum so the
  * account is never left silently ownerless.
+ *
+ * Retirement accounts (IRA/401k/403b) must have exactly one owner at 100% —
+ * enforced by the `account_owners_retirement_check` constraint trigger, which is
+ * DEFERRABLE INITIALLY DEFERRED and so fires at COMMIT. The extractor can label
+ * such an account 'joint' (e.g. an inherited IRA listed under both spouses); a
+ * multi-owner insert would fail that trigger and roll back the entire import.
+ * For retirement accounts we therefore collapse any multi-owner set to a single
+ * owner via the coarse synthesis below (spouse when the extractor said 'spouse',
+ * otherwise the primary client). A single explicit owner already satisfies the
+ * rule and is inserted as-is.
  */
 async function writeImportedOwners(
   tx: Tx,
@@ -115,6 +133,7 @@ async function writeImportedOwners(
   row: ImportPayload["accounts"][number],
   clientId: string,
   family: FamilyRoleIds,
+  isRetirement: boolean,
 ): Promise<void> {
   const owners = row.owners;
   if (Array.isArray(owners) && owners.length > 0) {
@@ -122,6 +141,10 @@ async function writeImportedOwners(
     if ("owners" in shape) {
       const tenantErr = await validateOwnersTenant(shape.owners, clientId);
       if (!tenantErr) {
+        if (isRetirement && shape.owners.length > 1) {
+          await synthesizeAccountOwners(tx, accountId, row.owner, family, true);
+          return;
+        }
         await tx.insert(accountOwners).values(
           shape.owners.map((o) => ({
             accountId,
@@ -135,7 +158,7 @@ async function writeImportedOwners(
     }
     // validation/tenant failure → fall through to coarse synthesis below.
   }
-  await synthesizeAccountOwners(tx, accountId, row.owner, family);
+  await synthesizeAccountOwners(tx, accountId, row.owner, family, isRetirement);
 }
 
 async function synthesizeAccountOwners(
@@ -143,10 +166,14 @@ async function synthesizeAccountOwners(
   accountId: string,
   owner: "client" | "spouse" | "joint" | undefined,
   family: { clientFmId: string | null; spouseFmId: string | null },
+  isRetirement: boolean,
 ): Promise<void> {
   const { clientFmId, spouseFmId } = family;
 
-  if (owner === "joint" && clientFmId && spouseFmId) {
+  // Retirement accounts can't be jointly held — skip the 50/50 split and fall
+  // through to the single-owner branches (spouse if the extractor said 'spouse',
+  // otherwise the primary client at 100%).
+  if (!isRetirement && owner === "joint" && clientFmId && spouseFmId) {
     await tx.insert(accountOwners).values([
       { accountId, familyMemberId: clientFmId, entityId: null, percent: "0.5000" },
       { accountId, familyMemberId: spouseFmId, entityId: null, percent: "0.5000" },

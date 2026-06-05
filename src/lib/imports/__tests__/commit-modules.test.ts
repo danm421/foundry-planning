@@ -23,7 +23,7 @@ import {
 } from "@/lib/imports/commit/will-types";
 import type { Annotated, ImportPayload } from "@/lib/imports/types";
 
-import { callsForTable, makeFakeTx } from "./commit-test-helpers";
+import { callsForTable, makeFakeTx, type FakeTxCall } from "./commit-test-helpers";
 
 const ctx = {
   clientId: "client-1",
@@ -44,6 +44,16 @@ function emptyPayload(): ImportPayload {
     entities: [],
     warnings: [],
   };
+}
+
+/**
+ * Normalizes a recorded account_owners insert to an array of rows. The synthesis
+ * path inserts a single object (client/spouse) or an array (joint); the owners[]
+ * path inserts an array. Tests assert on the flattened rows regardless of shape.
+ */
+function ownerRows(call: FakeTxCall): Record<string, unknown>[] {
+  const v = (call as { values: unknown }).values;
+  return (Array.isArray(v) ? v : [v]) as Record<string, unknown>[];
 }
 
 describe("commitClientsIdentity", () => {
@@ -408,6 +418,125 @@ describe("commitAccounts", () => {
     const values = (ownerInserts[0] as { values: unknown }).values as unknown[];
     expect(values).toHaveLength(2);
     expect((values[0] as Record<string, unknown>).percent).toBe("0.5000");
+  });
+
+  // ── Retirement single-owner-100% coercion ──────────────────────────────────
+  // A deferred DB trigger (account_owners_retirement_check) rejects any
+  // retirement account whose account_owners isn't exactly one row at 100%, and
+  // fires at COMMIT — so a mis-labelled joint IRA/401k rolls back the whole
+  // import. The commit must collapse such ownership to a single owner.
+
+  it("collapses a joint owners[] on a retirement account to the client at 100%", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [
+      { id: "fm-client", role: "client" },
+      { id: "fm-spouse", role: "spouse" },
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Schwab - Inherited IRA",
+          category: "retirement",
+          subType: "traditional_ira",
+          owner: "joint",
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+            { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+          match: { kind: "new" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
+    expect(ownerInserts).toHaveLength(1);
+    const rows = ownerRows(ownerInserts[0]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].familyMemberId).toBe("fm-client");
+    expect(rows[0].percent).toBe("1.0000");
+  });
+
+  it("collapses owner='joint' synthesis on a retirement account to the client at 100%", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [
+      { id: "fm-client", role: "client" },
+      { id: "fm-spouse", role: "spouse" },
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Rollover 401k",
+          category: "retirement",
+          subType: "401k",
+          owner: "joint",
+          match: { kind: "new" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
+    expect(ownerInserts).toHaveLength(1);
+    const rows = ownerRows(ownerInserts[0]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].familyMemberId).toBe("fm-client");
+    expect(rows[0].percent).toBe("1.0000");
+  });
+
+  it("keeps a spouse-owned retirement account assigned to the spouse at 100%", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [
+      { id: "fm-client", role: "client" },
+      { id: "fm-spouse", role: "spouse" },
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Spouse Rollover IRA",
+          category: "retirement",
+          subType: "roth_ira",
+          owner: "spouse",
+          match: { kind: "new" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
+    expect(ownerInserts).toHaveLength(1);
+    const rows = ownerRows(ownerInserts[0]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].familyMemberId).toBe("fm-spouse");
+    expect(rows[0].percent).toBe("1.0000");
+  });
+
+  it("preserves an explicit single-owner owners[] on a retirement account", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [
+      { id: "fm-client", role: "client" },
+      { id: "fm-spouse", role: "spouse" },
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Spouse Roth",
+          category: "retirement",
+          subType: "roth_ira",
+          owner: "spouse",
+          owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+          match: { kind: "new" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const ownerInserts = callsForTable(calls, "account_owners").filter((c) => c.op === "insert");
+    expect(ownerInserts).toHaveLength(1);
+    const rows = ownerRows(ownerInserts[0]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].familyMemberId).toBe("fm-spouse");
+    expect(Number(rows[0].percent)).toBe(1);
   });
 });
 
