@@ -81,7 +81,22 @@ export default async function QuickStartPage({ params }: { params: Promise<{ id:
     },
     residenceState: settings?.residenceState ?? null,
     expenseStubs: { currentId: currentStub?.id ?? null, retirementId: retirementStub?.id ?? null },
-    ssStubs: { client: ssClient?.id ?? null, spouse: ssSpouse?.id ?? null },
+    ssStubs: {
+      client: ssClient
+        ? {
+            id: ssClient.id,
+            monthlyBenefit: ssClient.piaMonthly != null ? Number(ssClient.piaMonthly) : null,
+            claimingAge: ssClient.claimingAge != null ? Number(ssClient.claimingAge) : null,
+          }
+        : null,
+      spouse: ssSpouse
+        ? {
+            id: ssSpouse.id,
+            monthlyBenefit: ssSpouse.piaMonthly != null ? Number(ssSpouse.piaMonthly) : null,
+            claimingAge: ssSpouse.claimingAge != null ? Number(ssSpouse.claimingAge) : null,
+          }
+        : null,
+    },
     familyMemberIds: { client: famClient?.id ?? null, spouse: famSpouse?.id ?? null },
     defaultGrowth: {
       taxable: Number(settings?.defaultGrowthTaxable ?? 0.07),
