@@ -13,7 +13,7 @@ interface CurrencyInputProps
   name?: string;
 }
 
-function formatDisplay(raw: string): string {
+export function formatDisplay(raw: string): string {
   if (raw === "" || raw === "-") return raw;
   const negative = raw.startsWith("-");
   const absRaw = negative ? raw.slice(1) : raw;
@@ -24,7 +24,7 @@ function formatDisplay(raw: string): string {
   return decPart !== undefined ? `${withSign}.${decPart}` : withSign;
 }
 
-function cleanInput(input: string): string {
+export function cleanInput(input: string): string {
   let cleaned = input.replace(/[^\d.-]/g, "");
   const negative = cleaned.startsWith("-");
   cleaned = cleaned.replace(/-/g, "");
