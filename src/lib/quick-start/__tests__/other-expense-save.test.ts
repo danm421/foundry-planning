@@ -19,7 +19,7 @@ function deps() {
   let n = 0;
   return {
     ctx,
-    post: vi.fn(async () => ({ id: `srv-${++n}` })),
+    post: vi.fn(async (_body: unknown) => ({ id: `srv-${++n}` })),
     put: vi.fn(async () => ({})),
     del: vi.fn(async () => ({})),
   };
