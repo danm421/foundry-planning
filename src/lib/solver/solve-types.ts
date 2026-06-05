@@ -24,8 +24,9 @@ export interface SolveRequest {
    *  by the client before sending. */
   mutations: SolverMutation[];
   target: SolveLeverKey;
-  /** Target Probability of Success in [0.01, 0.99]. */
-  targetPoS: number;
+  /** Target Probability of Success in [0.01, 0.99]. Optional: omitted for the
+   *  deterministic ss-claim-age solve, which has no PoS target. */
+  targetPoS?: number;
 }
 
 /** Emitted per iteration. */

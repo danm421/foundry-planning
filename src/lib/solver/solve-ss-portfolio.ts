@@ -45,16 +45,21 @@ export function solveSsClaimAgeByPortfolio(
   for (let age = config.lo; age <= config.hi; age += config.step) {
     if (args.signal?.aborted) throw new Error("aborted");
 
-    const allMutations: SolverMutation[] = [
-      ...args.baselineMutations,
-      // Force `years` mode so the candidate age takes effect even when the row
-      // is in FRA / at-retirement mode (otherwise every age projects identically).
+    // Force `years` mode so the candidate age takes effect even when the row
+    // is in FRA / at-retirement mode (otherwise every age projects identically).
+    const ageMutations: SolverMutation[] = [
       { kind: "ss-claim-age-mode", person: args.person, mode: "years" },
       { kind: "ss-claim-age", person: args.person, age },
     ];
-    let tree = applyMutations(args.effectiveTree, allMutations);
+    // Reuse the already-baselined searchTree rather than replaying the baseline
+    // mutations from scratch on each of the 9 iterations.
+    let tree = applyMutations(searchTree, ageMutations);
     if (args.resolutionContext) {
-      tree = resolveTechniqueMutations(tree, allMutations, args.resolutionContext);
+      tree = resolveTechniqueMutations(
+        tree,
+        [...args.baselineMutations, ...ageMutations],
+        args.resolutionContext,
+      );
     }
 
     const projection = runProjection(tree);
