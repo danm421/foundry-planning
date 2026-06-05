@@ -4,9 +4,13 @@ import type { RetirementComparisonOptions } from "./types";
 
 export const retirementComparisonOptionsSchema = z.object({
   scenarioId: z.string(),
-  showChanges: z.boolean(),
   showPortfolioMatrix: z.boolean(),
   showAiSummary: z.boolean(),
+  showConfidenceRange: z.boolean(),
+  maxSpend: z.object({
+    show: z.boolean(),
+    targetConfidence: z.number().min(0.5).max(0.99),
+  }),
   ai: z.object({
     tone: z.enum(["concise", "detailed", "plain"]),
     length: z.enum(["short", "medium", "long"]),
@@ -19,9 +23,10 @@ export const retirementComparisonOptionsSchema = z.object({
 
 export const RETIREMENT_COMPARISON_OPTIONS_DEFAULT: RetirementComparisonOptions = {
   scenarioId: "",
-  showChanges: true,
   showPortfolioMatrix: true,
   showAiSummary: true,
+  showConfidenceRange: true,
+  maxSpend: { show: true, targetConfidence: 0.85 },
   ai: {
     tone: "detailed",
     length: "medium",

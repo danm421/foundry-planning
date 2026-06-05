@@ -1,5 +1,4 @@
 // src/lib/presentations/pages/retirement-comparison/types.ts
-import type { DisplayUnit } from "@/lib/presentations/pages/scenario-changes/types";
 
 export interface RetirementComparisonAiConfig {
   tone: "concise" | "detailed" | "plain";
@@ -16,9 +15,10 @@ export interface RetirementComparisonAiConfig {
 export interface RetirementComparisonOptions {
   /** The comparison scenario id; baseline is always Base Case. Empty = unset. */
   scenarioId: string;
-  showChanges: boolean;
   showPortfolioMatrix: boolean;
   showAiSummary: boolean;
+  showConfidenceRange: boolean;
+  maxSpend: { show: boolean; targetConfidence: number };
   ai: RetirementComparisonAiConfig;
 }
 
@@ -55,16 +55,47 @@ export interface OverlayBar {
   baseAhead: number;     // grey
 }
 
+export interface VerdictBanner {
+  headline: string;   // "91% chance your plan fully funds your life — up from 73%"
+}
+
+export interface MaxSpendPoint { year: number; base: number; scenario: number } // nominal $
+
+export interface MaxSpendBlock {
+  show: boolean;
+  baseToday: number;       // today's $, rounded $2k
+  scenarioToday: number;   // today's $, rounded $2k
+  series: MaxSpendPoint[];  // inflated forward, retirement → end of life
+}
+
+export interface ConfidencePoint {
+  year: number;
+  baseP20: number; baseP50: number; baseP80: number;
+  scnP20: number; scnP50: number; scnP80: number;
+}
+
+export interface ConfidenceBlock { show: boolean; points: ConfidencePoint[] }
+
+export interface StatCard {
+  show: boolean;
+  base: string;       // formatted
+  scenario: string;   // formatted
+  delta: string;      // formatted signed delta or note ("Funded for life")
+}
+
 export interface RetirementComparisonPageData {
   title: string;
-  subtitle: string;          // "Base Case vs. <scenario label>"
-  isEmpty: boolean;          // no scenario selected / no data
-  kpis: ComparisonKpi[];
+  subtitle: string;
+  isEmpty: boolean;
+  verdict: VerdictBanner;
   overlay: OverlayBar[];
   matrix: PortfolioMatrix | null;
-  changeUnits: DisplayUnit[]; // reuse the scenario-changes display units
-  showChanges: boolean;
+  maxSpend: MaxSpendBlock;
+  confidence: ConfidenceBlock;
+  legacy: StatCard;       // always show
+  taxSaved: StatCard;     // show only when favorable
+  lastsToAge: StatCard;   // show only when favorable
   showPortfolioMatrix: boolean;
   showAiSummary: boolean;
-  aiMarkdown: string;        // stored text ("" → placeholder)
+  aiMarkdown: string;
 }
