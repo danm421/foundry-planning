@@ -366,6 +366,17 @@ export function planSettingsPayload(
     defaultGrowthRetirement: draft.growthRetirement,
     defaultGrowthRealEstate: draft.growthRealEstate,
     defaultGrowthLifeInsurance: draft.growthLifeInsurance,
+    growthSourceTaxable: draft.growthSourceTaxable,
+    growthSourceCash: draft.growthSourceCash,
+    growthSourceRetirement: draft.growthSourceRetirement,
+    growthSourceRealEstate: draft.growthSourceRealEstate,
+    growthSourceLifeInsurance: draft.growthSourceLifeInsurance,
+    modelPortfolioIdTaxable:
+      draft.growthSourceTaxable === "model_portfolio" ? draft.modelPortfolioIdTaxable : null,
+    modelPortfolioIdCash:
+      draft.growthSourceCash === "model_portfolio" ? draft.modelPortfolioIdCash : null,
+    modelPortfolioIdRetirement:
+      draft.growthSourceRetirement === "model_portfolio" ? draft.modelPortfolioIdRetirement : null,
   };
   if (draft.taxMode === "brackets") {
     return { ...common, taxEngineMode: "bracket" as const, residenceState };

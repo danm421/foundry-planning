@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { QS_STEPS, type QsStepSlug } from "@/lib/quick-start/steps";
 import { buildQsContext } from "@/lib/quick-start/derive";
@@ -90,6 +90,26 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
   const goto = (slug: QsStepSlug) =>
     router.push(`/clients/${bootstrap.clientId}/quick-start?step=${slug}`);
 
+  const patchQuickStartState = useCallback(
+    async (body: { lastStepVisited?: QsStepSlug; completed?: boolean }) => {
+      try {
+        await fetch(`/api/clients/${bootstrap.clientId}/quick-start`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        // Non-blocking — the wizard is still usable without this.
+      }
+    },
+    [bootstrap.clientId],
+  );
+
+  // Record the resume point whenever the advisor lands on / moves between steps.
+  useEffect(() => {
+    void patchQuickStartState({ lastStepVisited: current });
+  }, [current, patchQuickStartState]);
+
   const handleNext = async () => {
     setBusy(true);
     setError(null);
@@ -101,6 +121,7 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
       return;
     }
     if (isLast) {
+      await patchQuickStartState({ completed: true });
       router.push(`/clients/${bootstrap.clientId}/solver`);
     } else {
       goto(ORDER[orderIdx + 1]);

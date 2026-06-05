@@ -197,42 +197,71 @@ describe("insurancePayload", () => {
   });
 });
 
+const baseAssumptions = {
+  inflationRate: 0.03,
+  growthTaxable: 0.07,
+  growthCash: 0.02,
+  growthRetirement: 0.07,
+  growthRealEstate: 0.04,
+  growthLifeInsurance: 0.03,
+  growthSourceTaxable: "custom" as const,
+  growthSourceCash: "custom" as const,
+  growthSourceRetirement: "custom" as const,
+  modelPortfolioIdTaxable: null,
+  modelPortfolioIdCash: null,
+  modelPortfolioIdRetirement: null,
+  growthSourceRealEstate: "custom" as const,
+  growthSourceLifeInsurance: "custom" as const,
+};
+
 describe("planSettingsPayload", () => {
   it("brackets mode sets taxEngineMode + residenceState, keeps growth rates", () => {
-    const p = planSettingsPayload(
-      {
-        taxMode: "brackets",
-        inflationRate: 0.03,
-        growthTaxable: 0.07,
-        growthCash: 0.02,
-        growthRetirement: 0.07,
-        growthRealEstate: 0.04,
-        growthLifeInsurance: 0.03,
-      },
-      "CA",
-    );
+    const p = planSettingsPayload({ taxMode: "brackets", ...baseAssumptions }, "CA");
     expect(p.taxEngineMode).toBe("bracket");
     expect((p as { residenceState: string }).residenceState).toBe("CA");
     expect(p.defaultGrowthTaxable).toBe(0.07);
     expect(p.inflationRate).toBe(0.03);
   });
+
   it("flat mode sets rates and engine mode flat", () => {
     const p = planSettingsPayload(
-      {
-        taxMode: "flat",
-        flatFederalRate: 0.22,
-        flatStateRate: 0.05,
-        inflationRate: 0.03,
-        growthTaxable: 0.07,
-        growthCash: 0.02,
-        growthRetirement: 0.07,
-        growthRealEstate: 0.04,
-        growthLifeInsurance: 0.03,
-      },
+      { taxMode: "flat", flatFederalRate: 0.22, flatStateRate: 0.05, ...baseAssumptions },
       "CA",
     );
     expect(p.taxEngineMode).toBe("flat");
     expect((p as { flatFederalRate: number }).flatFederalRate).toBe(0.22);
     expect((p as { flatStateRate: number }).flatStateRate).toBe(0.05);
+  });
+
+  it("emits growth source + portfolio id when a category uses a model portfolio", () => {
+    const p = planSettingsPayload(
+      {
+        taxMode: "brackets",
+        ...baseAssumptions,
+        growthSourceTaxable: "model_portfolio",
+        modelPortfolioIdTaxable: "pf-123",
+      },
+      null,
+    );
+    expect(p.growthSourceTaxable).toBe("model_portfolio");
+    expect(p.modelPortfolioIdTaxable).toBe("pf-123");
+  });
+
+  it("nulls the portfolio id for non-model-portfolio sources, and passes flat sources through", () => {
+    const p = planSettingsPayload(
+      {
+        taxMode: "brackets",
+        ...baseAssumptions,
+        // stale id present but source is inflation -> must be cleared to null
+        growthSourceCash: "inflation",
+        modelPortfolioIdCash: "pf-should-be-cleared",
+        growthSourceRealEstate: "inflation",
+      },
+      null,
+    );
+    expect(p.growthSourceCash).toBe("inflation");
+    expect(p.modelPortfolioIdCash).toBeNull();
+    expect(p.growthSourceRealEstate).toBe("inflation");
+    expect(p.growthSourceLifeInsurance).toBe("custom");
   });
 });

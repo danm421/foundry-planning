@@ -22,6 +22,7 @@ export type AuditAction =
   | "client.delete"
   | "client.onboarding_state.update"
   | "client.onboarding.finish"
+  | "client.quick_start_state.update"
   | "client.base_facts.update"
   // Accounts (balance-sheet line items)
   | "account.create"

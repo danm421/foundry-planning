@@ -33,7 +33,8 @@ export interface FanChartSpec {
   markers: Array<{ atYear: number; label: string }>;
   colors: {
     band: string;
-    bandStroke: string;
+    bandUpper: string;
+    bandLower: string;
     median: string;
     deterministic: string;
     grid: string;
@@ -72,7 +73,8 @@ export function buildFanChartSpec(input: BuildFanChartSpecInput): FanChartSpec {
     markers,
     colors: {
       band: T.steel,
-      bandStroke: T.steel,
+      bandUpper: T.good, // green — above-average outcome (p80), mirrors the in-app fan chart
+      bandLower: T.crit, // red — below-average outcome (p20)
       median: T.ink,
       deterministic: T.accent,
       grid: T.hair,

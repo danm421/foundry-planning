@@ -6,6 +6,7 @@ import type { AssetAllocationOptions } from "./options-schema";
 
 export interface ComparisonTableRow { id: string; name: string; leftPct: number; rightPct: number; }
 export interface ComparisonDiffRow { id: string; name: string; diffPct: number; }
+export interface ExcludedAccountRow { id: string; name: string; value: number; }
 
 export interface AssetAllocationData {
   subtitle: string;
@@ -15,6 +16,9 @@ export interface AssetAllocationData {
   rightDonut: DonutSpec | null;
   tableRows: ComparisonTableRow[];
   diffRows: ComparisonDiffRow[] | null;
+  /** Left-source investable accounts with no asset mix (empty when showExcluded is off). */
+  excludedRows: ExcludedAccountRow[];
+  excludedTotal: number;
   disclosure: string;
 }
 
@@ -63,6 +67,10 @@ export function buildAssetAllocationData(
         .sort((a, b) => Math.abs(b.diffPct) - Math.abs(a.diffPct))
     : null;
 
+  // Only the left (household) source carries real accounts; a model portfolio has none.
+  const excludedRows = options.showExcluded ? left.excludedAccounts : [];
+  const excludedTotal = excludedRows.reduce((s, r) => s + r.value, 0);
+
   const disclosureParts: string[] = [];
   if (left.excludedNonInvestableValue > 0) disclosureParts.push(`$${fmt(left.excludedNonInvestableValue)} in business / real estate`);
   if (left.unallocatedValue > 0) disclosureParts.push(`$${fmt(left.unallocatedValue)} in accounts without an asset mix`);
@@ -78,6 +86,8 @@ export function buildAssetAllocationData(
     rightDonut: right ? buildAllocationDonutSpec(right, options.view) : null,
     tableRows,
     diffRows,
+    excludedRows,
+    excludedTotal,
     disclosure,
   };
 }

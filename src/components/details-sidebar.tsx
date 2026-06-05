@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
+import { qsStepLabel } from "@/lib/quick-start/state";
+import type { QsStepSlug } from "@/lib/quick-start/steps";
 
 interface DetailsSidebarProps {
   clientId: string;
+  quickStartResumeStep?: QsStepSlug | null;
 }
 
 interface SidebarTab {
@@ -106,7 +110,87 @@ const TABS: SidebarTab[] = [
 
 const IMPORT_TAB: SidebarTab = { label: "Import", href: "import", icon: <ImportIcon /> };
 
-export default function DetailsSidebar({ clientId }: DetailsSidebarProps) {
+function GuidedWalkthroughMenu({
+  clientId,
+  resumeStep,
+  withScenario,
+}: {
+  clientId: string;
+  resumeStep: QsStepSlug | null;
+  withScenario: (href: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside-click and Escape — mirrors client-identity-menu.tsx.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const quickHref = `/clients/${clientId}/quick-start?step=${resumeStep ?? "income"}`;
+  const quickLabel = resumeStep
+    ? `Resume Quick Start · ${qsStepLabel(resumeStep)}`
+    : "Quick Start";
+
+  return (
+    <div ref={wrapperRef} className="relative mt-3">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 rounded-md border border-dashed border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800"
+      >
+        <svg className="h-[18px] w-[18px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 5h16M4 12h16M4 19h10" />
+          <circle cx="20" cy="19" r="2" />
+        </svg>
+        <span className="flex-1 text-left">Guided Walkthrough</span>
+        <span aria-hidden="true" className={`text-[10px] transition-transform ${open ? "rotate-180" : ""}`}>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute top-full left-0 z-40 mt-1.5 w-full rounded-xl border border-hair bg-paper p-1.5 shadow-lg"
+        >
+          <Link
+            role="menuitem"
+            href={quickHref}
+            onClick={() => setOpen(false)}
+            className="block rounded-md px-3 py-2 text-[13px] font-medium text-ink hover:bg-card-2"
+          >
+            {quickLabel}
+          </Link>
+          <Link
+            role="menuitem"
+            href={withScenario(`/clients/${clientId}/onboarding`)}
+            onClick={() => setOpen(false)}
+            className="block rounded-md px-3 py-2 text-[13px] font-medium text-ink hover:bg-card-2"
+          >
+            Detailed setup
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function DetailsSidebar({ clientId, quickStartResumeStep = null }: DetailsSidebarProps) {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
 
@@ -133,16 +217,11 @@ export default function DetailsSidebar({ clientId }: DetailsSidebarProps) {
     <nav className="flex flex-col gap-1">
       {TABS.map(renderLink)}
       <div className="mt-2 border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
-      <Link
-        href={withScenario(`/clients/${clientId}/onboarding`)}
-        className="mt-3 flex items-center gap-3 rounded-md border border-dashed border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800"
-      >
-        <svg className="h-[18px] w-[18px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 5h16M4 12h16M4 19h10" />
-          <circle cx="20" cy="19" r="2" />
-        </svg>
-        Guided Walkthrough
-      </Link>
+      <GuidedWalkthroughMenu
+        clientId={clientId}
+        resumeStep={quickStartResumeStep}
+        withScenario={withScenario}
+      />
     </nav>
   );
 }

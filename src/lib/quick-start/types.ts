@@ -87,6 +87,11 @@ export interface QsInsuranceDraft {
 
 export type QsTaxMode = "brackets" | "flat";
 
+/** Source for an investable category's growth (Taxable / Cash / Retirement). */
+export type GrowthCategorySource = "model_portfolio" | "inflation" | "custom";
+/** Source for a non-investable category's growth (Real Estate / Life Insurance). */
+export type FlatGrowthSource = "inflation" | "custom";
+
 export interface QsAssumptionsDraft {
   taxMode: QsTaxMode;
   flatFederalRate?: number; // fraction, flat mode
@@ -97,4 +102,13 @@ export interface QsAssumptionsDraft {
   growthRetirement: number;
   growthRealEstate: number;
   growthLifeInsurance: number;
+  // Growth source per category (model-portfolio picker)
+  growthSourceTaxable: GrowthCategorySource;
+  growthSourceCash: GrowthCategorySource;
+  growthSourceRetirement: GrowthCategorySource;
+  modelPortfolioIdTaxable: string | null;
+  modelPortfolioIdCash: string | null;
+  modelPortfolioIdRetirement: string | null;
+  growthSourceRealEstate: FlatGrowthSource;
+  growthSourceLifeInsurance: FlatGrowthSource;
 }

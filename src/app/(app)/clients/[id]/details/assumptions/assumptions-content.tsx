@@ -14,6 +14,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { buildModelPortfolioOptions } from "@/lib/cma/model-portfolio-options";
 import AssumptionsClient from "./assumptions-client";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
@@ -142,17 +143,11 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     clientInflationOverride,
   );
 
-  // Compute blended returns for each model portfolio
-  const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
-  const modelPortfolioOptions = portfolioRows.map((p) => {
-    const allocs = allocationRows.filter((a) => a.modelPortfolioId === p.id);
-    let blendedReturn = 0;
-    for (const alloc of allocs) {
-      const ac = acMap.get(alloc.assetClassId);
-      if (ac) blendedReturn += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
-    }
-    return { id: p.id, name: p.name, blendedReturn };
-  });
+  const modelPortfolioOptions = buildModelPortfolioOptions(
+    portfolioRows,
+    allocationRows,
+    assetClassRows,
+  );
 
   const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
 

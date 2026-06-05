@@ -29,7 +29,8 @@ const CHART_LABEL: Record<MonteCarloChartKind, string> = {
 };
 
 function Chart({ kind, data, scale }: { kind: MonteCarloChartKind; data: MonteCarloPageData; scale: number }) {
-  if (kind === "fan") return <FanChartPdf spec={data.fan} scale={scale} />;
+  // Legend only on the full-size hero render (scale 1); thumbnails stay clean.
+  if (kind === "fan") return <FanChartPdf spec={data.fan} scale={scale} legend={scale === 1} />;
   if (kind === "histogram") return <HistogramPdf spec={data.histogram} scale={scale} />;
   return <SuccessPdf spec={data.success} scale={scale} />;
 }

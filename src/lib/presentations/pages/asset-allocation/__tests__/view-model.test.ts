@@ -32,7 +32,7 @@ function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
   };
 }
 function opts(o: Partial<AssetAllocationOptions> = {}): AssetAllocationOptions {
-  return { left: { kind: "group", id: "all-liquid" }, right: null, view: "detailed", includeOutOfEstate: false, showTable: true, ...o };
+  return { left: { kind: "group", id: "all-liquid" }, right: null, view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true, ...o };
 }
 
 describe("buildAssetAllocationData", () => {
@@ -78,5 +78,35 @@ describe("buildAssetAllocationData", () => {
   it("returns empty tableRows when showTable is false", () => {
     const data = buildAssetAllocationData(bundle(), opts({ showTable: false }));
     expect(data.tableRows).toHaveLength(0);
+  });
+
+  // An investable account whose growth_source resolves to no asset mix ("custom"
+  // here) is excluded from the donut and itemized in excludedRows.
+  const excludedBundle = () =>
+    bundle({
+      accounts: [
+        { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, value: 75, ownerEntityId: null, entityInPortfolio: false },
+        { id: "a3", name: "Old 401(k)", category: "retirement", growthSource: "custom", modelPortfolioId: null, value: 50, ownerEntityId: null, entityInPortfolio: false },
+      ],
+      resolvedGroups: {
+        "all-liquid": { groupKey: "all-liquid", groupName: "All Liquid Assets", groupColor: null, isDefault: true, accountIds: ["a1", "a3"] },
+      },
+    });
+
+  it("itemizes investable accounts without an asset mix as excludedRows", () => {
+    const data = buildAssetAllocationData(excludedBundle(), opts());
+    expect(data.excludedRows).toEqual([{ id: "a3", name: "Old 401(k)", value: 50 }]);
+    expect(data.excludedTotal).toBe(50);
+  });
+
+  it("omits excludedRows when showExcluded is false", () => {
+    const data = buildAssetAllocationData(excludedBundle(), opts({ showExcluded: false }));
+    expect(data.excludedRows).toHaveLength(0);
+    expect(data.excludedTotal).toBe(0);
+  });
+
+  it("has no excludedRows for a fully allocated household", () => {
+    const data = buildAssetAllocationData(bundle(), opts());
+    expect(data.excludedRows).toHaveLength(0);
   });
 });

@@ -108,6 +108,10 @@ export function AssetAllocationOptionsControl({
           <input type="checkbox" className="accent-accent" checked={v.showTable} onChange={(e) => onChange({ ...v, showTable: e.target.checked })} />
           <span>Show allocation table</span>
         </label>
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input type="checkbox" className="accent-accent" checked={v.showExcluded} onChange={(e) => onChange({ ...v, showExcluded: e.target.checked })} />
+          <span>Show excluded accounts</span>
+        </label>
       </OptionsGroup>
     </OptionsRow>
   );

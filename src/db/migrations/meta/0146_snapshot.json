@@ -1,5 +1,5 @@
 {
-  "id": "4d4de66f-c9df-4aec-a953-c833a6696d32",
+  "id": "21a2a716-af13-4d7e-842c-96ed6293bed4",
   "prevId": "d8c467b3-25ba-41b3-8076-afe4f48eacb5",
   "version": "7",
   "dialect": "postgresql",
@@ -777,13 +777,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'0'"
-        },
-        "hsa_coverage": {
-          "name": "hsa_coverage",
-          "type": "hsa_coverage",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
         },
         "growth_rate": {
           "name": "growth_rate",
@@ -3051,6 +3044,13 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "quick_start_state": {
+          "name": "quick_start_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
         },
         "created_at": {
           "name": "created_at",
@@ -13051,7 +13051,6 @@
         "401k",
         "403b",
         "529",
-        "hsa",
         "trust",
         "other",
         "primary_residence",
@@ -13379,14 +13378,6 @@
       "values": [
         "client",
         "spouse"
-      ]
-    },
-    "public.hsa_coverage": {
-      "name": "hsa_coverage",
-      "schema": "public",
-      "values": [
-        "self",
-        "family"
       ]
     },
     "public.import_document_type": {

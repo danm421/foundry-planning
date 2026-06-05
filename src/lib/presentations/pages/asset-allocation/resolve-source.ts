@@ -9,6 +9,9 @@ export interface NormalizedAllocation extends AllocationDonutInput {
   displayName: string;
   /** Dollars in non-investable accounts (groups only; 0 for portfolios). Drives the disclosure. */
   excludedNonInvestableValue: number;
+  /** Investable accounts with no asset mix (groups only; empty for portfolios),
+   *  value-desc. Itemizes the unallocated portion of the disclosure. */
+  excludedAccounts: { id: string; name: string; value: number }[];
 }
 
 /** A model portfolio's weights → normalized allocation (weights treated as values). */
@@ -38,7 +41,7 @@ export function portfolioToNormalized(
     .sort((a, b) => ASSET_TYPE_SORT_ORDER[a[0]] - ASSET_TYPE_SORT_ORDER[b[0]])
     .map(([id, value]) => ({ id, label: ASSET_TYPE_LABELS[id], value }));
 
-  return { displayName, byAssetClass, byAssetType, unallocatedValue: 0, excludedNonInvestableValue: 0 };
+  return { displayName, byAssetClass, byAssetType, unallocatedValue: 0, excludedNonInvestableValue: 0, excludedAccounts: [] };
 }
 
 /** An investment group → normalized current household allocation (real dollars). */
@@ -66,6 +69,11 @@ export function groupToNormalized(
     byAssetType: h.byAssetType,
     unallocatedValue: h.unallocatedValue,
     excludedNonInvestableValue: h.excludedNonInvestableValue,
+    excludedAccounts: h.unallocatedContributions.map((c) => ({
+      id: c.accountId,
+      name: c.accountName,
+      value: c.accountValue,
+    })),
   };
 }
 
