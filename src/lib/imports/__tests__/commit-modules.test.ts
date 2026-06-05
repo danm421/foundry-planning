@@ -666,6 +666,22 @@ describe("commitLiabilities", () => {
     const v = (ownerInserts[0] as { values: Record<string, unknown> }).values;
     expect(v.familyMemberId).toBe("fm-client");
   });
+
+  it("auto-links a new mortgage to a matching real-estate account", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    setSelectResult("accounts", [{ id: "p-austin-home", name: "Home - Austin" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      liabilities: [
+        { name: "Mortgage - Austin Home", balance: 1200000, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitLiabilities(tx, payload, ctx);
+    expect(result.created).toBe(1);
+    const insert = callsForTable(calls, "liabilities").filter((c) => c.op === "insert")[0];
+    expect((insert as { values: Record<string, unknown> }).values.linkedPropertyId).toBe("p-austin-home");
+  });
 });
 
 describe("commitLifeInsurance", () => {
