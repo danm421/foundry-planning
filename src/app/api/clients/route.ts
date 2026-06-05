@@ -144,13 +144,28 @@ export async function POST(request: NextRequest) {
     const spouseLastName = spouse?.lastName ?? null;
     const spouseDob = spouse?.dateOfBirth ?? null;
 
+    // When the household has a spouse, their planning fields must never be blank
+    // — default retirement to 65 and life expectancy to 95. Some creation paths
+    // (e.g. AI import) never surface these inputs, so we default here at the
+    // single write chokepoint rather than in each form. No spouse → stay null.
+    const hasSpouse = spouse != null;
+    const effectiveSpouseRetirementAge = hasSpouse
+      ? Number(spouseRetirementAge ?? 65)
+      : null;
+    const effectiveSpouseRetirementMonth = hasSpouse
+      ? Number(spouseRetirementMonth ?? 1)
+      : null;
+    const effectiveSpouseLifeExpectancy = hasSpouse
+      ? Number(spouseLifeExpectancy ?? 95)
+      : null;
+
     // Plan horizon is the year the last spouse dies; plan_end_age is derived
     // from client + spouse life expectancies.
     const planEndAge = computePlanEndAge({
       clientDob: dateOfBirth,
       clientLifeExpectancy: Number(lifeExpectancy),
       spouseDob: spouseDob ?? null,
-      spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
+      spouseLifeExpectancy: effectiveSpouseLifeExpectancy,
     });
 
     const currentYear = new Date().getFullYear();
@@ -183,9 +198,9 @@ export async function POST(request: NextRequest) {
           planEndAge,
           lifeExpectancy: Number(lifeExpectancy),
           filingStatus,
-          spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
-          spouseRetirementMonth: spouseRetirementMonth != null ? Number(spouseRetirementMonth) : null,
-          spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
+          spouseRetirementAge: effectiveSpouseRetirementAge,
+          spouseRetirementMonth: effectiveSpouseRetirementMonth,
+          spouseLifeExpectancy: effectiveSpouseLifeExpectancy,
         })
         .returning();
       if (Object.keys(contactPatch).length > 0) {
