@@ -37,10 +37,13 @@ export interface ChangesPanelLeafRowProps {
   /**
    * Resolved display name for the change's target entity (e.g. "Salary" for
    * an income, "401(k)" for an account). Built in `loadPanelData` from the
-   * effective tree. Falls back to a UUID slice when undefined — typically
-   * only for `remove` ops on entities the effective tree no longer contains.
+   * effective tree. When undefined (e.g. a `remove` op whose target is no
+   * longer in the tree), the row falls back to the bare humanized kind (e.g.
+   * "Income") — never a raw UUID.
    */
   targetName?: string;
+  /** User rename for this change; when set, replaces the whole computed title. */
+  customLabel?: string | null;
 }
 
 export function ChangesPanelLeafRow({
@@ -49,10 +52,14 @@ export function ChangesPanelLeafRow({
   change,
   enabled,
   targetName,
+  customLabel,
 }: ChangesPanelLeafRowProps) {
   const router = useRouter();
   const op = OP_ICON[change.opType];
   const [enabledLocal, setEnabledLocal] = useState(enabled);
+  const [menuState, setMenuState] = useState<"idle" | "confirming" | "renaming">(
+    "idle",
+  );
 
   async function handleRevert() {
     const params = new URLSearchParams({
@@ -102,7 +109,7 @@ export function ChangesPanelLeafRow({
         {op.glyph}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-ink truncate">{labelFor(change, targetName)}</div>
+        <div className="text-sm text-ink truncate">{labelFor(change, targetName, customLabel)}</div>
         <div className="text-xs text-ink-3 truncate">{subtextFor(change)}</div>
       </div>
       <button
@@ -150,17 +157,24 @@ function ToggleSwitch({
   );
 }
 
-function labelFor(change: ScenarioChange, targetName: string | undefined): string {
+function labelFor(
+  change: ScenarioChange,
+  targetName: string | undefined,
+  customLabel: string | null | undefined,
+): string {
+  const custom = customLabel?.trim();
+  if (custom) return custom;
+
   // Resolution order: caller-provided name (from effective tree) → payload.name
-  // (works for op=add where payload IS the entity) → UUID slice fallback.
+  // (op=add where payload IS the entity) → bare humanized kind (never a UUID).
   const payloadName =
     change.payload &&
     typeof change.payload === "object" &&
     typeof (change.payload as Record<string, unknown>).name === "string"
-      ? ((change.payload as Record<string, unknown>).name as string)
-      : null;
-  const name = targetName ?? payloadName ?? change.targetId.slice(0, 8);
-  return `${humanizeKind(change.targetKind)} — ${name}`;
+      ? ((change.payload as Record<string, unknown>).name as string).trim()
+      : "";
+  const name = targetName ?? (payloadName || null);
+  return name ? `${humanizeKind(change.targetKind)} — ${name}` : humanizeKind(change.targetKind);
 }
 
 function subtextFor(change: ScenarioChange): string {

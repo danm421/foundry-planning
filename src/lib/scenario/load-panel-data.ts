@@ -33,8 +33,9 @@ export interface PanelData {
   cascadeWarnings: CascadeWarning[];
   /** `${targetKind}:${targetId}` → entity display name, derived from the
    *  effective tree so leaf rows can render "Income — Salary" instead of
-   *  the raw UUID slice. Entities the effective tree no longer contains
-   *  (e.g. an op=remove target) gracefully fall back to the UUID slice. */
+   *  the raw UUID. Entities the effective tree no longer contains
+   *  (e.g. an op=remove target) cause the row to fall back to the bare
+   *  humanized kind (e.g. "Income") — never a raw UUID. */
   targetNames: Record<string, string>;
 }
 

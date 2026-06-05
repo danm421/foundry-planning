@@ -132,7 +132,7 @@ describe("ChangesPanelLeafRow", () => {
     expect(screen.getByText("Income — Consulting income")).toBeInTheDocument();
   });
 
-  it("falls back to UUID slice when targetName and payload.name are both unavailable", () => {
+  it("shows bare humanized kind (never a UUID) when targetName and payload.name are both unavailable", () => {
     render(
       <ChangesPanelLeafRow
         clientId="c1"
@@ -146,7 +146,7 @@ describe("ChangesPanelLeafRow", () => {
         })}
       />,
     );
-    expect(screen.getByText("Income — abcdef12")).toBeInTheDocument();
+    expect(screen.getByText("Income")).toBeInTheDocument();
   });
 
   it("toggle PATCHes { enabled: false } when an enabled row is flipped off, then router.refresh()", async () => {
