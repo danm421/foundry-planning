@@ -3,9 +3,14 @@
 interface Props {
   state: "idle" | "computing" | "ready" | "stale" | "error";
   successPct: number | null;
+  /** When provided (Scenario column only), a stale/error gauge renders a
+   *  centered Recalculate overlay that calls this. Omitted on the Base column. */
+  onRegenerate?: () => void;
+  /** Disables the overlay button while a deterministic solve owns the run. */
+  solveActive?: boolean;
 }
 
-export function SolverPosGauge({ state, successPct }: Props) {
+export function SolverPosGauge({ state, successPct, onRegenerate, solveActive }: Props) {
   let display: string;
   if (state === "computing") display = "…";
   else if (state === "ready" || state === "stale") {
@@ -23,19 +28,40 @@ export function SolverPosGauge({ state, successPct }: Props) {
           ? "text-warn"
           : "text-crit";
 
-  const dimmed = state === "stale" || state === "idle";
+  const showOverlay =
+    onRegenerate != null && (state === "stale" || state === "error");
+  const contentDim = showOverlay
+    ? "opacity-40 pointer-events-none"
+    : state === "idle"
+      ? "opacity-70"
+      : "";
+
   return (
-    <div className={dimmed ? "opacity-70" : ""}>
-      <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
-        Probability of Success
+    <div className="relative">
+      <div className={contentDim}>
+        <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
+          Probability of Success
+        </div>
+        <div
+          className={`mt-0.5 text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}
+        >
+          {display}
+        </div>
       </div>
-      <div className={`mt-0.5 text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}>
-        {display}
-      </div>
-      {state === "stale" ? (
-        <div className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-warn">
-          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-warn" />
-          Stale — re-generate
+      {showOverlay ? (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={onRegenerate}
+            disabled={solveActive}
+            aria-label="Recalculate probability of success"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-ink-2 hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            <span aria-hidden="true" className="text-[12px] leading-none">
+              ↻
+            </span>
+            Recalculate
+          </button>
         </div>
       ) : null}
     </div>
