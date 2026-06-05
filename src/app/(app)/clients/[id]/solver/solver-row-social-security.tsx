@@ -155,7 +155,11 @@ function EditableSummary({
     return (
       <div>
         <div className="text-[11px] text-ink-3">{label}</div>
-        <div className="mt-0.5 flex items-center gap-2 rounded-md border border-hair-2 bg-card-2 px-2.5 py-1.5 text-[13px] text-ink-2">
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-0.5 flex items-center gap-2 rounded-md border border-hair-2 bg-card-2 px-2.5 py-1.5 text-[13px] text-ink-2"
+        >
           <span
             className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-3 border-t-transparent"
             aria-hidden="true"
