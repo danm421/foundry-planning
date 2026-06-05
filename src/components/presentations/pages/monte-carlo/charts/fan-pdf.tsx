@@ -1,9 +1,9 @@
-import { View, Svg, G, Line, Polyline, Polygon, Text as SvgText } from "@react-pdf/renderer";
+import { View, Text, Svg, G, Line, Polyline, Polygon, Text as SvgText } from "@react-pdf/renderer";
 import { scalePoint, scaleLinear } from "d3-scale";
 import { compactCurrency } from "@/lib/presentations/format";
 import type { FanChartSpec } from "@/lib/presentations/charts/monte-carlo-specs";
 
-export function FanChartPdf({ spec, scale = 1 }: { spec: FanChartSpec; scale?: number }) {
+export function FanChartPdf({ spec, scale = 1, legend = false }: { spec: FanChartSpec; scale?: number; legend?: boolean }) {
   const W = spec.width * scale;
   const H = spec.height * scale;
   const m = spec.margin;
@@ -15,11 +15,24 @@ export function FanChartPdf({ spec, scale = 1 }: { spec: FanChartSpec; scale?: n
 
   const upperPts = spec.years.map((yr, i) => `${x(yr) ?? 0},${y(spec.band.upper[i])}`);
   const lowerPts = spec.years.map((yr, i) => `${x(yr) ?? 0},${y(spec.band.lower[i])}`);
-  const bandPoints = [...upperPts, ...lowerPts.reverse()].join(" ");
+  // Clone before reversing — the band polygon walks the upper edge then back along
+  // the lower edge; the boundary polylines below reuse the un-mutated point arrays.
+  const bandPoints = [...upperPts, ...[...lowerPts].reverse()].join(" ");
+  const upperLine = upperPts.join(" ");
+  const lowerLine = lowerPts.join(" ");
   const medianPts = spec.years.map((yr, i) => `${x(yr) ?? 0},${y(spec.median[i])}`).join(" ");
   const detPts = spec.deterministic
     ? spec.years.map((yr, i) => `${x(yr) ?? 0},${y(spec.deterministic![i])}`).join(" ")
     : null;
+
+  // Legend mirrors the in-app fan chart: above-average / median / below-average,
+  // plus the dashed cash-flow projection when one is supplied.
+  const legendItems = [
+    { label: "Above average (80th)", color: spec.colors.bandUpper, dash: false },
+    { label: "Median", color: spec.colors.median, dash: false },
+    { label: "Below average (20th)", color: spec.colors.bandLower, dash: false },
+    ...(spec.deterministic ? [{ label: "Cash-flow projection", color: spec.colors.deterministic, dash: true }] : []),
+  ];
 
   return (
     <View>
@@ -33,7 +46,9 @@ export function FanChartPdf({ spec, scale = 1 }: { spec: FanChartSpec; scale?: n
               </SvgText>
             </G>
           ))}
-          <Polygon points={bandPoints} fill={spec.colors.band} fillOpacity={0.14} stroke="none" />
+          <Polygon points={bandPoints} fill={spec.colors.band} fillOpacity={0.1} stroke="none" />
+          <Polyline points={upperLine} stroke={spec.colors.bandUpper} strokeWidth={1} fill="none" />
+          <Polyline points={lowerLine} stroke={spec.colors.bandLower} strokeWidth={1} fill="none" />
           {detPts && <Polyline points={detPts} stroke={spec.colors.deterministic} strokeWidth={1} strokeDasharray="3 3" fill="none" />}
           <Polyline points={medianPts} stroke={spec.colors.median} strokeWidth={1.5} fill="none" />
           {spec.markers.map((mk) => {
@@ -57,6 +72,25 @@ export function FanChartPdf({ spec, scale = 1 }: { spec: FanChartSpec; scale?: n
           })}
         </G>
       </Svg>
+      {legend && (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 6, paddingLeft: m.left }}>
+          {legendItems.map((it) => (
+            <View key={it.label} style={{ flexDirection: "row", alignItems: "center", marginRight: 14, marginBottom: 2 }}>
+              <View
+                style={{
+                  width: 14,
+                  height: 0,
+                  borderTopWidth: 1.5,
+                  borderTopColor: it.color,
+                  borderStyle: it.dash ? "dashed" : "solid",
+                  marginRight: 4,
+                }}
+              />
+              <Text style={{ fontFamily: "Inter", fontSize: 7, color: spec.colors.axis }}>{it.label}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }

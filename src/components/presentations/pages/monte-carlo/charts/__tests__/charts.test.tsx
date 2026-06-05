@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { renderToBuffer, Document, Page } from "@react-pdf/renderer";
+import { renderToBuffer, Document, Page, Polyline } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/pdf/fonts";
 import { FanChartPdf } from "../fan-pdf";
 import { HistogramPdf } from "../histogram-pdf";
@@ -27,6 +27,21 @@ async function renders(node: React.ReactElement) {
   expect(buf.length).toBeGreaterThan(0);
 }
 
+type PdfElement = { type?: unknown; props?: { children?: unknown; stroke?: string } };
+
+// Walk a react-pdf element tree and collect every element of a given type.
+function collectByType(node: unknown, type: unknown, acc: PdfElement[] = []): PdfElement[] {
+  if (node == null || typeof node !== "object") return acc;
+  if (Array.isArray(node)) {
+    for (const child of node) collectByType(child, type, acc);
+    return acc;
+  }
+  const el = node as PdfElement;
+  if (el.type === type) acc.push(el);
+  if (el.props?.children != null) collectByType(el.props.children, type, acc);
+  return acc;
+}
+
 beforeAll(() => ensureFontsRegistered());
 
 describe("monte carlo chart renderers", () => {
@@ -34,6 +49,27 @@ describe("monte carlo chart renderers", () => {
     const spec = buildFanChartSpec({ byYear, deterministic: [555, 545], markers: [] });
     await renders(<FanChartPdf spec={spec} />);
     await renders(<FanChartPdf spec={spec} scale={0.5} />);
+  });
+
+  it("draws p80, median, p20, and deterministic as four distinct lines", () => {
+    const spec = buildFanChartSpec({ byYear, deterministic: [555, 545], markers: [] });
+    const tree = FanChartPdf({ spec });
+    const strokes = collectByType(tree, Polyline).map((p) => p.props?.stroke);
+    expect(strokes).toContain(spec.colors.bandUpper); // p80 — above-average (green)
+    expect(strokes).toContain(spec.colors.median); // p50 — median (ink)
+    expect(strokes).toContain(spec.colors.bandLower); // p20 — below-average (red)
+    expect(strokes).toContain(spec.colors.deterministic); // cash-flow projection (dashed)
+    expect(strokes).toHaveLength(4);
+  });
+
+  it("omits the deterministic line when no projection is supplied", () => {
+    const spec = buildFanChartSpec({ byYear, deterministic: null, markers: [] });
+    const tree = FanChartPdf({ spec });
+    const strokes = collectByType(tree, Polyline).map((p) => p.props?.stroke);
+    expect(strokes).toContain(spec.colors.bandUpper);
+    expect(strokes).toContain(spec.colors.median);
+    expect(strokes).toContain(spec.colors.bandLower);
+    expect(strokes).toHaveLength(3);
   });
   it("renders the histogram", async () => {
     await renders(<HistogramPdf spec={buildHistogramChartSpec(histogram)} />);
