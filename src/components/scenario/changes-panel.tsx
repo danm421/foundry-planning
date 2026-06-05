@@ -53,6 +53,8 @@ export interface ChangesPanelProps {
    * users see "Income — Salary" instead of "Income — 5b0eb216".
    */
   targetNames?: Record<string, string>;
+  /** Extra classes merged onto the root aside (e.g. `h-full` in the drawer). */
+  className?: string;
 }
 
 export function ChangesPanel({
@@ -63,6 +65,7 @@ export function ChangesPanel({
   toggleGroups,
   cascadeWarnings,
   targetNames,
+  className = "",
 }: ChangesPanelProps) {
   const [editing, setEditing] = useState(false);
 
@@ -71,7 +74,9 @@ export function ChangesPanel({
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
 
   return (
-    <aside className="w-[360px] shrink-0 border-l border-hair bg-card flex flex-col">
+    <aside
+      className={`w-[360px] shrink-0 border-l border-hair bg-card flex flex-col ${className}`}
+    >
       <PanelHeader
         scenarioName={scenarioName}
         changesCount={changes.length}
