@@ -14,7 +14,6 @@ const ctx = {
 function deps() {
   let n = 0;
   return {
-    clientId: "c1",
     ctx,
     post: vi.fn(async () => ({ id: `srv-${++n}` })),
     put: vi.fn(async () => ({})),

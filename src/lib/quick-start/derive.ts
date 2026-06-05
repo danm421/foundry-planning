@@ -325,7 +325,7 @@ export function savingsPayload(draft: QsSavingsDraft, ctx: QsContext) {
   };
 }
 
-const POLICY_LABEL: Record<QsInsuranceDraft["policyType"], string> = {
+export const POLICY_LABEL: Record<QsInsuranceDraft["policyType"], string> = {
   term: "Term",
   whole: "Whole",
   universal: "Universal",

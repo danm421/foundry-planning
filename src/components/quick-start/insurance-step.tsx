@@ -3,19 +3,19 @@
 import { CurrencyInput } from "@/components/currency-input";
 import { inputClassName, selectClassName } from "@/components/forms/input-styles";
 import { saveInsuranceRows, isEmptyInsurance, type InsuranceRow } from "@/lib/quick-start/insurance-save";
+import { POLICY_LABEL } from "@/lib/quick-start/derive";
 import type { QsPolicyType } from "@/lib/quick-start/types";
 import type { QsInsuranceStepProps } from "./step-props";
 import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
 import { Labeled, sendJson, fmtMoney } from "./ui";
 
+// Canonical labels (POLICY_LABEL) come from derive.ts so the table matches the
+// persisted policy name; this local list only drives the Policy-type <select>.
 const POLICY_TYPE_OPTIONS: { value: QsPolicyType; label: string }[] = [
   { value: "term", label: "Term" },
   { value: "whole", label: "Whole" },
   { value: "universal", label: "Universal" },
 ];
-const POLICY_LABEL = Object.fromEntries(
-  POLICY_TYPE_OPTIONS.map((o) => [o.value, o.label]),
-) as Record<QsPolicyType, string>;
 
 const COLUMNS: ListColumn[] = [
   { key: "insured", label: "Insured" },

@@ -6,7 +6,7 @@ import { saveIncomeRows, type IncomeRow } from "@/lib/quick-start/income-save";
 import type { QsIncomeKind } from "@/lib/quick-start/types";
 import type { QsIncomeStepProps } from "./step-props";
 import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
-import { Labeled, OwnerPills, sendJson } from "./ui";
+import { Labeled, OwnerPills, sendJson, fmtMoney } from "./ui";
 
 // Social Security is pre-seeded as pinned rows, so it is NOT an "Add income" option.
 const KIND_OPTIONS: { value: Exclude<QsIncomeKind, "social_security">; label: string }[] = [
@@ -43,9 +43,6 @@ const COLUMNS: ListColumn[] = [
   { key: "tax", label: "Tax" },
 ];
 
-const fmtMoney = (n?: number) =>
-  n == null ? "—" : `$${Math.round(n).toLocaleString("en-US")}`;
-
 export function IncomeStep({ ctx, bootstrap, registerSave, list }: QsIncomeStepProps) {
   const { rows, setRows, deletedServerIds, pushDeleted, clearDeleted, makeId } = list;
 
@@ -64,7 +61,6 @@ export function IncomeStep({ ctx, bootstrap, registerSave, list }: QsIncomeStepP
   // which the DELETE route ignores. (If the route ever rejects it, pass `{}`.)
   registerSave(async () => {
     const result = await saveIncomeRows(rows, deletedServerIds, {
-      clientId: bootstrap.clientId,
       ctx,
       post: (body) =>
         sendJson(`/api/clients/${bootstrap.clientId}/incomes`, "POST", body) as Promise<{ id: string }>,

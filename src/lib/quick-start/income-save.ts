@@ -5,7 +5,6 @@ import type { QsIncomeDraft } from "./types";
 export type IncomeRow = QsIncomeDraft & { _id: number; serverId?: string };
 
 export interface IncomeSaveDeps {
-  clientId: string;
   ctx: QsContext;
   post: (body: unknown) => Promise<{ id: string }>;
   put: (incomeId: string, body: unknown) => Promise<unknown>;
