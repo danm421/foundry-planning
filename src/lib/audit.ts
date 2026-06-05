@@ -169,6 +169,8 @@ export type AuditAction =
   | "toggle_group.move_change"
   // Per-change enable/disable toggle on the comparison-page Changes drawer.
   | "scenario_change.set_enabled"
+  // Per-change custom label (rename) or reset to computed smart label (null).
+  | "scenario_change.rename"
   // Scenario snapshots (frozen comparisons; survive scenario deletion).
   | "snapshot.create"
   | "snapshot.delete"
