@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   applyContributionLimits,
   computeDeferralLimit,
+  computeHsaLimit,
   computeIraLimit,
+  computeMaxContribution,
   resolveAgeInYear,
 } from "../contribution-limits";
 import type { Account, ClientInfo, SavingsRule } from "../types";
@@ -48,6 +50,18 @@ const PARAMS_2025: TaxYearParameters = {
   },
 };
 
+// HSA limits aren't seeded in PARAMS_2025 (all zero); these tests need real
+// self/family/catch-up numbers to exercise the coverage-tier + 55-catch-up logic.
+const HSA_PARAMS: TaxYearParameters = {
+  ...PARAMS_2025,
+  contribLimits: {
+    ...PARAMS_2025.contribLimits,
+    hsaLimitSelf: 4_400,
+    hsaLimitFamily: 8_750,
+    hsaCatchup55: 1_000,
+  },
+};
+
 const clientInfoAge40: ClientInfo = {
   firstName: "Alex",
   lastName: "X",
@@ -84,6 +98,15 @@ function acct(id: string, subType: string, ownerKind: "client" | "spouse" | "joi
     rmdEnabled: false,
     owners,
   };
+}
+
+/** HSA account variant — same shape as `acct` but with a coverage tier set. */
+function hsaAcct(
+  id: string,
+  coverage: "self" | "family",
+  ownerKind: "client" | "spouse" | "joint" = "client"
+): Account {
+  return { ...acct(id, "hsa", ownerKind), hsaCoverage: coverage };
 }
 
 function rule(
@@ -427,5 +450,97 @@ describe("applyContributionLimits", () => {
     expect(cappedByRuleId.rA).toBeCloseTo(30_000 * (23_500 / 90_000), 2);
     expect(cappedByRuleId.rB).toBeCloseTo(30_000 * (23_500 / 90_000), 2);
     expect(cappedByRuleId.rC).toBeCloseTo(30_000 * (23_500 / 90_000), 2);
+  });
+});
+
+describe("computeHsaLimit", () => {
+  it("uses the self limit under 55", () => {
+    expect(computeHsaLimit(HSA_PARAMS, 40, "self")).toBe(4_400);
+  });
+  it("uses the family limit under 55", () => {
+    expect(computeHsaLimit(HSA_PARAMS, 40, "family")).toBe(8_750);
+  });
+  it("adds the 55+ catch-up", () => {
+    expect(computeHsaLimit(HSA_PARAMS, 55, "self")).toBe(5_400);
+    expect(computeHsaLimit(HSA_PARAMS, 60, "family")).toBe(9_750);
+  });
+  it("does not add catch-up at 54", () => {
+    expect(computeHsaLimit(HSA_PARAMS, 54, "self")).toBe(4_400);
+  });
+  it("defaults missing coverage to the self limit", () => {
+    expect(computeHsaLimit(HSA_PARAMS, 40, undefined)).toBe(4_400);
+  });
+});
+
+describe("computeMaxContribution for hsa", () => {
+  it("returns the self HSA limit", () => {
+    expect(computeMaxContribution("hsa", HSA_PARAMS, 40, "self")).toBe(4_400);
+  });
+  it("returns the family HSA limit + catch-up at 55", () => {
+    expect(computeMaxContribution("hsa", HSA_PARAMS, 55, "family")).toBe(9_750);
+  });
+  it("defaults missing coverage to self", () => {
+    expect(computeMaxContribution("hsa", HSA_PARAMS, 40)).toBe(4_400);
+  });
+});
+
+describe("applyContributionLimits HSA bucket", () => {
+  it("scales an over-limit self HSA contribution down to the self cap", () => {
+    const accounts = [hsaAcct("h1", "self")];
+    const rules = [rule("r1", "h1")];
+    const { cappedByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 6_000 },
+    });
+    expect(cappedByRuleId.r1).toBeCloseTo(4_400, 2);
+    expect(adjustments).toHaveLength(1);
+    expect(adjustments[0]).toMatchObject({ ruleId: "r1", group: "hsa", limit: 4_400 });
+  });
+
+  it("uses the family cap when the owner holds a family-coverage HSA", () => {
+    const accounts = [hsaAcct("h1", "family")];
+    const rules = [rule("r1", "h1")];
+    const { cappedByRuleId } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 20_000 },
+    });
+    expect(cappedByRuleId.r1).toBeCloseTo(8_750, 2);
+  });
+
+  it("adds the 55+ catch-up to the HSA cap", () => {
+    const accounts = [hsaAcct("h1", "family")];
+    const rules = [rule("r1", "h1")];
+    const { cappedByRuleId } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge55,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 20_000 },
+    });
+    expect(cappedByRuleId.r1).toBeCloseTo(9_750, 2);
+  });
+
+  it("leaves an under-limit HSA contribution unchanged", () => {
+    const accounts = [hsaAcct("h1", "self")];
+    const rules = [rule("r1", "h1")];
+    const { cappedByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 3_000 },
+    });
+    expect(cappedByRuleId.r1).toBe(3_000);
+    expect(adjustments).toHaveLength(0);
   });
 });

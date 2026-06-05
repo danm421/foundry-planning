@@ -2500,7 +2500,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           resolvedByRuleId[rule.id] = computeMaxContribution(
             acct.subType ?? "",
             resolved.params,
-            age
+            age,
+            acct.hsaCoverage
           );
           continue;
         }

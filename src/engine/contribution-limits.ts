@@ -10,12 +10,16 @@ const DEFERRAL_SUB_TYPES = new Set(["401k", "403b"]);
 /** Traditional + Roth IRAs share ONE combined annual limit per person. */
 const IRA_SUB_TYPES = new Set(["traditional_ira", "roth_ira"]);
 
+/** HSA — its own per-person limit, depending on coverage tier + a 55+ catch-up. */
+const HSA_SUB_TYPES = new Set(["hsa"]);
+
 type OwnerKey = "client" | "spouse" | "joint";
-type LimitGroup = "deferral" | "ira" | "none";
+type LimitGroup = "deferral" | "ira" | "hsa" | "none";
 
 function groupForSubType(subType: string): LimitGroup {
   if (DEFERRAL_SUB_TYPES.has(subType)) return "deferral";
   if (IRA_SUB_TYPES.has(subType)) return "ira";
+  if (HSA_SUB_TYPES.has(subType)) return "hsa";
   return "none";
 }
 
@@ -56,17 +60,35 @@ export function computeIraLimit(params: TaxYearParameters, age: number): number 
   return base;
 }
 
+/** HSA contribution limit for a given age + coverage tier. Self vs family
+ *  base, plus the $1,000-ish catch-up once age >= 55 (HSA catch-up is 55, not
+ *  50). Coverage defaults to "self" (the lower cap) when unknown. */
+export function computeHsaLimit(
+  params: TaxYearParameters,
+  age: number,
+  coverage: "self" | "family" | undefined
+): number {
+  const base =
+    coverage === "family"
+      ? params.contribLimits.hsaLimitFamily
+      : params.contribLimits.hsaLimitSelf;
+  return age >= 55 ? base + params.contribLimits.hsaCatchup55 : base;
+}
+
 /** Resolves a rule's "contribute the IRS max" intent to a dollar amount for
  *  a given subtype and owner age. Non-retirement subtypes resolve to 0
- *  (Max has no meaning for a brokerage or cash account). */
+ *  (Max has no meaning for a brokerage or cash account). `coverage` only
+ *  matters for HSAs; it's ignored for the deferral / IRA groups. */
 export function computeMaxContribution(
   subType: string,
   params: TaxYearParameters,
-  age: number
+  age: number,
+  coverage?: "self" | "family"
 ): number {
   const group = groupForSubType(subType);
   if (group === "deferral") return computeDeferralLimit(params, age);
   if (group === "ira") return computeIraLimit(params, age);
+  if (group === "hsa") return computeHsaLimit(params, age, coverage);
   return 0;
 }
 
@@ -132,25 +154,37 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
   const clientAge = resolveAgeInYear(client.dateOfBirth, year);
   const spouseAge = resolveAgeInYear(client.spouseDob, year);
 
-  const limits: Record<OwnerKey, { deferral: number; ira: number }> = {
+  // Per-owner HSA coverage: family if the owner holds any family-coverage HSA,
+  // else self. Used to pick the per-owner HSA limit.
+  function hsaCoverageFor(owner: OwnerKey): "self" | "family" {
+    const ownerHsas = accounts.filter(
+      (a) => a.subType === "hsa" && ownerKeyFor(a) === owner
+    );
+    return ownerHsas.some((a) => a.hsaCoverage === "family") ? "family" : "self";
+  }
+
+  const limits: Record<OwnerKey, { deferral: number; ira: number; hsa: number }> = {
     client: {
       deferral: computeDeferralLimit(taxYearParams, clientAge),
       ira: computeIraLimit(taxYearParams, clientAge),
+      hsa: computeHsaLimit(taxYearParams, clientAge, hsaCoverageFor("client")),
     },
     spouse: {
       deferral: computeDeferralLimit(taxYearParams, spouseAge),
       ira: computeIraLimit(taxYearParams, spouseAge),
+      hsa: computeHsaLimit(taxYearParams, spouseAge, hsaCoverageFor("spouse")),
     },
     joint: {
       deferral: computeDeferralLimit(taxYearParams, clientAge),
       ira: computeIraLimit(taxYearParams, clientAge),
+      hsa: computeHsaLimit(taxYearParams, clientAge, hsaCoverageFor("joint")),
     },
   };
 
   // Bucket capped-in rules by owner+group.
   interface Bucket {
     owner: OwnerKey;
-    group: "deferral" | "ira";
+    group: "deferral" | "ira" | "hsa";
     ruleIds: string[];
     total: number;
   }
