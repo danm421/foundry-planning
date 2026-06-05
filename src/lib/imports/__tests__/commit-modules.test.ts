@@ -659,6 +659,30 @@ describe("commitLifeInsurance", () => {
     expect(callsForTable(calls, "account_owners").filter((c) => c.op === "insert")).toHaveLength(1);
   });
 
+  it("stores cash value on the account row when extracted", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      lifePolicies: [
+        {
+          accountName: "Brighthouse",
+          policyType: "universal",
+          insuredPerson: "spouse",
+          faceValue: 3_000_000,
+          cashValue: 588_000,
+          match: { kind: "new" },
+        },
+      ],
+    };
+    const result = await commitLifeInsurance(tx, payload, ctx);
+    expect(result.created).toBe(1);
+    const acctInsert = callsForTable(calls, "accounts").filter((c) => c.op === "insert")[0];
+    expect((acctInsert as { values: Record<string, unknown> }).values.value).toBe("588000");
+    const policyInsert = callsForTable(calls, "life_insurance_policies").filter((c) => c.op === "insert")[0];
+    expect((policyInsert as { values: Record<string, unknown> }).values.faceValue).toBe("3000000");
+  });
+
   it("updates both account and policy rows on exact match", async () => {
     const { tx, calls, setSelectResult } = makeFakeTx();
     setSelectResult("family_members", []);
