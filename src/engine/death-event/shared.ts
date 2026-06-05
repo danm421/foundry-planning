@@ -204,8 +204,8 @@ export function partitionMixedAccount(
 
 /** §1014 basis step-up at death. Returns the post-death basis for an
  *  asset that was owned (in whole or in part) by the decedent.
- *  Categories that are income-in-respect-of-a-decedent (`retirement`)
- *  or have no cost-basis concept (`life_insurance`) do not step up.
+ *  Categories that are income-in-respect-of-a-decedent (`retirement`,
+ *  `annuity`) or have no cost-basis concept (`life_insurance`) do not step up.
  *
  *  Joint accounts at first death:
  *    - `jtwros`              → half step-up (decedent's 50% → FMV,
@@ -225,7 +225,11 @@ export function computeSteppedUpBasis(
     titlingType: "jtwros" | "community_property";
   },
 ): number {
-  if (category === "retirement" || category === "life_insurance") {
+  if (
+    category === "retirement" ||
+    category === "life_insurance" ||
+    category === "annuity"
+  ) {
     return originalBasis;
   }
   if (opts.isJointAtFirstDeath) {

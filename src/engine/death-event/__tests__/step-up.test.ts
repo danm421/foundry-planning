@@ -41,6 +41,14 @@ describe("computeSteppedUpBasis", () => {
     expect(computeSteppedUpBasis("retirement", 400_000, 0, joint)).toBe(0);
   });
 
+  it("annuity, single-owner → returns originalBasis unchanged (IRD rule, no step-up)", () => {
+    expect(computeSteppedUpBasis("annuity", 500_000, 100_000, noJoint)).toBe(100_000);
+  });
+
+  it("annuity, joint-at-first-death → returns originalBasis (IRD rule wins over joint rule)", () => {
+    expect(computeSteppedUpBasis("annuity", 500_000, 100_000, joint)).toBe(100_000);
+  });
+
   it("FMV < originalBasis (depreciated) → returns FMV (§1014 allows step-down)", () => {
     expect(computeSteppedUpBasis("taxable", 100_000, 300_000, noJoint)).toBe(100_000);
   });

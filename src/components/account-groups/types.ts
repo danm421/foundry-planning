@@ -9,6 +9,7 @@ export type AssetCategory =
   | "taxable"
   | "cash"
   | "retirement"
+  | "annuity"
   | "real_estate"
   | "business"
   | "life_insurance"

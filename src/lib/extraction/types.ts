@@ -27,6 +27,7 @@ export type AccountCategory =
   | "taxable"
   | "cash"
   | "retirement"
+  | "annuity"
   | "real_estate"
   | "business"
   | "life_insurance"
@@ -177,6 +178,9 @@ export interface ExtractedLifePolicy {
   policyType: LifePolicyType;
   insuredPerson: "client" | "spouse" | "joint";
   faceValue: number;
+  /** Cash / surrender value of the policy, when shown alongside the face
+   *  value (e.g. on a net-worth statement). Becomes the account row's value. */
+  cashValue?: number;
   costBasis?: number;
   premiumAmount?: number;
   premiumYears?: number;

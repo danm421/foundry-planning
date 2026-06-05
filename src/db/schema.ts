@@ -46,6 +46,7 @@ export const accountCategoryEnum = pgEnum("account_category", [
   "taxable",
   "cash",
   "retirement",
+  "annuity",
   "real_estate",
   "business",
   "life_insurance",

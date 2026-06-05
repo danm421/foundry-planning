@@ -10,6 +10,7 @@ export type AssetCategoryKey =
   | "cash"
   | "taxable"
   | "retirement"
+  | "annuity"
   | "realEstate"
   | "business"
   | "lifeInsurance";
@@ -19,6 +20,7 @@ export const CATEGORY_LABELS: Record<AssetCategoryKey, string> = {
   cash: "Cash",
   taxable: "Taxable",
   retirement: "Retirement",
+  annuity: "Annuity",
   realEstate: "Real Estate",
   business: "Business",
   lifeInsurance: "Life Insurance",
@@ -29,6 +31,7 @@ export const CATEGORY_ORDER: AssetCategoryKey[] = [
   "cash",
   "taxable",
   "retirement",
+  "annuity",
   "realEstate",
   "business",
   "lifeInsurance",
@@ -40,6 +43,7 @@ export const CATEGORY_HEX: Record<AssetCategoryKey, string> = {
   cash: dataLight.green,            // #1f8d5f
   taxable: dataLight.blue,          // #2d61aa
   retirement: dataLight.purple,     // #6c41a2
+  annuity: dataLight.yellow,        // #c2941b
   realEstate: dataLight.orange,     // #cf671d
   business: dataLight.pink,         // #ab3f6b
   lifeInsurance: dataLight.teal,    // #198b83

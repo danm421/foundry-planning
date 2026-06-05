@@ -1,1 +1,0 @@
-ALTER TABLE "clients" ADD COLUMN "quick_start_state" jsonb DEFAULT '{}'::jsonb NOT NULL;
