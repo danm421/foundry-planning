@@ -267,3 +267,105 @@ describe("AddAccountForm — category dropdown filtering", () => {
     expect(values).toEqual(expect.arrayContaining(["taxable", "cash", "retirement", "real_estate"]));
   });
 });
+
+// ── Test 7: HSA subtype reveals coverage selector; payload includes hsaCoverage ─
+
+describe("AddAccountForm — HSA subtype + coverage selector", () => {
+  it("shows coverage selector only for hsa subtype and includes hsaCoverage in submit payload", async () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="retirement"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={{
+          taxable: "0.07",
+          cash: "0.02",
+          retirement: "0.07",
+          annuity: "0.04",
+          real_estate: "0.04",
+          business: "0.05",
+          life_insurance: "0.03",
+          notes_receivable: "0",
+        }}
+      />,
+    );
+
+    // The default retirement subType is traditional_ira — coverage selector must be absent.
+    expect(screen.queryByRole("combobox", { name: /HSA Coverage/ })).toBeNull();
+
+    // Switch subType to hsa.
+    const subTypeSelect = screen.getByRole("combobox", { name: /Account Type/ });
+    fireEvent.change(subTypeSelect, { target: { value: "hsa" } });
+
+    // Coverage selector must now be visible.
+    const coverageSelect = screen.getByRole("combobox", { name: /HSA Coverage/ }) as HTMLSelectElement;
+    expect(coverageSelect).toBeDefined();
+    expect(coverageSelect.value).toBe("self");
+
+    // Switch to family coverage.
+    fireEvent.change(coverageSelect, { target: { value: "family" } });
+    expect(coverageSelect.value).toBe("family");
+
+    // Submit the form and verify the payload contains hsaCoverage: "family".
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/accounts",
+    );
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body as string);
+    expect(body.hsaCoverage).toBe("family");
+    expect(body.subType).toBe("hsa");
+  });
+
+  it("omits hsaCoverage (sends null) when subType is not hsa", async () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="retirement"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={{
+          taxable: "0.07",
+          cash: "0.02",
+          retirement: "0.07",
+          annuity: "0.04",
+          real_estate: "0.04",
+          business: "0.05",
+          life_insurance: "0.03",
+          notes_receivable: "0",
+        }}
+      />,
+    );
+
+    // Default subType is traditional_ira — no coverage selector.
+    expect(screen.queryByRole("combobox", { name: /HSA Coverage/ })).toBeNull();
+
+    // Submit without changing subType (stays traditional_ira).
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/accounts",
+    );
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body as string);
+    expect(body.hsaCoverage).toBeNull();
+  });
+});

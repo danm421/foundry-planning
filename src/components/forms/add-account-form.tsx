@@ -51,6 +51,7 @@ export interface AccountFormInitial {
   name: string;
   category: AccountCategory;
   subType: string;
+  hsaCoverage?: "self" | "family" | null;
   owner: string;
   value: string;
   basis: string;
@@ -174,7 +175,7 @@ interface AddAccountFormProps {
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
-  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
+  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa", "other"],
   annuity: ["other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
@@ -194,6 +195,7 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   "401k": "401(k)",
   "403b": "403(b)",
   "529": "529 Plan",
+  hsa: "HSA",
   trust: "Trust",
   other: "Other",
   primary_residence: "Primary Residence",
@@ -221,7 +223,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   notes_receivable: "Notes Receivable",
 };
 
-const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529"]);
+const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa"]);
 const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k", "403b"]);
 
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
@@ -370,6 +372,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
     )
   );
+  const [hsaCoverage, setHsaCoverage] = useState<"self" | "family">(
+    (initial?.hsaCoverage as "self" | "family") ?? "self"
+  );
   const [priorYearEndValue, setPriorYearEndValue] = useState<string>(
     initial?.priorYearEndValue ?? "",
   );
@@ -474,6 +479,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     name,
     category,
     subType,
+    hsaCoverage,
     owners,
     titlingType,
     parentBusinessId,
@@ -499,7 +505,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     custodian,
     accountNumberLast4,
   }), [
-    name, category, subType, owners, titlingType, parentBusinessId, accountValue, accountBasis,
+    name, category, subType, hsaCoverage, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
     realEstateGrowthRatePct, modelPortfolioId, rmdEnabled, priorYearEndValue,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
@@ -617,6 +623,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
+  const isHsa = category === "retirement" && subType === "hsa";
   const showEmployerMatch = supportsEmployerMatch(category, subType);
   const showContributionModeToggle = supportsPercentContribution(category, subType);
   const showContributionMaxToggle = supportsMaxContribution(category, subType);
@@ -712,6 +719,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
       custodian: custodian.trim() === "" ? null : custodian.trim(),
       accountNumberLast4: accountNumberLast4.trim() === "" ? null : accountNumberLast4.trim(),
+      hsaCoverage: isHsa ? hsaCoverage : null,
     };
 
     setLoading(true);
@@ -799,7 +807,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
-    currentSerialized, onAutoSaved, custodian, accountNumberLast4,
+    currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
   ]);
 
   useImperativeHandle(ref, () => ({ saveAsync: saveAsyncImpl }), [saveAsyncImpl]);
@@ -877,6 +885,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
       custodian: custodian.trim() === "" ? null : custodian.trim(),
       accountNumberLast4: accountNumberLast4.trim() === "" ? null : accountNumberLast4.trim(),
+      hsaCoverage: isHsa ? hsaCoverage : null,
     };
 
     try {
@@ -1424,6 +1433,26 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </>
               )}
             </div>
+
+            {isHsa && (
+              <div className="col-span-2">
+                <label className={fieldLabelClassName} htmlFor="hsa-coverage">
+                  HSA Coverage
+                </label>
+                <select
+                  id="hsa-coverage"
+                  value={hsaCoverage}
+                  onChange={(e) => setHsaCoverage(e.target.value as "self" | "family")}
+                  className={selectClassName}
+                >
+                  <option value="self">Self-only</option>
+                  <option value="family">Family</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  Sets the annual contribution limit. Catch-up (+$1,000) applies automatically at 55+.
+                </p>
+              </div>
+            )}
 
             <details className="col-span-2 mt-2 rounded-[var(--radius-sm)] border border-hair bg-card-2/40">
               <summary className="cursor-pointer select-none px-3 py-2 text-[13px] text-ink-3 hover:text-ink">
