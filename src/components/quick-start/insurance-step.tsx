@@ -1,80 +1,109 @@
 // src/components/quick-start/insurance-step.tsx
 "use client";
-import { useRef, useState } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { inputClassName, selectClassName } from "@/components/forms/input-styles";
-import { insurancePayload } from "@/lib/quick-start/derive";
-import type { QsInsuranceDraft, QsPolicyType } from "@/lib/quick-start/types";
-import type { QsStepProps } from "./step-props";
-import { Labeled, sendJson } from "./ui";
+import { saveInsuranceRows, isEmptyInsurance, type InsuranceRow } from "@/lib/quick-start/insurance-save";
+import { POLICY_LABEL } from "@/lib/quick-start/derive";
+import type { QsPolicyType } from "@/lib/quick-start/types";
+import type { QsInsuranceStepProps } from "./step-props";
+import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
+import { Labeled, sendJson, fmtMoney } from "./ui";
 
-type Row = QsInsuranceDraft & { _id: number };
-
+// Canonical labels (POLICY_LABEL) come from derive.ts so the table matches the
+// persisted policy name; this local list only drives the Policy-type <select>.
 const POLICY_TYPE_OPTIONS: { value: QsPolicyType; label: string }[] = [
   { value: "term", label: "Term" },
   { value: "whole", label: "Whole" },
   { value: "universal", label: "Universal" },
 ];
 
-export function InsuranceStep({ ctx, bootstrap, registerSave }: QsStepProps) {
-  const idRef = useRef(1);
-  const [rows, setRows] = useState<Row[]>([]);
+const COLUMNS: ListColumn[] = [
+  { key: "insured", label: "Insured" },
+  { key: "policy", label: "Policy" },
+  { key: "face", label: "Face value", align: "right" },
+  { key: "premium", label: "Premium", align: "right" },
+];
 
-  const update = (id: number, patch: Partial<Row>) =>
+export function InsuranceStep({ ctx, bootstrap, registerSave, list }: QsInsuranceStepProps) {
+  const { rows, setRows, deletedServerIds, pushDeleted, clearDeleted, makeId } = list;
+
+  const update = (id: number, patch: Partial<InsuranceRow>) =>
     setRows((rs) => rs.map((r) => (r._id === id ? { ...r, ...patch } : r)));
-  const remove = (id: number) => setRows((rs) => rs.filter((r) => r._id !== id));
-  const add = () =>
-    setRows((rs) => [
-      ...rs,
-      {
-        _id: idRef.current++,
-        insured: "client",
-        policyType: "term",
-        faceValue: 0,
-        premiumAmount: 0,
-      },
-    ]);
+
+  const insuredLabel = (r: InsuranceRow) =>
+    r.insured === "spouse" ? (ctx.spouseFirstName ?? "Spouse") : ctx.clientFirstName;
 
   registerSave(async () => {
-    // Validation: term policies need a term length or endsAtInsuredRetirement
+    // Validation runs here, not in the reducer: it throws a user-visible error and
+    // only applies to non-empty rows (a blank default term row must not block Next).
     for (const r of rows) {
+      if (isEmptyInsurance(r)) continue;
       if (r.policyType === "term" && !r.endsAtInsuredRetirement && !r.termLengthYears) {
         throw new Error("Term policies need a term length or 'ends at retirement'.");
       }
     }
-
-    for (const r of rows) {
-      const { _id: _drop, ...draft } = r;
-      void _drop;
-      const ownerFamilyMemberId =
-        draft.insured === "spouse"
-          ? bootstrap.familyMemberIds.spouse
-          : bootstrap.familyMemberIds.client;
-      await sendJson(
-        `/api/clients/${bootstrap.clientId}/insurance-policies`,
-        "POST",
-        insurancePayload(draft, ctx, ownerFamilyMemberId),
-      );
-    }
+    const result = await saveInsuranceRows(rows, deletedServerIds, {
+      ctx,
+      familyMemberIdFor: (insured) =>
+        insured === "spouse" ? bootstrap.familyMemberIds.spouse : bootstrap.familyMemberIds.client,
+      post: (body) =>
+        sendJson(
+          `/api/clients/${bootstrap.clientId}/insurance-policies`,
+          "POST",
+          body,
+        ) as Promise<{ id: string }>,
+      patch: (policyId, body) =>
+        sendJson(
+          `/api/clients/${bootstrap.clientId}/insurance-policies/${policyId}`,
+          "PATCH",
+          body,
+        ),
+      del: (policyId) =>
+        sendJson(
+          `/api/clients/${bootstrap.clientId}/insurance-policies/${policyId}`,
+          "DELETE",
+          undefined,
+        ),
+    });
+    setRows(result.rows);
+    clearDeleted();
   });
 
   return (
     <div className="space-y-4">
-      {rows.length === 0 && (
-        <p className="text-[13px] text-ink-3">
-          No insurance policies yet. Add term, whole, or universal life policies.
-        </p>
-      )}
-      {rows.map((r) => (
-        <div
-          key={r._id}
-          className="space-y-3 rounded-[var(--radius-md)] border border-hair bg-card-2/40 p-4"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <Labeled label="Insured">
-              <div role="group" aria-label="Insured" className="flex flex-wrap gap-1.5">
-                {(["client", ...(ctx.hasSpouse ? ["spouse"] : [])] as Array<"client" | "spouse">).map(
-                  (v) => {
+      <CollapsibleListEditor<InsuranceRow>
+        rows={rows}
+        columns={COLUMNS}
+        isEmpty={isEmptyInsurance}
+        update={update}
+        onChange={setRows}
+        onRemove={(r) => {
+          pushDeleted(r.serverId);
+          setRows((rs) => rs.filter((x) => x._id !== r._id));
+        }}
+        newRow={() => ({
+          _id: makeId(),
+          insured: "client",
+          policyType: "term",
+          faceValue: 0,
+          premiumAmount: 0,
+        })}
+        rowLabel={(r) => `${POLICY_LABEL[r.policyType]} · ${insuredLabel(r)}`}
+        addLabel="+ Add policy"
+        renderSummary={(r) => [
+          <span key="i">{insuredLabel(r)}</span>,
+          <span key="p">{POLICY_LABEL[r.policyType]}</span>,
+          <span key="f">{fmtMoney(r.faceValue)}</span>,
+          <span key="pr">{fmtMoney(r.premiumAmount)}</span>,
+        ]}
+        renderEditor={(r, upd) => (
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <Labeled label="Insured">
+                <div role="group" aria-label="Insured" className="flex flex-wrap gap-1.5">
+                  {(
+                    ["client", ...(ctx.hasSpouse ? ["spouse"] : [])] as Array<"client" | "spouse">
+                  ).map((v) => {
                     const label =
                       v === "client" ? ctx.clientFirstName : (ctx.spouseFirstName ?? "Spouse");
                     return (
@@ -82,7 +111,7 @@ export function InsuranceStep({ ctx, bootstrap, registerSave }: QsStepProps) {
                         key={v}
                         type="button"
                         aria-pressed={r.insured === v}
-                        onClick={() => update(r._id, { insured: v })}
+                        onClick={() => upd({ insured: v })}
                         className={
                           "rounded-[var(--radius-sm)] border px-3 py-1.5 text-[12px] font-medium transition-colors " +
                           (r.insured === v
@@ -93,105 +122,86 @@ export function InsuranceStep({ ctx, bootstrap, registerSave }: QsStepProps) {
                         {label}
                       </button>
                     );
-                  },
-                )}
-              </div>
-            </Labeled>
-            <button
-              type="button"
-              onClick={() => remove(r._id)}
-              className="mt-6 text-[12px] text-ink-3 transition-colors hover:text-crit"
-            >
-              Remove
-            </button>
-          </div>
+                  })}
+                </div>
+              </Labeled>
+            </div>
 
-          <Labeled label="Policy type">
-            <select
-              aria-label="Policy type"
-              value={r.policyType}
-              onChange={(e) => update(r._id, { policyType: e.target.value as QsPolicyType })}
-              className={selectClassName}
-            >
-              {POLICY_TYPE_OPTIONS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Labeled>
+            <Labeled label="Policy type">
+              <select
+                aria-label="Policy type"
+                value={r.policyType}
+                onChange={(e) => upd({ policyType: e.target.value as QsPolicyType })}
+                className={selectClassName}
+              >
+                {POLICY_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Labeled>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Labeled label="Face value">
-              <CurrencyInput
-                aria-label="Face value"
-                value={r.faceValue !== 0 ? r.faceValue : ""}
-                onChange={(raw) => update(r._id, { faceValue: raw ? Number(raw) : 0 })}
-              />
-            </Labeled>
-            <Labeled label="Annual premium">
-              <CurrencyInput
-                aria-label="Annual premium"
-                value={r.premiumAmount !== 0 ? r.premiumAmount : ""}
-                onChange={(raw) => update(r._id, { premiumAmount: raw ? Number(raw) : 0 })}
-              />
-            </Labeled>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Labeled label="Premium years">
-              <input
-                type="number"
-                aria-label="Premium years"
-                min={1}
-                value={r.premiumYears ?? ""}
-                onChange={(e) =>
-                  update(r._id, {
-                    premiumYears: e.target.value ? Number(e.target.value) : undefined,
-                  })
-                }
-                className={inputClassName}
-              />
-            </Labeled>
-            <Labeled label="Ends at retirement">
-              <div className="flex h-9 items-center">
-                <input
-                  type="checkbox"
-                  aria-label="Ends at retirement"
-                  checked={r.endsAtInsuredRetirement ?? false}
-                  onChange={(e) => update(r._id, { endsAtInsuredRetirement: e.target.checked })}
-                  className="h-4 w-4 rounded border-hair accent-accent"
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Labeled label="Face value">
+                <CurrencyInput
+                  aria-label="Face value"
+                  value={r.faceValue || ""}
+                  onChange={(raw) => upd({ faceValue: raw ? Number(raw) : 0 })}
                 />
-              </div>
-            </Labeled>
+              </Labeled>
+              <Labeled label="Annual premium">
+                <CurrencyInput
+                  aria-label="Annual premium"
+                  value={r.premiumAmount || ""}
+                  onChange={(raw) => upd({ premiumAmount: raw ? Number(raw) : 0 })}
+                />
+              </Labeled>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Labeled label="Premium years">
+                <input
+                  type="number"
+                  aria-label="Premium years"
+                  min={1}
+                  value={r.premiumYears ?? ""}
+                  onChange={(e) =>
+                    upd({ premiumYears: e.target.value ? Number(e.target.value) : undefined })
+                  }
+                  className={inputClassName}
+                />
+              </Labeled>
+              <Labeled label="Ends at retirement">
+                <div className="flex h-9 items-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Ends at retirement"
+                    checked={r.endsAtInsuredRetirement ?? false}
+                    onChange={(e) => upd({ endsAtInsuredRetirement: e.target.checked })}
+                    className="h-4 w-4 rounded border-hair accent-accent"
+                  />
+                </div>
+              </Labeled>
+            </div>
+
+            {r.policyType === "term" && (
+              <Labeled label="Term length (years)">
+                <input
+                  type="number"
+                  aria-label="Term length"
+                  min={1}
+                  value={r.termLengthYears ?? ""}
+                  onChange={(e) =>
+                    upd({
+                      termLengthYears: e.target.value ? Number(e.target.value) : undefined,
+                    })
+                  }
+                  className={inputClassName}
+                />
+              </Labeled>
+            )}
           </div>
-
-          {r.policyType === "term" && (
-            <Labeled label="Term length (years)">
-              <input
-                type="number"
-                aria-label="Term length"
-                min={1}
-                value={r.termLengthYears ?? ""}
-                onChange={(e) =>
-                  update(r._id, {
-                    termLengthYears: e.target.value ? Number(e.target.value) : undefined,
-                  })
-                }
-                className={inputClassName}
-              />
-            </Labeled>
-          )}
-        </div>
-      ))}
-
-      <button
-        type="button"
-        onClick={add}
-        className="rounded-[var(--radius-sm)] border border-dashed border-hair px-4 py-2 text-[13px] font-medium text-ink-2 transition-colors hover:border-accent hover:text-accent"
-      >
-        + Add policy
-      </button>
+        )}
+      />
     </div>
   );
 }

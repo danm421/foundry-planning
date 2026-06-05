@@ -2,6 +2,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ExpensesStep } from "../expenses-step";
+import { useLiftedList } from "@/lib/quick-start/use-lifted-list";
+import type { LiabilityRow } from "@/lib/quick-start/liability-save";
+import type { OtherExpenseRow } from "@/lib/quick-start/other-expense-save";
 import { buildQsContext } from "@/lib/quick-start/derive";
 import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
 import { mockFetch, findCall } from "./fetch-mock";
@@ -25,6 +28,27 @@ const bootstrap = {
   expenseStubs: { currentId: "cur-1", retirementId: "ret-1" },
 } as unknown as QsBootstrap;
 
+function Mount({
+  onRegisterSave,
+}: {
+  onRegisterSave?: (fn: () => Promise<void>) => void;
+}) {
+  const liabilityList = useLiftedList<LiabilityRow>();
+  const otherExpenseList = useLiftedList<OtherExpenseRow>();
+  return (
+    <ExpensesStep
+      ctx={ctx}
+      bootstrap={bootstrap}
+      busy={false}
+      registerSave={(fn) => {
+        onRegisterSave?.(fn);
+      }}
+      liabilityList={liabilityList}
+      otherExpenseList={otherExpenseList}
+    />
+  );
+}
+
 describe("ExpensesStep", () => {
   let saveFn: () => Promise<void>;
   let fetchMock: ReturnType<typeof mockFetch>;
@@ -35,16 +59,7 @@ describe("ExpensesStep", () => {
   });
 
   function renderStep() {
-    render(
-      <ExpensesStep
-        ctx={ctx}
-        bootstrap={bootstrap}
-        busy={false}
-        registerSave={(fn) => {
-          saveFn = fn;
-        }}
-      />,
-    );
+    render(<Mount onRegisterSave={(fn) => { saveFn = fn; }} />);
   }
 
   it("PUTs both expense stubs", async () => {
@@ -77,7 +92,7 @@ describe("ExpensesStep", () => {
       target: { value: "60000" },
     });
 
-    // Add a liability
+    // Add a liability — new row auto-opens
     fireEvent.click(screen.getByRole("button", { name: /add liability/i }));
     fireEvent.change(screen.getByLabelText("Liability name"), {
       target: { value: "Mortgage" },

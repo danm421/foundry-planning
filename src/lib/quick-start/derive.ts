@@ -170,13 +170,13 @@ export function ssPatch(input: { monthlyBenefit?: number; claimingAge?: number }
   };
 }
 
-const ACCOUNT_LABEL: Record<QsAccountDraft["kind"], string> = {
+export const ACCOUNT_LABEL: Record<QsAccountDraft["kind"], string> = {
   cash: "Cash",
   taxable: "Taxable",
   retirement: "Retirement",
   real_estate: "Real estate",
 };
-const RETIREMENT_LABEL: Record<NonNullable<QsAccountDraft["subType"]>, string> = {
+export const RETIREMENT_LABEL: Record<NonNullable<QsAccountDraft["subType"]>, string> = {
   traditional_ira: "Traditional IRA",
   roth_ira: "Roth IRA",
   "401k": "401(k)",
@@ -325,7 +325,7 @@ export function savingsPayload(draft: QsSavingsDraft, ctx: QsContext) {
   };
 }
 
-const POLICY_LABEL: Record<QsInsuranceDraft["policyType"], string> = {
+export const POLICY_LABEL: Record<QsInsuranceDraft["policyType"], string> = {
   term: "Term",
   whole: "Whole",
   universal: "Universal",

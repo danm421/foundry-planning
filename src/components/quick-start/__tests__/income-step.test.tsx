@@ -1,77 +1,60 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { useMemo } from "react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect } from "vitest";
 import { IncomeStep } from "../income-step";
-import { buildQsContext } from "@/lib/quick-start/derive";
-import type { QsBootstrap } from "@/lib/quick-start/bootstrap";
-import { mockFetch, findCall } from "./fetch-mock";
+import { useLiftedList } from "@/lib/quick-start/use-lifted-list";
+import type { IncomeRow } from "@/lib/quick-start/income-save";
+import type { QsContext } from "@/lib/quick-start/derive";
 
-const ctx = buildQsContext({
-  client: {
-    dateOfBirth: "1965-04-15",
-    retirementAge: 65,
-    planEndAge: 95,
-    spouseDob: null,
-    spouseRetirementAge: null,
-  },
-  planStartYear: 2026,
-  planEndYear: 2060,
-  clientFirstName: "Alice",
-  spouseFirstName: null,
-  hasSpouse: false,
-});
-const bootstrap = {
-  clientId: "c1",
-  ssStubs: { client: "ss-stub-1", spouse: null },
-} as unknown as QsBootstrap;
+function Mount({ hasSpouse }: { hasSpouse: boolean }) {
+  const ctx = useMemo(
+    () =>
+      ({
+        milestones: {} as QsContext["milestones"],
+        planStartYear: 2026,
+        planEndYear: 2066,
+        clientFirstName: "John",
+        spouseFirstName: hasSpouse ? "Jane" : null,
+        hasSpouse,
+      }) as QsContext,
+    [hasSpouse],
+  );
+  const list = useLiftedList<IncomeRow>((makeId) => {
+    const s: IncomeRow[] = [{ _id: makeId(), kind: "social_security", owner: "client" }];
+    if (hasSpouse) s.push({ _id: makeId(), kind: "social_security", owner: "spouse" });
+    return s;
+  });
+  return (
+    <IncomeStep
+      ctx={ctx}
+      bootstrap={{ clientId: "c1" } as never}
+      busy={false}
+      registerSave={() => {}}
+      list={list}
+    />
+  );
+}
 
 describe("IncomeStep", () => {
-  let saveFn: () => Promise<void>;
-  let fetchMock: ReturnType<typeof mockFetch>;
-  beforeEach(() => {
-    fetchMock = mockFetch();
-    saveFn = async () => {};
-  });
-  function renderStep() {
-    render(
-      <IncomeStep
-        ctx={ctx}
-        bootstrap={bootstrap}
-        busy={false}
-        registerSave={(fn) => {
-          saveFn = fn;
-        }}
-      />,
-    );
-  }
-
-  it("adds a salary and POSTs the derived payload", async () => {
-    renderStep();
-    fireEvent.click(screen.getByRole("button", { name: /add income/i }));
-    // choose salary kind (default), enter amount
-    fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: "200000" } });
-    await saveFn();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const call = findCall((u) => u.endsWith("/incomes"));
-    const body = JSON.parse(call[1].body);
-    expect(body).toMatchObject({
-      type: "salary",
-      name: "Alice - Salary",
-      taxType: "earned_income",
-      annualAmount: 200000,
-      endYearRef: "client_retirement",
-    });
+  it("pre-seeds a Social Security row per person", () => {
+    render(<Mount hasSpouse />);
+    expect(screen.getAllByText("Social Security")).toHaveLength(2);
+    expect(screen.getByText(/John/)).toBeInTheDocument();
+    expect(screen.getByText(/Jane/)).toBeInTheDocument();
   });
 
-  it("PATCHes the SS stub instead of creating a new SS income", async () => {
-    renderStep();
-    fireEvent.click(screen.getByRole("button", { name: /add income/i }));
-    fireEvent.change(screen.getByLabelText(/type/i), { target: { value: "social_security" } });
-    fireEvent.change(screen.getByLabelText(/monthly benefit/i), { target: { value: "3000" } });
-    await saveFn();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const call = findCall((u) => u.includes("/incomes/ss-stub-1"));
-    expect(call[1].method).toBe("PUT");
-    expect(JSON.parse(call[1].body)).toMatchObject({ ssBenefitMode: "pia_at_fra", piaMonthly: 3000 });
+  it("single person seeds one SS row", () => {
+    render(<Mount hasSpouse={false} />);
+    expect(screen.getAllByText("Social Security")).toHaveLength(1);
+  });
+
+  it("Add income appends an editable salary row", async () => {
+    const u = userEvent.setup();
+    render(<Mount hasSpouse={false} />);
+    await u.click(screen.getByRole("button", { name: "+ Add income" }));
+    expect(screen.getByLabelText("Amount")).toBeInTheDocument();
+    expect(screen.getByLabelText("Type")).toBeInTheDocument();
   });
 });
