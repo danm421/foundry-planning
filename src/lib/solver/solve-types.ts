@@ -35,8 +35,9 @@ export interface SolveProgressEvent {
   achievedPoS: number;
 }
 
-/** Terminal event — always exactly one per stream. */
-export interface SolveResultEvent {
+/** PoS-bisection result (retirement-age, living-expense, savings, roth). */
+export interface PoSSolveResult {
+  objective: "pos";
   status: "converged" | "unreachable" | "max-iterations";
   solvedValue: number;
   /** From the 250-trial search (kept for continuity / debug). */
@@ -50,6 +51,24 @@ export interface SolveResultEvent {
    *  lets the saved scenario's report reproduce the exact same PoS. */
   seed: number;
 }
+
+/** Deterministic SS claim-age result: the integer age 62–70 that maximizes the
+ *  final-year liquid portfolio. No Monte Carlo, so no PoS / seed. */
+export interface EndingPortfolioSolveResult {
+  objective: "ending-portfolio";
+  status: "converged"; // a max always exists among the candidate ages
+  /** Winning claim age. */
+  solvedValue: number;
+  /** Winning age's final-year portfolioAssets.liquidTotal. */
+  endingPortfolio: number;
+  /** Every candidate age with its final-year liquidTotal, for display/debug. */
+  candidates: { value: number; endingPortfolio: number }[];
+  /** Winning age's deterministic projection. */
+  finalProjection: ProjectionYear[];
+}
+
+/** Terminal event — always exactly one per stream. */
+export type SolveResultEvent = PoSSolveResult | EndingPortfolioSolveResult;
 
 /** Server-side fatal error. */
 export interface SolveErrorEvent {

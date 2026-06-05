@@ -176,6 +176,36 @@ export function LiveSolverWorkspace({
       // under StrictMode would otherwise call setMutationMap twice).
       const prev = activeSolveRef.current;
       if (!prev) return;
+      if (e.objective === "ending-portfolio") {
+        // Deterministic SS claim-age solve. Apply the winning age, forcing
+        // `years` mode so it takes effect even if the row was in FRA /
+        // at-retirement mode. Leave the PoS gauge stale — exactly like a manual
+        // edit; the advisor re-runs MC on demand for a fresh PoS.
+        if (prev.target.kind !== "ss-claim-age") return;
+        const person = prev.target.person;
+        const modeMutation: SolverMutation = {
+          kind: "ss-claim-age-mode",
+          person,
+          mode: "years",
+        };
+        const ageMutation: SolverMutation = {
+          kind: "ss-claim-age",
+          person,
+          age: e.solvedValue,
+        };
+        setMutationMap((mm) => {
+          const next = new Map(mm);
+          next.set(mutationKey(modeMutation), modeMutation);
+          next.set(mutationKey(ageMutation), ageMutation);
+          return next;
+        });
+        setCurrentProjection(e.finalProjection);
+        setSolvedPoS(null);
+        setSolvedSeed(null);
+        setComputeStatus("stale");
+        setActiveSolve(null);
+        return;
+      }
       // Min-savings write-back: if this solve targeted the synthetic
       // "Additional Savings" account, persist the solved value as a full
       // savings-rule-upsert (carrying fundFromExpenseReduction) rather than the
