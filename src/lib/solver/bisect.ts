@@ -173,8 +173,12 @@ function nextCandidate(
     snapped !== tight &&
     snapped !== loose;
   // Only use the interpolated point if it is at least as far from tight as the
-  // bisection midpoint — this ensures worst-case convergence equals bisection
-  // even on step functions where regula-falsi can converge slower.
+  // bisection midpoint — this guarantees worst-case convergence equals pure
+  // bisection, which is essential for the step-like, noisy PoS curves Monte
+  // Carlo produces (where unguarded regula-falsi can stagnate one-sidedly).
+  // Tradeoff: when the true root sits near the tight (beating) endpoint, this
+  // forgoes regula-falsi's small-step speedup and falls back to bisection rate —
+  // still ≥ the old pure-bisection baseline, just not maximally cheap there.
   if (within && Math.abs(snapped - tight) >= Math.abs(bisectMid - tight)) return snapped;
   // Interpolation degenerate, out of bracket, or too close to tight → bisect.
   return bisectMid;

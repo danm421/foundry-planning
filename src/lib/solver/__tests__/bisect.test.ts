@@ -236,4 +236,17 @@ describe("bisect", () => {
     expect(full.achievedPoS).toBeGreaterThanOrEqual(0.85);
     expect(full.solvedValue).toBeGreaterThan(early.solvedValue);
   });
+
+  it("interpolation reaches a linear root on a descending (d=-1) bracket", async () => {
+    // pos(v) = 2 - v: descending, crosses target 1.30 at v=0.70. tight=lo here
+    // (low v beats), loose=hi. Confirms the interpolation + floor-guard sign
+    // logic works for the loose>tight orientation the living-expense lever uses.
+    const evaluate = vi.fn(async (v: number) => 2 - v);
+    const result = await bisect({
+      lo: 0.5, hi: 1.5, step: 0.01, direction: -1, target: 1.3, evaluate,
+    });
+    expect(result.status).toBe("converged");
+    expect(Math.abs(result.solvedValue - 0.7)).toBeLessThanOrEqual(0.02);
+    expect(result.achievedPoS).toBeGreaterThanOrEqual(1.3);
+  });
 });
