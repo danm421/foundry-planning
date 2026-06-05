@@ -38,16 +38,6 @@ export function retirementLivingExpenseTotal(tree: ClientData): number {
 }
 
 /**
- * Adjust a solved scale factor so the resulting annual retirement living-expense
- * total (`scale * baseTotal`) lands on the nearest $2,000. Returns the scale
- * unchanged when `baseTotal` is 0 (nothing to scale; avoids divide-by-zero).
- */
-export function snapScaleToNearest2k(scale: number, baseTotal: number): number {
-  if (baseTotal <= 0) return scale;
-  return roundToNearest2k(scale * baseTotal) / baseTotal;
-}
-
-/**
  * Build a fresh retirement-phase "living" expense for the given annual amount.
  * Used by the absolute-dollar living-expense solve when the plan has no
  * retirement living-expense row to scale. Year windows are expressed as refs

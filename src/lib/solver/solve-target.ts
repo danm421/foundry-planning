@@ -24,10 +24,7 @@ import { applyMutations } from "./apply-mutations";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
 import { memoizeByValue } from "./eval-cache";
 import { buildLeverMutation, leverSearchConfig } from "./lever-search-config";
-import {
-  retirementLivingExpenseTotal,
-  snapScaleToNearest2k,
-} from "./living-expense";
+import { roundToNearest2k } from "./living-expense";
 import { resolveTechniqueMutations } from "./resolve-technique-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "./solve-types";
 import type { SolverMutation } from "./types";
@@ -115,7 +112,7 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     direction: config.direction,
     target: args.targetPoS,
     // Per-lever override: the living-expense lever sets tolerance:0 so the search
-    // returns the maximum sustainable spend instead of the first scale within
+    // returns the maximum sustainable spend instead of the first value within
     // ±2% of target. Other levers leave it undefined → bisect default 0.02.
     tolerance: config.tolerance,
     // Wide savings/roth levers need ~log2(range/step) bisections; the default 8
@@ -124,15 +121,11 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     evaluate,
   });
 
-  // For the living-expense solve, snap the solved scale so the resulting annual
-  // retirement living-expense total lands on the nearest $2,000. The scale
-  // multiplies the post-baseline tree, so measure the base total off searchTree.
+  // For the living-expense solve, the solved value is annual retirement dollars.
+  // Snap to the nearest $2,000 so the reported sustainable spend is round.
   let solvedValue = bisectResult.solvedValue;
   if (args.target.kind === "living-expense-scale") {
-    solvedValue = snapScaleToNearest2k(
-      solvedValue,
-      retirementLivingExpenseTotal(searchTree),
-    );
+    solvedValue = roundToNearest2k(solvedValue);
   }
 
   // The bisection may have ended on an endpoint or earlier iteration whose
