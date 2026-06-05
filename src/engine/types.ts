@@ -420,6 +420,9 @@ export interface ClientData {
   rothConversions?: RothConversion[];
   /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
   assetTransactions?: AssetTransaction[];
+  /** Equity-compensation plans (stock_options accounts). The engine expands
+   *  grants + strategy into per-year vest/exercise/sale events. */
+  stockOptionPlans?: import("./equity/types").StockOptionPlan[];
   /** Reinvestment techniques — change asset mix / growth rate of accounts in a future year. */
   reinvestments?: Reinvestment[];
   /** Gifts made by the client or spouse. */
