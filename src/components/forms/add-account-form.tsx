@@ -175,7 +175,7 @@ const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
-  annuity: ["fixed", "variable", "indexed", "other"],
+  annuity: ["other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
