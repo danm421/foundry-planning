@@ -180,4 +180,27 @@ describe("bisect", () => {
     expect(deep.status).toBe("converged");
     expect(deep.solvedValue).toBe(73_000);
   });
+
+  it("tolerance:0 returns the HIGHEST scale beating target where the default under-solves", async () => {
+    // The living-expense under-solve bug: PoS sits flat just above target across
+    // a wide band, then cliffs below it. True max scale with PoS ≥ 0.85 is 1.30.
+    // The default ±0.02 tolerance exits at the first midpoint inside [0.83,0.87]
+    // (≈1.0); tolerance:0 collapses the bracket to the real ceiling.
+    const curve = async (v: number) => (v <= 1.305 ? 0.86 : 0.8);
+
+    const early = await bisect({
+      lo: 0.5, hi: 1.5, step: 0.01, direction: -1, target: 0.85,
+      evaluate: curve,
+    });
+    expect(early.solvedValue).toBeLessThan(1.2); // stops early, leaves spend on the table
+
+    const full = await bisect({
+      lo: 0.5, hi: 1.5, step: 0.01, direction: -1, target: 0.85,
+      tolerance: 0, maxIterations: 24, evaluate: curve,
+    });
+    expect(full.status).toBe("converged");
+    expect(full.solvedValue).toBeCloseTo(1.3, 2);
+    expect(full.achievedPoS).toBeGreaterThanOrEqual(0.85);
+    expect(full.solvedValue).toBeGreaterThan(early.solvedValue);
+  });
 });

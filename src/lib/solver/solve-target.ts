@@ -23,6 +23,10 @@ import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import { applyMutations } from "./apply-mutations";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
 import { buildLeverMutation, leverSearchConfig } from "./lever-search-config";
+import {
+  retirementLivingExpenseTotal,
+  snapScaleToNearest2k,
+} from "./living-expense";
 import { resolveTechniqueMutations } from "./resolve-technique-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "./solve-types";
 import type { SolverMutation } from "./types";
@@ -98,17 +102,34 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     step: config.step,
     direction: config.direction,
     target: args.targetPoS,
+    // Per-lever override: the living-expense lever sets tolerance:0 so the search
+    // returns the maximum sustainable spend instead of the first scale within
+    // ±2% of target. Other levers leave it undefined → bisect default 0.02.
+    tolerance: config.tolerance,
     // Wide savings/roth levers need ~log2(range/step) bisections; the default 8
     // exits max-iterations short of the true minimum. (F11/F13/F29)
     maxIterations: WIDE_LEVER_MAX_ITERATIONS,
     evaluate,
   });
 
+  // For the living-expense solve, snap the solved scale so the resulting annual
+  // retirement living-expense total lands on the nearest $2,000. The scale
+  // multiplies the post-baseline tree, so measure the base total off searchTree.
+  let solvedValue = bisectResult.solvedValue;
+  if (args.target.kind === "living-expense-scale") {
+    solvedValue = snapScaleToNearest2k(
+      solvedValue,
+      retirementLivingExpenseTotal(searchTree),
+    );
+  }
+
   // The bisection may have ended on an endpoint or earlier iteration whose
-  // projection isn't the final one we want to return. Re-evaluate at the
-  // solved value if needed so finalProjection reflects the chosen value.
-  if (lastEvaluatedValue !== bisectResult.solvedValue || lastProjection === null) {
-    await evaluate(bisectResult.solvedValue);
+  // projection isn't the final one we want to return — and $2k-snapping may have
+  // nudged the value. Re-evaluate at the final solved value so finalProjection
+  // and achievedPoS reflect exactly what we return.
+  let achievedPoS = bisectResult.achievedPoS;
+  if (lastEvaluatedValue !== solvedValue || lastProjection === null) {
+    achievedPoS = await evaluate(solvedValue);
   }
 
   // Canonical 1,000-trial run on the converged tree so the displayed PoS matches
@@ -131,8 +152,8 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
 
   return {
     status: bisectResult.status,
-    solvedValue: bisectResult.solvedValue,
-    achievedPoS: bisectResult.achievedPoS,
+    solvedValue,
+    achievedPoS,
     canonicalPoS: canonical.successRate,
     iterations: bisectResult.iterations,
     finalProjection: lastProjection!,
