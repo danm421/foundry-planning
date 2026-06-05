@@ -81,6 +81,13 @@ describe("InsuranceStep", () => {
     });
   });
 
+  it("does not throw for an empty term row with no term length", async () => {
+    renderStep();
+    fireEvent.click(screen.getByRole("button", { name: /add policy/i }));
+    // Face value left blank → row is empty → term validation must be skipped.
+    await expect(saveFn()).resolves.toBeUndefined();
+  });
+
   it("throws validation error for term w/o term length", async () => {
     renderStep();
     fireEvent.click(screen.getByRole("button", { name: /add policy/i }));

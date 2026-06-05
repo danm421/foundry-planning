@@ -8,11 +8,14 @@ import type { QsInsuranceStepProps } from "./step-props";
 import { CollapsibleListEditor, type ListColumn } from "./collapsible-list-editor";
 import { Labeled, sendJson, fmtMoney } from "./ui";
 
-const POLICY_LABEL: Record<QsPolicyType, string> = {
-  term: "Term",
-  whole: "Whole",
-  universal: "Universal",
-};
+const POLICY_TYPE_OPTIONS: { value: QsPolicyType; label: string }[] = [
+  { value: "term", label: "Term" },
+  { value: "whole", label: "Whole" },
+  { value: "universal", label: "Universal" },
+];
+const POLICY_LABEL = Object.fromEntries(
+  POLICY_TYPE_OPTIONS.map((o) => [o.value, o.label]),
+) as Record<QsPolicyType, string>;
 
 const COLUMNS: ListColumn[] = [
   { key: "insured", label: "Insured" },
@@ -31,6 +34,8 @@ export function InsuranceStep({ ctx, bootstrap, registerSave, list }: QsInsuranc
     r.insured === "spouse" ? (ctx.spouseFirstName ?? "Spouse") : ctx.clientFirstName;
 
   registerSave(async () => {
+    // Validation runs here, not in the reducer: it throws a user-visible error and
+    // only applies to non-empty rows (a blank default term row must not block Next).
     for (const r of rows) {
       if (isEmptyInsurance(r)) continue;
       if (r.policyType === "term" && !r.endsAtInsuredRetirement && !r.termLengthYears) {
@@ -129,9 +134,9 @@ export function InsuranceStep({ ctx, bootstrap, registerSave, list }: QsInsuranc
                 onChange={(e) => upd({ policyType: e.target.value as QsPolicyType })}
                 className={selectClassName}
               >
-                <option value="term">Term</option>
-                <option value="whole">Whole</option>
-                <option value="universal">Universal</option>
+                {POLICY_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
             </Labeled>
 
