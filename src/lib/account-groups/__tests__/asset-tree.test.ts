@@ -15,9 +15,10 @@ describe("buildAssetTree", () => {
     expect(root.label).toBe("All Assets");
     expect(root.count).toBe(0);
     expect(root.value).toBe(0);
-    // children: all-liquid + 4 illiquid leaves
+    // children: all-liquid + 5 illiquid leaves
     expect(root.children?.map((c) => c.key)).toEqual([
       "all-liquid",
+      "annuity",
       "real_estate",
       "business",
       "life_insurance",

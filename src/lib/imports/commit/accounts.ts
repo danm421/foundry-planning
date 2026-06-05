@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 
-import { accountOwners, accounts } from "@/db/schema";
+import { accountOwners, accounts, lifeInsurancePolicies } from "@/db/schema";
 import {
   RETIREMENT_SUBTYPES,
   validateOwnersShape,
@@ -10,6 +10,13 @@ import {
 import { getExistingId, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
+
+const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "variable"> = {
+  term: "term",
+  whole_life: "whole",
+  universal_life: "universal",
+  variable_life: "variable",
+};
 
 /**
  * Commits the accounts tab. For each annotated row in `payload.accounts`:
@@ -74,6 +81,18 @@ export async function commitAccounts(
         subType,
       );
       await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family, isRetirement);
+      // Defensive: a life-insurance account committed through the accounts
+      // path (older drafts / excel imports) would otherwise have no policy
+      // satellite, so the Insurance tab can't manage it. Net-worth-statement
+      // imports route policies through lifePolicies (commitLifeInsurance) and
+      // never hit this branch.
+      if ((row.category ?? "taxable") === "life_insurance") {
+        await tx.insert(lifeInsurancePolicies).values({
+          accountId: inserted.id,
+          policyType: POLICY_TYPE_BY_SUBTYPE[subType] ?? "whole",
+          faceValue: "0",
+        });
+      }
       result.created += 1;
       continue;
     }

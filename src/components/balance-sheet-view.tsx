@@ -25,7 +25,7 @@ import {
 import { useToast } from "@/components/toast";
 import { refreshClientHoldingPrices } from "@/lib/investments/holdings-client";
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
+type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
 
 export interface AccountRow {
   id: string;
@@ -138,6 +138,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   taxable: "Taxable",
   cash: "Cash",
   retirement: "Retirement",
+  annuity: "Annuity",
   real_estate: "Real Estate",
   business: "Business",
   life_insurance: "Life Insurance",
@@ -148,6 +149,7 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "taxable",
   "cash",
   "retirement",
+  "annuity",
   "real_estate",
   "business",
   "life_insurance",
@@ -160,6 +162,7 @@ const ADDABLE_CATEGORIES: AccountCategory[] = [
   "taxable",
   "cash",
   "retirement",
+  "annuity",
   "real_estate",
   "business",
   "notes_receivable",
@@ -574,6 +577,7 @@ export default function BalanceSheetView({
     taxable: [],
     cash: [],
     retirement: [],
+    annuity: [],
     real_estate: [],
     business: [],
     life_insurance: [],

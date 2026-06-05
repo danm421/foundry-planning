@@ -20,6 +20,15 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Fidelity|Schwab|Vanguard/);
   });
 
+  it("instructs real estate, annuity, and lifePolicies extraction", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("real_estate");
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("primary_residence");
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-06-05.1");
+  });
+
   it("payload with accountNumberLast4 + custodian validates", () => {
     const result = extractedPayloadSchema.safeParse({
       accounts: [

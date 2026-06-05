@@ -241,6 +241,7 @@ const DB_TO_KEY: Record<string, AssetCategoryKey> = {
   cash: "cash",
   taxable: "taxable",
   retirement: "retirement",
+  annuity: "annuity",
   real_estate: "realEstate",
   business: "business",
   life_insurance: "lifeInsurance",
@@ -618,6 +619,42 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const list = inEstateSlicesByCategory.get(slice.category) ?? [];
     list.push(sliceRow);
     inEstateSlicesByCategory.set(slice.category, list);
+  }
+
+  // Consolidated view: collapse the per-owner slices of an account owned
+  // solely by in-estate family members (e.g. a client+spouse joint account)
+  // into a single household "Joint" row. This mirrors eMoney's single Joint
+  // column and removes the duplicate half-value rows that the import's 50/50
+  // owner synthesis would otherwise produce. Single-owner accounts and any
+  // account with an entity slice are left untouched.
+  if (view === "consolidated") {
+    for (const [categoryKey, rows] of inEstateSlicesByCategory) {
+      const byAccount = new Map<string, AssetRow[]>();
+      for (const r of rows) {
+        const list = byAccount.get(r.accountId) ?? [];
+        list.push(r);
+        byAccount.set(r.accountId, list);
+      }
+      const collapsed: AssetRow[] = [];
+      for (const group of byAccount.values()) {
+        const allFamily = group.every((r) => r.ownerEntityId === null);
+        if (group.length > 1 && allFamily) {
+          const first = group[0];
+          collapsed.push({
+            ...first,
+            rowKey: first.accountId,
+            owner: "joint",
+            ownerLabel: "Joint",
+            ownerPercent: 1,
+            value: group.reduce((s, r) => s + r.value, 0),
+            accountHasMultipleOwners: true,
+          });
+        } else {
+          collapsed.push(...group);
+        }
+      }
+      inEstateSlicesByCategory.set(categoryKey, collapsed);
+    }
   }
 
   // ── Fold flat business-entity valuations into the same buckets ──────────

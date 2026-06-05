@@ -130,12 +130,12 @@ describe("buildViewModel (consolidated)", () => {
     ]);
   });
 
-  it("expands joint accounts into per-family-member slices", () => {
+  it("collapses a joint (client+spouse) account into one 'Joint' row in the consolidated view", () => {
     const cash = vm.assetCategories.find((c) => c.key === "cash")!;
-    expect(cash.rows.length).toBe(2); // two slices for the joint cash account
-    const labels = cash.rows.map((r) => r.ownerLabel).sort();
-    expect(labels).toEqual(["Jane", "John"]);
-    expect(cash.rows.every((r) => r.value === 25_000)).toBe(true);
+    expect(cash.rows.length).toBe(1);
+    expect(cash.rows[0].value).toBe(50_000); // full household value, not split
+    expect(cash.rows[0].ownerLabel).toBe("Joint");
+    expect(cash.rows[0].owner).toBe("joint");
   });
 
   it("surfaces irrevocable-trust slices in outOfEstateRows", () => {

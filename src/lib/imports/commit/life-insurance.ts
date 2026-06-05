@@ -79,7 +79,7 @@ export async function commitLifeInsurance(
           category: "life_insurance",
           subType,
           insuredPerson: row.insuredPerson,
-          value: "0",
+          value: row.cashValue != null ? String(row.cashValue) : "0",
           basis: "0",
           source: "extracted",
         })
@@ -117,6 +117,7 @@ export async function commitLifeInsurance(
         category: "life_insurance",
         subType,
         insuredPerson: row.insuredPerson,
+        ...(row.cashValue != null ? { value: String(row.cashValue) } : {}),
         updatedAt: now,
       })
       .where(

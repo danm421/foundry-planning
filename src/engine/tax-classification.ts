@@ -1,7 +1,7 @@
 export interface TransferTaxInput {
-  sourceCategory: "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
+  sourceCategory: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
   sourceSubType: string;
-  targetCategory: "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
+  targetCategory: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
   targetSubType: string;
   amount: number;
   sourceAccountValue: number;

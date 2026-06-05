@@ -1,9 +1,10 @@
 import { and, eq } from "drizzle-orm";
 
-import { liabilities, liabilityOwners } from "@/db/schema";
+import { accounts, liabilities, liabilityOwners } from "@/db/schema";
 
 import { getExistingId, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
+import { matchMortgageToProperty, type PropertyRef } from "./mortgage-link";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 /**
@@ -35,6 +36,19 @@ export async function commitLiabilities(
   const now = new Date();
   const currentYear = now.getUTCFullYear();
 
+  // Real-estate accounts (committed by the accounts tab earlier in this tx, or
+  // by a prior commit) are auto-link candidates for mortgages.
+  const propertyRows = (await tx
+    .select({ id: accounts.id, name: accounts.name })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.clientId, ctx.clientId),
+        eq(accounts.scenarioId, ctx.scenarioId),
+        eq(accounts.category, "real_estate"),
+      ),
+    )) as PropertyRef[];
+
   for (const row of payload.liabilities) {
     const kind = row.match?.kind ?? "new";
 
@@ -56,6 +70,7 @@ export async function commitLiabilities(
             row.monthlyPayment != null ? String(row.monthlyPayment) : "0",
           startYear: row.startYear ?? currentYear,
           termMonths: 360,
+          linkedPropertyId: matchMortgageToProperty(row.name, propertyRows),
         })
         .returning({ id: liabilities.id });
 

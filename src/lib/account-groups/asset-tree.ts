@@ -16,6 +16,7 @@ const LEAF_LABELS: Record<AssetCategory, string> = {
   taxable: "Taxable",
   retirement: "Retirement",
   cash: "Cash",
+  annuity: "Annuity",
   real_estate: "Real Estate",
   business: "Business",
   life_insurance: "Life Insurance",
@@ -24,6 +25,7 @@ const LEAF_LABELS: Record<AssetCategory, string> = {
 
 const LIQUID_CATEGORIES: AssetCategory[] = ["taxable", "retirement", "cash"];
 const ILLIQUID_CATEGORIES: AssetCategory[] = [
+  "annuity",
   "real_estate",
   "business",
   "life_insurance",
