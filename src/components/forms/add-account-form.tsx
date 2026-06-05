@@ -44,7 +44,7 @@ import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 const isRetirementSubType = (st: string) =>
   (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable";
+type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options";
 
 export interface AccountFormInitial {
   id: string;
@@ -122,6 +122,7 @@ export interface CategoryDefaults {
   business: string;
   life_insurance: string;
   notes_receivable: string;
+  stock_options?: string;
 }
 
 export interface AccountFormAutoSaveHandle {
@@ -184,6 +185,7 @@ const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   // this form never renders for that category. Empty list keeps the Record
   // exhaustive without offering a stale subType option.
   notes_receivable: [],
+  stock_options: ["other"],
 };
 
 const SUB_TYPE_LABELS: Record<string, string> = {
@@ -221,6 +223,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   business: "Business",
   life_insurance: "Life Insurance",
   notes_receivable: "Notes Receivable",
+  stock_options: "Stock Options",
 };
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa"]);
@@ -238,6 +241,7 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   // this form never renders for that category. Entry kept only to satisfy
   // Record<AccountCategory, string> exhaustiveness.
   notes_receivable: "Promissory Note",
+  stock_options: "Stock Options",
 };
 
 function uniqueAccountName(base: string, existing: string[]): string {
