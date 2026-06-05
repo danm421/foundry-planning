@@ -22,11 +22,12 @@ export default function ResumeQuickStartBanner({ clientId, step }: Props): React
   async function dismiss() {
     setBusy(true);
     try {
-      await fetch(`/api/clients/${clientId}/quick-start`, {
+      const res = await fetch(`/api/clients/${clientId}/quick-start`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ dismissed: true }),
       });
+      if (!res.ok) throw new Error(`Dismiss failed: ${res.status}`);
       setHidden(true);
       router.refresh();
     } catch {
