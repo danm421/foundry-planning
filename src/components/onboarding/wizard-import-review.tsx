@@ -41,7 +41,7 @@ interface CanonicalRows {
     id: string;
     firstName: string;
     lastName: string | null;
-    householdRole: string;
+    role: string;
   }[];
   entities: { id: string; name: string }[];
 }
@@ -133,7 +133,7 @@ export default function WizardImportReview({
         id: string;
         firstName: string;
         lastName: string | null;
-        householdRole: string;
+        role: string;
       }>(fRes);
       const entitiesRaw = await safeJson<{ id: string; name: string }>(eRes);
       setCanonical({
@@ -143,7 +143,7 @@ export default function WizardImportReview({
           id: f.id,
           firstName: f.firstName,
           lastName: f.lastName,
-          householdRole: f.householdRole,
+          role: f.role,
         })),
         entities: entitiesRaw.map((e) => ({ id: e.id, name: e.name })),
       });
@@ -165,7 +165,7 @@ export default function WizardImportReview({
       opts.push({
         kind: "family_member",
         id: fm.id,
-        label: `${fm.firstName}${last} (${fm.householdRole})`,
+        label: `${fm.firstName}${last} (${fm.role})`,
       });
     }
     for (const e of canonical.entities) {
@@ -173,6 +173,19 @@ export default function WizardImportReview({
     }
     return opts;
   }, [canonical]);
+
+  // Stable reference so the accounts step's owner-seeding effect (keyed on this
+  // array) only re-runs when the roster actually changes, not on every render.
+  const accountFamilyMembers = useMemo(
+    () =>
+      canonical.familyMembers.map((f) => ({
+        id: f.id,
+        role: f.role as "client" | "spouse" | "child" | "other",
+        firstName: f.firstName,
+        lastName: f.lastName,
+      })),
+    [canonical.familyMembers],
+  );
 
   const assetOptions: AssetOption[] = useMemo(() => {
     const opts: AssetOption[] = [
@@ -306,6 +319,8 @@ export default function WizardImportReview({
             }
             candidates={accountCandidates}
             existingAccountsById={existingAccountsById}
+            familyMembers={accountFamilyMembers}
+            entities={canonical.entities}
           />
         )}
         {step === "cash-flow" && (

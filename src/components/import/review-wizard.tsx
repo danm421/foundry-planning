@@ -57,7 +57,7 @@ interface ReviewWizardProps {
 interface CanonicalRows {
   accounts: { id: string; name: string }[];
   liabilities: { id: string; name: string }[];
-  familyMembers: { id: string; firstName: string; lastName: string | null; householdRole: string }[];
+  familyMembers: { id: string; firstName: string; lastName: string | null; role: string }[];
   entities: { id: string; name: string }[];
 }
 
@@ -172,7 +172,7 @@ export default function ReviewWizard({
         id: string;
         firstName: string;
         lastName: string | null;
-        householdRole: string;
+        role: string;
       }>(fRes);
       const entitiesRaw = await safeJson<{ id: string; name: string }>(eRes);
       setCanonical({
@@ -182,7 +182,7 @@ export default function ReviewWizard({
           id: f.id,
           firstName: f.firstName,
           lastName: f.lastName,
-          householdRole: f.householdRole,
+          role: f.role,
         })),
         entities: entitiesRaw.map((e) => ({ id: e.id, name: e.name })),
       });
@@ -204,7 +204,7 @@ export default function ReviewWizard({
       opts.push({
         kind: "family_member",
         id: fm.id,
-        label: `${fm.firstName}${last} (${fm.householdRole})`,
+        label: `${fm.firstName}${last} (${fm.role})`,
       });
     }
     for (const e of canonical.entities) {
@@ -219,11 +219,7 @@ export default function ReviewWizard({
     () =>
       canonical.familyMembers.map((f) => ({
         id: f.id,
-        role: (f.householdRole === "spouse"
-          ? "spouse"
-          : f.householdRole === "client"
-            ? "client"
-            : "other") as "client" | "spouse" | "child" | "other",
+        role: f.role as "client" | "spouse" | "child" | "other",
         firstName: f.firstName,
         lastName: f.lastName,
       })),
