@@ -403,8 +403,10 @@ export function LiveSolverWorkspace({
 
   const handleRecalculate = useCallback(() => {
     if (activeSolve) return; // a solve owns the run while in flight
-    launchMc(false);
-  }, [launchMc, activeSolve]);
+    // If the Base PoS was never cached (e.g. the auto-run failed), re-include
+    // Base so a retry can recover it; once cached, Recalculate is working-only.
+    launchMc(cachedBaseSuccess === null);
+  }, [launchMc, activeSolve, cachedBaseSuccess]);
 
   // Auto-run MC once on first entry so both gauges populate without a click.
   // Never re-fires; after this, edits mark the Scenario stale and the user

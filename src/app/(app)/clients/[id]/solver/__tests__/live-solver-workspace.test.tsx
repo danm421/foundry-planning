@@ -380,4 +380,65 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
       expect(launched?.planIds[0]?.startsWith("working:")).toBe(true);
     });
   });
+
+  it("cached Base % survives a working-only Recalculate", async () => {
+    // Seed a ready result so the component's cached-base effect fires on mount
+    // and sets cachedBaseSuccess=0.8. The Base gauge should show "80%".
+    mcStateRef.current = {
+      status: "ready",
+      result: {
+        perPlan: [
+          { planId: "base:v1", successRate: 0.8 },
+          { planId: "working:v1", successRate: 0.85 },
+        ],
+      },
+    };
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        projection: [{ year: 2026, portfolioAssets: { total: 900_000 } }],
+      }),
+    });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // The Base gauge renders "80%" (Math.round(0.8*100)). The Scenario gauge
+    // renders "85%". Both values are distinct so getByText is unambiguous.
+    expect(screen.getByText("80%")).toBeTruthy();
+
+    // Edit an input → Scenario goes stale → Recalculate overlay appears.
+    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
+    fireEvent.change(cooper, { target: { value: "67" } });
+
+    const recalc = await screen.findByRole("button", { name: /recalculate/i });
+    fireEvent.click(recalc);
+
+    // After a working-only Recalculate the Base "80%" must still be present —
+    // cachedBaseSuccess was set on the first ready run and must not be cleared.
+    // The Base column heading ("Base Facts") plus "80%" both remain visible.
+    expect(screen.getByText("Base Facts")).toBeTruthy();
+    expect(screen.getByText("80%")).toBeTruthy();
+  });
+
+  it("auto-run failure is recoverable: Recalculate re-includes Base while uncached", async () => {
+    // Simulate a failed auto-run: hook starts in error state, so cachedBaseSuccess
+    // is never set. The Scenario gauge is in error → overlay shows immediately.
+    mcStateRef.current = { status: "error" };
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Recalculate overlay appears on error state (no edit needed).
+    const recalc = await screen.findByRole("button", { name: /recalculate/i });
+
+    const callsBefore = mcCalls.length;
+    fireEvent.click(recalc);
+
+    // With the fix: cachedBaseSuccess===null → launchMc(true) → 2 plans (base + working).
+    // Without the fix: launchMc(false) always → 1 plan → toHaveLength(2) fails.
+    await waitFor(() => {
+      const launched = mcCalls.slice(callsBefore).find((c) => c.enabled);
+      expect(launched?.planIds).toHaveLength(2);
+      expect(launched?.planIds.some((id) => id.startsWith("base:"))).toBe(true);
+    });
+  });
 });
