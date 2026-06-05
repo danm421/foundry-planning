@@ -26,6 +26,7 @@ import {
 } from "@/components/presentations/registry";
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
 import { PdfPreviewDialog, slug, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
+import { ensureFreshSummaries, type PageDescriptor } from "@/components/presentations/launcher/ensure-fresh-summaries";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
@@ -105,6 +106,7 @@ export function PresentationsLauncher(props: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
+  const [preparing, setPreparing] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -251,10 +253,46 @@ export function PresentationsLauncher(props: Props) {
     }));
   }
 
+  // Map every page in the current deck to the { descriptor, index } shape
+  // expected by withFreshSummaries. Used by the two full-deck export/preview
+  // sites; per-page sites build a one-element array inline.
+  function allPageDescriptors() {
+    return state.pages.map((p, i) => ({ descriptor: descriptorsFor([p])[0], index: i }));
+  }
+
+  // Before any export/preview, ensure each Retirement Comparison page carries a
+  // fresh AI summary. Writes refreshed text back into options state and returns
+  // the descriptors to send to the export route (with fresh text already
+  // inlined, since dispatched state updates won't be readable synchronously).
+  async function withFreshSummaries(
+    selected: { descriptor: PageDescriptor; index: number }[],
+  ): Promise<PageDescriptor[]> {
+    setError(null);
+    setPreparing(true);
+    try {
+      const { pages, updates, error } = await ensureFreshSummaries(
+        selected.map((s) => s.descriptor),
+        { clientId: props.clientId },
+      );
+      for (const u of updates) {
+        dispatch({
+          type: "updatePageOptions",
+          index: selected[u.index].index,
+          options: u.options,
+        });
+      }
+      if (error) setError(error);
+      return pages;
+    } finally {
+      setPreparing(false);
+    }
+  }
+
   async function handleGenerate() {
     setError(null);
     setGenerating(true);
     try {
+      const fresh = await withFreshSummaries(allPageDescriptors());
       const res = await fetch(
         `/api/clients/${props.clientId}/presentations/export-pdf`,
         {
@@ -269,7 +307,7 @@ export function PresentationsLauncher(props: Props) {
                 state.loadedTemplate?.name,
                 new Date(),
               ),
-            pages: descriptorsFor(state.pages),
+            pages: fresh,
           }),
         },
       );
@@ -371,25 +409,26 @@ export function PresentationsLauncher(props: Props) {
           </button>
           <button
             type="button"
-            disabled={state.pages.length === 0}
-            onClick={() =>
+            disabled={state.pages.length === 0 || preparing}
+            onClick={async () => {
+              const fresh = await withFreshSummaries(allPageDescriptors());
               setPreviewRequest({
                 title: "Full presentation",
                 scenarioId: resolvedScenarioId,
-                pages: descriptorsFor(state.pages),
-              })
-            }
+                pages: fresh,
+              });
+            }}
             className="rounded border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-card-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             Preview full
           </button>
           <button
             type="button"
-            disabled={generateDisabled}
+            disabled={generateDisabled || preparing}
             onClick={handleGenerate}
             className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {generating ? "Generating…" : "Generate PDF"}
+            {preparing ? "Preparing…" : generating ? "Generating…" : "Generate PDF"}
           </button>
         </div>
       </div>
@@ -435,15 +474,21 @@ export function PresentationsLauncher(props: Props) {
                       onRemove={() =>
                         dispatch({ type: "removePage", index: i })
                       }
-                      onPreview={() =>
+                      onPreview={async () => {
+                        const fresh = await withFreshSummaries([
+                          { descriptor: descriptorsFor([p])[0], index: i },
+                        ]);
                         setPreviewRequest({
                           title: PRESENTATION_PAGES[p.pageId].title,
                           scenarioId: resolvedScenarioId,
-                          pages: descriptorsFor([p]),
-                        })
-                      }
+                          pages: fresh,
+                        });
+                      }}
                       onDownload={async () => {
                         const pageTitle = PRESENTATION_PAGES[p.pageId].title;
+                        const fresh = await withFreshSummaries([
+                          { descriptor: descriptorsFor([p])[0], index: i },
+                        ]);
                         const res = await fetch(
                           `/api/clients/${props.clientId}/presentations/export-pdf`,
                           {
@@ -452,7 +497,7 @@ export function PresentationsLauncher(props: Props) {
                             body: JSON.stringify({
                               scenarioId: resolvedScenarioId,
                               filename: `${slug(pageTitle)}.pdf`,
-                              pages: descriptorsFor([p]),
+                              pages: fresh,
                             }),
                           },
                         );
@@ -494,6 +539,12 @@ export function PresentationsLauncher(props: Props) {
         </div>
       </div>
 
+      {preparing && (
+        <p className="mt-3 flex items-center gap-2 text-sm text-ink-3" role="status">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-hair border-t-accent" />
+          Preparing AI summary…
+        </p>
+      )}
       {error && (
         <p className="mt-3 text-sm text-crit" role="alert">
           {error}

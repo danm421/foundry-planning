@@ -12,6 +12,10 @@ interface Props {
 const TONES = ["concise", "detailed", "plain"] as const;
 const LENGTHS = ["short", "medium", "long"] as const;
 
+const label = "text-[11px] uppercase tracking-[0.1em] text-ink-3";
+const field =
+  "rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
+
 export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
   const scenarios = useScenarioOptions();
   const clientId = useClientId();
@@ -40,6 +44,7 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
           tone: value.ai.tone,
           length: value.ai.length,
           customInstructions: value.ai.customInstructions,
+          targetConfidence: value.maxSpend.targetConfidence,
           force,
         }),
       });
@@ -61,56 +66,128 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
 
   return (
     <div className="space-y-3 text-sm text-ink-2">
-      <label className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Comparison scenario (vs Base Case)</span>
-        <select
-          aria-label="Comparison scenario"
-          className="w-full rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
-          value={value.scenarioId}
-          onChange={(e) => onChange({ ...value, scenarioId: e.target.value })}
-        >
-          <option value="">— Select a scenario —</option>
-          {liveScenarios.map((sc) => (
-            <option key={sc.id} value={sc.id}>{sc.name}</option>
-          ))}
-        </select>
-      </label>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* Left column: comparison scenario + display toggles */}
+        <div className="space-y-3">
+          <label className="flex flex-col gap-1">
+            <span className={label}>Comparison scenario (vs Base Case)</span>
+            <select
+              aria-label="Comparison scenario"
+              className={`w-full ${field}`}
+              value={value.scenarioId}
+              onChange={(e) => onChange({ ...value, scenarioId: e.target.value })}
+            >
+              <option value="">— Select a scenario —</option>
+              {liveScenarios.map((sc) => (
+                <option key={sc.id} value={sc.id}>{sc.name}</option>
+              ))}
+            </select>
+          </label>
 
+          <div className="flex flex-col gap-1 rounded border border-hair p-2">
+            <span className={label}>Display</span>
+            {(
+              [
+                ["showPortfolioMatrix", "Show portfolio matrix"],
+                ["showAiSummary", "Show AI summary"],
+                ["showConfidenceRange", "Show range of outcomes"],
+              ] as const
+            ).map(([key, lbl]) => (
+              <label key={key} className="flex items-center gap-2 hover:text-ink">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={value[key]}
+                  onChange={(e) => onChange({ ...value, [key]: e.target.checked })}
+                />
+                <span>{lbl}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Right column: max spending */}
+        <div className="flex flex-col gap-2 rounded border border-hair p-2">
+          <span className={label}>Max spending</span>
+          <label className="flex items-center gap-2 hover:text-ink">
+            <input
+              type="checkbox"
+              className="accent-accent"
+              checked={value.maxSpend.show}
+              onChange={(e) => onChange({ ...value, maxSpend: { ...value.maxSpend, show: e.target.checked } })}
+            />
+            <span>Show max spending</span>
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            <span>Confidence target</span>
+            <select
+              aria-label="Max-spending confidence target"
+              className={field}
+              value={String(value.maxSpend.targetConfidence)}
+              onChange={(e) =>
+                onChange({ ...value, maxSpend: { ...value.maxSpend, targetConfidence: Number(e.target.value) } })
+              }
+            >
+              {["0.75", "0.8", "0.85", "0.9"].map((v) => (
+                <option key={v} value={v}>{`${Math.round(Number(v) * 100)}%`}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {/* Full-width AI summary */}
       <div className="flex flex-col gap-2 rounded border border-hair p-2">
-        <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">AI summary</span>
-        <label className="flex items-center justify-between gap-2">
-          <span>Tone</span>
-          <select
-            aria-label="AI tone"
-            className="rounded border border-hair bg-card-2 px-2 py-1 text-ink"
-            value={value.ai.tone}
-            onChange={(e) => onChange({ ...value, ai: { ...value.ai, tone: e.target.value as RetirementComparisonOptions["ai"]["tone"] } })}
-          >
-            {TONES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </label>
-        <label className="flex items-center justify-between gap-2">
-          <span>Length</span>
-          <select
-            aria-label="AI length"
-            className="rounded border border-hair bg-card-2 px-2 py-1 text-ink"
-            value={value.ai.length}
-            onChange={(e) => onChange({ ...value, ai: { ...value.ai, length: e.target.value as RetirementComparisonOptions["ai"]["length"] } })}
-          >
-            {LENGTHS.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-        </label>
+        <span className={label}>AI summary</span>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="flex items-center justify-between gap-2">
+            <span>Tone</span>
+            <select
+              aria-label="AI tone"
+              className={field}
+              value={value.ai.tone}
+              onChange={(e) => onChange({ ...value, ai: { ...value.ai, tone: e.target.value as RetirementComparisonOptions["ai"]["tone"] } })}
+            >
+              {TONES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            <span>Length</span>
+            <select
+              aria-label="AI length"
+              className={field}
+              value={value.ai.length}
+              onChange={(e) => onChange({ ...value, ai: { ...value.ai, length: e.target.value as RetirementComparisonOptions["ai"]["length"] } })}
+            >
+              {LENGTHS.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </label>
+        </div>
+
         <label className="flex flex-col gap-1">
           <span>Custom instructions</span>
           <textarea
             aria-label="AI custom instructions"
-            className="w-full rounded border border-hair bg-card-2 px-2 py-1 text-ink"
+            className={`w-full ${field}`}
             rows={2}
             maxLength={2000}
             value={value.ai.customInstructions}
             onChange={(e) => onChange({ ...value, ai: { ...value.ai, customInstructions: e.target.value } })}
           />
         </label>
+
+        <label className="flex flex-col gap-1">
+          <span>Summary</span>
+          <textarea
+            aria-label="AI summary text"
+            className={`w-full resize-y ${field}`}
+            rows={8}
+            placeholder="No summary yet — it's generated automatically when you preview or download, or click Generate."
+            value={value.ai.generatedText}
+            onChange={(e) => onChange({ ...value, ai: { ...value.ai, generatedText: e.target.value } })}
+          />
+        </label>
+
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -133,50 +210,6 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
           ) : null}
         </div>
         {error ? <span className="text-[11px] text-crit">{error}</span> : null}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        {([["showPortfolioMatrix", "Show portfolio matrix"], ["showAiSummary", "Show AI summary"], ["showConfidenceRange", "Show range of outcomes"]] as const).map(
-          ([key, lbl]) => (
-            <label key={key} className="flex items-center gap-2 hover:text-ink">
-              <input
-                type="checkbox"
-                className="accent-accent"
-                checked={value[key]}
-                onChange={(e) => onChange({ ...value, [key]: e.target.checked })}
-              />
-              <span>{lbl}</span>
-            </label>
-          ),
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2 rounded border border-hair p-2">
-        <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Max spending</span>
-        <label className="flex items-center gap-2 hover:text-ink">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value.maxSpend.show}
-            onChange={(e) => onChange({ ...value, maxSpend: { ...value.maxSpend, show: e.target.checked } })}
-          />
-          <span>Show max spending</span>
-        </label>
-        <label className="flex items-center justify-between gap-2">
-          <span>Confidence target</span>
-          <select
-            aria-label="Max-spending confidence target"
-            className="rounded border border-hair bg-card-2 px-2 py-1 text-ink"
-            value={String(value.maxSpend.targetConfidence)}
-            onChange={(e) =>
-              onChange({ ...value, maxSpend: { ...value.maxSpend, targetConfidence: Number(e.target.value) } })
-            }
-          >
-            {["0.75", "0.8", "0.85", "0.9"].map((v) => (
-              <option key={v} value={v}>{`${Math.round(Number(v) * 100)}%`}</option>
-            ))}
-          </select>
-        </label>
       </div>
     </div>
   );
