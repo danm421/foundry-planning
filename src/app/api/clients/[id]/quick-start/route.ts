@@ -47,7 +47,7 @@ export async function PATCH(
     await db
       .update(clients)
       .set({ quickStartState: next, updatedAt: new Date() })
-      .where(eq(clients.id, id));
+      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
     await recordAudit({
       firmId,
