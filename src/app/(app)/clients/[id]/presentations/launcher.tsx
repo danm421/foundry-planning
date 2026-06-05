@@ -40,10 +40,35 @@ import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-opt
 interface Props {
   clientId: string;
   currentUserId: string;
+  clientLastName: string;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
   initialTemplates: { shared: LoadedTemplate[]; mine: LoadedTemplate[] };
   investmentCatalog: InvestmentOptionCatalog;
+}
+
+/**
+ * Default download name when the Filename field is left blank:
+ * `Lastname_TemplateName_YYYY-MM-DD-HHmm.pdf`. Underscores delimit the three
+ * segments, so any underscore/path/quote characters inside a segment are
+ * folded to dashes; segments are capped to keep the whole name under the
+ * export route's 120-char filename limit. Falls back to "Client" /
+ * "Presentation" when the last name or loaded template is unavailable.
+ */
+function buildAutoFilename(
+  lastName: string,
+  templateName: string | undefined,
+  now: Date,
+): string {
+  const sanitize = (s: string) =>
+    s.replace(/[/\\:*?"<>|\r\n;_]+/g, "-").replace(/\s+/g, " ").trim();
+  const last = sanitize(lastName).slice(0, 40) || "Client";
+  const tpl = sanitize(templateName ?? "").slice(0, 50) || "Presentation";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp =
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  return `${last}_${tpl}_${stamp}.pdf`;
 }
 
 function makeInitialState(): LauncherState {
@@ -237,7 +262,13 @@ export function PresentationsLauncher(props: Props) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             scenarioId: resolvedScenarioId,
-            filename: state.filename || undefined,
+            filename:
+              state.filename.trim() ||
+              buildAutoFilename(
+                props.clientLastName,
+                state.loadedTemplate?.name,
+                new Date(),
+              ),
             pages: descriptorsFor(state.pages),
           }),
         },
@@ -265,6 +296,13 @@ export function PresentationsLauncher(props: Props) {
   const generateDisabled = generating || state.pages.length === 0;
   const isLoadedTemplateMine =
     state.loadedTemplate?.createdByUserId === props.currentUserId;
+
+  // Shown as the Filename placeholder so advisors see what "auto" produces.
+  const autoFilename = buildAutoFilename(
+    props.clientLastName,
+    state.loadedTemplate?.name,
+    new Date(),
+  );
 
   return (
     <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId }}>
@@ -296,10 +334,24 @@ export function PresentationsLauncher(props: Props) {
             onChange={(e) =>
               dispatch({ type: "setFilename", value: e.target.value })
             }
-            placeholder="(auto)"
+            placeholder={autoFilename}
+            title={`Leave blank to auto-name: ${autoFilename}`}
             className="rounded border border-hair bg-card-2 px-2 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
         </label>
+        <AddPageButton
+          counts={state.pages.reduce<Record<string, number>>((acc, p) => {
+            acc[p.pageId] = (acc[p.pageId] ?? 0) + 1;
+            return acc;
+          }, {})}
+          onAdd={(id) =>
+            dispatch({
+              type: "addPage",
+              pageId: id,
+              options: PRESENTATION_PAGES[id].defaultOptions,
+            })
+          }
+        />
         <div className="flex items-center gap-2">
           {state.loadedTemplate && state.isModified && isLoadedTemplateMine && (
             <button
@@ -425,19 +477,6 @@ export function PresentationsLauncher(props: Props) {
               </SortableContext>
             </DndContext>
           )}
-          <AddPageButton
-            counts={state.pages.reduce<Record<string, number>>((acc, p) => {
-              acc[p.pageId] = (acc[p.pageId] ?? 0) + 1;
-              return acc;
-            }, {})}
-            onAdd={(id) =>
-              dispatch({
-                type: "addPage",
-                pageId: id,
-                options: PRESENTATION_PAGES[id].defaultOptions,
-              })
-            }
-          />
         </div>
 
         <div>

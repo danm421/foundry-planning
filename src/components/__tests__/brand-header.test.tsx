@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-
 import BrandHeader from "../brand-header";
+import { SidebarProvider } from "../sidebar-provider";
 
 describe("BrandHeader", () => {
   it("renders the Foundry mark and product name", () => {
@@ -29,7 +26,11 @@ describe("BrandHeader", () => {
   });
 
   it("hides the text stack when collapsed", () => {
-    const { container } = render(<BrandHeader collapsed firmName="Westford" />);
+    const { container } = render(
+      <SidebarProvider initialCollapsed>
+        <BrandHeader firmName="Westford" />
+      </SidebarProvider>,
+    );
     const textStack = container.querySelector('[data-testid="brand-text"]');
     expect(textStack?.className).toContain("hidden");
   });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { getCrmHousehold } from "@/lib/crm/households";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import type { FirmMember } from "@/lib/crm-tasks/members";
@@ -52,22 +53,34 @@ export function HouseholdDetail({
     (TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "overview"),
   );
 
+  const planningHref = household.planningClient
+    ? `/clients/${household.planningClient.id}/overview`
+    : `/clients/new?crmHouseholdId=${household.id}`;
+
   return (
     <div className="p-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-ink">{household.name}</h1>
           <div className="mt-1 text-sm text-ink-3">
             Status: {STATUS_LABELS[household.status] ?? household.status}
           </div>
         </div>
-        {canManage && (
-          <HouseholdTrashActions
-            householdId={household.id}
-            householdName={household.name}
-            deleted={Boolean(household.deletedAt)}
-          />
-        )}
+        <div className="flex items-center gap-2">
+          <Link
+            href={planningHref}
+            className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] bg-accent px-3.5 py-2 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep"
+          >
+            {household.planningClient ? "Access planning" : "Start planning"}
+          </Link>
+          {canManage && (
+            <HouseholdTrashActions
+              householdId={household.id}
+              householdName={household.name}
+              deleted={Boolean(household.deletedAt)}
+            />
+          )}
+        </div>
       </div>
 
       {household.deletedAt && (

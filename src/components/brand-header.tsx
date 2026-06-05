@@ -1,22 +1,24 @@
+"use client";
+
 import type { ReactElement } from "react";
 import BrandMarkToggle from "./brand-mark-toggle";
+import { useSidebar } from "./sidebar-provider";
 
 interface BrandHeaderProps {
   firmName?: string;
-  collapsed?: boolean;
 }
 
 export default function BrandHeader({
   firmName,
-  collapsed = false,
 }: BrandHeaderProps): ReactElement {
+  const { collapsed } = useSidebar();
   return (
     <div
       className={`flex items-center gap-3 border-b border-hair py-4 ${
         collapsed ? "justify-center px-2" : "px-[var(--pad-card)]"
       }`}
     >
-      <BrandMarkToggle collapsed={collapsed} />
+      <BrandMarkToggle />
       <div
         data-testid="brand-text"
         className={collapsed ? "hidden" : "flex flex-col gap-1.5"}

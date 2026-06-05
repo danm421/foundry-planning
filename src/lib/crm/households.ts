@@ -3,6 +3,7 @@ import {
   accounts,
   clients,
   crmHouseholds,
+  crmHouseholdContacts,
   crmHouseholdViews,
   scenarios,
 } from "@/db/schema";
@@ -203,30 +204,70 @@ function ownerDisplayName(o: {
 
 export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
   const firmId = await requireOrgId();
-  const [created] = await db
-    .insert(crmHouseholds)
-    .values({
-      firmId,
-      advisorId: input.advisorId,
-      name: input.name,
-      status: input.status ?? "prospect",
-      notes: input.notes,
-    })
-    .returning();
 
+  // Insert the household and any inline contacts atomically, so a failed
+  // contact insert never leaves an orphan household behind.
+  const { household, contacts } = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(crmHouseholds)
+      .values({
+        firmId,
+        advisorId: input.advisorId,
+        name: input.name,
+        status: input.status ?? "prospect",
+        notes: input.notes,
+      })
+      .returning();
+
+    const insertedContacts: (typeof crmHouseholdContacts.$inferSelect)[] = [];
+    for (const c of input.contacts ?? []) {
+      const [contact] = await tx
+        .insert(crmHouseholdContacts)
+        .values({
+          householdId: created.id,
+          role: c.role,
+          firstName: c.firstName,
+          lastName: c.lastName,
+          dateOfBirth: c.dateOfBirth,
+        })
+        .returning();
+      insertedContacts.push(contact);
+    }
+
+    return { household: created, contacts: insertedContacts };
+  });
+
+  // Audit + activity are side records written with the global `db` after the
+  // transaction commits (recordAudit/recordActivity don't accept a tx handle).
   await recordAudit({
     action: "crm.household.create",
     resourceType: "crm_household",
-    resourceId: created.id,
+    resourceId: household.id,
     firmId,
   });
   await recordActivity({
-    householdId: created.id,
+    householdId: household.id,
     kind: "note",
     title: "Household created",
     occurredAt: new Date(),
   });
-  return created;
+  for (const contact of contacts) {
+    await recordAudit({
+      action: "crm.contact.create",
+      resourceType: "crm_contact",
+      resourceId: contact.id,
+      firmId,
+    });
+    await recordActivity({
+      householdId: household.id,
+      kind: "contact_change",
+      title: `Added ${contact.role}: ${contact.firstName} ${contact.lastName}`,
+      metadata: { contactId: contact.id, role: contact.role },
+      occurredAt: new Date(),
+    });
+  }
+
+  return household;
 }
 
 export async function updateCrmHousehold(

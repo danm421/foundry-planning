@@ -2,12 +2,10 @@
 
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
+import { useSidebar } from "./sidebar-provider";
 
-interface UserMenuProps {
-  collapsed?: boolean;
-}
-
-export default function UserMenu({ collapsed = false }: UserMenuProps): ReactElement {
+export default function UserMenu(): ReactElement {
+  const { collapsed } = useSidebar();
   return (
     <div
       className={

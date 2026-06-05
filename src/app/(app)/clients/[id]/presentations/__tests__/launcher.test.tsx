@@ -31,6 +31,7 @@ describe("PresentationsLauncher", () => {
       <PresentationsLauncher
         clientId="c1"
         currentUserId="me"
+        clientLastName="Sample"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
@@ -51,6 +52,7 @@ describe("PresentationsLauncher", () => {
       <PresentationsLauncher
         clientId="c1"
         currentUserId="me"
+        clientLastName="Sample"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
@@ -71,6 +73,7 @@ describe("PresentationsLauncher", () => {
       <PresentationsLauncher
         clientId="c1"
         currentUserId="me"
+        clientLastName="Sample"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
@@ -93,6 +96,7 @@ describe("PresentationsLauncher", () => {
       <PresentationsLauncher
         clientId="c1"
         currentUserId="me"
+        clientLastName="Sample"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}

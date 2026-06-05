@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import DialogShell from "@/components/dialog-shell";
 import {
   PRESENTATION_PAGES,
   type PresentationPageId,
@@ -75,20 +76,23 @@ export function SelectedPageRow(props: Props) {
         >
           Download
         </button>
-        {Options && (
-          <button
-            type="button"
-            className={`rounded px-2 py-1 text-xs transition-colors ${
-              showOptions
+        <button
+          type="button"
+          disabled={!Options}
+          aria-label={`Options for ${page.title}`}
+          title={Options ? undefined : "This page has no options"}
+          className={`rounded px-2 py-1 text-xs transition-colors ${
+            !Options
+              ? "cursor-not-allowed text-ink-4"
+              : showOptions
                 ? "bg-card-hover text-ink"
                 : "text-ink-3 hover:bg-card-hover hover:text-ink"
-            }`}
-            onClick={() => setShowOptions((v) => !v)}
-          >
-            Options
-          </button>
-        )}
-        {page.supportsScenarioOverride && (
+          }`}
+          onClick={() => setShowOptions((v) => !v)}
+        >
+          Options
+        </button>
+        {page.supportsScenarioOverride ? (
           <ScenarioPickerDropdown
             value={scenarioSelectValue}
             onChange={(v) =>
@@ -103,12 +107,19 @@ export function SelectedPageRow(props: Props) {
               value: DEFAULT_OVERRIDE,
               label: `Default (${props.deckScenarioLabel})`,
             }}
-            className={`max-w-[13rem] rounded border bg-paper px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+            className={`w-[13rem] rounded border bg-paper px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
               hasOverride
                 ? "border-accent text-accent"
                 : "border-hair text-ink-3 hover:border-hair-2 hover:text-ink"
             }`}
           />
+        ) : (
+          <div
+            title="This page always uses the base plan"
+            className="w-[13rem] cursor-not-allowed select-none rounded border border-hair bg-paper/50 px-2 py-1 text-xs text-ink-4"
+          >
+            Base plan
+          </div>
         )}
         <button
           type="button"
@@ -119,13 +130,19 @@ export function SelectedPageRow(props: Props) {
           ✕
         </button>
       </div>
-      {showOptions && Options && (
-        <div className="border-t border-hair pt-2">
+      {Options && (
+        <DialogShell
+          open={showOptions}
+          onOpenChange={setShowOptions}
+          title={`${page.title} options`}
+          size="md"
+          primaryAction={{ label: "Done", onClick: () => setShowOptions(false) }}
+        >
           <Options
             value={props.options as never}
             onChange={(v) => props.onOptionsChange(v)}
           />
-        </div>
+        </DialogShell>
       )}
     </div>
   );
