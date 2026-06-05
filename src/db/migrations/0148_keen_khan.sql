@@ -1,0 +1,1 @@
+ALTER TABLE "scenario_changes" ADD COLUMN "label" text;
