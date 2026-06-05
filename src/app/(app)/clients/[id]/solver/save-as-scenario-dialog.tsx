@@ -83,7 +83,7 @@ function describeMutation(m: SolverMutation): string {
     case "living-expense-scale":
       return `Living expenses scaled × ${m.multiplier.toFixed(2)}`;
     case "living-expense-amount":
-      return `Retirement living expense → $${Math.round(m.amount).toLocaleString()}/yr`;
+      return `Retirement living expense → $${m.amount.toLocaleString()}/yr`;
     case "expense-annual-amount":
       return `Expense (${m.expenseId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
     case "income-annual-amount":

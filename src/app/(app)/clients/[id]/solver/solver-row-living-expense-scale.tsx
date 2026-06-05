@@ -83,7 +83,7 @@ export function SolverRowLivingExpenseScale({
           maxIterations={14}
           candidateValue={activeSolve.candidateValue}
           achievedPoS={activeSolve.achievedPoS}
-          valueFormatter={(v) => `$${Math.round(v).toLocaleString()}`}
+          valueFormatter={formatCurrency}
           onCancel={onSolveCancel}
         />
       ) : (
