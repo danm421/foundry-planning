@@ -4,7 +4,7 @@
 //
 // Single change row inside <ChangesPanel>'s ungrouped (and, in Task 19,
 // toggle-group) sections. Shows op glyph + per-change toggle + label + subtext
-// + a hover-revealed revert button.
+// + a hover-revealed delete button with a confirm popover.
 //
 // The toggle PATCHes `{ enabled }` against
 // `/api/clients/[id]/scenarios/[sid]/changes/[cid]` and calls `router.refresh()`
@@ -17,7 +17,7 @@
 // `/api/clients/[id]/scenarios/[sid]/changes?kind=&target=&op=` — the same
 // route the writer hook uses for revert.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TrashIcon } from "@/components/icons";
 import type { ScenarioChange } from "@/engine/scenario/types";
@@ -112,15 +112,26 @@ export function ChangesPanelLeafRow({
         <div className="text-sm text-ink truncate">{labelFor(change, targetName, customLabel)}</div>
         <div className="text-xs text-ink-3 truncate">{subtextFor(change)}</div>
       </div>
-      <button
-        type="button"
-        onClick={handleRevert}
-        className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 text-ink hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded p-1 shrink-0"
-        aria-label="Revert change"
-        title="Revert this change"
-      >
-        <TrashIcon width={14} height={14} aria-hidden="true" />
-      </button>
+      <div className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setMenuState("confirming")}
+          className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 text-ink hover:text-crit focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded p-1"
+          aria-label="Delete change"
+          title="Delete this change"
+        >
+          <TrashIcon width={14} height={14} aria-hidden="true" />
+        </button>
+        {menuState === "confirming" && (
+          <ConfirmDeletePopover
+            onCancel={() => setMenuState("idle")}
+            onConfirm={() => {
+              setMenuState("idle");
+              void handleRevert();
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -154,6 +165,57 @@ function ToggleSwitch({
         aria-hidden="true"
       />
     </button>
+  );
+}
+
+function ConfirmDeletePopover({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onCancel();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onCancel]);
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Confirm delete"
+      className="absolute right-0 top-full mt-1 z-20 w-44 rounded-md border border-hair bg-card shadow-lg p-3 text-left"
+    >
+      <div className="text-xs text-ink mb-2">Delete this change?</div>
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-2 h-6 rounded text-[11px] text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="px-2 h-6 rounded bg-crit text-white text-[11px] font-medium hover:opacity-90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
   );
 }
 

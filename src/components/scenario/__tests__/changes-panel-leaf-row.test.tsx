@@ -76,27 +76,61 @@ describe("ChangesPanelLeafRow", () => {
     ).toBeInTheDocument();
   });
 
-  it("clicking ↶ revert calls fetch with DELETE on the changes route", async () => {
-    const change = makeChange({
-      opType: "edit",
-      targetKind: "income",
-      targetId: "target-uuid",
-      payload: { annualAmount: { from: 1, to: 2 } },
+  describe("delete confirmation", () => {
+    it("does not delete on first trash click; shows a confirm popover", () => {
+      render(
+        <ChangesPanelLeafRow
+          clientId="c1"
+          scenarioId="s1"
+          enabled={true}
+          change={makeChange()}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Delete change"));
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(screen.getByText(/delete this change\?/i)).toBeInTheDocument();
     });
-    render(
-      <ChangesPanelLeafRow clientId="client-x" scenarioId="scenario-y" enabled={true} change={change} />,
-    );
-    fireEvent.click(screen.getByLabelText("Revert change"));
 
-    await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    it("Cancel dismisses the popover without deleting", () => {
+      render(
+        <ChangesPanelLeafRow
+          clientId="c1"
+          scenarioId="s1"
+          enabled={true}
+          change={makeChange()}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Delete change"));
+      fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(screen.queryByText(/delete this change\?/i)).toBeNull();
     });
-    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(
-      "/api/clients/client-x/scenarios/scenario-y/changes?kind=income&target=target-uuid&op=edit",
-    );
-    expect(init).toEqual({ method: "DELETE" });
-    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+
+    it("confirming Delete fires the DELETE request on the changes route", async () => {
+      const change = makeChange({
+        opType: "edit",
+        targetKind: "income",
+        targetId: "target-uuid",
+        payload: { annualAmount: { from: 1, to: 2 } },
+      });
+      render(
+        <ChangesPanelLeafRow
+          clientId="client-x"
+          scenarioId="scenario-y"
+          enabled={true}
+          change={change}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Delete change"));
+      fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+      const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(String(url)).toContain(
+        "/api/clients/client-x/scenarios/scenario-y/changes?",
+      );
+      expect(init).toMatchObject({ method: "DELETE" });
+      await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+    });
   });
 
   it("uses targetName prop when provided (op=edit case where payload has no name)", () => {
