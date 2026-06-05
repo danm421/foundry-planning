@@ -19,6 +19,7 @@ import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
 import { clientCreateSchema, clientContactInfoSchema } from "@/lib/schemas/resources";
 import { recordAudit } from "@/lib/audit";
+import { recordHouseholdOpen } from "@/lib/crm/households";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 
 // Contact fields the POST body may carry. We extract them from the parsed
@@ -349,6 +350,18 @@ export async function POST(request: NextRequest) {
       firmId,
       metadata: { firstName, lastName, crmHouseholdId },
     });
+
+    // Surface the just-created household in this advisor's "Recently opened"
+    // clients view (the default list). That view is driven by crm_household_views,
+    // which is otherwise only written when a row-action pill hits /open — and the
+    // brand-new-household create flows never click a pill. Record the open here at
+    // the creation chokepoint so the household shows up immediately. Non-fatal: a
+    // view-write failure must not fail client creation.
+    try {
+      await recordHouseholdOpen(crmHouseholdId, userId);
+    } catch (viewErr) {
+      console.error("Failed to record household open on client create:", viewErr);
+    }
 
     return NextResponse.json(client, { status: 201 });
   } catch (err) {
