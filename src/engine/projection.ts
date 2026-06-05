@@ -73,6 +73,7 @@ import {
 import type { BusinessSalesResult } from "./asset-transactions";
 import { createEquityState, computeEquityYear } from "./equity/tax-events";
 import { applyEquityYear } from "./equity/apply";
+import { remainingGrantValue } from "./equity/valuation";
 import type { StockOptionPlan } from "./equity/types";
 import {
   computeFirstDeathYear,
@@ -146,9 +147,9 @@ function legacyTaxType(
 
 // Tax-efficiency ranking by category alone — Cash → Taxable → Tax-Deferred → Roth.
 // Returns null for categories that can't be cleanly liquidated at year boundaries
-// (real estate, business, life insurance). Shared by household and entity-scoped
-// withdrawal strategies; callers layer on their own ownership / default-checking
-// exclusions before consulting it.
+// (real estate, business, life insurance, stock_options). Shared by household and
+// entity-scoped withdrawal strategies; callers layer on their own ownership /
+// default-checking exclusions before consulting it.
 function categoryWithdrawalPriority(acct: Account): number | null {
   if (acct.category === "cash") return 1;
   if (acct.category === "taxable") return 2;
@@ -158,6 +159,7 @@ function categoryWithdrawalPriority(acct: Account): number | null {
     return 3;
   }
   if (acct.category === "notes_receivable") return null; // notes amortize themselves
+  if (acct.category === "stock_options") return null; // illiquid grants — not a drawdown source
   return null;
 }
 
@@ -1418,6 +1420,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (rothBefore > 0) {
         rothValueMap[acct.id] = rothBefore + rothBefore * effectiveGrowthRate;
       }
+    }
+
+    // stock_options base accounts hold only not-yet-acquired value (the equity
+    // module already moved acquired shares into the destination taxable account).
+    // Overwrite AFTER the growth loop so the value isn't double-grown — the
+    // valuation projects FMV/intrinsic from the start-year price itself.
+    for (const plan of equityPlans) {
+      accountBalances[plan.accountId] = remainingGrantValue(plan, year, planSettings.planStartYear);
     }
 
     // Per-account cash deltas plus per-account entry lists for this year. A "credit"
@@ -5368,7 +5378,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       year.portfolioAssets.retirementTotal +
       year.portfolioAssets.realEstateTotal +
       year.portfolioAssets.businessTotal +
-      year.portfolioAssets.lifeInsuranceTotal;
+      year.portfolioAssets.lifeInsuranceTotal +
+      year.portfolioAssets.stockOptionsTotal;
     // H1: keep the canonical liquid total in sync after the re-bucket — it feeds
     // the chart/cell/BoY and includes accessibleTrustAssetsTotal, which this pass
     // can change. Mirrors computePortfolioSnapshot.

@@ -1259,12 +1259,17 @@ export interface ProjectionYear {
     realEstate: Record<string, number>;
     business: Record<string, number>;
     lifeInsurance: Record<string, number>;
+    /** Not-yet-acquired equity value (unvested RSU FMV + unexercised in-the-money
+     *  option intrinsic). Acquired shares live in the destination taxable account,
+     *  so the two never overlap in net worth. Illiquid — excluded from liquidTotal. */
+    stockOptions: Record<string, number>;
     taxableTotal: number;
     cashTotal: number;
     retirementTotal: number;
     realEstateTotal: number;
     businessTotal: number;
     lifeInsuranceTotal: number;
+    stockOptionsTotal: number;
     /** Bucket for entity-owned shares where entity is non-IIP and not flagged
      *  accessibleToClient — plus household-owned business-category accounts.
      *  Powers the "Trusts and Businesses" column on the cashflow drill. */
