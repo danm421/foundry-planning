@@ -82,6 +82,7 @@ describe("toAccountSnapshot", () => {
       propertyTaxGrowthRate: 0.03,
       propertyTaxGrowthSource: "custom",
       titlingType: "jtwros",
+      hsaCoverage: null,
       source: "manual",
     });
     expect(snap).not.toHaveProperty("id");

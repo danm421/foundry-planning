@@ -36,6 +36,10 @@ export interface AccountRow {
   value: string;
   basis: string;
   rothValue?: string | null;
+  /** HSA coverage tier (self/family). Hydrated from `accounts.hsa_coverage`
+   * so the edit form round-trips the value instead of silently defaulting to
+   * "self" (which would overwrite a persisted "family" on the next save). */
+  hsaCoverage?: "self" | "family" | null;
   growthRate: string | null;
   rmdEnabled?: boolean | null;
   priorYearEndValue?: string | null;
@@ -223,6 +227,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     value: a.value,
     basis: a.basis,
     rothValue: a.rothValue ?? undefined,
+    hsaCoverage: a.hsaCoverage ?? null,
     growthRate: a.growthRate,
     rmdEnabled: a.rmdEnabled ?? null,
     priorYearEndValue: a.priorYearEndValue ?? null,

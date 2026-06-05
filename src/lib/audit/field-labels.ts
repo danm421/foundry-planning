@@ -32,6 +32,7 @@ export const ACCOUNT_FIELD_LABELS: FieldLabels = {
   propertyTaxGrowthRate: { label: "Property tax growth", format: "percent" },
   propertyTaxGrowthSource: { label: "Property tax growth source", format: "text" },
   titlingType: { label: "Titling type", format: "text" },
+  hsaCoverage: { label: "HSA coverage", format: "text" },
   source: { label: "Source", format: "text" },
 };
 
