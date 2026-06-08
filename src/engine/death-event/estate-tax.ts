@@ -201,6 +201,7 @@ export function computeGrossEstate(input: {
         liabilityId: null,
         percentage: pct,
         amount,
+        isProbate: false,
       });
       continue;
     }
@@ -260,6 +261,7 @@ export function computeGrossEstate(input: {
       liabilityId: null,
       percentage: effPct,
       amount,
+      isProbate: false,
     });
   }
 
@@ -312,6 +314,7 @@ export function computeGrossEstate(input: {
       liabilityId: l.id,
       percentage: pct,
       amount: -(l.balance * pct),
+      isProbate: false,
     });
   }
 
@@ -339,6 +342,7 @@ export function computeGrossEstate(input: {
       entityId: null,
       percentage: pct,
       amount: entityTotal * pct,
+      isProbate: false,
     });
   }
 
@@ -394,6 +398,11 @@ function isNonProbateAccount(a: Account, deathOrder: 1 | 2): boolean {
  * base is always a subset of the gross estate. Computed on gross probate value
  * — debts are not subtracted (statutory gross-value convention). Mixed
  * family+entity accounts are classified by their account-level attributes.
+ *
+ * @sideEffects Mutates `input.gross.lines[*].isProbate`, setting `true` on each
+ * line counted toward the base. This is intentional: the same line objects are
+ * stored on `EstateTaxResult.grossEstateLines`, so the tags propagate to the
+ * report. Call once per gross object.
  */
 export function computeProbateEstate(input: {
   gross: GrossEstateOutput;
@@ -407,6 +416,7 @@ export function computeProbateEstate(input: {
     const a = byId.get(ln.accountId);
     if (!a) continue;
     if (isNonProbateAccount(a, input.deathOrder)) continue;
+    ln.isProbate = true;
     base += ln.amount;
   }
   return base;

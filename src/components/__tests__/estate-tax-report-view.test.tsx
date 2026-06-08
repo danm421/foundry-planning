@@ -34,6 +34,7 @@ function makeEstateTaxResult(
       liabilityId: null,
       percentage: 1,
       amount: 0,
+      isProbate: false,
     },
   ];
   return {
