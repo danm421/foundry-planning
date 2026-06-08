@@ -296,4 +296,21 @@ describe("equity compensation — reporting surfaces", () => {
     expect(synth).toMatchObject({ id: destId, category: "taxable" });
     expect(synth!.name).toMatch(/shares/);
   });
+
+  // ── Task 8: portfolio-asset bucket separation (regression guard) ─────────────
+
+  it("unvested grants in stockOptions bucket; vested shares in taxable; no overlap", () => {
+    const byYear = new Map(runProjection(buildData({ stockOptionPlans: [EQUITY_PLAN] })).map((y) => [y.year, y]));
+    const destId = `equity-dest-${SO_PLAN_ACCOUNT_ID}`;
+    // 2026 pre-vest: all unacquired value in stockOptions, nothing in dest
+    expect(byYear.get(2026)!.portfolioAssets.stockOptionsTotal).toBeGreaterThan(0);
+    expect(byYear.get(2026)!.portfolioAssets.taxable[destId] ?? 0).toBe(0);
+    // 2030 fully vested, pre-sale: vested shares live in taxable dest
+    expect(byYear.get(2030)!.portfolioAssets.taxable[destId]).toBeGreaterThan(0);
+    // never both
+    for (const y of byYear.values()) {
+      expect(y.portfolioAssets.taxable[SO_PLAN_ACCOUNT_ID]).toBeUndefined();
+      expect(y.portfolioAssets.stockOptions[destId]).toBeUndefined();
+    }
+  });
 });
