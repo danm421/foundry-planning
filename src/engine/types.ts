@@ -1344,7 +1344,7 @@ export interface ProjectionYear {
     id: string;
     name: string;
     category: string;
-    owners: import("./ownership").AccountOwner[];
+    owners: AccountOwner[];
   }>;
 
   /** Technique breakdown for drill-down UI — only present in years where techniques execute. */
