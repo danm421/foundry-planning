@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioModeUI } from "./scenario-mode-wrapper";
+import { PromoteScenarioDialog } from "./promote-scenario-dialog";
 
 export interface ScenarioChip {
   id: string;
@@ -44,6 +45,8 @@ export function ScenarioChipRow({
   const { openCreate } = useScenarioModeUI();
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [promoteTarget, setPromoteTarget] = useState<ScenarioChip | null>(null);
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -101,6 +104,27 @@ export function ScenarioChipRow({
     }
   }
 
+  async function handlePromote(s: ScenarioChip) {
+    setPromotingId(s.id);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/scenarios/${s.id}/promote`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          // v1: promotes with default toggle state; full active-toggle plumbing is future-work.
+          body: JSON.stringify({ toggleState: {} }),
+        },
+      );
+      if (!res.ok) return;
+      setScenario(null); // base is now the promoted plan
+      router.refresh();
+    } finally {
+      setPromotingId(null);
+      setPromoteTarget(null);
+    }
+  }
+
   return (
     <div ref={wrapperRef} className="relative inline-flex justify-end">
       <button
@@ -119,6 +143,15 @@ export function ScenarioChipRow({
           ▾
         </span>
       </button>
+
+      {promoteTarget && (
+        <PromoteScenarioDialog
+          scenarioName={promoteTarget.name}
+          busy={promotingId === promoteTarget.id}
+          onCancel={() => setPromoteTarget(null)}
+          onConfirm={() => void handlePromote(promoteTarget)}
+        />
+      )}
 
       {open && (
         <div
@@ -150,19 +183,37 @@ export function ScenarioChipRow({
                   {s.name}
                 </button>
                 {!s.isBaseCase && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDelete(s);
-                    }}
-                    disabled={isDeleting}
-                    aria-label={`Delete scenario ${s.name}`}
-                    title="Delete scenario"
-                    className="ml-1 w-5 h-5 shrink-0 rounded-full bg-hair text-ink-3 text-[11px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-accent hover:text-accent-on focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    ×
-                  </button>
+                  <>
+                    {s.id === effectiveActive && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPromoteTarget(s);
+                          setOpen(false);
+                        }}
+                        disabled={promotingId === s.id}
+                        aria-label={`Promote scenario ${s.name} to base case`}
+                        title="Promote to base case"
+                        className="ml-1 w-5 h-5 shrink-0 rounded-full bg-hair text-ink-3 text-[11px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-accent hover:text-accent-on focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        ↑
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete(s);
+                      }}
+                      disabled={isDeleting}
+                      aria-label={`Delete scenario ${s.name}`}
+                      title="Delete scenario"
+                      className="ml-1 w-5 h-5 shrink-0 rounded-full bg-hair text-ink-3 text-[11px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-accent hover:text-accent-on focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      ×
+                    </button>
+                  </>
                 )}
               </div>
             );
