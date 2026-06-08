@@ -19,7 +19,7 @@ export function fmtPct(fraction: number): string {
 export interface EstateSummaryHousehold {
   federal: number;
   state: number;
-  probate: number; // admin_expenses
+  probate: number; // admin_expenses + probate
   ird: number;
   debts: number;
   netToHeirs: number;
@@ -48,7 +48,7 @@ export function summarizeHousehold(report: EstateTransferReportData): EstateSumm
     sections.reduce((acc, s) => acc + reductionAmount(s, kind), 0);
   const federal = sum("federal_estate_tax");
   const state = sum("state_estate_tax");
-  const probate = sum("admin_expenses");
+  const probate = sum("admin_expenses") + sum("probate");
   const ird = sum("ird_tax");
   const debts = sum("debts_paid");
   const netToHeirs = report.aggregateRecipientTotals.reduce((acc, t) => acc + t.total, 0);
@@ -81,7 +81,8 @@ export function buildDeathRows(report: EstateTransferReportData): EstateSummaryD
     if (!section) continue;
     const federal = reductionAmount(section, "federal_estate_tax");
     const state = reductionAmount(section, "state_estate_tax");
-    const probate = reductionAmount(section, "admin_expenses");
+    const probate =
+      reductionAmount(section, "admin_expenses") + reductionAmount(section, "probate");
     const ird = reductionAmount(section, "ird_tax");
     rows.push({
       label: order === 1 ? "First death" : "Second death",
