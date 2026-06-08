@@ -31,6 +31,9 @@ export interface CellDrillContext {
   rothConversionNames?: Record<string, string>;
   /** Optional note-receivable-id → display-name map for `note:<id>:<kind>` keys. */
   noteNames?: Record<string, string>;
+  /** Optional equity-plan accountId → display-name map for `equity-vest:<id>`,
+   *  `equity-ltcg:<id>`, and `equity-stcg:<id>` keys. */
+  equityPlanNames?: Record<string, string>;
 }
 
 export interface CellDrillRow {

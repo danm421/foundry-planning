@@ -95,6 +95,13 @@ export default function IncomeTaxReport({ clientId }: Props) {
         },
         {},
       ),
+      equityPlanNames: (clientData?.stockOptionPlans ?? []).reduce<Record<string, string>>(
+        (acc, p) => {
+          if (p.accountId && p.ticker) acc[p.accountId] = `${p.ticker} RSU`;
+          return acc;
+        },
+        {},
+      ),
     }),
     [accountNames, clientData],
   );
