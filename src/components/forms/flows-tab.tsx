@@ -7,6 +7,7 @@ import type { EntityFlowMode } from "@/engine/types";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, fieldLabelClassName } from "./input-styles";
+import { isTodaysDollars } from "@/lib/todays-dollars";
 import FlowScheduleGrid, { type ScheduleSaveBinding } from "./flow-schedule-grid";
 
 export type { ScheduleSaveBinding };
@@ -319,8 +320,7 @@ function FlowEditor({
   );
   const [todaysDollars, setTodaysDollars] = useState(
     existing
-      ? existing.inflationStartYear != null &&
-          existing.inflationStartYear < existing.startYear
+      ? isTodaysDollars(existing.inflationStartYear, existing.startYear)
       : true,
   );
   const [error, setError] = useState<string | null>(null);

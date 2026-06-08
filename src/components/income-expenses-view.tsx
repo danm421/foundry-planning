@@ -12,6 +12,7 @@ import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
+import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import { SocialSecurityCard } from "./social-security-card";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
@@ -475,9 +476,7 @@ function IncomeDialog({
   const [ownerAccountId, setOwnerAccountId] = useState<string | null>(editing?.ownerAccountId ?? null);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
-    editing
-      ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
-      : true
+    editing ? isTodaysDollars(editing.inflationStartYear, editing.startYear) : true
   );
   // New incomes default to inflation growth (advisor convention — most income
   // streams are modeled to inflate with cost of living unless explicitly set).
@@ -972,9 +971,7 @@ function ExpenseDialog({
   const hasSpouse = Boolean(clientInfo?.spouseDob);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
-    editing
-      ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
-      : true
+    editing ? isTodaysDollars(editing.inflationStartYear, editing.startYear) : true
   );
   // New living expenses default to inflation growth (advisor convention — living
   // costs track inflation). Other/insurance expenses default to custom.
