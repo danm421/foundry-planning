@@ -46,4 +46,13 @@ describe("buildViewModelInputs", () => {
     expect(empty.notesReceivable).toEqual([]);
     expect(empty.familyMembers).toEqual([]);
   });
+
+  it("includes merged synthetic accounts as AccountLike rows", () => {
+    const synthetic = [{ id: "equity-dest-plan1", name: "TSLA shares", category: "taxable", owners: [] }];
+    const enriched = { ...tree, accounts: [...(tree.accounts ?? []), ...synthetic] } as unknown as ClientData;
+    const out = buildViewModelInputs(enriched);
+    expect(out.accounts.find((a) => a.id === "equity-dest-plan1")).toMatchObject({
+      id: "equity-dest-plan1", name: "TSLA shares", category: "taxable",
+    });
+  });
 });

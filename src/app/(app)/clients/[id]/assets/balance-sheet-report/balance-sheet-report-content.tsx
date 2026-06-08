@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
+import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
 import BalanceSheetReport, { type BalanceSheetReportProps, type BalanceSheetProjYear } from "@/components/balance-sheet-report/balance-sheet-report";
 
 interface BalanceSheetReportContentProps {
@@ -36,7 +37,7 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
       .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId)),
   ]);
 
-  const inputs = buildViewModelInputs(tree);
+  const inputs = buildViewModelInputs(mergeSyntheticAccounts(tree, result.years));
 
   // Attach titlingType (drives the Joint-column rule) to the account inputs.
   const titlingById = new Map(

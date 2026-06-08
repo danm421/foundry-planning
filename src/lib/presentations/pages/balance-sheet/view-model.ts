@@ -6,6 +6,7 @@ import {
   type BalanceSheetViewModel,
 } from "@/components/balance-sheet-report/view-model";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
+import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
 import { LIQUID_CATEGORIES, type AccountCategory } from "@/lib/account-groups/liquid-filter";
 
 /** Liquid portfolio = cash + taxable + retirement category totals. */
@@ -54,7 +55,7 @@ export function buildBalanceSheetPageData(
   // mapper, shared with the on-screen balance-sheet report so both stay in
   // sync. (Its `notesReceivable` output is unused by `buildViewModel`.)
   const { accounts, liabilities, entities, familyMembers } =
-    buildViewModelInputs(ctx.clientData);
+    buildViewModelInputs(mergeSyntheticAccounts(ctx.clientData, ctx.years));
 
   const viewModel = buildViewModel({
     accounts,
