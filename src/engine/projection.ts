@@ -1019,6 +1019,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // Per-account cash deltas plus per-account entry lists for this year. A "credit"
+    // with a positive amount is an inflow; negative is an outflow. The entries list
+    // gives the ledger modal something to show beyond the summed totals.
+    // Hoisted above the equity block so equity net cash routes through the same
+    // deferred cashDelta path (flushed once at step 11) as every other flow.
+    const cashDelta: Record<string, number> = {};
+    const pendingEntries: Record<string, AccountLedgerEntry[]> = {};
+    const creditCash = (
+      acctId: string | undefined,
+      amount: number,
+      entry?: Omit<AccountLedgerEntry, "amount">
+    ) => {
+      if (!acctId || amount === 0) return;
+      cashDelta[acctId] = (cashDelta[acctId] ?? 0) + amount;
+      if (entry) {
+        (pendingEntries[acctId] ??= []).push({ ...entry, amount });
+      }
+    };
+
     // ── Equity compensation: vest / exercise / sell events for this year ──────
     // The equity module is authoritative over equity tax + share movement.
     // Acquisitions land in-kind in a destination taxable account (auto-created
@@ -1030,6 +1049,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let equityCapitalGains = 0;
     let equityStCapitalGains = 0;
     let equityIsoSpread = 0;
+    // Net equity cash routed to household checking this year (sale proceeds +
+    // sell-to-cover proceeds − strike outflow). Surfaced as Other Inflows via
+    // income.bySource (drill-down) and folded into totalIncome / netCashFlow
+    // below — mirrors householdNoteCashIn. NOT added to income.total/.other.
+    let householdEquityCashIn = 0;
+    // Per-plan equity result capture (consumed by the reporting surfaces below
+    // — bySource breakdowns, equity drill-down). Keyed by base stock_options
+    // account id, accumulated across all of this year's events for the plan.
+    const equityByPlan = new Map<string, {
+      ordinaryIncome: number; capitalGains: number; stCapitalGains: number;
+    }>();
     if (equityPlans.length > 0) {
       const checkingId = defaultChecking?.id ?? "";
       for (const plan of equityPlans) {
@@ -1091,11 +1121,76 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
         if (!destId) destId = checkingId; // fallback: no destination → land value in checking
 
-        const applied = applyEquityYear(result, destId, accountBalances, basisMap, checkingId);
+        const applied = applyEquityYear(result, destId, accountBalances, basisMap);
+        const planAcqValue = result.acquisitions.reduce((s, a) => s + a.value, 0);
+        const prev = equityByPlan.get(plan.accountId) ?? {
+          ordinaryIncome: 0, capitalGains: 0, stCapitalGains: 0,
+        };
+        equityByPlan.set(plan.accountId, {
+          ordinaryIncome: prev.ordinaryIncome + applied.taxDeltas.ordinaryIncome,
+          capitalGains:   prev.capitalGains   + applied.taxDeltas.capitalGains,
+          stCapitalGains: prev.stCapitalGains + applied.taxDeltas.stCapitalGains,
+        });
         equityOrdinaryIncome += applied.taxDeltas.ordinaryIncome;
         equityCapitalGains += applied.taxDeltas.capitalGains;
         equityStCapitalGains += applied.taxDeltas.stCapitalGains;
         equityIsoSpread += applied.taxDeltas.isoSpread;
+
+        // Portfolio Activity: write the dest-account ledger directly (NOT via
+        // creditCash — only the checking cash is deferred). Acquisitions are
+        // in-kind contributions when shares vest; sells are distributions that
+        // offset the checking inflow so net worth isn't double-counted. The
+        // value movements already landed on accountBalances/basisMap inside
+        // applyEquityYear; here we keep the ledger's running endingValue and
+        // contributions/distributions in step with them.
+        // destId can fall back to checkingId when autoCreateDestination is false;
+        // don't post share-movement entries onto the household checking ledger
+        // (its flows net via checkingExternalDelta, and the cash still lands via
+        // the creditCash call below).
+        if (destId && destId !== checkingId && accountLedgers[destId]) {
+          if (planAcqValue > 0) {
+            accountLedgers[destId].contributions += planAcqValue;
+            accountLedgers[destId].endingValue += planAcqValue;
+            accountLedgers[destId].entries.push({
+              category: "income",
+              label: `${plan.ticker ?? "Equity"} shares vest`,
+              amount: planAcqValue,
+              sourceId: plan.accountId,
+            });
+          }
+          if (result.sellProceeds > 0) {
+            accountLedgers[destId].distributions += result.sellProceeds;
+            accountLedgers[destId].endingValue -= result.sellProceeds;
+            accountLedgers[destId].entries.push({
+              category: "withdrawal",
+              label: `${plan.ticker ?? "Equity"} shares sold`,
+              amount: -result.sellProceeds,
+              sourceId: plan.accountId,
+            });
+          }
+        }
+
+        // Route the net equity cash through the deferred cashDelta path so the
+        // household-checking Portfolio Activity column and net-cash-flow see it
+        // exactly once (flushed at step 11). applyEquityYear no longer credits
+        // checking directly — this is the sole crediting point.
+        creditCash(checkingId, applied.netCashToChecking, {
+          category: "income",
+          label: `${plan.ticker ?? "Equity"} equity proceeds`,
+          sourceId: plan.accountId,
+        });
+
+        // Surface the proceeds as Other Inflows: income.bySource (a scalar map)
+        // gets a per-plan key for the drill-down, and householdEquityCashIn is
+        // folded into totalIncome below. Deliberately NOT added to
+        // income.total / income.other — those stay as computeIncome reported
+        // them, so the cash is counted exactly once (creditCash + the
+        // totalIncome fold). Mirrors the notes-receivable pattern.
+        if (applied.netCashToChecking > 0) {
+          householdEquityCashIn += applied.netCashToChecking;
+          const key = `equity-proceeds:${plan.accountId}`;
+          income.bySource[key] = (income.bySource[key] ?? 0) + applied.netCashToChecking;
+        }
       }
     }
     // ISO bargain element is an AMT-preference item, not regular-taxable.
@@ -1430,23 +1525,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountBalances[plan.accountId] = remainingGrantValue(plan, year, planSettings.planStartYear);
     }
 
-    // Per-account cash deltas plus per-account entry lists for this year. A "credit"
-    // with a positive amount is an inflow; negative is an outflow. The entries list
-    // gives the ledger modal something to show beyond the summed totals.
-    const cashDelta: Record<string, number> = {};
-    const pendingEntries: Record<string, AccountLedgerEntry[]> = {};
-    const creditCash = (
-      acctId: string | undefined,
-      amount: number,
-      entry?: Omit<AccountLedgerEntry, "amount">
-    ) => {
-      if (!acctId || amount === 0) return;
-      cashDelta[acctId] = (cashDelta[acctId] ?? 0) + amount;
-      if (entry) {
-        (pendingEntries[acctId] ??= []).push({ ...entry, amount });
-      }
-    };
-
     // ── Apply Transfers ─────────────────────────────────────────────────────
     let transferResult = {
       taxableOrdinaryIncome: 0,
@@ -1589,7 +1667,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains +
-      businessSaleResult.capitalGains;
+      businessSaleResult.capitalGains +
+      equityOrdinaryIncome +
+      equityCapitalGains +
+      equityStCapitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
@@ -1919,6 +2000,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const [rid, info] of Object.entries(reinvestmentResult.byReinvestment)) {
       if (info.capitalGains > 0) {
         taxDetail.bySource[`reinvestment:${rid}`] = { type: "capital_gains", amount: info.capitalGains };
+      }
+    }
+    // Per-plan equity bySource (tax-drill itemization — spec §B).
+    for (const [planId, eq] of equityByPlan) {
+      if (eq.ordinaryIncome > 0) {
+        taxDetail.bySource[`equity-vest:${planId}`] = { type: "earned_income", amount: eq.ordinaryIncome };
+      }
+      if (eq.capitalGains > 0) {
+        taxDetail.bySource[`equity-ltcg:${planId}`] = { type: "capital_gains", amount: eq.capitalGains };
+      }
+      if (eq.stCapitalGains > 0) {
+        taxDetail.bySource[`equity-stcg:${planId}`] = { type: "stcg", amount: eq.stCapitalGains };
       }
     }
 
@@ -4720,10 +4813,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (!effectiveIsGrantor(inc.ownerEntityId, year)) continue; // non-grantor: never in bySource here
       delete displayIncome.bySource[inc.id];
     }
-    // householdNoteCashIn folded in so notes-receivable principal+interest
-    // (credited directly to checking, not through income.bySource) shows up in
-    // both Total Income and Net Cash Flow on the cashflow report.
-    const totalIncome = displayIncome.total + householdRmdIncome + householdNoteCashIn;
+    // householdNoteCashIn and householdEquityCashIn folded in so notes-
+    // receivable principal+interest and equity-sale net cash (both routed to
+    // checking via creditCash, not into displayIncome.total) show up in both
+    // Total Income and Net Cash Flow on the cashflow report. Equity proceeds
+    // also carry a per-plan income.bySource key for the Other Inflows drill-
+    // down; the fold here is what counts them in the Total Income scalar.
+    const totalIncome =
+      displayIncome.total + householdRmdIncome + householdNoteCashIn + householdEquityCashIn;
 
     // ── 14. Surplus allocation (H5) ──
     // Size the discretionary/saved split from the resolved Net Cash Flow, taken
@@ -4907,6 +5004,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     years.push({
       year,
       ages,
+      syntheticAccounts: [...equityDestByPlan.values()]
+        .map((destId) => {
+          const acct = workingAccounts.find((a) => a.id === destId);
+          return acct
+            ? { id: acct.id, name: acct.name, category: acct.category, owners: acct.owners ?? [] }
+            : null;
+        })
+        .filter((a): a is NonNullable<typeof a> => a !== null),
       income: displayIncome,
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail: finalTaxDetail,

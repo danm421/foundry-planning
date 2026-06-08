@@ -19,6 +19,7 @@ import { TaxTabChart } from "@/components/cashflow/charts/tax-tab-chart";
 import { buildIncomeCellDrill } from "@/lib/tax/cell-drill/income-breakdown";
 import { buildConversionCellDrill } from "@/lib/tax/cell-drill/bracket-conversions";
 import { buildBracketStackCellDrill } from "@/lib/tax/cell-drill/bracket-stacking";
+import { equityPlanLabel } from "@/lib/tax/cell-drill/equity-plan-label";
 import type {
   IncomeColumnKey,
   BracketColumnKey,
@@ -91,6 +92,13 @@ export default function IncomeTaxReport({ clientId }: Props) {
       noteNames: (clientData?.notesReceivable ?? []).reduce<Record<string, string>>(
         (acc, n) => {
           if (n.name) acc[n.id] = n.name;
+          return acc;
+        },
+        {},
+      ),
+      equityPlanNames: (clientData?.stockOptionPlans ?? []).reduce<Record<string, string>>(
+        (acc, p) => {
+          if (p.accountId) acc[p.accountId] = equityPlanLabel(p);
           return acc;
         },
         {},

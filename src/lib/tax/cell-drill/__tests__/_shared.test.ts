@@ -65,4 +65,23 @@ describe("resolveSourceLabel", () => {
   it("falls back to the raw id for unknown shapes", () => {
     expect(resolveSourceLabel("mystery_thing", ctx)).toBe("mystery_thing");
   });
+
+  it("resolves equity-vest:<planId> to '<ticker> RSU — vest'", () => {
+    const eCtx: CellDrillContext = { ...ctx, equityPlanNames: { plan_tsla: "TSLA RSU" } };
+    expect(resolveSourceLabel("equity-vest:plan_tsla", eCtx)).toBe("TSLA RSU — vest");
+  });
+
+  it("resolves equity-ltcg:<planId> to '<ticker> RSU — sale'", () => {
+    const eCtx: CellDrillContext = { ...ctx, equityPlanNames: { plan_tsla: "TSLA RSU" } };
+    expect(resolveSourceLabel("equity-ltcg:plan_tsla", eCtx)).toBe("TSLA RSU — sale");
+  });
+
+  it("resolves equity-stcg:<planId> to '<ticker> RSU — sale (ST)'", () => {
+    const eCtx: CellDrillContext = { ...ctx, equityPlanNames: { plan_tsla: "TSLA RSU" } };
+    expect(resolveSourceLabel("equity-stcg:plan_tsla", eCtx)).toBe("TSLA RSU — sale (ST)");
+  });
+
+  it("falls back to planId when equityPlanNames absent", () => {
+    expect(resolveSourceLabel("equity-vest:plan_tsla", ctx)).toBe("plan_tsla — vest");
+  });
 });

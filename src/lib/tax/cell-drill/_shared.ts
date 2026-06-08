@@ -54,6 +54,18 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
     const name = ctx.noteNames?.[noteId] ?? "Note";
     return kindLabel ? `${name} — ${kindLabel}` : name;
   }
+  if (sourceId.startsWith("equity-vest:")) {
+    const planId = sourceId.slice("equity-vest:".length);
+    return `${ctx.equityPlanNames?.[planId] ?? planId} — vest`;
+  }
+  if (sourceId.startsWith("equity-ltcg:")) {
+    const planId = sourceId.slice("equity-ltcg:".length);
+    return `${ctx.equityPlanNames?.[planId] ?? planId} — sale`;
+  }
+  if (sourceId.startsWith("equity-stcg:")) {
+    const planId = sourceId.slice("equity-stcg:".length);
+    return `${ctx.equityPlanNames?.[planId] ?? planId} — sale (ST)`;
+  }
   if (sourceId.includes(":")) {
     const [acctId, kind] = sourceId.split(":");
     const name = ctx.accountNames[acctId] ?? acctId;

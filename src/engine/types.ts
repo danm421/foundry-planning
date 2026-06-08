@@ -1339,6 +1339,17 @@ export interface ProjectionYear {
     householdCashIn: number;
   };
 
+  /** Engine-minted accounts not present in ClientData.accounts (equity
+   *  destination accounts holding vested shares). Consumers merge these into
+   *  tree.accounts before buildViewModelInputs so the balance-sheet and
+   *  cash-flow name maps resolve them. */
+  syntheticAccounts?: Array<{
+    id: string;
+    name: string;
+    category: string;
+    owners: AccountOwner[];
+  }>;
+
   /** Technique breakdown for drill-down UI — only present in years where techniques execute. */
   techniqueBreakdown?: {
     sales: {
