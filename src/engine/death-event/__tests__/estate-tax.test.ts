@@ -1135,6 +1135,7 @@ describe("computeDeductions", () => {
         liabilityId: null,
         percentage: 0.5,
         amount: 500_000,
+        isProbate: false,
       },
     ];
     const resultingLiabilities: Liability[] = [
@@ -1233,6 +1234,7 @@ describe("computeDeductions", () => {
         liabilityId: null,
         percentage: 0.5,
         amount: 53_673,
+        isProbate: false,
       },
     ];
     const r = computeDeductions({
@@ -1259,6 +1261,7 @@ describe("computeDeductions", () => {
         entityId: "e1",
         percentage: 1,
         amount: 30_000,
+        isProbate: false,
       },
     ];
     const transferLedger: DeathTransfer[] = [
@@ -1305,6 +1308,7 @@ describe("computeDeductions", () => {
         entityId: "e1",
         percentage: 0.6,
         amount: 30_000,
+        isProbate: false,
       },
     ];
     const transferLedger: DeathTransfer[] = [

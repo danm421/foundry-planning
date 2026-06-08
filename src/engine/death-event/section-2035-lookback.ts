@@ -104,6 +104,8 @@ export function computeSection2035Lookback(
       liabilityId: null,
       percentage: percent,
       amount: faceValue,
+      // §2035 add-backs are life-insurance proceeds — non-probate by category.
+      isProbate: false,
     });
 
     if (ev.amountOverride != null && ev.amountOverride > 0) {

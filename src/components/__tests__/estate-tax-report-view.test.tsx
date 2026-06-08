@@ -34,6 +34,7 @@ function makeEstateTaxResult(
       liabilityId: null,
       percentage: 1,
       amount: 0,
+      isProbate: false,
     },
   ];
   return {
@@ -402,6 +403,119 @@ describe("EstateTaxReportView", () => {
     // Assert that dollar values swap: $456,000 (Linda's) now appears, $123,000 (Tom's) is hidden.
     await waitFor(() => expect(screen.getAllByText("$456,000").length).toBeGreaterThan(0));
     expect(screen.queryByText("$123,000")).toBeNull();
+  });
+
+  it("renders Probate badge on probate asset lines, probate subtotal, and split Probate Costs line", async () => {
+    const hypo = makeHypothetical(2040, true, {
+      primary: {
+        first: {
+          grossEstateLines: [
+            {
+              label: "Primary Home",
+              accountId: "acct-home",
+              liabilityId: null,
+              percentage: 1,
+              amount: 800_000,
+              isProbate: true,
+            },
+            {
+              label: "Joint Brokerage",
+              accountId: "acct-broker",
+              liabilityId: null,
+              percentage: 0.5,
+              amount: 200_000,
+              isProbate: false,
+            },
+          ],
+          grossEstate: 1_000_000,
+          probateEstate: 800_000,
+          probateCost: 24_000,
+          estateAdminExpenses: 10_000,
+          totalTaxesAndExpenses: 34_000,
+        },
+        final: {},
+      },
+      spouse: { first: {}, final: {} },
+    });
+    setProjectionFixture([makeProjectionYear(hypo)]);
+
+    render(
+      <EstateTaxReportView
+        clientId="client-1"
+        isMarried={true}
+        ownerNames={OWNERS}
+        ownerDobs={DOBS}
+        retirementYear={RETIREMENT_YEAR}
+      />,
+    );
+
+    // Wait for the component to render data.
+    await waitFor(() =>
+      expect(screen.getByText(/Tom — First to die/)).toBeDefined(),
+    );
+
+    // At least one "Probate" badge renders (on the isProbate=true asset line).
+    expect(screen.getAllByText("Probate").length).toBeGreaterThan(0);
+
+    // "of which Probate Estate" subtotal renders in the Gross Estate section.
+    expect(screen.getByText("of which Probate Estate")).toBeDefined();
+
+    // The split Probate Costs line renders in the Taxable Estate section.
+    expect(screen.getByText("LESS: Probate Costs")).toBeDefined();
+
+    // The split Admin/Final Expenses line also renders.
+    expect(screen.getByText("LESS: Administrative / Final Expenses")).toBeDefined();
+
+    // The Probate Costs line also appears in Total Taxes & Expenses section.
+    expect(screen.getAllByText("Probate Costs").length).toBeGreaterThan(0);
+  });
+
+  it("includes probate costs in the grand totals card for a married household", async () => {
+    // Tom: probateCost=20_000, estateAdminExpenses=5_000 → totalTaxesAndExpenses=25_000
+    // Linda: probateCost=15_000, estateAdminExpenses=3_000 → totalTaxesAndExpenses=18_000
+    // Grand total should be 43_000 and "Total probate costs" line should show $35,000.
+    const hypo = makeHypothetical(2040, true, {
+      primary: {
+        first: {
+          probateCost: 20_000,
+          estateAdminExpenses: 5_000,
+          totalTaxesAndExpenses: 25_000,
+        },
+        final: {
+          probateCost: 15_000,
+          estateAdminExpenses: 3_000,
+          totalTaxesAndExpenses: 18_000,
+        },
+        totals: { federal: 0, state: 0, admin: 8_000, total: 43_000 },
+      },
+      spouse: { first: {}, final: {} },
+    });
+    setProjectionFixture([makeProjectionYear(hypo)]);
+
+    render(
+      <EstateTaxReportView
+        clientId="client-1"
+        isMarried={true}
+        ownerNames={OWNERS}
+        ownerDobs={DOBS}
+        retirementYear={RETIREMENT_YEAR}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/Grand totals/i)).toBeDefined(),
+    );
+    const grandTotals = screen.getByText(/Grand totals/i).closest("section")!;
+
+    // "Total probate costs" line appears and shows combined $35,000.
+    expect(within(grandTotals).getByText("Total probate costs")).toBeDefined();
+    expect(within(grandTotals).getByText("$35,000")).toBeDefined();
+
+    // Grand total bottom line = federal(0) + stateEstate(0) + stateInheritance(0) + probate(35_000) + admin(8_000) + ird(0) = 43_000.
+    expect(
+      within(grandTotals).getByText(/^Grand total · taxes & expenses$/i),
+    ).toBeDefined();
+    expect(within(grandTotals).getByText("$43,000")).toBeDefined();
   });
 });
 

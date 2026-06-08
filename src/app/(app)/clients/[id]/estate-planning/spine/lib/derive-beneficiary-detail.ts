@@ -76,6 +76,7 @@ interface DeriveArgs {
 const DRAIN_KINDS: DrainKind[] = [
   "federal_estate_tax",
   "state_estate_tax",
+  "probate",
   "admin_expenses",
   "debts_paid",
   "ird_tax",
@@ -85,6 +86,7 @@ function emptyDrains(): Record<DrainKind, number> {
   return {
     federal_estate_tax: 0,
     state_estate_tax: 0,
+    probate: 0,
     admin_expenses: 0,
     debts_paid: 0,
     ird_tax: 0,

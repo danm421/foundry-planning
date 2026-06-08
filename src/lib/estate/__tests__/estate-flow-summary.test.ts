@@ -15,6 +15,7 @@ import { buildEstateFlowSummary } from "@/lib/estate/estate-flow-summary";
 const ZERO_DRAINS: RecipientGroup["drainsByKind"] = {
   federal_estate_tax: 0,
   state_estate_tax: 0,
+  probate: 0,
   admin_expenses: 0,
   debts_paid: 0,
   ird_tax: 0,
@@ -66,6 +67,7 @@ function group(opts: {
   const drainSum =
     drains.federal_estate_tax +
     drains.state_estate_tax +
+    drains.probate +
     drains.admin_expenses +
     drains.debts_paid +
     drains.ird_tax;

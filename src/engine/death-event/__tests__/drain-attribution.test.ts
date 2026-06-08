@@ -36,6 +36,7 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
       drainTotals: {
         federal_estate_tax: 100_000,
         state_estate_tax: 0,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 0,
         ird_tax: 0,
@@ -68,6 +69,7 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
       drainTotals: {
         federal_estate_tax: 50_000,
         state_estate_tax: 10_000,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 0,
         ird_tax: 0,
@@ -95,6 +97,7 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
       drainTotals: {
         federal_estate_tax: 0,
         state_estate_tax: 0,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 50_000,
         ird_tax: 0,
@@ -109,6 +112,34 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
     );
     expect(debtSpouse?.amount).toBeCloseTo(40_000);
     expect(debtHeir?.amount).toBeCloseTo(10_000);
+  });
+
+  it("allocates probate pro-rata across ALL recipients including spouse", () => {
+    const transfers: DeathTransfer[] = [
+      t({ recipientKind: "spouse", recipientId: null, amount: 800_000 }),
+      t({ recipientId: "fm-1", amount: 200_000 }),
+    ];
+    const out = computeDrainAttributions({
+      deathOrder: 1,
+      transfers,
+      drainTotals: {
+        federal_estate_tax: 0,
+        state_estate_tax: 0,
+        probate: 50_000,
+        admin_expenses: 0,
+        debts_paid: 0,
+        ird_tax: 0,
+      },
+      residuaryRecipients: [],
+    });
+    const probateSpouse = out.find(
+      (a) => a.recipientKind === "spouse" && a.drainKind === "probate",
+    );
+    const probateHeir = out.find(
+      (a) => a.recipientId === "fm-1" && a.drainKind === "probate",
+    );
+    expect(probateSpouse?.amount).toBeCloseTo(40_000); // 800/1000 × 50k
+    expect(probateHeir?.amount).toBeCloseTo(10_000); // 200/1000 × 50k
   });
 });
 
@@ -132,6 +163,7 @@ describe("computeDrainAttributions — residuary-first", () => {
       drainTotals: {
         federal_estate_tax: 100_000,
         state_estate_tax: 0,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 0,
         ird_tax: 0,
@@ -172,6 +204,7 @@ describe("computeDrainAttributions — residuary-first", () => {
       drainTotals: {
         federal_estate_tax: 100_000,
         state_estate_tax: 0,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 0,
         ird_tax: 0,
@@ -220,6 +253,7 @@ describe("computeDrainAttributions — residuary-first", () => {
       drainTotals: {
         federal_estate_tax: 100_000,
         state_estate_tax: 0,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 0,
         ird_tax: 0,
@@ -244,6 +278,7 @@ describe("computeDrainAttributions — residuary-first", () => {
     const drainTotals = {
       federal_estate_tax: 100_000,
       state_estate_tax: 50_000,
+      probate: 15_000,
       admin_expenses: 30_000,
       debts_paid: 20_000,
       ird_tax: 0,
@@ -257,6 +292,7 @@ describe("computeDrainAttributions — residuary-first", () => {
     for (const kind of [
       "federal_estate_tax",
       "state_estate_tax",
+      "probate",
       "admin_expenses",
       "debts_paid",
       "ird_tax",
@@ -278,6 +314,7 @@ describe("computeDrainAttributions — residuary-first", () => {
       drainTotals: {
         federal_estate_tax: 0,
         state_estate_tax: 0,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 0,
         ird_tax: 0,
@@ -322,6 +359,7 @@ describe("attributeDrainsToLedger — tier-aware residuary", () => {
         federalEstateTax: 0,
         stateEstateTax: 0,
         estateAdminExpenses: 100_000,
+        probateCost: 0,
       },
       creditorDrainTotal: 0,
       will,
@@ -335,6 +373,34 @@ describe("attributeDrainsToLedger — tier-aware residuary", () => {
       )
       .reduce((s, a) => s + a.amount, 0);
     expect(primaryDrain).toBeCloseTo(100_000, 0);
+  });
+
+  it("attributes probate cost as its own drain kind, borne by non-spouse recipients", () => {
+    const transfers: DeathTransfer[] = [
+      t({ recipientId: "kid", amount: 100_000 }),
+    ];
+    const result = attributeDrainsToLedger({
+      deathOrder: 2,
+      transfers,
+      estateTax: {
+        federalEstateTax: 0,
+        stateEstateTax: 0,
+        estateAdminExpenses: 0,
+        probateCost: 5_000,
+      },
+      creditorDrainTotal: 0,
+      will: null,
+      deceased: "client",
+      residuaryTier: "primary",
+    });
+    const probate = result.filter((a) => a.drainKind === "probate");
+    // Probate is its own drain kind, borne pro-rata like admin/debts. With a
+    // lone non-spouse heir, the whole $5k lands on that heir.
+    expect(probate.reduce((s, a) => s + a.amount, 0)).toBeCloseTo(5_000, 2);
+    expect(probate.find((a) => a.recipientId === "kid")?.amount).toBeCloseTo(
+      5_000,
+      2,
+    );
   });
 
   it("attributeDrainsToLedger routes the drain to the contingent tier when it governs", () => {
@@ -370,6 +436,7 @@ describe("attributeDrainsToLedger — tier-aware residuary", () => {
         federalEstateTax: 0,
         stateEstateTax: 0,
         estateAdminExpenses: 100_000,
+        probateCost: 0,
       },
       creditorDrainTotal: 0,
       will,

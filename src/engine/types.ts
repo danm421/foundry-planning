@@ -170,6 +170,7 @@ export interface DeathTransfer {
 export type DrainKind =
   | "federal_estate_tax"
   | "state_estate_tax"
+  | "probate"
   | "admin_expenses"
   | "debts_paid"
   | "ird_tax";
@@ -203,6 +204,10 @@ export interface GrossEstateLine {
   percentage: number;
   /** Positive for assets, negative for debts. */
   amount: number;
+  /** True when this asset line passes through probate (counts toward
+   *  `probateEstate`). Set by `computeProbateEstate`. Always false for
+   *  liabilities and non-probate accounts. */
+  isProbate: boolean;
 }
 
 export interface EstateTaxResult {
