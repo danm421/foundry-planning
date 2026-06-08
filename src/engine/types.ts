@@ -221,6 +221,11 @@ export interface EstateTaxResult {
   // Debts are already folded into grossEstateLines as negative entries.
   taxableEstate: number;
 
+  // Probate (§2053 administrative expense, additive to estateAdminExpenses)
+  probateCostRate: number;
+  probateEstate: number;
+  probateCost: number;
+
   // Tentative Tax Base
   adjustedTaxableGifts: number;
   tentativeTaxBase: number;
@@ -252,7 +257,7 @@ export interface EstateTaxResult {
 
   // Totals
   totalEstateTax: number;            // federal + state
-  totalTaxesAndExpenses: number;     // totalEstateTax + estateAdminExpenses
+  totalTaxesAndExpenses: number;     // totalEstateTax + estateAdminExpenses + probateCost
 
   /** Per-recipient × drain-kind allocation of the drains that summed into
    *  totalTaxesAndExpenses. Σ amount per drainKind across recipients equals
@@ -1124,6 +1129,9 @@ export interface PlanSettings {
   /** Flat IRD tax rate applied to pre-tax retirement assets passing to non-spouse,
    *  non-charity beneficiaries at any death event. 0 disables. */
   irdTaxRate?: number;
+  /** Probate cost rate (decimal). Applied to the probate estate at each death
+   *  event; additive to estateAdminExpenses. 0 disables. */
+  probateCostRate?: number;
   /** 0–1 fraction of unaccounted-for surplus cash flow to spend each year.
    *  Surplus = max(0, surplusBeforeSavings − savings.total − cashGifts).
    *  The spent portion is recorded as a discretionary expense; the remainder

@@ -896,6 +896,7 @@ export const loadClientDataWithContext = cache(
       flatStateEstateRate: settings.flatStateEstateRate != null ? parseFloat(settings.flatStateEstateRate) : 0,
       residenceState: (settings.residenceState ?? null) as import("@/lib/usps-states").USPSStateCode | null,
       irdTaxRate: settings.irdTaxRate != null ? parseFloat(settings.irdTaxRate) : 0,
+      probateCostRate: settings.probateCostRate != null ? parseFloat(settings.probateCostRate) : 0,
       inflationRate: parseFloat(settings.inflationRate),
       planStartYear: settings.planStartYear,
       planEndYear: settings.planEndYear,

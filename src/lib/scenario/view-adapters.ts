@@ -340,6 +340,7 @@ export interface PlanSettingsViewEngineFields {
   flatStateEstateRate: string;
   residenceState: import("@/lib/usps-states").USPSStateCode | null;
   irdTaxRate: string;
+  probateCostRate: string;
   outOfHouseholdRate: string | null;
 }
 
@@ -357,6 +358,7 @@ export function planSettingsEngineToView(s: EnginePlanSettings): PlanSettingsVie
     flatStateEstateRate: String(s.flatStateEstateRate ?? 0),
     residenceState: s.residenceState ?? null,
     irdTaxRate: String(s.irdTaxRate ?? 0),
+    probateCostRate: String(s.probateCostRate ?? 0),
     outOfHouseholdRate: s.outOfHouseholdRate != null ? String(s.outOfHouseholdRate) : null,
   };
 }

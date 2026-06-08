@@ -191,6 +191,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "client": 0,
       "spouse": 0,
     },
+    "probateCostRate": 0,
     "residenceState": null,
     "ssWageGrowthRate": null,
     "surplusSaveAccountId": null,
@@ -222,6 +223,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "startYearRef": null,
     },
   ],
+  "stockOptionPlans": [],
   "taxYearRows": [
     {
       "addlMedicareRate": 0.009,

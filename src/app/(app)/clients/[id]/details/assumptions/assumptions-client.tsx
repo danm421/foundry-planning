@@ -45,6 +45,7 @@ export interface AssumptionsSettings {
   flatStateEstateRate: string;
   residenceState: import("@/lib/usps-states").USPSStateCode | null;
   irdTaxRate: string;
+  probateCostRate: string;
   inflationRate: string;
   inflationRateSource: "asset_class" | "custom";
   planStartYear: number;
@@ -141,6 +142,7 @@ export default function AssumptionsClient({
             flatStateEstateRate={settings.flatStateEstateRate}
             residenceState={settings.residenceState}
             irdTaxRate={settings.irdTaxRate}
+            probateCostRate={settings.probateCostRate}
             outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
             priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
             priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}

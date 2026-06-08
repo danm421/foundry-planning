@@ -22,6 +22,7 @@ import {
   buildEstateTaxResult,
   computeDeductions,
   computeGrossEstate,
+  computeProbateEstate,
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
 import {
@@ -391,6 +392,16 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     gross.total += section2035.addBackLines.reduce((s, l) => s + l.amount, 0);
   }
 
+  // Probate cost (§2053): a rate applied to the probate estate — the subset of
+  // the gross estate that passes through the will. At final death formerly-joint
+  // property is solely owned, so the probate base typically widens.
+  const probateCostRate = input.planSettings.probateCostRate ?? 0;
+  const probateEstate = computeProbateEstate({
+    gross,
+    accounts: input.accounts,
+    deathOrder: 2,
+  });
+
   // Phase 3.5 — business-interest succession (compute-only; reads pre-flip
   // entities AND pre-chain accounts/accountBalances, same discipline as
   // grantor-succession above). At final death survivorFmId is null — the
@@ -570,6 +581,8 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     adjustedTaxableGiftsByYear: adjustedGiftsByYear,
     beaAtDeathYear,
     dsueReceived: input.dsueReceived,
+    probateCostRate,
+    probateEstate,
     residenceState: input.planSettings.residenceState ?? null,
     stateEstateTaxFallbackRate: input.planSettings.flatStateEstateRate ?? 0,
     inflationRate: taxInflation,
@@ -716,6 +729,8 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     adjustedTaxableGiftsByYear: adjustedGiftsByYear,
     beaAtDeathYear,
     dsueReceived: input.dsueReceived,
+    probateCostRate,
+    probateEstate,
     residenceState: input.planSettings.residenceState ?? null,
     stateEstateTaxFallbackRate: input.planSettings.flatStateEstateRate ?? 0,
     inflationRate: taxInflation,

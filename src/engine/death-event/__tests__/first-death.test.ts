@@ -372,3 +372,39 @@ describe("applyFirstDeath — community-property step-up integration", () => {
     expect(resultingAcct!.basis).toBe(700_000);
   });
 });
+
+describe("applyFirstDeath — probate cost integration", () => {
+  // Solely-owned, no-beneficiary brokerage → passes through probate at first
+  // death. The probate cost is deducted from the estate and added to
+  // totalTaxesAndExpenses, independent of the marital deduction.
+  const soleBrokerage: Account = {
+    id: "brok",
+    name: "Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    value: 1_000_000,
+    basis: 500_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    titlingType: "individual",
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+
+  it("folds the probate cost into the estate's taxes & expenses", () => {
+    const baseline = applyFirstDeath(
+      mkInput({ accounts: [soleBrokerage], planSettings: planSettings() }),
+    ).estateTax;
+    const withProbate = applyFirstDeath(
+      mkInput({
+        accounts: [soleBrokerage],
+        planSettings: planSettings({ probateCostRate: 0.05 }),
+      }),
+    ).estateTax;
+
+    expect(baseline.probateCost).toBe(0);
+    expect(withProbate.probateEstate).toBeCloseTo(1_000_000, 0);
+    expect(withProbate.probateCost).toBeCloseTo(50_000, 0);
+    expect(withProbate.totalTaxesAndExpenses - baseline.totalTaxesAndExpenses)
+      .toBeCloseTo(50_000, 0);
+  });
+});

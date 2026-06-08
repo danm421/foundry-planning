@@ -16,6 +16,7 @@ interface TaxRatesFormProps {
   flatStateEstateRate: string;
   residenceState: USPSStateCode | null;
   irdTaxRate: string;
+  probateCostRate: string;
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
@@ -100,6 +101,7 @@ export default function TaxRatesForm({
   flatStateEstateRate,
   residenceState,
   irdTaxRate,
+  probateCostRate,
   outOfHouseholdDniRate,
   priorTaxableGiftsClient,
   priorTaxableGiftsSpouse,
@@ -138,6 +140,7 @@ export default function TaxRatesForm({
       flatStateEstateRate: String(Number(data.get("flatStateEstateRate") ?? "0") / 100),
       residenceState: residence,
       irdTaxRate: String(Number(data.get("irdTaxRate") ?? "0") / 100),
+      probateCostRate: String(Number(data.get("probateCostRate") ?? "0") / 100),
       outOfHouseholdDniRate: String(Number(data.get("outOfHouseholdDniRate") ?? "0") / 100),
       priorTaxableGiftsClient: String(Number(data.get("priorTaxableGiftsClient") ?? "0")),
       priorTaxableGiftsSpouse: hasSpouse
@@ -293,6 +296,17 @@ export default function TaxRatesForm({
               id="irdTaxRate"
               name="irdTaxRate"
               defaultValue={pct(irdTaxRate)}
+              className={`${INPUT_CLS} max-w-[10rem]`}
+            />
+          </FieldRow>
+          <FieldRow
+            label="Probate cost rate"
+            help="Applied to the probate estate — assets passing through the will. Excludes jointly-titled property, beneficiary-designated accounts (life insurance, IRA/401(k), POD/TOD), and assets held in a trust."
+          >
+            <PercentInput
+              id="probateCostRate"
+              name="probateCostRate"
+              defaultValue={pct(probateCostRate)}
               className={`${INPUT_CLS} max-w-[10rem]`}
             />
           </FieldRow>
