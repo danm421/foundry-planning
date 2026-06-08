@@ -158,6 +158,7 @@ const populatedReport: EstateFlowReportData = {
         drainsByKind: {
           federal_estate_tax: 0,
           state_estate_tax: 0,
+          probate: 0,
           admin_expenses: -5_000,
           debts_paid: 0,
           ird_tax: 0,

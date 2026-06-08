@@ -15,6 +15,7 @@ const ESTATE_TAX_KINDS: ReadonlySet<DrainKind> = new Set([
 const DRAIN_KINDS = [
   "federal_estate_tax",
   "state_estate_tax",
+  "probate",
   "admin_expenses",
   "debts_paid",
 ] as const satisfies readonly DrainKind[];
@@ -163,7 +164,7 @@ export function attributeDrainsToLedger(args: {
   transfers: DeathTransfer[];
   estateTax: Pick<
     EstateTaxResult,
-    "federalEstateTax" | "stateEstateTax" | "estateAdminExpenses"
+    "federalEstateTax" | "stateEstateTax" | "estateAdminExpenses" | "probateCost"
   >;
   creditorDrainTotal: number;
   will: Will | null;
@@ -182,6 +183,7 @@ export function attributeDrainsToLedger(args: {
     drainTotals: {
       federal_estate_tax: args.estateTax.federalEstateTax,
       state_estate_tax: args.estateTax.stateEstateTax,
+      probate: args.estateTax.probateCost,
       admin_expenses: args.estateTax.estateAdminExpenses,
       debts_paid: args.creditorDrainTotal,
       ird_tax: 0,
@@ -207,6 +209,7 @@ export function assertDrainAttributionsReconcile(
   const expected: Record<DrainKind, number> = {
     federal_estate_tax: estateTax.federalEstateTax,
     state_estate_tax: estateTax.stateEstateTax,
+    probate: estateTax.probateCost,
     admin_expenses: estateTax.estateAdminExpenses,
     debts_paid: debtsTotal,
     ird_tax: 0,
@@ -214,6 +217,7 @@ export function assertDrainAttributionsReconcile(
   const sums: Record<DrainKind, number> = {
     federal_estate_tax: 0,
     state_estate_tax: 0,
+    probate: 0,
     admin_expenses: 0,
     debts_paid: 0,
     ird_tax: 0,

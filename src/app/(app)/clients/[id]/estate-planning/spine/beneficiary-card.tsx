@@ -6,6 +6,7 @@ import type { BeneficiaryDetail, DeathSlice } from "./lib/derive-beneficiary-det
 const DRAIN_LABEL: Record<keyof DeathSlice["drains"], string> = {
   federal_estate_tax: "Federal estate tax share",
   state_estate_tax: "State estate tax share",
+  probate: "Probate cost share",
   admin_expenses: "Admin expense share",
   debts_paid: "Debt share",
   ird_tax: "IRD tax share",

@@ -170,6 +170,7 @@ export interface DeathTransfer {
 export type DrainKind =
   | "federal_estate_tax"
   | "state_estate_tax"
+  | "probate"
   | "admin_expenses"
   | "debts_paid"
   | "ird_tax";

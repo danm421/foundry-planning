@@ -10,7 +10,7 @@ function group(over: Partial<RecipientGroup>): RecipientGroup {
   return {
     key: "family_member|a", recipientKind: "family_member", recipientId: "a",
     recipientLabel: "Emily", total: 0, byMechanism: [],
-    drainsByKind: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0, ird_tax: 0 },
+    drainsByKind: { federal_estate_tax: 0, state_estate_tax: 0, probate: 0, admin_expenses: 0, debts_paid: 0, ird_tax: 0 },
     netTotal: 0, ...over,
   };
 }

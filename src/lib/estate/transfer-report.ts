@@ -147,6 +147,7 @@ export interface RecipientGroup {
   drainsByKind: {
     federal_estate_tax: number;
     state_estate_tax: number;
+    probate: number;
     admin_expenses: number;
     debts_paid: number;
     ird_tax: number;
@@ -422,6 +423,7 @@ function buildDeathSection(
       entry = {
         federal_estate_tax: 0,
         state_estate_tax: 0,
+        probate: 0,
         admin_expenses: 0,
         debts_paid: 0,
         ird_tax: 0,
@@ -522,6 +524,7 @@ function buildDeathSection(
           : {
               federal_estate_tax: 0,
               state_estate_tax: 0,
+              probate: 0,
               admin_expenses: 0,
               debts_paid: 0,
               ird_tax: 0,
@@ -565,6 +568,7 @@ function buildDeathSection(
     const drainTotal =
       group.drainsByKind.federal_estate_tax +
       group.drainsByKind.state_estate_tax +
+      group.drainsByKind.probate +
       group.drainsByKind.admin_expenses +
       group.drainsByKind.debts_paid +
       group.drainsByKind.ird_tax;
