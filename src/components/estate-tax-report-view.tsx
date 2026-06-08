@@ -308,6 +308,7 @@ function LineRow({
   label,
   amount,
   hint,
+  badge,
   muted = false,
   showAsDeduction = false,
   hideIfZero = false,
@@ -315,6 +316,7 @@ function LineRow({
   label: string;
   amount: number;
   hint?: string;
+  badge?: string;
   muted?: boolean;
   showAsDeduction?: boolean;
   hideIfZero?: boolean;
@@ -335,6 +337,11 @@ function LineRow({
     >
       <span className="min-w-0 break-words">
         {label}
+        {badge && (
+          <span className="ml-2 rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-200/90">
+            {badge}
+          </span>
+        )}
         {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
       </span>
       <span
@@ -461,9 +468,17 @@ function DecedentBreakdown({
               key={`${line.accountId ?? line.liabilityId ?? line.entityId ?? "line"}-${idx}`}
               label={line.label}
               hint={line.percentage !== 1 ? pct.format(line.percentage) : undefined}
+              badge={line.isProbate ? "Probate" : undefined}
               amount={line.amount}
             />
           ))}
+          {tax.probateEstate > 0 && (
+            <LineRow
+              label="of which Probate Estate"
+              amount={tax.probateEstate}
+              muted
+            />
+          )}
         </Section>
 
         {/* Taxable Estate */}
@@ -474,7 +489,13 @@ function DecedentBreakdown({
         >
           <LineRow label="Gross Estate" amount={tax.grossEstate} />
           <LineRow
-            label="LESS: Probate and Final Expenses"
+            label="LESS: Probate Costs"
+            amount={tax.probateCost}
+            showAsDeduction
+            hideIfZero
+          />
+          <LineRow
+            label="LESS: Administrative / Final Expenses"
             amount={tax.estateAdminExpenses}
             showAsDeduction
             hideIfZero
@@ -548,8 +569,9 @@ function DecedentBreakdown({
             amount={stateInheritanceTax}
             hideIfZero
           />
+          <LineRow label="Probate Costs" amount={tax.probateCost} hideIfZero />
           <LineRow
-            label="Probate and Final Expenses"
+            label="Administrative / Final Expenses"
             amount={tax.estateAdminExpenses}
             hideIfZero
           />
@@ -583,6 +605,7 @@ function TotalsCard({
   federal,
   stateEstate,
   stateInheritance,
+  probate,
   admin,
   ird,
   total,
@@ -591,6 +614,7 @@ function TotalsCard({
   federal: number;
   stateEstate: number;
   stateInheritance: number;
+  probate: number;
   admin: number;
   ird: number;
   total: number;
@@ -614,6 +638,7 @@ function TotalsCard({
           amount={stateInheritance}
           hideIfZero
         />
+        <LineRow label="Total probate costs" amount={probate} hideIfZero />
         <LineRow label="Total admin expenses" amount={admin} hideIfZero />
         <LineRow
           label="Total tax on Income with Respect to Decedent"
@@ -653,6 +678,9 @@ function GrandTotals({ ordering }: { ordering: HypotheticalEstateTaxOrdering }) 
   const stateInheritance =
     inheritanceTaxOf(ordering.firstDeath)
     + (ordering.finalDeath ? inheritanceTaxOf(ordering.finalDeath) : 0);
+  const probate =
+    ordering.firstDeath.probateCost
+    + (ordering.finalDeath ? ordering.finalDeath.probateCost : 0);
   const admin = ordering.totals.admin;
   const ird =
     irdTaxOf(ordering.firstDeath)
@@ -663,9 +691,10 @@ function GrandTotals({ ordering }: { ordering: HypotheticalEstateTaxOrdering }) 
       federal={federal}
       stateEstate={stateEstate}
       stateInheritance={stateInheritance}
+      probate={probate}
       admin={admin}
       ird={ird}
-      total={federal + stateEstate + stateInheritance + admin + ird}
+      total={federal + stateEstate + stateInheritance + probate + admin + ird}
     />
   );
 }
@@ -674,6 +703,7 @@ function SplitTotals({ first, second }: { first: EstateTaxResult; second: Estate
   const federal = first.federalEstateTax + second.federalEstateTax;
   const stateEstate = first.stateEstateTax + second.stateEstateTax;
   const stateInheritance = inheritanceTaxOf(first) + inheritanceTaxOf(second);
+  const probate = first.probateCost + second.probateCost;
   const admin = first.estateAdminExpenses + second.estateAdminExpenses;
   const ird = irdTaxOf(first) + irdTaxOf(second);
   return (
@@ -682,9 +712,10 @@ function SplitTotals({ first, second }: { first: EstateTaxResult; second: Estate
       federal={federal}
       stateEstate={stateEstate}
       stateInheritance={stateInheritance}
+      probate={probate}
       admin={admin}
       ird={ird}
-      total={federal + stateEstate + stateInheritance + admin + ird}
+      total={federal + stateEstate + stateInheritance + probate + admin + ird}
     />
   );
 }
