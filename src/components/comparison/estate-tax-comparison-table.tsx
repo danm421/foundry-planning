@@ -81,7 +81,14 @@ export function EstateTaxComparisonTable({ plans }: Props) {
       },
       {
         kind: "row",
-        label: "Probate & Final Expenses",
+        label: "Probate Costs",
+        values: events.map((e) => (e ? e.probateCost : undefined)),
+        better: "lower",
+        hideIfZero: true,
+      },
+      {
+        kind: "row",
+        label: "Administrative / Final Expenses",
         values: events.map((e) => (e ? e.estateAdminExpenses : undefined)),
         better: "lower",
         hideIfZero: true,
