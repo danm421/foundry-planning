@@ -174,7 +174,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
               {!isRsu && <th className={thCls + " w-24"}>Exercised</th>}
               <th className={thCls + " w-24"}>Sold</th>
               <th className={thCls + " w-24"}>Remaining</th>
-              <th className={thCls + " w-8 pr-3"}></th>
+              <th className={thCls + " w-10 pr-3"}></th>
             </tr>
           </thead>
           <tbody>
@@ -240,7 +240,8 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                       type="button"
                       onClick={() => removeRow(i)}
                       title="Remove tranche"
-                      className="text-gray-500 hover:text-red-400 transition-colors"
+                      aria-label="Remove tranche"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded border border-gray-500 bg-gray-700 text-sm leading-none text-gray-100 hover:border-red-500 hover:bg-red-500/20 hover:text-red-300 transition-colors"
                     >
                       ✕
                     </button>
