@@ -397,6 +397,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           names[acc.id] = acc.name;
           subTypes[acc.id] = acc.subType;
         }
+        // Equity destination accounts (equity-dest-<planAccountId>) are
+        // engine-minted; name them from the plan ticker so the portfolio drill
+        // shows "TSLA shares" rather than the raw id.
+        for (const plan of data.stockOptionPlans ?? []) {
+          const destId = `equity-dest-${plan.accountId}`;
+          if (!(destId in names)) names[destId] = `${plan.ticker ?? plan.accountId} shares`;
+        }
         setAccountNames(names);
         setAccountSubTypes(subTypes);
         setClientData(data);
@@ -796,6 +803,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       if (acct.category !== "life_insurance") continue;
       const proceedsKey = `life-insurance-proceeds:${acct.id}`;
       incomeNames[proceedsKey] = `Life Insurance Proceeds: ${acct.name}`;
+      techniqueIncomeIds.push(proceedsKey);
+    }
+
+    // Equity-compensation sale proceeds. The engine emits
+    // bySource["equity-proceeds:<planAccountId>"] = net sale cash in sale years.
+    // Register each plan so "Other Inflows" + the Level-1 drill surface it,
+    // matching life-insurance-proceeds handling.
+    for (const plan of clientData.stockOptionPlans ?? []) {
+      const proceedsKey = `equity-proceeds:${plan.accountId}`;
+      incomeNames[proceedsKey] = `Equity Sale: ${plan.ticker ?? plan.accountId}`;
       techniqueIncomeIds.push(proceedsKey);
     }
   }
@@ -2095,6 +2112,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           ? [numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal)]
           : []),
         numCol("portfolio_subtotal", "Total Portfolio Assets", liquidPortfolioTotal, true, true),
+        numCol("portfolio_stock_options_total", "Stock Options", (r) => r.portfolioAssets.stockOptionsTotal),
         numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
         numCol("portfolio_real_estate_total", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => r.portfolioAssets.realEstateTotal),
         numCol("portfolio_grand_total", "Total Assets", grandTotal, true),
