@@ -1,5 +1,6 @@
 import { Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { SHORT_DISCLAIMER } from "@/lib/presentations/disclaimers";
 import type { ReactNode } from "react";
 
 const styles = StyleSheet.create({
@@ -36,6 +37,12 @@ const styles = StyleSheet.create({
     fontSize: 7,
     color: PRESENTATION_THEME.ink3,
   },
+  footerDisclaimer: {
+    fontSize: 7,
+    color: PRESENTATION_THEME.ink3,
+    textAlign: "center",
+    marginBottom: 4,
+  },
 });
 
 export function PageFrame({
@@ -64,6 +71,9 @@ export function PageFrame({
       <View style={styles.headerAccentRule} />
       <View style={styles.body}>{children}</View>
       <View style={styles.footerHair} fixed />
+      <Text style={styles.footerDisclaimer} fixed>
+        {SHORT_DISCLAIMER}
+      </Text>
       <View style={styles.footerRow} fixed>
         <Text>Confidential · Personal</Text>
         <Text render={({ pageNumber, totalPages: tp }) => `Page ${pageNumber} of ${tp}`} />
