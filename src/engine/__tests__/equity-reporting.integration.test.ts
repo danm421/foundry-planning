@@ -217,4 +217,48 @@ describe("equity compensation — reporting surfaces", () => {
       .reduce((s, [, v]) => s + v.amount, 0);
     expect(vestSum).toBeCloseTo(y.taxDetail!.earnedIncome, 2);
   });
+
+  // ── Task 4: sale proceeds as Other Inflows + Portfolio Activity offset ──────
+
+  it("sale year surfaces equity proceeds as Other Inflows without double-counting", () => {
+    const baseByYear = new Map(
+      runProjection(buildData({ stockOptionPlans: [] })).map((y) => [y.year, y]),
+    );
+    const byYear = new Map(
+      runProjection(buildData({ stockOptionPlans: [EQUITY_PLAN] })).map((y) => [y.year, y]),
+    );
+    const sale = byYear.get(2033)!;
+    const key = `equity-proceeds:${SO_PLAN_ACCOUNT_ID}`;
+    // (a) income.bySource carries the proceeds (scalar number)
+    expect(sale.income.bySource[key]).toBeGreaterThan(0);
+    // (b) folded into totalIncome but NOT into income.other/income.total
+    expect(sale.totalIncome).toBeGreaterThan(sale.income.total);
+    expect(sale.income.other).toBeCloseTo(baseByYear.get(2033)!.income.other, 2);
+    expect(sale.income.total).toBeCloseTo(baseByYear.get(2033)!.income.total, 2);
+    // (c) net cash flow reconciles
+    expect(sale.netCashFlow).toBeCloseTo(sale.totalIncome - sale.totalExpenses, 0);
+  });
+
+  it("Portfolio Activity shows the offsetting dest-account distribution on sale", () => {
+    const byYear = new Map(
+      runProjection(buildData({ stockOptionPlans: [EQUITY_PLAN] })).map((y) => [y.year, y]),
+    );
+    const destId = `equity-dest-${SO_PLAN_ACCOUNT_ID}`;
+    // vest years: contributions (shares enter portfolio)
+    expect(byYear.get(2027)!.accountLedgers[destId]?.contributions ?? 0).toBeGreaterThan(0);
+    // sale year: distribution (shares leave portfolio) — the offset to the inflow
+    expect(byYear.get(2033)!.accountLedgers[destId]?.distributions ?? 0).toBeGreaterThan(0);
+  });
+
+  it("net worth is not inflated by the sale proceeds (double-count guard)", () => {
+    const byYear = new Map(
+      runProjection(buildData({ stockOptionPlans: [EQUITY_PLAN] })).map((y) => [y.year, y]),
+    );
+    const sale = byYear.get(2033)!;
+    const destId = `equity-dest-${SO_PLAN_ACCOUNT_ID}`;
+    const proceeds = sale.income.bySource[`equity-proceeds:${SO_PLAN_ACCOUNT_ID}`];
+    const distribution = sale.accountLedgers[destId]!.distributions;
+    // the inflow and the portfolio drawdown are the same dollar (within sell-to-cover/tax)
+    expect(distribution).toBeCloseTo(proceeds, -2); // same order of magnitude, offsetting
+  });
 });
