@@ -165,6 +165,7 @@ export type AuditAction =
   | "scenario.rename"
   | "scenario.duplicate"
   | "scenario.delete"
+  | "scenario.promote_to_base"
   // Toggle groups (per-scenario named buckets that gate scenario_changes).
   | "toggle_group.create"
   | "toggle_group.rename"
