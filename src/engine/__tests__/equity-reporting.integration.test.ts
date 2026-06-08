@@ -199,4 +199,22 @@ describe("equity compensation — reporting surfaces", () => {
     // Flat mode previously ignored equity; tax in the vest year must now rise.
     expect(tax(withEq)).toBeGreaterThan(tax(base));
   });
+
+  it("writes itemized equity bySource entries on the tax detail", () => {
+    const byYear = new Map(runProjection(buildData({ stockOptionPlans: [EQUITY_PLAN] })).map((y) => [y.year, y]));
+    const vest = byYear.get(2027)!.taxDetail!.bySource[`equity-vest:${SO_PLAN_ACCOUNT_ID}`];
+    expect(vest).toMatchObject({ type: "earned_income" });
+    expect(vest.amount).toBeGreaterThan(0);
+    const sale = byYear.get(2033)!.taxDetail!.bySource[`equity-ltcg:${SO_PLAN_ACCOUNT_ID}`];
+    expect(sale).toMatchObject({ type: "capital_gains" });
+    expect(sale.amount).toBeGreaterThan(0);
+  });
+
+  it("equity bySource sums equal the scalar taxDetail buckets", () => {
+    const y = runProjection(buildData({ stockOptionPlans: [EQUITY_PLAN] })).find((x) => x.year === 2027)!;
+    const vestSum = Object.entries(y.taxDetail!.bySource)
+      .filter(([k]) => k.startsWith("equity-vest:"))
+      .reduce((s, [, v]) => s + v.amount, 0);
+    expect(vestSum).toBeCloseTo(y.taxDetail!.earnedIncome, 2);
+  });
 });

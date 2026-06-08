@@ -1941,6 +1941,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxDetail.bySource[`reinvestment:${rid}`] = { type: "capital_gains", amount: info.capitalGains };
       }
     }
+    // Per-plan equity bySource (tax-drill itemization — spec §B).
+    for (const [planId, eq] of equityByPlan) {
+      if (eq.ordinaryIncome > 0) {
+        taxDetail.bySource[`equity-vest:${planId}`] = { type: "earned_income", amount: eq.ordinaryIncome };
+      }
+      if (eq.capitalGains > 0) {
+        taxDetail.bySource[`equity-ltcg:${planId}`] = { type: "capital_gains", amount: eq.capitalGains };
+      }
+      if (eq.stCapitalGains > 0) {
+        taxDetail.bySource[`equity-stcg:${planId}`] = { type: "stcg", amount: eq.stCapitalGains };
+      }
+    }
 
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:
