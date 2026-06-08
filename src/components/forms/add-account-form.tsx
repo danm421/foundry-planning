@@ -40,6 +40,7 @@ import { inputClassName, selectClassName, fieldLabelClassName } from "./input-st
 import { GrowthRateField, parseGrowthSourceSelection, ASSET_MIX_CATEGORIES } from "./growth-rate-field";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
+import { isRmdEligibleSubType } from "@/engine/rmd";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 
 const isRetirementSubType = (st: string) =>
@@ -228,7 +229,6 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
 };
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa"]);
-const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k", "403b"]);
 
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   taxable: "Taxable Account",
@@ -373,7 +373,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
   );
   const [rmdEnabled, setRmdEnabled] = useState<boolean>(
-    initial?.rmdEnabled ?? RMD_ELIGIBLE_SUB_TYPES.has(
+    initial?.rmdEnabled ?? isRmdEligibleSubType(
       initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
     )
   );
@@ -1402,7 +1402,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     setCategory(newCat);
                     const firstSub = SUB_TYPE_BY_CATEGORY[newCat][0];
                     setSubType(firstSub);
-                    setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(firstSub));
+                    setRmdEnabled(isRmdEligibleSubType(firstSub));
                     if (!userEditedName) {
                       setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
                     }
@@ -1435,7 +1435,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   onChange={(e) => {
                     const newSub = e.target.value;
                     setSubType(newSub);
-                    setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(newSub));
+                    setRmdEnabled(isRmdEligibleSubType(newSub));
                     // Trad IRA default basis is 0 unless the advisor has
                     // already typed a value — flips back to mirroring on
                     // other subtypes.

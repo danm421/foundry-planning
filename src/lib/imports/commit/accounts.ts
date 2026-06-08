@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { accountOwners, accounts, lifeInsurancePolicies } from "@/db/schema";
+import { isRmdEligibleSubType } from "@/engine/rmd";
 import {
   RETIREMENT_SUBTYPES,
   validateOwnersShape,
@@ -72,7 +73,10 @@ export async function commitAccounts(
           growthRate: row.growthRate != null ? String(row.growthRate) : null,
           growthSource: row.growthSource ?? "default",
           modelPortfolioId: row.modelPortfolioId ?? null,
-          rmdEnabled: row.rmdEnabled ?? false,
+          // RMDs default ON for pre-tax retirement sub-types when the
+          // extraction didn't capture an explicit flag — matches the
+          // add-account form and quick-start wizard. Roth/non-retirement off.
+          rmdEnabled: row.rmdEnabled ?? isRmdEligibleSubType(subType),
           source: "extracted",
         })
         .returning({ id: accounts.id });

@@ -70,9 +70,10 @@ describe("calculateRMD", () => {
 });
 
 describe("isRmdEligibleSubType", () => {
-  it("returns true for traditional_ira and 401k", () => {
+  it("returns true for pre-tax retirement sub-types (traditional_ira, 401k, 403b)", () => {
     expect(isRmdEligibleSubType("traditional_ira")).toBe(true);
     expect(isRmdEligibleSubType("401k")).toBe(true);
+    expect(isRmdEligibleSubType("403b")).toBe(true);
   });
 
   it("returns false for roth types and other types", () => {

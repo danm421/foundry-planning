@@ -97,6 +97,22 @@ describe("accountPayload", () => {
     const p = accountPayload({ kind: "retirement", owner: "spouse", value: 250000, subType: "401k" }, ctx);
     expect(p).toMatchObject({ category: "retirement", subType: "401k", value: 250000, basis: 0 });
   });
+  it("retirement: RMDs default ON for pre-tax sub-types, OFF for Roth", () => {
+    const trad = accountPayload({ kind: "retirement", owner: "client", value: 100000, subType: "traditional_ira" }, ctx);
+    const k401 = accountPayload({ kind: "retirement", owner: "client", value: 100000, subType: "401k" }, ctx);
+    const b403 = accountPayload({ kind: "retirement", owner: "client", value: 100000, subType: "403b" }, ctx);
+    const roth = accountPayload({ kind: "retirement", owner: "client", value: 100000, subType: "roth_ira" }, ctx);
+    expect(trad.rmdEnabled).toBe(true);
+    expect(k401.rmdEnabled).toBe(true);
+    expect(b403.rmdEnabled).toBe(true);
+    expect(roth.rmdEnabled).toBe(false);
+  });
+  it("non-retirement accounts never enable RMDs", () => {
+    const cash = accountPayload({ kind: "cash", owner: "client", value: 50000 }, ctx);
+    const taxable = accountPayload({ kind: "taxable", owner: "client", value: 50000 }, ctx);
+    expect(cash.rmdEnabled).toBe(false);
+    expect(taxable.rmdEnabled).toBe(false);
+  });
   it("real_estate: primary residence subtype", () => {
     const p = accountPayload({ kind: "real_estate", owner: "joint", value: 600000 }, ctx);
     expect(p.category).toBe("real_estate");

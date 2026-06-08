@@ -348,6 +348,40 @@ describe("commitAccounts", () => {
     expect(values.modelPortfolioId).toBe("mp-1");
   });
 
+  it("defaults rmdEnabled by sub-type on a new account insert when not extracted", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        { name: "Trad IRA", category: "retirement", subType: "traditional_ira", owner: "client", match: { kind: "new" } },
+        { name: "Roth IRA", category: "retirement", subType: "roth_ira", owner: "client", match: { kind: "new" } },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const accountInserts = callsForTable(calls, "accounts").filter((c) => c.op === "insert");
+    expect(accountInserts).toHaveLength(2);
+    const trad = (accountInserts[0] as { values: Record<string, unknown> }).values;
+    const roth = (accountInserts[1] as { values: Record<string, unknown> }).values;
+    expect(trad.rmdEnabled).toBe(true);
+    expect(roth.rmdEnabled).toBe(false);
+  });
+
+  it("respects an explicitly-extracted rmdEnabled flag over the sub-type default", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        { name: "Trad IRA", category: "retirement", subType: "traditional_ira", owner: "client", rmdEnabled: false, match: { kind: "new" } },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const accountInserts = callsForTable(calls, "accounts").filter((c) => c.op === "insert");
+    const trad = (accountInserts[0] as { values: Record<string, unknown> }).values;
+    expect(trad.rmdEnabled).toBe(false);
+  });
+
   it("sets growthSource + modelPortfolioId on an exact update", async () => {
     const { tx, calls } = makeFakeTx();
     const payload: ImportPayload = {

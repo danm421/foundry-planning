@@ -47,6 +47,7 @@ export function calculateRMD(balance: number, age: number, birthYear: number): n
 export const RMD_ELIGIBLE_SUB_TYPES = new Set([
   "traditional_ira",
   "401k",
+  "403b",
 ]);
 
 /** Check if a sub-type is eligible for RMDs by default. */

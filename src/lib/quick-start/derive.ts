@@ -8,6 +8,7 @@ import {
   type YearRef,
 } from "@/lib/milestones";
 import { defaultDeductibleForSubtype } from "@/components/forms/deductible-contribution-checkbox";
+import { isRmdEligibleSubType } from "@/engine/rmd";
 import type { USPSStateCode } from "@/lib/usps-states";
 import type {
   QsIncomeDraft,
@@ -222,6 +223,10 @@ export function accountPayload(draft: QsAccountDraft, ctx: QsContext) {
     value: draft.value,
     basis,
     rothValue: 0,
+    // RMDs default ON for pre-tax retirement sub-types (traditional IRA,
+    // 401k, 403b); Roth and non-retirement accounts stay off. Mirrors the
+    // add-account form so accounts created via the wizard match.
+    rmdEnabled: isRmdEligibleSubType(subType),
     // growthRate omitted (null) => inherits category default from plan settings
   };
 }
