@@ -1129,6 +1129,9 @@ export interface PlanSettings {
   /** Flat IRD tax rate applied to pre-tax retirement assets passing to non-spouse,
    *  non-charity beneficiaries at any death event. 0 disables. */
   irdTaxRate?: number;
+  /** Probate cost rate (decimal). Applied to the probate estate at each death
+   *  event; additive to estateAdminExpenses. 0 disables. */
+  probateCostRate?: number;
   /** 0–1 fraction of unaccounted-for surplus cash flow to spend each year.
    *  Surplus = max(0, surplusBeforeSavings − savings.total − cashGifts).
    *  The spent portion is recorded as a discretionary expense; the remainder
