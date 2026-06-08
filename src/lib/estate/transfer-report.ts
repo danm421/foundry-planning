@@ -180,7 +180,7 @@ export interface AssetTransferLine {
 }
 
 export interface ReductionsLine {
-  kind: "federal_estate_tax" | "state_estate_tax" | "admin_expenses" | "debts_paid" | "ird_tax";
+  kind: "federal_estate_tax" | "state_estate_tax" | "probate" | "admin_expenses" | "debts_paid" | "ird_tax";
   label: string;
   amount: number;
   detail?: string;
@@ -603,10 +603,17 @@ function buildDeathSection(
       amount: tax.stateEstateTax,
     });
   }
+  if (tax.probateCost > 0) {
+    reductions.push({
+      kind: "probate",
+      label: "Probate Costs",
+      amount: tax.probateCost,
+    });
+  }
   if (tax.estateAdminExpenses > 0) {
     reductions.push({
       kind: "admin_expenses",
-      label: "Admin Expenses",
+      label: "Administrative Expenses",
       amount: tax.estateAdminExpenses,
     });
   }
