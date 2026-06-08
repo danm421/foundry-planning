@@ -26,37 +26,6 @@ function makeTx(returnedId?: string) {
   return { tx, inserted };
 }
 
-// Fake tx that supports .returning() for grandchild inserts (will bequests).
-function makeTxWithReturning() {
-  const inserted: { table: unknown; values: unknown }[] = [];
-  const tx = {
-    insert: (table: unknown) => ({
-      values: (values: unknown) => ({
-        returning: async () => {
-          inserted.push({ table, values });
-          return [{ id: "bequest-db-id" }];
-        },
-        // Fallback for tables that don't use returning()
-        then: undefined as unknown,
-      }),
-    }),
-  };
-  // Override to support direct await (no returning)
-  const txDirect = {
-    insert: (table: unknown) => ({
-      values: async (values: unknown) => {
-        inserted.push({ table, values });
-      },
-      returning: async () => {
-        return [{ id: "bequest-db-id" }];
-      },
-    }),
-  };
-  return { tx: txDirect, inserted };
-}
-
-const ctx = { clientId: "c1", baseScenarioId: "b1" };
-
 // ── writeAccountChildren ───────────────────────────────────────────────────
 
 describe("writeAccountChildren", () => {
@@ -65,7 +34,7 @@ describe("writeAccountChildren", () => {
     const raw = {
       owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 100 }],
     };
-    await writeAccountChildren(tx as never, "acct-db-id", raw, ctx);
+    await writeAccountChildren(tx as never, "acct-db-id", raw);
     expect(inserted).toHaveLength(1);
     expect((inserted[0].values as Record<string, unknown>).accountId).toBe("acct-db-id");
     expect((inserted[0].values as Record<string, unknown>).percent).toBe("100");
@@ -79,7 +48,7 @@ describe("writeAccountChildren", () => {
     const raw = {
       owners: [{ kind: "entity", entityId: "ent1", percent: 100 }],
     };
-    await writeAccountChildren(tx as never, "acct2", raw, ctx);
+    await writeAccountChildren(tx as never, "acct2", raw);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.entityId).toBe("ent1");
     expect(vals.familyMemberId).toBeNull();
@@ -91,7 +60,7 @@ describe("writeAccountChildren", () => {
     const raw = {
       owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "eb1", percent: 50 }],
     };
-    await writeAccountChildren(tx as never, "acct3", raw, ctx);
+    await writeAccountChildren(tx as never, "acct3", raw);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.externalBeneficiaryId).toBe("eb1");
     expect(vals.familyMemberId).toBeNull();
@@ -100,13 +69,13 @@ describe("writeAccountChildren", () => {
 
   it("skips owners when array is empty", async () => {
     const { tx, inserted } = makeTx();
-    await writeAccountChildren(tx as never, "a1", { owners: [] }, ctx);
+    await writeAccountChildren(tx as never, "a1", { owners: [] });
     expect(inserted).toHaveLength(0);
   });
 
   it("skips owners when not present in raw", async () => {
     const { tx, inserted } = makeTx();
-    await writeAccountChildren(tx as never, "a1", {}, ctx);
+    await writeAccountChildren(tx as never, "a1", {});
     expect(inserted).toHaveLength(0);
   });
 });
@@ -119,7 +88,7 @@ describe("writeLiabilityChildren", () => {
     const raw = {
       owners: [{ kind: "family_member", familyMemberId: "fm2", percent: 100 }],
     };
-    await writeLiabilityChildren(tx as never, "liab-db-id", raw, ctx);
+    await writeLiabilityChildren(tx as never, "liab-db-id", raw);
     expect(inserted).toHaveLength(1);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.liabilityId).toBe("liab-db-id");
@@ -132,7 +101,7 @@ describe("writeLiabilityChildren", () => {
     const raw = {
       extraPayments: [{ year: 2030, type: "lump_sum", amount: 5000 }],
     };
-    await writeLiabilityChildren(tx as never, "liab2", raw, ctx);
+    await writeLiabilityChildren(tx as never, "liab2", raw);
     expect(inserted).toHaveLength(1);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.liabilityId).toBe("liab2");
@@ -146,13 +115,13 @@ describe("writeLiabilityChildren", () => {
       owners: [{ kind: "entity", entityId: "ent2", percent: 100 }],
       extraPayments: [{ year: 2028, type: "per_payment", amount: 200 }],
     };
-    await writeLiabilityChildren(tx as never, "liab3", raw, ctx);
+    await writeLiabilityChildren(tx as never, "liab3", raw);
     expect(inserted).toHaveLength(2);
   });
 
   it("skips missing arrays gracefully", async () => {
     const { tx, inserted } = makeTx();
-    await writeLiabilityChildren(tx as never, "liab4", {}, ctx);
+    await writeLiabilityChildren(tx as never, "liab4", {});
     expect(inserted).toHaveLength(0);
   });
 });
@@ -165,7 +134,7 @@ describe("writeIncomeChildren", () => {
     const raw = {
       scheduleOverrides: { 2030: 50000, 2031: 55000 },
     };
-    await writeIncomeChildren(tx as never, "inc-id", raw, ctx);
+    await writeIncomeChildren(tx as never, "inc-id", raw);
     expect(inserted).toHaveLength(2);
     const years = inserted.map((r) => (r.values as Record<string, unknown>).year);
     expect(years).toContain(2030);
@@ -180,7 +149,7 @@ describe("writeIncomeChildren", () => {
 
   it("skips when no scheduleOverrides", async () => {
     const { tx, inserted } = makeTx();
-    await writeIncomeChildren(tx as never, "inc2", {}, ctx);
+    await writeIncomeChildren(tx as never, "inc2", {});
     expect(inserted).toHaveLength(0);
   });
 });
@@ -191,7 +160,7 @@ describe("writeExpenseChildren", () => {
   it("writes expense schedule overrides", async () => {
     const { tx, inserted } = makeTx();
     const raw = { scheduleOverrides: { 2032: 12000 } };
-    await writeExpenseChildren(tx as never, "exp-id", raw, ctx);
+    await writeExpenseChildren(tx as never, "exp-id", raw);
     expect(inserted).toHaveLength(1);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.expenseId).toBe("exp-id");
@@ -201,7 +170,7 @@ describe("writeExpenseChildren", () => {
 
   it("skips when no scheduleOverrides", async () => {
     const { tx, inserted } = makeTx();
-    await writeExpenseChildren(tx as never, "exp2", {}, ctx);
+    await writeExpenseChildren(tx as never, "exp2", {});
     expect(inserted).toHaveLength(0);
   });
 });
@@ -212,7 +181,7 @@ describe("writeSavingsRuleChildren", () => {
   it("writes savings schedule overrides", async () => {
     const { tx, inserted } = makeTx();
     const raw = { scheduleOverrides: { 2033: 6000, 2034: 7000 } };
-    await writeSavingsRuleChildren(tx as never, "sr-id", raw, ctx);
+    await writeSavingsRuleChildren(tx as never, "sr-id", raw);
     expect(inserted).toHaveLength(2);
     for (const row of inserted) {
       expect((row.values as Record<string, unknown>).savingsRuleId).toBe("sr-id");
@@ -221,7 +190,7 @@ describe("writeSavingsRuleChildren", () => {
 
   it("skips when no scheduleOverrides", async () => {
     const { tx, inserted } = makeTx();
-    await writeSavingsRuleChildren(tx as never, "sr2", {}, ctx);
+    await writeSavingsRuleChildren(tx as never, "sr2", {});
     expect(inserted).toHaveLength(0);
   });
 });
@@ -237,7 +206,7 @@ describe("writeTransferChildren", () => {
         { year: 2027, amount: 11000 },
       ],
     };
-    await writeTransferChildren(tx as never, "tr-id", raw, ctx);
+    await writeTransferChildren(tx as never, "tr-id", raw);
     expect(inserted).toHaveLength(2);
     for (const row of inserted) {
       expect((row.values as Record<string, unknown>).transferId).toBe("tr-id");
@@ -249,7 +218,7 @@ describe("writeTransferChildren", () => {
 
   it("skips when schedules is empty", async () => {
     const { tx, inserted } = makeTx();
-    await writeTransferChildren(tx as never, "tr2", { schedules: [] }, ctx);
+    await writeTransferChildren(tx as never, "tr2", { schedules: [] });
     expect(inserted).toHaveLength(0);
   });
 });
@@ -262,7 +231,7 @@ describe("writeRothConversionChildren", () => {
     const raw = {
       sourceAccountIds: ["acct-a", "acct-b"],
     };
-    await writeRothConversionChildren(tx as never, "rc-id", raw, ctx);
+    await writeRothConversionChildren(tx as never, "rc-id", raw);
     expect(inserted).toHaveLength(2);
     const rcIds = inserted.map((r) => (r.values as Record<string, unknown>).rothConversionId);
     expect(rcIds).toEqual(["rc-id", "rc-id"]);
@@ -276,7 +245,7 @@ describe("writeRothConversionChildren", () => {
 
   it("skips when sourceAccountIds is empty", async () => {
     const { tx, inserted } = makeTx();
-    await writeRothConversionChildren(tx as never, "rc2", { sourceAccountIds: [] }, ctx);
+    await writeRothConversionChildren(tx as never, "rc2", { sourceAccountIds: [] });
     expect(inserted).toHaveLength(0);
   });
 });
@@ -287,7 +256,7 @@ describe("writeReinvestmentChildren", () => {
   it("writes reinvestment accounts from accountIds", async () => {
     const { tx, inserted } = makeTx();
     const raw = { accountIds: ["acc1", "acc2"] };
-    await writeReinvestmentChildren(tx as never, "ri-id", raw, ctx);
+    await writeReinvestmentChildren(tx as never, "ri-id", raw);
     expect(inserted).toHaveLength(2);
     for (const row of inserted) {
       expect((row.values as Record<string, unknown>).reinvestmentId).toBe("ri-id");
@@ -300,7 +269,7 @@ describe("writeReinvestmentChildren", () => {
   it("writes reinvestment groups from groupKeys", async () => {
     const { tx, inserted } = makeTx();
     const raw = { groupKeys: ["all-liquid", "retirement"] };
-    await writeReinvestmentChildren(tx as never, "ri2", raw, ctx);
+    await writeReinvestmentChildren(tx as never, "ri2", raw);
     expect(inserted).toHaveLength(2);
     for (const row of inserted) {
       expect((row.values as Record<string, unknown>).reinvestmentId).toBe("ri2");
@@ -313,13 +282,13 @@ describe("writeReinvestmentChildren", () => {
   it("writes both accounts and groups", async () => {
     const { tx, inserted } = makeTx();
     const raw = { accountIds: ["acc3"], groupKeys: ["taxable"] };
-    await writeReinvestmentChildren(tx as never, "ri3", raw, ctx);
+    await writeReinvestmentChildren(tx as never, "ri3", raw);
     expect(inserted).toHaveLength(2);
   });
 
   it("skips when no accountIds or groupKeys", async () => {
     const { tx, inserted } = makeTx();
-    await writeReinvestmentChildren(tx as never, "ri4", {}, ctx);
+    await writeReinvestmentChildren(tx as never, "ri4", {});
     expect(inserted).toHaveLength(0);
   });
 });
@@ -367,7 +336,7 @@ describe("writeWillChildren", () => {
       ],
     };
 
-    await writeWillChildren(tx as never, "will-db-id", raw, ctx);
+    await writeWillChildren(tx as never, "will-db-id", raw);
 
     // 1 bequest + 1 bequest recipient + 1 residuary recipient = 3 inserts
     expect(inserted).toHaveLength(3);
@@ -405,7 +374,7 @@ describe("writeWillChildren", () => {
         },
       }),
     };
-    await writeWillChildren(tx as never, "w2", {}, ctx);
+    await writeWillChildren(tx as never, "w2", {});
     expect(inserted).toHaveLength(0);
   });
 });

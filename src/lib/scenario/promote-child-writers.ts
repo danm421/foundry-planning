@@ -26,8 +26,6 @@ import {
 import { coerceForTable } from "./promote-coerce";
 import type { PromoteTx } from "./promote-table-registry";
 
-type Ctx = { clientId: string; baseScenarioId: string };
-
 // ── Account children ───────────────────────────────────────────────────────
 
 /** Inserts accountOwners rows from raw.owners. Each owner carries a `kind`
@@ -37,7 +35,6 @@ export async function writeAccountChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const owners = (raw.owners as Array<Record<string, unknown>> | undefined) ?? [];
   for (const o of owners) {
@@ -62,7 +59,6 @@ export async function writeLiabilityChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const owners = (raw.owners as Array<Record<string, unknown>> | undefined) ?? [];
   for (const o of owners) {
@@ -95,7 +91,6 @@ export async function writeIncomeChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const overrides = raw.scheduleOverrides as Record<number, number> | undefined;
   if (!overrides) return;
@@ -116,7 +111,6 @@ export async function writeExpenseChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const overrides = raw.scheduleOverrides as Record<number, number> | undefined;
   if (!overrides) return;
@@ -137,7 +131,6 @@ export async function writeSavingsRuleChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const overrides = raw.scheduleOverrides as Record<number, number> | undefined;
   if (!overrides) return;
@@ -158,7 +151,6 @@ export async function writeTransferChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const schedules = (raw.schedules as Array<Record<string, unknown>> | undefined) ?? [];
   for (const s of schedules) {
@@ -179,7 +171,6 @@ export async function writeRothConversionChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const sourceAccountIds = (raw.sourceAccountIds as string[] | undefined) ?? [];
   for (let i = 0; i < sourceAccountIds.length; i++) {
@@ -200,7 +191,6 @@ export async function writeReinvestmentChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const accountIds = (raw.accountIds as string[] | undefined) ?? [];
   for (const accountId of accountIds) {
@@ -229,7 +219,6 @@ export async function writeWillChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  _ctx: Ctx,
 ): Promise<void> {
   const bequests = (raw.bequests as Array<Record<string, unknown>> | undefined) ?? [];
   for (const b of bequests) {
