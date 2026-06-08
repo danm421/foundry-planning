@@ -8,15 +8,12 @@ export interface ApplyEquityOutput {
 /** Mutates `accountBalances` / `basisMap` for the destination account and
  *  returns the tax numbers plus the equity net cash to fold into taxDetail.
  *  Does NOT credit checking — the caller routes `netCashToChecking` through
- *  creditCash so net-cash-flow reporting sees it exactly once.
- *  `checkingId` is retained for call-site symmetry but no longer read here. */
+ *  creditCash so net-cash-flow reporting sees it exactly once. */
 export function applyEquityYear(
   result: EquityYearResult,
   destinationAccountId: string,
   accountBalances: Record<string, number>,
   basisMap: Record<string, number>,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  checkingId: string,
 ): ApplyEquityOutput {
   // Acquisitions: in-kind inflow to the destination account.
   for (const a of result.acquisitions) {

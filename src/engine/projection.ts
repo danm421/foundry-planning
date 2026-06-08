@@ -1098,7 +1098,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
         if (!destId) destId = checkingId; // fallback: no destination → land value in checking
 
-        const applied = applyEquityYear(result, destId, accountBalances, basisMap, checkingId);
+        const applied = applyEquityYear(result, destId, accountBalances, basisMap);
         const planAcqValue = result.acquisitions.reduce((s, a) => s + a.value, 0);
         const prev = equityByPlan.get(plan.accountId) ?? {
           ordinaryIncome: 0, capitalGains: 0, stCapitalGains: 0, acquisitionValue: 0,
