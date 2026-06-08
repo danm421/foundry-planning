@@ -1,5 +1,6 @@
 import { Page, Text, View, Image, Svg, Polygon, Line, Rect, StyleSheet } from "@react-pdf/renderer";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { formatHouseholdName } from "@/lib/presentations/household-name";
 
 // Split-diagonal cover, ported from the eMoney report generator
 // (ethos-transition-platform `_engine/_cover.py`): a deep-navy slanted panel on
@@ -107,9 +108,7 @@ function clientNameSize(name: string): number {
 }
 
 export function CoverPdf(props: CoverProps) {
-  const names = props.spouseName
-    ? `${props.clientName} & ${props.spouseName}`
-    : props.clientName;
+  const names = formatHouseholdName(props.clientName, props.spouseName);
   const kicker = (props.title?.trim() || "Financial Planning Report").toUpperCase();
   const accent = props.accentColor;
 

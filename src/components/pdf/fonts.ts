@@ -35,5 +35,12 @@ export function ensureFontsRegistered(): void {
       { src: `${process.cwd()}/public/fonts/Fraunces-SemiBold.ttf`, fontWeight: 600 },
     ],
   });
+
+  // Disable automatic word-hyphenation. @react-pdf's default Knuth–Liang
+  // hyphenator inserts a hyphen mid-word at line ends (e.g. a long household
+  // name on the cover wrapping as "Frank Doyle & Anita Jack-/son"). Returning
+  // each word whole makes long text wrap at spaces instead.
+  Font.registerHyphenationCallback((word) => [word]);
+
   registered = true;
 }
