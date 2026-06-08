@@ -635,8 +635,8 @@ function IncomeDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 shadow-xl">
+        <div className="flex shrink-0 items-center justify-between px-6 pt-6 pb-4">
           <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Income" : "Add Income"}</h2>
           <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -645,12 +645,13 @@ function IncomeDialog({
           </button>
         </div>
 
-        <div className="mb-4 flex border-b border-gray-700">
+        <div className="mx-6 flex shrink-0 border-b border-gray-700">
           <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
           <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
-        {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
+        {activeTab === "details" && (<>
+          <form id="income-form-fields" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
           <div className="grid grid-cols-2 gap-4">
@@ -868,7 +869,8 @@ function IncomeDialog({
             onChange={setOwnerAccountId}
           />
 
-          <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
+          </form>
+          <div className="flex shrink-0 items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
             {isEdit && onRequestDelete ? (
               <button
                 type="button"
@@ -882,38 +884,41 @@ function IncomeDialog({
             )}
             <button
               type="submit"
+              form="income-form-fields"
               disabled={loading}
               className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Income"}
             </button>
           </div>
-        </form>)}
+        </>)}
 
         {activeTab === "schedule" && (
-          <ScheduleTab
-            startYear={startYear}
-            endYear={endYear}
-            initialOverrides={stagedSchedule}
-            onSave={async (overrides) => {
-              if (editing) {
-                await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ overrides }),
-                });
-              }
-              setStagedSchedule(overrides);
-              setHasSchedule(overrides.length > 0);
-            }}
-            onClear={async () => {
-              if (editing) {
-                await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, { method: "DELETE" });
-              }
-              setStagedSchedule([]);
-              setHasSchedule(false);
-            }}
-          />
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <ScheduleTab
+              startYear={startYear}
+              endYear={endYear}
+              initialOverrides={stagedSchedule}
+              onSave={async (overrides) => {
+                if (editing) {
+                  await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ overrides }),
+                  });
+                }
+                setStagedSchedule(overrides);
+                setHasSchedule(overrides.length > 0);
+              }}
+              onClear={async () => {
+                if (editing) {
+                  await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, { method: "DELETE" });
+                }
+                setStagedSchedule([]);
+                setHasSchedule(false);
+              }}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -971,8 +976,12 @@ function ExpenseDialog({
       ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
       : true
   );
+  // New living expenses default to inflation growth (advisor convention — living
+  // costs track inflation). Other/insurance expenses default to custom.
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
-    editing?.growthSource === "inflation" ? "inflation" : "custom"
+    editing
+      ? editing.growthSource === "inflation" ? "inflation" : "custom"
+      : defaultType === "living" ? "inflation" : "custom"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
     String(pctFromDecimal(editing?.growthRate, 3))
@@ -1075,8 +1084,8 @@ function ExpenseDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 shadow-xl">
+        <div className="flex shrink-0 items-center justify-between px-6 pt-6 pb-4">
           <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
           <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -1085,12 +1094,13 @@ function ExpenseDialog({
           </button>
         </div>
 
-        <div className="mb-4 flex border-b border-gray-700">
+        <div className="mx-6 flex shrink-0 border-b border-gray-700">
           <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
           <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
-        {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
+        {activeTab === "details" && (<>
+          <form id="expense-form-fields" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
           <div>
@@ -1290,7 +1300,8 @@ function ExpenseDialog({
             onChange={setOwnerAccountId}
           />
 
-          <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
+          </form>
+          <div className="flex shrink-0 items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
             {isEdit && onRequestDelete ? (
               <button
                 type="button"
@@ -1304,38 +1315,41 @@ function ExpenseDialog({
             )}
             <button
               type="submit"
+              form="expense-form-fields"
               disabled={loading}
               className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Expense"}
             </button>
           </div>
-        </form>)}
+        </>)}
 
         {activeTab === "schedule" && (
-          <ScheduleTab
-            startYear={startYear}
-            endYear={endYear}
-            initialOverrides={stagedSchedule}
-            onSave={async (overrides) => {
-              if (editing) {
-                await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ overrides }),
-                });
-              }
-              setStagedSchedule(overrides);
-              setHasSchedule(overrides.length > 0);
-            }}
-            onClear={async () => {
-              if (editing) {
-                await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, { method: "DELETE" });
-              }
-              setStagedSchedule([]);
-              setHasSchedule(false);
-            }}
-          />
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <ScheduleTab
+              startYear={startYear}
+              endYear={endYear}
+              initialOverrides={stagedSchedule}
+              onSave={async (overrides) => {
+                if (editing) {
+                  await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ overrides }),
+                  });
+                }
+                setStagedSchedule(overrides);
+                setHasSchedule(overrides.length > 0);
+              }}
+              onClear={async () => {
+                if (editing) {
+                  await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, { method: "DELETE" });
+                }
+                setStagedSchedule([]);
+                setHasSchedule(false);
+              }}
+            />
+          </div>
         )}
       </div>
     </div>
