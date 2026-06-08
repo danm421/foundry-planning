@@ -361,6 +361,8 @@ function GrantEditor({
         <VestingGrid
           rows={state.tranches}
           grantType={state.grantType}
+          sharesGranted={state.sharesGranted}
+          grantDate={state.grantDate}
           onChange={(tranches) => set({ tranches })}
         />
       </div>
@@ -576,6 +578,8 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
       shares: String(t.shares),
       sharesExercised: String(t.sharesExercised),
       sharesSold: String(t.sharesSold),
+      // Saved tranches are locked so a later auto-fill divides only new rows.
+      sharesEdited: true,
     }));
 
     // Seed strategy: null → ""; sellPercentPerYear ×100 for display
