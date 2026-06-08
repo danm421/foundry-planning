@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { fetchEodCloses, stooqSymbol, type QuoteDeps } from "@/lib/investments/quote";
+import { fetchEodCloses, eodhdSymbol, type QuoteDeps } from "@/lib/investments/quote";
 import {
   planPriceUpdates,
   type RefreshHoldingInput,
@@ -68,7 +68,7 @@ export async function refreshHoldings(
   await applyPriceUpdates(holdingUpdates);
 
   const tickersMissing = uniqueTickers.filter(
-    (t) => !quotes.get(stooqSymbol(t).toUpperCase()),
+    (t) => !quotes.get(eodhdSymbol(t)),
   );
 
   let accountsResynced = 0;

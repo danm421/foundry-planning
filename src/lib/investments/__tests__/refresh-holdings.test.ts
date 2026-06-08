@@ -4,7 +4,7 @@ const mockExecute = vi.fn();
 vi.mock("@/db", () => ({ db: { execute: (q: unknown) => mockExecute(q) } }));
 
 const mockFetchEodCloses = vi.fn();
-// Preserve the real module (stooqSymbol etc.); override only the batch fetcher.
+// Preserve the real module (eodhdSymbol etc.); override only the batch fetcher.
 vi.mock("@/lib/investments/quote", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/investments/quote")>()),
   fetchEodCloses: (...a: unknown[]) => mockFetchEodCloses(...a),

@@ -1,4 +1,4 @@
-import { stooqSymbol } from "./quote";
+import { eodhdSymbol } from "./quote";
 
 export interface RefreshHoldingInput {
   id: string;
@@ -36,7 +36,7 @@ export function planPriceUpdates(input: {
   for (const holding of input.holdings) {
     const ticker = holding.displayTicker?.trim();
     if (!ticker) continue;
-    const quote = input.quotes.get(stooqSymbol(ticker).toUpperCase());
+    const quote = input.quotes.get(eodhdSymbol(ticker));
     if (!quote) continue;
     if (holding.priceAsOf === quote.asOf) continue;
     holdingUpdates.push({ id: holding.id, price: quote.price, asOf: quote.asOf });

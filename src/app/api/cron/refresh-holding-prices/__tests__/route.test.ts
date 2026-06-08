@@ -25,8 +25,8 @@ vi.mock("@/db", async () => {
 });
 
 const mockFetchEodCloses = vi.fn();
-// Preserve the real module (stooqSymbol etc.) and override only the batch
-// fetcher — planPriceUpdates (not mocked) calls the real stooqSymbol.
+// Preserve the real module (eodhdSymbol etc.) and override only the batch
+// fetcher — planPriceUpdates (not mocked) calls the real eodhdSymbol.
 vi.mock("@/lib/investments/quote", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/investments/quote")>()),
   fetchEodCloses: (...a: unknown[]) => mockFetchEodCloses(...a),

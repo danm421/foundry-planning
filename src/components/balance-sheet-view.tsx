@@ -430,13 +430,17 @@ export default function BalanceSheetView({
     setRefreshingPrices(true);
     try {
       const s = await refreshClientHoldingPrices(clientId);
+      const missing = s.tickersMissing.length
+        ? ` Couldn't price: ${s.tickersMissing.join(", ")}.`
+        : "";
       const msg =
         s.holdingsConsidered === 0
           ? "No tickered holdings to refresh."
-          : s.holdingsUpdated === 0
-            ? "Prices already current."
-            : `Updated ${s.holdingsUpdated} holding${s.holdingsUpdated === 1 ? "" : "s"}.` +
-              (s.tickersMissing.length ? ` Couldn't price: ${s.tickersMissing.join(", ")}.` : "");
+          : s.holdingsUpdated > 0
+            ? `Updated ${s.holdingsUpdated} holding${s.holdingsUpdated === 1 ? "" : "s"}.${missing}`
+            : s.tickersMissing.length
+              ? `Couldn't fetch prices.${missing}`
+              : "Prices already current.";
       showToast({ message: msg });
       if (s.holdingsUpdated > 0) router.refresh();
     } catch (err) {

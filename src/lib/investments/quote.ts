@@ -1,90 +1,129 @@
+// Latest daily close prices via EODHD's real-time multi-ticker endpoint.
+// Replaces the retired Stooq `q/l/` quote endpoint (which now 404s / is behind a
+// browser challenge). Fail-soft throughout: unresolved symbols are simply absent
+// from the returned map and nothing throws to the caller — the refresh summary
+// (tickersMissing) surfaces what couldn't be priced.
+
 export interface QuoteDeps {
-  /** Injectable fetcher: takes the Stooq `s=` query value (one symbol or a
-   *  `+`-joined list) and returns the raw CSV. Defaults to the live call. */
-  fetchCsv?: (query: string) => Promise<string>;
+  /** Injectable EODHD API key (defaults to process.env.EODHD_API_KEY). */
+  apiKey?: string;
+  /** Injectable transport: takes a chunk of EODHD symbols (e.g. ["VTI.US"]) and
+   *  returns the parsed real-time JSON — an object for one symbol, an array for
+   *  many. Defaults to the live EODHD call. */
+  fetchRealtime?: (symbols: string[]) => Promise<unknown>;
 }
 
-const STOOQ_QUOTE_BASE = "https://stooq.com/q/l/";
+const EODHD_REALTIME_BASE = "https://eodhd.com/api/real-time";
+// EODHD takes one primary symbol in the path plus a comma list in `s=`. Keep
+// chunks modest so one failing chunk can't sink a large refresh.
 const BATCH_SIZE = 50;
 
-/** Map a ticker to its Stooq symbol (lower-cased). Bare US ticker → `vti.us`;
- *  US class share → `brk-b.us` (Stooq uses a dash, not a dot); an existing
- *  exchange suffix (foreign) passes through lower-cased and generally won't
- *  resolve on Stooq (fail-soft). */
-export function stooqSymbol(ticker: string): string {
+/** Canonical EODHD symbol (UPPERCASE): bare US ticker → `VTI.US`; a US class
+ *  share dot → dash (`BRK.B` → `BRK-B.US`); an existing exchange suffix
+ *  (foreign) passes through (`BMW.XETRA`) and generally won't resolve — fail-soft. */
+export function eodhdSymbol(ticker: string): string {
   const t = ticker.trim().toUpperCase();
-  if (/^[A-Z]+\.[A-Z]$/.test(t)) return `${t.replace(".", "-").toLowerCase()}.us`;
-  if (t.includes(".")) return t.toLowerCase();
-  return `${t.toLowerCase()}.us`;
+  if (/^[A-Z]+\.[A-Z]$/.test(t)) return `${t.replace(".", "-")}.US`;
+  if (t.includes(".")) return t;
+  return `${t}.US`;
 }
 
-/** Live Stooq quote fetch. `query` is the `s=` value; each symbol is encoded
- *  individually so the `+` separator survives. Throws on HTTP error — callers
- *  catch and fail soft. */
-async function fetchStooqCsv(query: string): Promise<string> {
-  const encoded = query.split("+").map(encodeURIComponent).join("+");
-  const url = `${STOOQ_QUOTE_BASE}?s=${encoded}&f=sd2t2ohlcv&h&e=csv`;
+interface RealtimeRow {
+  code?: unknown;
+  close?: unknown;
+  timestamp?: unknown;
+}
+
+/** Live EODHD real-time fetch for one chunk. Throws on HTTP error; callers catch
+ *  and fail soft. Commas in `s=` are kept literal (EODHD expects them raw). */
+async function fetchRealtimeLive(symbols: string[], apiKey: string): Promise<unknown> {
+  const [first, ...rest] = symbols;
+  const sParam = rest.length ? `&s=${rest.join(",")}` : "";
+  const url = `${EODHD_REALTIME_BASE}/${encodeURIComponent(first)}?api_token=${apiKey}&fmt=json${sParam}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Stooq quote ${query}: HTTP ${res.status}`);
-  return res.text();
+  if (!res.ok) throw new Error(`EODHD real-time ${first}+${rest.length}: HTTP ${res.status}`);
+  return res.json();
 }
 
-/** Parse a Stooq /q/l CSV (header + N data rows) into a map keyed by the
- *  upper-case Stooq symbol Stooq echoes back. Rows with `N/D` (unknown symbol)
- *  or a malformed close/date are dropped. */
-function parseStooqRows(csv: string): Map<string, { price: number; asOf: string }> {
-  const out = new Map<string, { price: number; asOf: string }>();
-  const lines = csv.trim().split(/\r?\n/);
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",");
-    if (cols.length < 7) continue;
-    const sym = cols[0].trim().toUpperCase();
-    const asOf = cols[1];
-    const price = Number(cols[6]);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !Number.isFinite(price)) continue;
-    out.set(sym, { price, asOf });
+/** EODHD epoch-seconds timestamp → YYYY-MM-DD (UTC). US closes land on the same
+ *  UTC day, so this is the trading date for our daily priceAsOf model. */
+function tsToDate(ts: number): string | null {
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+  return new Date(ts * 1000).toISOString().slice(0, 10);
+}
+
+/** Normalize a real-time response (object for one symbol, array for many) into
+ *  map entries keyed by upper-case EODHD code. Rows with a non-finite/non-positive
+ *  close, missing code, or unparseable timestamp are dropped (fail-soft). */
+function collectRows(
+  raw: unknown,
+  out: Map<string, { price: number; asOf: string }>,
+): void {
+  const rows: RealtimeRow[] = Array.isArray(raw) ? raw : [raw as RealtimeRow];
+  for (const r of rows) {
+    if (!r || typeof r.code !== "string") continue;
+    const price = typeof r.close === "number" ? r.close : Number(r.close);
+    const asOf = tsToDate(typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp));
+    if (!Number.isFinite(price) || price <= 0 || !asOf) continue;
+    out.set(r.code.toUpperCase(), { price, asOf });
   }
-  return out;
 }
 
-/** Latest daily close for one ticker, or null on ANY failure. Never throws. */
+/** Resolve the transport: an injected fetcher wins; otherwise the live EODHD
+ *  call bound to the configured key. Throws if neither is available — callers
+ *  decide whether to swallow (fail-soft) or surface. */
+function resolveFetch(deps: QuoteDeps): (symbols: string[]) => Promise<unknown> {
+  if (deps.fetchRealtime) return deps.fetchRealtime;
+  const apiKey = deps.apiKey ?? process.env.EODHD_API_KEY ?? "";
+  if (!apiKey) throw new Error("EODHD_API_KEY is not configured. Set it in .env.local.");
+  return (symbols) => fetchRealtimeLive(symbols, apiKey);
+}
+
+/** Latest close for one ticker, or null on ANY failure. Never throws. */
 export async function fetchEodClose(
   ticker: string,
   deps: QuoteDeps = {},
 ): Promise<{ price: number; asOf: string } | null> {
-  const fetchCsv = deps.fetchCsv ?? fetchStooqCsv;
   try {
-    const rows = parseStooqRows(await fetchCsv(stooqSymbol(ticker)));
-    return rows.get(stooqSymbol(ticker).toUpperCase()) ?? null;
+    const fetchRealtime = resolveFetch(deps);
+    const sym = eodhdSymbol(ticker);
+    const out = new Map<string, { price: number; asOf: string }>();
+    collectRows(await fetchRealtime([sym]), out);
+    return out.get(sym) ?? null;
   } catch {
     return null;
   }
 }
 
-/** Latest daily close for many tickers in batched requests. Returns a map keyed
- *  by upper-case Stooq symbol. Dedups symbols, chunks at BATCH_SIZE, retries a
- *  failing chunk once, then skips it. Never throws. */
+/** Latest close for many tickers in batched requests. Returns a map keyed by
+ *  upper-case EODHD code. Dedups symbols, chunks at BATCH_SIZE, retries a failing
+ *  chunk once, then skips it. Never throws (misconfig/transport → fewer entries). */
 export async function fetchEodCloses(
   tickers: readonly string[],
   deps: QuoteDeps = {},
 ): Promise<Map<string, { price: number; asOf: string }>> {
-  const fetchCsv = deps.fetchCsv ?? fetchStooqCsv;
-  const symbols = [...new Set(tickers.map(stooqSymbol))];
   const out = new Map<string, { price: number; asOf: string }>();
+  let fetchRealtime: (symbols: string[]) => Promise<unknown>;
+  try {
+    fetchRealtime = resolveFetch(deps);
+  } catch {
+    return out; // missing key → empty (fail-soft); the summary surfaces the misses
+  }
 
+  const symbols = [...new Set(tickers.map(eodhdSymbol))];
   for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
     const chunk = symbols.slice(i, i + BATCH_SIZE);
-    const query = chunk.join("+");
-    let csv: string | null = null;
-    for (let attempt = 0; attempt < 2 && csv === null; attempt++) {
+    let raw: unknown = null;
+    let ok = false;
+    for (let attempt = 0; attempt < 2 && !ok; attempt++) {
       try {
-        csv = await fetchCsv(query);
+        raw = await fetchRealtime(chunk);
+        ok = true;
       } catch {
-        csv = null; // retry once, then give up on this chunk
+        ok = false; // retry once, then give up on this chunk
       }
     }
-    if (csv === null) continue;
-    for (const [sym, quote] of parseStooqRows(csv)) out.set(sym, quote);
+    if (ok) collectRows(raw, out);
   }
   return out;
 }

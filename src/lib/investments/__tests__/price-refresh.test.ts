@@ -57,7 +57,7 @@ describe("planPriceUpdates", () => {
     expect(plan.accountsToResync).toEqual([]);
   });
 
-  it("maps a class-share ticker through stooqSymbol and dedups accounts", () => {
+  it("maps a class-share ticker through eodhdSymbol and dedups accounts", () => {
     const plan = planPriceUpdates({
       holdings: [
         h({ id: "h1", accountId: "a1", displayTicker: "BRK.B", priceAsOf: "2026-05-28" }),
