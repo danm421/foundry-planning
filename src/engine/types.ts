@@ -257,7 +257,7 @@ export interface EstateTaxResult {
 
   // Totals
   totalEstateTax: number;            // federal + state
-  totalTaxesAndExpenses: number;     // totalEstateTax + estateAdminExpenses
+  totalTaxesAndExpenses: number;     // totalEstateTax + estateAdminExpenses + probateCost
 
   /** Per-recipient × drain-kind allocation of the drains that summed into
    *  totalTaxesAndExpenses. Σ amount per drainKind across recipients equals
