@@ -1606,7 +1606,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains +
-      businessSaleResult.capitalGains;
+      businessSaleResult.capitalGains +
+      equityOrdinaryIncome +
+      equityCapitalGains +
+      equityStCapitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {

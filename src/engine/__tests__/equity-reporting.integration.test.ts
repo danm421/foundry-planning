@@ -185,4 +185,18 @@ describe("equity compensation — reporting surfaces", () => {
     // earnedIncome scalar still correct (regression guard for the refactor)
     expect(byYear.get(2027)!.taxDetail!.earnedIncome).toBeCloseTo(expected, 0);
   });
+
+  it("flat mode: equity vest income is included in taxes (no longer undertaxed)", () => {
+    const flat = (over?: Partial<ClientData>) =>
+      buildData({
+        ...over,
+        planSettings: { ...PLAN_SETTINGS, taxEngineMode: "flat" },
+      });
+    const base = runProjection(flat({ stockOptionPlans: [] }));
+    const withEq = runProjection(flat({ stockOptionPlans: [EQUITY_PLAN] }));
+    const tax = (ys: typeof base) =>
+      ys.find((y) => y.year === 2027)!.taxResult!.flow.totalTax;
+    // Flat mode previously ignored equity; tax in the vest year must now rise.
+    expect(tax(withEq)).toBeGreaterThan(tax(base));
+  });
 });
