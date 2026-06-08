@@ -313,7 +313,7 @@ function transferCost(branch: HypotheticalEstateTaxOrdering): number {
 }
 
 function branchDeathCost(d: EstateTaxResult): number {
-  // `totalTaxesAndExpenses` is federal + state + admin only. The engine drains
+  // `totalTaxesAndExpenses` is federal + state + admin + probate. The engine drains
   // liquid assets for creditor debt and IRD tax too (final-death.ts), so a
   // transfer cost that omits them understates the real liquidity demand and can
   // report a false surplus (audit F6). Matches the transfer report's "Debts
