@@ -20,13 +20,18 @@ export interface BuildSolverComparisonPlanArgs {
 export function buildSolverComparisonPlan(
   args: BuildSolverComparisonPlanArgs,
 ): ComparisonPlan {
-  // ScenarioRef requires toggleState for scenario kind and side for snapshot.
-  // Since this adapter is for the solver's transient "base" and scenario variants,
-  // we use empty toggleState (scenario kind) or omit snapshot entirely.
-  const ref: ScenarioRef =
-    args.id === "base"
-      ? { kind: "scenario", id: "base", toggleState: {} }
-      : { kind: "scenario", id: args.id, toggleState: {} };
+  // Solver plans wrap transient in-memory trees — the live base facts and the
+  // working tree being edited — neither of which is a saved scenario. They must
+  // be snapshot refs: useSharedMcRun's cacheScenarioId() returns null for
+  // snapshots, so it runs Monte Carlo client-side on `tree` instead of fetching
+  // `/api/clients/[id]/monte-carlo?scenario=<id>`. A scenario ref here would
+  // send the transient id (e.g. "working:v1"), which loadEffectiveTree rejects
+  // with "Scenario not found" → 500 → the PoS gauge shows "Error".
+  const ref: ScenarioRef = {
+    kind: "snapshot",
+    id: args.id,
+    side: args.isBaseline ? "left" : "right",
+  };
 
   return {
     index: args.index,

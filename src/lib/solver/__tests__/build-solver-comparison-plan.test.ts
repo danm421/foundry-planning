@@ -62,28 +62,31 @@ describe("buildSolverComparisonPlan", () => {
     expect(plan.lifetime.total).toBe(0);
   });
 
-  it("constructs a ScenarioRef of kind scenario when id is not 'base'", () => {
+  // Solver plans wrap transient in-memory trees (live base + working edits) that
+  // are NOT saved scenarios. They must be snapshot refs so useSharedMcRun's
+  // cacheScenarioId() returns null and runs Monte Carlo client-side on the
+  // supplied tree — fetching `?scenario=working:v1` 500s (no such scenario).
+  it("constructs a snapshot ScenarioRef for the working plan", () => {
     const plan = buildSolverComparisonPlan({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: "working:v1",
       label: "Working",
       tree,
       years,
       isBaseline: false,
       index: 1,
     });
-    expect(plan.ref.kind).toBe("scenario");
+    expect(plan.ref.kind).toBe("snapshot");
   });
 
-  it("constructs a ScenarioRef with id 'base' when id is 'base'", () => {
+  it("constructs a snapshot ScenarioRef for the base plan", () => {
     const plan = buildSolverComparisonPlan({
-      id: "base",
+      id: "base:v1",
       label: "Base Facts",
       tree,
       years,
       isBaseline: true,
       index: 0,
     });
-    expect(plan.ref.kind).toBe("scenario");
-    expect((plan.ref as any).id).toBe("base");
+    expect(plan.ref.kind).toBe("snapshot");
   });
 });
