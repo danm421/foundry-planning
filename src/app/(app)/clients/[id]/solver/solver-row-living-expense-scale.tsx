@@ -55,14 +55,14 @@ export function SolverRowLivingExpenseScale({
         {side === "working" ? (
           <div className="relative">
             <SolverSolveIcon
-              label="Solve Living Expense Scale"
+              label="Solve Maximum Retirement Spend"
               tooltip={LIVING_EXPENSE_SOLVE_DESCRIPTION}
               disabled={otherSolveActive}
               onClick={() => setPopoverOpen(true)}
             />
             {popoverOpen ? (
               <SolverSolvePopover
-                title="Solve Living Expense Scale"
+                title="Solve Maximum Retirement Spend"
                 rangeLabel="$0 – resource cap"
                 defaultTargetPct={85}
                 open={popoverOpen}
@@ -78,7 +78,7 @@ export function SolverRowLivingExpenseScale({
       </div>
       {side === "working" && isSolvingHere ? (
         <SolverSolveProgressStrip
-          title={`Solving Living Expense for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
+          title={`Solving Maximum Retirement Spend for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
           iteration={activeSolve.iteration}
           maxIterations={14}
           candidateValue={activeSolve.candidateValue}
