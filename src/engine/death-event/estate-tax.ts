@@ -357,6 +357,61 @@ function formatLabel(
   return label;
 }
 
+// ── Probate estate ──────────────────────────────────────────────────────────
+
+/**
+ * An account is NON-probate (excluded from the probate base) when it passes
+ * outside the will: held in a trust/entity, beneficiary-designated, a
+ * beneficiary-by-nature category (retirement / annuity / life insurance), or
+ * jointly titled with a surviving co-owner (first death only). At final death
+ * a formerly-joint account is solely owned → probate.
+ */
+function isNonProbateAccount(a: Account, deathOrder: 1 | 2): boolean {
+  // 1. Trust / entity-owned — revocable-trust assets are in the gross estate
+  //    but avoid probate.
+  if (controllingEntity(a) != null) return true;
+  // 2. Beneficiary-by-nature categories — transfer by contract/designation.
+  if (
+    a.category === "retirement" ||
+    a.category === "annuity" ||
+    a.category === "life_insurance"
+  ) {
+    return true;
+  }
+  // 3. Named primary beneficiary (POD/TOD/contract).
+  if (a.beneficiaries?.some((b) => b.tier === "primary")) return true;
+  // 4. Jointly titled with a surviving co-owner → right of survivorship.
+  if (deathOrder === 1) {
+    const fmOwners = a.owners.filter((o) => o.kind === "family_member");
+    if (fmOwners.length > 1) return true;
+  }
+  return false;
+}
+
+/**
+ * Sum of the gross-estate asset lines that pass through probate. Reuses the
+ * gross-estate inclusion (death-order joint split, trust inclusion) so the
+ * base is always a subset of the gross estate. Computed on gross probate value
+ * — debts are not subtracted (statutory gross-value convention). Mixed
+ * family+entity accounts are classified by their account-level attributes.
+ */
+export function computeProbateEstate(input: {
+  gross: GrossEstateOutput;
+  accounts: Account[];
+  deathOrder: 1 | 2;
+}): number {
+  const byId = new Map(input.accounts.map((a) => [a.id, a]));
+  let base = 0;
+  for (const ln of input.gross.lines) {
+    if (ln.amount <= 0 || ln.accountId == null) continue; // skip liabilities / zero
+    const a = byId.get(ln.accountId);
+    if (!a) continue;
+    if (isNonProbateAccount(a, input.deathOrder)) continue;
+    base += ln.amount;
+  }
+  return base;
+}
+
 // ── Deduction stack ─────────────────────────────────────────────────────────
 
 export interface DeductionOutput {
