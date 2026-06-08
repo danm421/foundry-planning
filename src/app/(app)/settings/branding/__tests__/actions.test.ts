@@ -121,6 +121,14 @@ describe("uploadBrandingAsset", () => {
     expect(result.ok).toBe(false);
     expect(mockPut).not.toHaveBeenCalled();
   });
+
+  it("returns an error (does not throw) when the blob upload fails", async () => {
+    mockPut.mockRejectedValueOnce(new Error("Cannot use public access on a private store"));
+    const result = await uploadBrandingAsset("logo", fileFormData("logo.png", "image/png", PNG));
+    expect(result.ok).toBe(false);
+    // DB write must not happen if the upload failed.
+    expect(mockSetLogo).not.toHaveBeenCalled();
+  });
 });
 
 describe("removeBrandingAsset", () => {

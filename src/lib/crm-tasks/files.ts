@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmTaskActivity, crmTaskFiles } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
+import { publicBlobToken } from "@/lib/blob-store";
 
 /**
  * Blob upload + record module for CRM task attachments. Mirrors the
@@ -61,6 +62,7 @@ export async function uploadCrmTaskFile(args: {
   const blob = await put(storageKey, args.file, {
     access: "public",
     addRandomSuffix: false,
+    token: publicBlobToken(),
   });
 
   const created = await db.transaction(async (tx) => {
@@ -146,7 +148,7 @@ export async function deleteCrmTaskFile(args: {
 
   // Best-effort blob delete — if it 404s we still want the DB row gone.
   try {
-    await del(row.storageKey);
+    await del(row.storageKey, { token: publicBlobToken() });
   } catch (err) {
     const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
     console.error("[crm-tasks.files] failed to delete blob:", {

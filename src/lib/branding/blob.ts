@@ -1,4 +1,5 @@
 import { put, del } from "@vercel/blob";
+import { publicBlobToken } from "@/lib/blob-store";
 
 export type BrandingKind = "logo" | "favicon";
 
@@ -22,6 +23,7 @@ export async function putBrandingAsset(args: PutArgs): Promise<{ url: string }> 
     access: "public",
     addRandomSuffix: true,
     contentType: args.contentType,
+    token: publicBlobToken(),
   });
   return { url: result.url };
 }
@@ -31,5 +33,5 @@ export async function putBrandingAsset(args: PutArgs): Promise<{ url: string }> 
  * acceptable; failing the user's action because cleanup failed is not).
  */
 export async function deleteBrandingAsset(url: string): Promise<void> {
-  await del(url);
+  await del(url, { token: publicBlobToken() });
 }

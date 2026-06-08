@@ -62,7 +62,17 @@ export async function uploadBrandingAsset(
   if (!check.ok) return { ok: false, error: check.error };
 
   const before = await getBranding(orgId);
-  const { url } = await putBrandingAsset({ firmId: orgId, kind, bytes, contentType: mime });
+
+  let url: string;
+  try {
+    ({ url } = await putBrandingAsset({ firmId: orgId, kind, bytes, contentType: mime }));
+  } catch (err) {
+    // Don't let a Blob failure escape the server action — an uncaught throw
+    // here crashes the whole page (error boundary) instead of surfacing a
+    // toast. Return a friendly error so the form can show it inline.
+    console.error("[branding] upload failed:", err);
+    return { ok: false, error: "Upload failed. Please try again." };
+  }
 
   await setterFor(kind)(orgId, url);
 
