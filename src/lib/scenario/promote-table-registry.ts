@@ -29,6 +29,17 @@ import {
   wills,
   entities,
 } from "@/db/schema";
+import {
+  writeAccountChildren,
+  writeLiabilityChildren,
+  writeIncomeChildren,
+  writeExpenseChildren,
+  writeSavingsRuleChildren,
+  writeTransferChildren,
+  writeRothConversionChildren,
+  writeReinvestmentChildren,
+  writeWillChildren,
+} from "./promote-child-writers";
 
 /** Loosely-typed tx handle (Drizzle's tx callback param is not exported as a
  *  named type at our version). The executor passes the real tx through. */
@@ -65,20 +76,20 @@ export const NESTED_ONLY_KINDS = new Set<TargetKind>([
 ]);
 
 export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> = {
-  account: { table: accounts },
-  income: { table: incomes },
-  expense: { table: expenses },
-  liability: { table: liabilities },
-  savings_rule: { table: savingsRules },
+  account: { table: accounts, childWriter: writeAccountChildren },
+  income: { table: incomes, childWriter: writeIncomeChildren },
+  expense: { table: expenses, childWriter: writeExpenseChildren },
+  liability: { table: liabilities, childWriter: writeLiabilityChildren },
+  savings_rule: { table: savingsRules, childWriter: writeSavingsRuleChildren },
   withdrawal_strategy: { table: withdrawalStrategies },
-  transfer: { table: transfers },
-  reinvestment: { table: reinvestments },
+  transfer: { table: transfers, childWriter: writeTransferChildren },
+  reinvestment: { table: reinvestments, childWriter: writeReinvestmentChildren },
   asset_transaction: { table: assetTransactions },
-  roth_conversion: { table: rothConversions },
+  roth_conversion: { table: rothConversions, childWriter: writeRothConversionChildren },
   client_deduction: { table: clientDeductions },
   family_member: { table: familyMembers },
   external_beneficiary: { table: externalBeneficiaries },
   gift: { table: gifts },
-  will: { table: wills },
+  will: { table: wills, childWriter: writeWillChildren },
   entity: { table: entities },
 };
