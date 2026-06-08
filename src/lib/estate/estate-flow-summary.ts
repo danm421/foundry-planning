@@ -128,6 +128,7 @@ export interface BuildEstateFlowSummaryInput {
 const fmtKindLabels: Record<ReductionsLine["kind"], string> = {
   federal_estate_tax: "Federal Estate Tax",
   state_estate_tax: "State Estate Tax",
+  probate: "Probate Costs",
   admin_expenses: "Admin Expenses",
   debts_paid: "Debts Paid",
   ird_tax: "IRD Tax",
@@ -367,11 +368,12 @@ function buildDeathStage(
   };
 }
 
-// Order drain kinds appear in the heirs popover — estate taxes, then admin,
-// then debts, then IRD. Matches the conceptual order of the taxes sub-box.
+// Order drain kinds appear in the heirs popover — estate taxes, then probate,
+// then admin, then debts, then IRD. Matches the conceptual order of the taxes sub-box.
 const DRAIN_KIND_ORDER: ReadonlyArray<ReductionsLine["kind"]> = [
   "federal_estate_tax",
   "state_estate_tax",
+  "probate",
   "admin_expenses",
   "debts_paid",
   "ird_tax",
