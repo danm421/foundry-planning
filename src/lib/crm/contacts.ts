@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
+import { resolveContactDateOfBirth } from "./default-dob";
 import type { CreateCrmContactInput } from "./schemas";
 
 export async function createCrmContact(householdId: string, input: CreateCrmContactInput) {
@@ -17,7 +18,7 @@ export async function createCrmContact(householdId: string, input: CreateCrmCont
       firstName: input.firstName,
       lastName: input.lastName,
       preferredName: input.preferredName,
-      dateOfBirth: input.dateOfBirth,
+      dateOfBirth: resolveContactDateOfBirth(input.role, input.dateOfBirth),
       email: input.email || null,
       phone: input.phone,
       mobile: input.mobile,

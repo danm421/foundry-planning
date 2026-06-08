@@ -14,6 +14,7 @@ import { recordAudit } from "@/lib/audit";
 import { recordDelete } from "@/lib/audit/record-helpers";
 import { toHouseholdSnapshot } from "@/lib/audit/snapshots/household";
 import { recordActivity } from "./activity";
+import { resolveContactDateOfBirth } from "./default-dob";
 import type { CreateCrmHouseholdInput } from "./schemas";
 
 type CrmHouseholdStatus = "prospect" | "active" | "inactive" | "archived";
@@ -228,7 +229,7 @@ export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
           role: c.role,
           firstName: c.firstName,
           lastName: c.lastName,
-          dateOfBirth: c.dateOfBirth,
+          dateOfBirth: resolveContactDateOfBirth(c.role, c.dateOfBirth),
         })
         .returning();
       insertedContacts.push(contact);

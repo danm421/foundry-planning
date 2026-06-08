@@ -167,6 +167,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
             Date of birth <span className="text-ink-4">(optional)</span>
           </label>
           <input id="dob" name="dob" type="date" min="1910-01-01" className={inputClassName} />
+          <p className="mt-1 text-[12px] text-ink-4">Defaults to age 50 if left blank.</p>
         </div>
         <div>
           <label className={fieldLabelClassName} htmlFor="status">
