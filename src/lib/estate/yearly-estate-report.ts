@@ -255,13 +255,14 @@ function buildDeathRow(
     taxableEstate: tax.taxableEstate,
     charitableDeduction: tax.charitableDeduction,
     stateEstateTax: tax.stateEstateTax,
-    probateAndExpenses: tax.estateAdminExpenses,
+    probateAndExpenses: tax.estateAdminExpenses + tax.probateCost,
     incomeTaxOnIRD: irdTax,
     estateTaxPayable: tax.federalEstateTax,
     totalTaxAtDeath:
       tax.federalEstateTax +
       tax.stateEstateTax +
       tax.estateAdminExpenses +
+      tax.probateCost +
       irdTax,
   };
 }
