@@ -3774,21 +3774,32 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const sourceId = gift.sourceAccountId ?? defaultChecking?.id;
       if (!sourceId) continue;
 
-      // Resolve recipient: trust's default checking.  If the trust has no
-      // default-checking account configured, log a soft skip — don't crash.
-      const recipientId = entityCheckingByEntityId[gift.recipientEntityId];
-      if (!recipientId) continue;
+      // Resolve recipient: a modeled trust entity's default checking. Gifts to
+      // family members / external beneficiaries (recipientEntityId absent) — or
+      // to a trust with no checking account configured — have no in-projection
+      // account to credit; the cash simply leaves the household. The source is
+      // still debited below regardless.
+      const recipientId = gift.recipientEntityId
+        ? entityCheckingByEntityId[gift.recipientEntityId]
+        : undefined;
+      const recipientName = gift.recipientEntityId
+        ? currentEntities.find((e) => e.id === gift.recipientEntityId)?.name ?? gift.recipientEntityId
+        : "recipient";
 
       creditCash(sourceId, -gift.amount, {
         category: "gift",
-        label: `Cash gift to ${currentEntities.find((e) => e.id === gift.recipientEntityId)?.name ?? gift.recipientEntityId}`,
+        label: `Cash gift to ${recipientName}`,
         sourceId: gift.recipientEntityId,
       });
-      creditCash(recipientId, gift.amount, {
-        category: "gift",
-        label: `Cash gift received`,
-        sourceId: gift.recipientEntityId,
-      });
+      // Credit the recipient only when it's a modeled entity with a checking
+      // account; otherwise the cash exits the projection.
+      if (recipientId) {
+        creditCash(recipientId, gift.amount, {
+          category: "gift",
+          label: `Cash gift received`,
+          sourceId: gift.recipientEntityId,
+        });
+      }
 
       // Surface household-side outflows on the cashflow report. Counted only
       // when the source is a household-owned account; gifts originating from

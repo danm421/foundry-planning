@@ -361,7 +361,10 @@ export type GiftEvent =
       year: number;
       amount: number;
       grantor: "client" | "spouse";
-      recipientEntityId: string;
+      /** Set only when the recipient is a modeled trust entity. Absent for
+       *  cash gifts to family members / external beneficiaries — those have no
+       *  in-projection account to credit; the cash simply leaves the household. */
+      recipientEntityId?: string;
       sourceAccountId?: string;
       useCrummeyPowers: boolean;
       seriesId?: string; // present on fanned-out series occurrences

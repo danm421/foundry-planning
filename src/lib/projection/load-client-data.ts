@@ -1282,7 +1282,10 @@ export const loadClientDataWithContext = cache(
         year: g.year,
         amount: Number(g.amount),
         grantor: g.grantor as "client" | "spouse",
-        recipientEntityId: g.recipientEntityId!,
+        // Null for gifts to family members / external beneficiaries — the
+        // engine debits the household source either way; only a trust recipient
+        // gets an offsetting credit.
+        recipientEntityId: g.recipientEntityId ?? undefined,
         useCrummeyPowers: g.useCrummeyPowers ?? false,
         eventKind: g.eventKind,
       }));
