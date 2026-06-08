@@ -7,14 +7,6 @@ const fmt = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-const DRAIN_KINDS: ReadonlyArray<keyof RecipientGroup["drainsByKind"]> = [
-  "federal_estate_tax",
-  "state_estate_tax",
-  "admin_expenses",
-  "debts_paid",
-  "ird_tax",
-];
-
 const DISTRIBUTION_FORM_CHIP = {
   outright: { className: "bg-gray-800/70 text-gray-300", label: "Outright" },
   in_trust: { className: "bg-indigo-900/40 text-indigo-200", label: "In trust" },
@@ -28,8 +20,10 @@ export function EstateTransferRecipientCard({
   const isSpouse = group.recipientKind === "spouse";
   const isSystemDefault = group.recipientKind === "system_default";
 
-  const totalDrains = DRAIN_KINDS.reduce(
-    (s, k) => s + group.drainsByKind[k],
+  // Sum every drain kind generically so a new DrainKind can never silently
+  // drop out of the displayed reductions (and break gross − reductions = net).
+  const totalDrains = Object.values(group.drainsByKind).reduce(
+    (s, v) => s + v,
     0,
   );
   const hasReductions = Math.abs(totalDrains) >= 0.5;

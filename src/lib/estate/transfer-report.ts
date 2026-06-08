@@ -415,19 +415,20 @@ function buildDeathSection(
   // post-drain amounts; post-Phase-B the chain routes gross, so the inference
   // is unnecessary for chain transfers.
   type DrainsByKind = RecipientGroup["drainsByKind"];
+  const ZERO_DRAINS_BY_KIND: DrainsByKind = {
+    federal_estate_tax: 0,
+    state_estate_tax: 0,
+    probate: 0,
+    admin_expenses: 0,
+    debts_paid: 0,
+    ird_tax: 0,
+  };
   const drainsByKindByRecipient = new Map<GroupKey, DrainsByKind>();
   for (const a of payload.estateTax.drainAttributions ?? []) {
     const key: GroupKey = `${a.recipientKind}|${a.recipientId ?? ""}`;
     let entry = drainsByKindByRecipient.get(key);
     if (!entry) {
-      entry = {
-        federal_estate_tax: 0,
-        state_estate_tax: 0,
-        probate: 0,
-        admin_expenses: 0,
-        debts_paid: 0,
-        ird_tax: 0,
-      };
+      entry = { ...ZERO_DRAINS_BY_KIND };
       drainsByKindByRecipient.set(key, entry);
     }
     entry[a.drainKind] += a.amount;
@@ -519,16 +520,7 @@ function buildDeathSection(
         recipientLabel: resolved.name,
         total: 0,
         byMechanism: [],
-        drainsByKind: sourced
-          ? { ...sourced }
-          : {
-              federal_estate_tax: 0,
-              state_estate_tax: 0,
-              probate: 0,
-              admin_expenses: 0,
-              debts_paid: 0,
-              ird_tax: 0,
-            },
+        drainsByKind: sourced ? { ...sourced } : { ...ZERO_DRAINS_BY_KIND },
         netTotal: 0,
       };
       groups.set(key, group);
@@ -565,13 +557,10 @@ function buildDeathSection(
   // engine's actual cash routed to the recipient at second death; equivalent
   // to gross − chain-allocated drain at first death.
   for (const group of groups.values()) {
-    const drainTotal =
-      group.drainsByKind.federal_estate_tax +
-      group.drainsByKind.state_estate_tax +
-      group.drainsByKind.probate +
-      group.drainsByKind.admin_expenses +
-      group.drainsByKind.debts_paid +
-      group.drainsByKind.ird_tax;
+    const drainTotal = Object.values(group.drainsByKind).reduce(
+      (s, v) => s + v,
+      0,
+    );
     group.netTotal = group.total - drainTotal;
   }
 

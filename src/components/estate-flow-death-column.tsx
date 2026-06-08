@@ -54,16 +54,6 @@ function DeathWarningsCallout({ notes }: { notes: DeathWarningNote[] }) {
   );
 }
 
-// ── Drain kinds (module-scoped to avoid per-render reallocation) ─────────────
-
-const DRAIN_KINDS: ReadonlyArray<keyof RecipientGroup["drainsByKind"]> = [
-  "federal_estate_tax",
-  "state_estate_tax",
-  "admin_expenses",
-  "debts_paid",
-  "ird_tax",
-];
-
 const DISTRIBUTION_FORM_CHIP = {
   outright: { className: "bg-gray-800/70 text-gray-300", label: "Outright" },
   in_trust: { className: "bg-indigo-900/40 text-indigo-200", label: "In trust" },
@@ -196,7 +186,9 @@ function ClickableRecipientGroup({
   // deliberately NOT added into group.total / group.netTotal.
   const matchedGifts = gifts.filter((g) => giftMatchesGroup(g, group));
 
-  const totalDrains = DRAIN_KINDS.reduce((s, k) => s + group.drainsByKind[k], 0);
+  // Sum every drain kind generically so a new DrainKind can never silently
+  // drop out of the displayed reductions (and break gross − reductions = net).
+  const totalDrains = Object.values(group.drainsByKind).reduce((s, v) => s + v, 0);
   const hasReductions = Math.abs(totalDrains) >= 0.5;
 
   return (
