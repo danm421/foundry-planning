@@ -221,6 +221,11 @@ export interface EstateTaxResult {
   // Debts are already folded into grossEstateLines as negative entries.
   taxableEstate: number;
 
+  // Probate (§2053 administrative expense, additive to estateAdminExpenses)
+  probateCostRate: number;
+  probateEstate: number;
+  probateCost: number;
+
   // Tentative Tax Base
   adjustedTaxableGifts: number;
   tentativeTaxBase: number;

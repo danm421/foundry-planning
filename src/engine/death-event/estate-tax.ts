@@ -551,6 +551,12 @@ export function buildEstateTaxResult(input: {
   adjustedTaxableGiftsByYear?: Array<{ year: number; amount: number }>;
   beaAtDeathYear: number;
   dsueReceived: number;
+  /** Probate cost rate (decimal). Multiplied by `probateEstate` to a §2053
+   *  administrative expense, additive to `deductions.estateAdminExpenses`.
+   *  Defaults to 0. */
+  probateCostRate?: number;
+  /** Gross probate-estate base (from `computeProbateEstate`). Defaults to 0. */
+  probateEstate?: number;
   residenceState: USPSStateCode | null;
   stateEstateTaxFallbackRate: number;
   /** Plan tax-inflation rate (decimal). Forward-projects indexed state-estate
@@ -570,9 +576,13 @@ export function buildEstateTaxResult(input: {
   /** Decedent age at death — needed for PA IRA-under-59½ rule. */
   decedentAgeAtDeath?: number;
 }): EstateTaxResult {
+  const probateCostRate = input.probateCostRate ?? 0;
+  const probateEstate = input.probateEstate ?? 0;
+  const probateCost = Math.round(probateCostRate * probateEstate);
+
   const taxableEstate = Math.max(
     0,
-    input.gross.total - input.deductions.estateAdminExpenses
+    input.gross.total - input.deductions.estateAdminExpenses - probateCost
       - input.deductions.maritalDeduction - input.deductions.charitableDeduction,
   );
 
@@ -636,7 +646,8 @@ export function buildEstateTaxResult(input: {
     ? stateEstateTaxDetail.fallbackRate
     : (taxableEstate > 0 ? stateEstateTax / taxableEstate : 0);
   const totalEstateTax = fed.federalEstateTax + stateEstateTax;
-  const totalTaxesAndExpenses = totalEstateTax + input.deductions.estateAdminExpenses;
+  const totalTaxesAndExpenses =
+    totalEstateTax + input.deductions.estateAdminExpenses + probateCost;
 
   const dsueGenerated =
     input.deathOrder === 1 ? Math.max(0, fed.applicableExclusion - fed.tentativeTaxBase) : 0;
@@ -651,6 +662,9 @@ export function buildEstateTaxResult(input: {
     maritalDeduction: input.deductions.maritalDeduction,
     charitableDeduction: input.deductions.charitableDeduction,
     taxableEstate,
+    probateCostRate,
+    probateEstate,
+    probateCost,
     adjustedTaxableGifts: input.adjustedTaxableGifts,
     giftTaxPayable: fed.giftTaxPayable,
     tentativeTaxBase: fed.tentativeTaxBase,
