@@ -1,3 +1,4 @@
+import { clerkClient } from "@clerk/nextjs/server";
 import { getBranding } from "@/lib/branding/db";
 import { resolveAccentColor } from "@/components/pdf/theme";
 
@@ -14,9 +15,36 @@ export interface BrandingResolved {
 export async function resolveBranding(firmId: string): Promise<BrandingResolved> {
   const row = await getBranding(firmId);
   const primaryColor = resolveAccentColor(row?.primaryColor ?? null);
-  const firmName = row?.displayName?.trim() || "Foundry Planning";
+  const firmName = await resolveFirmName(firmId, row?.displayName ?? null);
   const logoDataUrl = await loadLogo(row?.logoUrl ?? null);
   return { primaryColor, firmName, logoDataUrl };
+}
+
+/**
+ * The firm name printed on report chrome. Clerk's organization name is the
+ * source of truth — it's what the user edits both in the Firm settings form and
+ * in Clerk's Organization Profile widget. We read it live so a rename shows up
+ * on the next export no matter which surface changed it. `firms.display_name` is
+ * a denormalized cache (kept in sync only by the Firm settings form, not by the
+ * Clerk widget) used as a fallback when Clerk is briefly unreachable;
+ * "Foundry Planning" is the last-resort default.
+ */
+async function resolveFirmName(
+  firmId: string,
+  cachedName: string | null,
+): Promise<string> {
+  try {
+    const cc = await clerkClient();
+    const org = await cc.organizations.getOrganization({ organizationId: firmId });
+    const liveName = org.name?.trim();
+    if (liveName) return liveName;
+  } catch (err) {
+    console.warn(
+      "[comparison-pdf] Clerk org name fetch failed; using cached display_name",
+      err,
+    );
+  }
+  return cachedName?.trim() || "Foundry Planning";
 }
 
 async function loadLogo(url: string | null): Promise<string | null> {

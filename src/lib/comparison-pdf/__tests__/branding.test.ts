@@ -3,15 +3,25 @@ import { PDF_THEME } from "@/components/pdf/theme";
 
 const mocks = vi.hoisted(() => ({
   getBranding: vi.fn(),
+  getOrganization: vi.fn(),
 }));
 
 vi.mock("@/lib/branding/db", () => ({ getBranding: mocks.getBranding }));
+vi.mock("@clerk/nextjs/server", () => ({
+  clerkClient: vi.fn(async () => ({
+    organizations: { getOrganization: mocks.getOrganization },
+  })),
+}));
 
 const originalFetch = globalThis.fetch;
 
 describe("resolveBranding", () => {
   beforeEach(() => {
     mocks.getBranding.mockReset();
+    // Default: Clerk reachable but unnamed, so firmName falls back to the
+    // cached display_name. Individual tests override to exercise the live path.
+    mocks.getOrganization.mockReset();
+    mocks.getOrganization.mockResolvedValue({ name: "" });
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
@@ -112,5 +122,35 @@ describe("resolveBranding", () => {
     const res = await resolveBranding("firm-1");
     expect(res.logoDataUrl).toBeNull();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("image/webp"));
+  });
+
+  it("prefers the live Clerk org name over the cached display_name", async () => {
+    // Mirrors the real bug: the firm was renamed via Clerk's OrganizationProfile
+    // widget (updating Clerk only), leaving firms.display_name stale.
+    mocks.getBranding.mockResolvedValue({
+      logoUrl: null,
+      primaryColor: null,
+      faviconUrl: null,
+      displayName: "Foundry Financial",
+    });
+    mocks.getOrganization.mockResolvedValue({ name: "Ethos Financial Group" });
+    const { resolveBranding } = await import("../branding");
+    const res = await resolveBranding("org-1");
+    expect(res.firmName).toBe("Ethos Financial Group");
+  });
+
+  it("falls back to cached display_name when Clerk is unreachable", async () => {
+    mocks.getBranding.mockResolvedValue({
+      logoUrl: null,
+      primaryColor: null,
+      faviconUrl: null,
+      displayName: "Acme Wealth",
+    });
+    mocks.getOrganization.mockRejectedValue(new Error("clerk down"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { resolveBranding } = await import("../branding");
+    const res = await resolveBranding("org-1");
+    expect(res.firmName).toBe("Acme Wealth");
+    expect(warnSpy).toHaveBeenCalled();
   });
 });
