@@ -10,6 +10,13 @@
 // Expenses" is anchored to `client_retirement` (startYear > planStartYear).
 // This mirrors the current/retirement split the solver UI shows via labelFor()
 // in solver-row-living-expense-scale.tsx.
+//
+// EXCEPTION — already-retired clients: when both spouses have already retired,
+// `client_retirement` resolves to a PAST year, so the retirement row's startYear
+// lands <= plan start and the "begins after plan start" test misses it. We then
+// also accept a row anchored to client/spouse retirement that stays active into
+// the plan. Without this the solver can't see the real retirement row, scales a
+// synthesized duplicate instead, and the PoS solve reports "unreachable" at $0.
 
 import type { ClientData, Expense } from "@/engine/types";
 
@@ -17,7 +24,19 @@ export function isRetirementLivingExpense(
   e: Expense,
   planStartYear: number,
 ): boolean {
-  return e.type === "living" && e.startYear > planStartYear;
+  if (e.type !== "living") return false;
+  // Not-yet-retired clients: the retirement living expense begins in a future
+  // year (anchored to client/spouse retirement, which resolves > plan start).
+  if (e.startYear > planStartYear) return true;
+  // Already-retired clients: retirement is in the PAST, so the retirement
+  // living-expense row resolves to a startYear <= plan start and the test above
+  // misses it. Recognize it by its retirement anchor as long as it stays active
+  // into the plan — otherwise the solver can't see the real row, synthesizes a
+  // duplicate on top of it, and the PoS solve returns "unreachable" at $0.
+  const startsAtRetirement =
+    e.startYearRef === "client_retirement" ||
+    e.startYearRef === "spouse_retirement";
+  return startsAtRetirement && e.endYear >= planStartYear;
 }
 
 /** Round a dollar amount to the nearest $2,000. */

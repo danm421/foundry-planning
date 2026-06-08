@@ -30,6 +30,41 @@ describe("isRetirementLivingExpense", () => {
       isRetirementLivingExpense(expense({ type: "insurance", startYear: 2040 }), 2026),
     ).toBe(false);
   });
+
+  // Already-retired clients: client_retirement resolves to a past year, so the
+  // retirement row's startYear is <= plan start. It must still be recognized via
+  // its retirement anchor (otherwise the PoS solve synthesizes a duplicate and
+  // returns "unreachable" at $0).
+  it("recognizes a retirement-anchored row that began in the past", () => {
+    expect(
+      isRetirementLivingExpense(
+        expense({ startYear: 2017, endYear: 2054, startYearRef: "client_retirement" }),
+        2026,
+      ),
+    ).toBe(true);
+    // spouse_retirement anchor counts too
+    expect(
+      isRetirementLivingExpense(
+        expense({ startYear: 2020, endYear: 2054, startYearRef: "spouse_retirement" }),
+        2026,
+      ),
+    ).toBe(true);
+    // the working-phase row (anchored to plan_start, ends at retirement in the
+    // past) is NOT retirement spend
+    expect(
+      isRetirementLivingExpense(
+        expense({ startYear: 2026, endYear: 2016, startYearRef: "plan_start" }),
+        2026,
+      ),
+    ).toBe(false);
+    // a retirement-anchored row that fully ended before the plan is inactive
+    expect(
+      isRetirementLivingExpense(
+        expense({ startYear: 2010, endYear: 2020, startYearRef: "client_retirement" }),
+        2026,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("roundToNearest2k", () => {
