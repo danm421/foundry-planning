@@ -6,11 +6,13 @@ interface Props {
   /** "What does this solve for" copy revealed on hover / keyboard focus. */
   tooltip?: string;
   disabled?: boolean;
+  /** Hover/focus copy shown while disabled. Defaults to the running-solve message. */
+  disabledReason?: string;
   onClick: () => void;
 }
 
-export function SolverSolveIcon({ label, tooltip, disabled, onClick }: Props) {
-  const hint = disabled ? "Another solve is running" : tooltip;
+export function SolverSolveIcon({ label, tooltip, disabled, disabledReason, onClick }: Props) {
+  const hint = disabled ? (disabledReason ?? "Another solve is running") : tooltip;
   return (
     <span className="group relative inline-flex">
       <button

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ClientData, Income } from "@/engine";
+import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { useSolverSide } from "./solver-section";
@@ -151,6 +152,19 @@ function EditableSummary({
     (activeSolve.target as { kind: "ss-claim-age"; person: SolverPerson }).person === person;
   const otherSolveActive = activeSolve !== null && !isSolvingHere;
 
+  // Once a person is already collecting, their claim age is locked in the past
+  // and can't be solved — mirror the engine's "has claimed this year" test.
+  const claimAgeMonths = resolveClaimAgeMonths(row, client);
+  const dob = person === "spouse" ? client.spouseDob : client.dateOfBirth;
+  const birthYear = dob ? Number(String(dob).slice(0, 4)) : NaN;
+  const ageMonthsThisYear = Number.isFinite(birthYear)
+    ? (new Date().getFullYear() - birthYear) * 12
+    : null;
+  const alreadyClaiming =
+    claimAgeMonths != null &&
+    ageMonthsThisYear != null &&
+    ageMonthsThisYear >= claimAgeMonths;
+
   if (isSolvingHere) {
     return (
       <div>
@@ -203,7 +217,12 @@ function EditableSummary({
           <SolverSolveIcon
             label={`Solve ${label} Claim Age`}
             tooltip={SS_CLAIM_AGE_SOLVE_DESCRIPTION}
-            disabled={otherSolveActive}
+            disabled={otherSolveActive || alreadyClaiming}
+            disabledReason={
+              alreadyClaiming
+                ? "Already collecting Social Security — claim age can't be solved."
+                : undefined
+            }
             onClick={() => onSolveStart(target)}
           />
         </div>
