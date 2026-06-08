@@ -1,5 +1,6 @@
 import { Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
+import { DISCLOSURES_HEADING, longDisclaimerParagraphs } from "@/lib/presentations/disclaimers";
 import { PdfPageFooter } from "../../pdf-page-footer";
 
 export interface TocSection {
@@ -17,9 +18,33 @@ const styles = StyleSheet.create({
   title: { fontSize: 12, color: PRESENTATION_THEME.ink },
   leader: { flex: 1, borderBottom: `1pt dotted ${PRESENTATION_THEME.hair}`, marginHorizontal: 6, marginBottom: 2 },
   pageNum: { fontSize: 12, color: PRESENTATION_THEME.ink2 },
+  disclosures: { marginTop: 40 },
+  disclosuresHeading: {
+    fontSize: 9,
+    fontWeight: 700,
+    color: PRESENTATION_THEME.ink2,
+    marginBottom: 6,
+  },
+  disclosureParagraph: {
+    fontSize: 7.5,
+    lineHeight: 1.4,
+    color: PRESENTATION_THEME.ink3,
+    marginBottom: 5,
+  },
 });
 
-export function TocPdf({ sections }: { sections: TocSection[] }) {
+export function TocPdf({
+  sections,
+  firmName,
+  clientName,
+  reportDate,
+}: {
+  sections: TocSection[];
+  firmName: string;
+  clientName: string;
+  reportDate: string;
+}) {
+  const disclosures = longDisclaimerParagraphs({ firmName, clientName, reportDate });
   return (
     <Page size="LETTER" style={styles.page}>
       <Text style={styles.heading}>Contents</Text>
@@ -30,6 +55,14 @@ export function TocPdf({ sections }: { sections: TocSection[] }) {
           <Text style={styles.pageNum}>{s.startPage}</Text>
         </View>
       ))}
+      <View style={styles.disclosures}>
+        <Text style={styles.disclosuresHeading}>{DISCLOSURES_HEADING}</Text>
+        {disclosures.map((paragraph, i) => (
+          <Text key={i} style={styles.disclosureParagraph}>
+            {paragraph}
+          </Text>
+        ))}
+      </View>
       <PdfPageFooter />
     </Page>
   );

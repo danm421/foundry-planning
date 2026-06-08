@@ -379,8 +379,13 @@ export const tocPage: PresentationPage<TocPageData, TocPageOptions> = {
   estimatePageCount: estimateTocPageCount,
   supportsScenarioOverride: false,
   buildData: () => ({}),
-  renderPdf: ({ documentSections }) => (
-    <TocPdf sections={documentSections ?? []} />
+  renderPdf: ({ documentSections, firmName, clientName, reportDate }) => (
+    <TocPdf
+      sections={documentSections ?? []}
+      firmName={firmName}
+      clientName={clientName}
+      reportDate={reportDate}
+    />
   ),
 };
 
