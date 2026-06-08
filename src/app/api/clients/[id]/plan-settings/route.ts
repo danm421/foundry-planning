@@ -79,6 +79,7 @@ export async function PUT(
       flatStateEstateRate,
       residenceState,
       irdTaxRate,
+      probateCostRate,
       outOfHouseholdDniRate,
       priorTaxableGiftsClient,
       priorTaxableGiftsSpouse,
@@ -169,6 +170,14 @@ export async function PUT(
       );
     }
 
+    if (typeof probateCostRate === "number" &&
+        (probateCostRate < 0 || probateCostRate > 1)) {
+      return NextResponse.json(
+        { error: "probateCostRate must be between 0 and 1" },
+        { status: 400 },
+      );
+    }
+
     if (typeof outOfHouseholdDniRate === "number" &&
         (outOfHouseholdDniRate < 0 || outOfHouseholdDniRate > 1)) {
       return NextResponse.json(
@@ -215,6 +224,7 @@ export async function PUT(
         flatStateEstateRate: flatStateEstateRate != null ? String(flatStateEstateRate) : undefined,
         residenceState: "residenceState" in body ? (residenceState ?? null) : undefined,
         irdTaxRate: irdTaxRate != null ? String(irdTaxRate) : undefined,
+        probateCostRate: probateCostRate != null ? String(probateCostRate) : undefined,
         outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
         priorTaxableGiftsClient: priorTaxableGiftsClient != null ? String(priorTaxableGiftsClient) : undefined,
         priorTaxableGiftsSpouse: priorTaxableGiftsSpouse != null ? String(priorTaxableGiftsSpouse) : undefined,
