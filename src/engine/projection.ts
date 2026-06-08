@@ -1145,7 +1145,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // value movements already landed on accountBalances/basisMap inside
         // applyEquityYear; here we keep the ledger's running endingValue and
         // contributions/distributions in step with them.
-        if (destId && accountLedgers[destId]) {
+        // destId can fall back to checkingId when autoCreateDestination is false;
+        // don't post share-movement entries onto the household checking ledger
+        // (its flows net via checkingExternalDelta, and the cash still lands via
+        // the creditCash call below).
+        if (destId && destId !== checkingId && accountLedgers[destId]) {
           if (planAcqValue > 0) {
             accountLedgers[destId].contributions += planAcqValue;
             accountLedgers[destId].endingValue += planAcqValue;

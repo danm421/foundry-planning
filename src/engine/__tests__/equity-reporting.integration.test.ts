@@ -261,4 +261,29 @@ describe("equity compensation — reporting surfaces", () => {
     // the inflow and the portfolio drawdown are the same dollar (within sell-to-cover/tax)
     expect(distribution).toBeCloseTo(proceeds, -2); // same order of magnitude, offsetting
   });
+
+  // ── Fallback config: autoCreateDestination=false, no destination account ──────
+  // destId falls back to the household checking id. The dest-ledger-writing block
+  // must NOT post phantom "shares vest"/"shares sold" entries onto checking, nor
+  // mutate its contributions/distributions with raw gross amounts (checking flows
+  // net via checkingExternalDelta). The equity cash must still reach checking.
+  it("no-destination plan does not corrupt the checking ledger with phantom equity entries", () => {
+    const NO_DEST_PLAN: StockOptionPlan = {
+      ...EQUITY_PLAN,
+      autoCreateDestination: false,
+      destinationAccountId: null,
+    };
+    const byYear = new Map(
+      runProjection(buildData({ stockOptionPlans: [NO_DEST_PLAN] })).map((y) => [y.year, y]),
+    );
+    const checkingId = CHECKING.id;
+    // No year's checking ledger may carry equity share-movement entries.
+    for (const y of byYear.values()) {
+      const entries = y.accountLedgers[checkingId]?.entries ?? [];
+      expect(entries.some((e) => /shares (vest|sold)/.test(e.label ?? ""))).toBe(false);
+    }
+    // And the equity cash still surfaces (not silently dropped) in the sale year.
+    const sale = byYear.get(2033)!;
+    expect(sale.income.bySource[`equity-proceeds:${SO_PLAN_ACCOUNT_ID}`] ?? 0).toBeGreaterThan(0);
+  });
 });
