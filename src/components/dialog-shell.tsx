@@ -1,9 +1,23 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import DialogTabs, { type DialogTab } from "./dialog-tabs";
 
 type Size = "sm" | "md" | "lg" | "xl";
+
+/** Maps the surface sizing flags to an inline height style. Driven by inline
+ *  style (not a Tailwind class) so the fixedHeight case can't silently fall
+ *  back to content-hugging if an arbitrary `h-[min(...)]` utility fails to get
+ *  generated. `fixedHeight` pins the same cap as the default `max-h` so tabbed
+ *  dialogs keep a stable size when switching tabs instead of shrinking. */
+export function surfaceHeightStyle(opts: {
+  contentFill?: boolean;
+  fixedHeight?: boolean;
+}): CSSProperties {
+  if (opts.contentFill) return { height: "min(90vh, 940px)" };
+  if (opts.fixedHeight) return { height: "min(80vh, 720px)" };
+  return { maxHeight: "min(80vh, 720px)" };
+}
 
 interface ActionConfig {
   label: string;
@@ -36,6 +50,12 @@ interface DialogShellProps {
    *  a single `flex-1` child (e.g. a PDF iframe) fills the dialog vertically
    *  instead of collapsing to its intrinsic height. */
   contentFill?: boolean;
+  /** Pins the surface to a fixed height (the same cap as the default `max-h`)
+   *  instead of hugging the active content. Use for tabbed dialogs so switching
+   *  tabs never resizes the box — short tabs show empty space below, tall tabs
+   *  scroll. Unlike `contentFill` this keeps the current size, it just stops the
+   *  box from shrinking. */
+  fixedHeight?: boolean;
   primaryAction?: ActionConfig;
   secondaryAction?: ActionConfig;        // defaults to a Cancel button that closes the dialog
   destructiveAction?: ActionConfig;
@@ -60,6 +80,7 @@ export default function DialogShell({
   tabBarRight,
   bodyTopFlush,
   contentFill,
+  fixedHeight,
   primaryAction,
   secondaryAction,
   destructiveAction,
@@ -145,9 +166,8 @@ export default function DialogShell({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative z-10 w-full ${sizeClass[size]} ${
-          contentFill ? "h-[min(90vh,940px)]" : "max-h-[min(80vh,720px)]"
-        } flex flex-col whitespace-normal rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
+        style={surfaceHeightStyle({ contentFill, fixedHeight })}
+        className={`relative z-10 w-full ${sizeClass[size]} flex flex-col whitespace-normal rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
       >
         {/* Header */}
         <div

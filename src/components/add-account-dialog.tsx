@@ -131,6 +131,7 @@ export default function AddAccountDialog({
           }
           size="md"
           bodyTopFlush={!isNoteCategory}
+          fixedHeight={!lockTab}
           primaryAction={{
             label: isEdit ? "Save Changes" : "Add Account",
             form: isNoteCategory ? "add-note-receivable-form" : "add-account-form",

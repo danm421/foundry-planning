@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import DialogShell from "../dialog-shell";
+import DialogShell, { surfaceHeightStyle } from "../dialog-shell";
 
 describe("DialogShell", () => {
   it("renders nothing when open=false", () => {
@@ -171,6 +171,30 @@ describe("DialogShell", () => {
     first.focus();
     fireEvent.keyDown(surface, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(last);
+  });
+
+  // surfaceHeightStyle is asserted directly: jsdom's CSS parser drops the
+  // `min()` function, so reading it back off an element's computed style is
+  // unreliable. The mapping (prop → height) is the part that can regress.
+  describe("surfaceHeightStyle", () => {
+    it("hugs content with a max-height by default", () => {
+      expect(surfaceHeightStyle({})).toEqual({ maxHeight: "min(80vh, 720px)" });
+    });
+
+    it("pins a fixed height (no shrinking) when fixedHeight is set", () => {
+      expect(surfaceHeightStyle({ fixedHeight: true })).toEqual({
+        height: "min(80vh, 720px)",
+      });
+    });
+
+    it("uses the tall fill height when contentFill is set, which wins over fixedHeight", () => {
+      expect(surfaceHeightStyle({ contentFill: true })).toEqual({
+        height: "min(90vh, 940px)",
+      });
+      expect(surfaceHeightStyle({ contentFill: true, fixedHeight: true })).toEqual({
+        height: "min(90vh, 940px)",
+      });
+    });
   });
 
   it("renders a tab strip when tabs is provided and switches active tab", () => {

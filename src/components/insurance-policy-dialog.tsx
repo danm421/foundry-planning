@@ -503,6 +503,9 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
       onOpenChange={(o) => { if (!o) handleCloseRequest(); }}
       title={title}
       size="md"
+      // Pin a stable height so switching between Details / Beneficiaries /
+      // Schedule (very different content lengths) doesn't resize the dialog.
+      fixedHeight
       tabs={[
         { id: "details", label: "Details" },
         { id: "beneficiaries", label: "Beneficiaries" },

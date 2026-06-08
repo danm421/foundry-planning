@@ -213,6 +213,9 @@ export default function EntityDialog({
       // Trusts pack two side-by-side beneficiary lists (income + remainder), plus
       // CLT details with a 2-col grid — md is too tight and forces clipping.
       size="lg"
+      // Pin the box to a stable height so switching between the tabs (which have
+      // very different content lengths) doesn't resize the dialog.
+      fixedHeight
       tabs={tabs}
       activeTab={trustTab}
       onTabChange={onTabChange}

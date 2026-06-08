@@ -114,6 +114,9 @@ export default function AddLiabilityDialog({
         onOpenChange={(o) => { if (!o) close(); }}
         title={isEdit ? "Edit Liability" : "Add Liability"}
         size="md"
+        // Pin a stable height so switching Details (form) ↔ Amortization
+        // (chart + table) doesn't resize the dialog.
+        fixedHeight
         tabs={[
           { id: "details", label: "Details" },
           { id: "amortization", label: "Amortization" },
