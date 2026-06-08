@@ -4995,6 +4995,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     years.push({
       year,
       ages,
+      syntheticAccounts: [...equityDestByPlan.values()]
+        .map((destId) => {
+          const acct = workingAccounts.find((a) => a.id === destId);
+          return acct
+            ? { id: acct.id, name: acct.name, category: acct.category, owners: acct.owners ?? [] }
+            : null;
+        })
+        .filter((a): a is NonNullable<typeof a> => a !== null),
       income: displayIncome,
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail: finalTaxDetail,

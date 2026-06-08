@@ -286,4 +286,14 @@ describe("equity compensation — reporting surfaces", () => {
     const sale = byYear.get(2033)!;
     expect(sale.income.bySource[`equity-proceeds:${SO_PLAN_ACCOUNT_ID}`] ?? 0).toBeGreaterThan(0);
   });
+
+  // ── Task 7: syntheticAccounts sidecar (engine-minted dest accounts) ──────────
+
+  it("exposes equity destination accounts on the syntheticAccounts sidecar", () => {
+    const y = runProjection(buildData({ stockOptionPlans: [EQUITY_PLAN] })).find((x) => x.year === 2030)!;
+    const destId = `equity-dest-${SO_PLAN_ACCOUNT_ID}`;
+    const synth = y.syntheticAccounts?.find((a) => a.id === destId);
+    expect(synth).toMatchObject({ id: destId, category: "taxable" });
+    expect(synth!.name).toMatch(/shares/);
+  });
 });
