@@ -1059,7 +1059,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // account id, accumulated across all of this year's events for the plan.
     const equityByPlan = new Map<string, {
       ordinaryIncome: number; capitalGains: number; stCapitalGains: number;
-      acquisitionValue: number;
     }>();
     if (equityPlans.length > 0) {
       const checkingId = defaultChecking?.id ?? "";
@@ -1125,13 +1124,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const applied = applyEquityYear(result, destId, accountBalances, basisMap);
         const planAcqValue = result.acquisitions.reduce((s, a) => s + a.value, 0);
         const prev = equityByPlan.get(plan.accountId) ?? {
-          ordinaryIncome: 0, capitalGains: 0, stCapitalGains: 0, acquisitionValue: 0,
+          ordinaryIncome: 0, capitalGains: 0, stCapitalGains: 0,
         };
         equityByPlan.set(plan.accountId, {
           ordinaryIncome: prev.ordinaryIncome + applied.taxDeltas.ordinaryIncome,
           capitalGains:   prev.capitalGains   + applied.taxDeltas.capitalGains,
           stCapitalGains: prev.stCapitalGains + applied.taxDeltas.stCapitalGains,
-          acquisitionValue:    prev.acquisitionValue    + planAcqValue,
         });
         equityOrdinaryIncome += applied.taxDeltas.ordinaryIncome;
         equityCapitalGains += applied.taxDeltas.capitalGains;
