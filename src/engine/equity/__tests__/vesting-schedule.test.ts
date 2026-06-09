@@ -172,3 +172,35 @@ describe("buildVestingSchedule — ISO qualification", () => {
     expect(m.rows[1].isoSplit).toBeNull();
   });
 });
+
+describe("buildVestingSchedule — edge cases", () => {
+  it("treats an 83(b) RSU as fully vested with no future columns", () => {
+    const plan = basePlan({
+      accountId: "acct-83b",
+      grants: [{
+        id: "g-83b", grantNumber: "ACME 83b", grantType: "rsu", grantYear: 2025,
+        sharesGranted: 2000, has83bElection: true, fmvAtGrant: 10,
+        strikePrice: null, strikeDiscountPct: null, expirationYear: null,
+        strategy: { ...EMPTY_STRATEGY },
+        tranches: [
+          { id: "b1", vestYear: 2026, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+          { id: "b2", vestYear: 2027, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+        ],
+        plannedEvents: [],
+      }],
+    });
+    const row = buildVestingSchedule([plan], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    expect(row.vested).toBe(2000);
+    expect(row.unvested).toBe(0);
+    expect(row.futureByYear).toEqual([0, 0, 0, 0]);
+    expect(row.futurePlus).toBe(0);
+  });
+
+  it("returns an empty model for no plans", () => {
+    const model = buildVestingSchedule([], { asOfYear: 2026, planStartYear: 2026 });
+    expect(model.rows).toEqual([]);
+    expect(model.yearColumns).toEqual([2026, 2027, 2028, 2029]);
+    expect(model.plusLabel).toBeNull();
+    expect(model.totals.granted).toBe(0);
+  });
+});
