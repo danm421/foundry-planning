@@ -1,32 +1,33 @@
 import type { Gift, GiftEvent, EntitySummary } from "@/engine/types";
+import { toCanonicalGifts, treatCanonicalGift } from "@/lib/gifts/normalize-gifts";
 
 /**
  * Per-grantor cumulative post-1976 adjusted taxable gifts, per IRC §2001(b)(1)(B).
  * Used by the estate-tax module to compute Tentative Tax Base at death.
  *
- * Algorithm:
- * - For each cash `Gift` where `gift.grantor === decedent`: add `max(0, amount − annualExclusion(year))`.
- * - For each cash `Gift` where `gift.grantor === "joint"`: add `max(0, amount/2 − annualExclusion(year))`
- *   (attributed equally to both spouses).
- * - For each asset `GiftEvent` where `event.grantor === decedent`: add the gift-year value
- *   (amountOverride if set, otherwise accountValueAtYear(accountId, year) × percent).
- * - For each cash `GiftEvent` with `seriesId` set (series fan-out): apply the same
- *   annual-exclusion logic as the legacy `Gift` rows. One-time cash gifts (no `seriesId`)
- *   come through the legacy `gifts` array and are NOT counted here to avoid double-counting.
- * - For each liability `GiftEvent`: contribute $0 — debt assumption is not a gift of value.
+ * Routes both the legacy `gifts[]` array and `giftEvents[]` through the unified
+ * canonical+treatment model ({@link toCanonicalGifts} → {@link treatCanonicalGift}),
+ * keeping this addback in lock-step with the gift-ledger's lifetime-exemption math:
+ * - Charitable gifts → $0 lifetime used (fully deductible).
+ * - Crummey trust → `amount − annualExclusion × crummeyBeneficiaryCount`.
+ * - Non-Crummey irrevocable trust → full `amount` (no annual exclusion).
+ * - Family member / individual / no modeled recipient → `amount − one annualExclusion`.
+ * - Joint gifts are split 50/50 across spouses before treatment (§2513).
+ * - Asset / business-interest transfers are valued at the gift-year balance and
+ *   consume full lifetime exemption (Crummey is cash-only). Liability transfers → $0.
  *
- * `entities` is accepted for API symmetry but intentionally not consumed here.
- * `entity.exemptionConsumed` is a loader-derived sum of gift rows by recipient
- * trust used by the trust-card UI; counting it would double-count gifts that
- * already appear in `gifts` / `giftEvents`. (See commit 186a97a — the legacy
- * advisor-entered `exemption_consumed` column was folded into the gifts ledger.)
+ * `entities` supplies each recipient trust's `isIrrevocable` / `entityType` and
+ * Crummey beneficiary count to the treatment. `entity.exemptionConsumed` is a
+ * loader-derived display value and is NOT consumed (counting it would double-count
+ * gifts already in `gifts` / `giftEvents` — see commit 186a97a).
  *
  * @param accountValueAtYear - callback that returns the projected account balance
  *   for a given accountId at a given year. Used only for asset-transfer giftEvents
  *   without an amountOverride. Pass `() => 0` when no giftEvents are provided.
  * @param giftEvents - discriminated-union gift events. Asset and liability transfer rows are
- *   exclusively here. Cash rows here are SERIES FAN-OUTS only (seriesId set); one-time cash
- *   gifts come through the legacy `gifts` array to avoid double-counting.
+ *   exclusively here. Cash rows here are SERIES FAN-OUTS (seriesId) or synthesized premium
+ *   gifts (sourcePolicyAccountId) only; one-time cash gifts come through the legacy `gifts`
+ *   array to avoid double-counting.
  */
 export function computeAdjustedTaxableGifts(
   decedent: "client" | "spouse",
@@ -47,59 +48,32 @@ export function computeAdjustedTaxableGifts(
 }
 
 /**
- * Per-gift-year breakdown of {@link computeAdjustedTaxableGifts}: each entry is a single
- * gift's post-annual-exclusion contribution tagged with the year it was made. The amounts
- * sum to the scalar `computeAdjustedTaxableGifts` total. State estate-tax modules use the
- * year tags to apply statutory gift-addback lookback windows (ME/VT/MN/NY); the federal
- * Form 706 line always uses the full sum.
+ * Per-gift-year breakdown of {@link computeAdjustedTaxableGifts}: each entry is the
+ * total post-annual-exclusion lifetime-exemption contribution for a single year. The
+ * amounts sum to the scalar `computeAdjustedTaxableGifts` total. State estate-tax
+ * modules use the year tags to apply statutory gift-addback lookback windows
+ * (ME/VT/MN/NY); the federal Form 706 line always uses the full sum.
  *
- * Fully-excluded gifts (zero net contribution) are omitted. One entry per contributing
- * gift/event in iteration order — years may repeat when multiple gifts share a year.
+ * Years with zero net contribution are omitted. Contributions are aggregated by year
+ * (one entry per year) and sorted ascending so output is deterministic regardless of
+ * gift/event ordering.
  */
 export function computeAdjustedTaxableGiftsByYear(
   decedent: "client" | "spouse",
   gifts: Gift[],
-  _entities: EntitySummary[],
+  entities: EntitySummary[],
   annualExclusionsByYear: Record<number, number>,
   accountValueAtYear: (accountId: string, year: number) => number,
   giftEvents: GiftEvent[] = [],
 ): Array<{ year: number; amount: number }> {
-  const contributions: Array<{ year: number; amount: number }> = [];
-  const add = (year: number, amount: number) => {
-    if (amount > 0) contributions.push({ year, amount });
-  };
-
-  // Legacy cash-gift array (cash-only rows from the loader).
-  for (const g of gifts) {
-    const exclusion = annualExclusionsByYear[g.year] ?? 0;
-    if (g.grantor === decedent) {
-      add(g.year, Math.max(0, g.amount - exclusion));
-    } else if (g.grantor === "joint") {
-      add(g.year, Math.max(0, g.amount / 2 - exclusion));
-    }
-    // Other-grantor gifts contribute 0 to the current decedent's total.
+  const canonical = toCanonicalGifts(gifts, giftEvents, { entities, accountValueAtYear });
+  const byYear = new Map<number, number>();
+  for (const cg of canonical) {
+    if (cg.grantor !== decedent) continue;
+    const used = treatCanonicalGift(cg, annualExclusionsByYear[cg.year] ?? 0).lifetimeUsed;
+    if (used > 0) byYear.set(cg.year, (byYear.get(cg.year) ?? 0) + used);
   }
-
-  // Phase 3 giftEvents — asset/liability transfers valued at gift-year.
-  for (const ev of giftEvents) {
-    if (ev.grantor !== decedent) continue;
-
-    if (ev.kind === "cash") {
-      // One-time cash gifts come through the legacy `gifts` array (counted above).
-      // Only series-fanned cash events (which have seriesId) need to be counted here.
-      if (ev.seriesId == null) continue;
-      const exclusion = annualExclusionsByYear[ev.year] ?? 0;
-      add(ev.year, Math.max(0, ev.amount - exclusion));
-    } else if (ev.kind === "asset") {
-      // Asset transfer: advisor override takes precedence over engine-computed value.
-      const contribution =
-        ev.amountOverride != null
-          ? ev.amountOverride
-          : accountValueAtYear(ev.accountId, ev.year) * ev.percent;
-      add(ev.year, contribution);
-    }
-    // Liability transfers: debt assumption is not a gift of value → $0.
-  }
-
-  return contributions;
+  return [...byYear.entries()]
+    .map(([year, amount]) => ({ year, amount }))
+    .sort((a, b) => a.year - b.year);
 }
