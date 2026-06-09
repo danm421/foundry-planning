@@ -1,5 +1,6 @@
 import type { ClientData, Gift, GiftEvent, GiftEventKind } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 
 // ── Public model ─────────────────────────────────────────────────────────────
 
@@ -189,6 +190,18 @@ export function applyGiftsToClientData(
   const cashGifts: Gift[] = [];
   const giftEvents: GiftEvent[] = [];
 
+  // §2503(b) annual-exclusion map across the plan horizon — drives
+  // annual_exclusion series fan-out (mirrors load-client-data.ts).
+  const ps = data.planSettings;
+  const exclusionByYear = ps
+    ? buildAnnualExclusionMap(
+        data.taxYearRows ?? [],
+        ps.planStartYear,
+        ps.planEndYear,
+        ps.taxInflationRate ?? ps.inflationRate ?? 0,
+      )
+    : {};
+
   for (const g of gifts) {
     if (g.kind === "cash-once") {
       // The loader's mappedGifts omits eventKind from Gift[] entries
@@ -281,7 +294,7 @@ export function applyGiftsToClientData(
             inflationAdjust: g.inflationAdjust,
             useCrummeyPowers: g.crummey,
           },
-          { cpi },
+          { cpi, exclusionByYear },
         ),
       );
     }
