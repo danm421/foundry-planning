@@ -86,8 +86,8 @@ export function buildFutureActivity(
 
   const byYear = new Map<number, FutureActivityEvent[]>();
   for (const e of events) {
-    const bucket = byYear.get(e.year) ?? byYear.set(e.year, []).get(e.year)!;
-    bucket.push(e);
+    if (!byYear.has(e.year)) byYear.set(e.year, []);
+    byYear.get(e.year)!.push(e);
   }
 
   const groups: FutureActivityYearGroup[] = [...byYear.keys()]

@@ -1,4 +1,5 @@
 import { formatCompact } from "@/lib/format-compact";
+import type { GrantType } from "@/engine/equity/types";
 import type {
   FutureActivityModel,
   FutureActivityEvent,
@@ -6,7 +7,7 @@ import type {
   FutureActivityKind,
 } from "@/engine/equity/future-activity";
 
-const TYPE_LABEL: Record<string, string> = { rsu: "RSU", nqso: "NQSO", iso: "ISO" };
+const TYPE_LABEL: Record<GrantType, string> = { rsu: "RSU", nqso: "NQSO", iso: "ISO" };
 const KIND_LABEL: Record<FutureActivityKind, string> = {
   vest: "Vest", exercise: "Exercise", sell: "Sell", expire: "Expire",
 };
@@ -18,10 +19,9 @@ const KIND_DOT: Record<FutureActivityKind, string> = {
   expire: "var(--color-crit)",
 };
 
-const sh = (n: number): string => (Math.round(n) === 0 ? "0" : Math.round(n).toLocaleString("en-US"));
-const money = (n: number): React.ReactNode =>
-  Math.round(n) === 0 ? <span className="text-ink-4">—</span> : formatCompact(n);
 const dash = <span className="text-ink-4">—</span>;
+const sh = (n: number): string => (Math.round(n) === 0 ? "0" : Math.round(n).toLocaleString("en-US"));
+const money = (n: number): React.ReactNode => (Math.round(n) === 0 ? dash : formatCompact(n));
 
 const TH = "px-2.5 py-1.5 text-right whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.04em] text-ink-4";
 const TD = "px-2.5 py-1.5 text-right whitespace-nowrap border-b border-hair";
@@ -35,15 +35,14 @@ function EventCell({ e }: { e: FutureActivityEvent }) {
       <span className="text-ink-2">{e.grantLabel}</span>
       <span className="text-ink-4 text-[11px]">{e.trancheLabel}</span>
       <span className="ml-0.5 rounded border border-hair-2 px-1 py-px text-[9.5px] font-bold tracking-[0.02em] text-ink-3">
-        {TYPE_LABEL[e.grantType] ?? e.grantType}
+        {TYPE_LABEL[e.grantType]}
       </span>
     </span>
   );
 }
 
 function moneyTone(n: number | null, tone: "pos-neg" | "neg" | "plain" = "plain"): React.ReactNode {
-  if (n === null) return dash;
-  if (Math.round(n) === 0) return <span className="text-ink-4">—</span>;
+  if (n === null || Math.round(n) === 0) return dash;
   const cls = tone === "neg" ? "text-crit" : tone === "pos-neg" ? (n < 0 ? "text-crit" : "text-good") : "";
   return <span className={cls}>{formatCompact(n)}</span>;
 }
