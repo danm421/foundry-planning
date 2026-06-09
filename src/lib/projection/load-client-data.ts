@@ -53,6 +53,7 @@ import {
   holdingAssetClassOverrides,
   medicareCoverage,
   securityAssetClassWeights,
+  revocableTrusts,
 } from "@/db/schema";
 import type {
   AccountFlowOverride,
@@ -236,6 +237,13 @@ export const loadClientDataWithContext = cache(
       // medicare_coverage is client-scoped (shared across scenarios), not scenario-scoped.
       db.select().from(medicareCoverage).where(eq(medicareCoverage.clientId, id)),
     ]);
+
+    // revocable_trusts is client-scoped (not scenario-scoped) — one fetch, reused below
+    const revocableTrustRows = await db
+      .select({ id: revocableTrusts.id, name: revocableTrusts.name })
+      .from(revocableTrusts)
+      .where(eq(revocableTrusts.clientId, id));
+    const revocableTrustNameById = new Map(revocableTrustRows.map((t) => [t.id, t.name]));
 
     // Load schedule overrides for all incomes, expenses, and savings rules
     const incomeIds = incomeRows.map((i) => i.id);
@@ -731,8 +739,8 @@ export const loadClientDataWithContext = cache(
       accountPropertyTaxFromInflation,
     };
 
-    const mappedAccounts = accountRows.map((a) =>
-      resolveAccountFromRaw(
+    const mappedAccounts = accountRows.map((a) => {
+      const acct = resolveAccountFromRaw(
         {
           id: a.id,
           name: a.name,
@@ -765,8 +773,12 @@ export const loadClientDataWithContext = cache(
           parentAccountId: a.parentAccountId,
         },
         resolutionCtx,
-      ),
-    );
+      );
+      acct.revocableTrustName = a.revocableTrustId
+        ? (revocableTrustNameById.get(a.revocableTrustId) ?? null)
+        : null;
+      return acct;
+    });
 
     const mappedIncomes = incomeRows.map((i) =>
       resolveIncomeFromRaw(
