@@ -202,6 +202,7 @@ export function computeGrossEstate(input: {
         percentage: pct,
         amount,
         isProbate: false,
+        revocableTrustName: a.revocableTrustName ?? null,
       });
       continue;
     }
@@ -262,6 +263,7 @@ export function computeGrossEstate(input: {
       percentage: effPct,
       amount,
       isProbate: false,
+      revocableTrustName: a.revocableTrustName ?? null,
     });
   }
 
@@ -371,6 +373,8 @@ function formatLabel(
  * a formerly-joint account is solely owned → probate.
  */
 function isNonProbateAccount(a: Account, deathOrder: 1 | 2): boolean {
+  // 0. Tagged into a revocable trust — in the gross estate, but skips probate.
+  if (a.revocableTrustName != null) return true;
   // 1. Trust / entity-owned — revocable-trust assets are in the gross estate
   //    but avoid probate.
   if (controllingEntity(a) != null) return true;
