@@ -789,7 +789,11 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             <label className={fieldLabelClassName} htmlFor="trust-type">Type <span className="text-red-500">*</span></label>
             <select id="trust-type" required value={trustSubType} onChange={(e) => setTrustSubType(e.target.value as TrustSubType | "")} className={selectClassName}>
               <option value="" disabled>— select type —</option>
-              {Object.entries(TRUST_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {/* Revocable trusts are created via the dedicated "Add Revocable Trust"
+                  dialog, so they're omitted here. The subtype stays valid in the union. */}
+              {Object.entries(TRUST_TYPE_LABELS)
+                .filter(([v]) => v !== "revocable")
+                .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
           <div>
