@@ -25,10 +25,13 @@ import type {
   PlanSettings,
   FamilyMember,
 } from "../types";
-import type { StockOptionPlan } from "../equity/types";
+import type { StockOptionPlan, EquityGrant, EquityStrategy } from "../equity/types";
 import type { TaxYearParameters } from "../../lib/tax/types";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
+import { createEquityState, computeEquityYear } from "../equity/tax-events";
+import { applyEquityYear } from "../equity/apply";
+import { buildFutureActivity } from "../equity/future-activity";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -311,6 +314,94 @@ describe("equity compensation — reporting surfaces", () => {
     for (const y of byYear.values()) {
       expect(y.portfolioAssets.taxable[SO_PLAN_ACCOUNT_ID]).toBeUndefined();
       expect(y.portfolioAssets.stockOptions[destId]).toBeUndefined();
+    }
+  });
+});
+
+// ── Per-year reconciliation: Future Activity net proceeds == engine net cash ──
+
+const ROUND = (n: number) => Math.round(n * 1e6) / 1e6;
+const PSY = 2026, PEY = 2040;
+
+const SELL_NOW: EquityStrategy = {
+  exerciseTiming: "at_vest", exerciseYear: null,
+  sellTiming: "immediately", sellYear: null, sellPercentPerYear: null, sellStartYear: null,
+};
+const HOLD: EquityStrategy = { ...SELL_NOW, sellTiming: "hold" };
+
+function grant(over: Partial<EquityGrant>): EquityGrant {
+  return {
+    id: "g", grantNumber: "G", grantType: "rsu", grantYear: 2026, sharesGranted: 100,
+    has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: null,
+    expirationYear: null, strategy: null,
+    tranches: [{ id: "t", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    plannedEvents: [], ...over,
+  };
+}
+
+function plan(over: Partial<StockOptionPlan>, grants: EquityGrant[], strategy: EquityStrategy): StockOptionPlan {
+  return {
+    accountId: "a", ticker: "ACME", pricePerShare: 100, growthRate: 0.05,
+    destinationAccountId: "dest", autoCreateDestination: false,
+    sellToCover: true, withholdingRate: 0.22, strategy, owner: "client", grants, ...over,
+  };
+}
+
+// NQSO held shares sold a few years AFTER the exercise/vest year — drops a
+// distinct, later active year into the per-year mapping.
+const SELL_LATER: EquityStrategy = { ...SELL_NOW, sellTiming: "hold_then_sell_year", sellYear: 2032 };
+
+describe("Future Activity reconciles with the cash flow", () => {
+  it("Σ netProceeds per year == Σ netCashToChecking per year (RSU sell-all + NQSO + ISO)", () => {
+    const plans: StockOptionPlan[] = [
+      // RSU, sell-to-cover ON, sell-the-rest immediately. Exercises the
+      // cover-shares + same-year strategy-sell case: at each vest ≈22 of 100
+      // shares sell to cover withholding and the remaining ≈78 sell
+      // immediately in the SAME year. Two tranches (2027, 2030) put non-zero
+      // proceeds in two distinct years.
+      plan({ accountId: "rsu", ticker: "ACME" }, [
+        grant({
+          id: "g-rsu", grantNumber: "RSU-1", grantType: "rsu", sharesGranted: 200,
+          tranches: [
+            { id: "t-rsu-2027", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+            { id: "t-rsu-2030", vestYear: 2030, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+          ],
+        }),
+      ], SELL_NOW),
+      // NQSO, sell-to-cover ON, exercise at vest (2027) but HOLD then sell the
+      // retained shares in 2032 — cover proceeds (minus strike) land in 2027,
+      // the strategy sell lands in a distinct later year (2032).
+      plan({ accountId: "nq", ticker: "ACME" }, [grant({ id: "g-nq", grantNumber: "NQSO-1", grantType: "nqso", grantYear: 2024, strikePrice: 30, expirationYear: 2034 })], SELL_LATER),
+      // ISO, hold (no cover) — keeps the cross-type + ISO-no-cover coverage.
+      plan({ accountId: "iso", ticker: "ACME" }, [grant({ id: "g-iso", grantNumber: "ISO-1", grantType: "iso", grantYear: 2024, strikePrice: 25, expirationYear: 2034 })], HOLD),
+    ];
+
+    // Report side.
+    const model = buildFutureActivity(plans, { asOfYear: PSY, planStartYear: PSY, planEndYear: PEY });
+    const reportByYear = new Map<number, number>();
+    for (const g of model.groups) reportByYear.set(g.year, ROUND(g.subtotal.netProceeds));
+
+    // Engine side — fresh state, same construction. `balances`/`basis` only
+    // satisfy applyEquityYear's required signature; the asserted
+    // `netCashToChecking` value is computed solely from the year's sell /
+    // cover proceeds and strike outflow and never reads these maps, so no
+    // cross-year balance accumulation is in play here.
+    const state = createEquityState(plans, PSY);
+    const balances: Record<string, number> = {};
+    const basis: Record<string, number> = {};
+    const engineByYear = new Map<number, number>();
+    for (let year = PSY; year <= PEY; year++) {
+      let net = 0;
+      for (const p of plans) {
+        const res = computeEquityYear(p, state, year);
+        net += applyEquityYear(res, p.destinationAccountId ?? "dest", balances, basis).netCashToChecking;
+      }
+      engineByYear.set(year, ROUND(net));
+    }
+
+    const years = new Set([...reportByYear.keys(), ...engineByYear.keys()]);
+    for (const year of years) {
+      expect(reportByYear.get(year) ?? 0).toBeCloseTo(engineByYear.get(year) ?? 0, 6);
     }
   });
 });
