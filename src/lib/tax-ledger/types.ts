@@ -37,7 +37,7 @@ export interface TaxLedgerSection {
   passThrough: boolean;
   rows: TaxLedgerRow[];
   characterSubtotals: Partial<Record<TaxCharacter, number>>;
-  /** Net taxable amount for the section. */
+  /** Net amount for the section (income rows minus deduction/offset rows). */
   subtotal: number;
   /** True when an "Unattributed" reconciliation row was added. */
   unreconciled: boolean;

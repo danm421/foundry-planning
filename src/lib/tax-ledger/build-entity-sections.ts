@@ -41,8 +41,12 @@ function buildTrust(row: Extract<EntityCashFlowRow, { kind: "trust" }>): TaxLedg
   if (row.expenses !== 0) rows.push({ type: "Trust Expenses", description: row.entityName, character: "deduction", account: null, amount: -Math.abs(row.expenses), taxable: false });
 
   if (row.isGrantor) {
-    // Grantor trust: income is taxed on the grantor's (household) 1040.
-    rows.push({ type: "Pass-Thru to Grantor", description: "Taxed on the grantor's household 1040", character: "ordinary", account: null, amount: -row.income, taxable: false });
+    // Grantor trust: the grantor reports both the trust's income AND its
+    // deductions on their household 1040, so the trust is a pure conduit.
+    // Pass through the NET (income − expenses) so the section subtotals to 0,
+    // mirroring the pass-through business above.
+    const net = row.income - row.expenses;
+    rows.push({ type: "Pass-Thru to Grantor", description: "Taxed on the grantor's household 1040", character: "ordinary", account: null, amount: -net, taxable: false });
     return finalize(row.entityId, row.entityName, "trust", true, rows);
   }
 
