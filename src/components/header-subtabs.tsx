@@ -28,6 +28,7 @@ function sectionFor(pathname: string, clientId: string): Section | null {
       tabs: [
         { label: "Cash Flow", href: root, exact: true },
         { label: "Income Tax", href: `${root}/income-tax` },
+        { label: "Tax Ledger", href: `${root}/tax-ledger` },
         { label: "Monte Carlo", href: `${root}/monte-carlo` },
         { label: "Timeline", href: `${root}/timeline` },
         { label: "Entities", href: `${root}/entities` },
