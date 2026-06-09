@@ -26,6 +26,7 @@ import { resolveReinvestments } from "@/lib/projection/resolve-reinvestments";
 import { reResolveInflationGrowth } from "@/lib/projection/resolve-inflation-growth";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
+import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { resolveRefYears } from "@/lib/year-refs";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
@@ -147,8 +148,13 @@ export function applyScenarioChangesWithRefs(
   // Re-synthesize life-insurance scheduled income over the same effective
   // accounts. Idempotent — strips prior policy-income rows and re-derives.
   const withPolicyIncome = withSynthesizedPolicyIncome(withPremiums);
+  // Re-derive life-insurance premium gifts from the effective tree's current
+  // life-insurance accounts + entities + familyMembers. Idempotent — strips
+  // prior policy gifts and re-derives. Must run OUTERMOST so it sees the
+  // effective tree after premium + income synthesis.
+  const withPremiumGifts = withSynthesizedPremiumGifts(withPolicyIncome);
 
-  return { effectiveTree: withPolicyIncome, warnings };
+  return { effectiveTree: withPremiumGifts, warnings };
 }
 
 export const loadEffectiveTree = cache(

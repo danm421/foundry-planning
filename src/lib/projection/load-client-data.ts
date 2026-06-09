@@ -74,6 +74,7 @@ import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/mil
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
+import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadStockOptionPlans } from "./load-equity";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
@@ -1509,7 +1510,9 @@ export const loadClientDataWithContext = cache(
     };
 
     return {
-      clientData: withSynthesizedPolicyIncome(withSynthesizedPremiums(clientData)),
+      clientData: withSynthesizedPremiumGifts(
+        withSynthesizedPolicyIncome(withSynthesizedPremiums(clientData)),
+      ),
       resolutionContext: resolutionCtx,
     };
   },
