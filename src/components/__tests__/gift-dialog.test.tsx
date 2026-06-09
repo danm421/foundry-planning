@@ -34,12 +34,13 @@ describe("GiftDialog", () => {
 
   it("narrows recipients to trusts when Recurring is selected", () => {
     render(<GiftDialog {...baseProps} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
     fireEvent.click(screen.getByText("Recurring"));
     const recipient = screen.getByTestId("recipient") as HTMLSelectElement;
     const values = [...recipient.options].map((o) => o.value);
     expect(values).toContain("entity:t1");
-    expect(values).not.toContain("family:m1");
-    expect(values).not.toContain("external:x1");
+    expect(values).not.toContain("family_member:m1");
+    expect(values).not.toContain("external_beneficiary:x1");
   });
 
   it("maps the encoded recipient value to the correct FK on a cash POST", async () => {
@@ -47,7 +48,8 @@ describe("GiftDialog", () => {
       new Response(JSON.stringify({ id: "g1", year: 2026, amount: "1000", grantor: "client", recipientFamilyMemberId: "m1", useCrummeyPowers: false }), { status: 201 }),
     );
     render(<GiftDialog {...baseProps} />);
-    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family:m1" } });
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "1000" } });
     fireEvent.click(screen.getByText("Add gift"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
@@ -60,10 +62,10 @@ describe("GiftDialog", () => {
       new Response(JSON.stringify({ id: "se1", grantor: "joint", recipientEntityId: "t1", startYear: 2026, endYear: 2035, annualAmount: "38000", amountMode: "annual_exclusion", inflationAdjust: false, useCrummeyPowers: true }), { status: 201 }),
     );
     render(<GiftDialog {...baseProps} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
     fireEvent.click(screen.getByText("Recurring"));
     fireEvent.change(screen.getByTestId("grantor"), { target: { value: "joint" } });
     fireEvent.click(screen.getByText("Max annual exclusion"));
-    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
     fireEvent.click(screen.getByText("Add gift"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [url, init] = fetchMock.mock.calls[0];
