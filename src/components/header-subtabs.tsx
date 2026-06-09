@@ -31,6 +31,7 @@ function sectionFor(pathname: string, clientId: string): Section | null {
         { label: "Monte Carlo", href: `${root}/monte-carlo` },
         { label: "Timeline", href: `${root}/timeline` },
         { label: "Trusts", href: `${root}/entities` },
+        { label: "Stock Options", href: `${root}/stock-options` },
       ],
     };
   }
