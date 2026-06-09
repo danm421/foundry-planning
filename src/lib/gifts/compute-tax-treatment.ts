@@ -82,5 +82,12 @@ export function computeGiftTaxTreatment(
     };
   }
 
-  throw new Error("computeGiftTaxTreatment: no recipient set");
+  // No modeled recipient — cash leaving the household to an unmodeled
+  // individual (e.g. an individual-owned life-insurance premium gift).
+  // Treated as an outright individual gift: one annual exclusion, remainder
+  // consumes lifetime exemption. (Spec decision: not an error.)
+  {
+    const annual = Math.min(gift.amount, ctx.annualExclusionAmount);
+    return { lifetimeUsed: gift.amount - annual, annualExcluded: annual, charitableExcluded: 0 };
+  }
 }

@@ -129,3 +129,21 @@ describe("computeGiftTaxTreatment", () => {
     expect(r).toEqual({ lifetimeUsed: 50_000, annualExcluded: 0, charitableExcluded: 0 });
   });
 });
+
+describe("computeGiftTaxTreatment — no recipient (unmodeled individual)", () => {
+  it("treats a recipient-less gift as a single-annual-exclusion individual gift", () => {
+    const t = computeGiftTaxTreatment(
+      { amount: 30_000, useCrummeyPowers: false, recipientEntityId: null, recipientFamilyMemberId: null, recipientExternalBeneficiaryId: null },
+      { annualExclusionAmount: 18_000, crummeyBeneficiaryCount: 0 },
+    );
+    expect(t).toEqual({ lifetimeUsed: 12_000, annualExcluded: 18_000, charitableExcluded: 0 });
+  });
+
+  it("does not over-exclude when amount is below the exclusion", () => {
+    const t = computeGiftTaxTreatment(
+      { amount: 10_000, useCrummeyPowers: false, recipientEntityId: null, recipientFamilyMemberId: null, recipientExternalBeneficiaryId: null },
+      { annualExclusionAmount: 18_000, crummeyBeneficiaryCount: 0 },
+    );
+    expect(t).toEqual({ lifetimeUsed: 0, annualExcluded: 10_000, charitableExcluded: 0 });
+  });
+});
