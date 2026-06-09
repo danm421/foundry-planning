@@ -1,6 +1,6 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
-import { LEGACY_FM_CLIENT } from "./ownership";
+import { LEGACY_FM_CLIENT, controllingEntity } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -200,6 +200,12 @@ export interface ApplyAssetSalesInput {
   year: number;
   defaultCheckingId: string;
   filingStatus: FilingStatus;
+  /** Map of entity id → that entity's default-checking account id. When a sold
+   *  account is fully owned by an entity and the sale has no explicit
+   *  `proceedsAccountId`, proceeds route to the entity's own checking rather
+   *  than the household default — the cash belongs to the entity. Omitted (or
+   *  missing the entity) falls back to `defaultCheckingId`. */
+  entityCheckingByEntityId?: Record<string, string>;
 }
 
 export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
@@ -213,6 +219,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     year,
     defaultCheckingId,
     filingStatus,
+    entityCheckingByEntityId,
   } = input;
 
   let totalCapitalGains = 0;
@@ -300,8 +307,16 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     const taxableCapitalGain = capitalGain - homeSaleExclusionApplied;
     totalCapitalGains += taxableCapitalGain;
 
-    // Route net proceeds to destination account
-    const proceedsAccountId = sale.proceedsAccountId ?? defaultCheckingId;
+    // Route net proceeds to destination account. An explicit proceedsAccountId
+    // always wins. Otherwise, a fully-entity-owned source account routes to the
+    // owning entity's checking (the proceeds belong to the entity, not the
+    // household); fall back to the household default checking when the account
+    // is household-owned or the entity has no checking on file.
+    const owningEntityId = soldAccount?.owners ? controllingEntity(soldAccount) : null;
+    const entityChecking =
+      owningEntityId != null ? entityCheckingByEntityId?.[owningEntityId] : undefined;
+    const proceedsAccountId =
+      sale.proceedsAccountId ?? entityChecking ?? defaultCheckingId;
     accountBalances[proceedsAccountId] = (accountBalances[proceedsAccountId] ?? 0) + netProceeds;
     basisMap[proceedsAccountId] = (basisMap[proceedsAccountId] ?? 0) + netProceeds;
 
@@ -314,6 +329,9 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
         label: `Sale proceeds: ${sale.name}`,
         amount: netProceeds,
         sourceId: sale.id,
+        // Asset→cash conversion, not operating income. Entity income rollups
+        // exclude this; the taxable gain is recognized separately.
+        isSaleProceeds: true,
       });
     }
 

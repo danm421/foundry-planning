@@ -1551,6 +1551,11 @@ export interface AccountLedgerEntry {
    * Reports filter these out so the same dollars don't appear as both an
    * addition and a distribution at the aggregate level. */
   isInternalTransfer?: boolean;
+  /** True for the cash leg of an asset sale (net proceeds credited to a cash
+   * account). The entry is an asset→cash conversion, not operating income, so
+   * entity income rollups exclude it — the taxable capital gain is recognized
+   * separately on the 1040 / 1041. */
+  isSaleProceeds?: boolean;
 }
 
 export interface DeductionBreakdown {

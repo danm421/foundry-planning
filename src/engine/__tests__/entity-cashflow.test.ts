@@ -212,6 +212,51 @@ describe("computeEntityCashFlow", () => {
     expect((row as { kind: "trust"; totalDistributions: number }).totalDistributions).toBe(50_000);
   });
 
+  it("excludes asset-sale proceeds from trust income", () => {
+    // Selling a trust-owned asset deposits the net proceeds into the trust's
+    // cash as an inflow, but that's an asset→cash conversion — not income. The
+    // taxable component (the capital gain) is handled separately on the 1040 /
+    // 1041, so the proceeds must NOT inflate the trust's reported income.
+    const trust = {
+      id: "trust-1",
+      name: "IDGT",
+      entityType: "trust" as const,
+      trustSubType: "idgt" as const,
+      isGrantor: true,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "trust-cash": {
+        beginningValue: 0,
+        endingValue: 504_288,
+        growth: 0,
+        contributions: 579_288,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [
+          { category: "income", label: "Rental", amount: 75_000, sourceId: "inc-rental" },
+          { category: "income", label: "Sale proceeds: sell IDGT real estate", amount: 504_288, sourceId: "sale-1", isSaleProceeds: true },
+        ],
+      },
+    };
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["trust-1", trust]]),
+      accountEntityOwners: new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]]),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+    const row = y.entityCashFlow.get("trust-1")!;
+    expect((row as { kind: "trust"; income: number }).income).toBe(75_000);
+  });
+
   it("populates Transfers In from gifts and death-event bequests", () => {
     const trust = {
       id: "trust-1",

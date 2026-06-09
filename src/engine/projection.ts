@@ -973,6 +973,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             firstDeathYear,
             year,
           ),
+          // Entity-owned asset sales with no explicit proceeds destination route
+          // to the owning entity's own checking, not the household default.
+          entityCheckingByEntityId,
         });
 
         if (saleResult.removedAccountIds.length > 0) {

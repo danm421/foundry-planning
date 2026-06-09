@@ -225,6 +225,10 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           growth += ledger.growth;
           for (const entry of ledger.entries) {
             if (entry.isInternalTransfer) continue;
+            // Asset-sale proceeds are an asset→cash conversion, not income —
+            // exclude them so the trust/business income column (and the
+            // grantor-trust 1040 pass-through) isn't inflated by gross proceeds.
+            if (entry.isSaleProceeds) continue;
             if (entry.category === "income") income += Math.abs(entry.amount);
             if (entry.category === "expense") expenses += Math.abs(entry.amount);
           }

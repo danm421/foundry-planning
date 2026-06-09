@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useScenarioState } from "@/hooks/use-scenario-state";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { runProjection } from "@/engine";
@@ -260,6 +261,7 @@ export default function AddAssetTransactionForm({
 }: AddAssetTransactionFormProps) {
   const businessOptions = businesses ?? [];
   const writer = useScenarioWriter(clientId);
+  const { scenarioId } = useScenarioState(clientId);
   const isEdit = !!initialData;
   const currentYear = new Date().getFullYear();
   const pastBuys = pastBuysProp ?? [];
@@ -369,7 +371,14 @@ export default function AddAssetTransactionForm({
     let cancelled = false;
     async function loadProjection() {
       try {
-        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        // Pass the active scenario so projected values reflect scenario-only
+        // accounts (e.g. an entity-owned asset added inside this scenario).
+        // Without it the endpoint loads base-plan data and a scenario-only
+        // sell account resolves to a $0 projected sale value.
+        const url = scenarioId
+          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioId)}`
+          : `/api/clients/${clientId}/projection-data`;
+        const res = await fetch(url);
         if (!res.ok) return;
         const data: ClientData = await res.json();
         const projection = runProjection(data);
@@ -380,7 +389,7 @@ export default function AddAssetTransactionForm({
     }
     loadProjection();
     return () => { cancelled = true; };
-  }, [clientId]);
+  }, [clientId, scenarioId]);
 
   // Look up projected value and basis for the sell account in the selected year.
   // Sales run BoY in the engine, so the BoY snapshots (beginningValue on the

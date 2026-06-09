@@ -171,6 +171,70 @@ describe("applyAssetSales", () => {
     expect(balances["brokerage-1"]).toBe(700000);
     expect(balances["checking-1"]).toBe(50000);
   });
+
+  it("routes proceeds from an entity-owned asset to the entity's checking by default", () => {
+    // Rental owned 100% by a trust, no explicit proceedsAccountId. Proceeds
+    // belong to the trust, so they must land in the trust's checking — not the
+    // household default checking.
+    const trustRental: Account = {
+      ...rentalProperty,
+      id: "trust-rental-1",
+      owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
+    };
+    const trustChecking: Account = {
+      ...checkingAccount,
+      id: "trust-checking-1",
+      name: "Trust Checking",
+      value: 0,
+      basis: 0,
+      owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
+    };
+    const sale: AssetTransaction = {
+      id: "sale-trust", name: "Sell Trust Rental", type: "sell", year: 2028,
+      accountId: "trust-rental-1",
+    };
+    const balances: Record<string, number> = { "trust-rental-1": 500000, "trust-checking-1": 0, "checking-1": 50000 };
+    const basisMap: Record<string, number> = { "trust-rental-1": 300000, "trust-checking-1": 0, "checking-1": 50000 };
+    const ledgers: Record<string, AccountLedger> = {
+      "trust-rental-1": makeLedger(500000), "trust-checking-1": makeLedger(0), "checking-1": makeLedger(50000),
+    };
+
+    applyAssetSales({
+      sales: [sale], accounts: [trustRental, trustChecking, checkingAccount], liabilities: [],
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028,
+      defaultCheckingId: "checking-1", filingStatus: "single",
+      entityCheckingByEntityId: { "trust-1": "trust-checking-1" },
+    });
+
+    expect(balances["trust-checking-1"]).toBe(500000);
+    expect(balances["checking-1"]).toBe(50000);
+  });
+
+  it("falls back to household default checking when the entity has no checking", () => {
+    const trustRental: Account = {
+      ...rentalProperty,
+      id: "trust-rental-1",
+      owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
+    };
+    const sale: AssetTransaction = {
+      id: "sale-trust", name: "Sell Trust Rental", type: "sell", year: 2028,
+      accountId: "trust-rental-1",
+    };
+    const balances: Record<string, number> = { "trust-rental-1": 500000, "checking-1": 50000 };
+    const basisMap: Record<string, number> = { "trust-rental-1": 300000, "checking-1": 50000 };
+    const ledgers: Record<string, AccountLedger> = {
+      "trust-rental-1": makeLedger(500000), "checking-1": makeLedger(50000),
+    };
+
+    applyAssetSales({
+      sales: [sale], accounts: [trustRental, checkingAccount], liabilities: [],
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028,
+      defaultCheckingId: "checking-1", filingStatus: "single",
+      entityCheckingByEntityId: {},
+    });
+
+    expect(balances["checking-1"]).toBe(550000);
+  });
 });
 
 describe("applyAssetSales — home-sale exclusion (§121)", () => {
