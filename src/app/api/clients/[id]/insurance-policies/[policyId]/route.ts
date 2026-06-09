@@ -97,6 +97,7 @@ export async function PATCH(
       costBasis: number;
       premiumAmount: number;
       premiumYears: number | null;
+      premiumPayer: "owner" | "client" | "spouse" | "both";
       termIssueYear: number | null;
       termLengthYears: number | null;
       endsAtInsuredRetirement: boolean;
@@ -179,6 +180,9 @@ export async function PATCH(
       }
       if (input.premiumYears !== undefined) {
         policyUpdates.premiumYears = input.premiumYears ?? null;
+      }
+      if (input.premiumPayer !== undefined) {
+        policyUpdates.premiumPayer = input.premiumPayer;
       }
       if (input.policyType !== undefined) {
         policyUpdates.policyType = input.policyType;

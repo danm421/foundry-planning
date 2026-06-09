@@ -18,6 +18,7 @@ const base = {
   costBasis: z.number().gte(0).optional().default(0),
   premiumAmount: z.number().gte(0).optional().default(0),
   premiumYears: z.number().int().positive().nullable().optional(),
+  premiumPayer: z.enum(["owner", "client", "spouse", "both"]).optional().default("owner"),
   termIssueYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
   termLengthYears: z.number().int().positive().nullable().optional(),
   endsAtInsuredRetirement: z.boolean().optional().default(false),

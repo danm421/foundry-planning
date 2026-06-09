@@ -181,6 +181,7 @@ export async function POST(
         costBasis: String(input.costBasis),
         premiumAmount: String(input.premiumAmount),
         premiumYears: input.premiumYears ?? null,
+        premiumPayer: input.premiumPayer,
         policyType: input.policyType,
         termIssueYear: input.termIssueYear ?? null,
         termLengthYears: input.termLengthYears ?? null,
