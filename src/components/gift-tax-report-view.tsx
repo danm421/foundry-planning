@@ -131,6 +131,7 @@ export default function GiftTaxReportView({
         year: ly.year,
         gifts: tree.gifts ?? [],
         giftEvents: tree.giftEvents ?? [],
+        entities: tree.entities ?? [],
         familyMembersById,
         entitiesById,
         externalBeneficiariesById,

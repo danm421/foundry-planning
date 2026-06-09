@@ -1,4 +1,4 @@
-import type { EntitySummary, Gift, GiftEvent } from "@/engine/types";
+import type { EntitySummary, Gift, GiftEvent, GiftEventKind } from "@/engine/types";
 import {
   computeGiftTaxTreatment,
   type EntityType,
@@ -22,6 +22,8 @@ export interface CanonicalGift {
   /** Provenance for labeling / debugging. */
   source: "legacy" | "event";
   sourcePolicyAccountId?: string;
+  /** Non-outright gift kind (e.g. CLT remainder interest), preserved for labeling. */
+  eventKind?: GiftEventKind;
 }
 
 export interface CanonicalGiftContext {
@@ -108,6 +110,7 @@ export function toCanonicalGifts(
         recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
         useCrummeyPowers: g.useCrummeyPowers,
         source: "legacy",
+        eventKind: g.eventKind,
       },
       g.grantor,
       g.amount,

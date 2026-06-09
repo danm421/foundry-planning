@@ -3,7 +3,18 @@ import {
   buildRecipientDrilldown,
   type BuildRecipientDrilldownInput,
 } from "../build-recipient-drilldown";
-import type { Gift, GiftEvent } from "@/engine/types";
+import type { Gift, GiftEvent, EntitySummary } from "@/engine/types";
+
+const ent1Trust = {
+  id: "ent-1",
+  name: "Sample Family ILIT",
+  entityType: "trust",
+  isIrrevocable: true,
+  crummeyPowers: false,
+  includeInPortfolio: false,
+  isGrantor: false,
+  beneficiaries: [],
+} as unknown as EntitySummary;
 
 function baseInput(
   over: Partial<BuildRecipientDrilldownInput> = {},
@@ -12,6 +23,7 @@ function baseInput(
     year: 2028,
     gifts: [],
     giftEvents: [],
+    entities: [ent1Trust],
     familyMembersById: new Map([
       ["fm-1", { firstName: "Caroline", lastName: "Sample" }],
       ["fm-2", { firstName: "Henry", lastName: "Sample" }],
@@ -58,7 +70,7 @@ describe("buildRecipientDrilldown", () => {
     });
   });
 
-  it("joint cash gift aggregates two AEs in the row exclusion", () => {
+  it("joint cash gift splits into two half-gifts that aggregate two AEs", () => {
     const gift: Gift = {
       id: "g1",
       year: 2028,
@@ -68,14 +80,21 @@ describe("buildRecipientDrilldown", () => {
       useCrummeyPowers: false,
     };
     const groups = buildRecipientDrilldown(baseInput({ gifts: [gift] }));
+    // §2513: joint gift splits into client + spouse half-gifts (25k each).
+    expect(groups[0].rows).toHaveLength(2);
     expect(groups[0].rows[0]).toMatchObject({
+      amount: 25_000,
+      exclusion: 20_000,
+      taxableGift: 5_000,
+    });
+    expect(groups[0].subtotal).toMatchObject({
       amount: 50_000,
       exclusion: 40_000,
       taxableGift: 10_000,
     });
   });
 
-  it("charitable cash gift renders with 0 exclusion and 0 taxable", () => {
+  it("charitable cash gift renders fully excluded (charitable) and 0 taxable", () => {
     const gift: Gift = {
       id: "g1",
       year: 2028,
@@ -86,10 +105,12 @@ describe("buildRecipientDrilldown", () => {
     };
     const groups = buildRecipientDrilldown(baseInput({ gifts: [gift] }));
     expect(groups[0].label).toBe("Default Charity");
+    // Unified model: charitable gifts net to lifetimeUsed 0 via the charitable
+    // exclusion, so the full amount surfaces as exclusion (was 0 pre-unification).
     expect(groups[0].rows[0]).toMatchObject({
       amount: 500_000,
       giftValue: 500_000,
-      exclusion: 0,
+      exclusion: 500_000,
       taxableGift: 0,
     });
   });
@@ -226,6 +247,51 @@ describe("buildRecipientDrilldown", () => {
       "Sample Family ILIT",
       "Generic Friend",
     ]);
+  });
+
+  it("renders a premium gift to a trust with Crummey exclusion", () => {
+    const trust = {
+      id: "t1",
+      name: "ILIT",
+      entityType: "trust",
+      isIrrevocable: true,
+      crummeyPowers: true,
+      includeInPortfolio: false,
+      isGrantor: false,
+      beneficiaries: [
+        {
+          id: "b1",
+          tier: "primary",
+          percentage: 100,
+          familyMemberId: "k1",
+          sortOrder: 0,
+        },
+      ],
+    } as unknown as import("@/engine/types").EntitySummary;
+    const groups = buildRecipientDrilldown({
+      year: 2030,
+      gifts: [],
+      giftEvents: [
+        {
+          kind: "cash",
+          year: 2030,
+          amount: 30_000,
+          grantor: "client",
+          useCrummeyPowers: true,
+          recipientEntityId: "t1",
+          sourcePolicyAccountId: "p1",
+        },
+      ],
+      familyMembersById: new Map(),
+      entitiesById: new Map([["t1", { name: "ILIT" }]]),
+      externalBeneficiariesById: new Map(),
+      entities: [trust],
+      annualExclusion: 18_000,
+      accountValueAtYear: () => 0,
+    });
+    const ilit = groups.find((g) => g.label === "ILIT")!;
+    expect(ilit.subtotal.taxableGift).toBe(12_000); // 30k − 18k×1
+    expect(ilit.subtotal.exclusion).toBe(18_000);
   });
 
   it("annotates clt_remainder_interest gifts with CLT trust name in description", () => {

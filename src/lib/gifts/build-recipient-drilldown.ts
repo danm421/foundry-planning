@@ -1,4 +1,9 @@
-import type { Gift, GiftEvent, FamilyMember } from "@/engine/types";
+import type { Gift, GiftEvent, FamilyMember, EntitySummary } from "@/engine/types";
+import {
+  toCanonicalGifts,
+  treatCanonicalGift,
+  type CanonicalGift,
+} from "./normalize-gifts";
 
 export interface RecipientDrilldownRow {
   description: string;
@@ -23,6 +28,7 @@ export interface BuildRecipientDrilldownInput {
   year: number;
   gifts: Gift[];
   giftEvents: GiftEvent[];
+  entities: EntitySummary[];
   familyMembersById: Map<
     string,
     Pick<FamilyMember, "firstName" | "lastName">
@@ -44,65 +50,63 @@ interface ResolvedRecipient {
   label: string;
 }
 
-function resolveGiftRecipient(
-  gift: Gift,
+const INDIVIDUAL_OTHER_KEY = "external:__individual_other__";
+
+function resolveCanonicalRecipient(
+  cg: CanonicalGift,
   input: BuildRecipientDrilldownInput,
 ): ResolvedRecipient | null {
-  if (gift.recipientFamilyMemberId) {
-    const fm = input.familyMembersById.get(gift.recipientFamilyMemberId);
-    if (!fm) return null;
-    return {
-      kind: "family",
-      key: `family:${gift.recipientFamilyMemberId}`,
-      label: `${fm.firstName} ${fm.lastName ?? ""}`.trim(),
-    };
-  }
-  if (gift.recipientEntityId) {
-    const ent = input.entitiesById.get(gift.recipientEntityId);
+  if (cg.recipientEntityId) {
+    const ent = input.entitiesById.get(cg.recipientEntityId);
     if (!ent) return null;
     return {
       kind: "entity",
-      key: `entity:${gift.recipientEntityId}`,
+      key: `entity:${cg.recipientEntityId}`,
       label: ent.name,
     };
   }
-  if (gift.recipientExternalBeneficiaryId) {
+  if (cg.recipientFamilyMemberId) {
+    const fm = input.familyMembersById.get(cg.recipientFamilyMemberId);
+    if (!fm) return null;
+    return {
+      kind: "family",
+      key: `family:${cg.recipientFamilyMemberId}`,
+      label: `${fm.firstName} ${fm.lastName ?? ""}`.trim(),
+    };
+  }
+  if (cg.recipientExternalBeneficiaryId) {
     const ext = input.externalBeneficiariesById.get(
-      gift.recipientExternalBeneficiaryId,
+      cg.recipientExternalBeneficiaryId,
     );
     if (!ext) return null;
     return {
       kind: "external",
-      key: `external:${gift.recipientExternalBeneficiaryId}`,
+      key: `external:${cg.recipientExternalBeneficiaryId}`,
       label: ext.name,
     };
   }
-  return null;
-}
-
-function resolveAssetEventRecipient(
-  ev: Extract<GiftEvent, { kind: "asset" }>,
-  input: BuildRecipientDrilldownInput,
-): ResolvedRecipient | null {
-  if (!ev.recipientEntityId) return null;
-  const ent = input.entitiesById.get(ev.recipientEntityId);
-  if (!ent) return null;
+  // Recipient-less cash (e.g. an individual-owned life-insurance premium gift)
+  // — the cash leaves the household to an unmodeled individual.
   return {
-    kind: "entity",
-    key: `entity:${ev.recipientEntityId}`,
-    label: ent.name,
+    kind: "external",
+    key: INDIVIDUAL_OTHER_KEY,
+    label: "Individual (other)",
   };
 }
 
-function isCharityRecipient(
-  gift: Gift,
+function describeCanonical(
+  cg: CanonicalGift,
   input: BuildRecipientDrilldownInput,
-): boolean {
-  if (!gift.recipientExternalBeneficiaryId) return false;
-  return (
-    input.externalBeneficiariesById.get(gift.recipientExternalBeneficiaryId)
-      ?.kind === "charity"
-  );
+): string {
+  if (cg.sourcePolicyAccountId != null) return "Life-insurance premium gift";
+  if (cg.eventKind === "clt_remainder_interest" && cg.recipientEntityId) {
+    const ent = input.entitiesById.get(cg.recipientEntityId);
+    return `CLT ${ent?.name ?? "remainder"} – remainder interest`;
+  }
+  // Non-premium giftEvents are the asset / business-interest transfers (cash
+  // series carry sourcePolicyAccountId only when synthesized from a policy).
+  if (cg.source === "event") return "Asset gift";
+  return "Gift";
 }
 
 const GROUP_RANK: Record<GroupKind, number> = {
@@ -125,46 +129,24 @@ export function buildRecipientDrilldown(
     else groups.set(rec.key, { kind: rec.kind, label: rec.label, rows: [row] });
   }
 
-  const giftsThisYear = input.gifts.filter((g) => g.year === input.year);
-  giftsThisYear.forEach((g, i) => {
-    const rec = resolveGiftRecipient(g, input);
-    if (!rec) return;
-    const charity = isCharityRecipient(g, input);
-    const exclusion = charity
-      ? 0
-      : g.grantor === "joint"
-        ? input.annualExclusion * 2
-        : input.annualExclusion;
-    const taxable = charity ? 0 : Math.max(0, g.amount - exclusion);
-    addRow(rec, {
-      description: describeGift(g, i, input),
-      amount: g.amount,
-      giftValue: g.amount,
-      exclusion,
-      taxableGift: taxable,
-    });
-  });
+  const canonical = toCanonicalGifts(input.gifts, input.giftEvents, {
+    entities: input.entities,
+    externalBeneficiaries: [...input.externalBeneficiariesById.entries()].map(
+      ([id, v]) => ({ id, kind: v.kind }),
+    ),
+    accountValueAtYear: input.accountValueAtYear,
+  }).filter((cg) => cg.year === input.year);
 
-  // Asset GiftEvents — engine values them at amountOverride or accountValue × percent.
-  // Cash and liability series come through legacy `gifts[]`, so we only render assets here.
-  const eventsThisYear = input.giftEvents.filter(
-    (ev) => ev.year === input.year,
-  );
-  let assetIdx = 0;
-  for (const ev of eventsThisYear) {
-    if (ev.kind !== "asset") continue;
-    const rec = resolveAssetEventRecipient(ev, input);
+  for (const cg of canonical) {
+    const rec = resolveCanonicalRecipient(cg, input);
     if (!rec) continue;
-    const value =
-      ev.amountOverride ??
-      input.accountValueAtYear(ev.accountId, ev.year) * ev.percent;
-    assetIdx += 1;
+    const t = treatCanonicalGift(cg, input.annualExclusion);
     addRow(rec, {
-      description: `Asset gift ${assetIdx}`,
-      amount: value,
-      giftValue: value,
-      exclusion: 0,
-      taxableGift: value,
+      description: describeCanonical(cg, input),
+      amount: cg.amount,
+      giftValue: cg.amount,
+      exclusion: t.annualExcluded + t.charitableExcluded,
+      taxableGift: t.lifetimeUsed,
     });
   }
 
@@ -185,16 +167,4 @@ export function buildRecipientDrilldown(
       );
       return { label, rows, subtotal };
     });
-}
-
-function describeGift(
-  g: Gift,
-  index: number,
-  input: BuildRecipientDrilldownInput,
-): string {
-  if (g.eventKind === "clt_remainder_interest" && g.recipientEntityId) {
-    const ent = input.entitiesById.get(g.recipientEntityId);
-    return `CLT ${ent?.name ?? "remainder"} – remainder interest`;
-  }
-  return `Gift ${index + 1}`;
 }
