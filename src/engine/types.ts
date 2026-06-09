@@ -1546,6 +1546,13 @@ export interface AccountLedgerEntry {
    * Reports filter these out so the same dollars don't appear as both an
    * addition and a distribution at the aggregate level. */
   isInternalTransfer?: boolean;
+  /** Signed cost-basis delta for this entry. Invariant per account:
+   *  basisBoY + Σ entry.basis ≈ basisEoY. Reuses already-computed figures —
+   *  never re-derive realization numbers here. Cash/checking: basis == amount. */
+  basis?: number;
+  /** Counterparty account or entity id for transfer-style rows, surfaced as the
+   *  Asset Ledger "Other Account" column. Undefined for external income/expense. */
+  counterpartyId?: string;
 }
 
 export interface DeductionBreakdown {
