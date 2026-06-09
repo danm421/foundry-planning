@@ -77,6 +77,7 @@ async function persistGiftChange(
       endYear: gift.endYear,
       endYearRef: null,
       annualAmount: gift.annualAmount,
+      amountMode: gift.amountMode,
       inflationAdjust: gift.inflationAdjust,
       useCrummeyPowers: gift.crummey,
       notes: null,
