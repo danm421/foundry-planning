@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 
-type Format = "currency" | "pct" | "int";
+type Format = "currency" | "pct" | "int" | "accounting";
 type Size = "body" | "kpi";
 
 interface MoneyTextProps {
@@ -30,9 +30,18 @@ const pctFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 
+const accountingFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  currencySign: "accounting",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
 function formatValue(value: number, format: Format): string {
   if (format === "currency") return currencyFormatter.format(value);
   if (format === "pct") return pctFormatter.format(value);
+  if (format === "accounting") return accountingFormatter.format(value);
   return intFormatter.format(value);
 }
 

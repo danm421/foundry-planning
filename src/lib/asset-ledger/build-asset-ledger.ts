@@ -27,7 +27,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
   }));
 
   const boyRow: AssetRow = {
-    category: "growth",
+    category: "bookend",
     label: "Beginning of Year",
     amount: ledger.beginningValue,
     basis: basisBoY,
@@ -35,7 +35,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
     internal: false,
   };
   const eoyRow: AssetRow = {
-    category: "growth",
+    category: "bookend",
     label: "End of Year",
     amount: ledger.endingValue,
     basis: basisEoY,
@@ -47,7 +47,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
     boyRow,
     ...(ledger.rothValueBoY !== undefined
       ? [{
-          category: "growth" as const,
+          category: "bookend" as const,
           label: "Beginning of Year - Roth",
           amount: ledger.rothValueBoY,
           basis: 0,
@@ -59,7 +59,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
     eoyRow,
     ...(ledger.rothValueEoY !== undefined
       ? [{
-          category: "growth" as const,
+          category: "bookend" as const,
           label: "End of Year - Roth",
           amount: ledger.rothValueEoY,
           basis: 0,

@@ -2,21 +2,20 @@
 "use client";
 
 import MoneyText from "@/components/money-text";
-import {
-  FLOW_CATEGORY_LABEL,
-  type AssetAccountBlock,
-  type AssetLedger,
-  type AssetOwnerSection,
-  type AssetRow,
+import type {
+  AssetAccountBlock,
+  AssetLedger,
+  AssetOwnerSection,
+  AssetRow,
 } from "@/lib/asset-ledger";
 import type { AssetFilterState } from "./asset-ledger-filters";
 
-const COLSPAN = 3;
+const COLSPAN = 4;
 
 function visibleRows(block: AssetAccountBlock, f: AssetFilterState): AssetRow[] {
   return block.rows.filter((r) => {
-    if (f.categories.size > 0 && !f.categories.has(r.category)) return false;
-    if (f.hideZero && r.amount === 0) return false;
+    if (r.bookend) return true;
+    if (f.hideZero && Math.round(r.amount) === 0) return false;
     return true;
   });
 }
@@ -48,49 +47,27 @@ function AccountBlock({ block, f }: { block: AssetAccountBlock; f: AssetFilterSt
         </td>
       </tr>
 
-      {rows.map((r, i) => (
-        <tr key={`${block.id}-${i}`}>
-          <td className="border-b border-hair bg-card px-3 py-1.5">
-            <span className="inline-block rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-2">
-              {FLOW_CATEGORY_LABEL[r.category]}
-            </span>
-          </td>
-          <td className="border-b border-hair bg-card px-3 py-1.5 text-ink-2">
+      {rows.map((r) => (
+        <tr key={`${block.id}-${r.label}`} className={r.bookend ? "font-semibold" : undefined}>
+          <td className="border-b border-hair bg-card px-3 py-1.5 text-ink">
             {r.label}
-            {r.internal && (
+            {!r.bookend && r.internal && (
               <span className="ml-2 rounded bg-card-2 px-1 py-0.5 text-[10px] uppercase tracking-wide text-ink-3">
                 internal
               </span>
             )}
           </td>
+          <td className="border-b border-hair bg-card px-3 py-1.5 text-ink-2">
+            {r.counterpartyName ?? ""}
+          </td>
           <td className="border-b border-hair bg-card px-3 py-1.5 text-right tabular-nums">
-            <MoneyText value={r.amount} />
+            <MoneyText value={r.amount} format="accounting" />
+          </td>
+          <td className="border-b border-hair bg-card px-3 py-1.5 text-right tabular-nums">
+            <MoneyText value={r.basis} format="accounting" />
           </td>
         </tr>
       ))}
-
-      {/* Per-account summary sub-header. */}
-      <tr>
-        <td colSpan={COLSPAN} className="border-b border-hair-2 bg-card px-3 py-1.5">
-          <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-[11px] text-ink-3">
-            {(
-              [
-                ["Growth", block.summary.growth],
-                ["Contributions", block.summary.contributions],
-                ["Distributions", block.summary.distributions],
-                ["RMD", block.summary.rmd],
-                ["Fees", block.summary.fees],
-              ] as [string, number][]
-            )
-              .filter(([, v]) => Math.abs(v) > 0.5)
-              .map(([lbl, v]) => (
-                <span key={lbl}>
-                  {lbl} <span className="font-medium tabular-nums text-ink-2"><MoneyText value={v} /></span>
-                </span>
-              ))}
-          </div>
-        </td>
-      </tr>
     </>
   );
 }
@@ -116,11 +93,12 @@ export default function AssetLedgerTable({ ledger, filter }: { ledger: AssetLedg
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead className="sticky top-0 z-20">
           <tr>
-            {["Category", "Description", "Amount"].map((h, i) => (
+            {["Description", "Other Account", "Amount", "Basis"].map((h, i) => (
               <th
                 key={h}
+                scope="col"
                 className={`border-b border-hair bg-card-2 px-3 py-2.5 text-[13px] font-semibold uppercase tracking-wider text-ink ${
-                  i === 2 ? "text-right" : "text-left"
+                  i >= 2 ? "text-right" : "text-left"
                 }`}
               >
                 {h}

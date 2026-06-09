@@ -27,39 +27,38 @@ const ledger: AssetLedger = {
           basisEoY: 0,
           basisResidual: 0,
           rows: [
+            { category: "bookend", label: "Beginning of Year", amount: 500_000, basis: 0, bookend: true, internal: false },
             { category: "growth", label: "Growth", amount: 32_000, basis: 32_000, internal: false },
-            { category: "withdrawal", label: "Supplemental withdrawal", amount: -7_000, basis: -7_000, internal: true },
+            { category: "withdrawal", label: "Supplemental withdrawal", amount: -7_000, basis: -7_000, internal: true, counterpartyName: "John IRA" },
             { category: "tax", label: "Phantom", amount: 0, basis: 0, internal: false },
+            { category: "bookend", label: "End of Year", amount: 537_000, basis: 0, bookend: true, internal: false },
           ],
-          reconciles: true,
-          residual: 0,
-        },
-        {
-          id: "ira",
-          name: "John IRA",
-          category: "retirement",
-          beginningValue: 100_000,
-          endingValue: 120_000,
-          netChange: 20_000,
-          summary: { growth: 5_000, contributions: 0, distributions: 0, rmd: 0, fees: 0, internalContributions: 0, internalDistributions: 0 },
-          basisBoY: 0,
-          basisEoY: 0,
-          basisResidual: 0,
-          rows: [{ category: "growth", label: "Growth", amount: 5_000, basis: 5_000, internal: false }],
           reconciles: false,
-          residual: 15_000,
+          residual: 12_000,
         },
       ],
     },
   ],
 };
 
-const showAll: AssetFilterState = { categories: new Set(), hideZero: false };
+const showAll: AssetFilterState = { hideZero: false };
 
 describe("AssetLedgerTable", () => {
-  it("renders an internal tag on internal-transfer rows", () => {
+  it("renders Beginning of Year and End of Year rows", () => {
     render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
-    expect(screen.getByText("internal")).toBeDefined();
+    expect(screen.getAllByText("Beginning of Year").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("End of Year").length).toBeGreaterThan(0);
+  });
+
+  it("shows the Other Account column header and a counterparty value", () => {
+    render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
+    expect(screen.getByText("Other Account")).toBeDefined();
+    expect(screen.getByText("John IRA")).toBeDefined();
+  });
+
+  it("renders outflows in accounting parentheses", () => {
+    render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
+    expect(screen.getAllByText(/\(\$7,000\)/).length).toBeGreaterThan(0);
   });
 
   it("renders a reconcile warning when an account does not reconcile", () => {
@@ -67,10 +66,13 @@ describe("AssetLedgerTable", () => {
     expect(screen.getByText(/off by/)).toBeDefined();
   });
 
-  it("hides zero-amount rows when hideZero is on", () => {
+  it("hides zero-amount rows when hideZero is on, but never bookend rows", () => {
     const { rerender } = render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
     expect(screen.queryByText("Phantom")).not.toBeNull();
-    rerender(<AssetLedgerTable ledger={ledger} filter={{ categories: new Set(), hideZero: true }} />);
+    rerender(<AssetLedgerTable ledger={ledger} filter={{ hideZero: true }} />);
     expect(screen.queryByText("Phantom")).toBeNull();
+    // Bookend rows must still be visible even when hideZero is on
+    expect(screen.getAllByText("Beginning of Year").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("End of Year").length).toBeGreaterThan(0);
   });
 });

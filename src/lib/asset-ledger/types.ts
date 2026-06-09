@@ -5,7 +5,7 @@ import type { AccountLedgerEntry } from "@/engine/types";
 export type FlowCategory = AccountLedgerEntry["category"];
 
 export interface AssetRow {
-  category: FlowCategory;
+  category: FlowCategory | "bookend";
   /** entry.label, e.g. "Growth", "RMD", "Supplemental withdrawal". */
   label: string;
   /** Signed: + inflow, − outflow. */
