@@ -18,10 +18,16 @@ function moneyTone(n: number, tone: "pos-neg" | "neg" = "pos-neg"): React.ReactN
   return <span className={cls}>{formatCompact(n)}</span>;
 }
 
-const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.04em] text-ink-4";
+// Tax Impact + After Tax populate only at the year-subtotal / grand-total level —
+// taxImpact is a joint per-year counterfactual, so per-grant rows (taxImpact === null)
+// fall through to a dash. A year with activity but no tax entry is also null → dash.
+const taxCell = (taxImpact: number | null): React.ReactNode => (taxImpact === null ? dash : money(taxImpact));
+const afterTaxCell = (netProceeds: number, taxImpact: number | null): React.ReactNode =>
+  taxImpact === null ? dash : moneyTone(netProceeds - taxImpact);
+
+const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-ink-2";
 const TD = "px-2 py-1.5 text-right whitespace-nowrap border-b border-hair";
 const L = "text-left";
-const pending = <span className="italic text-ink-4 text-[11px]">pending</span>;
 const COLS = 15;
 
 export default function FutureActivityLedger({ model }: { model: FutureActivityModel }) {
@@ -58,7 +64,7 @@ export default function FutureActivityLedger({ model }: { model: FutureActivityM
             <th className={TH}>Sale $</th>
             <th className={TH}>Gross Proceeds</th>
             <th className={TH}>Net Proceeds</th>
-            <th className={TH}>Opt. Income Tax</th>
+            <th className={TH}>Tax Impact</th>
             <th className={TH}>After Tax</th>
           </tr>
         </thead>
@@ -78,8 +84,8 @@ export default function FutureActivityLedger({ model }: { model: FutureActivityM
             <td className={`${TD} border-t-2 border-hair-2`}></td>
             <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.grossProceeds)}</td>
             <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(model.totals.netProceeds)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{pending}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{pending}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{taxCell(model.totals.taxImpact)}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{afterTaxCell(model.totals.netProceeds, model.totals.taxImpact)}</td>
           </tr>
         </tfoot>
       </table>
@@ -89,9 +95,11 @@ export default function FutureActivityLedger({ model }: { model: FutureActivityM
         withholding at vest/exercise (tagged <span className="text-accent-ink font-semibold">cover</span>)
         plus strategy sells; <span className="text-ink-2 font-semibold">Net Proceeds</span> = gross
         proceeds − exercise cost and reconciles with the cash flow.{" "}
-        <span className="text-ink-2 font-semibold">Opt. Income Tax</span> /{" "}
-        <span className="text-ink-2 font-semibold">After Tax</span> are wired but{" "}
-        <span className="italic text-ink-4">pending</span> — a future Tax Impact report fills them.
+        <span className="text-ink-2 font-semibold">Tax Impact</span> is the additional tax the plan
+        incurs that year from equity comp (income + capital gains + payroll + state, from the Tax Impact
+        report) — a joint per-year figure, so it shows on the year subtotals and total only, not per grant.{" "}
+        <span className="text-ink-2 font-semibold">After Tax</span> = Net Proceeds − Tax Impact, netting
+        cash proceeds against total additional tax (which includes tax on non-cash vest income).
       </p>
     </div>
   );
@@ -135,8 +143,8 @@ function YearGroup({ year, rows, subtotal }: { year: number; rows: FutureActivit
           <td className={TD}>{r.salePrice === 0 ? dash : `$${r.salePrice.toFixed(2)}`}</td>
           <td className={TD}>{money(r.grossProceeds)}</td>
           <td className={TD}>{moneyTone(r.netProceeds)}</td>
-          <td className={TD}>{pending}</td>
-          <td className={TD}>{pending}</td>
+          <td className={TD}>{taxCell(r.taxImpact)}</td>
+          <td className={TD}>{afterTaxCell(r.netProceeds, r.taxImpact)}</td>
         </tr>
       ))}
       <SubtotalRow label={`${year} subtotal`} s={subtotal} />
@@ -156,8 +164,8 @@ function SubtotalRow({ label, s }: { label: string; s: FutureActivitySubtotal })
       <td className={TD}></td>
       <td className={TD}>{money(s.grossProceeds)}</td>
       <td className={TD}>{moneyTone(s.netProceeds)}</td>
-      <td className={TD}>{pending}</td>
-      <td className={TD}>{pending}</td>
+      <td className={TD}>{taxCell(s.taxImpact)}</td>
+      <td className={TD}>{afterTaxCell(s.netProceeds, s.taxImpact)}</td>
     </tr>
   );
 }

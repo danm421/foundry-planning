@@ -31,18 +31,21 @@ function model(over: Partial<FutureActivityModel>): FutureActivityModel {
 }
 
 describe("FutureActivityLedger", () => {
-  it("renders a year group, a sell-to-cover row with the cover tag, and pending tax cells", () => {
+  it("renders a year group, a sell-to-cover row, and tax impact on the subtotal + grand total", () => {
     const r = row({ sharesVested: 100, sharesSold: 25, hasSellToCover: true, grossProceeds: 2500, netProceeds: 2500 });
-    const m = model({
-      groups: [{ year: 2027, rows: [r], subtotal: { ...ZERO_SUB, sharesVested: 100, sharesSold: 25, grossProceeds: 2500, netProceeds: 2500 } }],
-    });
+    const sub = { ...ZERO_SUB, sharesVested: 100, sharesSold: 25, grossProceeds: 2500, netProceeds: 2500, taxImpact: 1000 };
+    const m = model({ groups: [{ year: 2027, rows: [r], subtotal: sub }], totals: sub });
     render(<FutureActivityLedger model={m} />);
     expect(screen.getByText("2027")).toBeTruthy();
     expect(screen.getByText("RSU-09")).toBeTruthy();
     // "cover" appears twice: the row badge + the footnote legend. Asserting === 2
     // keeps the badge under test (footnote alone would only yield 1).
     expect(screen.getAllByText("cover").length).toBe(2);
-    expect(screen.getAllByText(/pending/i).length).toBeGreaterThan(0);
+    // Tax Impact ($1K) and After Tax ($1.5K = net − tax) each render on the year
+    // subtotal AND the grand total; per-grant rows stay "—" (no `pending` placeholder).
+    expect(screen.queryByText(/pending/i)).toBeNull();
+    expect(screen.getAllByText("$1K").length).toBe(2);
+    expect(screen.getAllByText("$1.5K").length).toBe(2);
   });
 
   it("shows the no-grants empty state", () => {

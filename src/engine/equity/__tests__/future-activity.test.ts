@@ -140,3 +140,30 @@ describe("buildFutureActivity — grant-level rows", () => {
     expect(m.hasGrants).toBe(true);
   });
 });
+
+describe("buildFutureActivity — tax impact join", () => {
+  it("joins per-year tax onto the subtotal + grand total, leaving per-grant rows null", () => {
+    const taxByYear = new Map([[2027, 5000]]);
+    const m = buildFutureActivity([plan([rsu()], HOLD)], { ...OPTS, taxByYear });
+    expect(m.hasTaxImpact).toBe(true);
+    const g = m.groups.find((grp) => grp.year === 2027)!;
+    expect(g.subtotal.taxImpact).toBe(5000);
+    expect(g.rows[0].taxImpact).toBeNull(); // joint per-year figure, not split per grant
+    expect(m.totals.taxImpact).toBe(5000);
+  });
+
+  it("sums only present years; a year with activity but no tax entry stays null (not 0)", () => {
+    const twoVests = rsu({
+      sharesGranted: 200,
+      tranches: [
+        { id: "rt1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+        { id: "rt2", vestYear: 2029, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+      ],
+    });
+    const taxByYear = new Map([[2027, 5000]]); // 2029 deliberately absent
+    const m = buildFutureActivity([plan([twoVests], HOLD)], { ...OPTS, taxByYear });
+    expect(m.groups.find((grp) => grp.year === 2027)!.subtotal.taxImpact).toBe(5000);
+    expect(m.groups.find((grp) => grp.year === 2029)!.subtotal.taxImpact).toBeNull();
+    expect(m.totals.taxImpact).toBe(5000); // present year only — 2029 not coerced to 0
+  });
+});

@@ -11,7 +11,7 @@ function moneyTone(n: number): React.ReactNode {
   return <span className={n < 0 ? "text-crit" : "text-good"}>{formatCompact(n)}</span>;
 }
 
-const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.04em] text-ink-4";
+const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-ink-2";
 const TD = "px-2 py-1.5 text-right whitespace-nowrap border-b border-hair";
 const TDF = `${TD} border-t-2 border-hair-2`; // totals-row cell (heavier top rule)
 const L = "text-left";
