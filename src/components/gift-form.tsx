@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Field, NumberInput, Segmented, selectCls } from "@/components/gift-dialog-controls";
 import { GiftWarningAlert, type GiftWarningBreach } from "@/components/gift-warning-alert";
 import { checkExemptionImpact } from "@/engine/gift-exemption-warning";
+import type { ClientData } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { EstateFlowGift, GiftGrantor, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
 
@@ -12,6 +13,27 @@ export interface GiftFormRecipients {
   trusts: { id: string; name: string }[];
   familyMembers: { id: string; firstName: string; lastName?: string | null; roleLabel?: string }[];
   externals: { id: string; name: string; kindLabel?: string }[];
+}
+
+/** Map a `ClientData` slice to the `GiftForm` recipients shape (shared by the
+ *  estate-flow add-gift + change-owner wrappers). */
+export function giftFormRecipientsFromClientData(clientData: ClientData): GiftFormRecipients {
+  return {
+    trusts: (clientData.entities ?? [])
+      .filter((e) => e.entityType === "trust" && e.isIrrevocable)
+      .map((e) => ({ id: e.id, name: e.name ?? "Trust" })),
+    familyMembers: (clientData.familyMembers ?? []).map((m) => ({
+      id: m.id,
+      firstName: m.firstName,
+      lastName: m.lastName,
+      roleLabel: m.role,
+    })),
+    externals: (clientData.externalBeneficiaries ?? []).map((x) => ({
+      id: x.id,
+      name: x.name,
+      kindLabel: x.kind,
+    })),
+  };
 }
 
 export interface GiftFormProps {

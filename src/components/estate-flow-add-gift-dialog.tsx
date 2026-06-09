@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import DialogShell from "@/components/dialog-shell";
-import GiftForm from "@/components/gift-form";
+import GiftForm, { giftFormRecipientsFromClientData } from "@/components/gift-form";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -74,22 +74,7 @@ export default function EstateFlowAddGiftDialog({
           state per gift — honours the GiftForm remount contract. */}
       <GiftForm
         key={editing?.id ?? "new"}
-        recipients={{
-          trusts: (clientData.entities ?? [])
-            .filter((e) => e.entityType === "trust" && e.isIrrevocable)
-            .map((e) => ({ id: e.id, name: e.name ?? "Trust" })),
-          familyMembers: (clientData.familyMembers ?? []).map((m) => ({
-            id: m.id,
-            firstName: m.firstName,
-            lastName: m.lastName,
-            roleLabel: m.role,
-          })),
-          externals: (clientData.externalBeneficiaries ?? []).map((x) => ({
-            id: x.id,
-            name: x.name,
-            kindLabel: x.kind,
-          })),
-        }}
+        recipients={giftFormRecipientsFromClientData(clientData)}
         accounts={(clientData.accounts ?? []).map((a) => ({ id: a.id, name: a.name }))}
         hasSpouse={clientData.client.spouseDob != null}
         annualExclusionByYear={annualExclusionByYear}

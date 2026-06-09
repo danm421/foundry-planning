@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
-import GiftForm from "@/components/gift-form";
+import GiftForm, { giftFormRecipientsFromClientData } from "@/components/gift-form";
 import type { Account, BeneficiaryRef, ClientData } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
@@ -517,22 +517,7 @@ export default function EstateFlowChangeOwnerDialog({
         <div className="mt-4">
           <GiftForm
             key={selectedDestId}
-            recipients={{
-              trusts: (clientData.entities ?? [])
-                .filter((e) => e.entityType === "trust" && e.isIrrevocable)
-                .map((e) => ({ id: e.id, name: e.name ?? "Trust" })),
-              familyMembers: (clientData.familyMembers ?? []).map((m) => ({
-                id: m.id,
-                firstName: m.firstName,
-                lastName: m.lastName,
-                roleLabel: m.role,
-              })),
-              externals: (clientData.externalBeneficiaries ?? []).map((x) => ({
-                id: x.id,
-                name: x.name,
-                kindLabel: x.kind,
-              })),
-            }}
+            recipients={giftFormRecipientsFromClientData(clientData)}
             accounts={(clientData.accounts ?? []).map((a) => ({ id: a.id, name: a.name }))}
             hasSpouse={clientData.client.spouseDob != null}
             annualExclusionByYear={annualExclusionByYear}
