@@ -32,6 +32,14 @@ export function computeGiftTaxTreatment(
   gift: GiftInput,
   ctx: GiftContext,
 ): GiftTreatment {
+  // Outright gift to a natural person: one annual exclusion, remainder draws
+  // lifetime exemption. Shared by the family-member, external-individual, and
+  // no-modeled-recipient paths.
+  const outrightIndividual = (): GiftTreatment => {
+    const annual = Math.min(gift.amount, ctx.annualExclusionAmount);
+    return { lifetimeUsed: gift.amount - annual, annualExcluded: annual, charitableExcluded: 0 };
+  };
+
   if (gift.recipientEntityId) {
     if (!ctx.entity) {
       throw new Error("computeGiftTaxTreatment: entity context required for entity recipient");
@@ -59,12 +67,7 @@ export function computeGiftTaxTreatment(
   }
 
   if (gift.recipientFamilyMemberId) {
-    const annual = Math.min(gift.amount, ctx.annualExclusionAmount);
-    return {
-      lifetimeUsed: gift.amount - annual,
-      annualExcluded: annual,
-      charitableExcluded: 0,
-    };
+    return outrightIndividual();
   }
 
   if (gift.recipientExternalBeneficiaryId) {
@@ -74,20 +77,12 @@ export function computeGiftTaxTreatment(
     if (ctx.external.kind === "charity") {
       return { lifetimeUsed: 0, annualExcluded: 0, charitableExcluded: gift.amount };
     }
-    const annual = Math.min(gift.amount, ctx.annualExclusionAmount);
-    return {
-      lifetimeUsed: gift.amount - annual,
-      annualExcluded: annual,
-      charitableExcluded: 0,
-    };
+    return outrightIndividual();
   }
 
   // No modeled recipient — cash leaving the household to an unmodeled
   // individual (e.g. an individual-owned life-insurance premium gift).
   // Treated as an outright individual gift: one annual exclusion, remainder
   // consumes lifetime exemption. (Spec decision: not an error.)
-  {
-    const annual = Math.min(gift.amount, ctx.annualExclusionAmount);
-    return { lifetimeUsed: gift.amount - annual, annualExcluded: annual, charitableExcluded: 0 };
-  }
+  return outrightIndividual();
 }

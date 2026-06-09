@@ -21,15 +21,17 @@
  * only consumes `data.giftEvents`.
  *
  * ── Why two ledgers ─────────────────────────────────────────────────────────
- * The crummey-vs-exemption distinction (assertion 3) is NOT represented in the
- * projection's own gift ledger (`runProjectionWithEvents().giftLedger` /
- * `src/engine/gift-ledger.ts`): that ledger never reads `useCrummeyPowers`, and
- * its cash-event path skips one-time cash GiftEvents (`seriesId == null`), which
- * is exactly what synthesized premium gifts are. The exclusion-vs-exemption
- * contract the plan describes ("crummey true → annual exclusion, false →
- * lifetime exemption") lives in the production lib ledger
- * `src/lib/gifts/compute-ledger.ts` (`computeExemptionLedger` +
- * `computeGiftTaxTreatment`). So assertion 3 feeds the SAME synthesized gift the
+ * The projection's own gift ledger (`runProjectionWithEvents().giftLedger` /
+ * `src/engine/gift-ledger.ts`) DOES now apply the unified Crummey treatment to
+ * the synthesized premium cash gift — the B4 suite at the bottom of this file
+ * proves it (gross in `giftsGiven`, taxable netting `exclusion × beneficiaryCount`).
+ * But its rows surface taxable *totals* (`taxableGiftsThisYear` / `perGrantor`),
+ * not the lifetime-exemption *drawdown* (`lifetimeUsedThisYear` /
+ * `cumulativeLifetimeUsed`). Assertion 3 specifically distinguishes "annual
+ * exclusion absorbs the gift, no lifetime drawn" from "no Crummey → lifetime
+ * exemption drawn" — a drawdown question the projection row doesn't expose. That
+ * drawdown ledger lives in the production lib `src/lib/gifts/compute-ledger.ts`
+ * (`computeExemptionLedger`), so assertion 3 feeds the SAME synthesized gift the
  * projection consumed into that ledger and asserts on `lifetimeUsedThisYear`.
  *
  * Assertions 1 & 2 (cash flow) run against the real projection engine output.
@@ -335,8 +337,9 @@ describe("life insurance — premium gift projection (trust-owned, premiumPayer=
  * gift-ledger was rewired onto the unified canonical + Crummey model
  * (`computeGiftLedger` → `toCanonicalGifts` → `treatCanonicalGift`), the
  * synthesized premium gift now:
- *   • appears in `giftsGiven` (gross visibility — `sumGrossGifts` counts cash
- *     events with `sourcePolicyAccountId`), and
+ *   • appears in `giftsGiven` (gross visibility — the per-year gross is summed
+ *     from the canonical list, which includes premium cash events tagged with
+ *     `sourcePolicyAccountId`), and
  *   • nets `annualExclusion × beneficiaryCount` against the gross when the
  *     owning trust has Crummey powers + natural-person beneficiaries.
  *

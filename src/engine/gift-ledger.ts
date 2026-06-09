@@ -70,6 +70,15 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
     entityValueAtYear: input.entityValueAtYear,
   });
 
+  // Per-year gross gift total (pre-exclusion). Summing canonical amounts
+  // reproduces the gross — joint halves sum back to the whole, and the
+  // normalizer already applies the one-time-cash dedup the ledger needs — so
+  // there is no separate gross-summing pass to keep in lockstep.
+  const grossByYear = new Map<number, number>();
+  for (const cg of canonical) {
+    grossByYear.set(cg.year, (grossByYear.get(cg.year) ?? 0) + cg.amount);
+  }
+
   let prevClient: GrantorYearState = {
     ...emptyState(),
     cumulativeTaxableGifts: input.priorTaxableGifts.client,
@@ -94,7 +103,7 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
 
     result.push({
       year,
-      giftsGiven: sumGrossGifts(year, input),
+      giftsGiven: grossByYear.get(year) ?? 0,
       taxableGiftsGiven,
       perGrantor: { client, ...(spouse ? { spouse } : {}) },
       totalGiftTax,
@@ -105,43 +114,6 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   }
 
   return result;
-}
-
-function assetGiftValue(
-  ev: Extract<GiftEvent, { kind: "asset" }>,
-  accountValueAtYear: GiftLedgerInput["accountValueAtYear"],
-): number {
-  return ev.amountOverride != null
-    ? ev.amountOverride
-    : accountValueAtYear(ev.accountId, ev.year) * ev.percent;
-}
-
-function businessInterestGiftValue(
-  ev: Extract<GiftEvent, { kind: "business_interest" }>,
-  entityValueAtYear: GiftLedgerInput["entityValueAtYear"],
-): number {
-  if (ev.amountOverride != null) return ev.amountOverride;
-  const value = entityValueAtYear ? entityValueAtYear(ev.entityId, ev.year) : 0;
-  return value * ev.percent;
-}
-
-function sumGrossGifts(year: number, input: GiftLedgerInput): number {
-  let total = 0;
-  for (const g of input.gifts) {
-    if (g.year === year) total += g.amount;
-  }
-  for (const ev of input.giftEvents) {
-    if (ev.year !== year) continue;
-    if (ev.kind === "cash") {
-      if (ev.seriesId == null && ev.sourcePolicyAccountId == null) continue;
-      total += ev.amount;
-    } else if (ev.kind === "asset") {
-      total += assetGiftValue(ev, input.accountValueAtYear);
-    } else if (ev.kind === "business_interest") {
-      total += businessInterestGiftValue(ev, input.entityValueAtYear);
-    }
-  }
-  return total;
 }
 
 function stepGrantor(
