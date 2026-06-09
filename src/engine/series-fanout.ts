@@ -2,11 +2,12 @@ import type { GiftEvent } from "./types";
 
 export interface GiftSeriesRow {
   id: string;
-  grantor: "client" | "spouse";
+  grantor: "client" | "spouse" | "joint";
   recipientEntityId: string;
   startYear: number;
   endYear: number;
   annualAmount: number;
+  amountMode: "fixed" | "annual_exclusion";
   inflationAdjust: boolean;
   useCrummeyPowers: boolean;
   sourceAccountId?: string;

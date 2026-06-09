@@ -365,7 +365,7 @@ export type GiftEvent =
       kind: "cash";
       year: number;
       amount: number;
-      grantor: "client" | "spouse";
+      grantor: "client" | "spouse" | "joint";
       /** Set only when the recipient is a modeled trust entity. Absent for
        *  cash gifts to family members / external beneficiaries — those have no
        *  in-projection account to credit; the cash simply leaves the household. */
