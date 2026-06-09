@@ -14,6 +14,15 @@ import type { AssetFilterState } from "./asset-ledger-filters";
 const HEADERS = ["Description", "Other Account", "Amount", "Basis"];
 const COLSPAN = HEADERS.length;
 
+/** Transparent gap row used to separate stacked account blocks. */
+function SpacerRow({ height = "h-3" }: { height?: string }) {
+  return (
+    <tr aria-hidden>
+      <td colSpan={COLSPAN} className={height} />
+    </tr>
+  );
+}
+
 function visibleRows(block: AssetAccountBlock, f: AssetFilterState): AssetRow[] {
   return block.rows.filter((r) => {
     if (r.bookend) return true;
@@ -22,10 +31,21 @@ function visibleRows(block: AssetAccountBlock, f: AssetFilterState): AssetRow[] 
   });
 }
 
-function AccountBlock({ block, f }: { block: AssetAccountBlock; f: AssetFilterState }) {
+function AccountBlock({
+  block,
+  f,
+  index,
+}: {
+  block: AssetAccountBlock;
+  f: AssetFilterState;
+  index: number;
+}) {
   const rows = visibleRows(block, f);
   return (
     <>
+      {/* Breathing room between stacked accounts (not before the first one in a section). */}
+      {index > 0 && <SpacerRow />}
+
       {/* Account header — always rendered so beginning→ending + reconcile badge stay visible. */}
       <tr>
         <td colSpan={COLSPAN} className="border-b border-hair bg-card-2 px-3 py-2">
@@ -50,8 +70,14 @@ function AccountBlock({ block, f }: { block: AssetAccountBlock; f: AssetFilterSt
       </tr>
 
       {rows.map((r) => (
-        <tr key={`${block.id}-${r.label}`} className={r.bookend ? "font-semibold" : undefined}>
-          <td className="border-b border-hair bg-card px-3 py-1.5 text-ink">
+        <tr
+          key={`${block.id}-${r.label}`}
+          className={`hover:[&>td]:shadow-[inset_0_1px_0_var(--color-hair-2),inset_0_-1px_0_var(--color-hair-2)] ${
+            r.bookend ? "font-semibold" : ""
+          }`}
+        >
+          {/* Detail label indented so it reads as subordinate to the account header above. */}
+          <td className="border-b border-hair bg-card py-1.5 pl-7 pr-3 text-ink">
             {r.label}
             {!r.bookend && r.internal && (
               <span className="ml-2 rounded bg-card-2 px-1 py-0.5 text-[10px] uppercase tracking-wide text-ink-3">
@@ -74,16 +100,25 @@ function AccountBlock({ block, f }: { block: AssetAccountBlock; f: AssetFilterSt
   );
 }
 
-function OwnerSection({ section, f }: { section: AssetOwnerSection; f: AssetFilterState }) {
+function OwnerSection({
+  section,
+  f,
+  index,
+}: {
+  section: AssetOwnerSection;
+  f: AssetFilterState;
+  index: number;
+}) {
   return (
     <>
+      {index > 0 && <SpacerRow height="h-5" />}
       <tr>
         <td colSpan={COLSPAN} className="bg-card px-3 py-2 text-[13px] font-semibold uppercase tracking-wider text-ink">
           {section.label}
         </td>
       </tr>
-      {section.accounts.map((b) => (
-        <AccountBlock key={b.id} block={b} f={f} />
+      {section.accounts.map((b, i) => (
+        <AccountBlock key={b.id} block={b} f={f} index={i} />
       ))}
     </>
   );
@@ -109,8 +144,8 @@ export default function AssetLedgerTable({ ledger, filter }: { ledger: AssetLedg
           </tr>
         </thead>
         <tbody className="text-ink">
-          {ledger.sections.map((s) => (
-            <OwnerSection key={s.id} section={s} f={filter} />
+          {ledger.sections.map((s, i) => (
+            <OwnerSection key={s.id} section={s} f={filter} index={i} />
           ))}
         </tbody>
       </table>
