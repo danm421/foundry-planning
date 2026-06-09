@@ -139,9 +139,23 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
   };
 }
 
-// Placeholder until Task 3 implements ISO qualification.
-function isoSplitFor(_grant: EquityGrant, _asOfYear: number): IsoSplit | null {
-  return null;
+/** ISO qualified/holding split for exercised shares.
+ *  Qualifying disposition needs held ≥2y from grant AND ≥1y from exercise.
+ *  We lack actual exercise dates (tranches store counts only), so we assume
+ *  exercise happened at the tranche vest year → qualifyYear = max(grantYear+2, vestYear+1).
+ *  An exercised tranche's shares are "qualified" once asOfYear ≥ qualifyYear. */
+function isoSplitFor(grant: EquityGrant, asOfYear: number): IsoSplit | null {
+  if (grant.grantType !== "iso") return null;
+  let qualified = 0;
+  let holding = 0;
+  for (const t of grant.tranches) {
+    if (t.sharesExercised <= 0) continue;
+    const qualifyYear = Math.max(grant.grantYear + 2, t.vestYear + 1);
+    if (asOfYear >= qualifyYear) qualified += t.sharesExercised;
+    else holding += t.sharesExercised;
+  }
+  if (qualified + holding === 0) return null;
+  return { qualified, holding };
 }
 
 function sumTotals(rows: VestingScheduleRow[], n: number): VestingScheduleTotals {

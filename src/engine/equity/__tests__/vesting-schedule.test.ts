@@ -121,3 +121,54 @@ describe("buildVestingSchedule — options (NQSO)", () => {
     expect(row.exercisable).toBe(0);
   });
 });
+
+function isoPlan(): StockOptionPlan {
+  return basePlan({
+    accountId: "acct-iso",
+    grants: [
+      { // OLD grant → exercised shares are past the holding period (qualified)
+        id: "g-iso-old", grantNumber: "ACME ISO old", grantType: "iso", grantYear: 2021,
+        sharesGranted: 3000, has83bElection: false, fmvAtGrant: null,
+        strikePrice: 12, strikeDiscountPct: null, expirationYear: 2031,
+        strategy: { ...EMPTY_STRATEGY },
+        tranches: [
+          { id: "o1", vestYear: 2022, shares: 3000, sharesExercised: 3000, sharesSold: 0, strategy: null },
+        ],
+        plannedEvents: [],
+      },
+      { // RECENT grant → grantYear+2 (2027) > asOf (2026), still in holding window
+        id: "g-iso-new", grantNumber: "ACME ISO new", grantType: "iso", grantYear: 2025,
+        sharesGranted: 4000, has83bElection: false, fmvAtGrant: null,
+        strikePrice: 12, strikeDiscountPct: null, expirationYear: 2035,
+        strategy: { ...EMPTY_STRATEGY },
+        tranches: [
+          { id: "o2", vestYear: 2025, shares: 4000, sharesExercised: 4000, sharesSold: 0, strategy: null },
+        ],
+        plannedEvents: [],
+      },
+    ],
+  });
+}
+
+describe("buildVestingSchedule — ISO qualification", () => {
+  it("splits exercised ISO shares into qualified vs holding (at-vest assumption)", () => {
+    const model = buildVestingSchedule([isoPlan()], { asOfYear: 2026, planStartYear: 2026 });
+    const [oldRow, newRow] = model.rows;
+
+    // old: qualifyYear = max(2021+2, 2022+1) = 2023 <= 2026 → all qualified
+    expect(oldRow.isoSplit).toEqual({ qualified: 3000, holding: 0 });
+    // new: qualifyYear = max(2025+2, 2025+1) = 2027 > 2026 → all holding
+    expect(newRow.isoSplit).toEqual({ qualified: 0, holding: 4000 });
+  });
+
+  it("returns null isoSplit for NQSO/RSU and for ISO with nothing exercised", () => {
+    expect(buildVestingSchedule([nqsoPlan()], { asOfYear: 2026, planStartYear: 2026 }).rows[0].isoSplit).toBeNull();
+    expect(buildVestingSchedule([rsuPlan()], { asOfYear: 2026, planStartYear: 2026 }).rows[0].isoSplit).toBeNull();
+    const noEx = isoPlan();
+    noEx.grants[0].tranches[0].sharesExercised = 0;
+    noEx.grants[1].tranches[0].sharesExercised = 0;
+    const m = buildVestingSchedule([noEx], { asOfYear: 2026, planStartYear: 2026 });
+    expect(m.rows[0].isoSplit).toBeNull();
+    expect(m.rows[1].isoSplit).toBeNull();
+  });
+});
