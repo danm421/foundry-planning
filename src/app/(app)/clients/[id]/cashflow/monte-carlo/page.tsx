@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import MonteCarloReport from "@/components/monte-carlo-report";
@@ -15,7 +16,7 @@ export default async function MonteCarloPage({
   const { id } = await params;
   const sp = await searchParams;
   const firmId = await requireOrgId();
-  await findClientInFirm(id, firmId);
+  if (!(await findClientInFirm(id, firmId))) notFound();
   return (
     <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
       <MonteCarloReport clientId={id} />
