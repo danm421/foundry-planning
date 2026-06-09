@@ -124,3 +124,44 @@ describe("buildFutureActivity — core mapping", () => {
     expect(m.groups[0].subtotal.netCash).toBe(40000);
   });
 });
+
+describe("buildFutureActivity — totals, tax seam, empty states", () => {
+  it("reconciles grand totals across years and leaves taxImpact null / hasTaxImpact false", () => {
+    // RSU vests 2027 (hold) + NQSO exercises 2027 (hold). Use distinct accounts to avoid id clashes.
+    const m = buildFutureActivity(
+      [plan([rsu()], HOLD), plan([nqso()], HOLD, { accountId: "acct2", ticker: "ACME" })],
+      OPTS,
+    );
+    const all = m.groups.flatMap((g) => g.events);
+    const sumShares = all.reduce((s, e) => s + e.shares, 0);
+    const sumGross = all.reduce((s, e) => s + e.grossValue, 0);
+    expect(m.totals.shares).toBe(sumShares);
+    expect(m.totals.grossValue).toBe(sumGross);
+    expect(m.hasTaxImpact).toBe(false);
+    expect(m.totals.taxImpact).toBeNull();
+    expect(all.every((e) => e.taxImpact === null)).toBe(true);
+    expect(m.groups.every((g) => g.subtotal.taxImpact === null)).toBe(true);
+  });
+
+  it("reports hasGrants=false with empty groups when there are no grants", () => {
+    const m = buildFutureActivity([plan([], HOLD)], OPTS);
+    expect(m.groups).toEqual([]);
+    expect(m.hasGrants).toBe(false);
+    expect(m.totals.shares).toBe(0);
+  });
+
+  it("reports hasGrants=true with empty groups when grants have no in-window activity", () => {
+    // Held RSU that fully vested before the plan and is never sold → only seed_held (dropped).
+    const g = rsu({ tranches: [{ id: "rt1", vestYear: 2020, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }] });
+    const m = buildFutureActivity([plan([g], HOLD)], OPTS);
+    expect(m.groups).toEqual([]);
+    expect(m.hasGrants).toBe(true);
+  });
+
+  it("handles an empty plans array", () => {
+    const m = buildFutureActivity([], OPTS);
+    expect(m.groups).toEqual([]);
+    expect(m.hasGrants).toBe(false);
+    expect(m.totals).toEqual({ shares: 0, grossValue: 0, exerciseCost: 0, netCash: 0, taxImpact: null });
+  });
+});
