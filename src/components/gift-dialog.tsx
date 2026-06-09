@@ -332,12 +332,12 @@ export default function GiftDialog(props: GiftDialogProps) {
   );
 }
 
-const selectCls = "mt-1 block w-full rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink";
+const selectCls = "block w-full max-w-xs rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="text-xs text-ink-3">{label}</label>
+      <label className="mb-1.5 block text-xs text-ink-3">{label}</label>
       {children}
     </div>
   );
@@ -349,14 +349,14 @@ function NumberInput({ value, onChange, className }: { value: number; onChange: 
       type="number"
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className={`${className ?? ""} block w-full rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink`}
+      className={`${className ?? ""} block w-full max-w-[10rem] rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink`}
     />
   );
 }
 
 function Segmented({ value, options, onChange }: { value: string; options: [string, string][]; onChange: (v: string) => void }) {
   return (
-    <div className="mt-1 inline-flex rounded border border-ink-3 p-0.5">
+    <div className="inline-flex rounded border border-ink-3 p-0.5">
       {options.map(([val, label]) => (
         <button
           key={val}
