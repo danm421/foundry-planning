@@ -38,7 +38,7 @@ describe("HeaderSubtabs", () => {
       expect(links.map((a) => a.textContent?.trim())).toEqual([
         "Cash Flow",
         "Income Tax",
-        "Tax Ledger",
+        "Ledgers",
         "Monte Carlo",
         "Timeline",
         "Entities",
@@ -47,7 +47,7 @@ describe("HeaderSubtabs", () => {
       expect(links.map((a) => a.getAttribute("href"))).toEqual([
         "/clients/c1/cashflow",
         "/clients/c1/cashflow/income-tax",
-        "/clients/c1/cashflow/tax-ledger",
+        "/clients/c1/cashflow/ledgers",
         "/clients/c1/cashflow/monte-carlo",
         "/clients/c1/cashflow/timeline",
         "/clients/c1/cashflow/entities",
@@ -76,6 +76,16 @@ describe("HeaderSubtabs", () => {
         (a) => a.textContent?.trim() === "Income Tax",
       );
       expect(incomeTax?.getAttribute("aria-selected")).toBe("true");
+    });
+
+    it("marks the Ledgers tab active on a nested ledger sub-report route", () => {
+      vi.mocked(usePathname).mockReturnValue("/clients/c1/cashflow/ledgers/asset-ledger");
+      const { container } = render(<HeaderSubtabs clientId="c1" />);
+      const ledgers = Array.from(container.querySelectorAll("a")).find(
+        (a) => a.textContent?.trim() === "Ledgers",
+      );
+      expect(ledgers?.getAttribute("aria-selected")).toBe("true");
+      expect(ledgers?.className).toContain("border-accent");
     });
   });
 

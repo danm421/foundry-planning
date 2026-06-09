@@ -31,8 +31,7 @@ const TABS: ReadonlyArray<{
     subTabs: [
       { label: "Cash Flow", path: "" },
       { label: "Income Tax", path: "/income-tax" },
-      { label: "Tax Ledger", path: "/tax-ledger" },
-      { label: "Asset Ledger", path: "/asset-ledger" },
+      { label: "Ledgers", path: "/ledgers" },
       { label: "Monte Carlo", path: "/monte-carlo" },
       { label: "Timeline", path: "/timeline" },
       { label: "Entities", path: "/entities" },

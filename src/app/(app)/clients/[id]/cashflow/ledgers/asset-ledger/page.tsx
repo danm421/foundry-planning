@@ -1,16 +1,16 @@
-// src/app/(app)/clients/[id]/cashflow/tax-ledger/page.tsx
+// src/app/(app)/clients/[id]/cashflow/ledgers/asset-ledger/page.tsx
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
-import TaxLedgerReport from "@/components/tax-ledger-report";
+import AssetLedgerReport from "@/components/asset-ledger-report";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
-interface TaxLedgerPageProps {
+interface AssetLedgerPageProps {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function TaxLedgerPage({ params, searchParams }: TaxLedgerPageProps) {
+export default async function AssetLedgerPage({ params, searchParams }: AssetLedgerPageProps) {
   const { id } = await params;
   const sp = await searchParams;
   const firmId = await requireOrgId();
@@ -18,7 +18,7 @@ export default async function TaxLedgerPage({ params, searchParams }: TaxLedgerP
   const scenarioId = sp.scenario ?? "base";
   return (
     <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
-      <TaxLedgerReport clientId={id} scenarioId={scenarioId} />
+      <AssetLedgerReport clientId={id} scenarioId={scenarioId} />
     </ScenarioDrawerShell>
   );
 }
