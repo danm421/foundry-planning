@@ -16,7 +16,7 @@ function visibleRows(section: TaxLedgerSection, f: LedgerFilterState): TaxLedger
 
 function CharacterTag({ row }: { row: TaxLedgerRow }) {
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] ${isTaxableCharacter(row.character) ? "bg-card-2 text-ink-2" : "bg-card-2 text-ink-3"}`}>
+    <span className={`inline-block rounded bg-card-2 px-1.5 py-0.5 text-[11px] ${isTaxableCharacter(row.character) ? "text-ink-2" : "text-ink-3"}`}>
       {CHARACTER_LABEL[row.character]}
     </span>
   );

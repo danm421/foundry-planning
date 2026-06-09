@@ -2,6 +2,7 @@
 import type { ProjectionYear } from "@/engine/types";
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
 import { parseHouseholdSource } from "./parse-source";
+import { subtotalByCharacter } from "./_shared";
 import type { TaxCharacter, TaxLedgerRow, TaxLedgerSection } from "./types";
 
 const RECON_TOLERANCE = 1; // dollars
@@ -91,10 +92,4 @@ export function buildHouseholdSection(
   const subtotal = rows.reduce((s, r) => s + r.amount, 0);
 
   return { id: "household", label: householdLabel, kind: "household", passThrough: false, rows, characterSubtotals, subtotal, unreconciled };
-}
-
-function subtotalByCharacter(rows: TaxLedgerRow[]): Partial<Record<TaxCharacter, number>> {
-  const out: Partial<Record<TaxCharacter, number>> = {};
-  for (const r of rows) out[r.character] = (out[r.character] ?? 0) + r.amount;
-  return out;
 }

@@ -25,6 +25,12 @@ export default function TaxLedgerDiagnosticsHeader({ d }: { d: TaxLedgerDiagnost
       ? "top tier"
       : `${formatCurrency(d.irmaa.headroomToNextTier)} to next`;
 
+  const niitHint =
+    d.niit.active ? `on ${formatCurrency(d.niit.base)}`
+    : d.niit.thresholdDistance != null && d.niit.thresholdDistance > 0
+      ? `${formatCurrency(d.niit.thresholdDistance)} under threshold`
+      : undefined;
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -32,7 +38,7 @@ export default function TaxLedgerDiagnosticsHeader({ d }: { d: TaxLedgerDiagnost
         <Tile label="AGI" value={formatCurrency(d.agi)} />
         <Tile label="Taxable income" value={formatCurrency(d.taxableIncome)} />
         <Tile label="Eff. / marg. rate" value={`${pct(d.effectiveRate)} / ${pct(d.marginalRate)}`} hint={d.bracketHeadroom != null ? `${formatCurrency(d.bracketHeadroom)} to next bracket` : undefined} />
-        <Tile label="NIIT" value={d.niit.active ? formatCurrency(d.taxByType.niit) : "—"} hint={d.niit.active ? `on ${formatCurrency(d.niit.base)}` : d.niit.thresholdDistance != null && d.niit.thresholdDistance > 0 ? `${formatCurrency(d.niit.thresholdDistance)} under threshold` : undefined} />
+        <Tile label="NIIT" value={d.niit.active ? formatCurrency(d.taxByType.niit) : "—"} hint={niitHint} />
         <Tile label="IRMAA tier" value={d.irmaa.tier == null ? "—" : `Tier ${d.irmaa.tier}`} hint={irmaaHint} />
         <Tile label="AMT" value={d.amt.bound ? formatCurrency(d.amt.additional) : "—"} hint={d.amt.bound ? "AMT applies" : undefined} />
         <Tile label="SS taxable" value={d.ssTaxablePercent == null ? "—" : pct(d.ssTaxablePercent)} />

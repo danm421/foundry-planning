@@ -1,15 +1,10 @@
 // src/lib/tax-ledger/build-entity-sections.ts
 import type { ProjectionYear } from "@/engine/types";
 import type { EntityCashFlowRow } from "@/engine/entity-cashflow";
-import type { TaxCharacter, TaxLedgerRow, TaxLedgerSection } from "./types";
+import type { TaxLedgerRow, TaxLedgerSection } from "./types";
+import { subtotalByCharacter } from "./_shared";
 
 const PASS_THROUGH_BUSINESS = new Set(["llc", "s_corp", "partnership"]);
-
-function subtotalByCharacter(rows: TaxLedgerRow[]): Partial<Record<TaxCharacter, number>> {
-  const out: Partial<Record<TaxCharacter, number>> = {};
-  for (const r of rows) out[r.character] = (out[r.character] ?? 0) + r.amount;
-  return out;
-}
 
 function finalize(id: string, label: string, kind: TaxLedgerSection["kind"], passThrough: boolean, rows: TaxLedgerRow[]): TaxLedgerSection {
   rows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
