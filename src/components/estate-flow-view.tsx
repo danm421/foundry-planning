@@ -16,6 +16,7 @@ import {
   type EstateFlowGift,
 } from "@/lib/estate/estate-flow-gifts";
 import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
@@ -77,6 +78,7 @@ async function persistGiftChange(
       endYear: gift.endYear,
       endYearRef: null,
       annualAmount: gift.annualAmount,
+      amountMode: gift.amountMode,
       inflationAdjust: gift.inflationAdjust,
       useCrummeyPowers: gift.crummey,
       notes: null,
@@ -185,6 +187,18 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     () => runProjectionWithEvents(engineData),
     [engineData],
   );
+
+  // Dense year→annual-exclusion map for the gift form's "max annual exclusion"
+  // preview, forward-projected past the last seeded tax year.
+  const annualExclusionByYear = useMemo(() => {
+    const ps = working.planSettings;
+    return buildAnnualExclusionMap(
+      working.taxYearRows ?? [],
+      ps.planStartYear,
+      ps.planEndYear,
+      ps.taxInflationRate ?? ps.inflationRate ?? 0,
+    );
+  }, [working]);
 
   // Plan year bounds, derived from the projection. `planStartYear` is "today".
   // Guard against an empty `years` array — fall back to the current calendar year.
@@ -518,6 +532,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           ownerNames={ownerNames}
           planStartYear={planStartYear}
           planEndYear={planEndYear}
+          annualExclusionByYear={annualExclusionByYear}
           applyEdit={applyEdit}
           setWorkingGifts={setWorkingGifts}
         />

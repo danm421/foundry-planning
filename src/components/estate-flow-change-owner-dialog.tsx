@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
-import { EstateFlowGiftFields } from "@/components/estate-flow-gift-fields";
+import GiftForm, { giftFormRecipientsFromClientData } from "@/components/gift-form";
 import type { Account, BeneficiaryRef, ClientData } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
@@ -31,6 +31,8 @@ interface Props {
   ledger: GiftLedgerYear[];
   /** Plan tax-inflation rate, threaded to the gift-fields warning preview. */
   taxInflationRate: number;
+  /** Dense year→annual-exclusion map for the gift form's max-exclusion preview. */
+  annualExclusionByYear: Record<number, number>;
   onClose: () => void;
 }
 
@@ -112,6 +114,7 @@ export default function EstateFlowChangeOwnerDialog({
   onSeedBeneficiary,
   ledger,
   taxInflationRate,
+  annualExclusionByYear,
   onClose,
 }: Props) {
   // ── Derive available destinations ─────────────────────────────────────────
@@ -506,24 +509,27 @@ export default function EstateFlowChangeOwnerDialog({
         </div>
       </div>
 
-      {/* Gift destination — gift-fields form replaces the joint-split section.
+      {/* Gift destination — gift form replaces the joint-split section.
           Keyed on the destination id so switching between gift destinations
           remounts the form and re-seeds its state (honours the remount
-          contract documented on EstateFlowGiftFields). */}
+          contract documented on GiftForm). */}
       {isGiftDest && (
         <div className="mt-4">
-          <EstateFlowGiftFields
+          <GiftForm
             key={selectedDestId}
-            clientData={clientData}
+            recipients={giftFormRecipientsFromClientData(clientData)}
+            accounts={(clientData.accounts ?? []).map((a) => ({ id: a.id, name: a.name }))}
+            hasSpouse={clientData.client.spouseDob != null}
+            annualExclusionByYear={annualExclusionByYear}
+            editing={null}
             sourceAccount={{
               id: account.id,
               name: account.name,
               value: account.value,
             }}
-            editing={null}
-            onChange={setGiftDraft}
             ledger={ledger}
             taxInflationRate={taxInflationRate}
+            onChange={setGiftDraft}
           />
         </div>
       )}

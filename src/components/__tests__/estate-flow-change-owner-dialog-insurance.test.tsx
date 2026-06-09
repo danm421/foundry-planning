@@ -64,6 +64,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
         onApplyGift={onApplyGift}
         ledger={[]}
         taxInflationRate={0}
+        annualExclusionByYear={{}}
         onClose={vi.fn()}
       />,
     );
@@ -100,6 +101,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
         onApplyGift={onApplyGift}
         ledger={[]}
         taxInflationRate={0}
+        annualExclusionByYear={{}}
         onClose={vi.fn()}
       />,
     );
@@ -135,6 +137,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
         onSeedBeneficiary={onSeedBeneficiary}
         ledger={[]}
         taxInflationRate={0}
+        annualExclusionByYear={{}}
         onClose={vi.fn()}
       />,
     );
@@ -190,6 +193,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
         onSeedBeneficiary={onSeedBeneficiary}
         ledger={[]}
         taxInflationRate={0}
+        annualExclusionByYear={{}}
         onClose={vi.fn()}
       />,
     );
@@ -216,6 +220,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
         onSeedBeneficiary={onSeedBeneficiary}
         ledger={[]}
         taxInflationRate={0}
+        annualExclusionByYear={{}}
         onClose={vi.fn()}
       />,
     );

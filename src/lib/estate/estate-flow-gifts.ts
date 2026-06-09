@@ -1,5 +1,6 @@
 import type { ClientData, Gift, GiftEvent, GiftEventKind } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 
 // ── Public model ─────────────────────────────────────────────────────────────
 
@@ -50,8 +51,9 @@ export type EstateFlowGift =
       startYear: number;
       endYear: number;
       annualAmount: number;
+      amountMode: "fixed" | "annual_exclusion";
       inflationAdjust: boolean;
-      grantor: "client" | "spouse";
+      grantor: "client" | "spouse" | "joint";
       recipient: GiftRecipientRef; // recipient.kind is always "entity" (irrevocable trust)
       crummey: boolean;
     };
@@ -77,11 +79,12 @@ export interface GiftRow {
 /** Shape of a `gift_series` table row as returned by a plain `select()`. */
 export interface GiftSeriesDbRow {
   id: string;
-  grantor: "client" | "spouse";
+  grantor: "client" | "spouse" | "joint";
   recipientEntityId: string;
   startYear: number;
   endYear: number;
   annualAmount: string;
+  amountMode: "fixed" | "annual_exclusion";
   inflationAdjust: boolean;
   useCrummeyPowers: boolean;
 }
@@ -141,6 +144,7 @@ export function giftSeriesRowToDraft(row: GiftSeriesDbRow): EstateFlowGift {
     startYear: row.startYear,
     endYear: row.endYear,
     annualAmount: Number(row.annualAmount),
+    amountMode: row.amountMode,
     inflationAdjust: row.inflationAdjust,
     grantor: row.grantor,
     recipient: { kind: "entity", id: row.recipientEntityId },
@@ -185,6 +189,18 @@ export function applyGiftsToClientData(
 ): ClientData {
   const cashGifts: Gift[] = [];
   const giftEvents: GiftEvent[] = [];
+
+  // §2503(b) annual-exclusion map across the plan horizon — drives
+  // annual_exclusion series fan-out (mirrors load-client-data.ts).
+  const ps = data.planSettings;
+  const exclusionByYear = ps
+    ? buildAnnualExclusionMap(
+        data.taxYearRows ?? [],
+        ps.planStartYear,
+        ps.planEndYear,
+        ps.taxInflationRate ?? ps.inflationRate ?? 0,
+      )
+    : {};
 
   for (const g of gifts) {
     if (g.kind === "cash-once") {
@@ -274,11 +290,11 @@ export function applyGiftsToClientData(
             startYear: g.startYear,
             endYear: g.endYear,
             annualAmount: g.annualAmount,
-            amountMode: "fixed",
+            amountMode: g.amountMode,
             inflationAdjust: g.inflationAdjust,
             useCrummeyPowers: g.crummey,
           },
-          { cpi },
+          { cpi, exclusionByYear },
         ),
       );
     }
