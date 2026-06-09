@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildVestingSchedule } from "@/engine/equity/vesting-schedule";
+import { buildFutureActivity } from "@/engine/equity/future-activity";
 import StockOptionsReportView from "@/components/stock-options-report-view";
 
 interface Props {
@@ -22,9 +23,15 @@ export async function StockOptionsContent({ id, firmId, scenarioParam }: Props) 
   const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioParam ?? "base", {});
   const plans = effectiveTree.stockOptionPlans ?? [];
   const planStartYear = effectiveTree.planSettings.planStartYear;
+  const planEndYear = effectiveTree.planSettings.planEndYear;
 
-  // Static schedule: anchor "as of" and the FMV projection base to plan start.
-  const model = buildVestingSchedule(plans, { asOfYear: planStartYear, planStartYear });
+  // Both sub-reports are static (no runProjection). As-of anchors to plan start.
+  const vestingModel = buildVestingSchedule(plans, { asOfYear: planStartYear, planStartYear });
+  const futureActivityModel = buildFutureActivity(plans, {
+    asOfYear: planStartYear,
+    planStartYear,
+    planEndYear,
+  });
 
-  return <StockOptionsReportView model={model} />;
+  return <StockOptionsReportView vestingModel={vestingModel} futureActivityModel={futureActivityModel} />;
 }
