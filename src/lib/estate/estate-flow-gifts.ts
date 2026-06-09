@@ -50,8 +50,9 @@ export type EstateFlowGift =
       startYear: number;
       endYear: number;
       annualAmount: number;
+      amountMode: "fixed" | "annual_exclusion";
       inflationAdjust: boolean;
-      grantor: "client" | "spouse";
+      grantor: "client" | "spouse" | "joint";
       recipient: GiftRecipientRef; // recipient.kind is always "entity" (irrevocable trust)
       crummey: boolean;
     };
@@ -77,11 +78,12 @@ export interface GiftRow {
 /** Shape of a `gift_series` table row as returned by a plain `select()`. */
 export interface GiftSeriesDbRow {
   id: string;
-  grantor: "client" | "spouse";
+  grantor: "client" | "spouse" | "joint";
   recipientEntityId: string;
   startYear: number;
   endYear: number;
   annualAmount: string;
+  amountMode: "fixed" | "annual_exclusion";
   inflationAdjust: boolean;
   useCrummeyPowers: boolean;
 }
@@ -141,6 +143,7 @@ export function giftSeriesRowToDraft(row: GiftSeriesDbRow): EstateFlowGift {
     startYear: row.startYear,
     endYear: row.endYear,
     annualAmount: Number(row.annualAmount),
+    amountMode: row.amountMode,
     inflationAdjust: row.inflationAdjust,
     grantor: row.grantor,
     recipient: { kind: "entity", id: row.recipientEntityId },
@@ -274,7 +277,7 @@ export function applyGiftsToClientData(
             startYear: g.startYear,
             endYear: g.endYear,
             annualAmount: g.annualAmount,
-            amountMode: "fixed",
+            amountMode: g.amountMode,
             inflationAdjust: g.inflationAdjust,
             useCrummeyPowers: g.crummey,
           },

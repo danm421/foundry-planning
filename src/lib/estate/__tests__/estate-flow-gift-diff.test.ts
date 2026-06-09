@@ -8,7 +8,7 @@ const g1: EstateFlowGift = {
 };
 const g2: EstateFlowGift = {
   kind: "series", id: "s1", startYear: 2030, endYear: 2035, annualAmount: 18000,
-  inflationAdjust: true, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: true,
+  amountMode: "fixed", inflationAdjust: true, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: true,
 };
 
 describe("diffGifts", () => {
