@@ -1597,6 +1597,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "rmd",
           label: `RMD distribution (age ${ownerAge})`,
           amount: -rmd,
+          basis: 0, // pre-tax retirement distribution: no cost basis moves
         });
       }
 
@@ -1609,7 +1610,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (householdOwner != null) {
         householdRmdIncome += rmd;
         rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
-        creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id });
+        creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: rmd });
       } else if (isFullyEntityOwned(acct)) {
         const entityOwner = acct.owners.find((o) => o.kind === "entity") as
           | { kind: "entity"; entityId: string; percent: number }
@@ -1623,6 +1624,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "rmd",
           label: rmdLabel,
           sourceId: acct.id,
+          basis: rmd, // cash inflow into entity checking: basis == amount (1:1)
         });
         if (effectiveIsGrantor(entityOwner.entityId, year)) {
           grantorRmdTaxable += rmd;
@@ -4351,6 +4353,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         withdrawals.byAccount[draw.accountId] =
           (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
         withdrawals.total += draw.amount;
+
+        // Basis reduction for taxable/cash accounts uses the actual basisReturn
+        // from categorizeDraw (fresh-basis-first ordering per spec 2026-05-11),
+        // not pure pro-rata. The basis delta this withdrawal entry carries MUST
+        // equal the exact change the gate below applies to basisMap (clamped at
+        // 0), so the Task-9 reconciliation (basisResidual ≈ 0) holds. Compute it
+        // up-front from the pre-mutation basis so the push can carry it: for
+        // taxable/cash sources the entry sheds -min(basisReturn, basisBefore);
+        // retirement sources (and depleted preBalance ≤ 0) touch no basis → 0.
+        const drawAccount = accountById.get(draw.accountId);
+        const gatesBasis =
+          (drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0;
+        const basisBefore = basisMap[draw.accountId] ?? 0;
+        const entryBasisDelta = gatesBasis
+          ? -Math.min(draw.basisReturn, basisBefore)
+          : 0;
+
         if (accountLedgers[draw.accountId]) {
           accountLedgers[draw.accountId].distributions += draw.amount;
           accountLedgers[draw.accountId].endingValue -= draw.amount;
@@ -4359,18 +4378,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Withdrawal to cover household shortfall",
             amount: -draw.amount,
             counterpartyId: checkingId, // proceeds refill household checking
+            basis: entryBasisDelta, // == basisMap delta applied by the gate below
           });
         }
 
-        // Basis reduction for taxable/cash accounts uses the actual basisReturn
-        // from categorizeDraw (fresh-basis-first ordering per spec 2026-05-11),
-        // not pure pro-rata. freshBasisMap drains by the consumed fresh portion,
-        // and the source ledger accumulates withdrawalDetail.
-        const drawAccount = accountById.get(draw.accountId);
-        if ((drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0) {
+        if (gatesBasis) {
           basisMap[draw.accountId] = Math.max(
             0,
-            (basisMap[draw.accountId] ?? 0) - draw.basisReturn,
+            basisBefore - draw.basisReturn,
           );
           const freshBefore = freshBasisMap[draw.accountId] ?? 0;
           const consumed = Math.min(freshBefore, draw.amount);
@@ -4413,6 +4428,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Withdrawal to cover shortfall",
             amount: supplementalPlan.total,
             isInternalTransfer: true,
+            basis: supplementalPlan.total, // cash inflow: basis == amount (1:1)
           });
         }
       }
@@ -4504,6 +4520,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               category: "withdrawal",
               label: "Withdrawal to cover shortfall",
               amount: -amount,
+              // Legacy no-checking path does NOT touch basisMap (it drains a
+              // separate householdWithdrawBalances pool), so the basisMap delta
+              // is 0 here. Carrying basis 0 keeps reconciliation consistent —
+              // no basis moved on either side. See future-work/engine.md.
+              basis: 0,
             });
           }
         }
@@ -4567,6 +4588,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           (entityWithdrawals.byAccount[acctId] ?? 0) + amount;
         entityWithdrawals.total += amount;
 
+        // Pro-rata basis the source sheds this liquidation — must match the
+        // basisMap mutation below so reconciliation holds. Only taxable sources
+        // with positive pre-balance touch basisMap; everything else sheds 0.
+        // Computed up-front from the pre-mutation basis so the source entry can
+        // carry it; the mutation below clamps at 0 but acctBasis*(1-fraction) is
+        // already ≥ 0, so the applied delta is exactly -acctBasis*fraction.
+        const acct = liquidatableAcctById.get(acctId);
+        const liqTaxable = acct?.category === "taxable" && preBalance > 0;
+        const liqBasisBefore = basisMap[acctId] ?? preBalance;
+        const liqFraction = preBalance > 0 ? Math.min(1, amount / preBalance) : 0;
+        const sourceBasisDelta = liqTaxable ? -liqBasisBefore * liqFraction : 0;
+
         // Symmetric to the supplemental-draw block above: entity gap-fill draws
         // are attributed to the source so Portfolio Activity surfaces the real
         // funding account, and a matching slice of cash's distribution is
@@ -4578,6 +4611,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             category: "withdrawal",
             label: "Entity gap-fill",
             amount: -amount,
+            basis: sourceBasisDelta, // == basisMap delta applied below
           });
         }
         if (accountLedgers[checkingId]) {
@@ -4590,6 +4624,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Refill from entity liquidation",
             amount,
             isInternalTransfer: true,
+            basis: amount, // cash inflow: basis == amount (1:1)
           });
         }
 
@@ -4600,10 +4635,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Routing (grantor → household 1040 vs non-grantor → trust 1041)
         // happens at drain time in next year's loop iteration so a grantor
         // flip in the intervening year is honored.
-        const acct = liquidatableAcctById.get(acctId);
-        if (acct?.category === "taxable" && preBalance > 0) {
-          const acctBasis = basisMap[acctId] ?? preBalance;
-          const fraction = Math.min(1, amount / preBalance);
+        if (liqTaxable) {
+          const acctBasis = liqBasisBefore;
+          const fraction = liqFraction;
           const gain = Math.max(0, amount - acctBasis * fraction);
           basisMap[acctId] = Math.max(0, acctBasis * (1 - fraction));
           if (gain > 0) {
