@@ -156,6 +156,14 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
       accountBalances[src.id] = srcBalance - slice;
       accountBalances[destAccount.id] = (accountBalances[destAccount.id] ?? 0) + slice;
 
+      // Snapshot basisMap for the source and destination BEFORE the basis
+      // mutations so the per-entry `basis` we record equals the EXACT delta the
+      // engine applies — never a hand-derived figure. This keeps the
+      // entry-basis === basisMap-delta invariant true by construction,
+      // regardless of how _updateBasis / _updateRothValueAndDestBasis interact.
+      const srcBasisBefore = basisMap[src.id] ?? 0;
+      const destBasisBefore = basisMap[destAccount.id] ?? 0;
+
       // Move proportional basis
       _updateBasis(src.id, destAccount.id, slice, srcBalance, basisMap);
 
@@ -173,8 +181,21 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
         basisMap,
       );
 
+      // Read basisMap AFTER both mutations and thread the realized deltas onto
+      // the ledger legs. Source delta ≤ 0 (basis leaves), dest delta ≥ 0.
+      const sourceBasisDelta = (basisMap[src.id] ?? 0) - srcBasisBefore;
+      const destBasisDelta = (basisMap[destAccount.id] ?? 0) - destBasisBefore;
+
       // Update ledgers
-      _updateLedgers(conv, src.id, destAccount.id, slice, accountLedgers);
+      _updateLedgers(
+        conv,
+        src.id,
+        destAccount.id,
+        slice,
+        accountLedgers,
+        sourceBasisDelta,
+        destBasisDelta,
+      );
 
       // After _updateBasis ran, the Trad-IRA aggregation pool shrank.
       // Refresh it so the next slice's pro-rata math is accurate.
@@ -379,6 +400,10 @@ function _updateLedgers(
   targetId: string,
   amount: number,
   accountLedgers: Record<string, AccountLedger>,
+  /** Signed basisMap delta applied to the source this slice (≤ 0). */
+  sourceBasisDelta: number,
+  /** Signed basisMap delta applied to the destination this slice (≥ 0). */
+  destBasisDelta: number,
 ): void {
   const sourceLedger = accountLedgers[sourceId];
   if (sourceLedger) {
@@ -388,6 +413,7 @@ function _updateLedgers(
       category: "withdrawal",
       label: conv.name,
       amount: -amount,
+      basis: sourceBasisDelta,
       sourceId: conv.id,
       counterpartyId: targetId, // converted into the Roth target
     });
@@ -400,6 +426,7 @@ function _updateLedgers(
       category: "savings_contribution",
       label: conv.name,
       amount,
+      basis: destBasisDelta,
       sourceId: conv.id,
       counterpartyId: sourceId, // converted from the traditional source
     });

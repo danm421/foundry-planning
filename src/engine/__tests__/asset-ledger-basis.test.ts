@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "..";
+import { applyRothConversions } from "../roth-conversions";
 import { buildClientData, sampleAccounts, sampleFamilyMembers } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
-import type { Account } from "../types";
+import type { Account, AccountLedger, RothConversion } from "../types";
+
+/** Per-account basis-reconciliation tolerance ($1, matching the view-model). */
+const TOL = 1;
 
 // The base fixture has no default checking account, so income/expense/tax
 // flows (which route through creditCash → default checking) have nowhere to
@@ -46,11 +50,83 @@ describe("asset-ledger per-entry basis", () => {
     expect(asserted).toBeGreaterThan(0);
   });
 
-  it("growth/withdrawal/roth sites are NOT yet populated in phase 1 (placeholder)", () => {
-    // Sentinel so the reconciliation invariant test is added in Phase 2 (Task 9),
-    // after the tax-sensitive sites are populated. Phase 1 leaves those basis
-    // deltas undefined intentionally.
-    expect(true).toBe(true);
+  it("roth-conversion legs carry basis == the actual basisMap delta (Form-8606 pro-rata)", () => {
+    // Trad IRA pool = 600k (ira-a 400k + ira-b 200k); 150k after-tax basis on
+    // ira-a. _updateBasis moves basis by the SOURCE account's own ratio:
+    // 150k/400k = 37.5% × 100k slice = 37.5k of basis out of the source —
+    // strictly less than the 100k slice (non-tautological: basisMoved < slice,
+    // so basis !== amount). (The 25% aggregate-pool fraction drives the
+    // *taxable* figure in classifyTransferTax, a separate calc.)
+    const iraA: Account = {
+      id: "ira-a", name: "IRA A", category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros", value: 400_000, basis: 150_000, growthRate: 0,
+      rmdEnabled: false, owners: [],
+    };
+    const iraB: Account = {
+      id: "ira-b", name: "IRA B", category: "retirement", subType: "traditional_ira",
+      titlingType: "jtwros", value: 200_000, basis: 0, growthRate: 0,
+      rmdEnabled: false, owners: [],
+    };
+    const rothDest: Account = {
+      id: "roth-1", name: "Roth IRA", category: "retirement", subType: "roth_ira",
+      titlingType: "jtwros", value: 0, basis: 0, growthRate: 0,
+      rmdEnabled: false, owners: [],
+    };
+    const mkLedger = (value: number): AccountLedger => ({
+      beginningValue: value, growth: 0, contributions: 0, distributions: 0,
+      internalContributions: 0, internalDistributions: 0, rmdAmount: 0, fees: 0,
+      endingValue: value, entries: [],
+    });
+
+    const accountBalances: Record<string, number> = { "ira-a": 400_000, "ira-b": 200_000, "roth-1": 0 };
+    const basisMap: Record<string, number> = { "ira-a": 150_000, "ira-b": 0, "roth-1": 0 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "ira-a": mkLedger(400_000),
+      "ira-b": mkLedger(200_000),
+      "roth-1": mkLedger(0),
+    };
+
+    // Snapshot pre-conversion basis so we can compare the entry basis against
+    // the EXACT delta the engine applied to basisMap.
+    const srcBasisBefore = basisMap["ira-a"];
+    const destBasisBefore = basisMap["roth-1"];
+
+    const conv: RothConversion = {
+      id: "rc-prorata", name: "Pro-rata convert", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fixed_amount",
+      fixedAmount: 100_000, startYear: 2026, indexingRate: 0,
+    };
+    applyRothConversions({
+      conversions: [conv],
+      accounts: [iraA, iraB, rothDest],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2026,
+      ownerAges: { client: 60 },
+    });
+
+    const srcBasisDelta = basisMap["ira-a"] - srcBasisBefore;
+    const destBasisDelta = basisMap["roth-1"] - destBasisBefore;
+
+    // Source (Trad) leg: a withdrawal entry whose basis is the negative
+    // pro-rata basis decrease — NOT the full converted amount.
+    const srcEntry = accountLedgers["ira-a"].entries.find((e) => e.category === "withdrawal");
+    expect(srcEntry, "expected a withdrawal entry on the Trad source").toBeTruthy();
+    expect(srcEntry!.amount).toBe(-100_000);
+    expect(srcEntry!.basis, "source basis == actual basisMap decrease").toBeCloseTo(srcBasisDelta, 6);
+    expect(srcEntry!.basis!, "source basis is negative (basis leaves)").toBeLessThan(0);
+    // Non-tautological: pro-rata basis moved (37.5k) < slice (100k) → basis ≠ amount.
+    expect(Math.abs(srcEntry!.basis!)).toBeLessThan(Math.abs(srcEntry!.amount));
+    expect(srcEntry!.basis!).toBeCloseTo(-37_500, 0);
+
+    // Dest (Roth) leg: a contribution entry whose basis is the positive
+    // basisMap increase the engine applied.
+    const destEntry = accountLedgers["roth-1"].entries.find((e) => e.category === "savings_contribution");
+    expect(destEntry, "expected a contribution entry on the Roth dest").toBeTruthy();
+    expect(destEntry!.amount).toBe(100_000);
+    expect(destEntry!.basis, "dest basis == actual basisMap increase").toBeCloseTo(destBasisDelta, 6);
+    expect(destEntry!.basis!, "dest basis is positive (basis arrives)").toBeGreaterThan(0);
   });
 
   it("growth-realization basis equals basisIncrease on taxable (LTCG excluded), 0 on retirement", () => {
@@ -253,5 +329,91 @@ describe("asset-ledger per-entry basis", () => {
       contrib?.counterpartyId,
       "contribution should name its cash source",
     ).toBe("acct-checking");
+  });
+
+  // ── Per-account basis-reconciliation invariant (Task 9 Phase 2) ────────────
+  //
+  // Replaces the Phase-1 sentinel. For every account/year whose ledger tracks
+  // basis (basisBoY + basisEoY both defined), the entry basis deltas must sum
+  // to the year's basis change within $1:  basisBoY + Σ entry.basis ≈ basisEoY.
+  //
+  // Each entry's `basis` is the EXACT basisMap delta the engine applied at that
+  // site (cash 1:1, growth realization, taxable withdrawal basisReturn, RMD 0,
+  // and — added in this task — both Roth-conversion legs). The invariant is the
+  // guardrail that keeps those sites honest as the engine evolves.
+  //
+  // Known Phase-1 basis-recon limits (no current fixture exercises these, so no
+  // guard is wired up — add one keyed on the right field when a fixture first does):
+  //  • Equity-comp vest/sale basis lives inside applyEquityYear and is stamped on
+  //    the entry LABEL ("<ticker> shares vest/sold"), not sourceId — see future-work/engine.md.
+  //  • Death-event step-up lands on the next year's basisBoY (no entry), so the
+  //    step-up boundary year won't reconcile via entries by design.
+
+  function assertBasisReconciles(years: ReturnType<typeof runProjection>) {
+    let asserted = 0;
+    for (const y of years) {
+      for (const [id, ledger] of Object.entries(y.accountLedgers)) {
+        if (ledger.basisBoY === undefined || ledger.basisEoY === undefined) continue;
+        const sum = ledger.entries.reduce((s, e) => s + (e.basis ?? 0), 0);
+        expect(
+          Math.abs(ledger.basisEoY - ledger.basisBoY - sum),
+          `${id}@${y.year}`,
+        ).toBeLessThanOrEqual(TOL);
+        asserted++;
+      }
+    }
+    return asserted;
+  }
+
+  it("every account reconciles on basis: basisBoY + Σ entry.basis ≈ basisEoY", () => {
+    const years = runProjection(buildClientData());
+    const asserted = assertBasisReconciles(years);
+    // Guard against a vacuous pass: the default fixture tracks basis on 5
+    // accounts across 30 years (≈150 account-years).
+    expect(asserted).toBeGreaterThan(100);
+  });
+
+  it("basis reconciles across a multi-year Roth-conversion fixture (exercises both legs)", () => {
+    // A Trad IRA with after-tax basis + a Roth destination + a fixed-amount
+    // conversion across 2026–2030. This drives the Roth-conversion basis legs
+    // added in this task through a full runProjection, including the source
+    // pro-rata decrease and the dest increase, year over year.
+    const tradIra: Account = {
+      id: "acct-trad-ira",
+      name: "John Trad IRA",
+      category: "retirement",
+      subType: "traditional_ira",
+      titlingType: "jtwros",
+      value: 400_000,
+      basis: 100_000, // 25% after-tax basis → pro-rata conversions
+      growthRate: 0.05,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const conv: RothConversion = {
+      id: "rc-fixed",
+      name: "Annual Roth Conversion",
+      destinationAccountId: "acct-roth",
+      sourceAccountIds: ["acct-trad-ira"],
+      conversionType: "fixed_amount",
+      fixedAmount: 40_000,
+      startYear: 2026,
+      endYear: 2030,
+      indexingRate: 0,
+    };
+    const years = runProjection(
+      buildClientData({
+        accounts: [...sampleAccounts, tradIra],
+        rothConversions: [conv],
+      }),
+    );
+
+    // Non-vacuous: the conversion actually fired in the start year.
+    const trad0 = years[0].accountLedgers["acct-trad-ira"];
+    const convLeg = trad0?.entries.find((e) => e.sourceId === "rc-fixed");
+    expect(convLeg, "expected a roth-conversion leg on the Trad IRA in 2026").toBeTruthy();
+    expect(convLeg!.basis, "conversion source basis is negative").toBeLessThan(0);
+
+    assertBasisReconciles(years);
   });
 });

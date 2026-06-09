@@ -47,6 +47,9 @@ describe("buildAssetLedger", () => {
       growth: 32_000,
       contributions: 12_000,
       endingValue: 537_000,
+      // basisEoY − basisBoY = 37_000 = Σ entry.basis (32k + 12k − 7k).
+      basisBoY: 400_000,
+      basisEoY: 437_000,
       entries: [
         { category: "growth", label: "Growth", amount: 32_000, basis: 32_000 },
         { category: "savings_contribution", label: "Savings", amount: 12_000, basis: 12_000 },
@@ -58,6 +61,9 @@ describe("buildAssetLedger", () => {
       growth: 21_000,
       rmdAmount: 14_000,
       endingValue: 307_000,
+      // Pre-tax retirement: no basis. basisEoY − basisBoY = 0 = Σ entry.basis.
+      basisBoY: 0,
+      basisEoY: 0,
       entries: [
         { category: "growth", label: "Growth", amount: 21_000, basis: 0 },
         { category: "rmd", label: "RMD", amount: -14_000, basis: 0 },
@@ -67,6 +73,9 @@ describe("buildAssetLedger", () => {
       beginningValue: 100_000,
       growth: 5_000,
       endingValue: 105_000,
+      // basisEoY − basisBoY = 5_000 = Σ entry.basis.
+      basisBoY: 100_000,
+      basisEoY: 105_000,
       entries: [{ category: "growth", label: "Growth", amount: 5_000, basis: 5_000 }],
     }),
   });
@@ -255,19 +264,37 @@ describe("buildAssetLedger", () => {
     expect(acct.rows.find((r) => r.label === "End of Year - Roth")).toBeUndefined();
   });
 
-  it("reconciles still uses amount residual only (not basis)", () => {
-    // entries sum correctly by amount but not by basis — reconciles should still be true
+  it("reconciles requires BOTH amount and basis to balance", () => {
+    // Amount reconciles (endingValue − beginningValue = Σ entry.amount) but
+    // basis does NOT (basisEoY − basisBoY ≠ Σ entry.basis) → reconciles false.
     const ledger = buildAssetLedger(mkYear({
       brokerage: mkLedger({
         beginningValue: 100_000, endingValue: 105_000,
         basisBoY: 80_000, basisEoY: 90_000,
         entries: [{ category: "growth", label: "Growth", amount: 5_000, basis: 5_000 }],
-        // basisResidual = 90000 - 80000 - 5000 = 5000 (nonzero) but reconciles on amount
+        // basisResidual = 90000 - 80000 - 5000 = 5000 (nonzero) → fails basis check
       }),
     }), ctx);
     const acct = ledger.sections[0].accounts[0];
-    expect(acct.reconciles).toBe(true);
-    expect(acct.residual).toBe(0);
-    expect(acct.basisResidual).toBe(5_000); // informational only
+    expect(acct.residual).toBe(0); // amount balances
+    expect(acct.basisResidual).toBe(5_000); // basis does NOT
+    expect(acct.reconciles).toBe(false);
+  });
+
+  it("flags an account whose entry basis does not sum to basisEoY − basisBoY", () => {
+    // Amount reconciles trivially (flat balance, no amount activity) but the
+    // ledger claims a −20 basis move (basisBoY 100 → basisEoY 80) with a single
+    // entry carrying basis 0 → basisResidual = 80 − 100 − 0 = −20 → reconciles false.
+    const ledger = buildAssetLedger(mkYear({
+      brokerage: mkLedger({
+        beginningValue: 100, endingValue: 100,
+        basisBoY: 100, basisEoY: 80,
+        entries: [{ category: "growth", label: "Growth", amount: 0, basis: 0 }],
+      }),
+    }), ctx);
+    const acct = ledger.sections[0].accounts[0];
+    expect(acct.residual).toBe(0); // amount balances
+    expect(acct.basisResidual).toBe(-20); // basis off by 20
+    expect(acct.reconciles).toBe(false);
   });
 });

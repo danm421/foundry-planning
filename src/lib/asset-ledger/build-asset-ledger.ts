@@ -97,7 +97,9 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
     basisResidual,
     rows,
     residual,
-    reconciles: Math.abs(residual) <= RECONCILE_TOLERANCE,
+    reconciles:
+      Math.abs(residual) <= RECONCILE_TOLERANCE &&
+      Math.abs(basisResidual) <= RECONCILE_TOLERANCE,
   };
 }
 
