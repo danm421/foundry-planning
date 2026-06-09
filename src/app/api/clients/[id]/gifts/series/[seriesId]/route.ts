@@ -81,6 +81,7 @@ export async function PATCH(
         ...(d.annualAmount !== undefined && {
           annualAmount: d.annualAmount.toString(),
         }),
+        ...(d.amountMode !== undefined && { amountMode: d.amountMode }),
         ...(d.inflationAdjust !== undefined && {
           inflationAdjust: d.inflationAdjust,
         }),

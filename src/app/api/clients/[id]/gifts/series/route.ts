@@ -157,6 +157,7 @@ export async function POST(
         endYearRef: (data.endYearRef ??
           null) as typeof giftSeries.$inferInsert["endYearRef"],
         annualAmount: data.annualAmount.toString(),
+        amountMode: data.amountMode ?? "fixed",
         inflationAdjust: data.inflationAdjust ?? false,
         useCrummeyPowers: data.useCrummeyPowers ?? false,
         notes: data.notes ?? null,
