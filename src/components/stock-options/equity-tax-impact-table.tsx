@@ -11,7 +11,7 @@ function moneyTone(n: number): React.ReactNode {
   return <span className={n < 0 ? "text-crit" : "text-good"}>{formatCompact(n)}</span>;
 }
 
-const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-ink-2";
+const TH = "px-2 py-1.5 text-right align-bottom max-w-[5.5rem] cursor-help leading-tight text-[10px] font-bold uppercase tracking-[0.04em] text-ink-2";
 const TD = "px-2 py-1.5 text-right whitespace-nowrap border-b border-hair";
 const TDF = `${TD} border-t-2 border-hair-2`; // totals-row cell (heavier top rule)
 const L = "text-left";
@@ -30,17 +30,35 @@ export default function EquityTaxImpactTable({ model }: { model: EquityTaxImpact
       <table className="w-full border-collapse text-[12.5px] tabular-nums">
         <thead>
           <tr>
-            <th className={`${TH} ${L}`}>Year</th>
-            <th className={TH}>Earned Income from Options</th>
-            <th className={TH}>ISO Spread</th>
-            <th className={TH}>Capital Gains from Options</th>
-            <th className={TH}>Total Option Income &amp; Gains</th>
-            <th className={TH}>Federal Income Tax</th>
-            <th className={TH}>Capital Gains Tax</th>
-            <th className={TH}>Payroll Tax</th>
-            <th className={TH}>State Tax</th>
-            <th className={TH}>Total Option Tax</th>
-            <th className={TH}>Net Option Income</th>
+            <Th left tip="Calendar year of the plan projection.">Year</Th>
+            <Th tip="Ordinary income from equity comp this year — RSU vest value, NQSO exercise spread, and ordinary income from disqualifying ISO dispositions.">
+              Earned Income from Options
+            </Th>
+            <Th tip="Bargain element on ISO exercises — an AMT preference item (informational). Its tax is included in Federal Income Tax and it is not added to Total Option Income & Gains.">
+              ISO Spread
+            </Th>
+            <Th tip="Long- and short-term capital gains realized on option shares sold this year.">
+              Capital Gains from Options
+            </Th>
+            <Th tip="Earned Income from Options plus Capital Gains from Options (excludes the ISO spread).">
+              Total Option Income &amp; Gains
+            </Th>
+            <Th tip="Additional regular federal income tax plus AMT the plan owes because of this year's equity comp.">
+              Federal Income Tax
+            </Th>
+            <Th tip="Additional federal capital-gains tax and NIIT — including options income pushing the client's other gains into a higher bracket.">
+              Capital Gains Tax
+            </Th>
+            <Th tip="Additional FICA — Social Security (OASDI), Medicare, and the 0.9% additional Medicare surtax.">
+              Payroll Tax
+            </Th>
+            <Th tip="Additional state income tax attributable to the equity comp.">State Tax</Th>
+            <Th tip="Sum of Federal Income, Capital Gains, Payroll, and State tax — the total additional tax from equity comp this year.">
+              Total Option Tax
+            </Th>
+            <Th tip="Total Option Income & Gains minus Total Option Tax — what the client keeps after tax.">
+              Net Option Income
+            </Th>
           </tr>
         </thead>
         <tbody>
@@ -73,6 +91,16 @@ export default function EquityTaxImpactTable({ model }: { model: EquityTaxImpact
         sits inside Federal Income Tax) and is not added into income &amp; gains.
       </p>
     </div>
+  );
+}
+
+// Column header: wraps its label and carries a hover tooltip (native title — it
+// can't be clipped by the surrounding overflow-x-auto scroll container).
+function Th({ children, tip, left }: { children: React.ReactNode; tip: string; left?: boolean }) {
+  return (
+    <th title={tip} className={`${TH}${left ? ` ${L}` : ""}`}>
+      {children}
+    </th>
   );
 }
 
