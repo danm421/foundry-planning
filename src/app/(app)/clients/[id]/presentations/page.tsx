@@ -11,6 +11,7 @@ import {
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { listTemplatesForUser } from "@/lib/presentations/templates-repo";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
+import { loadEntityPickerOptions } from "@/lib/presentations/entity-picker-options";
 import { PresentationsLauncher } from "./launcher";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
@@ -36,7 +37,7 @@ export default async function PresentationsPage({
     .limit(1);
   if (!clientRow) notFound();
 
-  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows] = await Promise.all([
+  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -65,6 +66,7 @@ export default async function PresentationsPage({
         ),
       )
       .limit(1),
+    loadEntityPickerOptions(clientId, firmId),
   ]);
 
   const clientLastName = primaryContactRows[0]?.lastName ?? "";
@@ -79,6 +81,7 @@ export default async function PresentationsPage({
         snapshots={snapshotRows}
         initialTemplates={templates}
         investmentCatalog={investmentCatalog}
+        entities={entityPickerOptions}
       />
     </ScenarioDrawerShell>
   );

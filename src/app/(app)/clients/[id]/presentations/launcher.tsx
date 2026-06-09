@@ -37,6 +37,7 @@ import {
 } from "@/components/presentations/launcher/use-launcher-state";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
+import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
 
 interface Props {
   clientId: string;
@@ -46,6 +47,7 @@ interface Props {
   snapshots: SnapshotOption[];
   initialTemplates: { shared: LoadedTemplate[]; mine: LoadedTemplate[] };
   investmentCatalog: InvestmentOptionCatalog;
+  entities?: EntityPickerOption[];
 }
 
 /**
@@ -343,7 +345,7 @@ export function PresentationsLauncher(props: Props) {
   );
 
   return (
-    <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId }}>
+    <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId, entities: props.entities ?? [] }}>
     <div className="p-6">
       <h1 className="text-2xl font-semibold text-ink mb-4">
         Presentations<span className="dot">.</span>
