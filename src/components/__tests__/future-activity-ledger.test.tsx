@@ -47,4 +47,28 @@ describe("FutureActivityLedger", () => {
     render(<FutureActivityLedger model={model({ groups: [], hasGrants: true })} />);
     expect(screen.getByText(/No planned activity/i)).toBeTruthy();
   });
+
+  it("renders 'pending' in an exercise event's tax cell (not just the footnote)", () => {
+    const m = model({
+      groups: [
+        {
+          year: 2028,
+          events: [
+            {
+              year: 2028, kind: "exercise", grantId: "g2", grantLabel: "NQSO-17",
+              trancheId: "t2", trancheLabel: "T1", grantType: "nqso", ticker: "ACME",
+              shares: 500, pricePerShare: 50, grossValue: 15000,
+              exerciseCost: 10000, netCash: -10000, underwater: false, taxImpact: null,
+            },
+          ],
+          subtotal: { shares: 500, grossValue: 15000, exerciseCost: 10000, netCash: -10000, taxImpact: null },
+        },
+      ],
+    });
+    render(<FutureActivityLedger model={m} />);
+    const pendingCell = screen
+      .getAllByRole("cell")
+      .some((c) => /pending/i.test(c.textContent ?? ""));
+    expect(pendingCell).toBe(true);
+  });
 });
