@@ -116,7 +116,7 @@ export function buildFutureActivity(
           row.hasSellToCover = true;
         }
         row.grossProceeds = ROUND(row.grossProceeds + d.proceeds);
-        row.salePrice = d.fmv;
+        // salePrice (projected FMV) is constant per grant-year, set at row init.
       }
     }
   }
