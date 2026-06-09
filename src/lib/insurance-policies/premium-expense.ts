@@ -1,5 +1,6 @@
 import type { Account, ClientData, Expense } from "@/engine/types";
 import { controllingEntity } from "@/engine/ownership";
+import { planPremiumGift, buildPremiumGiftContext } from "./premium-gift";
 
 export interface SynthesizePremiumsInput {
   /** The projection's first year — premiums that were issued in the past
@@ -23,6 +24,10 @@ export interface SynthesizePremiumsInput {
   /** Spouse's retirement age. Required when any policy with
    *  `endsAtInsuredRetirement: true` is spouse- or joint-insured. */
   spouseRetirementAge: number | null;
+  /** When provided, individual-owned policies whose premium becomes a gift to a
+   *  non-entity recipient have their household expense suppressed (the gift is
+   *  the outflow). Entity-owned policies keep their entity-scoped expense. */
+  giftContext?: import("./premium-gift").PremiumGiftContext;
 }
 
 /** The resolved premium billing window for one policy. `mode` distinguishes the
@@ -153,6 +158,11 @@ export function synthesizePremiumExpenses(
     const resolved = resolvePremiumSchedule(acct, input);
     if (!resolved) continue;
 
+    if (input.giftContext) {
+      const plan = planPremiumGift(acct, input.giftContext);
+      if (plan && plan.recipient.kind === "individual") continue;
+    }
+
     out.push({
       id: `premium-${acct.id}`,
       type: "insurance",
@@ -200,6 +210,7 @@ export function withSynthesizedPremiums(tree: ClientData): ClientData {
     spouseRetirementAge: client.spouseRetirementAge ?? null,
     lifeExpectancyClient: client.lifeExpectancy ?? 0,
     lifeExpectancySpouse: client.spouseLifeExpectancy ?? null,
+    giftContext: buildPremiumGiftContext(tree),
   });
   return { ...tree, expenses: [...nonPolicyExpenses, ...premiums] };
 }
