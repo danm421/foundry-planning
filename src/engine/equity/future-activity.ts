@@ -3,6 +3,7 @@ import { createEquityState, computeEquityYear } from "./tax-events";
 
 export interface FutureActivityGrantYearRow {
   year: number;
+  grantId: string;              // stable identity (grantNumber is display-only)
   owner: "client" | "spouse";
   planLabel: string;            // ticker ?? "—"
   grantNumber: string;          // grantNumber ?? `${ticker} ${grantYear}`
@@ -82,6 +83,7 @@ export function buildFutureActivity(
         if (!row) {
           row = {
             year,
+            grantId: d.grantId,
             owner: plan.owner,
             planLabel: plan.ticker ?? "—",
             grantNumber: grant.grantNumber ?? `${plan.ticker ?? "—"} ${grant.grantYear}`,

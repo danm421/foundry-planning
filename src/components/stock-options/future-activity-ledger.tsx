@@ -106,7 +106,7 @@ function YearGroup({ year, rows, subtotal }: { year: number; rows: FutureActivit
         </td>
       </tr>
       {rows.map((r) => (
-        <tr key={`${r.grantNumber}:${r.year}`}>
+        <tr key={`${r.grantId}:${r.year}`}>
           <td className={`${TD} ${L}`}>{OWNER_LABEL[r.owner]}</td>
           <td className={`${TD} ${L}`}>{r.planLabel}</td>
           <td className={`${TD} ${L}`}>{r.grantNumber}</td>
