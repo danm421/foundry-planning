@@ -114,16 +114,22 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     // transfer); target gains the same amount (basis conserved across the move).
     // Spec 2026-05-11. Retirement-source transfers have basisReturn=0 — preserve
     // their existing proportional basis movement.
+    // Signed basis that moved source → target this transfer. Captured (not
+    // re-derived) so the per-entry ledger basis below matches the basisMap
+    // mutation. Taxable/cash: the conserved basisReturn the target gained.
+    // Retirement: the proportional figure _updateBasis already computed.
+    let basisMoved: number;
     if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
       const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
       basisMap[transfer.sourceAccountId] = Math.max(0, srcBasisBefore - taxResult.basisReturn);
       basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + taxResult.basisReturn;
+      basisMoved = taxResult.basisReturn;
       if (freshBasisMap) {
         const consumed = Math.min(sourceFresh, actualAmount);
         freshBasisMap[transfer.sourceAccountId] = Math.max(0, sourceFresh - consumed);
       }
     } else {
-      _updateBasis(transfer.sourceAccountId, transfer.targetAccountId, actualAmount, sourceBalance, basisMap);
+      basisMoved = _updateBasis(transfer.sourceAccountId, transfer.targetAccountId, actualAmount, sourceBalance, basisMap);
     }
 
     // ── Update rothValue map ─────────────────────────────────────────────────
@@ -143,7 +149,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     }
 
     // ── Update ledgers ───────────────────────────────────────────────────────
-    _updateLedgers(transfer, actualAmount, taxResult.label, accountLedgers);
+    _updateLedgers(transfer, actualAmount, basisMoved, taxResult.label, accountLedgers);
 
     // ── Accumulate withdrawalDetail on the source ledger (spec 2026-05-11) ──
     if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
@@ -254,15 +260,16 @@ function _updateBasis(
   amount: number,
   sourceBalanceBefore: number,
   basisMap: Record<string, number>,
-): void {
+): number {
   const sourceBasis = basisMap[sourceId] ?? 0;
-  if (sourceBasis <= 0 || sourceBalanceBefore <= 0) return;
+  if (sourceBasis <= 0 || sourceBalanceBefore <= 0) return 0;
 
   const fractionMoved = amount / sourceBalanceBefore;
   const basisMoved = sourceBasis * fractionMoved;
 
   basisMap[sourceId] = sourceBasis - basisMoved;
   basisMap[targetId] = (basisMap[targetId] ?? 0) + basisMoved;
+  return basisMoved;
 }
 
 /**
@@ -294,6 +301,7 @@ function _updateRothValue(
 function _updateLedgers(
   transfer: Transfer,
   amount: number,
+  basisMoved: number,
   label: string,
   accountLedgers: Record<string, AccountLedger>,
 ): void {
@@ -306,6 +314,8 @@ function _updateLedgers(
       label: transfer.name,
       amount: -amount,
       sourceId: transfer.id,
+      basis: -basisMoved, // proportional basis leaving the source
+      counterpartyId: transfer.targetAccountId, // moved to the transfer target
     });
   }
 
@@ -318,6 +328,8 @@ function _updateLedgers(
       label: transfer.name,
       amount,
       sourceId: transfer.id,
+      basis: basisMoved, // proportional basis arriving at the target
+      counterpartyId: transfer.sourceAccountId, // moved from the transfer source
     });
   }
 }

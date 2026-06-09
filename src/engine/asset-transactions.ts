@@ -142,6 +142,7 @@ export function sellAccountFraction(
       label: saleLabel,
       amount: -saleValue,
       sourceId: saleId,
+      basis: -basis, // remove the sold lot's basis from the source account
     });
   }
 
@@ -332,6 +333,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
         // Asset→cash conversion, not operating income. Entity income rollups
         // exclude this; the taxable gain is recognized separately.
         isSaleProceeds: true,
+        basis: netProceeds, // cash deposit: basis == amount (mirrors basisMap += netProceeds)
       });
     }
 
@@ -456,6 +458,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
         label: `Asset purchase: ${purchase.name}`,
         amount: -equity,
         sourceId: purchase.id,
+        basis: -basisDebit, // proportional basis removed from the funding account (== equity for cash)
       });
     }
 
@@ -500,6 +503,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
           label: `Asset purchase: ${newAccount.name}`,
           amount: purchasePrice,
           sourceId: purchase.id,
+          basis: assetBasis, // seed the new asset's cost basis
         },
       ],
       basisBoY: assetBasis,
@@ -763,6 +767,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
           label: `Business sale proceeds: ${business.name}`,
           amount: netProceeds,
           sourceId: sale.id,
+          basis: netProceeds, // cash deposit: basis == amount (mirrors basisMap += netProceeds)
         });
       }
     } else {

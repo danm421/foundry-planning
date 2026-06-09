@@ -1556,6 +1556,13 @@ export interface AccountLedgerEntry {
    * entity income rollups exclude it — the taxable capital gain is recognized
    * separately on the 1040 / 1041. */
   isSaleProceeds?: boolean;
+  /** Signed cost-basis delta for this entry. Invariant per account:
+   *  basisBoY + Σ entry.basis ≈ basisEoY. Reuses already-computed figures —
+   *  never re-derive realization numbers here. Cash/checking: basis == amount. */
+  basis?: number;
+  /** Counterparty account or entity id for transfer-style rows, surfaced as the
+   *  Asset Ledger "Other Account" column. Undefined for external income/expense. */
+  counterpartyId?: string;
 }
 
 export interface DeductionBreakdown {

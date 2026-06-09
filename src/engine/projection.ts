@@ -873,7 +873,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         fees: 0,
         endingValue: beginningValue,
         entries: [],
-        basisBoY: basisMap[acct.id] ?? acct.basis,
+        // Cash basis ≡ value: cash flows never move basisMap, so reading it here
+        // would stamp a stale BoY basis. Mirror the balance instead (see the EoY
+        // stamp). Non-cash accounts keep their tracked cost basis.
+        basisBoY: acct.category === "cash" ? beginningValue : (basisMap[acct.id] ?? acct.basis),
         rothValueBoY: rothValueMap[acct.id] ?? acct.rothValue ?? 0,
       };
     }
@@ -1038,7 +1041,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (!acctId || amount === 0) return;
       cashDelta[acctId] = (cashDelta[acctId] ?? 0) + amount;
       if (entry) {
-        (pendingEntries[acctId] ??= []).push({ ...entry, amount });
+        // Cash accounts carry no cost basis distinct from their balance — every
+        // dollar in/out moves basis 1:1. Default `basis` to `amount` for cash
+        // targets so cash ledgers reconcile by construction (asset-ledger basis
+        // column + per-account basis reconciliation). Callers may still pass an
+        // explicit basis; non-cash targets are left untouched.
+        const basis =
+          entry.basis ??
+          (accountById.get(acctId)?.category === "cash" ? amount : undefined);
+        (pendingEntries[acctId] ??= []).push({ ...entry, amount, basis });
       }
     };
 
@@ -1394,6 +1405,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (growth === 0) continue;
 
       let growthDetail: AccountLedger["growthDetail"];
+      // Cost-basis delta this growth entry adds to basisMap — equals the
+      // recognized in-year basisIncrease, but ONLY where the gate below
+      // actually applies it (taxable/cash). Stays 0 on retirement accounts.
+      let growthBasisDelta = 0;
 
       if (acct.realization) {
         const r = acct.realization;
@@ -1416,6 +1431,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if ((acct.category === "taxable" || acct.category === "cash") && basisIncrease > 0) {
           basisMap[acct.id] = (basisMap[acct.id] ?? 0) + basisIncrease;
           freshBasisMap[acct.id] = (freshBasisMap[acct.id] ?? 0) + basisIncrease;
+          growthBasisDelta = basisIncrease;
         }
 
         // Only taxable accounts generate current-year tax from realization.
@@ -1506,6 +1522,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "growth",
         label: `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%)`,
         amount: growth,
+        basis: growthBasisDelta,
       });
       if (growthDetail) accountLedgers[acct.id].growthDetail = growthDetail;
 
@@ -1595,6 +1612,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "rmd",
           label: `RMD distribution (age ${ownerAge})`,
           amount: -rmd,
+          basis: 0, // pre-tax retirement distribution: no cost basis moves
         });
       }
 
@@ -1607,7 +1625,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (householdOwner != null) {
         householdRmdIncome += rmd;
         rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
-        creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id });
+        creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: rmd });
       } else if (isFullyEntityOwned(acct)) {
         const entityOwner = acct.owners.find((o) => o.kind === "entity") as
           | { kind: "entity"; entityId: string; percent: number }
@@ -1621,6 +1639,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "rmd",
           label: rmdLabel,
           sourceId: acct.id,
+          basis: rmd, // cash inflow into entity checking: basis == amount (1:1)
         });
         if (effectiveIsGrantor(entityOwner.entityId, year)) {
           grantorRmdTaxable += rmd;
@@ -3484,6 +3503,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "income",
         label: `Income: ${inc.name}`,
         sourceId: inc.id,
+        basis: amount, // cash deposit: basis == amount
       });
     }
 
@@ -3531,6 +3551,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "expense",
         label: `Expense: ${exp.name}`,
         sourceId: exp.id,
+        basis: -amount, // cash outflow: basis == amount (signed)
       });
     }
 
@@ -3544,6 +3565,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "expense",
         label: "Medicare premiums",
         sourceId: "medicarePremiums",
+        basis: -medicareTotalAnnualCost, // cash outflow: basis == amount (signed)
       });
     }
 
@@ -3661,6 +3683,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "entity_distribution",
           label: `Distribution from ${business.name}`,
           sourceId: business.id,
+          counterpartyId: destinationId, // distributed to the owner's cash account
         });
       }
       // Credit owner's default cash account
@@ -3668,6 +3691,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "entity_distribution",
         label: `Distribution from ${business.name}`,
         sourceId: business.id,
+        counterpartyId: business.id, // received from the business
       });
     }
 
@@ -3689,6 +3713,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "liability",
           label: `Liability: ${liab.name}`,
           sourceId: liab.id,
+          basis: -payment * householdShare, // cash outflow: basis == amount (signed)
         });
       }
       for (const owner of liabYearOwners) {
@@ -3698,6 +3723,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "liability",
           label: `Liability: ${liab.name}`,
           sourceId: liab.id,
+          basis: -payment * owner.percent, // cash outflow: basis == amount (signed)
         });
       }
     }
@@ -3751,12 +3777,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `Contribution to ${destName}`,
           amount,
           sourceId: acctId,
+          basis: 0, // pre-tax 401k/403b contribution carries no cost basis
+          counterpartyId: defaultChecking?.id, // money came from household cash
         });
       }
     }
     creditCash(defaultChecking?.id, -savings.total, {
       category: "savings_contribution",
       label: "Savings contributions",
+      basis: -savings.total, // cash outflow: basis conserves 1:1 with amount
     });
 
     // Self-funding hypothetical savings (Retirement Analysis "Minimum Additional
@@ -3802,6 +3831,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Hypothetical additional savings",
             amount: actual,
             sourceId: rule.accountId,
+            basis: actual, // post-tax dollars: basis bumps by the full contribution
+            counterpartyId: defaultChecking?.id, // funded from household cash flow
           });
         }
       }
@@ -3810,6 +3841,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       creditCash(defaultChecking?.id, -hypoFromCashFlow, {
         category: "savings_contribution",
         label: "Hypothetical additional savings (cash flow)",
+        basis: -hypoFromCashFlow, // cash outflow: basis conserves 1:1 with amount
       });
     }
 
@@ -3855,6 +3887,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "employer_match",
           label,
           amount: match,
+          basis: 0, // pre-tax employer contribution carries no cost basis
         });
       }
     }
@@ -3888,6 +3921,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "gift",
         label: `Cash gift to ${recipientName}`,
         sourceId: gift.recipientEntityId,
+        basis: -gift.amount, // cash outflow: basis == amount (signed)
+        counterpartyId: gift.recipientEntityId, // money went to the recipient
       });
       // Credit the recipient only when it's a modeled entity with a checking
       // account; otherwise the cash exits the projection.
@@ -3896,6 +3931,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "gift",
           label: `Cash gift received`,
           sourceId: gift.recipientEntityId,
+          basis: gift.amount, // cash deposit: basis == amount
+          counterpartyId: sourceId, // money came from the gift source account
         });
       }
 
@@ -4381,6 +4418,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         withdrawals.byAccount[draw.accountId] =
           (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
         withdrawals.total += draw.amount;
+
+        // Basis reduction for taxable/cash accounts uses the actual basisReturn
+        // from categorizeDraw (fresh-basis-first ordering per spec 2026-05-11),
+        // not pure pro-rata. The basis delta this withdrawal entry carries MUST
+        // equal the exact change the gate below applies to basisMap (clamped at
+        // 0), so the Task-9 reconciliation (basisResidual ≈ 0) holds. Compute it
+        // up-front from the pre-mutation basis so the push can carry it: for
+        // taxable/cash sources the entry sheds -min(basisReturn, basisBefore);
+        // retirement sources (and depleted preBalance ≤ 0) touch no basis → 0.
+        const drawAccount = accountById.get(draw.accountId);
+        const gatesBasis =
+          (drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0;
+        const basisBefore = basisMap[draw.accountId] ?? 0;
+        const entryBasisDelta = gatesBasis
+          ? -Math.min(draw.basisReturn, basisBefore)
+          : 0;
+
         if (accountLedgers[draw.accountId]) {
           accountLedgers[draw.accountId].distributions += draw.amount;
           accountLedgers[draw.accountId].endingValue -= draw.amount;
@@ -4388,18 +4442,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             category: "withdrawal",
             label: "Withdrawal to cover household shortfall",
             amount: -draw.amount,
+            counterpartyId: checkingId, // proceeds refill household checking
+            basis: entryBasisDelta, // == basisMap delta applied by the gate below
           });
         }
 
-        // Basis reduction for taxable/cash accounts uses the actual basisReturn
-        // from categorizeDraw (fresh-basis-first ordering per spec 2026-05-11),
-        // not pure pro-rata. freshBasisMap drains by the consumed fresh portion,
-        // and the source ledger accumulates withdrawalDetail.
-        const drawAccount = accountById.get(draw.accountId);
-        if ((drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0) {
+        if (gatesBasis) {
           basisMap[draw.accountId] = Math.max(
             0,
-            (basisMap[draw.accountId] ?? 0) - draw.basisReturn,
+            basisBefore - draw.basisReturn,
           );
           const freshBefore = freshBasisMap[draw.accountId] ?? 0;
           const consumed = Math.min(freshBefore, draw.amount);
@@ -4442,6 +4493,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Withdrawal to cover shortfall",
             amount: supplementalPlan.total,
             isInternalTransfer: true,
+            basis: supplementalPlan.total, // cash inflow: basis == amount (1:1)
           });
         }
       }
@@ -4480,6 +4532,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ? "Income tax + 10% early-withdrawal penalty"
                 : "Federal + state taxes",
             amount: -taxAndPenalty,
+            basis: -taxAndPenalty, // cash outflow: basis == amount (signed)
           });
         }
         checkingExternalDelta -= taxAndPenalty;
@@ -4532,6 +4585,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               category: "withdrawal",
               label: "Withdrawal to cover shortfall",
               amount: -amount,
+              // Legacy no-checking path does NOT touch basisMap (it drains a
+              // separate householdWithdrawBalances pool), so the basisMap delta
+              // is 0 here. Carrying basis 0 keeps reconciliation consistent —
+              // no basis moved on either side. See future-work/engine.md.
+              basis: 0,
             });
           }
         }
@@ -4595,6 +4653,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           (entityWithdrawals.byAccount[acctId] ?? 0) + amount;
         entityWithdrawals.total += amount;
 
+        // Pro-rata basis the source sheds this liquidation — must match the
+        // basisMap mutation below so reconciliation holds. Only taxable sources
+        // with positive pre-balance touch basisMap; everything else sheds 0.
+        // Computed up-front from the pre-mutation basis so the source entry can
+        // carry it; the mutation below clamps at 0 but acctBasis*(1-fraction) is
+        // already ≥ 0, so the applied delta is exactly -acctBasis*fraction.
+        const acct = liquidatableAcctById.get(acctId);
+        const liqTaxable = acct?.category === "taxable" && preBalance > 0;
+        const liqBasisBefore = basisMap[acctId] ?? preBalance;
+        const liqFraction = preBalance > 0 ? Math.min(1, amount / preBalance) : 0;
+        const sourceBasisDelta = liqTaxable ? -liqBasisBefore * liqFraction : 0;
+
         // Symmetric to the supplemental-draw block above: entity gap-fill draws
         // are attributed to the source so Portfolio Activity surfaces the real
         // funding account, and a matching slice of cash's distribution is
@@ -4606,6 +4676,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             category: "withdrawal",
             label: "Entity gap-fill",
             amount: -amount,
+            basis: sourceBasisDelta, // == basisMap delta applied below
           });
         }
         if (accountLedgers[checkingId]) {
@@ -4618,6 +4689,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Refill from entity liquidation",
             amount,
             isInternalTransfer: true,
+            basis: amount, // cash inflow: basis == amount (1:1)
           });
         }
 
@@ -4628,10 +4700,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Routing (grantor → household 1040 vs non-grantor → trust 1041)
         // happens at drain time in next year's loop iteration so a grantor
         // flip in the intervening year is honored.
-        const acct = liquidatableAcctById.get(acctId);
-        if (acct?.category === "taxable" && preBalance > 0) {
-          const acctBasis = basisMap[acctId] ?? preBalance;
-          const fraction = Math.min(1, amount / preBalance);
+        if (liqTaxable) {
+          const acctBasis = liqBasisBefore;
+          const fraction = liqFraction;
           const gain = Math.max(0, amount - acctBasis * fraction);
           basisMap[acctId] = Math.max(0, acctBasis * (1 - fraction));
           if (gain > 0) {
@@ -4916,6 +4987,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             category: "discretionary",
             label: "Discretionary spend (surplus)",
             amount: -spendAmount,
+            basis: -spendAmount, // cash outflow: basis == amount (signed)
           });
           expenses.discretionary = spendAmount;
           expenses.total += spendAmount;
@@ -4937,6 +5009,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Surplus transferred out",
             amount: -saveAmount,
             sourceId: saveDestId!,
+            basis: -saveAmount, // cash outflow: basis == amount (signed)
           });
           accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
           const destLedger = accountLedgers[saveDestId!];
@@ -4948,6 +5021,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               label: "Surplus transferred in",
               amount: saveAmount,
               sourceId: checkingId,
+              basis: saveAmount, // post-tax surplus deposit: basis == amount
             });
           }
         } else if (saveAmount > 0 && checkingLedger) {
@@ -4959,6 +5033,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Surplus retained in cash",
             amount: saveAmount,
             isInternalTransfer: true,
+            basis: saveAmount, // stays in cash: basis == amount
           });
         }
       }
@@ -5051,7 +5126,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // event mutations to basisMap happen *after* this push and land on the
     // next year's BoY, which is the right semantics for the drill-down view.
     for (const acctId of Object.keys(accountLedgers)) {
-      accountLedgers[acctId].basisEoY = basisMap[acctId] ?? 0;
+      // Cash basis ≡ value (basisMap isn't moved by cash flows): stamp the
+      // ending balance so the basis column is correct and the ledger reconciles.
+      accountLedgers[acctId].basisEoY =
+        accountById.get(acctId)?.category === "cash"
+          ? accountLedgers[acctId].endingValue
+          : (basisMap[acctId] ?? 0);
       accountLedgers[acctId].rothValueEoY = rothValueMap[acctId] ?? 0;
     }
 
