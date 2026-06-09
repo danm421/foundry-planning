@@ -9,8 +9,9 @@ const yearRefSchema = z
 
 export const giftSeriesSchema = z
   .object({
-    grantor: z.enum(["client", "spouse"]),
+    grantor: z.enum(["client", "spouse", "joint"]),
     recipientEntityId: uuidSchema,
+    amountMode: z.enum(["fixed", "annual_exclusion"]).default("fixed"),
     startYear: year,
     startYearRef: yearRefSchema,
     endYear: year,
@@ -28,8 +29,9 @@ export type GiftSeriesInput = z.infer<typeof giftSeriesSchema>;
 
 // Partial schema for PATCH — no cross-field refinement so .partial() works.
 export const giftSeriesUpdateSchema = z.object({
-  grantor: z.enum(["client", "spouse"]).optional(),
+  grantor: z.enum(["client", "spouse", "joint"]).optional(),
   recipientEntityId: uuidSchema.optional(),
+  amountMode: z.enum(["fixed", "annual_exclusion"]).optional(),
   startYear: year.optional(),
   startYearRef: yearRefSchema.optional(),
   endYear: year.optional(),
