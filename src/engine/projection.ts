@@ -3659,6 +3659,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "entity_distribution",
           label: `Distribution from ${business.name}`,
           sourceId: business.id,
+          counterpartyId: destinationId, // distributed to the owner's cash account
         });
       }
       // Credit owner's default cash account
@@ -3666,6 +3667,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "entity_distribution",
         label: `Distribution from ${business.name}`,
         sourceId: business.id,
+        counterpartyId: business.id, // received from the business
       });
     }
 
@@ -3752,6 +3754,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           amount,
           sourceId: acctId,
           basis: 0, // pre-tax 401k/403b contribution carries no cost basis
+          counterpartyId: defaultChecking?.id, // money came from household cash
         });
       }
     }
@@ -3805,6 +3808,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             amount: actual,
             sourceId: rule.accountId,
             basis: actual, // post-tax dollars: basis bumps by the full contribution
+            counterpartyId: defaultChecking?.id, // funded from household cash flow
           });
         }
       }
@@ -3894,6 +3898,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         label: `Cash gift to ${recipientName}`,
         sourceId: gift.recipientEntityId,
         basis: -gift.amount, // cash outflow: basis == amount (signed)
+        counterpartyId: gift.recipientEntityId, // money went to the recipient
       });
       // Credit the recipient only when it's a modeled entity with a checking
       // account; otherwise the cash exits the projection.
@@ -3903,6 +3908,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `Cash gift received`,
           sourceId: gift.recipientEntityId,
           basis: gift.amount, // cash deposit: basis == amount
+          counterpartyId: sourceId, // money came from the gift source account
         });
       }
 
@@ -4346,6 +4352,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             category: "withdrawal",
             label: "Withdrawal to cover household shortfall",
             amount: -draw.amount,
+            counterpartyId: checkingId, // proceeds refill household checking
           });
         }
 

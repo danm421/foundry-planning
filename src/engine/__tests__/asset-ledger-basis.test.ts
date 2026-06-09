@@ -52,4 +52,23 @@ describe("asset-ledger per-entry basis", () => {
     // deltas undefined intentionally.
     expect(true).toBe(true);
   });
+
+  it("contribution legs cross-reference each other via counterpartyId", () => {
+    // Inject a default checking account so the savings cash source resolves;
+    // the base fixture has none, so without it `defaultChecking` is undefined
+    // and the contribution's counterparty (the cash account) can't be named.
+    const years = runProjection(
+      buildClientData({ accounts: [...sampleAccounts, householdChecking] }),
+    );
+    const y0 = years[0];
+    // sampleSavingsRules contributes to acct-401k from the household checking
+    // account (acct-checking). The dest credit should name that cash source.
+    const dest = y0.accountLedgers["acct-401k"];
+    const contrib = dest?.entries.find((e) => e.category === "savings_contribution");
+    expect(contrib, "expected a savings_contribution entry on acct-401k").toBeTruthy();
+    expect(
+      contrib?.counterpartyId,
+      "contribution should name its cash source",
+    ).toBe("acct-checking");
+  });
 });

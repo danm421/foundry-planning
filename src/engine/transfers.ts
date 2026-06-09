@@ -315,6 +315,7 @@ function _updateLedgers(
       amount: -amount,
       sourceId: transfer.id,
       basis: -basisMoved, // proportional basis leaving the source
+      counterpartyId: transfer.targetAccountId, // moved to the transfer target
     });
   }
 
@@ -328,6 +329,7 @@ function _updateLedgers(
       amount,
       sourceId: transfer.id,
       basis: basisMoved, // proportional basis arriving at the target
+      counterpartyId: transfer.sourceAccountId, // moved from the transfer source
     });
   }
 }

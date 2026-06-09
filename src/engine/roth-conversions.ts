@@ -389,6 +389,7 @@ function _updateLedgers(
       label: conv.name,
       amount: -amount,
       sourceId: conv.id,
+      counterpartyId: targetId, // converted into the Roth target
     });
   }
   const targetLedger = accountLedgers[targetId];
@@ -400,6 +401,7 @@ function _updateLedgers(
       label: conv.name,
       amount,
       sourceId: conv.id,
+      counterpartyId: sourceId, // converted from the traditional source
     });
   }
 }
