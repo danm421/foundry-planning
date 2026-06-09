@@ -228,6 +228,7 @@ const RevocableTrustForm = forwardRef<RevocableTrustFormHandle, RevocableTrustFo
 
     async function handleSubmit(e: React.FormEvent) {
       e.preventDefault();
+      // Snapshot wasFirstCreate before saveAsyncImpl, which flips effectiveEntityId.
       const wasFirstCreate = !effectiveEntityId && !editing;
       const result = await saveAsyncImpl();
       if (!result.ok) { setError(result.error); return; }

@@ -852,6 +852,7 @@ export default function FamilyView({
           if (res.ok || res.status === 204) {
             setEntities((prev) => prev.filter((e) => e.id !== deletingEntity.id));
             setEntityDialogOpen(false);
+            setRevocableDialogOpen(false);
             setDeletingEntity(null);
           }
         }}
