@@ -9,7 +9,7 @@ const TYPE_LABEL: Record<string, string> = { rsu: "RSU", nqso: "NQSO", iso: "ISO
 const sh = (n: number): string => (Math.round(n) === 0 ? "0" : Math.round(n).toLocaleString("en-US"));
 const dash = <span className="text-ink-3">—</span>;
 
-const TH = "px-2 py-1 text-right whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.03em] text-ink-3";
+const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-ink-2";
 const TD = "px-2 py-1 text-right whitespace-nowrap border-b border-hair";
 const L = "text-left";
 

@@ -85,10 +85,10 @@ export async function EstateFlowContent({
       .map(giftRowToDraft)
       .filter((g): g is EstateFlowGift => g !== null),
     // gift_series.grantor uses the wider owner enum ("client" | "spouse" |
-    // "joint") in the DB schema, but recurring gift series are constrained to
-    // "client" | "spouse" by giftSeriesSchema / saveGiftRecurring — "joint" is
-    // never stored. GiftSeriesDbRow.grantor reflects the narrower type, so cast
-    // only that field rather than the whole row.
+    // "joint"). The family-page GiftDialog can now store "joint" recurring
+    // series, but this estate-flow view doesn't yet render the joint-split /
+    // annual_exclusion modes (deferred — see future-work/estate.md). Cast the
+    // grantor to the narrower type GiftSeriesDbRow expects until that lands.
     ...giftSeriesRows.map((r) =>
       giftSeriesRowToDraft({ ...r, grantor: r.grantor as "client" | "spouse" }),
     ),

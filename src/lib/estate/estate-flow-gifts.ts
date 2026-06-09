@@ -274,6 +274,7 @@ export function applyGiftsToClientData(
             startYear: g.startYear,
             endYear: g.endYear,
             annualAmount: g.annualAmount,
+            amountMode: "fixed",
             inflationAdjust: g.inflationAdjust,
             useCrummeyPowers: g.crummey,
           },

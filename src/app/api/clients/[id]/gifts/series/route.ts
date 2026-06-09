@@ -157,6 +157,7 @@ export async function POST(
         endYearRef: (data.endYearRef ??
           null) as typeof giftSeries.$inferInsert["endYearRef"],
         annualAmount: data.annualAmount.toString(),
+        amountMode: data.amountMode ?? "fixed",
         inflationAdjust: data.inflationAdjust ?? false,
         useCrummeyPowers: data.useCrummeyPowers ?? false,
         notes: data.notes ?? null,
@@ -176,7 +177,9 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ id: row.id }, { status: 201 });
+    // Return the full inserted row (not just { id }) so the GiftDialog's
+    // optimistic list update has grantor/years/amountMode/etc. without a refetch.
+    return NextResponse.json(row, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

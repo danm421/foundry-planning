@@ -75,7 +75,17 @@ function collectRows(
 function resolveFetch(deps: QuoteDeps): (symbols: string[]) => Promise<unknown> {
   if (deps.fetchRealtime) return deps.fetchRealtime;
   const apiKey = deps.apiKey ?? process.env.EODHD_API_KEY ?? "";
-  if (!apiKey) throw new Error("EODHD_API_KEY is not configured. Set it in .env.local.");
+  if (!apiKey) {
+    // Distinguish misconfig (loud) from a routine unresolved ticker (silent).
+    // The callers below fail soft, so without this a missing key looks identical
+    // to "ticker not found" — every quote silently returns null and the cause
+    // is invisible in the logs.
+    console.warn(
+      "[investments/quote] EODHD_API_KEY is not configured — holdings prices will be null. " +
+        "Set EODHD_API_KEY in .env.local (and in Vercel env for preview/prod).",
+    );
+    throw new Error("EODHD_API_KEY is not configured. Set it in .env.local.");
+  }
   return (symbols) => fetchRealtimeLive(symbols, apiKey);
 }
 

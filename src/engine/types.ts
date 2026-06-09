@@ -365,7 +365,7 @@ export type GiftEvent =
       kind: "cash";
       year: number;
       amount: number;
-      grantor: "client" | "spouse";
+      grantor: "client" | "spouse" | "joint";
       /** Set only when the recipient is a modeled trust entity. Absent for
        *  cash gifts to family members / external beneficiaries — those have no
        *  in-projection account to credit; the cash simply leaves the household. */
@@ -1216,6 +1216,11 @@ export interface ProjectionYear {
     totalAnnualCost: number;
     totalIrmaaSurcharge: number;
   };
+
+  /** Additional tax attributable to this year's equity-comp events, computed
+   *  as a tax(actual) − tax(equity-removed) counterfactual. Present only in
+   *  years with equity activity. */
+  equityTaxImpact?: import("./equity/tax-impact").EquityTaxImpact;
 
   taxResult?: TaxResult;
 

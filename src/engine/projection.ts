@@ -122,7 +122,8 @@ import {
   type CharityCarryforward,
   type EntityFlowOverride,
 } from "./types";
-import { computeTaxForYear } from "./year-tax";
+import { computeTaxForYear, type YearTaxInput } from "./year-tax";
+import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
   computeNotesReceivable,
@@ -3200,7 +3201,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    const taxOut = computeTaxForYear({
+    const baseTaxInput: YearTaxInput = {
       taxDetail,
       socialSecurityGross: income.socialSecurity,
       totalIncome: income.total,
@@ -3222,7 +3223,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       primaryAge: ages.client,
       spouseAge: ages.spouse,
       isoSpread: equityIsoSpread,
-    });
+    };
+    const taxOut = computeTaxForYear(baseTaxInput);
 
     // `taxes` is the pre-supplemental tax. The legacy no-checking path (else branch
     // in phase 12 below) uses it directly; the hasChecking path runs the convergence
@@ -4034,6 +4036,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       recognizedIncome: { ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 },
     };
     let taxOutForIter = taxOut;
+    // Tracks the EXACT input that produced the latest taxOutForIter, so the
+    // equity tax counterfactual (below) re-runs from the same baseline.
+    let finalTaxInput: YearTaxInput = baseTaxInput;
     let convergenceWarning: TrustWarning | null = null;
 
     // If bracket-fillers exist, recompute `taxOutForIter` with the seeded
@@ -4051,7 +4056,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ordinaryIncome: baselineTaxDetail.ordinaryIncome + seededTotal,
           bySource: { ...baselineTaxDetail.bySource },
         };
-        taxOutForIter = computeTaxForYear({
+        const seededTaxInput: YearTaxInput = {
           taxDetail: seededTaxDetail,
           socialSecurityGross: income.socialSecurity,
           totalIncome: income.total,
@@ -4070,7 +4075,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           isoSpread: equityIsoSpread,
-        });
+        };
+        taxOutForIter = computeTaxForYear(seededTaxInput);
+        finalTaxInput = seededTaxInput;
       }
     }
 
@@ -4186,7 +4193,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           bySource: { ...baselineTaxDetail.bySource },
         };
 
-        taxOutForIter = computeTaxForYear({
+        const supplementalTaxInput: YearTaxInput = {
           taxDetail: taxDetailWithBoth,
           socialSecurityGross: income.socialSecurity,
           totalIncome: income.total,
@@ -4209,7 +4216,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           isoSpread: equityIsoSpread,
-        });
+        };
+        taxOutForIter = computeTaxForYear(supplementalTaxInput);
+        finalTaxInput = supplementalTaxInput;
 
         const taxAndPenalty =
           taxOutForIter.taxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
@@ -4323,6 +4332,48 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const type: "ordinary_income" | "capital_gains" =
         draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains";
       finalTaxDetail.bySource[`withdrawal:${draw.accountId}`] = { type, amount: recognized };
+    }
+
+    // === Equity tax impact (counterfactual) =================================
+    // "Additional tax because of stock options" = tax(actual) − tax(equity
+    // income removed), computed from the SAME input that produced
+    // finalTaxResult. Computed here, BEFORE the supplemental early-withdrawal
+    // penalty is layered onto finalTaxResult.flow below, so neither side carries
+    // that (non-equity) penalty. The cap-gains-tax delta automatically includes
+    // the bracket-push on the client's other gains.
+    let equityTaxImpact: EquityTaxImpact | undefined;
+    if (
+      equityOrdinaryIncome !== 0 ||
+      equityCapitalGains !== 0 ||
+      equityStCapitalGains !== 0 ||
+      equityIsoSpread !== 0
+    ) {
+      const counterfactualInput: YearTaxInput = {
+        ...finalTaxInput,
+        taxDetail: {
+          ...finalTaxInput.taxDetail,
+          earnedIncome: finalTaxInput.taxDetail.earnedIncome - equityOrdinaryIncome,
+          capitalGains: finalTaxInput.taxDetail.capitalGains - equityCapitalGains,
+          stCapitalGains: finalTaxInput.taxDetail.stCapitalGains - equityStCapitalGains,
+          bySource: { ...finalTaxInput.taxDetail.bySource },
+        },
+        taxableIncome:
+          finalTaxInput.taxableIncome
+          - equityOrdinaryIncome
+          - equityCapitalGains
+          - equityStCapitalGains,
+        isoSpread: 0,
+      };
+      const counterfactual = computeTaxForYear(counterfactualInput);
+      equityTaxImpact = diffEquityTaxImpact(
+        finalTaxResult.flow,
+        counterfactual.taxResult.flow,
+        {
+          ordinaryIncome: equityOrdinaryIncome,
+          capitalGains: equityCapitalGains + equityStCapitalGains,
+          isoSpread: equityIsoSpread,
+        },
+      );
     }
 
     // Update magiHistory with the FINAL post-supplemental MAGI so next year's
@@ -5079,6 +5130,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       income: displayIncome,
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail: finalTaxDetail,
+      equityTaxImpact,
       taxResult: finalTaxResult,
       ...(medicareYearData ? { medicare: medicareYearData } : {}),
       charityCarryforward,

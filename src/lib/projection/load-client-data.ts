@@ -66,6 +66,7 @@ import type {
   WillResiduaryRecipient,
 } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
@@ -1329,19 +1330,31 @@ export const loadClientDataWithContext = cache(
         eventKind: g.eventKind,
       }));
 
+    // Same inputs the gift-ledger uses, so annual_exclusion series net to
+    // exactly $0 taxable.
+    const giftExclusionByYear = buildAnnualExclusionMap(
+      parsedTaxRows,
+      settings.planStartYear,
+      settings.planEndYear,
+      settings.taxInflationRate != null
+        ? parseFloat(settings.taxInflationRate)
+        : parseFloat(settings.inflationRate),
+    );
+
     const seriesEvents: GiftEvent[] = giftSeriesRows.flatMap((s) =>
       fanOutGiftSeries(
         {
           id: s.id,
-          grantor: s.grantor as "client" | "spouse",
+          grantor: s.grantor as "client" | "spouse" | "joint",
           recipientEntityId: s.recipientEntityId,
           startYear: s.startYear,
           endYear: s.endYear,
           annualAmount: Number(s.annualAmount),
+          amountMode: (s.amountMode ?? "fixed") as "fixed" | "annual_exclusion",
           inflationAdjust: s.inflationAdjust,
           useCrummeyPowers: s.useCrummeyPowers,
         },
-        { cpi },
+        { cpi, exclusionByYear: giftExclusionByYear },
       ),
     );
 

@@ -20,7 +20,7 @@ export interface FutureActivityGrantYearRow {
   netProceeds: number;          // grossProceeds − exerciseCost
   expiredShares: number;        // unexercised options that lapsed
   underwater: boolean;          // any expiry this grant-year
-  taxImpact: number | null;     // null this phase (pending)
+  taxImpact: number | null;     // always null — joint per-year figure, not split per grant
 }
 
 export interface FutureActivitySubtotal {
@@ -30,7 +30,7 @@ export interface FutureActivitySubtotal {
   sharesSold: number;
   grossProceeds: number;
   netProceeds: number;
-  taxImpact: number | null;     // null this phase
+  taxImpact: number | null;     // per-year additional tax (null when no counterfactual entry)
 }
 
 export interface FutureActivityYearGroup {
@@ -45,13 +45,17 @@ export interface FutureActivityModel {
   groups: FutureActivityYearGroup[];
   totals: FutureActivitySubtotal;
   hasGrants: boolean;
-  hasTaxImpact: boolean;        // false this phase → view renders "pending"
+  hasTaxImpact: boolean;        // true when at least one year carries a tax figure (= totals.taxImpact != null)
 }
 
 export interface BuildFutureActivityOptions {
   asOfYear: number;             // lower bound; = planStartYear
   planStartYear: number;        // FMV projection base year
   planEndYear: number;          // upper bound — caps the tail
+  // Per-year additional tax from the Tax Impact report (equityTaxImpact.totalTax).
+  // Joins onto year subtotals + grand total only — the counterfactual is a joint
+  // per-year figure and can't be split per grant, so per-grant rows stay null.
+  taxByYear?: ReadonlyMap<number, number>;
 }
 
 const ROUND = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -60,7 +64,7 @@ export function buildFutureActivity(
   plans: StockOptionPlan[],
   opts: BuildFutureActivityOptions,
 ): FutureActivityModel {
-  const { asOfYear, planStartYear, planEndYear } = opts;
+  const { asOfYear, planStartYear, planEndYear, taxByYear } = opts;
 
   // grantId → { plan, grant } for identity lookup.
   const idInfo = new Map<string, { plan: StockOptionPlan; grant: EquityGrant }>();
@@ -135,16 +139,25 @@ export function buildFutureActivity(
     .sort((a, b) => a - b)
     .map((year) => {
       const rows = byYear.get(year)!.sort(compareRows);
-      return { year, rows, subtotal: sumRows(rows) };
+      const subtotal = sumRows(rows);
+      subtotal.taxImpact = taxByYear?.get(year) ?? null;
+      return { year, rows, subtotal };
     });
+
+  // Grand total = sum of the per-year tax figures that are present. Stays null
+  // when no year carries a counterfactual entry (no projection ran, or an empty map).
+  const totals = sumRows([...rowByKey.values()]);
+  for (const g of groups) {
+    if (g.subtotal.taxImpact !== null) totals.taxImpact = ROUND((totals.taxImpact ?? 0) + g.subtotal.taxImpact);
+  }
 
   return {
     asOfYear,
     planEndYear,
     groups,
-    totals: sumRows([...rowByKey.values()]),
+    totals,
     hasGrants: plans.some((p) => p.grants.length > 0),
-    hasTaxImpact: false,
+    hasTaxImpact: totals.taxImpact !== null,
   };
 }
 
