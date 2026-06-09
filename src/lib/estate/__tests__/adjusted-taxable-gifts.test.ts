@@ -97,6 +97,25 @@ describe("computeAdjustedTaxableGifts", () => {
     const gifts = [gift({ year: 2099, amount: 50_000 })];
     expect(computeAdjustedTaxableGifts("client", gifts, [], ann, noAccountValue)).toBeCloseTo(50_000, 2);
   });
+
+  it("excludes a charitable gift from the addback when the external beneficiary is supplied", () => {
+    // Charitable gifts are fully deductible (§2522) — not adjusted taxable gifts.
+    // Keeps the estate addback in lock-step with the gift ledger, which already
+    // excludes charity. Requires threading externalBeneficiaries through.
+    const gifts = [gift({ amount: 100_000, recipientExternalBeneficiaryId: "charity-1" })];
+    const externals = [{ id: "charity-1", kind: "charity" as const }];
+    expect(
+      computeAdjustedTaxableGifts("client", gifts, [], ann, noAccountValue, [], externals),
+    ).toBe(0);
+  });
+
+  it("taxes an external individual gift like any outright cash gift", () => {
+    const gifts = [gift({ amount: 100_000, recipientExternalBeneficiaryId: "ind-1" })];
+    const externals = [{ id: "ind-1", kind: "individual" as const }];
+    expect(
+      computeAdjustedTaxableGifts("client", gifts, [], ann, noAccountValue, [], externals),
+    ).toBeCloseTo(81_000, 2);
+  });
 });
 
 describe("computeAdjustedTaxableGifts (Phase 3 — asset/liability giftEvents)", () => {

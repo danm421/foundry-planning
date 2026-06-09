@@ -561,6 +561,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     input.annualExclusionsByYear,
     accountValueAtYear,
     giftEventsForAtg,
+    input.externalBeneficiaries
+      .filter((e) => e.kind != null)
+      .map((e) => ({ id: e.id, kind: e.kind! })),
   );
   const inPlanCumulative = adjustedGiftsByYear.reduce((sum, g) => sum + g.amount, 0);
   const adjustedGifts = inPlanCumulative + input.priorTaxableGifts[input.deceased];

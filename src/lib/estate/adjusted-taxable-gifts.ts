@@ -8,7 +8,9 @@ import { toCanonicalGifts, treatCanonicalGift } from "@/lib/gifts/normalize-gift
  * Routes both the legacy `gifts[]` array and `giftEvents[]` through the unified
  * canonical+treatment model ({@link toCanonicalGifts} → {@link treatCanonicalGift}),
  * keeping this addback in lock-step with the gift-ledger's lifetime-exemption math:
- * - Charitable gifts → $0 lifetime used (fully deductible).
+ * - Charitable gifts → $0 lifetime used (fully deductible) — requires the gift's
+ *   external beneficiary to be supplied via `externalBeneficiaries` (matching the
+ *   ledger's filter); an unsupplied external falls back to outright-individual.
  * - Crummey trust → `amount − annualExclusion × crummeyBeneficiaryCount`.
  * - Non-Crummey irrevocable trust → full `amount` (no annual exclusion).
  * - Family member / individual / no modeled recipient → `amount − one annualExclusion`.
@@ -28,6 +30,10 @@ import { toCanonicalGifts, treatCanonicalGift } from "@/lib/gifts/normalize-gift
  *   exclusively here. Cash rows here are SERIES FAN-OUTS (seriesId) or synthesized premium
  *   gifts (sourcePolicyAccountId) only; one-time cash gifts come through the legacy `gifts`
  *   array to avoid double-counting.
+ * @param externalBeneficiaries - id→kind for non-modeled recipients, so charitable
+ *   gifts resolve to $0 (fully deductible) instead of taxed as outright gifts. Pass the
+ *   same kind-filtered list the gift ledger uses; omit (defaults `[]`) only when no gift
+ *   targets an external beneficiary.
  */
 export function computeAdjustedTaxableGifts(
   decedent: "client" | "spouse",
@@ -36,6 +42,7 @@ export function computeAdjustedTaxableGifts(
   annualExclusionsByYear: Record<number, number>,
   accountValueAtYear: (accountId: string, year: number) => number,
   giftEvents: GiftEvent[] = [],
+  externalBeneficiaries: Array<{ id: string; kind: "charity" | "individual" }> = [],
 ): number {
   return computeAdjustedTaxableGiftsByYear(
     decedent,
@@ -44,6 +51,7 @@ export function computeAdjustedTaxableGifts(
     annualExclusionsByYear,
     accountValueAtYear,
     giftEvents,
+    externalBeneficiaries,
   ).reduce((sum, g) => sum + g.amount, 0);
 }
 
@@ -65,8 +73,13 @@ export function computeAdjustedTaxableGiftsByYear(
   annualExclusionsByYear: Record<number, number>,
   accountValueAtYear: (accountId: string, year: number) => number,
   giftEvents: GiftEvent[] = [],
+  externalBeneficiaries: Array<{ id: string; kind: "charity" | "individual" }> = [],
 ): Array<{ year: number; amount: number }> {
-  const canonical = toCanonicalGifts(gifts, giftEvents, { entities, accountValueAtYear });
+  const canonical = toCanonicalGifts(gifts, giftEvents, {
+    entities,
+    externalBeneficiaries,
+    accountValueAtYear,
+  });
   const byYear = new Map<number, number>();
   for (const cg of canonical) {
     if (cg.grantor !== decedent) continue;
