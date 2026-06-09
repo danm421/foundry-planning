@@ -87,11 +87,16 @@ export interface Entity {
 export type Gift = {
   id: string;
   year: number;
-  amount: number;
+  /** null for in-kind (asset) gifts; present for cash gifts */
+  amount: number | null;
   grantor: "client" | "spouse" | "joint";
   recipientEntityId: string | null;
   recipientFamilyMemberId: string | null;
   recipientExternalBeneficiaryId: string | null;
+  /** Source account for in-kind asset gifts */
+  accountId?: string | null;
+  /** Fractional share of the account gifted (in-kind) */
+  percent?: number | null;
   useCrummeyPowers: boolean;
   notes: string | null;
 };
@@ -897,7 +902,7 @@ function GiftsSection(props: {
                   <td className="px-2 py-1">{g.year}</td>
                   <td className="px-2 py-1 capitalize">{g.grantor}</td>
                   <td className="px-2 py-1 text-right">
-                    ${g.amount.toLocaleString()}
+                    {g.amount != null ? `$${g.amount.toLocaleString()}` : "—"}
                   </td>
                   <td className="px-2 py-1">{r?.label ?? "—"}</td>
                   <td className="px-2 py-1">{g.useCrummeyPowers ? "✓" : ""}</td>

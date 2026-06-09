@@ -9,8 +9,12 @@ import {
   externalBeneficiaries,
   beneficiaryDesignations,
   gifts,
+  giftSeries,
+  taxYearParameters,
+  scenarios as scenariosTable,
 } from "@/db/schema";
 import { eq, and, asc, inArray, notInArray } from "drizzle-orm";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { getOrgId } from "@/lib/db-helpers";
 import FamilyView, {
   FamilyMember,
@@ -49,7 +53,7 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
   const spouseContact = contactRows.find((c) => c.role === "spouse") ?? null;
 
-  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }, contacts] =
+  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }, contacts, scenarioRows] =
     await Promise.all([
       db
         .select()
@@ -83,10 +87,37 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
       loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
       getClientWithContacts(id, firmId),
+      db
+        .select({
+          id: scenariosTable.id,
+          name: scenariosTable.name,
+          isBaseCase: scenariosTable.isBaseCase,
+        })
+        .from(scenariosTable)
+        .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
+        .where(and(eq(scenariosTable.clientId, id), eq(clients.firmId, firmId))),
     ]);
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const effectiveClient = effectiveTree.client;
+
+  const resolvedScenario =
+    (scenarioParam ?? "base") === "base"
+      ? scenarioRows.find((s) => s.isBaseCase)
+      : scenarioRows.find((s) => s.id === (scenarioParam ?? "base"));
+  if (!resolvedScenario) notFound();
+
+  const [giftSeriesRows, taxRows] = await Promise.all([
+    db
+      .select()
+      .from(giftSeries)
+      .where(and(eq(giftSeries.clientId, id), eq(giftSeries.scenarioId, resolvedScenario.id)))
+      .orderBy(asc(giftSeries.startYear)),
+    db
+      .select({ year: taxYearParameters.year, giftAnnualExclusion: taxYearParameters.giftAnnualExclusion })
+      .from(taxYearParameters)
+      .orderBy(asc(taxYearParameters.year)),
+  ]);
 
   const entityIds = entityRows.map((e) => e.id);
   const ownerRows = entityIds.length > 0
@@ -247,20 +278,41 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     sortOrder: d.sortOrder,
   }));
 
-  // FamilyView's gift list shows cash gifts only
   const giftsList = giftRows
-    .filter((g) => g.amount != null)
+    .filter((g) => g.parentGiftId == null) // hide auto-bundled liability child rows
     .map((g) => ({
       id: g.id,
       year: g.year,
-      amount: parseFloat(g.amount as string),
+      amount: g.amount != null ? parseFloat(g.amount as string) : null,
       grantor: g.grantor,
       recipientEntityId: g.recipientEntityId ?? null,
       recipientFamilyMemberId: g.recipientFamilyMemberId ?? null,
       recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
+      accountId: g.accountId ?? null,
+      percent: g.percent != null ? parseFloat(g.percent as string) : null,
       useCrummeyPowers: g.useCrummeyPowers,
       notes: g.notes ?? null,
     }));
+
+  const giftSeriesList = giftSeriesRows.map((s) => ({
+    id: s.id,
+    grantor: s.grantor as "client" | "spouse" | "joint",
+    recipientEntityId: s.recipientEntityId,
+    startYear: s.startYear,
+    endYear: s.endYear,
+    annualAmount: parseFloat(s.annualAmount as string),
+    amountMode: (s.amountMode ?? "fixed") as "fixed" | "annual_exclusion",
+    inflationAdjust: s.inflationAdjust,
+    useCrummeyPowers: s.useCrummeyPowers,
+  }));
+
+  const planStartYear = effectiveTree.planSettings.planStartYear;
+  const annualExclusionByYear = buildAnnualExclusionMap(
+    taxRows,
+    planStartYear,
+    planStartYear + 40,
+    0.025, // display-only inflation assumption; engine uses the exact plan rate
+  );
 
   // Every client field — including retirementMonth / spouseRetirementMonth —
   // comes from the EFFECTIVE client so scenario overrides flow through. Only
@@ -281,6 +333,9 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
         initialAccounts={accts}
         initialDesignations={designations}
         initialGifts={giftsList}
+        initialGiftSeries={giftSeriesList}
+        annualExclusionByYear={annualExclusionByYear}
+        scenarioId={resolvedScenario.id}
         initialFullAccounts={fullAccounts}
         initialFullLiabilities={fullLiabilities}
         initialFullIncomes={fullIncomes}
