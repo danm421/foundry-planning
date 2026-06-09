@@ -38,6 +38,7 @@ describe("HeaderSubtabs", () => {
       expect(links.map((a) => a.textContent?.trim())).toEqual([
         "Cash Flow",
         "Income Tax",
+        "Tax Ledger",
         "Monte Carlo",
         "Timeline",
         "Entities",
@@ -46,6 +47,7 @@ describe("HeaderSubtabs", () => {
       expect(links.map((a) => a.getAttribute("href"))).toEqual([
         "/clients/c1/cashflow",
         "/clients/c1/cashflow/income-tax",
+        "/clients/c1/cashflow/tax-ledger",
         "/clients/c1/cashflow/monte-carlo",
         "/clients/c1/cashflow/timeline",
         "/clients/c1/cashflow/entities",
