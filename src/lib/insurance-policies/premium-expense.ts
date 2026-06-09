@@ -25,13 +25,20 @@ export interface SynthesizePremiumsInput {
   spouseRetirementAge: number | null;
 }
 
+/** The resolved premium billing window for one policy. `mode` distinguishes the
+ *  scalar path (flat annualAmount over [startYear, endYear]) from the scheduled
+ *  path (per-year overrides). Returns null when the policy bills no premium. */
+export interface ResolvedPremiumSchedule {
+  startYear: number;
+  endYear: number;
+  mode: "scalar" | "scheduled";
+  annualAmount: number; // scalar only (0 for scheduled)
+  overrides: Record<number, number>; // scheduled only ({} for scalar)
+}
+
 /**
- * Produces synthetic expense rows from life-insurance policies with
- * premium_amount > 0. Expenses are tagged with `source = "policy"` and
- * `sourcePolicyAccountId` set to the policy's account id. The expense
- * inherits the policy account's `ownerEntityId` so entity-owned policies
- * produce entity-scoped premium expenses (matching the engine's cash-
- * routing contract for expenses).
+ * Resolves the premium billing window for a single life-insurance account.
+ * Returns null when the account has no billable premium.
  *
  * End-year resolution priority:
  *   1. Explicit `premiumYears` (paid-up horizon)
@@ -44,17 +51,6 @@ export interface SynthesizePremiumsInput {
  * Then capped at the insured's retirement year when the policy's
  * `endsAtInsuredRetirement` flag is set (term-only).
  */
-/** The resolved premium billing window for one policy. `mode` distinguishes the
- *  scalar path (flat annualAmount over [startYear, endYear]) from the scheduled
- *  path (per-year overrides). Returns null when the policy bills no premium. */
-export interface ResolvedPremiumSchedule {
-  startYear: number;
-  endYear: number;
-  mode: "scalar" | "scheduled";
-  annualAmount: number; // scalar only (0 for scheduled)
-  overrides: Record<number, number>; // scheduled only ({} for scalar)
-}
-
 export function resolvePremiumSchedule(
   acct: Account,
   input: SynthesizePremiumsInput,
@@ -118,8 +114,13 @@ export function resolvePremiumSchedule(
   };
 }
 
-/** Per-year premium amount for the resolved window. Scheduled years are clamped
- *  to [startYear, endYear] so the gift stream matches what the expense bills. */
+/**
+ * Per-year premium amount for the resolved window. Scheduled years are clamped
+ * to [startYear, endYear] so the gift stream matches what the expense bills.
+ *
+ * NOTE: intentionally unexercised until the upcoming premium-gift synthesizer
+ * consumes it; no direct tests exist yet.
+ */
 export function premiumAmountsByYear(
   r: ResolvedPremiumSchedule,
 ): Map<number, number> {
@@ -135,6 +136,13 @@ export function premiumAmountsByYear(
   return out;
 }
 
+/**
+ * Produces synthetic premium `Expense` rows for every life-insurance account
+ * in `input.accounts` that has a billable premium. For each qualifying account,
+ * delegates billing-window resolution to `resolvePremiumSchedule`, then
+ * attaches `source = "policy"`, `sourcePolicyAccountId`, and the account's
+ * `ownerEntityId` so entity-owned policies produce correctly scoped expenses.
+ */
 export function synthesizePremiumExpenses(
   input: SynthesizePremiumsInput,
 ): Expense[] {
