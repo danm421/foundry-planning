@@ -373,6 +373,9 @@ export type GiftEvent =
       sourceAccountId?: string;
       useCrummeyPowers: boolean;
       seriesId?: string; // present on fanned-out series occurrences
+      /** Set on cash gifts auto-synthesized from a life-insurance policy whose
+       *  premiumPayer ≠ owner. Used to strip + re-derive these idempotently. */
+      sourcePolicyAccountId?: string;
       eventKind?: GiftEventKind;
     }
   | {
@@ -490,6 +493,10 @@ export interface EntitySummary {
   accessibleToClient?: boolean;
   // When true, taxes on the entity's income and RMDs are paid at the household rate.
   isGrantor: boolean;
+  /** Trust-level Crummey (annual-exclusion withdrawal) powers. Sourced from
+   *  entities.crummey_powers. Read by the premium-gift synthesizer to decide
+   *  whether premium gifts to this trust qualify for the annual exclusion. */
+  crummeyPowers?: boolean;
   /** Trust-only. When set, grantor-trust treatment applies only through this year (inclusive). */
   grantorStatusEndYear?: number;
   beneficiaries?: BeneficiaryRef[];

@@ -1062,6 +1062,7 @@ export const loadClientDataWithContext = cache(
       includeInPortfolio: e.includeInPortfolio,
       accessibleToClient: e.accessibleToClient,
       isGrantor: e.isGrantor,
+      crummeyPowers: e.crummeyPowers,
       grantorStatusEndYear: e.grantorStatusEndYear ?? undefined,
       beneficiaries: trustBens.get(e.id) ?? undefined,
       trustSubType: e.trustSubType ?? undefined,
