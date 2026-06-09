@@ -947,6 +947,58 @@ describe("detectConflicts", () => {
     expect(out[0].overriddenBy[0].intendedRecipient).toContain("Alex");
   });
 
+  it("does NOT flag conflict when the governing mechanism routes to the same recipient the will names", () => {
+    // Will leaves the home to Alex; titling also routes the home to Alex. The
+    // mechanism is upstream of the will but produces the will's intended
+    // outcome — no real conflict, so no callout.
+    const data = withWill(
+      tree(),
+      willWithSpecificBequest({
+        accountId: "acc-house",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+      }),
+    );
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-house",
+        sourceAccountName: "Home",
+        via: "titling",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+      }),
+    ];
+    const out = detectConflicts(data, transfers, "client");
+    expect(out).toEqual([]);
+  });
+
+  it("does NOT flag conflict when a will 'to spouse' bequest is honored by spouse titling", () => {
+    // Mirrors the reported case: will leaves Home to the spouse, titling routes
+    // Home to that same spouse. "spouse" kind must normalize to the spouse's
+    // family-member identity so the two sides compare equal.
+    const data = withWill(
+      tree(),
+      willWithSpecificBequest({
+        accountId: "acc-house",
+        recipientKind: "spouse",
+        recipientId: "fm-spouse",
+      }),
+    );
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-house",
+        sourceAccountName: "Home",
+        via: "titling",
+        recipientKind: "spouse",
+        recipientId: "fm-spouse",
+        recipientLabel: "Sam",
+      }),
+    ];
+    const out = detectConflicts(data, transfers, "client");
+    expect(out).toEqual([]);
+  });
+
   it("flags a will-bequest overridden by beneficiary designation", () => {
     const data = withWill(
       tree(),

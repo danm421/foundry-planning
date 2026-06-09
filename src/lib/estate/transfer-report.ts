@@ -753,7 +753,15 @@ export function detectConflicts(
   // is a single conflict — not one card per recipient.
   const byAccount = new Map<
     string,
-    { entry: ConflictEntry; recipients: Set<string>; intended: string }
+    {
+      entry: ConflictEntry;
+      recipients: Set<string>;
+      intended: string;
+      // Identity keys (not display labels) for deciding whether the mechanism
+      // actually routes somewhere different from what the will names.
+      governingKeys: Set<string>;
+      intendedKeys: Set<string>;
+    }
   >();
 
   for (const t of transfers) {
@@ -784,9 +792,11 @@ export function detectConflicts(
     if (!matchingBequest) continue;
 
     const governingRecipient = resolveRecipientLabel(t, clientData).name;
+    const governingKey = recipientKey(t.recipientKind, t.recipientId, clientData);
     const existing = byAccount.get(t.sourceAccountId);
     if (existing) {
       existing.recipients.add(governingRecipient);
+      existing.governingKeys.add(governingKey);
     } else {
       byAccount.set(t.sourceAccountId, {
         entry: {
@@ -799,11 +809,23 @@ export function detectConflicts(
         },
         recipients: new Set([governingRecipient]),
         intended: describeRecipients(matchingBequest.recipients, clientData),
+        governingKeys: new Set([governingKey]),
+        intendedKeys: new Set(
+          matchingBequest.recipients.map((r) =>
+            recipientKey(r.recipientKind, r.recipientId, clientData),
+          ),
+        ),
       });
     }
   }
 
-  return Array.from(byAccount.values()).map(({ entry, recipients, intended }) => {
+  return Array.from(byAccount.values())
+    // An upstream mechanism that routes to exactly the recipients the will
+    // names isn't a conflict — the will's intent is honored, just via a
+    // different legal pathway. Only surface a callout when the destinations
+    // actually diverge.
+    .filter(({ governingKeys, intendedKeys }) => !setsEqual(governingKeys, intendedKeys))
+    .map(({ entry, recipients, intended }) => {
     const governing = joinNames([...recipients]);
     return {
       ...entry,
@@ -827,6 +849,43 @@ function joinNames(names: string[]): string {
 }
 
 // ── Conflict-detection helpers ───────────────────────────────────────────────
+
+/**
+ * Canonical identity key for a recipient. Used to decide whether an upstream
+ * mechanism actually routes somewhere different from what the will names —
+ * compared by identity, not display label, because (a) entity labels gain a
+ * " remainder" suffix on one path but not the other and (b) two distinct
+ * people can share a display name. "spouse" normalizes to the resolved
+ * spouse's family-member id so a will "to spouse" bequest matches a titling /
+ * beneficiary transfer recorded against that same person.
+ */
+function recipientKey(
+  kind: DeathTransfer["recipientKind"],
+  id: string | null,
+  clientData: ClientData,
+): string {
+  if (kind === "spouse") {
+    const spouseId =
+      id ?? (clientData.familyMembers ?? []).find((f) => f.role === "spouse")?.id ?? null;
+    return spouseId ? `fm:${spouseId}` : "spouse";
+  }
+  switch (kind) {
+    case "family_member":
+      return `fm:${id ?? "?"}`;
+    case "external_beneficiary":
+      return `ext:${id ?? "?"}`;
+    case "entity":
+      return `ent:${id ?? "?"}`;
+    default:
+      return `sys:${id ?? "?"}`;
+  }
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
 
 function conditionApplies(
   condition: WillBequest["condition"],
