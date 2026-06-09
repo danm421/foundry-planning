@@ -2,6 +2,7 @@ import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { resolveStrategy } from "./strategy";
 import { buildGrantTimeline, type EquityAction } from "./timeline";
 import { projectFmv, resolveStrikePrice } from "./price-model";
+import { computeSellToCover } from "./withholding";
 
 /** One acquired-and-held lot (per tranche). */
 interface Lot {
@@ -34,6 +35,22 @@ export interface EquityYearResult {
   sellToCoverProceeds: number;
   acquisitions: { value: number; basis: number }[]; // in-kind inflows to the destination account
   saleBasisRemoved: number; // basis to drain from destination account on sells
+  details: EquityYearDetail[];
+}
+
+export type EquityDetailKind = "vest" | "exercise" | "sell" | "expire";
+
+export interface EquityYearDetail {
+  grantId: string;
+  trancheId: string;
+  grantType: GrantType;
+  kind: EquityDetailKind;     // seed_held is NOT emitted (its later sells are)
+  shares: number;             // vested / exercised / sold (clamped) / expired
+  exercisePrice: number | null;
+  exerciseCost: number;       // strike × shares (exercise; ISO included)
+  coverShares: number;        // sell-to-cover shares (vest / exercise)
+  proceeds: number;           // cover proceeds OR clamped sell proceeds
+  fmv: number;                // projected FMV that year
 }
 
 const ROUND = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -57,7 +74,7 @@ export function createEquityState(plans: StockOptionPlan[], planStartYear: numbe
 }
 
 function emptyResult(): EquityYearResult {
-  return { ordinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0 };
+  return { ordinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0, details: [] };
 }
 
 export function computeEquityYear(plan: StockOptionPlan, state: EquityState, year: number): EquityYearResult {
@@ -91,21 +108,23 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       const f = grant.has83bElection ? (grant.fmvAtGrant ?? 0) : fmv(year);
       const income = ROUND(a.shares * f);
       res.ordinaryIncome += income;
-      let retained = a.shares;
-      // Sell-to-cover.
-      if (plan.sellToCover && plan.withholdingRate > 0 && f > 0) {
-        const coverShares = Math.min(a.shares, ROUND((income * plan.withholdingRate) / fmv(year)));
-        if (coverShares > 0) {
-          res.sellToCoverProceeds += ROUND(coverShares * fmv(year));
-          retained = ROUND(a.shares - coverShares);
-        }
-      }
+      const cover = computeSellToCover({
+        taxableIncome: income, fmvAtYear: fmv(year), shares: a.shares,
+        sellToCover: plan.sellToCover, withholdingRate: plan.withholdingRate,
+      });
+      res.sellToCoverProceeds += cover.proceeds;
+      const retained = cover.retained;
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: "rsu", shares: retained,
         basisPerShare: f, acquisitionYear: grant.has83bElection ? grant.grantYear : year, grantYear: grant.grantYear,
         exerciseYear: null, strike: 0, fmvAtExercise: f,
       });
       res.acquisitions.push({ value: ROUND(retained * fmv(year)), basis: ROUND(retained * f) });
+      res.details.push({
+        grantId: a.grantId, trancheId: a.trancheId, grantType: "rsu", kind: "vest",
+        shares: a.shares, exercisePrice: null, exerciseCost: 0,
+        coverShares: cover.coverShares, proceeds: cover.proceeds, fmv: fmv(year),
+      });
       continue;
     }
 
@@ -115,12 +134,15 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       const spread = ROUND(a.shares * Math.max(0, f - strike));
       res.strikeCashOutflow += ROUND(a.shares * strike);
       let retained = a.shares;
+      let cover = { coverShares: 0, proceeds: 0, retained: a.shares };
       if (grant.grantType === "nqso") {
         res.ordinaryIncome += spread;
-        if (plan.sellToCover && plan.withholdingRate > 0 && f > 0) {
-          const coverShares = Math.min(a.shares, ROUND((spread * plan.withholdingRate) / f));
-          if (coverShares > 0) { res.sellToCoverProceeds += ROUND(coverShares * f); retained = ROUND(a.shares - coverShares); }
-        }
+        cover = computeSellToCover({
+          taxableIncome: spread, fmvAtYear: f, shares: a.shares,
+          sellToCover: plan.sellToCover, withholdingRate: plan.withholdingRate,
+        });
+        res.sellToCoverProceeds += cover.proceeds;
+        retained = cover.retained;
       } else {
         // ISO: AMT preference, no regular OI; regular basis = strike.
         res.isoSpread += spread;
@@ -132,6 +154,11 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
         exerciseYear: year, strike, fmvAtExercise: f,
       });
       res.acquisitions.push({ value: ROUND(retained * f), basis: ROUND(retained * basisPerShare) });
+      res.details.push({
+        grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, kind: "exercise",
+        shares: a.shares, exercisePrice: strike, exerciseCost: ROUND(a.shares * strike),
+        coverShares: cover.coverShares, proceeds: cover.proceeds, fmv: f,
+      });
       continue;
     }
 
@@ -162,11 +189,21 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
         else res.stCapitalGains += gain;
       }
       lot.shares = ROUND(lot.shares - shares);
+      res.details.push({
+        grantId: a.grantId, trancheId: a.trancheId, grantType: lot.grantType, kind: "sell",
+        shares, exercisePrice: null, exerciseCost: 0,
+        coverShares: 0, proceeds: ROUND(shares * f), fmv: f,
+      });
       continue;
     }
 
     if (a.kind === "expire") {
       // Unexercised options expire worthless — no tax, nothing held.
+      res.details.push({
+        grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, kind: "expire",
+        shares: a.shares, exercisePrice: null, exerciseCost: 0,
+        coverShares: 0, proceeds: 0, fmv: fmv(year),
+      });
       continue;
     }
   }
