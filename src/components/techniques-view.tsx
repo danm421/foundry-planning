@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useScenarioState } from "@/hooks/use-scenario-state";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
 import AddAssetTransactionForm, { type BusinessSaleOption } from "./forms/add-asset-transaction-form";
@@ -908,6 +909,7 @@ export default function TechniquesView({
 }: TechniquesViewProps) {
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
+  const { scenarioId } = useScenarioState(clientId);
 
   const [showAddTransfer, setShowAddTransfer] = useState(false);
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
@@ -919,13 +921,20 @@ export default function TechniquesView({
   const [editingRothConversion, setEditingRothConversion] = useState<RothConversionInitialData | null>(null);
   const [projectionYears, setProjectionYears] = useState<ProjectionYear[] | null>(null);
 
-  // Load projection once so transaction rows can display the projected BoY
-  // mortgage payoff for the sale year (matches what the engine will pay off).
+  // Load projection so transaction rows can display the projected BoY sale
+  // value and mortgage payoff for the sale year (matches what the engine will
+  // use). Pass the active scenario so scenario-only accounts (e.g. an
+  // entity-owned asset added inside this scenario) resolve a real value —
+  // without it the endpoint loads base-plan data and a scenario-only sell
+  // account prices at $0, yielding a bogus negative NET preview.
   useEffect(() => {
     let cancelled = false;
     async function loadProjection() {
       try {
-        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        const url = scenarioId
+          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioId)}`
+          : `/api/clients/${clientId}/projection-data`;
+        const res = await fetch(url);
         if (!res.ok) return;
         const data: ClientData = await res.json();
         const projection = runProjection(data);
@@ -936,7 +945,7 @@ export default function TechniquesView({
     }
     loadProjection();
     return () => { cancelled = true; };
-  }, [clientId]);
+  }, [clientId, scenarioId]);
 
   const projectedMortgagePayoffFor = useMemo(() => {
     return (liabilityId: string, year: number): number | null => {
