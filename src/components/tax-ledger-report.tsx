@@ -12,6 +12,7 @@ import { buildTaxLedger } from "@/lib/tax-ledger";
 import TaxLedgerDiagnosticsHeader from "@/components/tax-ledger/tax-ledger-diagnostics-header";
 import TaxLedgerTable from "@/components/tax-ledger/tax-ledger-table";
 import TaxLedgerFilters, { type LedgerFilterState } from "@/components/tax-ledger/tax-ledger-filters";
+import TaxLedgerYearPicker from "@/components/tax-ledger/tax-ledger-year-picker";
 
 interface Props {
   clientId: string;
@@ -89,15 +90,13 @@ export default function TaxLedgerReport({ clientId }: Props) {
         <h1 className="text-lg font-semibold text-ink">Tax Ledger</h1>
         <label className="flex items-center gap-2 text-sm text-ink-2">
           Year
-          <select
-            className="rounded-md border border-hair bg-card px-2 py-1 text-ink"
-            value={selectedYear ?? ""}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-          >
-            {years.map((y) => (
-              <option key={y.year} value={y.year}>{y.year}</option>
-            ))}
-          </select>
+          <TaxLedgerYearPicker
+            years={years.map((y) => ({ year: y.year, ages: y.ages }))}
+            selectedYear={selectedYear}
+            onSelect={setSelectedYear}
+            clientName={clientData?.client?.firstName}
+            spouseName={clientData?.client?.spouseName}
+          />
         </label>
       </div>
       <TaxLedgerDiagnosticsHeader d={ledger.diagnostics} />
