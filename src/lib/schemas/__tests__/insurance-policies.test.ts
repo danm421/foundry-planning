@@ -13,16 +13,23 @@ const validBase = {
 
 describe("insurancePolicyCreateSchema premiumPayer", () => {
   it("defaults premiumPayer to 'owner' when omitted", () => {
-    const parsed = insurancePolicyCreateSchema.parse(validBase);
-    expect(parsed.premiumPayer).toBe("owner");
+    const result = insurancePolicyCreateSchema.safeParse(validBase);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.premiumPayer).toBe("owner");
+    }
   });
 
   it("accepts an explicit payer", () => {
-    const parsed = insurancePolicyCreateSchema.parse({ ...validBase, premiumPayer: "both" });
-    expect(parsed.premiumPayer).toBe("both");
+    const result = insurancePolicyCreateSchema.safeParse({ ...validBase, premiumPayer: "both" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.premiumPayer).toBe("both");
+    }
   });
 
   it("rejects an unknown payer", () => {
-    expect(() => insurancePolicyCreateSchema.parse({ ...validBase, premiumPayer: "nephew" })).toThrow();
+    const result = insurancePolicyCreateSchema.safeParse({ ...validBase, premiumPayer: "nephew" });
+    expect(result.success).toBe(false);
   });
 });
