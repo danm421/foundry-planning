@@ -143,12 +143,24 @@ function defaultProps(activeTab: "details" | "assets" | "transfers" | "notes" = 
 // Tests
 // ---------------------------------------------------------------------------
 
+const LEDGER_SUMMARY = {
+  perGrantor: {
+    client: { used: 3_000_000, total: 13_610_000 },
+    spouse: { used: 1_500_000, total: 13_610_000 },
+  },
+  perTrust: {
+    [TRUST_ID]: { client: 500_000, spouse: 0 },
+  },
+};
+
 describe("AddTrustForm — Transfers tab (T21)", () => {
   beforeEach(() => {
-    // Stub fetch to return empty arrays for both gifts and gifts/series
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve([]),
+    // Stub fetch: return valid ledger summary for /gifts/ledger, empty arrays for gifts/series.
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (typeof url === "string" && url.includes("/gifts/ledger")) {
+        return { ok: true, json: () => Promise.resolve(LEDGER_SUMMARY) };
+      }
+      return { ok: true, json: () => Promise.resolve([]) };
     }));
   });
 
@@ -161,6 +173,18 @@ describe("AddTrustForm — Transfers tab (T21)", () => {
     render(<AddTrustForm {...defaultProps("transfers")} />);
     // The empty-state message comes from TransfersTab itself
     expect(await screen.findByText(/No transfers recorded yet/i)).toBeInTheDocument();
+  });
+
+  it("renders ExemptionPanel with ledger data when editing a trust", async () => {
+    render(<AddTrustForm {...defaultProps("transfers")} />);
+    // Wait for transfers to load first (ensures effect has run)
+    await screen.findByText(/No transfers recorded yet/i);
+    // ExemptionPanel should appear with lifetime exemption heading
+    await waitFor(() => {
+      expect(screen.getByText(/Lifetime Gift \/ Estate Exemption/i)).toBeInTheDocument();
+    });
+    // ExemptionBar should show used/total for client ($3.0M used / $13.6M total)
+    expect(screen.getByText(/used \$3\.0M \/ \$13\.6M/i)).toBeInTheDocument();
   });
 
   it("shows create-mode fallback message when activeTab is transfers but editing is undefined", () => {

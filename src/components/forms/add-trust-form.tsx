@@ -19,7 +19,7 @@ import FlowsTab, {
 } from "./flows-tab";
 import { applyAssetTabOp } from "./asset-tab-ops";
 import type { AssetTabOp } from "./asset-tab-ops";
-import TransfersTab, { type TransferEvent, type TransferSeries } from "./transfers-tab";
+import TransfersTab, { type TransferEvent, type TransferSeries, type ExemptionDisplay } from "./transfers-tab";
 import TransferAssetForm, { type AccountOption as AssetAccountOption } from "./transfer-asset-form";
 import TransferCashForm from "./transfer-cash-form";
 import TransferSeriesForm from "./transfer-series-form";
@@ -304,6 +304,8 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   const [transferFetchError, setTransferFetchError] = useState<string | null>(null);
   // refetchTick is bumped after a successful save so the useEffect re-runs.
   const [refetchTick, setRefetchTick] = useState(0);
+  const [exemption, setExemption] = useState<ExemptionDisplay>({});
+  const [totalConsumedByThisTrust, setTotalConsumedByThisTrust] = useState<{ client: number; spouse: number }>({ client: 0, spouse: 0 });
 
   // Self-fetch gifts and gift_series when the Transfers tab is active.
   // Mirrors the pattern used in beneficiaries-tab.tsx (per-account self-fetch on mount).
@@ -335,6 +337,21 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       console.error("[transfers-tab] fetch failed:", err);
       setTransferFetchError(err.message);
     });
+
+    // Fetch lifetime-exemption ledger — panel stays hidden on failure (exemption {} hides it).
+    fetchJson<{
+      perGrantor: { client: { used: number; total: number }; spouse?: { used: number; total: number } };
+      perTrust: Record<string, { client: number; spouse: number }>;
+    }>(
+      scenarioId
+        ? `/api/clients/${clientId}/gifts/ledger?scenario=${encodeURIComponent(scenarioId)}`
+        : `/api/clients/${clientId}/gifts/ledger`,
+    ).then((summary) => {
+      if (!alive) return;
+      if (!summary?.perGrantor) return; // unexpected shape — leave panel hidden
+      setExemption(summary.perGrantor);
+      setTotalConsumedByThisTrust(summary.perTrust[editing.id] ?? { client: 0, spouse: 0 });
+    }).catch(() => { /* panel stays hidden on failure */ });
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities, trustSubType, scenarioId]);
@@ -1047,10 +1064,8 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             <TransfersTab
               events={transferEvents}
               series={transferSeries}
-              // T21 scope: exemption + total-consumed are deferred.
-              // See future-work/estate.md — needs compute-ledger integration.
-              exemption={{}}
-              totalConsumedByThisTrust={{ client: 0, spouse: 0 }}
+              exemption={exemption}
+              totalConsumedByThisTrust={totalConsumedByThisTrust}
               onAdd={(kind) => setOpenModal(kind)}
               // onEdit intentionally omitted — edit mode not yet implemented.
               // Each modal form needs an `editing` prop and a PATCH path.
