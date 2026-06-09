@@ -1435,6 +1435,23 @@ export const holdingPriceRefreshRuns = pgTable("holding_price_refresh_runs", {
   failures: jsonb("failures"), // [{ stage, ref, message }]
 });
 
+// A revocable living trust is NOT an entity in this app — it is a lightweight,
+// named probate-skip tag. Assets keep their existing owner; tagging one only
+// (a) excludes it from the probate total and (b) shows the trust's name as a
+// badge on the estate-tax + balance-sheet reports. Client-scoped (mirrors
+// entities); membership lives on accounts.revocable_trust_id (scenario-scoped).
+export const revocableTrusts = pgTable("revocable_trusts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  clientIdx: index("revocable_trusts_client_idx").on(t.clientId),
+}));
+
 export const accounts = pgTable("accounts", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1520,6 +1537,12 @@ export const accounts = pgTable("accounts", {
     onDelete: "set null",
   }),
   notes: text("notes"),
+  // Revocable-trust membership tag. Null = not in a revocable trust. ON DELETE
+  // SET NULL so deleting a trust just untags its accounts (no asset loss).
+  revocableTrustId: uuid("revocable_trust_id").references(
+    (): AnyPgColumn => revocableTrusts.id,
+    { onDelete: "set null" },
+  ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
