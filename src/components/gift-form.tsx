@@ -90,6 +90,9 @@ export default function GiftForm(props: GiftFormProps) {
   const [amount, setAmount] = useState(() => (editing?.kind === "cash-once" ? editing.amount : sourceAccount?.value ?? 0));
   const [annualAmount, setAnnualAmount] = useState(() => (editing?.kind === "series" ? editing.annualAmount : 0));
   const [percentWhole, setPercentWhole] = useState(() => (editing?.kind === "asset-once" ? Math.round(editing.percent * 100) : 100));
+  const [selectedAccountId, setSelectedAccountId] = useState(() =>
+    editing?.kind === "asset-once" ? editing.accountId : "",
+  );
   const [inflationAdjust, setInflationAdjust] = useState(() => (editing?.kind === "series" ? editing.inflationAdjust : false));
   const [grantor, setGrantor] = useState<GiftGrantor>(() => editing?.grantor ?? "client");
   const [crummey, setCrummey] = useState(() => (editing && editing.kind !== "asset-once" ? editing.crummey : false));
@@ -98,8 +101,9 @@ export default function GiftForm(props: GiftFormProps) {
   const recipientIsTrust = selected?.isTrust ?? false;
   const recurringAllowed = recipientIsTrust;
   const effectiveRecurring = recurringAllowed && isRecurring;
-  const inKindAllowed = recipientIsTrust && sourceAccount != null;
+  const inKindAllowed = recipientIsTrust && (sourceAccount != null || props.accounts.length > 0);
   const effectiveInKind = !effectiveRecurring && inKindAllowed && isInKind;
+  const effectiveAccountId = sourceAccount?.id ?? selectedAccountId;
   const kindLocked = editing != null;
   const grantorCount = grantor === "joint" ? 2 : 1;
 
@@ -131,11 +135,12 @@ export default function GiftForm(props: GiftFormProps) {
       return editing?.kind === "series" ? { ...editing, ...base } : base;
     }
 
-    if (effectiveInKind && sourceAccount) {
+    if (effectiveInKind) {
+      if (!effectiveAccountId) return null;
       if (!Number.isFinite(year) || !inWindow(year)) return null;
       if (!(percentWhole >= 1 && percentWhole <= 100)) return null;
       const base: EstateFlowGift = {
-        kind: "asset-once", id, year, accountId: sourceAccount.id, percent: percentWhole / 100,
+        kind: "asset-once", id, year, accountId: effectiveAccountId, percent: percentWhole / 100,
         grantor, recipient,
         amountOverride: editing?.kind === "asset-once" ? editing.amountOverride : undefined,
         eventKind: editing?.kind === "asset-once" ? editing.eventKind : undefined,
@@ -153,7 +158,7 @@ export default function GiftForm(props: GiftFormProps) {
       eventKind: editing?.kind === "cash-once" ? editing.eventKind : undefined,
     };
     return editing?.kind === "cash-once" ? { ...editing, ...base } : base;
-  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, sourceAccount, year, percentWhole, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, recipientIsTrust, planMinYear, planMaxYear]);
+  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, percentWhole, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, recipientIsTrust, planMinYear, planMaxYear]);
 
   // Fire onChange whenever the draft *content* changes (stable JSON key so a
   // new object identity for an unchanged draft does not re-fire; onChange held
@@ -261,8 +266,8 @@ export default function GiftForm(props: GiftFormProps) {
         )}
       </Field>
 
-      {/* Funding (one-time only, and only when a source account is available) */}
-      {!effectiveRecurring && sourceAccount != null && (
+      {/* Funding (one-time only, and only when in-kind funding is allowed) */}
+      {!effectiveRecurring && inKindAllowed && (
         <Field label="Funding">
           <Segmented
             value={effectiveInKind ? "asset" : "cash"}
@@ -274,12 +279,26 @@ export default function GiftForm(props: GiftFormProps) {
       )}
 
       {/* Amount controls */}
-      {effectiveInKind && sourceAccount ? (
+      {effectiveInKind ? (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Asset">
-            <select data-testid="account" value={sourceAccount.id} disabled className={selectCls}>
-              <option value={sourceAccount.id}>{sourceAccount.name}</option>
-            </select>
+            {sourceAccount ? (
+              <select data-testid="account" value={sourceAccount.id} disabled className={selectCls}>
+                <option value={sourceAccount.id}>{sourceAccount.name}</option>
+              </select>
+            ) : (
+              <select
+                data-testid="account"
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className={selectCls}
+              >
+                <option value="">— select —</option>
+                {props.accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            )}
           </Field>
           <Field label="Percent (%)">
             <NumberInput value={percentWhole} onChange={setPercentWhole} min={1} max={100} />
