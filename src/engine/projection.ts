@@ -4766,11 +4766,29 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Transaction costs are NOT a separate expense line — they're already
     // deducted from netProceeds (in applyAssetSales) and surface in the sale
     // drill-down breakdown.
-    const totalNetProceeds = saleResult.breakdown.reduce((s, x) => s + x.netProceeds, 0);
+    //
+    // Entity-owned sale proceeds belong to the OWNING ENTITY, not the
+    // household: applyAssetSales already routed that cash to the entity's
+    // checking (asset-transactions.ts proceeds routing) and the entity
+    // cash-flow rollup excludes it (isSaleProceeds). Mirror that predicate here
+    // so a trust/business sale's proceeds aren't double-counted — once in the
+    // entity's cash balance and again as household "Other income". Resolve
+    // ownership against the invariant `accountById` (sold accounts are gone from
+    // workingAccounts by now); a missing account (synthetic technique source)
+    // falls back to household, matching the router's default-checking fallback.
+    // `controllingEntity` is the SAME 100%-single-entity predicate the router
+    // uses, so the two stay in sync — split-owned sales (controllingEntity null)
+    // surface as household income, matching the router routing 100% of their
+    // proceeds to the household default checking.
+    const householdSales = saleResult.breakdown.filter((item) => {
+      const sold = accountById.get(item.accountId);
+      return !sold || controllingEntity(sold) == null;
+    });
+    const totalNetProceeds = householdSales.reduce((s, x) => s + x.netProceeds, 0);
     const totalPurchaseEquity = purchaseBreakdown.reduce((s, x) => s + x.equity, 0);
     const absorption = Math.min(totalNetProceeds, totalPurchaseEquity);
 
-    for (const item of saleResult.breakdown) {
+    for (const item of householdSales) {
       const saleShare = totalNetProceeds > 0 ? item.netProceeds / totalNetProceeds : 0;
       const netImpact = item.netProceeds - absorption * saleShare;
 
