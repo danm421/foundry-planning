@@ -2,15 +2,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import GiftDialog from "@/components/gift-dialog";
+import type {
+  FamilyMember,
+  ExternalBeneficiary,
+  Entity,
+  AccountLite,
+} from "@/components/family-view";
 
 const baseProps = {
   clientId: "c1",
   scenarioId: "s1",
   hasSpouse: true,
-  members: [{ id: "m1", firstName: "Jane", lastName: "Doe", role: "child", relationship: "child", dateOfBirth: null, notes: null, domesticPartner: false, inheritanceClassOverride: {} }] as any,
-  externals: [{ id: "x1", name: "Red Cross", kind: "charity", notes: null }] as any,
-  entities: [{ id: "t1", name: "ILIT", entityType: "trust", isIrrevocable: true } as any],
-  accounts: [{ id: "a1", name: "Brokerage", category: "taxable", ownerFamilyMemberId: "m0", ownerEntityId: null }] as any,
+  members: [{ id: "m1", firstName: "Jane", lastName: "Doe", role: "child", relationship: "child", dateOfBirth: null, notes: null, domesticPartner: false, inheritanceClassOverride: {} }] as unknown as FamilyMember[],
+  externals: [{ id: "x1", name: "Red Cross", kind: "charity", notes: null }] as unknown as ExternalBeneficiary[],
+  entities: [{ id: "t1", name: "ILIT", entityType: "trust", isIrrevocable: true }] as unknown as Entity[],
+  accounts: [{ id: "a1", name: "Brokerage", category: "taxable", ownerFamilyMemberId: "m0", ownerEntityId: null }] as unknown as AccountLite[],
   annualExclusionByYear: { 2026: 19000 },
   onClose: vi.fn(),
   onSavedGift: vi.fn(),
