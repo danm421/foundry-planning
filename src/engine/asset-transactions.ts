@@ -100,8 +100,9 @@ export function sellAccountFraction(
   const costFlat = transactionCostFlat ?? 0;
   const transactionCosts = costPct + costFlat;
 
-  // Capital gain is on full sale value minus basis (not reduced by transaction costs)
-  const capitalGain = Math.max(0, saleValue - basis);
+  // Amount-realized treatment: selling costs reduce the amount realized, so the
+  // gain is (saleValue − transactionCosts) − basis, floored at 0.
+  const capitalGain = Math.max(0, saleValue - transactionCosts - basis);
 
   // Net proceeds after costs
   let netProceeds = saleValue - transactionCosts;
@@ -168,7 +169,7 @@ export interface AssetSaleBreakdown {
   basis: number;
   transactionCosts: number;
   netProceeds: number;
-  /** Raw capital gain (saleValue - basis, floored at 0), before the home-sale exclusion. */
+  /** Capital gain net of selling costs (saleValue − transactionCosts − basis, floored at 0), before the home-sale exclusion. */
   capitalGain: number;
   /** IRC §121 exclusion actually applied to this sale (0 unless the flag was set
    *  AND the account was real-estate AND there was gain to exclude). */

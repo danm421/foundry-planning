@@ -57,4 +57,34 @@ describe("buildEntitySections", () => {
     const sections = buildEntitySections(yearWith([["b1", empty as EntityCashFlowRow]]));
     expect(sections).toHaveLength(0);
   });
+
+  it("reconciles a grantor trust's realized capital gain to zero (cap-gain only)", () => {
+    // IDGT real-estate sale: the trust realizes a gain that is taxed on the
+    // grantor's 1040. The section shows the gain and an equal pass-through so
+    // it nets to $0, while the household section carries the actual tax.
+    const idgtSale = {
+      ...grantorTrust, entityId: "t3", entityName: "IDGT",
+      income: 0, expenses: 0, assetSaleCapitalGain: 4288,
+    } as unknown as EntityCashFlowRow;
+    const [s] = buildEntitySections(yearWith([["t3", idgtSale]]));
+    expect(s).toBeDefined();
+    expect(s.passThrough).toBe(true);
+    const gain = s.rows.find((r) => r.type === "Capital Gain on Sale");
+    expect(gain?.amount).toBe(4288);
+    expect(gain?.character).toBe("long_term_gain");
+    expect(gain?.taxable).toBe(false);
+    expect(s.rows.find((r) => r.type === "Pass-Thru to Grantor")?.amount).toBe(-4288);
+    expect(s.subtotal).toBe(0);
+  });
+
+  it("reconciles a grantor trust with both income and a realized capital gain", () => {
+    const mixed = {
+      ...grantorTrust, entityId: "t4", entityName: "IDGT+income",
+      income: 2000, expenses: 0, assetSaleCapitalGain: 4288,
+    } as unknown as EntityCashFlowRow;
+    const [s] = buildEntitySections(yearWith([["t4", mixed]]));
+    expect(s.rows.find((r) => r.type === "Trust Income")?.amount).toBe(2000);
+    expect(s.rows.find((r) => r.type === "Capital Gain on Sale")?.amount).toBe(4288);
+    expect(s.subtotal).toBe(0);
+  });
 });

@@ -129,9 +129,32 @@ describe("applyAssetSales", () => {
       accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1", filingStatus: "single",
     });
 
-    expect(result.capitalGains).toBe(200000);
+    // Amount-realized treatment: gain = (saleValue − costs) − basis
+    //   = (500k − 35k) − 300k = 165k. Costs = 30k (6%) + 5k flat = 35k.
+    expect(result.capitalGains).toBe(165000);
     // Proceeds = 500k - 30k (6%) - 5k flat = 465k
     expect(balances["checking-1"]).toBe(515000);
+  });
+
+  it("nets transaction costs against the capital gain (amount-realized)", () => {
+    // IDGT real-estate sale shape: $524,288 sale, $500k basis, $20k flat cost.
+    // Gain = (524,288 − 20,000) − 500,000 = 4,288, NOT the gross 24,288.
+    const sale: AssetTransaction = {
+      id: "sale-idgt", name: "Sell IDGT Real Estate", type: "sell", year: 2028,
+      accountId: "rental-1", overrideSaleValue: 524288, overrideBasis: 500000,
+      transactionCostFlat: 20000,
+    };
+    const balances: Record<string, number> = { "rental-1": 524288, "checking-1": 0 };
+    const basisMap: Record<string, number> = { "rental-1": 500000, "checking-1": 0 };
+    const ledgers: Record<string, AccountLedger> = { "rental-1": makeLedger(524288), "checking-1": makeLedger(0) };
+
+    const result = applyAssetSales({
+      sales: [sale], accounts: [rentalProperty, checkingAccount], liabilities: [],
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1", filingStatus: "single",
+    });
+
+    expect(result.capitalGains).toBe(4288);
+    expect(result.breakdown[0].capitalGain).toBe(4288);
   });
 
   it("pays off linked mortgage on real estate sale", () => {

@@ -69,6 +69,11 @@ export interface TrustCashFlowRow extends BaseEntityCashFlowRow {
   expenses: number;
   taxes: number;
   endingBalance: number;
+  /** Realized capital gain on asset sales attributed to this trust this year.
+   *  Only populated for grantor trusts (the gain is taxed on the grantor's
+   *  1040; the tax ledger renders an offsetting pass-through so the entity
+   *  section nets to 0). Net of selling costs, before any §121 exclusion. */
+  assetSaleCapitalGain?: number;
 }
 
 export interface BusinessCashFlowRow extends BaseEntityCashFlowRow {
@@ -304,6 +309,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           expenses,
           taxes,
           endingBalance,
+          assetSaleCapitalGain: year.grantorCapGainsByEntity?.get(entityId) ?? 0,
         });
       } else {
         // Business branch: llc | s_corp | c_corp | partnership | foundation | other.

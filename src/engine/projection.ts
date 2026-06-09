@@ -5135,6 +5135,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountLedgers[acctId].rothValueEoY = rothValueMap[acctId] ?? 0;
     }
 
+    // Surface per-grantor-entity realized asset-sale cap gains so
+    // computeEntityCashFlow + the tax ledger can render them in the grantor
+    // trust's own section (with an offsetting pass-through). The gain itself is
+    // already taxed on the household 1040 via taxDetail.capitalGains; this is the
+    // display value. Independent of the grantor distribution pass — a pure
+    // grantor trust with no distribution policy still realizes (and shows) gains.
+    // Resolve ownership against the invariant accountById (sold accounts are gone
+    // from workingAccounts by now) and use the entity's CURRENT-year grantor status.
+    const grantorCapGainsByEntity = new Map<string, number>();
+    for (const item of saleResult.breakdown) {
+      if (item.capitalGain <= 0) continue;
+      const sold = accountById.get(item.accountId);
+      if (!sold) continue;
+      const owners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
+      for (const owner of owners) {
+        if (owner.kind !== "entity") continue;
+        if (!effectiveIsGrantor(owner.entityId, year)) continue;
+        grantorCapGainsByEntity.set(
+          owner.entityId,
+          (grantorCapGainsByEntity.get(owner.entityId) ?? 0) + item.capitalGain * owner.percent,
+        );
+      }
+    }
+
     years.push({
       year,
       ages,
@@ -5160,6 +5184,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ...(yearTrustTerminations.length > 0
         ? { trustTerminations: yearTrustTerminations }
         : {}),
+      ...(grantorCapGainsByEntity.size > 0 ? { grantorCapGainsByEntity } : {}),
       deductionBreakdown: deductionBreakdownResult,
       withdrawals,
       entityWithdrawals,

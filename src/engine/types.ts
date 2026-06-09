@@ -1411,6 +1411,12 @@ export interface ProjectionYear {
    *  with category: "expense" / "income") and CLT charity payments
    *  (read charitableOutflowDetail for those). */
   trustDistributionsByEntity?: Map<string, number>;
+  /** Per-grantor-entity realized asset-sale capital gain (net of selling costs,
+   *  before §121). The gain is taxed on the grantor's household 1040; this map
+   *  lets the entity cash-flow rollup + tax ledger surface it in the grantor
+   *  trust's own section with an offsetting pass-through. Populated only when
+   *  grantor trusts realized a gain this year. */
+  grantorCapGainsByEntity?: Map<string, number>;
   /** Per-entity cash-flow rollup. Keyed by entity id. Empty map if no
    *  entities exist or none have activity in this year. */
   entityCashFlow: Map<string, EntityCashFlowRow>;

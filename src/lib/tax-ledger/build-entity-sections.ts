@@ -30,18 +30,28 @@ function buildBusiness(row: Extract<EntityCashFlowRow, { kind: "business" }>): T
 }
 
 function buildTrust(row: Extract<EntityCashFlowRow, { kind: "trust" }>): TaxLedgerSection | null {
-  if (row.income === 0 && row.totalDistributions === 0 && row.expenses === 0) return null;
+  const capGain = row.assetSaleCapitalGain ?? 0;
+  if (row.income === 0 && row.totalDistributions === 0 && row.expenses === 0 && capGain === 0) return null;
   const rows: TaxLedgerRow[] = [];
   if (row.income !== 0) rows.push({ type: "Trust Income", description: row.entityName, character: "ordinary", account: null, amount: row.income, taxable: true });
   if (row.expenses !== 0) rows.push({ type: "Trust Expenses", description: row.entityName, character: "deduction", account: null, amount: -Math.abs(row.expenses), taxable: false });
 
   if (row.isGrantor) {
-    // Grantor trust: the grantor reports both the trust's income AND its
-    // deductions on their household 1040, so the trust is a pure conduit.
-    // Pass through the NET (income − expenses) so the section subtotals to 0,
-    // mirroring the pass-through business above.
-    const net = row.income - row.expenses;
-    rows.push({ type: "Pass-Thru to Grantor", description: "Taxed on the grantor's household 1040", character: "ordinary", account: null, amount: -net, taxable: false });
+    // Grantor trust: the grantor reports the trust's income, deductions, AND
+    // realized capital gains on their household 1040, so the trust is a pure
+    // conduit. Emit a per-character pass-through so the section subtotals to 0
+    // (mirroring the pass-through business above) while the household section
+    // carries the actual tax.
+    const ordinaryNet = row.income - row.expenses;
+    if (ordinaryNet !== 0) {
+      rows.push({ type: "Pass-Thru to Grantor", description: "Taxed on the grantor's household 1040", character: "ordinary", account: null, amount: -ordinaryNet, taxable: false });
+    }
+    if (capGain !== 0) {
+      // Gain is recognized in the trust but taxed on the grantor's 1040; the
+      // offsetting pass-through keeps it from being double-counted here.
+      rows.push({ type: "Capital Gain on Sale", description: "Long-term gain realized in the trust", character: "long_term_gain", account: null, amount: capGain, taxable: false });
+      rows.push({ type: "Pass-Thru to Grantor", description: "Capital gain taxed on the grantor's household 1040", character: "long_term_gain", account: null, amount: -capGain, taxable: false });
+    }
     return finalize(row.entityId, row.entityName, "trust", true, rows);
   }
 
