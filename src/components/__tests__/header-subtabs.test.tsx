@@ -40,7 +40,8 @@ describe("HeaderSubtabs", () => {
         "Income Tax",
         "Monte Carlo",
         "Timeline",
-        "Trusts",
+        "Entities",
+        "Stock Options",
       ]);
       expect(links.map((a) => a.getAttribute("href"))).toEqual([
         "/clients/c1/cashflow",
@@ -48,6 +49,7 @@ describe("HeaderSubtabs", () => {
         "/clients/c1/cashflow/monte-carlo",
         "/clients/c1/cashflow/timeline",
         "/clients/c1/cashflow/entities",
+        "/clients/c1/cashflow/stock-options",
       ]);
     });
 
