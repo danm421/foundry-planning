@@ -42,12 +42,16 @@ function birthYear(iso: string | null | undefined): number | null {
 }
 
 // A family member counts as a "child card" by descendant relationship. We can't
-// rely on the `role` column: the family-member form never sets it, so UI-entered
-// children land in the DB as role:"other". Match imported data (role:"child")
-// too, for completeness.
+// rely on the `role` column alone for children: the family-member form never sets
+// it, so UI-entered children land in the DB as role:"other". Match imported data
+// (role:"child") too, for completeness.
 const CHILD_RELATIONSHIPS = new Set(["child", "stepchild", "grandchild", "great_grandchild"]);
 
 function isChildMember(m: { role?: string | null; relationship?: string | null }): boolean {
+  // Household principals are person cards, never child cards — even though their
+  // `relationship` column commonly holds the schema default of "child" (some
+  // creation paths don't override it). The `role` column is authoritative here.
+  if (m.role === "client" || m.role === "spouse") return false;
   return m.role === "child" || (m.relationship != null && CHILD_RELATIONSHIPS.has(m.relationship));
 }
 

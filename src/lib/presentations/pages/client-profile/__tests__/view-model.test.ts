@@ -112,6 +112,23 @@ describe("buildClientProfileData — children", () => {
     expect(data.children.map((c) => c.name)).toEqual(["Emma Smith", "Noah Smith"]);
   });
 
+  it("never renders the household principals (role client/spouse) as children", () => {
+    // Household rows carry the schema default relationship:"child" unless a
+    // creation path overrides it. The `role` column is authoritative — client
+    // and spouse are person cards, never child cards.
+    const data = buildClientProfileData({
+      ...base,
+      clientData: clientData({}, {
+        familyMembers: [
+          { id: "c", role: "client", relationship: "child", firstName: "John", lastName: "Smith", dateOfBirth: "1968-03-12" },
+          { id: "s", role: "spouse", relationship: "child", firstName: "Jane", lastName: "Smith", dateOfBirth: "1970-07-04" },
+          { id: "1", role: "other", relationship: "child", firstName: "Emma", lastName: "Smith", dateOfBirth: "2013-01-01" },
+        ] as ClientData["familyMembers"],
+      }),
+    });
+    expect(data.children.map((c) => c.name)).toEqual(["Emma Smith"]);
+  });
+
   it("returns empty children when none present", () => {
     const data = buildClientProfileData({ ...base, clientData: clientData({}) });
     expect(data.children).toEqual([]);
