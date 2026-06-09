@@ -1,0 +1,2 @@
+CREATE TYPE "public"."premium_payer" AS ENUM('owner', 'client', 'spouse', 'both');--> statement-breakpoint
+ALTER TABLE "life_insurance_policies" ADD COLUMN "premium_payer" "premium_payer" DEFAULT 'owner' NOT NULL;

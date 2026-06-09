@@ -664,6 +664,11 @@ export interface LifeInsurancePolicy {
   costBasis: number;
   premiumAmount: number;
   premiumYears: number | null;
+  /** Who funds the premium. "owner" (default) = today's behavior (premium is the
+   *  owner's expense). "client" | "spouse" | "both" = the household funds it; when
+   *  the owner is a trust/entity or a non-principal individual, the premium is
+   *  modeled as a gift to the owner (see synthesizePremiumGifts). */
+  premiumPayer: "owner" | "client" | "spouse" | "both";
   policyType: "term" | "whole" | "universal" | "variable";
   termIssueYear: number | null;
   termLengthYears: number | null;

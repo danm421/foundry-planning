@@ -65,6 +65,7 @@ export async function loadPoliciesByAccountIds(
       costBasis: Number(p.costBasis),
       premiumAmount: Number(p.premiumAmount),
       premiumYears: p.premiumYears,
+      premiumPayer: p.premiumPayer,
       policyType: p.policyType,
       termIssueYear: p.termIssueYear,
       termLengthYears: p.termLengthYears,

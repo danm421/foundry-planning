@@ -138,6 +138,13 @@ export const cashValueGrowthModeEnum = pgEnum("cash_value_growth_mode", [
   "free_form",
 ]);
 
+export const premiumPayerEnum = pgEnum("premium_payer", [
+  "owner",
+  "client",
+  "spouse",
+  "both",
+]);
+
 export const scheduleModeEnum = pgEnum("li_schedule_mode", ["off", "scheduled"]);
 
 export const entityGrantorEnum = pgEnum("entity_grantor_enum", ["client", "spouse"]);
@@ -1634,6 +1641,7 @@ export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
   costBasis: decimal("cost_basis", { precision: 15, scale: 2 }).notNull().default("0"),
   premiumAmount: decimal("premium_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   premiumYears: integer("premium_years"),
+  premiumPayer: premiumPayerEnum("premium_payer").notNull().default("owner"),
   policyType: policyTypeEnum("policy_type").notNull(),
   termIssueYear: integer("term_issue_year"),
   termLengthYears: integer("term_length_years"),
