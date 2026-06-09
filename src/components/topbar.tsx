@@ -7,8 +7,11 @@ import BackButton from "./back-button";
 import Breadcrumb from "./breadcrumb";
 import { ThemeToggle } from "./theme-toggle";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
+import { ChevronRightIcon } from "./icons";
 
-type SubTab = { label: string; path: string };
+/** A `view` is the third tier: an alternate presentation within one sub-report. */
+type View = { label: string; path: string };
+type SubTab = { label: string; path: string; views?: ReadonlyArray<View> };
 
 const TABS: ReadonlyArray<{
   label: string;
@@ -31,7 +34,14 @@ const TABS: ReadonlyArray<{
     subTabs: [
       { label: "Cash Flow", path: "" },
       { label: "Income Tax", path: "/income-tax" },
-      { label: "Ledgers", path: "/ledgers" },
+      {
+        label: "Ledgers",
+        path: "/ledgers",
+        views: [
+          { label: "Asset Ledger", path: "/ledgers/asset-ledger" },
+          { label: "Tax Ledger", path: "/ledgers/tax-ledger" },
+        ],
+      },
       { label: "Monte Carlo", path: "/monte-carlo" },
       { label: "Timeline", path: "/timeline" },
       { label: "Entities", path: "/entities" },
@@ -122,6 +132,62 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
                       const subActive = sub.path
                         ? pathname === subHref || pathname.startsWith(subHref + "/")
                         : pathname === href;
+
+                      // Sub-reports with their own views get a nested flyout to the
+                      // right; the sub-report link itself stays navigable.
+                      if (sub.views) {
+                        const triggerClassName = subActive
+                          ? "flex items-center justify-between gap-3 px-3 py-1.5 text-[12px] font-medium text-accent bg-card-2"
+                          : "flex items-center justify-between gap-3 px-3 py-1.5 text-[12px] text-ink-2 hover:bg-card-2 hover:text-ink";
+                        return (
+                          <div key={subHref} className="group/view relative">
+                            <Link
+                              href={withScenario(subHref)}
+                              role="menuitem"
+                              aria-haspopup="menu"
+                              className={`${triggerClassName} whitespace-nowrap`}
+                              onClick={(e) => {
+                                setDismissedTab(tab.href);
+                                e.currentTarget.blur();
+                              }}
+                            >
+                              {sub.label}
+                              <ChevronRightIcon width={14} height={14} className="text-ink-3" />
+                            </Link>
+                            <div
+                              role="menu"
+                              aria-label={`${sub.label} views`}
+                              className="invisible absolute left-full top-0 z-30 pl-1 opacity-0 transition-opacity duration-100 group-hover/view:visible group-hover/view:opacity-100 group-focus-within/view:visible group-focus-within/view:opacity-100"
+                            >
+                              <div className="min-w-[150px] rounded-md border border-hair bg-paper py-1 shadow-lg">
+                                {sub.views.map((view) => {
+                                  const viewHref = `${href}${view.path}`;
+                                  const viewActive =
+                                    pathname === viewHref || pathname.startsWith(viewHref + "/");
+                                  const viewClassName = viewActive
+                                    ? "block px-3 py-1.5 text-[12px] font-medium text-accent bg-card-2"
+                                    : "block px-3 py-1.5 text-[12px] text-ink-2 hover:bg-card-2 hover:text-ink";
+                                  return (
+                                    <Link
+                                      key={viewHref}
+                                      href={withScenario(viewHref)}
+                                      role="menuitem"
+                                      className={`${viewClassName} whitespace-nowrap`}
+                                      onClick={(e) => {
+                                        setDismissedTab(tab.href);
+                                        e.currentTarget.blur();
+                                      }}
+                                    >
+                                      {view.label}
+                                    </Link>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       const subClassName = subActive
                         ? "block px-3 py-1.5 text-[12px] font-medium text-accent bg-card-2"
                         : "block px-3 py-1.5 text-[12px] text-ink-2 hover:bg-card-2 hover:text-ink";

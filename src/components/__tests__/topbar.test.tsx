@@ -5,10 +5,12 @@ import { render } from "@testing-library/react";
 vi.mock("next/navigation", () => ({
   usePathname: vi.fn(),
   useSearchParams: vi.fn(() => new URLSearchParams()),
+  useRouter: vi.fn(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() })),
 }));
 
 import { usePathname, useSearchParams } from "next/navigation";
 import Topbar from "../topbar";
+import { BackNavProvider } from "../back-nav-provider";
 
 beforeEach(() => {
   vi.mocked(useSearchParams).mockReturnValue(
@@ -99,5 +101,38 @@ describe("Topbar", () => {
     const menus = container.querySelectorAll("[role='menu']");
     // Assets, Cash Flow, Analysis, Estate Planning each render a sub-tab menu.
     expect(menus.length).toBe(4);
+  });
+
+  it("exposes a sub-report's views in a nested flyout (Ledgers → Asset/Tax Ledger)", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/cashflow/ledgers/asset-ledger");
+    // Wrapped in BackNavProvider so BackButton's useBackNav resolves; the rest of
+    // this suite predates that provider and is independently stale.
+    const { container } = render(
+      <BackNavProvider>
+        <Topbar />
+      </BackNavProvider>,
+    );
+    const byText = (label: string) =>
+      Array.from(container.querySelectorAll("a")).find((a) => a.textContent?.trim() === label);
+
+    // The Ledgers sub-report stays navigable and advertises its flyout.
+    const ledgers = byText("Ledgers");
+    expect(ledgers?.getAttribute("aria-haspopup")).toBe("menu");
+    expect(ledgers?.getAttribute("href")).toContain("/clients/c1/cashflow/ledgers");
+    expect(ledgers?.className).toContain("text-accent"); // active on a child route
+
+    // Both views are present with their nested hrefs.
+    expect(byText("Asset Ledger")?.getAttribute("href")).toContain(
+      "/clients/c1/cashflow/ledgers/asset-ledger",
+    );
+    expect(byText("Tax Ledger")?.getAttribute("href")).toContain(
+      "/clients/c1/cashflow/ledgers/tax-ledger",
+    );
+
+    // The active view is highlighted; the inactive one is not.
+    expect(byText("Asset Ledger")?.className).toContain("text-accent");
+    expect(byText("Tax Ledger")?.className).not.toContain("text-accent");
+
+    expect(container.querySelector("[role='menu'][aria-label='Ledgers views']")).not.toBeNull();
   });
 });
