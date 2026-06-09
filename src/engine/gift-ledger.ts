@@ -165,19 +165,29 @@ function sumGiftEvents(
   let total = 0;
   for (const ev of input.giftEvents) {
     if (ev.year !== year) continue;
-    if (ev.grantor !== grantor) continue;
     if (isCharityRecipient(ev as { recipientExternalBeneficiaryId?: string }, input.externalBeneficiaryKindById)) continue;
 
     if (ev.kind === "cash") {
       // One-time cash gifts come through legacy `gifts` array; only series fan-outs here.
       if (ev.seriesId == null) continue;
-      total += Math.max(0, ev.amount - exclusion);
-    } else if (ev.kind === "asset") {
+      if (ev.grantor === grantor) {
+        total += Math.max(0, ev.amount - exclusion);
+      } else if (ev.grantor === "joint") {
+        // §2513: half attributed to each spouse, each netting their own exclusion.
+        total += Math.max(0, ev.amount / 2 - exclusion);
+      }
+      continue;
+    }
+
+    // asset / liability / business_interest events are never split across spouses.
+    if (ev.grantor !== grantor) continue;
+    if (ev.kind === "asset") {
       total += assetGiftValue(ev, input.accountValueAtYear);
     } else if (ev.kind === "business_interest") {
       // No annual exclusion — Crummey applies to cash only.
       total += businessInterestGiftValue(ev, input.entityValueAtYear);
     }
+    // `liability` events contribute 0 (debt assumption is not a gift of value).
   }
   return total;
 }
