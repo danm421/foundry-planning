@@ -11,15 +11,69 @@ function isEmpty(ledger: AccountLedger): boolean {
 }
 
 function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext): AssetAccountBlock {
-  const rows: AssetRow[] = ledger.entries.map((e) => ({
+  const basisBoY = ledger.basisBoY ?? 0;
+  const basisEoY = ledger.basisEoY ?? 0;
+
+  const entryRows: AssetRow[] = ledger.entries.map((e) => ({
     category: e.category,
     label: e.label,
     amount: e.amount,
+    basis: e.basis ?? 0,
+    counterpartyName: e.counterpartyId
+      ? (ctx.accountNames[e.counterpartyId] ?? ctx.entityNames[e.counterpartyId])
+      : undefined,
     sourceId: e.sourceId,
     internal: e.isInternalTransfer ?? false,
   }));
-  const sumRows = rows.reduce((s, r) => s + r.amount, 0);
-  const residual = ledger.endingValue - ledger.beginningValue - sumRows;
+
+  const boyRow: AssetRow = {
+    category: "growth",
+    label: "Beginning of Year",
+    amount: ledger.beginningValue,
+    basis: basisBoY,
+    bookend: true,
+    internal: false,
+  };
+  const eoyRow: AssetRow = {
+    category: "growth",
+    label: "End of Year",
+    amount: ledger.endingValue,
+    basis: basisEoY,
+    bookend: true,
+    internal: false,
+  };
+
+  const rows: AssetRow[] = [
+    boyRow,
+    ...(ledger.rothValueBoY !== undefined
+      ? [{
+          category: "growth" as const,
+          label: "Beginning of Year - Roth",
+          amount: ledger.rothValueBoY,
+          basis: 0,
+          bookend: true,
+          internal: false,
+        }]
+      : []),
+    ...entryRows,
+    eoyRow,
+    ...(ledger.rothValueEoY !== undefined
+      ? [{
+          category: "growth" as const,
+          label: "End of Year - Roth",
+          amount: ledger.rothValueEoY,
+          basis: 0,
+          bookend: true,
+          internal: false,
+        }]
+      : []),
+  ];
+
+  const sumEntries = entryRows.reduce((s, r) => s + r.amount, 0);
+  const residual = ledger.endingValue - ledger.beginningValue - sumEntries;
+  const sumEntryBasis = entryRows.reduce((s, r) => s + r.basis, 0);
+  const basisResidual = basisEoY - basisBoY - sumEntryBasis;
+
   return {
     id,
     name: ctx.accountNames[id] ?? id,
@@ -36,6 +90,11 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
       internalContributions: ledger.internalContributions,
       internalDistributions: ledger.internalDistributions,
     },
+    basisBoY,
+    basisEoY,
+    rothValueBoY: ledger.rothValueBoY,
+    rothValueEoY: ledger.rothValueEoY,
+    basisResidual,
     rows,
     residual,
     reconciles: Math.abs(residual) <= RECONCILE_TOLERANCE,

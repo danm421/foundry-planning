@@ -10,6 +10,12 @@ export interface AssetRow {
   label: string;
   /** Signed: + inflow, − outflow. */
   amount: number;
+  /** Signed basis delta (0 when the engine left it undefined). */
+  basis: number;
+  /** Resolved counterparty name for the "Other Account" column, if any. */
+  counterpartyName?: string;
+  /** True for synthesized Beginning/End-of-Year bookend rows. */
+  bookend?: boolean;
   sourceId?: string;
   /** True for the source/target legs of pure portfolio-to-portfolio transfers. */
   internal: boolean;
@@ -32,11 +38,17 @@ export interface AssetAccountBlock {
     internalContributions: number;
     internalDistributions: number;
   };
-  /** Entries in the order the engine applied them. */
+  basisBoY: number;
+  basisEoY: number;
+  rothValueBoY?: number;
+  rothValueEoY?: number;
+  /** basisEoY − basisBoY − Σ(non-bookend row.basis). ~0 once all engine sites are populated. */
+  basisResidual: number;
+  /** Entries in the order the engine applied them, plus bookend rows prepended/appended. */
   rows: AssetRow[];
   /** |residual| ≤ $1. */
   reconciles: boolean;
-  /** endingValue − beginningValue − Σ rows.amount. ≈0 normally; nonzero = engine bug. */
+  /** endingValue − beginningValue − Σ(non-bookend rows.amount). ≈0 normally; nonzero = engine bug. */
   residual: number;
 }
 
