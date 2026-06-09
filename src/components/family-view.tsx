@@ -87,18 +87,27 @@ export interface Entity {
 export type Gift = {
   id: string;
   year: number;
-  /** null for in-kind (asset) gifts; present for cash gifts */
-  amount: number | null;
+  amount: number | null; // null for in-kind asset gifts
   grantor: "client" | "spouse" | "joint";
   recipientEntityId: string | null;
   recipientFamilyMemberId: string | null;
   recipientExternalBeneficiaryId: string | null;
-  /** Source account for in-kind asset gifts */
-  accountId?: string | null;
-  /** Fractional share of the account gifted (in-kind) */
-  percent?: number | null;
+  accountId: string | null; // set for in-kind asset gifts
+  percent: number | null; // fraction 0..1, set for in-kind asset gifts
   useCrummeyPowers: boolean;
   notes: string | null;
+};
+
+export type GiftSeriesLite = {
+  id: string;
+  grantor: "client" | "spouse" | "joint";
+  recipientEntityId: string;
+  startYear: number;
+  endYear: number;
+  annualAmount: number;
+  amountMode: "fixed" | "annual_exclusion";
+  inflationAdjust: boolean;
+  useCrummeyPowers: boolean;
 };
 
 export type ExternalBeneficiary = {
@@ -194,6 +203,9 @@ interface FamilyViewProps {
   initialAccounts: AccountLite[];
   initialDesignations: Designation[];
   initialGifts: Gift[];
+  initialGiftSeries: GiftSeriesLite[];
+  annualExclusionByYear: Record<number, number>;
+  scenarioId: string;
   /** Optional: full asset data for the trust Assets tab */
   initialFullAccounts?: AssetsTabAccount[];
   initialFullLiabilities?: AssetsTabLiability[];
@@ -292,6 +304,9 @@ export default function FamilyView({
   initialAccounts,
   initialDesignations,
   initialGifts,
+  initialGiftSeries,
+  annualExclusionByYear,
+  scenarioId,
   initialFullAccounts,
   initialFullLiabilities,
   initialFullIncomes,
@@ -309,6 +324,7 @@ export default function FamilyView({
   const [accounts] = useState<AccountLite[]>(initialAccounts);
   const [designations] = useState<Designation[]>(initialDesignations);
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
+  const [giftSeriesState, setGiftSeriesState] = useState<GiftSeriesLite[]>(initialGiftSeries);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
@@ -983,6 +999,8 @@ function GiftRowForm(props: {
         recipientEntityId: row.recipientEntityId ?? null,
         recipientFamilyMemberId: row.recipientFamilyMemberId ?? null,
         recipientExternalBeneficiaryId: row.recipientExternalBeneficiaryId ?? null,
+        accountId: row.accountId ?? null,
+        percent: row.percent ?? null,
         useCrummeyPowers: row.useCrummeyPowers,
         notes: row.notes ?? null,
       });
