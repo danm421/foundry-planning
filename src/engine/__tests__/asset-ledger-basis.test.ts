@@ -349,10 +349,23 @@ describe("asset-ledger per-entry basis", () => {
   //  • Death-event step-up lands on the next year's basisBoY (no entry), so the
   //    step-up boundary year won't reconcile via entries by design.
 
+  // Per-entry basis reconciliation applies to accounts that ACCRUE basis through
+  // discrete entry deltas (taxable: growth-realization + withdrawals; retirement:
+  // contributions + Roth legs). Cash accounts are different: basis ≡ value by
+  // definition (every dollar in/out is basis 1:1), stamped from the balance at the
+  // bookends — not summed from entries. They're verified by the dedicated
+  // "cash accounts: basis tracks value" test below, and skipped here. (In the
+  // fixture, cash growth carries no entry basis because the sample cash accounts
+  // have no realization mix; production cash resolves to pctOrdinaryIncome:1.)
+  const CASH_ACCOUNT_IDS = new Set(
+    sampleAccounts.filter((a) => a.category === "cash").map((a) => a.id),
+  );
+
   function assertBasisReconciles(years: ReturnType<typeof runProjection>) {
     let asserted = 0;
     for (const y of years) {
       for (const [id, ledger] of Object.entries(y.accountLedgers)) {
+        if (CASH_ACCOUNT_IDS.has(id)) continue;
         if (ledger.basisBoY === undefined || ledger.basisEoY === undefined) continue;
         const sum = ledger.entries.reduce((s, e) => s + (e.basis ?? 0), 0);
         expect(
@@ -371,6 +384,40 @@ describe("asset-ledger per-entry basis", () => {
     // Guard against a vacuous pass: the default fixture tracks basis on 5
     // accounts across 30 years (≈150 account-years).
     expect(asserted).toBeGreaterThan(100);
+  });
+
+  // The base fixture above has NO default checking, so it never exercises a cash
+  // account carrying income/expense/withdrawal activity. A real client always
+  // has one — and cash basis is special: cash flows never move basisMap, so the
+  // basis must mirror the BALANCE (cash basis ≡ value), not the (frozen) basisMap.
+  // Without that, every client's checking showed a stale End-of-Year basis and
+  // tripped the reconcile warning. This test injects a default checking so the
+  // cash-basis rule is non-vacuously asserted.
+  it("cash accounts: basis tracks value, and the basis ledger is as consistent as the amount ledger", () => {
+    const years = runProjection(
+      buildClientData({ accounts: [...sampleAccounts, householdChecking] }),
+    );
+    let activeYears = 0;
+    for (const y of years) {
+      const l = y.accountLedgers["acct-checking"];
+      if (!l) continue;
+      // Cash has no cost basis distinct from its balance.
+      expect(l.basisBoY, `basisBoY@${y.year}`).toBeCloseTo(l.beginningValue, 0);
+      expect(l.basisEoY, `basisEoY@${y.year}`).toBeCloseTo(l.endingValue, 0);
+      // The basis ledger introduces no drift of its own: its residual must equal
+      // the (pre-existing, gross-vs-net) amount residual to the dollar.
+      const sumAmt = l.entries.reduce((s, e) => s + e.amount, 0);
+      const sumBasis = l.entries.reduce((s, e) => s + (e.basis ?? 0), 0);
+      const amtResidual = l.endingValue - l.beginningValue - sumAmt;
+      const basisResidual = (l.basisEoY ?? 0) - (l.basisBoY ?? 0) - sumBasis;
+      expect(
+        Math.abs(basisResidual - amtResidual),
+        `basis/amount residual parity@${y.year}`,
+      ).toBeLessThanOrEqual(TOL);
+      if (l.entries.length > 0) activeYears++;
+    }
+    // Non-vacuous: checking actually carried activity across many years.
+    expect(activeYears).toBeGreaterThan(5);
   });
 
   it("basis reconciles across a multi-year Roth-conversion fixture (exercises both legs)", () => {

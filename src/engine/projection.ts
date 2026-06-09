@@ -873,7 +873,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         fees: 0,
         endingValue: beginningValue,
         entries: [],
-        basisBoY: basisMap[acct.id] ?? acct.basis,
+        // Cash basis ≡ value: cash flows never move basisMap, so reading it here
+        // would stamp a stale BoY basis. Mirror the balance instead (see the EoY
+        // stamp). Non-cash accounts keep their tracked cost basis.
+        basisBoY: acct.category === "cash" ? beginningValue : (basisMap[acct.id] ?? acct.basis),
         rothValueBoY: rothValueMap[acct.id] ?? acct.rothValue ?? 0,
       };
     }
@@ -1035,7 +1038,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (!acctId || amount === 0) return;
       cashDelta[acctId] = (cashDelta[acctId] ?? 0) + amount;
       if (entry) {
-        (pendingEntries[acctId] ??= []).push({ ...entry, amount });
+        // Cash accounts carry no cost basis distinct from their balance — every
+        // dollar in/out moves basis 1:1. Default `basis` to `amount` for cash
+        // targets so cash ledgers reconcile by construction (asset-ledger basis
+        // column + per-account basis reconciliation). Callers may still pass an
+        // explicit basis; non-cash targets are left untouched.
+        const basis =
+          entry.basis ??
+          (accountById.get(acctId)?.category === "cash" ? amount : undefined);
+        (pendingEntries[acctId] ??= []).push({ ...entry, amount, basis });
       }
     };
 
@@ -5112,7 +5123,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // event mutations to basisMap happen *after* this push and land on the
     // next year's BoY, which is the right semantics for the drill-down view.
     for (const acctId of Object.keys(accountLedgers)) {
-      accountLedgers[acctId].basisEoY = basisMap[acctId] ?? 0;
+      // Cash basis ≡ value (basisMap isn't moved by cash flows): stamp the
+      // ending balance so the basis column is correct and the ledger reconciles.
+      accountLedgers[acctId].basisEoY =
+        accountById.get(acctId)?.category === "cash"
+          ? accountLedgers[acctId].endingValue
+          : (basisMap[acctId] ?? 0);
       accountLedgers[acctId].rothValueEoY = rothValueMap[acctId] ?? 0;
     }
 
