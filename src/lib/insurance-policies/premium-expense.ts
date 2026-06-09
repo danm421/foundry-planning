@@ -44,6 +44,97 @@ export interface SynthesizePremiumsInput {
  * Then capped at the insured's retirement year when the policy's
  * `endsAtInsuredRetirement` flag is set (term-only).
  */
+/** The resolved premium billing window for one policy. `mode` distinguishes the
+ *  scalar path (flat annualAmount over [startYear, endYear]) from the scheduled
+ *  path (per-year overrides). Returns null when the policy bills no premium. */
+export interface ResolvedPremiumSchedule {
+  startYear: number;
+  endYear: number;
+  mode: "scalar" | "scheduled";
+  annualAmount: number; // scalar only (0 for scheduled)
+  overrides: Record<number, number>; // scheduled only ({} for scalar)
+}
+
+export function resolvePremiumSchedule(
+  acct: Account,
+  input: SynthesizePremiumsInput,
+): ResolvedPremiumSchedule | null {
+  const policy = acct.lifeInsurance;
+  if (!policy) return null;
+
+  // Scheduled premiums short-circuit the scalar path: the per-year amount
+  // comes from the schedule's `premiumAmount` column, surfaced as
+  // `scheduleOverrides` (amount per year, 0 outside the range).
+  if (policy.premiumScheduleMode === "scheduled") {
+    const overrides: Record<number, number> = {};
+    for (const row of policy.cashValueSchedule) {
+      if (row.premiumAmount != null) overrides[row.year] = row.premiumAmount;
+    }
+    const years = Object.keys(overrides).map(Number);
+    if (years.length === 0) return null;
+    const startYear = Math.max(input.currentYear, Math.min(...years));
+    const endYear = Math.max(...years);
+    if (endYear < startYear) return null;
+    return { startYear, endYear, mode: "scheduled", annualAmount: 0, overrides };
+  }
+
+  if (policy.premiumAmount <= 0) return null;
+
+  const issueYear = policy.termIssueYear ?? input.currentYear;
+  const startYear =
+    issueYear < input.currentYear ? input.currentYear : issueYear;
+
+  let endYear: number;
+  if (policy.premiumYears != null) {
+    endYear = startYear + policy.premiumYears - 1;
+  } else if (policy.policyType === "term") {
+    endYear =
+      policy.termIssueYear != null && policy.termLengthYears != null
+        ? policy.termIssueYear + policy.termLengthYears - 1
+        : startYear + 20 - 1; // 20-year fallback for malformed term rows
+  } else {
+    // Permanent, no paid-up horizon → pay until insured's lifespan.
+    endYear = resolvePermanentLifespanYear(acct, input);
+  }
+
+  // endsAtInsuredRetirement is term-only (validated in the policy schema)
+  // and means the policy stops at the insured's retirement year — cap
+  // billing there even if premiumYears or the term-length fallback would
+  // otherwise outlive retirement.
+  if (policy.endsAtInsuredRetirement) {
+    endYear = Math.min(endYear, resolveRetirementEndYear(acct, input));
+  }
+
+  // Guard against nonsensical ranges (e.g., endYear < startYear from a
+  // back-dated term policy). No premium window in that case.
+  if (endYear < startYear) return null;
+
+  return {
+    startYear,
+    endYear,
+    mode: "scalar",
+    annualAmount: policy.premiumAmount,
+    overrides: {},
+  };
+}
+
+/** Per-year premium amount for the resolved window. Scheduled years are clamped
+ *  to [startYear, endYear] so the gift stream matches what the expense bills. */
+export function premiumAmountsByYear(
+  r: ResolvedPremiumSchedule,
+): Map<number, number> {
+  const out = new Map<number, number>();
+  if (r.mode === "scheduled") {
+    for (const [y, amt] of Object.entries(r.overrides)) {
+      const year = Number(y);
+      if (year >= r.startYear && year <= r.endYear && amt > 0) out.set(year, amt);
+    }
+  } else {
+    for (let y = r.startYear; y <= r.endYear; y++) out.set(y, r.annualAmount);
+  }
+  return out;
+}
+
 export function synthesizePremiumExpenses(
   input: SynthesizePremiumsInput,
 ): Expense[] {
@@ -51,76 +142,20 @@ export function synthesizePremiumExpenses(
 
   for (const acct of input.accounts) {
     if (acct.category !== "life_insurance" || !acct.lifeInsurance) continue;
-    const policy = acct.lifeInsurance;
-
-    // Scheduled premiums short-circuit the scalar path: the per-year amount
-    // comes from the schedule's `premiumAmount` column, surfaced as
-    // `scheduleOverrides` (amount per year, 0 outside the range).
-    if (policy.premiumScheduleMode === "scheduled") {
-      const overrides: Record<number, number> = {};
-      for (const row of policy.cashValueSchedule) {
-        if (row.premiumAmount != null) overrides[row.year] = row.premiumAmount;
-      }
-      const years = Object.keys(overrides).map(Number);
-      if (years.length === 0) continue;
-      const startYear = Math.max(input.currentYear, Math.min(...years));
-      const endYear = Math.max(...years);
-      if (endYear < startYear) continue;
-      out.push({
-        id: `premium-${acct.id}`,
-        type: "insurance",
-        name: `${acct.name} premium`,
-        annualAmount: 0,
-        startYear,
-        endYear,
-        growthRate: 0,
-        scheduleOverrides: overrides,
-        ownerEntityId: controllingEntity(acct) ?? undefined,
-        source: "policy",
-        sourcePolicyAccountId: acct.id,
-      });
-      continue;
-    }
-
-    if (policy.premiumAmount <= 0) continue;
-
-    const issueYear = policy.termIssueYear ?? input.currentYear;
-    const startYear =
-      issueYear < input.currentYear ? input.currentYear : issueYear;
-
-    let endYear: number;
-    if (policy.premiumYears != null) {
-      endYear = startYear + policy.premiumYears - 1;
-    } else if (policy.policyType === "term") {
-      endYear =
-        policy.termIssueYear != null && policy.termLengthYears != null
-          ? policy.termIssueYear + policy.termLengthYears - 1
-          : startYear + 20 - 1; // 20-year fallback for malformed term rows
-    } else {
-      // Permanent, no paid-up horizon → pay until insured's lifespan.
-      endYear = resolvePermanentLifespanYear(acct, input);
-    }
-
-    // endsAtInsuredRetirement is term-only (validated in the policy schema)
-    // and means the policy stops at the insured's retirement year — cap
-    // billing there even if premiumYears or the term-length fallback would
-    // otherwise outlive retirement.
-    if (policy.endsAtInsuredRetirement) {
-      endYear = Math.min(endYear, resolveRetirementEndYear(acct, input));
-    }
-
-    // Guard against nonsensical ranges (e.g., endYear < startYear from a
-    // back-dated term policy). Skip emitting an expense row in that case.
-    if (endYear < startYear) continue;
+    const resolved = resolvePremiumSchedule(acct, input);
+    if (!resolved) continue;
 
     out.push({
       id: `premium-${acct.id}`,
       type: "insurance",
       name: `${acct.name} premium`,
-      annualAmount: policy.premiumAmount,
-      startYear,
-      endYear,
+      annualAmount: resolved.annualAmount,
+      startYear: resolved.startYear,
+      endYear: resolved.endYear,
       growthRate: 0,
+      ...(resolved.mode === "scheduled"
+        ? { scheduleOverrides: resolved.overrides }
+        : {}),
       ownerEntityId: controllingEntity(acct) ?? undefined,
       source: "policy",
       sourcePolicyAccountId: acct.id,
