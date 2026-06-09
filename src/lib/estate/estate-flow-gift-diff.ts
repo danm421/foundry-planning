@@ -13,7 +13,7 @@ export interface GiftChange {
  *
  * CONTRACT: `eq` uses `JSON.stringify`, which is both key-order- and
  * key-presence-sensitive. Any code that constructs an `EstateFlowGift` for
- * comparison (notably EstateFlowGiftFields' draft assembly) MUST either:
+ * comparison (notably GiftForm's draft assembly) MUST either:
  *   a) spread an existing gift object — `{ ...gift, field: x }` — so that key
  *      order is preserved, or
  *   b) match the exact key order produced by `giftRowToDraft` /

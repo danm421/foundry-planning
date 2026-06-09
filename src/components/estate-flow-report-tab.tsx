@@ -34,6 +34,7 @@ export interface EstateFlowReportTabProps {
   ownerNames: { clientName: string; spouseName: string | null };
   planStartYear: number;
   planEndYear: number;
+  annualExclusionByYear: Record<number, number>;
   applyEdit: (fn: (d: ClientData) => ClientData) => void;
   setWorkingGifts: React.Dispatch<React.SetStateAction<EstateFlowGift[]>>;
 }
@@ -48,6 +49,7 @@ export function EstateFlowReportTab({
   ownerNames,
   planStartYear,
   planEndYear,
+  annualExclusionByYear,
   applyEdit,
   setWorkingGifts,
 }: EstateFlowReportTabProps) {
@@ -270,6 +272,7 @@ export function EstateFlowReportTab({
           clientData={working}
           ledger={projection.giftLedger}
           taxInflationRate={taxInflationRate}
+          annualExclusionByYear={annualExclusionByYear}
           onApply={(owners) => {
             applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
             setOwnerDialogId(null);
@@ -321,6 +324,7 @@ export function EstateFlowReportTab({
           clientData={working}
           ledger={projection.giftLedger}
           taxInflationRate={taxInflationRate}
+          annualExclusionByYear={annualExclusionByYear}
           editing={null}
           onApply={(draft) => {
             setWorkingGifts((cur) => addGift(cur, draft));
@@ -338,6 +342,7 @@ export function EstateFlowReportTab({
           clientData={working}
           ledger={projection.giftLedger}
           taxInflationRate={taxInflationRate}
+          annualExclusionByYear={annualExclusionByYear}
           editing={editingGift}
           onApply={(draft) => {
             setWorkingGifts((cur) => updateGift(cur, draft));

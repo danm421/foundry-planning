@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import DialogShell from "@/components/dialog-shell";
-import { EstateFlowGiftFields } from "@/components/estate-flow-gift-fields";
+import GiftForm from "@/components/gift-form";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -15,6 +15,8 @@ interface EstateFlowAddGiftDialogProps {
   ledger: GiftLedgerYear[];
   /** Plan tax-inflation rate, threaded to the gift-fields warning preview. */
   taxInflationRate: number;
+  /** Dense year→annual-exclusion map for the gift form's max-exclusion preview. */
+  annualExclusionByYear: Record<number, number>;
   /** Existing gift to edit; null for the standalone add path. */
   editing: EstateFlowGift | null;
   /** Called with the assembled draft when the advisor confirms. */
@@ -27,7 +29,7 @@ interface EstateFlowAddGiftDialogProps {
 // ── Component ────────────────────────────────────────────────────────────────
 
 /**
- * Standalone "Add a gift" / "Edit gift" dialog. Wraps `EstateFlowGiftFields`
+ * Standalone "Add a gift" / "Edit gift" dialog. Wraps the shared `GiftForm`
  * in the shared `DialogShell`. The source account is always null here — the
  * column-1 asset-sourced gift path lives in EstateFlowChangeOwnerDialog.
  */
@@ -35,6 +37,7 @@ export default function EstateFlowAddGiftDialog({
   clientData,
   ledger,
   taxInflationRate,
+  annualExclusionByYear,
   editing,
   onApply,
   onDelete,
@@ -68,12 +71,30 @@ export default function EstateFlowAddGiftDialog({
       }
     >
       {/* Keyed on the gift id (or "new") so the form remounts and re-seeds its
-          state per gift — honours the EstateFlowGiftFields remount contract. */}
-      <EstateFlowGiftFields
+          state per gift — honours the GiftForm remount contract. */}
+      <GiftForm
         key={editing?.id ?? "new"}
-        clientData={clientData}
-        sourceAccount={null}
+        recipients={{
+          trusts: (clientData.entities ?? [])
+            .filter((e) => e.entityType === "trust" && e.isIrrevocable)
+            .map((e) => ({ id: e.id, name: e.name ?? "Trust" })),
+          familyMembers: (clientData.familyMembers ?? []).map((m) => ({
+            id: m.id,
+            firstName: m.firstName,
+            lastName: m.lastName,
+            roleLabel: m.role,
+          })),
+          externals: (clientData.externalBeneficiaries ?? []).map((x) => ({
+            id: x.id,
+            name: x.name,
+            kindLabel: x.kind,
+          })),
+        }}
+        accounts={(clientData.accounts ?? []).map((a) => ({ id: a.id, name: a.name }))}
+        hasSpouse={clientData.client.spouseDob != null}
+        annualExclusionByYear={annualExclusionByYear}
         editing={editing}
+        sourceAccount={null}
         ledger={ledger}
         taxInflationRate={taxInflationRate}
         onChange={setDraft}
