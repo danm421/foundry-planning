@@ -39,7 +39,6 @@ export interface GiftLedgerInput {
    *  beneficiary counts to the unified gift-tax treatment. */
   entities: EntitySummary[];
   externalBeneficiaries?: Array<{ id: string; kind: "charity" | "individual" }>;
-  externalBeneficiaryKindById: Map<string, "charity" | "individual">;
   annualExclusionsByYear: Record<number, number>;
   taxInflationRate: number;
   accountValueAtYear: (accountId: string, year: number) => number;

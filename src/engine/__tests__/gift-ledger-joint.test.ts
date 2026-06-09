@@ -1,6 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { computeGiftLedger } from "../gift-ledger";
-import type { GiftEvent } from "../types";
+import type { EntitySummary, GiftEvent } from "../types";
+
+// 1-beneficiary Crummey trust: each split half-gift earns exactly ONE annual
+// exclusion (amount − exclusion × 1).
+const crummeyTrust1 = {
+  id: "trust-1",
+  name: "ILIT",
+  entityType: "trust",
+  isIrrevocable: true,
+  crummeyPowers: true,
+  beneficiaries: [
+    { id: "b1", tier: "primary", percentage: 100, familyMemberId: "k1", sortOrder: 0 },
+  ],
+} as unknown as EntitySummary;
 
 describe("gift-ledger — joint series split", () => {
   it("splits a joint series cash gift across both grantors (nets to 0 at 2× exclusion)", () => {
@@ -21,7 +34,7 @@ describe("gift-ledger — joint series split", () => {
       priorTaxableGifts: { client: 0, spouse: 0 },
       gifts: [],
       giftEvents: [ev],
-      externalBeneficiaryKindById: new Map(),
+      entities: [crummeyTrust1],
       annualExclusionsByYear: { 2026: exclusion },
       taxInflationRate: 0,
       accountValueAtYear: () => 0,
@@ -50,7 +63,7 @@ describe("gift-ledger — joint series split", () => {
       priorTaxableGifts: { client: 0, spouse: 0 },
       gifts: [],
       giftEvents: [ev],
-      externalBeneficiaryKindById: new Map(),
+      entities: [crummeyTrust1],
       annualExclusionsByYear: { 2026: exclusion },
       taxInflationRate: 0,
       accountValueAtYear: () => 0,

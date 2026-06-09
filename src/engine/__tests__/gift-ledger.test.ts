@@ -1,8 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { computeGiftLedger } from "../gift-ledger";
-import type { Gift, GiftEvent } from "../types";
+import type { EntitySummary, Gift, GiftEvent } from "../types";
 
 const noAccountValue = () => 0;
+
+// Irrevocable trust "trust-1" — the recipient for all asset/business GiftEvents
+// below. No Crummey beneficiaries: asset/business transfers are cash-only for
+// Crummey purposes, so every gift to it consumes full lifetime exemption.
+const trustT1 = {
+  id: "trust-1",
+  name: "Dynasty Trust",
+  entityType: "trust",
+  isIrrevocable: true,
+  crummeyPowers: false,
+  beneficiaries: [],
+} as unknown as EntitySummary;
 
 const baseInput = {
   planStartYear: 2026,
@@ -12,7 +24,6 @@ const baseInput = {
   gifts: [] as Gift[],
   giftEvents: [] as GiftEvent[],
   entities: [],
-  externalBeneficiaryKindById: new Map<string, "charity" | "individual">(),
   annualExclusionsByYear: { 2026: 19_000, 2027: 19_000, 2028: 20_000, 2029: 20_000, 2030: 20_000 },
   taxInflationRate: 0.025,
   accountValueAtYear: noAccountValue,
@@ -120,7 +131,7 @@ describe("computeGiftLedger", () => {
           recipientExternalBeneficiaryId: "ext-charity-1",
         }),
       ],
-      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
+      externalBeneficiaries: [{ id: "ext-charity-1", kind: "charity" }],
     });
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
     expect(ledger[0].taxableGiftsGiven).toBe(0);
@@ -146,6 +157,7 @@ describe("computeGiftLedger", () => {
   it("adds asset GiftEvent's gift-year value (no AE on asset transfers)", () => {
     const ledger = computeGiftLedger({
       ...baseInput,
+      entities: [trustT1],
       giftEvents: [assetEvent({ year: 2026, accountId: "acct-1", percent: 0.5 })],
       accountValueAtYear: (id, year) => (id === "acct-1" && year === 2026 ? 600_000 : 0),
     });
@@ -156,6 +168,7 @@ describe("computeGiftLedger", () => {
   it("uses amountOverride for asset GiftEvent when set", () => {
     const ledger = computeGiftLedger({
       ...baseInput,
+      entities: [trustT1],
       giftEvents: [assetEvent({ year: 2026, amountOverride: 250_000, percent: 1 })],
       // Override should win even though accountValueAtYear would return a different number.
       accountValueAtYear: () => 999_999,
@@ -163,50 +176,66 @@ describe("computeGiftLedger", () => {
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(250_000);
   });
 
-  it("zeros out charitable asset GiftEvents", () => {
+  it("asset GiftEvent to a Crummey trust still consumes full lifetime (Crummey is cash-only)", () => {
+    // Asset transfers never qualify for the annual exclusion even when the
+    // receiving trust has Crummey beneficiaries — withdrawal powers only apply
+    // to contributed cash. So a $400k asset gift is taxable in full.
+    const crummeyTrust = {
+      id: "trust-1",
+      name: "ILIT",
+      entityType: "trust",
+      isIrrevocable: true,
+      crummeyPowers: true,
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, familyMemberId: "k1", sortOrder: 0 },
+      ],
+    } as unknown as EntitySummary;
     const ledger = computeGiftLedger({
       ...baseInput,
-      giftEvents: [assetEvent({
-        year: 2026,
-        amountOverride: 400_000,
-        recipientEntityId: undefined,
-        recipientExternalBeneficiaryId: "ext-charity-1",
-      })],
-      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
+      entities: [crummeyTrust],
+      giftEvents: [assetEvent({ year: 2026, amountOverride: 400_000 })],
     });
-    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(400_000);
   });
 
   it("processes series-fanned cash GiftEvents (seriesId set) with AE", () => {
+    // Series cash always targets a trust. A 1-beneficiary Crummey trust earns
+    // exactly one annual exclusion. Crummey: 1 ben × $19k (2026) → 50k − 19k.
+    const seriesTrust = {
+      id: "t-series",
+      name: "ILIT",
+      entityType: "trust",
+      isIrrevocable: true,
+      crummeyPowers: true,
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, familyMemberId: "k1", sortOrder: 0 },
+      ],
+    } as unknown as EntitySummary;
     const cashSeries: GiftEvent = {
-      id: "ge2",
       kind: "cash",
       year: 2026,
       grantor: "client",
       amount: 50_000,
       seriesId: "series-1",
-      sourceAccountId: undefined,
-      recipientEntityId: undefined,
-      recipientFamilyMemberId: "fm1",
-      recipientExternalBeneficiaryId: undefined,
-    } as unknown as GiftEvent;
-    const ledger = computeGiftLedger({ ...baseInput, giftEvents: [cashSeries] });
+      useCrummeyPowers: true,
+      recipientEntityId: "t-series",
+    };
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [seriesTrust],
+      giftEvents: [cashSeries],
+    });
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBeCloseTo(31_000, 2);
   });
 
   it("ignores one-time cash GiftEvents (no seriesId — handled via legacy gifts[])", () => {
     const oneTime: GiftEvent = {
-      id: "ge3",
       kind: "cash",
       year: 2026,
       grantor: "client",
       amount: 50_000,
-      seriesId: undefined,
-      sourceAccountId: undefined,
-      recipientEntityId: undefined,
-      recipientFamilyMemberId: "fm1",
-      recipientExternalBeneficiaryId: undefined,
-    } as unknown as GiftEvent;
+      useCrummeyPowers: false,
+    };
     const ledger = computeGiftLedger({ ...baseInput, giftEvents: [oneTime] });
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
@@ -238,6 +267,7 @@ describe("computeGiftLedger", () => {
     } as unknown as GiftEvent;
     const ledger = computeGiftLedger({
       ...baseInput,
+      entities: [trustT1],
       giftEvents: [businessGift],
       entityValueAtYear: (id, year) => (id === "biz-llc-1" && year === 2026 ? 1_000_000 : 0),
     });
@@ -262,6 +292,7 @@ describe("computeGiftLedger", () => {
     } as unknown as GiftEvent;
     const ledger = computeGiftLedger({
       ...baseInput,
+      entities: [trustT1],
       giftEvents: [businessGift],
       // Override should win even though percent × value would yield a different number.
       entityValueAtYear: () => 9_999_999,
@@ -282,6 +313,7 @@ describe("computeGiftLedger", () => {
     } as unknown as GiftEvent;
     const ledger = computeGiftLedger({
       ...baseInput,
+      entities: [trustT1],
       giftEvents: [businessGift],
       entityValueAtYear: (id, year) => (id === "biz-llc-1" && year === 2026 ? 2_500_000 : 0),
     });
@@ -303,7 +335,7 @@ describe("computeGiftLedger", () => {
           recipientExternalBeneficiaryId: "ext-charity-1",
         }),
       ],
-      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
+      externalBeneficiaries: [{ id: "ext-charity-1", kind: "charity" }],
     });
     // Gross sums everything: 100k + 500k = 600k
     expect(ledger[0].giftsGiven).toBeCloseTo(600_000, 2);

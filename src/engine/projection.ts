@@ -5794,11 +5794,6 @@ export function runProjectionWithEvents(
     externalBeneficiaries: (data.externalBeneficiaries ?? [])
       .filter((e) => e.kind != null)
       .map((e) => ({ id: e.id, kind: e.kind! })),
-    externalBeneficiaryKindById: new Map(
-      (data.externalBeneficiaries ?? [])
-        .filter((e) => e.kind != null)
-        .map((e) => [e.id, e.kind!] as const),
-    ),
     annualExclusionsByYear,
     taxInflationRate: data.planSettings.taxInflationRate ?? data.planSettings.inflationRate ?? 0,
     accountValueAtYear: () => 0,
