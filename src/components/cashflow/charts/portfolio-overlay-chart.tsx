@@ -12,7 +12,7 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
-import { seriesColor, seriesDash } from "@/lib/comparison/series-palette";
+import { seriesColor, seriesDash } from "@/lib/scenario/series-palette";
 import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(

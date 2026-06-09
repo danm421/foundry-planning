@@ -38,11 +38,6 @@ const TABS: ReadonlyArray<{
   },
   { label: "Solver", href: "solver" },
   {
-    label: "Analysis",
-    href: "analysis",
-    subTabs: [{ label: "Retirement", path: "/retirement" }],
-  },
-  {
     label: "Estate Planning",
     href: "estate-planning",
     subTabs: [
@@ -53,7 +48,6 @@ const TABS: ReadonlyArray<{
       { label: "Gift Tax", path: "/gift-tax" },
     ],
   },
-  { label: "Comparison", href: "comparison" },
   { label: "Presentations", href: "presentations" },
 ];
 

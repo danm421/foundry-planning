@@ -6,7 +6,7 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { MAX_PLANS } from "@/lib/comparison/series-palette";
+import { MAX_PLANS } from "@/lib/scenario/series-palette";
 
 const MIN_PLANS = 2;
 

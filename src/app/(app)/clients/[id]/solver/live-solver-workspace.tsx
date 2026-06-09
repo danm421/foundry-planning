@@ -13,7 +13,7 @@ import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { buildSolverComparisonPlan } from "@/lib/solver/build-solver-comparison-plan";
 import { useSolverSolve } from "./use-solver-solve";
-import { useSharedMcRun } from "@/app/(app)/clients/[id]/comparison/use-shared-mc-run";
+import { useSharedMcRun } from "@/hooks/use-shared-mc-run";
 import { deriveScenarioGaugeState } from "./scenario-gauge-state";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
@@ -289,7 +289,6 @@ export function LiveSolverWorkspace({
       tree: workingTree,
       years: currentProjection,
       isBaseline: false,
-      index: 1,
     });
     if (!includeBase) return [workingPlan];
     return [
@@ -299,7 +298,6 @@ export function LiveSolverWorkspace({
         tree: baseClientData,
         years: baseProjection,
         isBaseline: true,
-        index: 0,
       }),
       workingPlan,
     ];
@@ -492,7 +490,7 @@ export function LiveSolverWorkspace({
       }
       const data = (await res.json()) as { scenarioId: string };
       setSaveOpen(false);
-      router.push(`/clients/${clientId}/comparison?scenario=${data.scenarioId}`);
+      router.push(`/clients/${clientId}/cashflow?scenario=${data.scenarioId}`);
       // Re-fetch server components so the new scenario appears in the
       // ScenarioChipRow (rendered by the shared [id] layout, which a plain
       // push does not re-run). Mirrors create-scenario-dialog.tsx.

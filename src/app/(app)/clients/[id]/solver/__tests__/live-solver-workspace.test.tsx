@@ -21,7 +21,7 @@ const { mcStateRef, mcCalls } = vi.hoisted(() => ({
   },
   mcCalls: [] as Array<{ enabled: boolean; planIds: string[] }>,
 }));
-vi.mock("@/app/(app)/clients/[id]/comparison/use-shared-mc-run", () => ({
+vi.mock("@/hooks/use-shared-mc-run", () => ({
   useSharedMcRun: (args: { enabled: boolean; plans: Array<{ id: string }> }) => {
     mcCalls.push({ enabled: args.enabled, planIds: args.plans.map((p) => p.id) });
     return { ...mcStateRef.current, retry: vi.fn() };

@@ -21,11 +21,11 @@ import { runMonteCarlo, summarizeMonteCarlo, createReturnEngine } from "@/engine
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
-import { describeChangeUnit, type ChangeUnit } from "@/lib/comparison/scenario-change-describe";
+import { describeChangeUnit, type ChangeUnit } from "@/lib/scenario/scenario-change-describe";
 import { buildRetirementComparisonMetrics } from "@/lib/presentations/pages/retirement-comparison/metrics";
 import { buildRetirementComparisonAiPrompt } from "@/lib/presentations/pages/retirement-comparison/ai-prompt";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
-import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/comparison/ai-cache";
+import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/presentations/ai-cache";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
 

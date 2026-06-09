@@ -14,7 +14,7 @@ import {
 import { Bar } from "react-chartjs-2";
 import { formatPercent } from "./lib/format";
 import { PromoteButton } from "./promote-button";
-import { successByYear } from "@/lib/comparison/success-by-year";
+import { successByYear } from "@/lib/monte-carlo/success-by-year";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
 
