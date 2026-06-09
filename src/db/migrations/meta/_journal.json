@@ -1065,6 +1065,13 @@
       "when": 1780968796387,
       "tag": "0151_retire_comparison_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1781017573498,
+      "tag": "0152_panoramic_james_howlett",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ describe("fanOutGiftSeries", () => {
     startYear: 2026,
     endYear: 2030,
     annualAmount: 19000,
+    amountMode: "fixed",
     inflationAdjust: false,
     useCrummeyPowers: true,
   };
@@ -39,5 +40,51 @@ describe("fanOutGiftSeries", () => {
 
   it("returns empty array when endYear < startYear", () => {
     expect(fanOutGiftSeries({ ...baseSeries, startYear: 2030, endYear: 2025 }, { cpi: 0.025 })).toEqual([]);
+  });
+});
+
+describe("fanOutGiftSeries — annual_exclusion mode", () => {
+  const exclusionBase: GiftSeriesRow = {
+    id: "s1",
+    grantor: "client",
+    recipientEntityId: "t1",
+    startYear: 2026,
+    endYear: 2028,
+    annualAmount: 1, // ignored in annual_exclusion mode
+    amountMode: "annual_exclusion",
+    inflationAdjust: false,
+    useCrummeyPowers: true,
+  };
+
+  const exclusionByYear = { 2026: 19_000, 2027: 19_000, 2028: 20_000 };
+
+  it("emits the indexed exclusion per year for a single grantor", () => {
+    const events = fanOutGiftSeries(exclusionBase, { cpi: 0.02, exclusionByYear });
+    expect(events.map((e) => e.kind === "cash" && e.amount)).toEqual([19_000, 19_000, 20_000]);
+  });
+
+  it("doubles the exclusion for a joint series", () => {
+    const events = fanOutGiftSeries(
+      { ...exclusionBase, grantor: "joint" },
+      { cpi: 0.02, exclusionByYear },
+    );
+    expect(events.map((e) => e.kind === "cash" && e.amount)).toEqual([38_000, 38_000, 40_000]);
+    expect(events[0].grantor).toBe("joint");
+  });
+
+  it("emits zero when a year has no exclusion entry", () => {
+    const events = fanOutGiftSeries(
+      { ...exclusionBase, endYear: 2029 },
+      { cpi: 0.02, exclusionByYear },
+    );
+    expect(events.map((e) => e.kind === "cash" && e.amount)).toEqual([19_000, 19_000, 20_000, 0]);
+  });
+
+  it("falls back to fixed annualAmount when amountMode is fixed", () => {
+    const events = fanOutGiftSeries(
+      { ...exclusionBase, amountMode: "fixed", annualAmount: 5_000 },
+      { cpi: 0, exclusionByYear },
+    );
+    expect(events.map((e) => e.kind === "cash" && e.amount)).toEqual([5_000, 5_000, 5_000]);
   });
 });

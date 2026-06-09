@@ -6,6 +6,7 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
 import BeneficiarySummary from "./beneficiary-summary";
+import GiftDialog from "@/components/gift-dialog";
 import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
@@ -87,13 +88,27 @@ export interface Entity {
 export type Gift = {
   id: string;
   year: number;
-  amount: number;
+  amount: number | null; // null for in-kind asset gifts
   grantor: "client" | "spouse" | "joint";
   recipientEntityId: string | null;
   recipientFamilyMemberId: string | null;
   recipientExternalBeneficiaryId: string | null;
+  accountId: string | null; // set for in-kind asset gifts
+  percent: number | null; // fraction 0..1, set for in-kind asset gifts
   useCrummeyPowers: boolean;
   notes: string | null;
+};
+
+export type GiftSeriesLite = {
+  id: string;
+  grantor: "client" | "spouse" | "joint";
+  recipientEntityId: string;
+  startYear: number;
+  endYear: number;
+  annualAmount: number;
+  amountMode: "fixed" | "annual_exclusion";
+  inflationAdjust: boolean;
+  useCrummeyPowers: boolean;
 };
 
 export type ExternalBeneficiary = {
@@ -189,6 +204,9 @@ interface FamilyViewProps {
   initialAccounts: AccountLite[];
   initialDesignations: Designation[];
   initialGifts: Gift[];
+  initialGiftSeries: GiftSeriesLite[];
+  annualExclusionByYear: Record<number, number>;
+  scenarioId: string;
   /** Optional: full asset data for the trust Assets tab */
   initialFullAccounts?: AssetsTabAccount[];
   initialFullLiabilities?: AssetsTabLiability[];
@@ -287,6 +305,9 @@ export default function FamilyView({
   initialAccounts,
   initialDesignations,
   initialGifts,
+  initialGiftSeries,
+  annualExclusionByYear,
+  scenarioId,
   initialFullAccounts,
   initialFullLiabilities,
   initialFullIncomes,
@@ -304,6 +325,7 @@ export default function FamilyView({
   const [accounts] = useState<AccountLite[]>(initialAccounts);
   const [designations] = useState<Designation[]>(initialDesignations);
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
+  const [giftSeriesState, setGiftSeriesState] = useState<GiftSeriesLite[]>(initialGiftSeries);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
@@ -621,8 +643,14 @@ export default function FamilyView({
         members={members}
         externals={externals}
         entities={entities}
+        accounts={accounts}
         gifts={giftsState}
-        onChange={setGiftsState}
+        series={giftSeriesState}
+        annualExclusionByYear={annualExclusionByYear}
+        scenarioId={scenarioId}
+        hasSpouse={primary.spouseName != null}
+        onChangeGifts={setGiftsState}
+        onChangeSeries={setGiftSeriesState}
       />
       )}
 
@@ -806,114 +834,141 @@ function PersonCard({ name, badge, fields }: { name: string; badge: string; fiel
   );
 }
 
-type RecipientKind = "trust" | "family" | "external";
-
 function GiftsSection(props: {
   clientId: string;
   members: FamilyMember[];
   externals: ExternalBeneficiary[];
   entities: Entity[];
+  accounts: AccountLite[];
   gifts: Gift[];
-  onChange: (gifts: Gift[]) => void;
+  series: GiftSeriesLite[];
+  annualExclusionByYear: Record<number, number>;
+  scenarioId: string;
+  hasSpouse: boolean;
+  onChangeGifts: (gifts: Gift[]) => void;
+  onChangeSeries: (series: GiftSeriesLite[]) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [editingGift, setEditingGift] = useState<Gift | null>(null);
+  const [editingSeries, setEditingSeries] = useState<GiftSeriesLite | null>(null);
 
-  const resolveRecipient = (g: Gift): { label: string; kind: RecipientKind } | null => {
-    if (g.recipientEntityId) {
-      const e = props.entities.find((x) => x.id === g.recipientEntityId);
-      return e ? { label: e.name, kind: "trust" } : null;
+  const recipientLabel = (
+    ids: { entity?: string | null; family?: string | null; external?: string | null },
+  ): string => {
+    if (ids.entity) return props.entities.find((e) => e.id === ids.entity)?.name ?? "—";
+    if (ids.family) {
+      const m = props.members.find((x) => x.id === ids.family);
+      return m ? `${m.firstName} ${m.lastName ?? ""}`.trim() : "—";
     }
-    if (g.recipientFamilyMemberId) {
-      const m = props.members.find((x) => x.id === g.recipientFamilyMemberId);
-      return m ? { label: `${m.firstName} ${m.lastName ?? ""}`.trim(), kind: "family" } : null;
-    }
-    if (g.recipientExternalBeneficiaryId) {
-      const ex = props.externals.find(
-        (x) => x.id === g.recipientExternalBeneficiaryId,
-      );
-      return ex ? { label: ex.name, kind: "external" } : null;
-    }
-    return null;
+    if (ids.external) return props.externals.find((x) => x.id === ids.external)?.name ?? "—";
+    return "—";
   };
 
-  async function deleteGift(giftId: string) {
-    const res = await fetch(`/api/clients/${props.clientId}/gifts/${giftId}`, {
-      method: "DELETE",
-    });
-    if (res.ok) {
-      props.onChange(props.gifts.filter((x) => x.id !== giftId));
-    }
+  const accountName = (id: string | null) =>
+    id ? props.accounts.find((a) => a.id === id)?.name ?? "asset" : "asset";
+
+  async function deleteGift(id: string) {
+    const res = await fetch(`/api/clients/${props.clientId}/gifts/${id}`, { method: "DELETE" });
+    if (res.ok) props.onChangeGifts(props.gifts.filter((x) => x.id !== id));
   }
+  async function deleteSeries(id: string) {
+    const res = await fetch(
+      `/api/clients/${props.clientId}/gifts/series/${id}?scenario=${props.scenarioId}`,
+      { method: "DELETE" },
+    );
+    if (res.ok) props.onChangeSeries(props.series.filter((x) => x.id !== id));
+  }
+
+  const dialogOpen = adding || editingGift != null || editingSeries != null;
 
   return (
     <section className="mt-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-300">
-          Gifts
-        </h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-300">Gifts</h3>
         <button
           type="button"
-          onClick={() => setAdding((v) => !v)}
+          onClick={() => { setEditingGift(null); setEditingSeries(null); setAdding(true); }}
           className="rounded bg-accent px-3 py-1 text-sm text-accent-on hover:bg-accent-deep"
         >
-          {adding ? "Cancel" : "+ Add gift"}
+          + Add gift
         </button>
       </div>
 
-      {adding && (
-        <GiftRowForm
+      {dialogOpen && (
+        <GiftDialog
           clientId={props.clientId}
+          scenarioId={props.scenarioId}
+          hasSpouse={props.hasSpouse}
           members={props.members}
           externals={props.externals}
           entities={props.entities}
-          onSaved={(newGift) => {
-            props.onChange([...props.gifts, newGift]);
-            setAdding(false);
+          accounts={props.accounts}
+          annualExclusionByYear={props.annualExclusionByYear}
+          editingGift={editingGift}
+          editingSeries={editingSeries}
+          onClose={() => { setAdding(false); setEditingGift(null); setEditingSeries(null); }}
+          onSavedGift={(g) => {
+            const exists = props.gifts.some((x) => x.id === g.id);
+            props.onChangeGifts(exists ? props.gifts.map((x) => (x.id === g.id ? g : x)) : [...props.gifts, g]);
+            setAdding(false); setEditingGift(null);
           }}
-          onCancel={() => setAdding(false)}
+          onSavedSeries={(s) => {
+            const exists = props.series.some((x) => x.id === s.id);
+            props.onChangeSeries(exists ? props.series.map((x) => (x.id === s.id ? s : x)) : [...props.series, s]);
+            setAdding(false); setEditingSeries(null);
+          }}
         />
       )}
 
-      {props.gifts.length === 0 ? (
+      {props.gifts.length === 0 && props.series.length === 0 ? (
         <p className="text-sm text-gray-400">No gifts recorded.</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-gray-300">
-              <th className="px-2 py-1">Year</th>
+              <th className="px-2 py-1">When</th>
               <th className="px-2 py-1">Grantor</th>
               <th className="px-2 py-1 text-right">Amount</th>
               <th className="px-2 py-1">Recipient</th>
               <th className="px-2 py-1">Crummey</th>
-              <th className="px-2 py-1">Notes</th>
               <th className="px-2 py-1"></th>
             </tr>
           </thead>
           <tbody>
-            {props.gifts.map((g) => {
-              const r = resolveRecipient(g);
-              return (
-                <tr key={g.id} className="border-t border-gray-800">
-                  <td className="px-2 py-1">{g.year}</td>
-                  <td className="px-2 py-1 capitalize">{g.grantor}</td>
-                  <td className="px-2 py-1 text-right">
-                    ${g.amount.toLocaleString()}
-                  </td>
-                  <td className="px-2 py-1">{r?.label ?? "—"}</td>
-                  <td className="px-2 py-1">{g.useCrummeyPowers ? "✓" : ""}</td>
-                  <td className="px-2 py-1 text-gray-300">{g.notes ?? ""}</td>
-                  <td className="px-2 py-1 text-right">
-                    <button
-                      type="button"
-                      onClick={() => deleteGift(g.id)}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+            {props.gifts.map((g) => (
+              <tr key={`gift-${g.id}`} className="border-t border-gray-800">
+                <td className="px-2 py-1">{g.year}</td>
+                <td className="px-2 py-1 capitalize">{g.grantor === "joint" ? "Both (split)" : g.grantor}</td>
+                <td className="px-2 py-1 text-right">
+                  {g.amount != null
+                    ? `$${g.amount.toLocaleString()}`
+                    : `${((g.percent ?? 0) * 100).toFixed(0)}% of ${accountName(g.accountId)}`}
+                </td>
+                <td className="px-2 py-1">
+                  {recipientLabel({ entity: g.recipientEntityId, family: g.recipientFamilyMemberId, external: g.recipientExternalBeneficiaryId })}
+                </td>
+                <td className="px-2 py-1">{g.useCrummeyPowers ? "✓" : ""}</td>
+                <td className="px-2 py-1 text-right">
+                  <button type="button" onClick={() => { setEditingGift(g); setEditingSeries(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
+                  <button type="button" onClick={() => deleteGift(g.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                </td>
+              </tr>
+            ))}
+            {props.series.map((s) => (
+              <tr key={`series-${s.id}`} className="border-t border-gray-800">
+                <td className="px-2 py-1">{s.startYear}–{s.endYear}/yr</td>
+                <td className="px-2 py-1 capitalize">{s.grantor === "joint" ? "Both (split)" : s.grantor}</td>
+                <td className="px-2 py-1 text-right">
+                  {s.amountMode === "annual_exclusion" ? "Max exclusion" : `$${s.annualAmount.toLocaleString()}/yr`}
+                </td>
+                <td className="px-2 py-1">{recipientLabel({ entity: s.recipientEntityId })}</td>
+                <td className="px-2 py-1">{s.useCrummeyPowers ? "✓" : ""}</td>
+                <td className="px-2 py-1 text-right">
+                  <button type="button" onClick={() => { setEditingSeries(s); setEditingGift(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
+                  <button type="button" onClick={() => deleteSeries(s.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
@@ -921,202 +976,6 @@ function GiftsSection(props: {
   );
 }
 
-function GiftRowForm(props: {
-  clientId: string;
-  members: FamilyMember[];
-  externals: ExternalBeneficiary[];
-  entities: Entity[];
-  onSaved: (g: Gift) => void;
-  onCancel: () => void;
-}) {
-  const trusts = props.entities.filter(
-    (e) => e.entityType === "trust" && e.isIrrevocable === true,
-  );
-  const [year, setYear] = useState<string>(`${new Date().getFullYear()}`);
-  const [grantor, setGrantor] = useState<"client" | "spouse" | "joint">("client");
-  const [amount, setAmount] = useState<string>("0");
-  const [kind, setKind] = useState<RecipientKind>("trust");
-  const [recipientId, setRecipientId] = useState<string>("");
-  const [crummey, setCrummey] = useState(false);
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      if (!recipientId) {
-        throw new Error("Please select a recipient.");
-      }
-      const body: Record<string, unknown> = {
-        year: Number(year),
-        amount: Number(amount),
-        grantor,
-        useCrummeyPowers: kind === "trust" ? crummey : false,
-        notes: notes.trim() || null,
-      };
-      if (kind === "trust") body.recipientEntityId = recipientId;
-      if (kind === "family") body.recipientFamilyMemberId = recipientId;
-      if (kind === "external") body.recipientExternalBeneficiaryId = recipientId;
-
-      const res = await fetch(`/api/clients/${props.clientId}/gifts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? `HTTP ${res.status}`);
-      }
-      const row = await res.json();
-      props.onSaved({
-        id: row.id,
-        year: row.year,
-        amount: typeof row.amount === "string" ? parseFloat(row.amount) : row.amount,
-        grantor: row.grantor,
-        recipientEntityId: row.recipientEntityId ?? null,
-        recipientFamilyMemberId: row.recipientFamilyMemberId ?? null,
-        recipientExternalBeneficiaryId: row.recipientExternalBeneficiaryId ?? null,
-        useCrummeyPowers: row.useCrummeyPowers,
-        notes: row.notes ?? null,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="mb-3 space-y-2 rounded border border-gray-700 bg-gray-800 p-3">
-      <div className="grid grid-cols-4 gap-2">
-        <div>
-          <label className="text-xs text-gray-300">Year</label>
-          <input
-            type="number"
-            min={1900}
-            max={2200}
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-gray-300">Grantor</label>
-          <select
-            value={grantor}
-            onChange={(e) =>
-              setGrantor(e.target.value as "client" | "spouse" | "joint")
-            }
-            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
-          >
-            <option value="client">Client</option>
-            <option value="spouse">Spouse</option>
-            <option value="joint">Joint</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-gray-300">Amount ($)</label>
-          <input
-            type="number"
-            min={0}
-            step={1000}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-gray-300">Recipient kind</label>
-          <select
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value as RecipientKind);
-              setRecipientId("");
-              setCrummey(false);
-            }}
-            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
-          >
-            <option value="trust">Irrevocable trust</option>
-            <option value="family">Family member</option>
-            <option value="external">Charity / external</option>
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <label className="text-xs text-gray-300">Recipient</label>
-        <select
-          value={recipientId}
-          onChange={(e) => setRecipientId(e.target.value)}
-          className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
-        >
-          <option value="">— select —</option>
-          {kind === "trust" &&
-            trusts.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          {kind === "family" &&
-            props.members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.firstName} {m.lastName ?? ""}
-              </option>
-            ))}
-          {kind === "external" &&
-            props.externals.map((ex) => (
-              <option key={ex.id} value={ex.id}>
-                {ex.name} ({ex.kind})
-              </option>
-            ))}
-        </select>
-      </div>
-
-      {kind === "trust" && recipientId && (
-        <label className="flex items-center gap-2 text-sm text-gray-200">
-          <input
-            type="checkbox"
-            checked={crummey}
-            onChange={(e) => setCrummey(e.target.checked)}
-          />
-          Use Crummey powers (annual-exclusion per beneficiary)
-        </label>
-      )}
-
-      <div>
-        <label className="text-xs text-gray-300">Notes</label>
-        <input
-          type="text"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
-        />
-      </div>
-
-      {error && <p className="text-sm text-red-400">{error}</p>}
-
-      <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={save}
-          className="rounded bg-accent px-3 py-1 text-sm text-accent-on disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={props.onCancel}
-          className="rounded bg-gray-700 px-3 py-1 text-sm text-gray-100"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function EmptyState({ label }: { label: string }) {
   return (
