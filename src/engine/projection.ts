@@ -3479,6 +3479,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "income",
         label: `Income: ${inc.name}`,
         sourceId: inc.id,
+        basis: amount, // cash deposit: basis == amount
       });
     }
 
@@ -3526,6 +3527,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "expense",
         label: `Expense: ${exp.name}`,
         sourceId: exp.id,
+        basis: -amount, // cash outflow: basis == amount (signed)
       });
     }
 
@@ -3539,6 +3541,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "expense",
         label: "Medicare premiums",
         sourceId: "medicarePremiums",
+        basis: -medicareTotalAnnualCost, // cash outflow: basis == amount (signed)
       });
     }
 
@@ -3684,6 +3687,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "liability",
           label: `Liability: ${liab.name}`,
           sourceId: liab.id,
+          basis: -payment * householdShare, // cash outflow: basis == amount (signed)
         });
       }
       for (const owner of liabYearOwners) {
@@ -3693,6 +3697,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "liability",
           label: `Liability: ${liab.name}`,
           sourceId: liab.id,
+          basis: -payment * owner.percent, // cash outflow: basis == amount (signed)
         });
       }
     }
@@ -3746,12 +3751,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `Contribution to ${destName}`,
           amount,
           sourceId: acctId,
+          basis: 0, // pre-tax 401k/403b contribution carries no cost basis
         });
       }
     }
     creditCash(defaultChecking?.id, -savings.total, {
       category: "savings_contribution",
       label: "Savings contributions",
+      basis: -savings.total, // cash outflow: basis conserves 1:1 with amount
     });
 
     // Self-funding hypothetical savings (Retirement Analysis "Minimum Additional
@@ -3797,6 +3804,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Hypothetical additional savings",
             amount: actual,
             sourceId: rule.accountId,
+            basis: actual, // post-tax dollars: basis bumps by the full contribution
           });
         }
       }
@@ -3805,6 +3813,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       creditCash(defaultChecking?.id, -hypoFromCashFlow, {
         category: "savings_contribution",
         label: "Hypothetical additional savings (cash flow)",
+        basis: -hypoFromCashFlow, // cash outflow: basis conserves 1:1 with amount
       });
     }
 
@@ -3850,6 +3859,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "employer_match",
           label,
           amount: match,
+          basis: 0, // pre-tax employer contribution carries no cost basis
         });
       }
     }
@@ -3883,6 +3893,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "gift",
         label: `Cash gift to ${recipientName}`,
         sourceId: gift.recipientEntityId,
+        basis: -gift.amount, // cash outflow: basis == amount (signed)
       });
       // Credit the recipient only when it's a modeled entity with a checking
       // account; otherwise the cash exits the projection.
@@ -3891,6 +3902,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           category: "gift",
           label: `Cash gift received`,
           sourceId: gift.recipientEntityId,
+          basis: gift.amount, // cash deposit: basis == amount
         });
       }
 
@@ -4426,6 +4438,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ? "Income tax + 10% early-withdrawal penalty"
                 : "Federal + state taxes",
             amount: -taxAndPenalty,
+            basis: -taxAndPenalty, // cash outflow: basis == amount (signed)
           });
         }
         checkingExternalDelta -= taxAndPenalty;
@@ -4862,6 +4875,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             category: "discretionary",
             label: "Discretionary spend (surplus)",
             amount: -spendAmount,
+            basis: -spendAmount, // cash outflow: basis == amount (signed)
           });
           expenses.discretionary = spendAmount;
           expenses.total += spendAmount;
@@ -4883,6 +4897,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Surplus transferred out",
             amount: -saveAmount,
             sourceId: saveDestId!,
+            basis: -saveAmount, // cash outflow: basis == amount (signed)
           });
           accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
           const destLedger = accountLedgers[saveDestId!];
@@ -4894,6 +4909,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               label: "Surplus transferred in",
               amount: saveAmount,
               sourceId: checkingId,
+              basis: saveAmount, // post-tax surplus deposit: basis == amount
             });
           }
         } else if (saveAmount > 0 && checkingLedger) {
@@ -4905,6 +4921,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Surplus retained in cash",
             amount: saveAmount,
             isInternalTransfer: true,
+            basis: saveAmount, // stays in cash: basis == amount
           });
         }
       }
