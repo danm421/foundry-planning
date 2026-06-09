@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import IncomeTaxReport from "@/components/income-tax-report";
@@ -15,7 +16,7 @@ export default async function IncomeTaxPage({
   const { id } = await params;
   const sp = await searchParams;
   const firmId = await requireOrgId();
-  await findClientInFirm(id, firmId);
+  if (!(await findClientInFirm(id, firmId))) notFound();
   const scenarioId = sp.scenario ?? "base";
   return (
     <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>

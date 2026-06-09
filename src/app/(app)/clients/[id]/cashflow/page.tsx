@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import CashFlowReport from "@/components/cashflow-report";
@@ -12,7 +13,7 @@ export default async function CashFlowPage({ params, searchParams }: CashFlowPag
   const { id: clientId } = await params;
   const sp = await searchParams;
   const firmId = await requireOrgId();
-  await findClientInFirm(clientId, firmId);
+  if (!(await findClientInFirm(clientId, firmId))) notFound();
   return (
     <ScenarioDrawerShell clientId={clientId} scenarioId={sp.scenario}>
       <CashFlowReport clientId={clientId} />
