@@ -1217,6 +1217,11 @@ export interface ProjectionYear {
     totalIrmaaSurcharge: number;
   };
 
+  /** Additional tax attributable to this year's equity-comp events, computed
+   *  as a tax(actual) − tax(equity-removed) counterfactual. Present only in
+   *  years with equity activity. */
+  equityTaxImpact?: import("./equity/tax-impact").EquityTaxImpact;
+
   taxResult?: TaxResult;
 
   deductionBreakdown?: DeductionBreakdown;
