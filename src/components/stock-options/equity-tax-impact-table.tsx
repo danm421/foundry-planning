@@ -13,6 +13,7 @@ function moneyTone(n: number): React.ReactNode {
 
 const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.04em] text-ink-4";
 const TD = "px-2 py-1.5 text-right whitespace-nowrap border-b border-hair";
+const TDF = `${TD} border-t-2 border-hair-2`; // totals-row cell (heavier top rule)
 const L = "text-left";
 
 export default function EquityTaxImpactTable({ model }: { model: EquityTaxImpactModel }) {
@@ -49,17 +50,17 @@ export default function EquityTaxImpactTable({ model }: { model: EquityTaxImpact
         </tbody>
         <tfoot>
           <tr className="font-bold text-ink">
-            <td className={`${TD} ${L} border-t-2 border-hair-2`}>Totals</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.ordinaryIncome)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.isoSpread)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.capitalGains)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.totalIncome)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.fedIncomeTax)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.capGainsTax)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.payrollTax)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.stateTax)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.totalTax)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(model.totals.netIncome)}</td>
+            <td className={`${TDF} ${L}`}>Totals</td>
+            <td className={TDF}>{money(model.totals.ordinaryIncome)}</td>
+            <td className={TDF}>{money(model.totals.isoSpread)}</td>
+            <td className={TDF}>{money(model.totals.capitalGains)}</td>
+            <td className={TDF}>{money(model.totals.totalIncome)}</td>
+            <td className={TDF}>{money(model.totals.fedIncomeTax)}</td>
+            <td className={TDF}>{money(model.totals.capGainsTax)}</td>
+            <td className={TDF}>{money(model.totals.payrollTax)}</td>
+            <td className={TDF}>{money(model.totals.stateTax)}</td>
+            <td className={TDF}>{money(model.totals.totalTax)}</td>
+            <td className={TDF}>{moneyTone(model.totals.netIncome)}</td>
           </tr>
         </tfoot>
       </table>

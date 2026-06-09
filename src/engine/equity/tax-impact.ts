@@ -70,6 +70,12 @@ const EMPTY_TOTALS: EquityTaxImpactRow = {
   fedIncomeTax: 0, capGainsTax: 0, payrollTax: 0, stateTax: 0, totalTax: 0, netIncome: 0,
 };
 
+// Every numeric column summed into the totals row (everything but `year`).
+const SUM_KEYS = [
+  "ordinaryIncome", "isoSpread", "capitalGains", "totalIncome",
+  "fedIncomeTax", "capGainsTax", "payrollTax", "stateTax", "totalTax", "netIncome",
+] as const satisfies readonly (keyof EquityTaxImpactRow)[];
+
 export function buildEquityTaxImpact(years: ProjectionYear[]): EquityTaxImpactModel {
   const rows: EquityTaxImpactRow[] = [];
   for (const y of years) {
@@ -90,21 +96,9 @@ export function buildEquityTaxImpact(years: ProjectionYear[]): EquityTaxImpactMo
       netIncome: totalIncome - e.totalTax,
     });
   }
-  const totals = rows.reduce<EquityTaxImpactRow>(
-    (acc, r) => ({
-      year: 0,
-      ordinaryIncome: acc.ordinaryIncome + r.ordinaryIncome,
-      isoSpread: acc.isoSpread + r.isoSpread,
-      capitalGains: acc.capitalGains + r.capitalGains,
-      totalIncome: acc.totalIncome + r.totalIncome,
-      fedIncomeTax: acc.fedIncomeTax + r.fedIncomeTax,
-      capGainsTax: acc.capGainsTax + r.capGainsTax,
-      payrollTax: acc.payrollTax + r.payrollTax,
-      stateTax: acc.stateTax + r.stateTax,
-      totalTax: acc.totalTax + r.totalTax,
-      netIncome: acc.netIncome + r.netIncome,
-    }),
-    { ...EMPTY_TOTALS },
-  );
+  const totals: EquityTaxImpactRow = { ...EMPTY_TOTALS };
+  for (const r of rows) {
+    for (const k of SUM_KEYS) totals[k] += r[k];
+  }
   return { rows, totals, hasActivity: rows.length > 0 };
 }
