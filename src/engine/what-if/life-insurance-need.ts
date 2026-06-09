@@ -174,6 +174,7 @@ function syntheticPolicy(
     deathBenefitScheduleMode: "off",
     incomeScheduleMode: "off",
     postPayoutGrowthRate: proceedsGrowthRate,
+    premiumPayer: "owner",
     ...(proceedsRealization ? { postPayoutRealization: proceedsRealization } : {}),
     cashValueSchedule: [],
   };

@@ -17,6 +17,7 @@ const mkPolicy = (over: Partial<LifeInsurancePolicy> = {}): LifeInsurancePolicy 
   deathBenefitScheduleMode: "off",
   incomeScheduleMode: "off",
   postPayoutGrowthRate: 0.06,
+  premiumPayer: "owner",
   cashValueSchedule: [],
   ...over,
 });

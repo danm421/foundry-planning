@@ -58,6 +58,7 @@ describe("detectInsuranceEvents", () => {
       deathBenefitScheduleMode: "off",
       incomeScheduleMode: "off",
       postPayoutGrowthRate: 0.06,
+      premiumPayer: "owner",
       cashValueSchedule: [],
     };
     data.accounts = [

@@ -109,6 +109,7 @@ function buildPolicyAccount(): Account {
     deathBenefitScheduleMode: "scheduled",
     incomeScheduleMode: "scheduled",
     postPayoutGrowthRate: 0.04,
+    premiumPayer: "owner",
     cashValueSchedule: buildSchedule(),
   };
   return {

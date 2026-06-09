@@ -81,6 +81,7 @@ function mkPolicy(opts: {
     deathBenefitScheduleMode: "off",
     incomeScheduleMode: "off",
     postPayoutGrowthRate: 0,
+    premiumPayer: "owner",
     cashValueSchedule: [],
   };
   return {

@@ -64,6 +64,7 @@ function mkPolicyAccount(
     deathBenefitScheduleMode: "off",
     incomeScheduleMode: "off",
     postPayoutGrowthRate: 0.04,
+    premiumPayer: "owner",
     cashValueSchedule: [],
     ...policyOver,
   };

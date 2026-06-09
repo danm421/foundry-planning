@@ -2940,7 +2940,7 @@ describe("fractional ownership: balance sheet year-aware pro-rate (Task 7 — Ph
         planEndYear: 2032,
       },
       entities: [
-        { id: "trust-1", name: "Test Trust", includeInPortfolio: false, isGrantor: true },
+        { id: "trust-1", name: "Test Trust", includeInPortfolio: false, isGrantor: true, isIrrevocable: true },
       ],
       giftEvents: [
         {

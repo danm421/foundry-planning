@@ -117,6 +117,7 @@ function mkIlitPolicy(
       deathBenefitScheduleMode: "off",
       incomeScheduleMode: "off",
       postPayoutGrowthRate: 0,
+      premiumPayer: "owner",
       cashValueSchedule: [],
       ...policyOver,
     },

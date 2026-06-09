@@ -266,6 +266,7 @@ function whole(opts: {
       deathBenefitScheduleMode: "off",
       incomeScheduleMode: "off",
       postPayoutGrowthRate: 0,
+      premiumPayer: "owner",
       cashValueSchedule: [],
     },
   };
