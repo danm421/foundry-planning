@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { fetchEodClose, fetchEodCloses, eodhdSymbol, type QuoteDeps } from "../quote";
 
 // EODHD real-time row shape (only the fields the parser reads).
@@ -49,6 +49,33 @@ describe("fetchEodClose (single)", () => {
       fetchRealtime: () => Promise.reject(new Error("HTTP 500")),
     });
     expect(res).toBeNull();
+  });
+
+  it("warns distinctly when no API key is configured (instead of silently null)", async () => {
+    const prev = process.env.EODHD_API_KEY;
+    delete process.env.EODHD_API_KEY;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const res = await fetchEodClose("VTI"); // no injected fetcher, no key
+      expect(res).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("EODHD_API_KEY"));
+    } finally {
+      warn.mockRestore();
+      if (prev !== undefined) process.env.EODHD_API_KEY = prev;
+    }
+  });
+
+  it("does NOT warn about a missing key when a transport error occurs", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const res = await fetchEodClose("AAPL", {
+        fetchRealtime: () => Promise.reject(new Error("HTTP 500")),
+      });
+      expect(res).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
