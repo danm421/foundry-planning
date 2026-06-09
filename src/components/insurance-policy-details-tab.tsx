@@ -9,6 +9,7 @@ import type {
   InsurancePanelModelPortfolio,
 } from "./insurance-panel";
 import type { PolicyFormState } from "./insurance-policy-dialog";
+import { isOwnerPrincipal } from "./insurance-policy-dialog";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
 import {
   inputClassName,
@@ -81,10 +82,7 @@ export default function InsurancePolicyDetailsTab({
   // non-principal family member). Principal- and joint-owned policies are funded
   // by the household directly, so there is no gift and the field is hidden.
   const ownerRef = state.ownerRef;
-  const ownerIsPrincipal =
-    ownerRef.kind === "joint" ||
-    (ownerRef.kind === "family" &&
-      (ownerRef.id === clientFm?.id || ownerRef.id === spouseFm?.id));
+  const ownerIsPrincipal = isOwnerPrincipal(ownerRef, clientFm?.id, spouseFm?.id);
   const showPaidBy = !ownerIsPrincipal;
 
   // Owner label + Crummey state, for the helper line under "Paid by".

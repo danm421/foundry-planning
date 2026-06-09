@@ -79,6 +79,21 @@ const POLICY_TYPE_LABELS: Record<PolicyFormState["policyType"], string> = {
   variable: "Variable Life",
 };
 
+/** Returns true when the ownerRef is a "household principal" — meaning the
+ *  policy is funded directly by the household and no premium-gift can arise.
+ *  Principal = joint ownership OR the client/spouse family member. */
+export function isOwnerPrincipal(
+  ownerRef: OwnerRef,
+  clientFmId: string | undefined,
+  spouseFmId: string | undefined,
+): boolean {
+  return (
+    ownerRef.kind === "joint" ||
+    (ownerRef.kind === "family" &&
+      (ownerRef.id === clientFmId || ownerRef.id === spouseFmId))
+  );
+}
+
 export function formatOwnerLabel(
   ref: OwnerRef,
   familyMembers: InsurancePanelFamilyMember[],
@@ -401,6 +416,15 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               spouseFirstName,
             ),
         );
+      }
+      // When the owner changes to a household principal, reset premiumPayer to
+      // "owner" so we never persist a stale gift-payer on a principal-owned policy.
+      if (patch.ownerRef !== undefined) {
+        const clientFmId = props.familyMembers.find((f) => f.role === "client")?.id;
+        const spouseFmId = props.familyMembers.find((f) => f.role === "spouse")?.id;
+        if (isOwnerPrincipal(next.ownerRef, clientFmId, spouseFmId)) {
+          next.premiumPayer = "owner";
+        }
       }
       return next;
     });
