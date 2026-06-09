@@ -110,6 +110,11 @@ export const accountBusinessTypeEnum = pgEnum("account_business_type", [
 
 export const ownerEnum = pgEnum("owner", ["client", "spouse", "joint"]);
 
+export const giftAmountModeEnum = pgEnum("gift_amount_mode", [
+  "fixed",
+  "annual_exclusion",
+]);
+
 export const titlingTypeEnum = pgEnum("titling_type", [
   "jtwros",
   "community_property",
@@ -2455,6 +2460,7 @@ export const giftSeries = pgTable(
     endYear: integer("end_year").notNull(),
     endYearRef: yearRefEnum("end_year_ref"),
     annualAmount: decimal("annual_amount", { precision: 15, scale: 2 }).notNull(),
+    amountMode: giftAmountModeEnum("amount_mode").notNull().default("fixed"),
     inflationAdjust: boolean("inflation_adjust").notNull().default(false),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
     notes: text("notes"),
