@@ -33,6 +33,7 @@ export interface PolicyFormState {
   costBasis: number;
   premiumAmount: number;
   premiumYears: number | null;
+  premiumPayer: "owner" | "client" | "spouse" | "both";
   termIssueYear: number | null;
   termLengthYears: number | null;
   endsAtInsuredRetirement: boolean;
@@ -123,6 +124,7 @@ const DEFAULT_STATE: PolicyFormState = {
   costBasis: 0,
   premiumAmount: 0,
   premiumYears: null,
+  premiumPayer: "owner",
   termIssueYear: null,
   termLengthYears: null,
   endsAtInsuredRetirement: false,
@@ -147,6 +149,7 @@ function seedStateFromRecord(
     costBasis: policy.costBasis,
     premiumAmount: policy.premiumAmount,
     premiumYears: policy.premiumYears,
+    premiumPayer: policy.premiumPayer,
     termIssueYear: policy.termIssueYear,
     termLengthYears: policy.termLengthYears,
     endsAtInsuredRetirement: policy.endsAtInsuredRetirement,
@@ -213,6 +216,7 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     costBasis: state.costBasis,
     premiumAmount: state.premiumAmount,
     premiumYears: state.premiumYears,
+    premiumPayer: state.premiumPayer,
     termIssueYear: state.termIssueYear,
     termLengthYears: state.termLengthYears,
     endsAtInsuredRetirement: state.endsAtInsuredRetirement,

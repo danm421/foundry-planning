@@ -167,6 +167,7 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
     id: e.id,
     name: e.name,
     entityType: e.entityType,
+    crummeyPowers: e.crummeyPowers,
   }));
   const exts: InsurancePanelExternal[] = externalRows.map((e) => ({
     id: e.id,

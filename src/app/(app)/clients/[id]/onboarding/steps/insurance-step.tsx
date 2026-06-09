@@ -137,6 +137,7 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
     id: e.id,
     name: e.name,
     entityType: e.entityType,
+    crummeyPowers: e.crummeyPowers,
   }));
   const exts: InsurancePanelExternal[] = externalRows.map((e) => ({
     id: e.id,

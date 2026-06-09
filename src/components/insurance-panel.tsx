@@ -40,6 +40,7 @@ export interface InsurancePanelEntity {
   id: string;
   name: string;
   entityType: EntityRow["entityType"];
+  crummeyPowers: boolean;
 }
 
 export interface InsurancePanelExternal {

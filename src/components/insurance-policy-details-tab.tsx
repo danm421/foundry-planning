@@ -76,6 +76,38 @@ export default function InsurancePolicyDetailsTab({
     (f) => f.role !== "client" && f.role !== "spouse",
   );
 
+  // The "Paid by" selector only matters when a gift could arise — i.e. the owner
+  // is NOT a household principal (a trust/entity, an external person, or a
+  // non-principal family member). Principal- and joint-owned policies are funded
+  // by the household directly, so there is no gift and the field is hidden.
+  const ownerRef = state.ownerRef;
+  const ownerIsPrincipal =
+    ownerRef.kind === "joint" ||
+    (ownerRef.kind === "family" &&
+      (ownerRef.id === clientFm?.id || ownerRef.id === spouseFm?.id));
+  const showPaidBy = !ownerIsPrincipal;
+
+  // Owner label + Crummey state, for the helper line under "Paid by".
+  const ownerEntity =
+    ownerRef.kind === "entity" ? entities.find((e) => e.id === ownerRef.id) ?? null : null;
+  const paidByOwnerLabel =
+    ownerRef.kind === "entity"
+      ? ownerEntity?.name ?? "the owner"
+      : ownerRef.kind === "external"
+      ? externalBeneficiaries.find((x) => x.id === ownerRef.id)?.name ?? "the owner"
+      : ownerRef.kind === "family"
+      ? otherFms.find((f) => f.id === ownerRef.id)?.firstName ?? "the owner"
+      : "the owner";
+  const paidByHelp =
+    state.premiumPayer === "owner"
+      ? "Premiums are paid by the owner."
+      : `Premiums are treated as gifts to ${paidByOwnerLabel}` +
+        (ownerEntity
+          ? ownerEntity.crummeyPowers
+            ? " (annual-exclusion / Crummey)."
+            : " (uses lifetime exemption)."
+          : ".");
+
   function refToValue(ref: OwnerRef): string {
     return JSON.stringify(ref);
   }
@@ -332,8 +364,8 @@ export default function InsurancePolicyDetailsTab({
 
       {/* ── Premium & basis ────────────────────────────────────────── */}
       <section className={sectionCls}>
-        <h3 className={sectionTitleCls}>Premium & basis</h3>
-        <div className={gridTwoCls}>
+        <h3 className={sectionTitleCls}>Premium &amp; basis</h3>
+        <div className={showPaidBy ? "grid grid-cols-1 gap-3 sm:grid-cols-3" : gridTwoCls}>
           <label className="block">
             <span className={fieldLabelClassName}>Annual premium</span>
             <CurrencyInput
@@ -341,7 +373,7 @@ export default function InsurancePolicyDetailsTab({
               onChange={(raw) => onChange({ premiumAmount: toNumber(raw) })}
               className={inputClassName}
             />
-            <p className={helpCls}>Annual premium paid by the owner.</p>
+            <p className={helpCls}>Annual premium amount.</p>
           </label>
           <label className="block">
             <span className={fieldLabelClassName}>Premium payment years</span>
@@ -349,13 +381,29 @@ export default function InsurancePolicyDetailsTab({
               type="number"
               min={1}
               value={state.premiumYears ?? ""}
-              onChange={(e) =>
-                onChange({ premiumYears: toNullableInt(e.target.value) })
-              }
+              onChange={(e) => onChange({ premiumYears: toNullableInt(e.target.value) })}
               className={inputClassName}
             />
             <p className={helpCls}>Leave empty for ongoing.</p>
           </label>
+          {showPaidBy && (
+            <label className="block">
+              <span className={fieldLabelClassName}>Paid by</span>
+              <select
+                value={state.premiumPayer}
+                onChange={(e) =>
+                  onChange({ premiumPayer: e.target.value as PolicyFormState["premiumPayer"] })
+                }
+                className={selectClassName}
+              >
+                <option value="owner">Owner</option>
+                <option value="client">{clientFirstName}</option>
+                <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
+                <option value="both" disabled={!spouseFirstName}>Both</option>
+              </select>
+              <p className={helpCls}>{paidByHelp}</p>
+            </label>
+          )}
         </div>
       </section>
 
