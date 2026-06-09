@@ -10,7 +10,9 @@ import type {
 } from "@/lib/asset-ledger";
 import type { AssetFilterState } from "./asset-ledger-filters";
 
-const COLSPAN = 4;
+/** Column headers; index >= 2 (Amount, Basis) right-aligns. COLSPAN derives from this. */
+const HEADERS = ["Description", "Other Account", "Amount", "Basis"];
+const COLSPAN = HEADERS.length;
 
 function visibleRows(block: AssetAccountBlock, f: AssetFilterState): AssetRow[] {
   return block.rows.filter((r) => {
@@ -93,7 +95,7 @@ export default function AssetLedgerTable({ ledger, filter }: { ledger: AssetLedg
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead className="sticky top-0 z-20">
           <tr>
-            {["Description", "Other Account", "Amount", "Basis"].map((h, i) => (
+            {HEADERS.map((h, i) => (
               <th
                 key={h}
                 scope="col"

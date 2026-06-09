@@ -43,13 +43,16 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
     internal: false,
   };
 
+  // Roth bookend rows only when the account actually carries a Roth sub-balance.
+  // The engine stamps rothValueBoY/EoY on *every* ledger (0 for non-Roth accounts),
+  // so guard on `> 0`, not `!== undefined`, to avoid spurious $0 Roth rows everywhere.
   const rows: AssetRow[] = [
     boyRow,
-    ...(ledger.rothValueBoY !== undefined
+    ...((ledger.rothValueBoY ?? 0) > 0
       ? [{
           category: "bookend" as const,
           label: "Beginning of Year - Roth",
-          amount: ledger.rothValueBoY,
+          amount: ledger.rothValueBoY!,
           basis: 0,
           bookend: true,
           internal: false,
@@ -57,11 +60,11 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
       : []),
     ...entryRows,
     eoyRow,
-    ...(ledger.rothValueEoY !== undefined
+    ...((ledger.rothValueEoY ?? 0) > 0
       ? [{
           category: "bookend" as const,
           label: "End of Year - Roth",
-          amount: ledger.rothValueEoY,
+          amount: ledger.rothValueEoY!,
           basis: 0,
           bookend: true,
           internal: false,
@@ -69,9 +72,13 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext):
       : []),
   ];
 
-  const sumEntries = entryRows.reduce((s, r) => s + r.amount, 0);
+  let sumEntries = 0;
+  let sumEntryBasis = 0;
+  for (const r of entryRows) {
+    sumEntries += r.amount;
+    sumEntryBasis += r.basis;
+  }
   const residual = ledger.endingValue - ledger.beginningValue - sumEntries;
-  const sumEntryBasis = entryRows.reduce((s, r) => s + r.basis, 0);
   const basisResidual = basisEoY - basisBoY - sumEntryBasis;
 
   return {

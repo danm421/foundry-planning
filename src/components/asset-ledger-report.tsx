@@ -98,6 +98,12 @@ export default function AssetLedgerReport({ clientId }: Props) {
     return buildAssetLedger(year, ctx);
   }, [years, selectedYear, ctx]);
 
+  // Stable reference so the year picker doesn't re-allocate on every filter/year change.
+  const yearPickerItems = useMemo(
+    () => years.map((y) => ({ year: y.year, ages: y.ages })),
+    [years],
+  );
+
   if (loading) return <div className="p-6 text-ink-2">Loading…</div>;
   if (error) return <div className="p-6 text-crit">Error: {error}</div>;
   if (!ledger) return <div className="p-6 text-ink-2">No projection data.</div>;
@@ -109,7 +115,7 @@ export default function AssetLedgerReport({ clientId }: Props) {
         <label className="flex items-center gap-2 text-sm text-ink-2">
           Year
           <TaxLedgerYearPicker
-            years={years.map((y) => ({ year: y.year, ages: y.ages }))}
+            years={yearPickerItems}
             selectedYear={selectedYear}
             onSelect={setSelectedYear}
             clientName={clientData?.client?.firstName}

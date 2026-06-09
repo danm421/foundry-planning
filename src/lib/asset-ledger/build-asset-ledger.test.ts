@@ -264,6 +264,21 @@ describe("buildAssetLedger", () => {
     expect(acct.rows.find((r) => r.label === "End of Year - Roth")).toBeUndefined();
   });
 
+  it("does not add Roth bookend rows when the Roth sub-balance is zero", () => {
+    // The engine stamps rothValueBoY/EoY (= 0) on every account, so the view-model
+    // must guard on `> 0` — a defined-but-zero sub-balance gets no spurious rows.
+    const ledger = buildAssetLedger(mkYear({
+      brokerage: mkLedger({
+        beginningValue: 10, endingValue: 10,
+        rothValueBoY: 0, rothValueEoY: 0,
+        entries: [],
+      }),
+    }), ctx);
+    const acct = ledger.sections[0].accounts[0];
+    expect(acct.rows.find((r) => r.label === "Beginning of Year - Roth")).toBeUndefined();
+    expect(acct.rows.find((r) => r.label === "End of Year - Roth")).toBeUndefined();
+  });
+
   it("reconciles requires BOTH amount and basis to balance", () => {
     // Amount reconciles (endingValue − beginningValue = Σ entry.amount) but
     // basis does NOT (basisEoY − basisBoY ≠ Σ entry.basis) → reconciles false.
