@@ -53,6 +53,85 @@ describe("asset-ledger per-entry basis", () => {
     expect(true).toBe(true);
   });
 
+  it("growth-realization basis equals basisIncrease on taxable (LTCG excluded), 0 on retirement", () => {
+    // A realization mix with a large LTCG slice so the basis-bearing portion
+    // (oi + qdiv + stcg + taxExempt) is strictly less than the full growth —
+    // LTCG is unrealized appreciation and must NOT count toward basis.
+    const realization = {
+      pctOrdinaryIncome: 0.2,
+      pctQualifiedDividends: 0.1,
+      pctLtCapitalGains: 0.6, // excluded from basis
+      pctTaxExempt: 0.1,
+      turnoverPct: 0, // no STCG → 0.6 stays LTCG
+    };
+    // Taxable account with embedded LTCG: growth bumps basis only by the
+    // non-LTCG portion. Retirement account carries the SAME realization model
+    // (so growthDetail/basisIncrease are nonzero) but basis stays flat there.
+    const taxableWithLtcg: Account = {
+      ...sampleAccounts.find((a) => a.id === "acct-brokerage")!,
+      realization,
+    };
+    const retirementWithRealization: Account = {
+      ...sampleAccounts.find((a) => a.id === "acct-401k")!,
+      realization,
+    };
+    const otherAccounts = sampleAccounts.filter(
+      (a) => a.id !== "acct-brokerage" && a.id !== "acct-401k",
+    );
+    const years = runProjection(
+      buildClientData({
+        accounts: [
+          taxableWithLtcg,
+          retirementWithRealization,
+          ...otherAccounts,
+          householdChecking,
+        ],
+      }),
+    );
+    const y0 = years[0];
+
+    // Taxable brokerage: growth entry basis == growthDetail.basisIncrease and < amount.
+    const taxLedger = y0.accountLedgers["acct-brokerage"];
+    expect(taxLedger?.growthDetail, "brokerage should have a realization model").toBeTruthy();
+    const taxGrowth = taxLedger?.entries.find((e) => e.category === "growth");
+    expect(taxGrowth, "expected a growth entry on the taxable account").toBeTruthy();
+    expect(taxGrowth?.basis, "taxable growth basis").toBeCloseTo(
+      taxLedger!.growthDetail!.basisIncrease,
+      6,
+    );
+    // LTCG is excluded, so basis is strictly less than the full growth amount.
+    expect(taxGrowth!.basis!).toBeLessThan(taxGrowth!.amount);
+    expect(taxGrowth!.basis!).toBeGreaterThan(0);
+
+    // Retirement 401k: growthDetail/basisIncrease are nonzero (realization model
+    // is present) but the growth entry's basis is 0 — basis tracks post-tax
+    // contributions, not realization, on retirement accounts.
+    const retLedger = y0.accountLedgers["acct-401k"];
+    expect(retLedger?.growthDetail, "401k should have a realization model").toBeTruthy();
+    expect(retLedger!.growthDetail!.basisIncrease, "401k basisIncrease nonzero").toBeGreaterThan(0);
+    const retGrowth = retLedger?.entries.find((e) => e.category === "growth");
+    expect(retGrowth, "expected a growth entry on the retirement account").toBeTruthy();
+    expect(retGrowth?.basis, "retirement growth basis must be 0").toBe(0);
+
+    // Gate guard, across ALL accounts: a growth entry's basis is never greater
+    // than its amount, and any nonzero growth basis lands only on taxable/cash.
+    for (const [acctId, ledger] of Object.entries(y0.accountLedgers)) {
+      const acct = [taxableWithLtcg, retirementWithRealization, ...otherAccounts, householdChecking].find(
+        (a) => a.id === acctId,
+      );
+      for (const e of ledger.entries) {
+        if (e.category !== "growth" || e.basis === undefined) continue;
+        expect(e.basis, `${acctId} growth basis <= amount`).toBeLessThanOrEqual(e.amount);
+        if (e.basis !== 0) {
+          expect(
+            acct?.category === "taxable" || acct?.category === "cash",
+            `${acctId} nonzero growth basis only on taxable/cash`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
   it("contribution legs cross-reference each other via counterpartyId", () => {
     // Inject a default checking account so the savings cash source resolves;
     // the base fixture has none, so without it `defaultChecking` is undefined

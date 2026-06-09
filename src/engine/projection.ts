@@ -1390,6 +1390,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (growth === 0) continue;
 
       let growthDetail: AccountLedger["growthDetail"];
+      // Cost-basis delta this growth entry adds to basisMap — equals the
+      // recognized in-year basisIncrease, but ONLY where the gate below
+      // actually applies it (taxable/cash). Stays 0 on retirement accounts.
+      let growthBasisDelta = 0;
 
       if (acct.realization) {
         const r = acct.realization;
@@ -1412,6 +1416,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if ((acct.category === "taxable" || acct.category === "cash") && basisIncrease > 0) {
           basisMap[acct.id] = (basisMap[acct.id] ?? 0) + basisIncrease;
           freshBasisMap[acct.id] = (freshBasisMap[acct.id] ?? 0) + basisIncrease;
+          growthBasisDelta = basisIncrease;
         }
 
         // Only taxable accounts generate current-year tax from realization.
@@ -1502,6 +1507,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "growth",
         label: `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%)`,
         amount: growth,
+        basis: growthBasisDelta,
       });
       if (growthDetail) accountLedgers[acct.id].growthDetail = growthDetail;
 
