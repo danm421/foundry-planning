@@ -2,64 +2,27 @@ import { formatCompact } from "@/lib/format-compact";
 import type { GrantType } from "@/engine/equity/types";
 import type {
   FutureActivityModel,
-  FutureActivityEvent,
+  FutureActivityGrantYearRow,
   FutureActivitySubtotal,
-  FutureActivityKind,
 } from "@/engine/equity/future-activity";
 
 const TYPE_LABEL: Record<GrantType, string> = { rsu: "RSU", nqso: "NQSO", iso: "ISO" };
-const KIND_LABEL: Record<FutureActivityKind, string> = {
-  vest: "Vest", exercise: "Exercise", sell: "Sell", expire: "Expire",
-};
-// Dot colors via CSS vars (defined in globals.css for both themes).
-const KIND_DOT: Record<FutureActivityKind, string> = {
-  exercise: "var(--color-secondary-ink)",
-  sell: "var(--color-good)",
-  vest: "var(--color-cat-life)",
-  expire: "var(--color-crit)",
-};
+const OWNER_LABEL: Record<"client" | "spouse", string> = { client: "Client", spouse: "Spouse" };
 
 const dash = <span className="text-ink-4">—</span>;
-const sh = (n: number): string => (Math.round(n) === 0 ? "0" : Math.round(n).toLocaleString("en-US"));
+const sh = (n: number): React.ReactNode => (Math.round(n) === 0 ? dash : Math.round(n).toLocaleString("en-US"));
 const money = (n: number): React.ReactNode => (Math.round(n) === 0 ? dash : formatCompact(n));
-
-const TH = "px-2.5 py-1.5 text-right whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.04em] text-ink-4";
-const TD = "px-2.5 py-1.5 text-right whitespace-nowrap border-b border-hair";
-const L = "text-left";
-
-function EventCell({ e }: { e: FutureActivityEvent }) {
-  return (
-    <span className="inline-flex items-center gap-2 font-medium text-ink">
-      <span className="inline-block h-[7px] w-[7px] rounded-[2px]" style={{ background: KIND_DOT[e.kind] }} />
-      {KIND_LABEL[e.kind]}
-      <span className="text-ink-2">{e.grantLabel}</span>
-      <span className="text-ink-4 text-[11px]">{e.trancheLabel}</span>
-      <span className="ml-0.5 rounded border border-hair-2 px-1 py-px text-[9.5px] font-bold tracking-[0.02em] text-ink-3">
-        {TYPE_LABEL[e.grantType]}
-      </span>
-    </span>
-  );
-}
-
-function moneyTone(n: number | null, tone: "pos-neg" | "neg" | "plain" = "plain"): React.ReactNode {
-  if (n === null || Math.round(n) === 0) return dash;
-  const cls = tone === "neg" ? "text-crit" : tone === "pos-neg" ? (n < 0 ? "text-crit" : "text-good") : "";
+function moneyTone(n: number, tone: "pos-neg" | "neg" = "pos-neg"): React.ReactNode {
+  if (Math.round(n) === 0) return dash;
+  const cls = tone === "neg" ? "text-crit" : n < 0 ? "text-crit" : "text-good";
   return <span className={cls}>{formatCompact(n)}</span>;
 }
 
-function SubtotalRow({ label, s }: { label: string; s: FutureActivitySubtotal }) {
-  return (
-    <tr className="bg-accent-wash text-[11.5px] font-semibold text-ink-2">
-      <td className={`${TD} ${L} uppercase tracking-[0.03em] text-[10px] text-ink-3`}>{label}</td>
-      <td className={TD}>{sh(s.shares)}</td>
-      <td className={TD}></td>
-      <td className={TD}>{money(s.grossValue)}</td>
-      <td className={TD}>{moneyTone(s.exerciseCost === 0 ? null : -s.exerciseCost, "neg")}</td>
-      <td className={TD}>{moneyTone(s.netCash, "pos-neg")}</td>
-      <td className={TD}>{dash}</td>
-    </tr>
-  );
-}
+const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.04em] text-ink-4";
+const TD = "px-2 py-1.5 text-right whitespace-nowrap border-b border-hair";
+const L = "text-left";
+const pending = <span className="italic text-ink-4 text-[11px]">pending</span>;
+const COLS = 15;
 
 export default function FutureActivityLedger({ model }: { model: FutureActivityModel }) {
   if (!model.hasGrants) {
@@ -75,91 +38,126 @@ export default function FutureActivityLedger({ model }: { model: FutureActivityM
 
   return (
     <div className="overflow-x-auto">
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-3">
-        <span>as of {model.asOfYear} · through plan end {model.planEndYear} · per-tranche</span>
-        <span className="ml-auto flex flex-wrap gap-x-4 gap-y-1">
-          {(["exercise", "sell", "vest", "expire"] as const).map((k) => (
-            <span key={k} className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-[7px] w-[7px] rounded-[2px]" style={{ background: KIND_DOT[k] }} />
-              {KIND_LABEL[k]}
-            </span>
-          ))}
-        </span>
+      <div className="mb-3 text-[11px] text-ink-3">
+        as of {model.asOfYear} · through plan end {model.planEndYear} · per-grant
       </div>
 
       <table className="w-full border-collapse text-[12.5px] tabular-nums">
         <thead>
           <tr>
-            <th className={`${TH} ${L}`}>Event</th>
-            <th className={TH}>Shares</th>
-            <th className={TH}>Price/sh</th>
-            <th className={TH}>Gross value</th>
-            <th className={TH}>Ex. cost</th>
-            <th className={TH}>Net cash</th>
-            <th className={TH}>Tax impact</th>
+            <th className={`${TH} ${L}`}>Owner</th>
+            <th className={`${TH} ${L}`}>Plan</th>
+            <th className={`${TH} ${L}`}>Grant #</th>
+            <th className={`${TH} ${L}`}>Type</th>
+            <th className={`${TH} ${L}`}>Grant Date</th>
+            <th className={TH}>Sh. Vested</th>
+            <th className={TH}>Sh. Exercised</th>
+            <th className={TH}>Ex. Price</th>
+            <th className={TH}>Ex. Cost</th>
+            <th className={TH}>Sh. Sold</th>
+            <th className={TH}>Sale $</th>
+            <th className={TH}>Gross Proceeds</th>
+            <th className={TH}>Net Proceeds</th>
+            <th className={TH}>Opt. Income Tax</th>
+            <th className={TH}>After Tax</th>
           </tr>
         </thead>
         <tbody>
           {model.groups.map((g) => (
-            <YearGroup key={g.year} year={g.year} events={g.events} subtotal={g.subtotal} />
+            <YearGroup key={g.year} year={g.year} rows={g.rows} subtotal={g.subtotal} />
           ))}
         </tbody>
         <tfoot>
           <tr className="font-bold text-ink">
-            <td className={`${TD} ${L} border-t-2 border-hair-2`}>Total</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{sh(model.totals.shares)}</td>
+            <td className={`${TD} ${L} border-t-2 border-hair-2`} colSpan={5}>Total</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{sh(model.totals.sharesVested)}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{sh(model.totals.sharesExercised)}</td>
             <td className={`${TD} border-t-2 border-hair-2`}></td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.grossValue)}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(model.totals.exerciseCost === 0 ? null : -model.totals.exerciseCost, "neg")}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(model.totals.netCash, "pos-neg")}</td>
-            <td className={`${TD} border-t-2 border-hair-2`}>{dash}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(-model.totals.exerciseCost, "neg")}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{sh(model.totals.sharesSold)}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}></td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.grossProceeds)}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(model.totals.netProceeds)}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{pending}</td>
+            <td className={`${TD} border-t-2 border-hair-2`}>{pending}</td>
           </tr>
         </tfoot>
       </table>
 
       <p className="mt-3 text-[11px] text-ink-3">
-        <span className="text-ink-2 font-semibold">Tax impact</span> is wired but unpopulated this phase
-        (shows <span className="italic text-ink-4">pending</span>). A future Tax Impact report computes
-        tax(with equity) − tax(without equity) per year and feeds those numbers in. Price/sh is projected
-        FMV; gross value = RSU FMV or option intrinsic; net cash = proceeds − strike (before
-        sell-to-cover / withholding).
+        <span className="text-ink-2 font-semibold">Sh. Sold</span> includes shares auto-sold to cover
+        withholding at vest/exercise (tagged <span className="text-accent-ink font-semibold">cover</span>)
+        plus strategy sells; <span className="text-ink-2 font-semibold">Net Proceeds</span> = gross
+        proceeds − exercise cost and reconciles with the cash flow.{" "}
+        <span className="text-ink-2 font-semibold">Opt. Income Tax</span> /{" "}
+        <span className="text-ink-2 font-semibold">After Tax</span> are wired but{" "}
+        <span className="italic text-ink-4">pending</span> — a future Tax Impact report fills them.
       </p>
     </div>
   );
 }
 
-function YearGroup({ year, events, subtotal }: { year: number; events: FutureActivityEvent[]; subtotal: FutureActivitySubtotal }) {
+function YearGroup({ year, rows, subtotal }: { year: number; rows: FutureActivityGrantYearRow[]; subtotal: FutureActivitySubtotal }) {
   return (
     <>
       <tr>
-        <td colSpan={7} className="border-y border-hair bg-card-2 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-accent-ink">
+        <td colSpan={COLS} className="border-y border-hair bg-card-2 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-accent-ink">
           {year}
         </td>
       </tr>
-      {events.map((e, i) => (
-        <tr key={`${e.grantId}:${e.trancheId}:${e.kind}:${i}`}>
-          <td className={`${TD} ${L}`}><EventCell e={e} /></td>
-          <td className={TD}>{sh(e.shares)}</td>
-          <td className={TD}>
-            <span className={e.kind === "expire" ? "text-ink-4" : ""}>${e.pricePerShare.toFixed(2)}</span>
+      {rows.map((r) => (
+        <tr key={`${r.grantNumber}:${r.year}`}>
+          <td className={`${TD} ${L}`}>{OWNER_LABEL[r.owner]}</td>
+          <td className={`${TD} ${L}`}>{r.planLabel}</td>
+          <td className={`${TD} ${L}`}>{r.grantNumber}</td>
+          <td className={`${TD} ${L}`}>
+            <span className="rounded border border-hair-2 px-1 py-px text-[9.5px] font-bold tracking-[0.02em] text-ink-3">
+              {TYPE_LABEL[r.grantType]}
+            </span>
           </td>
+          <td className={`${TD} ${L}`}>{r.grantDate}</td>
+          <td className={TD}>{sh(r.sharesVested)}</td>
+          <td className={TD}>{sh(r.sharesExercised)}</td>
+          <td className={TD}>{r.exercisePrice === null ? dash : `$${r.exercisePrice.toFixed(2)}`}</td>
+          <td className={TD}>{moneyTone(-r.exerciseCost, "neg")}</td>
           <td className={TD}>
-            {e.underwater
-              ? <span className="text-warn text-[11px]">$0 · underwater ⚠</span>
-              : money(e.grossValue)}
+            {r.underwater && r.sharesSold === 0 ? (
+              <span className="text-warn text-[11px]">{sh(r.expiredShares)} · underwater ⚠</span>
+            ) : (
+              <span className="inline-flex items-center justify-end gap-1">
+                {sh(r.sharesSold)}
+                {r.hasSellToCover && (
+                  <span className="rounded bg-accent-wash px-1 text-[9px] font-semibold text-accent-ink">cover</span>
+                )}
+              </span>
+            )}
           </td>
-          <td className={TD}>{moneyTone(e.exerciseCost === null ? null : -e.exerciseCost, "neg")}</td>
-          <td className={TD}>{moneyTone(e.netCash, "pos-neg")}</td>
-          <td className={TD}>
-            {e.taxImpact === null
-              ? (e.kind === "vest" || e.kind === "expire"
-                  ? dash
-                  : <span className="italic text-ink-4 text-[11px]">pending</span>)
-              : formatCompact(e.taxImpact)}
-          </td>
+          <td className={TD}>{r.salePrice === 0 ? dash : `$${r.salePrice.toFixed(2)}`}</td>
+          <td className={TD}>{money(r.grossProceeds)}</td>
+          <td className={TD}>{moneyTone(r.netProceeds)}</td>
+          <td className={TD}>{pending}</td>
+          <td className={TD}>{pending}</td>
         </tr>
       ))}
       <SubtotalRow label={`${year} subtotal`} s={subtotal} />
     </>
+  );
+}
+
+function SubtotalRow({ label, s }: { label: string; s: FutureActivitySubtotal }) {
+  return (
+    <tr className="bg-accent-wash text-[11.5px] font-semibold text-ink-2">
+      <td className={`${TD} ${L} uppercase tracking-[0.03em] text-[10px] text-ink-3`} colSpan={5}>{label}</td>
+      <td className={TD}>{sh(s.sharesVested)}</td>
+      <td className={TD}>{sh(s.sharesExercised)}</td>
+      <td className={TD}></td>
+      <td className={TD}>{moneyTone(-s.exerciseCost, "neg")}</td>
+      <td className={TD}>{sh(s.sharesSold)}</td>
+      <td className={TD}></td>
+      <td className={TD}>{money(s.grossProceeds)}</td>
+      <td className={TD}>{moneyTone(s.netProceeds)}</td>
+      <td className={TD}>{pending}</td>
+      <td className={TD}>{pending}</td>
+    </tr>
   );
 }
