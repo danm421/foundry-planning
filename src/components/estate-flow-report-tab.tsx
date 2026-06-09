@@ -53,10 +53,10 @@ export function EstateFlowReportTab({
 }: EstateFlowReportTabProps) {
   // ── Tab-local state ──────────────────────────────────────────────────────────
   const [asOfYear, setAsOfYear] = useState<number>(planStartYear);
-  // As-of selection for the two death columns. "split" (each death at its
-  // actual projected year) preserves the report's original behavior; a year
-  // or "today" shows the hypothetical "both die then" scenario.
-  const [deathAsOf, setDeathAsOf] = useState<AsOfValue>("split");
+  // As-of selection for the two death columns. Defaults to "today" (the
+  // hypothetical "both die now" scenario); "split" (each death at its actual
+  // projected year) and a specific year remain available from the dropdown.
+  const [deathAsOf, setDeathAsOf] = useState<AsOfValue>("today");
 
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
   const [entityDialogId, setEntityDialogId] = useState<string | null>(null);
@@ -217,6 +217,7 @@ export function EstateFlowReportTab({
             onYearChange={setAsOfYear}
             gifts={workingGifts}
             recipientLabelById={recipientLabelById}
+            accountNameById={accountNameById}
             onGiftClick={(giftId) => setEditingGiftId(giftId)}
             onAddGift={() => setAddGiftOpen(true)}
           />

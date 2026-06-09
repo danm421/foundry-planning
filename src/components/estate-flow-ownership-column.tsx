@@ -33,6 +33,41 @@ function formatAccountType(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// ── Scheduled-gift summary ────────────────────────────────────────────────────
+
+/** Year (or start year, for a series) used to sort the scheduled-gifts list. */
+function giftSortYear(gift: EstateFlowGift): number {
+  return gift.kind === "series" ? gift.startYear : gift.year;
+}
+
+/**
+ * One-line summary for a scheduled gift: what is given, to whom, and when.
+ * Asset gifts resolve their source-account name from `accountNameById`.
+ */
+function giftSummary(
+  gift: EstateFlowGift,
+  recipientLabelById: Map<string, string>,
+  accountNameById: Map<string, string>,
+): { what: string; when: string } {
+  const recipient =
+    recipientLabelById.get(gift.recipient.id) ??
+    giftRecipientKindLabel(gift.recipient.kind);
+  if (gift.kind === "cash-once") {
+    return { what: `${fmt.format(gift.amount)} to ${recipient}`, when: `${gift.year}` };
+  }
+  if (gift.kind === "asset-once") {
+    const account = accountNameById.get(gift.accountId) ?? "account";
+    return {
+      what: `${Math.round(gift.percent * 100)}% of ${account} to ${recipient}`,
+      when: `${gift.year}`,
+    };
+  }
+  return {
+    what: `${fmt.format(gift.annualAmount)}/yr to ${recipient}`,
+    when: `${gift.startYear}–${gift.endYear}`,
+  };
+}
+
 // ── Asset row ─────────────────────────────────────────────────────────────────
 
 interface AssetRowProps {
@@ -203,6 +238,54 @@ function GroupCard({
   );
 }
 
+// ── Scheduled gifts section ───────────────────────────────────────────────────
+
+interface ScheduledGiftsSectionProps {
+  gifts: EstateFlowGift[];
+  recipientLabelById: Map<string, string>;
+  accountNameById: Map<string, string>;
+  onGiftClick: (giftId: string) => void;
+}
+
+function ScheduledGiftsSection({
+  gifts,
+  recipientLabelById,
+  accountNameById,
+  onGiftClick,
+}: ScheduledGiftsSectionProps) {
+  if (gifts.length === 0) return null;
+  const sorted = [...gifts].sort((a, b) => giftSortYear(a) - giftSortYear(b));
+
+  return (
+    <section className="rounded-lg border border-amber-900/40 bg-amber-950/10 px-3 py-2.5">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-amber-300/80">
+        Scheduled Gifts
+      </h3>
+      <ul className="mt-1.5 space-y-0.5">
+        {sorted.map((gift) => {
+          const { what, when } = giftSummary(
+            gift,
+            recipientLabelById,
+            accountNameById,
+          );
+          return (
+            <li key={gift.id}>
+              <button
+                type="button"
+                onClick={() => onGiftClick(gift.id)}
+                className="flex w-full items-baseline justify-between gap-3 rounded px-1 py-0.5 text-left text-[11px] text-amber-400/90 transition-colors hover:bg-amber-950/30 hover:text-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+              >
+                <span className="truncate">{what}</span>
+                <span className="shrink-0 tabular-nums text-amber-400/70">{when}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 // ── EstateFlowOwnershipColumn ─────────────────────────────────────────────────
 
 interface EstateFlowOwnershipColumnProps {
@@ -219,6 +302,8 @@ interface EstateFlowOwnershipColumnProps {
   gifts: EstateFlowGift[];
   /** Human label for each gift recipient, keyed by recipient id. */
   recipientLabelById: Map<string, string>;
+  /** Account display names keyed by id — labels asset-gift summaries. */
+  accountNameById: Map<string, string>;
   onGiftClick: (giftId: string) => void;
   /** Opens the standalone "Add a gift" dialog. */
   onAddGift: () => void;
@@ -233,6 +318,7 @@ export function EstateFlowOwnershipColumn({
   onYearChange,
   gifts,
   recipientLabelById,
+  accountNameById,
   onGiftClick,
   onAddGift,
 }: EstateFlowOwnershipColumnProps) {
@@ -266,6 +352,13 @@ export function EstateFlowOwnershipColumn({
           </span>
         )}
       </div>
+
+      <ScheduledGiftsSection
+        gifts={gifts}
+        recipientLabelById={recipientLabelById}
+        accountNameById={accountNameById}
+        onGiftClick={onGiftClick}
+      />
 
       {data.groups.length === 0 ? (
         <div className="flex items-center justify-center rounded border border-gray-800/60 p-6 text-sm text-gray-500">
