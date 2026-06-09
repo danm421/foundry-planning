@@ -44,6 +44,48 @@ function nqso(over: Partial<EquityGrant> = {}): EquityGrant {
   };
 }
 
+describe("buildFutureActivity — edge behavior", () => {
+  it("flags an unexercised expiry as underwater with $0 value, price = projected FMV", () => {
+    // exerciseTiming "manual" with no planned events → never exercised → expires at expirationYear.
+    const g = nqso({ expirationYear: 2030 });
+    const m = buildFutureActivity([plan([g], MANUAL_NO_EVENTS)], OPTS);
+    expect(m.groups).toHaveLength(1);
+    const e = m.groups[0].events[0];
+    expect(e.year).toBe(2030);
+    expect(e.kind).toBe("expire");
+    expect(e.underwater).toBe(true);
+    expect(e.grossValue).toBe(0);
+    expect(e.pricePerShare).toBe(40); // FMV still shown (muted in the view)
+    expect(e.netCash).toBeNull();
+    expect(e.exerciseCost).toBeNull();
+  });
+
+  it("drops seed_held but keeps sells generated from a seeded (pre-plan) position", () => {
+    // RSU tranche vested in 2024 (< planStartYear) → seed_held in 2026; immediate sell also in 2026.
+    const g = rsu({ tranches: [{ id: "rt1", vestYear: 2024, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }] });
+    const m = buildFutureActivity([plan([g], SELL_NOW)], OPTS);
+    const kinds = m.groups.flatMap((grp) => grp.events.map((e) => e.kind));
+    expect(kinds).toEqual(["sell"]);          // no "vest"/"seed_held"
+    expect(m.groups[0].year).toBe(2026);
+    expect(m.groups[0].events[0].shares).toBe(1000);
+  });
+
+  it("caps the horizon at planEndYear", () => {
+    // Two RSU tranches: one vests in-window (2028), one beyond planEndYear (2032).
+    const g = rsu({
+      sharesGranted: 2000,
+      tranches: [
+        { id: "rt1", vestYear: 2028, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+        { id: "rt2", vestYear: 2032, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+      ],
+    });
+    const m = buildFutureActivity([plan([g], HOLD)], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2030 });
+    expect(m.groups).toHaveLength(1);
+    expect(m.groups[0].year).toBe(2028);
+    expect(m.groups[0].events[0].trancheLabel).toBe("T1");
+  });
+});
+
 describe("buildFutureActivity — core mapping", () => {
   it("maps an RSU vest to a Vest event valued at projected FMV", () => {
     const m = buildFutureActivity([plan([rsu()], HOLD)], OPTS);
