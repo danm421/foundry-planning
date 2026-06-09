@@ -1,6 +1,6 @@
 import type { Account, ClientData, Expense } from "@/engine/types";
 import { controllingEntity } from "@/engine/ownership";
-import { planPremiumGift, buildPremiumGiftContext } from "./premium-gift";
+import { planPremiumGift, buildPremiumGiftContext, type PremiumGiftContext } from "./premium-gift";
 
 export interface SynthesizePremiumsInput {
   /** The projection's first year — premiums that were issued in the past
@@ -27,7 +27,7 @@ export interface SynthesizePremiumsInput {
   /** When provided, individual-owned policies whose premium becomes a gift to a
    *  non-entity recipient have their household expense suppressed (the gift is
    *  the outflow). Entity-owned policies keep their entity-scoped expense. */
-  giftContext?: import("./premium-gift").PremiumGiftContext;
+  giftContext?: PremiumGiftContext;
 }
 
 /** The resolved premium billing window for one policy. `mode` distinguishes the
@@ -123,8 +123,9 @@ export function resolvePremiumSchedule(
  * Per-year premium amount for the resolved window. Scheduled years are clamped
  * to [startYear, endYear] so the gift stream matches what the expense bills.
  *
- * NOTE: intentionally unexercised until the upcoming premium-gift synthesizer
- * consumes it; no direct tests exist yet.
+ * Consumed by both the expense path (indirectly via `synthesizePremiumExpenses`)
+ * and `synthesizePremiumGifts` (the gift path), which guarantees the gift stream
+ * matches the premium stream exactly.
  */
 export function premiumAmountsByYear(
   r: ResolvedPremiumSchedule,
