@@ -25,6 +25,19 @@ import { summarizeTocOptions } from "@/lib/presentations/pages/toc/summarize-opt
 import { estimateTocPageCount } from "@/lib/presentations/pages/toc/estimate-page-count";
 import { CashFlowOptionsControl } from "./pages/cash-flow/options-control";
 import { CashflowPagePdf } from "./pages/cash-flow/page-pdf";
+import { buildEntityCashFlowPageData } from "./pages/entity-cash-flow/build-data";
+import {
+  entityCashFlowOptionsSchema,
+  summarizeEntityCashFlowOptions,
+  estimateEntityCashFlowPageCount,
+} from "./pages/entity-cash-flow/options-schema";
+import {
+  ENTITY_CASH_FLOW_OPTIONS_DEFAULT,
+  type EntityCashFlowPageOptions,
+  type EntityCashFlowPageData,
+} from "./pages/entity-cash-flow/types";
+import { EntityCashFlowOptionsControl } from "./pages/entity-cash-flow/options-control";
+import { EntityCashFlowPagePdf } from "./pages/entity-cash-flow/page-pdf";
 import { CoverOptionsControl } from "./pages/cover/options-control";
 import { CoverPdf } from "./pages/cover/page-pdf";
 import { TocPdf, type TocSection } from "./pages/toc/page-pdf";
@@ -571,6 +584,28 @@ export const cashFlowAssetsPage = makeDrillPage(
   buildPortfolioAssetsDrillData,
 );
 
+export const entityCashFlowPage: PresentationPage<EntityCashFlowPageData, EntityCashFlowPageOptions> = {
+  id: "entityCashFlow",
+  title: "Business & Trusts",
+  description: "Cash flow for a single trust or business — income, expenses, growth, and balances over time.",
+  category: "Cash Flow",
+  defaultOptions: ENTITY_CASH_FLOW_OPTIONS_DEFAULT,
+  optionsSchema: entityCashFlowOptionsSchema,
+  summarizeOptions: summarizeEntityCashFlowOptions,
+  estimatePageCount: estimateEntityCashFlowPageCount,
+  OptionsControl: EntityCashFlowOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) =>
+    buildEntityCashFlowPageData({
+      years: ctx.years,
+      entityId: options.entityId,
+      entityName: options.entityName,
+      range: options.range,
+      scenarioLabel: ctx.scenarioLabel,
+    }),
+  renderPdf: (input) => <EntityCashFlowPagePdf {...input} />,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Income Tax pages — mirror the in-app Income Tax report tabs. Summary pages
 // (Income, Federal, State) carry stacked-bar charts; the deduction/other-tax
@@ -882,6 +917,7 @@ export const PRESENTATION_PAGES = {
   cashFlowGrowth: cashFlowGrowthPage,
   cashFlowActivity: cashFlowActivityPage,
   cashFlowAssets: cashFlowAssetsPage,
+  entityCashFlow: entityCashFlowPage,
   taxSummary: taxSummaryPage,
   retirementSummary: retirementSummaryPage,
   incomeTaxIncome: incomeTaxIncomePage,
