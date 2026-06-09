@@ -325,3 +325,193 @@ describe("life insurance — premium gift projection (trust-owned, premiumPayer=
     expect(entries[0].cumulativeLifetimeUsed).toBeCloseTo(PREMIUM, 6);
   });
 });
+
+/**
+ * Plan Task B4 — the synthesized premium gift through the REAL projection path.
+ *
+ * Unlike the suite above (which routes assertion 3 through the production lib
+ * ledger because the projection's own ledger used to skip premium cash gifts),
+ * this exercises `runProjectionWithEvents().giftLedger` directly. Since the
+ * gift-ledger was rewired onto the unified canonical + Crummey model
+ * (`computeGiftLedger` → `toCanonicalGifts` → `treatCanonicalGift`), the
+ * synthesized premium gift now:
+ *   • appears in `giftsGiven` (gross visibility — `sumGrossGifts` counts cash
+ *     events with `sourcePolicyAccountId`), and
+ *   • nets `annualExclusion × beneficiaryCount` against the gross when the
+ *     owning trust has Crummey powers + natural-person beneficiaries.
+ *
+ * The fixture is sized so the premium STRICTLY exceeds `exclusion × N`, making
+ * `taxableGiftsThisYear` a specific nonzero number that ONLY the per-beneficiary
+ * (×N) model produces — the old flat single-exclusion model would yield a
+ * different value. That's what makes this assertion discriminating.
+ */
+const B4_TRUST = "trust-ilit-b4";
+const B4_FM_CLIENT = "fm-client-b4";
+const B4_BENE_1 = "fm-bene-1-b4";
+const B4_BENE_2 = "fm-bene-2-b4";
+const B4_BENEFICIARY_COUNT = 2;
+// premium > exclusion × N (19_000 × 2 = 38_000) so taxable floors above 0.
+const B4_PREMIUM = 50_000;
+// taxable = premium − exclusion × N = 50_000 − 38_000 = 12_000 (nonzero).
+const B4_EXPECTED_TAXABLE =
+  B4_PREMIUM - ANNUAL_EXCLUSION * B4_BENEFICIARY_COUNT;
+
+/** ILIT with two natural-person (familyMemberId) Crummey beneficiaries so the
+ *  annual-exclusion multiplier is exactly 2. */
+function buildB4Scenario(): ClientData {
+  const householdCheckingB4: Account = {
+    id: "acct-checking-b4",
+    name: "Household Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    isDefaultChecking: true,
+    value: 1_000_000,
+    basis: 1_000_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: B4_FM_CLIENT, percent: 1 }],
+  };
+
+  const trustCheckingB4: Account = {
+    id: "acct-trust-checking-b4",
+    name: "Trust Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    isDefaultChecking: true,
+    value: 0,
+    basis: 0,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: B4_TRUST, percent: 1 }],
+  };
+
+  const trustPolicyB4: Account = {
+    id: "pol-ilit",
+    name: "ILIT Term Policy",
+    category: "life_insurance",
+    subType: "term",
+    titlingType: "jtwros",
+    insuredPerson: "client",
+    value: 0,
+    basis: 0,
+    growthRate: 0,
+    rmdEnabled: false,
+    lifeInsurance: {
+      faceValue: 1_000_000,
+      costBasis: 0,
+      premiumAmount: B4_PREMIUM,
+      premiumYears: null,
+      policyType: "term",
+      termIssueYear: START_YEAR,
+      termLengthYears: 20,
+      endsAtInsuredRetirement: false,
+      cashValueGrowthMode: "basic",
+      premiumScheduleMode: "off",
+      deathBenefitScheduleMode: "off",
+      incomeScheduleMode: "off",
+      postPayoutGrowthRate: 0.04,
+      cashValueSchedule: [],
+      premiumPayer: "client",
+    },
+    owners: [{ kind: "entity", entityId: B4_TRUST, percent: 1 }],
+  };
+
+  const base: ClientData = {
+    client: CLIENT,
+    accounts: [householdCheckingB4, trustCheckingB4, trustPolicyB4],
+    incomes: [],
+    expenses: [],
+    liabilities: [],
+    savingsRules: [],
+    withdrawalStrategy: [],
+    planSettings: PLAN,
+    familyMembers: [
+      {
+        id: B4_FM_CLIENT,
+        role: "client",
+        relationship: "other",
+        firstName: "Solo",
+        lastName: "Client",
+        dateOfBirth: "1980-01-01",
+      },
+      {
+        id: B4_BENE_1,
+        role: "other",
+        relationship: "child",
+        firstName: "Bene",
+        lastName: "One",
+        dateOfBirth: "2010-01-01",
+      },
+      {
+        id: B4_BENE_2,
+        role: "other",
+        relationship: "child",
+        firstName: "Bene",
+        lastName: "Two",
+        dateOfBirth: "2012-01-01",
+      },
+    ],
+    entities: [
+      {
+        id: B4_TRUST,
+        name: "Client ILIT",
+        entityType: "trust",
+        trustSubType: "ilit",
+        isIrrevocable: true,
+        isGrantor: false,
+        includeInPortfolio: false,
+        grantor: "client",
+        crummeyPowers: true,
+        // Two natural-person primary beneficiaries → crummeyBeneficiaryCount = 2.
+        beneficiaries: [
+          {
+            id: "ben-1",
+            tier: "primary",
+            percentage: 0.5,
+            familyMemberId: B4_BENE_1,
+            sortOrder: 0,
+          },
+          {
+            id: "ben-2",
+            tier: "primary",
+            percentage: 0.5,
+            familyMemberId: B4_BENE_2,
+            sortOrder: 1,
+          },
+        ],
+      },
+    ],
+    gifts: [],
+    giftEvents: [],
+    taxYearRows: [
+      {
+        ...g4TaxYearRow,
+        year: START_YEAR,
+        giftAnnualExclusion: ANNUAL_EXCLUSION,
+      } as TaxYearParameters,
+    ],
+  } as unknown as ClientData;
+
+  return withSynthesizedPremiumGifts(withSynthesizedPremiums(base));
+}
+
+describe("life insurance — premium gift via real runProjectionWithEvents giftLedger", () => {
+  it("premium gift flows into giftLedger with per-beneficiary Crummey treatment", () => {
+    const data = buildB4Scenario();
+    const result = runProjectionWithEvents(data);
+
+    const row = result.giftLedger.find((r) => r.year === START_YEAR);
+    expect(row).toBeDefined();
+
+    // Gross visibility: the synthesized premium shows up in giftsGiven.
+    expect(row!.giftsGiven).toBeGreaterThan(0);
+    expect(row!.giftsGiven).toBeCloseTo(B4_PREMIUM, 6);
+
+    // Crummey multiplication: taxable = premium − exclusion × beneficiaryCount.
+    //   50_000 − 19_000 × 2 = 12_000 — a value ONLY the ×N model produces.
+    expect(row!.perGrantor.client.taxableGiftsThisYear).toBe(B4_EXPECTED_TAXABLE);
+    expect(B4_EXPECTED_TAXABLE).toBe(12_000); // guard the arithmetic itself
+  });
+});
