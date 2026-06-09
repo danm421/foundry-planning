@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { TaxResult } from "../../../lib/tax/types";
-import { diffEquityTaxImpact } from "../tax-impact";
+import { diffEquityTaxImpact, buildEquityTaxImpact } from "../tax-impact";
+import type { ProjectionYear } from "../../types";
 
 type Flow = TaxResult["flow"];
 
@@ -49,5 +50,43 @@ describe("diffEquityTaxImpact", () => {
     expect(r.capitalGains).toBe(0);
     expect(r.capGainsTax).toBe(6000);
     expect(r.fedIncomeTax).toBe(7000);
+  });
+});
+
+function projYear(year: number, impact?: Partial<import("../tax-impact").EquityTaxImpact>): ProjectionYear {
+  const e = impact && {
+    ordinaryIncome: 0, capitalGains: 0, isoSpread: 0, fedIncomeTax: 0,
+    capGainsTax: 0, payrollTax: 0, stateTax: 0, totalTax: 0, ...impact,
+  };
+  // Only the fields buildEquityTaxImpact reads matter; cast the partial year.
+  return { year, equityTaxImpact: e } as unknown as ProjectionYear;
+}
+
+describe("buildEquityTaxImpact", () => {
+  it("emits one row per equity-active year, skips inactive years, sums totals", () => {
+    const years = [
+      projYear(2026), // no equityTaxImpact → skipped
+      projYear(2027, { ordinaryIncome: 100, capitalGains: 0, fedIncomeTax: 20, payrollTax: 8, stateTax: 5, totalTax: 33 }),
+      projYear(2028, { ordinaryIncome: 0, capitalGains: 200, capGainsTax: 30, stateTax: 10, totalTax: 40 }),
+    ];
+    const m = buildEquityTaxImpact(years);
+    expect(m.hasActivity).toBe(true);
+    expect(m.rows.map((r) => r.year)).toEqual([2027, 2028]);
+    // 2027 row: totalIncome = 100 + 0; netIncome = 100 − 33
+    expect(m.rows[0].totalIncome).toBe(100);
+    expect(m.rows[0].netIncome).toBe(67);
+    // 2028 row: totalIncome = 0 + 200; netIncome = 200 − 40
+    expect(m.rows[1].totalIncome).toBe(200);
+    expect(m.rows[1].netIncome).toBe(160);
+    // totals = column sums
+    expect(m.totals.totalIncome).toBe(300);
+    expect(m.totals.totalTax).toBe(73);
+    expect(m.totals.netIncome).toBe(227);
+  });
+
+  it("reports no activity when no year has an equity tax impact", () => {
+    const m = buildEquityTaxImpact([projYear(2026), projYear(2027)]);
+    expect(m.hasActivity).toBe(false);
+    expect(m.rows).toEqual([]);
   });
 });
