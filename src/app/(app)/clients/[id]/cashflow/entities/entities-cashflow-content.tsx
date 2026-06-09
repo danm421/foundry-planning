@@ -3,33 +3,13 @@ import { clients, entities } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { mapAccountBusinessTypeToEntityType } from "@/lib/presentations/entity-picker-options";
 import EntitiesCashFlowReportView from "@/components/entities-cashflow-report-view";
 
 interface Props {
   id: string;
   firmId: string;
   scenarioParam?: string;
-}
-
-/** Map an account-business type to the report's entityType union. `sole_prop`
- *  has no entity equivalent — surfaced as `"other"` so it groups with the
- *  generic businesses bucket in the header dropdown. */
-function mapAccountBusinessTypeToEntityType(
-  businessType: string | null | undefined,
-): string {
-  switch (businessType) {
-    case "llc":
-    case "s_corp":
-    case "c_corp":
-    case "partnership":
-      return businessType;
-    case "sole_prop":
-    case "other":
-    case null:
-    case undefined:
-    default:
-      return "other";
-  }
 }
 
 export async function EntitiesCashFlowContent({ id, firmId, scenarioParam }: Props) {

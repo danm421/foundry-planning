@@ -21,12 +21,16 @@ export function EntityCashFlowOptionsControl({ value, onChange }: Props) {
 
   // Mirror the in-app default (selectedEntityId = entities[0]?.id): when no
   // entity is chosen yet, pre-select the first so a freshly added page renders.
+  // Deps intentionally exclude `onChange` (a fresh arrow each parent render) and
+  // the full `value` object — the body only runs while no entity is selected, so
+  // re-firing on unrelated re-renders would be wasted work.
   useEffect(() => {
     if (!value.entityId && entities.length > 0) {
       const first = entities[0];
       onChange({ ...value, entityId: first.id, entityName: first.name });
     }
-  }, [value, entities, onChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.entityId, entities]);
 
   if (entities.length === 0) {
     return (
