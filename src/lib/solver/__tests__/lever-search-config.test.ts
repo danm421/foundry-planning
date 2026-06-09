@@ -7,8 +7,11 @@ import {
   SAVINGS_ZERO_DEFAULT_HI,
   SAVINGS_SOURCE_MULTIPLIER,
 } from "../lever-search-config";
-import { SYNTHETIC_SAVINGS_ACCOUNT_ID } from "@/lib/analysis/hypothetical-savings";
 import { applyMutations } from "../apply-mutations";
+
+// The solver excludes self-funding savings rules by their fundFromExpenseReduction
+// flag, not by a specific account id — any stable id works for this fixture.
+const SYNTHETIC_SAVINGS_ACCOUNT_ID = "hypothetical-additional-savings";
 
 const emptyTree = {
   client: {},

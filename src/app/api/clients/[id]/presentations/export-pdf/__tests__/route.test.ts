@@ -51,7 +51,7 @@ vi.mock("@/lib/audit", () => ({
 }));
 
 // Firm branding + default cover logo (the route resolves these for the cover).
-vi.mock("@/lib/comparison-pdf/branding", () => ({
+vi.mock("@/lib/branding/branding", () => ({
   resolveBranding: vi.fn().mockResolvedValue({
     primaryColor: "#b87f1f",
     firmName: "Acme Wealth Management",

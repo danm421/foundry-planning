@@ -11,7 +11,7 @@
 //   - toggles=g1,g2     → toggle group ids; only honored on the right side
 import type { ScenarioRef } from "@/lib/scenario/loader";
 import type { ToggleState } from "@/engine/scenario/types";
-import { MAX_PLANS } from "@/lib/comparison/series-palette";
+import { MAX_PLANS } from "@/lib/scenario/series-palette";
 
 export function parseCompareSearchParams(
   sp: Record<string, string | undefined>,

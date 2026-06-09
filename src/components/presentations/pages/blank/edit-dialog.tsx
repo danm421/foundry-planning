@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RichTextEditor } from "@/components/comparison/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor";
 
 interface Props {
   initialMarkdown: string;

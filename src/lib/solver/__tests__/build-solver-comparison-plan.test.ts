@@ -29,37 +29,18 @@ const years: ProjectionYear[] = [
 ];
 
 describe("buildSolverComparisonPlan", () => {
-  it("returns a ComparisonPlan-shaped object with the supplied tree and result", () => {
+  it("returns a SharedMcPlan with the supplied id, label, tree and result", () => {
     const plan = buildSolverComparisonPlan({
       id: "base",
       label: "Base Facts",
       tree,
       years,
       isBaseline: true,
-      index: 0,
     });
     expect(plan.id).toBe("base");
     expect(plan.label).toBe("Base Facts");
-    expect(plan.isBaseline).toBe(true);
     expect(plan.tree).toBe(tree);
     expect(plan.result.years).toBe(years);
-  });
-
-  it("stubs the auxiliary fields with empty / null values", () => {
-    const plan = buildSolverComparisonPlan({
-      id: "working:v1",
-      label: "Working",
-      tree,
-      years,
-      isBaseline: false,
-      index: 1,
-    });
-    expect(plan.liquidityRows).toEqual([]);
-    expect(plan.finalEstate).toBeNull();
-    expect(plan.panelData).toBeNull();
-    expect(plan.allocation).toBeNull();
-    expect(plan.lifetime).toBeDefined();
-    expect(plan.lifetime.total).toBe(0);
   });
 
   // Solver plans wrap transient in-memory trees (live base + working edits) that
@@ -73,7 +54,6 @@ describe("buildSolverComparisonPlan", () => {
       tree,
       years,
       isBaseline: false,
-      index: 1,
     });
     expect(plan.ref.kind).toBe("snapshot");
   });
@@ -85,7 +65,6 @@ describe("buildSolverComparisonPlan", () => {
       tree,
       years,
       isBaseline: true,
-      index: 0,
     });
     expect(plan.ref.kind).toBe("snapshot");
   });

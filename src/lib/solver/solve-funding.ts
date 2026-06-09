@@ -6,7 +6,7 @@
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ResolutionContext } from "@/lib/projection/resolve-entity";
-import { fundingScore } from "@/lib/analysis/retirement-funding-score";
+import { fundingScore } from "@/lib/retirement/retirement-funding-score";
 import { applyMutations } from "./apply-mutations";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
 import {

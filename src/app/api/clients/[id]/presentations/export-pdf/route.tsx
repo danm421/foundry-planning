@@ -6,7 +6,7 @@ import { inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios, scenarioSnapshots } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { resolveBranding } from "@/lib/comparison-pdf/branding";
+import { resolveBranding } from "@/lib/branding/branding";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
 import {
   checkExportPdfRateLimit,

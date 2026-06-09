@@ -11,7 +11,7 @@ import {
   type LivingExpenseCompare, type OtherRetirementExpenses, type RetirementIncomeRow, type AssetTxnRow,
 } from "./aggregate";
 import { buildSocialSecurity, type SsBreakdown, type SsClient } from "./social-security";
-import { lifetimeFunding, type FundingBreakdown } from "@/lib/analysis/retirement-funding";
+import { lifetimeFunding, type FundingBreakdown } from "@/lib/retirement/retirement-funding";
 import { buildRetirementNarrative } from "./narrative";
 
 /** Lifetime funding sources in display order — the single source of truth for

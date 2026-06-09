@@ -5,7 +5,7 @@ import {
   type ProjectionResult,
 } from "@/engine";
 import { buildHistogramSeries } from "@/lib/monte-carlo/histogram-series";
-import { successByYear } from "@/lib/comparison/success-by-year";
+import { successByYear } from "@/lib/monte-carlo/success-by-year";
 import type { ClientData } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import type { MonteCarloReportPayload } from "./view-model";

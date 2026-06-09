@@ -3,7 +3,7 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
 import { buildRetirementComparisonMetrics } from "./metrics";
 import { lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
-import { deriveRetirementSummary } from "@/lib/analysis/derive-retirement-summary";
+import { deriveRetirementSummary } from "@/lib/retirement/derive-retirement-summary";
 import { fmtUsdCompact } from "./format";
 import type {
   RetirementComparisonOptions,

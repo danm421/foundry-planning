@@ -1,8 +1,8 @@
 "use client";
 
 import type { ProjectionYear } from "@/engine/types";
-import { AnalysisYearTable } from "@/components/analysis/analysis-year-table";
-import { retirementYearColumns } from "@/components/analysis/retirement/retirement-year-columns";
+import { AnalysisYearTable } from "@/components/scenario/year-table";
+import { retirementYearColumns } from "@/components/scenario/retirement-year-columns";
 
 interface Props {
   /** The full working-plan projection — all years, no retirement slice. */
