@@ -11,6 +11,7 @@ const baseInput = {
   priorTaxableGifts: { client: 0, spouse: 0 },
   gifts: [] as Gift[],
   giftEvents: [] as GiftEvent[],
+  entities: [],
   externalBeneficiaryKindById: new Map<string, "charity" | "individual">(),
   annualExclusionsByYear: { 2026: 19_000, 2027: 19_000, 2028: 20_000, 2029: 20_000, 2030: 20_000 },
   taxInflationRate: 0.025,
@@ -366,5 +367,30 @@ describe("computeGiftLedger", () => {
     expect(ledger[2].perGrantor.client.cumulativeGiftTax).toBeGreaterThan(
       ledger[0].perGrantor.client.cumulativeGiftTax,
     );
+  });
+});
+
+describe("computeGiftLedger — unified Crummey model", () => {
+  const trust = {
+    id: "t1", name: "ILIT", entityType: "trust", isIrrevocable: true, crummeyPowers: true,
+    includeInPortfolio: false, isGrantor: false,
+    beneficiaries: [
+      { id: "b1", tier: "primary", percentage: 50, familyMemberId: "k1", sortOrder: 0 },
+      { id: "b2", tier: "primary", percentage: 50, familyMemberId: "k2", sortOrder: 1 },
+    ],
+  } as unknown as import("@/engine/types").EntitySummary;
+
+  it("premium gift to a 2-beneficiary Crummey trust: taxable = amount − 2×exclusion; appears in gross", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [trust],
+      annualExclusionsByYear: { 2030: 18_000 },
+      giftEvents: [
+        { kind: "cash", year: 2030, amount: 50_000, grantor: "client", useCrummeyPowers: true, recipientEntityId: "t1", sourcePolicyAccountId: "pol1" },
+      ],
+    });
+    const row = ledger.find((r) => r.year === 2030)!;
+    expect(row.giftsGiven).toBe(50_000);                       // gross now visible
+    expect(row.perGrantor.client.taxableGiftsThisYear).toBe(14_000); // 50k − 36k
   });
 });

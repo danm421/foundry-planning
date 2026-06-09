@@ -1,5 +1,10 @@
-import type { Gift, GiftEvent } from "./types";
+import type { EntitySummary, Gift, GiftEvent } from "./types";
 import { applyUnifiedRateSchedule, beaForYear } from "@/lib/tax/estate";
+import {
+  toCanonicalGifts,
+  treatCanonicalGift,
+  type CanonicalGift,
+} from "@/lib/gifts/normalize-gifts";
 
 export interface GrantorYearState {
   /** Taxable gifts this year only (after annual exclusion + charitable). */
@@ -30,6 +35,10 @@ export interface GiftLedgerInput {
   priorTaxableGifts: { client: number; spouse: number };
   gifts: Gift[];
   giftEvents: GiftEvent[];
+  /** All modeled entities — supplies trust isIrrevocable/entityType + Crummey
+   *  beneficiary counts to the unified gift-tax treatment. */
+  entities: EntitySummary[];
+  externalBeneficiaries?: Array<{ id: string; kind: "charity" | "individual" }>;
   externalBeneficiaryKindById: Map<string, "charity" | "individual">;
   annualExclusionsByYear: Record<number, number>;
   taxInflationRate: number;
@@ -55,6 +64,13 @@ function emptyState(): GrantorYearState {
 export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   const result: GiftLedgerYear[] = [];
 
+  const canonical = toCanonicalGifts(input.gifts, input.giftEvents, {
+    entities: input.entities,
+    externalBeneficiaries: input.externalBeneficiaries,
+    accountValueAtYear: input.accountValueAtYear,
+    entityValueAtYear: input.entityValueAtYear,
+  });
+
   let prevClient: GrantorYearState = {
     ...emptyState(),
     cumulativeTaxableGifts: input.priorTaxableGifts.client,
@@ -69,9 +85,9 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
     : undefined;
 
   for (let year = input.planStartYear; year <= input.planEndYear; year++) {
-    const client = stepGrantor("client", year, prevClient, input);
+    const client = stepGrantor("client", year, prevClient, input, canonical);
     const spouse = input.hasSpouse && prevSpouse
-      ? stepGrantor("spouse", year, prevSpouse, input)
+      ? stepGrantor("spouse", year, prevSpouse, input, canonical)
       : undefined;
 
     const taxableGiftsGiven = client.taxableGiftsThisYear + (spouse?.taxableGiftsThisYear ?? 0);
@@ -92,14 +108,6 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   return result;
 }
 
-function isCharityRecipient(
-  recipient: { recipientExternalBeneficiaryId?: string } | undefined,
-  externalBeneficiaryKindById: Map<string, "charity" | "individual">,
-): boolean {
-  const id = recipient?.recipientExternalBeneficiaryId;
-  return id != null && externalBeneficiaryKindById.get(id) === "charity";
-}
-
 function assetGiftValue(
   ev: Extract<GiftEvent, { kind: "asset" }>,
   accountValueAtYear: GiftLedgerInput["accountValueAtYear"],
@@ -118,25 +126,6 @@ function businessInterestGiftValue(
   return value * ev.percent;
 }
 
-function sumLegacyCashGifts(
-  grantor: Grantor,
-  year: number,
-  input: GiftLedgerInput,
-): number {
-  const exclusion = input.annualExclusionsByYear[year] ?? 0;
-  let total = 0;
-  for (const g of input.gifts) {
-    if (g.year !== year) continue;
-    if (isCharityRecipient(g, input.externalBeneficiaryKindById)) continue;
-    if (g.grantor === grantor) {
-      total += Math.max(0, g.amount - exclusion);
-    } else if (g.grantor === "joint") {
-      total += Math.max(0, g.amount / 2 - exclusion);
-    }
-  }
-  return total;
-}
-
 function sumGrossGifts(year: number, input: GiftLedgerInput): number {
   let total = 0;
   for (const g of input.gifts) {
@@ -145,7 +134,7 @@ function sumGrossGifts(year: number, input: GiftLedgerInput): number {
   for (const ev of input.giftEvents) {
     if (ev.year !== year) continue;
     if (ev.kind === "cash") {
-      if (ev.seriesId == null) continue;
+      if (ev.seriesId == null && ev.sourcePolicyAccountId == null) continue;
       total += ev.amount;
     } else if (ev.kind === "asset") {
       total += assetGiftValue(ev, input.accountValueAtYear);
@@ -156,51 +145,17 @@ function sumGrossGifts(year: number, input: GiftLedgerInput): number {
   return total;
 }
 
-function sumGiftEvents(
-  grantor: Grantor,
-  year: number,
-  input: GiftLedgerInput,
-): number {
-  const exclusion = input.annualExclusionsByYear[year] ?? 0;
-  let total = 0;
-  for (const ev of input.giftEvents) {
-    if (ev.year !== year) continue;
-    if (isCharityRecipient(ev as { recipientExternalBeneficiaryId?: string }, input.externalBeneficiaryKindById)) continue;
-
-    if (ev.kind === "cash") {
-      // One-time cash gifts come through legacy `gifts` array; only series fan-outs here.
-      if (ev.seriesId == null) continue;
-      if (ev.grantor === grantor) {
-        total += Math.max(0, ev.amount - exclusion);
-      } else if (ev.grantor === "joint") {
-        // §2513: half attributed to each spouse, each netting their own exclusion.
-        total += Math.max(0, ev.amount / 2 - exclusion);
-      }
-      continue;
-    }
-
-    // asset / liability / business_interest events are never split across spouses.
-    if (ev.grantor !== grantor) continue;
-    if (ev.kind === "asset") {
-      total += assetGiftValue(ev, input.accountValueAtYear);
-    } else if (ev.kind === "business_interest") {
-      // No annual exclusion — Crummey applies to cash only.
-      total += businessInterestGiftValue(ev, input.entityValueAtYear);
-    }
-    // `liability` events contribute 0 (debt assumption is not a gift of value).
-  }
-  return total;
-}
-
 function stepGrantor(
   grantor: Grantor,
   year: number,
   prev: GrantorYearState,
   input: GiftLedgerInput,
+  canonical: CanonicalGift[],
 ): GrantorYearState {
-  const taxableGiftsThisYear =
-    sumLegacyCashGifts(grantor, year, input) +
-    sumGiftEvents(grantor, year, input);
+  const exclusion = input.annualExclusionsByYear[year] ?? 0;
+  const taxableGiftsThisYear = canonical
+    .filter((cg) => cg.grantor === grantor && cg.year === year)
+    .reduce((sum, cg) => sum + treatCanonicalGift(cg, exclusion).lifetimeUsed, 0);
 
   const cumulativeBefore = prev.cumulativeTaxableGifts;
   const cumulativeAfter = cumulativeBefore + taxableGiftsThisYear;

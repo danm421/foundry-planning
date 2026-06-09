@@ -5790,6 +5790,10 @@ export function runProjectionWithEvents(
     priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
     gifts: data.gifts ?? [],
     giftEvents: data.giftEvents ?? [],
+    entities: data.entities ?? [],
+    externalBeneficiaries: (data.externalBeneficiaries ?? [])
+      .filter((e) => e.kind != null)
+      .map((e) => ({ id: e.id, kind: e.kind! })),
     externalBeneficiaryKindById: new Map(
       (data.externalBeneficiaries ?? [])
         .filter((e) => e.kind != null)
