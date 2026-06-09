@@ -41,6 +41,7 @@ describe("registry — Cash Flow page", () => {
         "clientProfile",
         "cover",
         "entitiesBalanceSheet",
+        "entityCashFlow",
         "estateFlow",
         "estateFlowChart",
         "estateGiftTax",
