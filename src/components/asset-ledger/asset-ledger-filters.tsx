@@ -1,23 +1,23 @@
-// src/components/flows-ledger/flows-ledger-filters.tsx
+// src/components/asset-ledger/asset-ledger-filters.tsx
 "use client";
 
-import { FLOW_CATEGORY_LABEL, type FlowCategory } from "@/lib/flows-ledger";
+import { FLOW_CATEGORY_LABEL, type FlowCategory } from "@/lib/asset-ledger";
 
-export interface FlowsFilterState {
+export interface AssetFilterState {
   /** Empty = show all categories. */
   categories: Set<FlowCategory>;
   hideZero: boolean;
 }
 
-export default function FlowsLedgerFilters({
+export default function AssetLedgerFilters({
   present,
   state,
   onChange,
 }: {
   /** Categories actually appearing in the selected year (no dead chips). */
   present: FlowCategory[];
-  state: FlowsFilterState;
-  onChange: (next: FlowsFilterState) => void;
+  state: AssetFilterState;
+  onChange: (next: AssetFilterState) => void;
 }) {
   function toggle(c: FlowCategory) {
     const next = new Set(state.categories);

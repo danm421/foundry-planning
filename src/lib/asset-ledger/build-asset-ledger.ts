@@ -1,6 +1,6 @@
-// src/lib/flows-ledger/build-flows-ledger.ts
+// src/lib/asset-ledger/build-asset-ledger.ts
 import type { AccountLedger, ProjectionYear } from "@/engine/types";
-import type { FlowsAccountBlock, FlowsLedger, FlowsLedgerContext, FlowsOwnerSection, FlowsRow } from "./types";
+import type { AssetAccountBlock, AssetLedger, AssetLedgerContext, AssetOwnerSection, AssetRow } from "./types";
 
 const HOUSEHOLD_ID = "household";
 const RECONCILE_TOLERANCE = 1;
@@ -10,8 +10,8 @@ function isEmpty(ledger: AccountLedger): boolean {
   return ledger.beginningValue === 0 && ledger.endingValue === 0 && ledger.entries.length === 0;
 }
 
-function buildBlock(id: string, ledger: AccountLedger, ctx: FlowsLedgerContext): FlowsAccountBlock {
-  const rows: FlowsRow[] = ledger.entries.map((e) => ({
+function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext): AssetAccountBlock {
+  const rows: AssetRow[] = ledger.entries.map((e) => ({
     category: e.category,
     label: e.label,
     amount: e.amount,
@@ -43,14 +43,14 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: FlowsLedgerContext):
 }
 
 /** Order accounts within a section by category, then name. */
-function byCategoryThenName(a: FlowsAccountBlock, b: FlowsAccountBlock): number {
+function byCategoryThenName(a: AssetAccountBlock, b: AssetAccountBlock): number {
   return a.category === b.category ? a.name.localeCompare(b.name) : a.category.localeCompare(b.category);
 }
 
-export function buildFlowsLedger(year: ProjectionYear, ctx: FlowsLedgerContext): FlowsLedger {
-  const household: FlowsAccountBlock[] = [];
+export function buildAssetLedger(year: ProjectionYear, ctx: AssetLedgerContext): AssetLedger {
+  const household: AssetAccountBlock[] = [];
   // Preserve first-seen entity order for stable section ordering.
-  const byEntity = new Map<string, FlowsAccountBlock[]>();
+  const byEntity = new Map<string, AssetAccountBlock[]>();
 
   for (const [accountId, ledger] of Object.entries(year.accountLedgers)) {
     if (isEmpty(ledger)) continue;
@@ -69,7 +69,7 @@ export function buildFlowsLedger(year: ProjectionYear, ctx: FlowsLedgerContext):
     }
   }
 
-  const sections: FlowsOwnerSection[] = [];
+  const sections: AssetOwnerSection[] = [];
   if (household.length > 0) {
     sections.push({ id: HOUSEHOLD_ID, label: "Household", kind: "household", accounts: household.sort(byCategoryThenName) });
   }

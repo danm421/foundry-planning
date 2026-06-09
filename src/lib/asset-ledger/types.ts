@@ -1,10 +1,10 @@
-// src/lib/flows-ledger/types.ts
+// src/lib/asset-ledger/types.ts
 import type { AccountLedgerEntry } from "@/engine/types";
 
 /** Reuse the engine's own ledger-entry category union — single source of truth. */
 export type FlowCategory = AccountLedgerEntry["category"];
 
-export interface FlowsRow {
+export interface AssetRow {
   category: FlowCategory;
   /** entry.label, e.g. "Growth", "RMD", "Supplemental withdrawal". */
   label: string;
@@ -15,7 +15,7 @@ export interface FlowsRow {
   internal: boolean;
 }
 
-export interface FlowsAccountBlock {
+export interface AssetAccountBlock {
   id: string;
   name: string;
   /** Account category (taxable/cash/retirement/real_estate/business/…). */
@@ -33,7 +33,7 @@ export interface FlowsAccountBlock {
     internalDistributions: number;
   };
   /** Entries in the order the engine applied them. */
-  rows: FlowsRow[];
+  rows: AssetRow[];
   /** |residual| ≤ $1. */
   reconciles: boolean;
   /** endingValue − beginningValue − Σ rows.amount. ≈0 normally; nonzero = engine bug. */
@@ -42,22 +42,22 @@ export interface FlowsAccountBlock {
 
 export type OwnerKind = "household" | "trust" | "business" | "charity" | "individual";
 
-export interface FlowsOwnerSection {
+export interface AssetOwnerSection {
   /** "household" or the entity id. */
   id: string;
   label: string;
   kind: OwnerKind;
-  accounts: FlowsAccountBlock[];
+  accounts: AssetAccountBlock[];
 }
 
-export interface FlowsLedger {
+export interface AssetLedger {
   year: number;
   ages: { client: number; spouse?: number };
-  sections: FlowsOwnerSection[];
+  sections: AssetOwnerSection[];
 }
 
 /** Name/owner lookup context the report assembles from ClientData + projection. */
-export interface FlowsLedgerContext {
+export interface AssetLedgerContext {
   /** account id → display name (includes synthetic equity-comp accounts). */
   accountNames: Record<string, string>;
   /** account id → category (includes synthetic accounts). */

@@ -1,4 +1,4 @@
-// src/lib/flows-ledger/categories.test.ts
+// src/lib/asset-ledger/categories.test.ts
 import { describe, it, expect } from "vitest";
 import { FLOW_CATEGORY_LABEL } from "./categories";
 

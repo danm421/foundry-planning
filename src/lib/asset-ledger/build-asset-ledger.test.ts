@@ -1,8 +1,8 @@
-// src/lib/flows-ledger/build-flows-ledger.test.ts
+// src/lib/asset-ledger/build-asset-ledger.test.ts
 import { describe, it, expect } from "vitest";
 import type { AccountLedger, ProjectionYear } from "@/engine/types";
-import { buildFlowsLedger } from "./build-flows-ledger";
-import type { FlowsLedgerContext } from "./types";
+import { buildAssetLedger } from "./build-asset-ledger";
+import type { AssetLedgerContext } from "./types";
 
 /** Fill an AccountLedger with zero defaults, override what the test cares about. */
 function mkLedger(p: Partial<AccountLedger>): AccountLedger {
@@ -21,7 +21,7 @@ function mkLedger(p: Partial<AccountLedger>): AccountLedger {
   };
 }
 
-/** Minimal ProjectionYear — buildFlowsLedger reads only year/ages/accountLedgers. */
+/** Minimal ProjectionYear — buildAssetLedger reads only year/ages/accountLedgers. */
 function mkYear(accountLedgers: Record<string, AccountLedger>): ProjectionYear {
   return {
     year: 2031,
@@ -30,7 +30,7 @@ function mkYear(accountLedgers: Record<string, AccountLedger>): ProjectionYear {
   } as unknown as ProjectionYear;
 }
 
-const ctx: FlowsLedgerContext = {
+const ctx: AssetLedgerContext = {
   accountNames: { brokerage: "Joint Brokerage", ira: "John IRA", trustAcct: "Trust Brokerage" },
   accountCategories: { brokerage: "taxable", ira: "retirement", trustAcct: "taxable" },
   entityNames: { ent1: "Smith Family Trust" },
@@ -38,7 +38,7 @@ const ctx: FlowsLedgerContext = {
   accountEntityOwners: new Map([["trustAcct", { entityId: "ent1", percent: 1 }]]),
 };
 
-describe("buildFlowsLedger", () => {
+describe("buildAssetLedger", () => {
   const year = mkYear({
     brokerage: mkLedger({
       beginningValue: 500_000,
@@ -70,7 +70,7 @@ describe("buildFlowsLedger", () => {
   });
 
   it("groups household accounts under Household and entity accounts under the entity", () => {
-    const ledger = buildFlowsLedger(year, ctx);
+    const ledger = buildAssetLedger(year, ctx);
     expect(ledger.sections.map((s) => s.label)).toEqual(["Household", "Smith Family Trust"]);
     expect(ledger.sections[0].kind).toBe("household");
     expect(ledger.sections[0].accounts.map((a) => a.name)).toEqual(["John IRA", "Joint Brokerage"]); // retirement < taxable by category
@@ -79,7 +79,7 @@ describe("buildFlowsLedger", () => {
   });
 
   it("maps entries to signed rows, plumbs the internal-transfer flag", () => {
-    const ledger = buildFlowsLedger(year, ctx);
+    const ledger = buildAssetLedger(year, ctx);
     const brokerage = ledger.sections[0].accounts.find((a) => a.name === "Joint Brokerage")!;
     expect(brokerage.rows).toHaveLength(3);
     const wd = brokerage.rows.find((r) => r.category === "withdrawal")!;
@@ -89,7 +89,7 @@ describe("buildFlowsLedger", () => {
   });
 
   it("surfaces summary figures and net change", () => {
-    const ledger = buildFlowsLedger(year, ctx);
+    const ledger = buildAssetLedger(year, ctx);
     const ira = ledger.sections[0].accounts.find((a) => a.name === "John IRA")!;
     expect(ira.summary.growth).toBe(21_000);
     expect(ira.summary.rmd).toBe(14_000);
@@ -97,7 +97,7 @@ describe("buildFlowsLedger", () => {
   });
 
   it("reconciles when entries sum to ending − beginning", () => {
-    const ledger = buildFlowsLedger(year, ctx);
+    const ledger = buildAssetLedger(year, ctx);
     for (const s of ledger.sections) {
       for (const a of s.accounts) {
         expect(a.reconciles, a.name).toBe(true);
@@ -114,7 +114,7 @@ describe("buildFlowsLedger", () => {
         entries: [{ category: "growth", label: "Growth", amount: 5_000 }], // ...but entries only +5k
       }),
     });
-    const ledger = buildFlowsLedger(broken, ctx);
+    const ledger = buildAssetLedger(broken, ctx);
     const block = ledger.sections[0].accounts[0];
     expect(block.reconciles).toBe(false);
     expect(block.residual).toBe(15_000);
@@ -125,20 +125,20 @@ describe("buildFlowsLedger", () => {
       brokerage: mkLedger({ beginningValue: 0, endingValue: 0, entries: [] }),
       ira: mkLedger({ beginningValue: 1, endingValue: 1, entries: [{ category: "growth", label: "Growth", amount: 0 }] }),
     });
-    const ledger = buildFlowsLedger(withEmpty, ctx);
+    const ledger = buildAssetLedger(withEmpty, ctx);
     const names = ledger.sections.flatMap((s) => s.accounts.map((a) => a.name));
     expect(names).toEqual(["John IRA"]);
   });
 
   it("labels an unknown-entity owner with its raw id rather than dropping it", () => {
-    const orphanCtx: FlowsLedgerContext = {
+    const orphanCtx: AssetLedgerContext = {
       ...ctx,
       entityNames: {}, // entity not in the map
       entityKinds: {},
       accountEntityOwners: new Map([["brokerage", { entityId: "ghost", percent: 1 }]]),
     };
     const y = mkYear({ brokerage: mkLedger({ beginningValue: 10, endingValue: 10, entries: [{ category: "growth", label: "Growth", amount: 0 }] }) });
-    const ledger = buildFlowsLedger(y, orphanCtx);
+    const ledger = buildAssetLedger(y, orphanCtx);
     expect(ledger.sections.map((s) => s.label)).toEqual(["ghost"]);
     expect(ledger.sections[0].kind).toBe("business"); // default kind
   });

@@ -1,4 +1,4 @@
-// src/lib/flows-ledger/categories.ts
+// src/lib/asset-ledger/categories.ts
 import type { FlowCategory } from "./types";
 
 /** Display label per engine ledger-entry category. Exhaustive over the union:

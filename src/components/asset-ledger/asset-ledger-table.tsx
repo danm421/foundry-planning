@@ -1,19 +1,19 @@
-// src/components/flows-ledger/flows-ledger-table.tsx
+// src/components/asset-ledger/asset-ledger-table.tsx
 "use client";
 
 import MoneyText from "@/components/money-text";
 import {
   FLOW_CATEGORY_LABEL,
-  type FlowsAccountBlock,
-  type FlowsLedger,
-  type FlowsOwnerSection,
-  type FlowsRow,
-} from "@/lib/flows-ledger";
-import type { FlowsFilterState } from "./flows-ledger-filters";
+  type AssetAccountBlock,
+  type AssetLedger,
+  type AssetOwnerSection,
+  type AssetRow,
+} from "@/lib/asset-ledger";
+import type { AssetFilterState } from "./asset-ledger-filters";
 
 const COLSPAN = 3;
 
-function visibleRows(block: FlowsAccountBlock, f: FlowsFilterState): FlowsRow[] {
+function visibleRows(block: AssetAccountBlock, f: AssetFilterState): AssetRow[] {
   return block.rows.filter((r) => {
     if (f.categories.size > 0 && !f.categories.has(r.category)) return false;
     if (f.hideZero && r.amount === 0) return false;
@@ -21,7 +21,7 @@ function visibleRows(block: FlowsAccountBlock, f: FlowsFilterState): FlowsRow[] 
   });
 }
 
-function AccountBlock({ block, f }: { block: FlowsAccountBlock; f: FlowsFilterState }) {
+function AccountBlock({ block, f }: { block: AssetAccountBlock; f: AssetFilterState }) {
   const rows = visibleRows(block, f);
   return (
     <>
@@ -95,7 +95,7 @@ function AccountBlock({ block, f }: { block: FlowsAccountBlock; f: FlowsFilterSt
   );
 }
 
-function OwnerSection({ section, f }: { section: FlowsOwnerSection; f: FlowsFilterState }) {
+function OwnerSection({ section, f }: { section: AssetOwnerSection; f: AssetFilterState }) {
   return (
     <>
       <tr>
@@ -110,7 +110,7 @@ function OwnerSection({ section, f }: { section: FlowsOwnerSection; f: FlowsFilt
   );
 }
 
-export default function FlowsLedgerTable({ ledger, filter }: { ledger: FlowsLedger; filter: FlowsFilterState }) {
+export default function AssetLedgerTable({ ledger, filter }: { ledger: AssetLedger; filter: AssetFilterState }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-hair bg-card">
       <table className="min-w-full border-separate border-spacing-0 text-sm">

@@ -1,12 +1,12 @@
-// src/components/flows-ledger/__tests__/flows-ledger-table.test.tsx
+// src/components/asset-ledger/__tests__/asset-ledger-table.test.tsx
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import FlowsLedgerTable from "../flows-ledger-table";
-import type { FlowsFilterState } from "../flows-ledger-filters";
-import type { FlowsLedger } from "@/lib/flows-ledger";
+import AssetLedgerTable from "../asset-ledger-table";
+import type { AssetFilterState } from "../asset-ledger-filters";
+import type { AssetLedger } from "@/lib/asset-ledger";
 
-const ledger: FlowsLedger = {
+const ledger: AssetLedger = {
   year: 2031,
   ages: { client: 64 },
   sections: [
@@ -48,23 +48,23 @@ const ledger: FlowsLedger = {
   ],
 };
 
-const showAll: FlowsFilterState = { categories: new Set(), hideZero: false };
+const showAll: AssetFilterState = { categories: new Set(), hideZero: false };
 
-describe("FlowsLedgerTable", () => {
+describe("AssetLedgerTable", () => {
   it("renders an internal tag on internal-transfer rows", () => {
-    render(<FlowsLedgerTable ledger={ledger} filter={showAll} />);
+    render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
     expect(screen.getByText("internal")).toBeDefined();
   });
 
   it("renders a reconcile warning when an account does not reconcile", () => {
-    render(<FlowsLedgerTable ledger={ledger} filter={showAll} />);
+    render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
     expect(screen.getByText(/off by/)).toBeDefined();
   });
 
   it("hides zero-amount rows when hideZero is on", () => {
-    const { rerender } = render(<FlowsLedgerTable ledger={ledger} filter={showAll} />);
+    const { rerender } = render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
     expect(screen.queryByText("Phantom")).not.toBeNull();
-    rerender(<FlowsLedgerTable ledger={ledger} filter={{ categories: new Set(), hideZero: true }} />);
+    rerender(<AssetLedgerTable ledger={ledger} filter={{ categories: new Set(), hideZero: true }} />);
     expect(screen.queryByText("Phantom")).toBeNull();
   });
 });
