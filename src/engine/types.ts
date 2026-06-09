@@ -208,6 +208,10 @@ export interface GrossEstateLine {
    *  `probateEstate`). Set by `computeProbateEstate`. Always false for
    *  liabilities and non-probate accounts. */
   isProbate: boolean;
+  /** Trust name when the source account is tagged into a revocable trust.
+   *  Null/undefined otherwise. Carried for the report badge; a tagged line
+   *  always has isProbate === false. */
+  revocableTrustName?: string | null;
 }
 
 export interface EstateTaxResult {
@@ -763,6 +767,11 @@ export interface Account {
    */
   titlingType: "jtwros" | "community_property";
   owners: AccountOwner[];
+  /** Set when this account is tagged into a revocable trust (the trust's name).
+   *  Null/undefined = not in a revocable trust. Drives probate exclusion in
+   *  isNonProbateAccount and the report badge. Does NOT change ownership,
+   *  gross-estate inclusion, or will distribution. */
+  revocableTrustName?: string | null;
   /** For business-owned child accounts: the id of the parent business account. */
   parentAccountId?: string | null;
   /** Business-as-asset fields. Present only when `category === "business"` and
