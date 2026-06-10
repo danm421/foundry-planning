@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, expenses } from "@/db/schema";
+import { expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
   assertBusinessAccountsInClient,
@@ -12,14 +13,6 @@ import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClientAccess(clientId: string, firmId: string): Promise<boolean> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
 
 // PUT /api/clients/[id]/expenses/[expenseId] — update expense
 export async function PUT(
