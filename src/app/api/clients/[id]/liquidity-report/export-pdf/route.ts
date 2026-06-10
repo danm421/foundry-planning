@@ -4,6 +4,8 @@ import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
+import { recordCompletedRun } from "@/lib/crm/generation-runs";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import {
   checkExportPdfRateLimit,
   rateLimitErrorResponse,
@@ -121,7 +123,7 @@ export async function POST(
 
     const downloadName = `liquidity-${(clientLastName ?? "client").toLowerCase()}.pdf`;
 
-    await savePlanToVault({
+    const vaultDoc = await savePlanToVault({
       clientId: id,
       firmId,
       reportType: "liquidity",
@@ -129,6 +131,25 @@ export async function POST(
       filename: downloadName,
       buffer,
     });
+    try {
+      const householdId = client.crmHouseholdId;
+      if (householdId) {
+        const { userId } = await auth();
+        const u = await currentUser().catch(() => null);
+        await recordCompletedRun({
+          clientId: id,
+          householdId,
+          firmId,
+          kind: "liquidity",
+          scenarioId: scenarioParam ?? null,
+          triggeredBy: userId ?? null,
+          triggeredByEmail: u?.emailAddresses?.[0]?.emailAddress ?? null,
+          resultDocumentId: vaultDoc?.id ?? null,
+        });
+      }
+    } catch (err) {
+      console.error("[liquidity-report] run log failed (non-fatal)", err);
+    }
 
     return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,

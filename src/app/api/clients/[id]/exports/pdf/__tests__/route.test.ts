@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
 
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "u-test", orgId: "firm_test" }),
+  currentUser: vi.fn().mockResolvedValue({ emailAddresses: [{ emailAddress: "advisor@firm.com" }] }),
+}));
+
+vi.mock("@/lib/crm/generation-runs", () => ({
+  recordCompletedRun: vi.fn().mockResolvedValue("run-id"),
+}));
+
 vi.mock("@/lib/db-helpers", async () => {
   class UnauthorizedError extends Error {
     constructor(msg = "Unauthorized") {
@@ -25,7 +34,10 @@ vi.mock("@/db", () => ({
   db: {
     select: () => ({
       from: () => ({
-        where: () => Promise.resolve([{ displayName: "Test Firm" }]),
+        where: () => ({
+          limit: () => Promise.resolve([{ displayName: "Test Firm", householdId: "hh-test" }]),
+          then: (resolve: (v: unknown) => unknown) => Promise.resolve([{ displayName: "Test Firm", householdId: "hh-test" }]).then(resolve),
+        }),
       }),
     }),
   },
@@ -176,6 +188,10 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
         reportType: "report:investments",
         scenarioId: null,
       }),
+    );
+    const { recordCompletedRun } = await import("@/lib/crm/generation-runs");
+    expect(recordCompletedRun).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "report:investments", resultDocumentId: null }),
     );
   });
 

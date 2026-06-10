@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { db } from "@/db";
-import { firms } from "@/db/schema";
+import { firms, clients } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
   checkExportPdfRateLimit,
@@ -11,9 +11,11 @@ import {
 } from "@/lib/rate-limit";
 import { getArtifact } from "@/lib/report-artifacts/index";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
+import { recordCompletedRun } from "@/lib/crm/generation-runs";
 import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
 import { ArtifactDocument } from "@/components/pdf/artifact-document";
 import type { ChartImage, Variant } from "@/lib/report-artifacts/types";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -146,7 +148,7 @@ export async function POST(
 
     const downloadName = `${safeFilename(reportId)}-${asOf.toISOString().slice(0, 10)}.pdf`;
 
-    await savePlanToVault({
+    const doc = await savePlanToVault({
       clientId,
       firmId,
       reportType: `report:${reportId}`,
@@ -154,6 +156,30 @@ export async function POST(
       filename: downloadName,
       buffer,
     });
+    try {
+      const [c] = await db
+        .select({ householdId: clients.crmHouseholdId })
+        .from(clients)
+        .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
+        .limit(1);
+      const householdId = c?.householdId;
+      if (householdId) {
+        const { userId } = await auth();
+        const u = await currentUser().catch(() => null);
+        await recordCompletedRun({
+          clientId,
+          householdId,
+          firmId,
+          kind: `report:${reportId}`,
+          scenarioId: null,
+          triggeredBy: userId ?? null,
+          triggeredByEmail: u?.emailAddresses?.[0]?.emailAddress ?? null,
+          resultDocumentId: doc?.id ?? null,
+        });
+      }
+    } catch (err) {
+      console.error("[exports/pdf] run log failed (non-fatal)", err);
+    }
 
     return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
