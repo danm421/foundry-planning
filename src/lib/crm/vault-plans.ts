@@ -184,6 +184,11 @@ export async function linkImportFilesToVault(args: {
 
     let created = 0;
     for (const f of files) {
+      // Idempotency is enforced app-side by this (householdId, importFileId)
+      // existence check — there is no DB unique constraint, so two concurrent
+      // commits of the same import could both pass and double-insert. Accepted
+      // trade-off: import_ref rows are benign links (storageKey null), commits
+      // are rate-limited + user-initiated, and this helper is best-effort.
       const existing = await db.query.crmHouseholdDocuments.findFirst({
         where: and(
           eq(crmHouseholdDocuments.householdId, householdId),
@@ -208,7 +213,12 @@ export async function linkImportFilesToVault(args: {
     return created;
   } catch (err) {
     const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
-    console.error("[vault-plans] linkImportFilesToVault failed (non-fatal):", msg);
+    console.error("[vault-plans] linkImportFilesToVault failed (non-fatal):", {
+      importId: args.importId,
+      clientId: args.clientId,
+      firmId: args.firmId,
+      err: msg,
+    });
     return 0;
   }
 }

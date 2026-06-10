@@ -138,8 +138,32 @@ describe("linkImportFilesToVault", () => {
     const second = await linkImportFilesToVault({ importId, clientId, firmId: ORG });
     expect(second).toBe(0);
     const refs = await db.query.crmHouseholdDocuments.findMany({
-      where: eq(crmHouseholdDocuments.sourceKind, "import_ref"),
+      where: and(eq(crmHouseholdDocuments.householdId, householdId),
+                 eq(crmHouseholdDocuments.sourceKind, "import_ref")),
     });
     expect(refs).toHaveLength(2);
+  });
+
+  it("excludes soft-deleted import files from the links", async () => {
+    const [imp] = await db.insert(clientImports).values({
+      clientId, orgId: ORG, mode: "onboarding", createdByUserId: "u",
+    }).returning();
+    await db.insert(clientImportFiles).values({
+      importId: imp.id, blobUrl: "https://b/live", blobPathname: "imports/live",
+      originalFilename: "live.pdf", contentHash: "hlive", sizeBytes: 100, detectedKind: "pdf",
+    });
+    await db.insert(clientImportFiles).values({
+      importId: imp.id, blobUrl: "https://b/dead", blobPathname: "imports/dead",
+      originalFilename: "dead.pdf", contentHash: "hdead", sizeBytes: 100, detectedKind: "pdf",
+      deletedAt: new Date(),
+    });
+    const created = await linkImportFilesToVault({ importId: imp.id, clientId, firmId: ORG });
+    expect(created).toBe(1);
+    const refs = await db.query.crmHouseholdDocuments.findMany({
+      where: and(eq(crmHouseholdDocuments.householdId, householdId),
+                 eq(crmHouseholdDocuments.sourceKind, "import_ref")),
+    });
+    expect(refs).toHaveLength(1);
+    expect(refs[0]!.filename).toBe("live.pdf");
   });
 });
