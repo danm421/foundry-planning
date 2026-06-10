@@ -33,6 +33,7 @@ import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-met
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
 import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
+import { SolverTabEstatePlanning } from "./solver-tab-estate-planning";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 
@@ -108,7 +109,7 @@ export function LiveSolverWorkspace({
   const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
 
   const [activeTab, setActiveTab] = useState<
-    "retirement" | "techniques" | "life_insurance"
+    "retirement" | "techniques" | "life_insurance" | "estate_planning"
   >("retirement");
 
   // LI assumptions live here so a sibling chart panel can read them while the
@@ -644,6 +645,8 @@ export function LiveSolverWorkspace({
           clientName={clientName}
           spouseName={spouseName}
           showLifeInsuranceTab={activeTab === "life_insurance"}
+          showEstateTab={activeTab === "estate_planning"}
+          baseTree={baseClientData}
         />
       </div>
 
@@ -767,6 +770,19 @@ export function LiveSolverWorkspace({
           >
             Life Insurance
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "estate_planning"}
+            onClick={() => setActiveTab("estate_planning")}
+            className={
+              activeTab === "estate_planning"
+                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
+            }
+          >
+            Estate Planning
+          </button>
         </div>
 
         {activeTab === "retirement" && (
@@ -885,6 +901,13 @@ export function LiveSolverWorkspace({
             }))}
             estateAdminExpenses={baseClientData.planSettings.estateAdminExpenses ?? 0}
             modelPortfolios={modelPortfolios}
+          />
+        )}
+
+        {activeTab === "estate_planning" && (
+          <SolverTabEstatePlanning
+            accounts={baseClientData.accounts}
+            onChange={pushMutation}
           />
         )}
       </SolverCompareGrid>
