@@ -6,6 +6,7 @@ import { invoices } from "@/db/schema";
 import { ForbiddenError, requireOrgOwner } from "@/lib/authz";
 import {
   getSubscriptionState,
+  GRACE_WINDOW_MS,
   type SubscriptionState,
 } from "@/lib/billing/subscription-state";
 import Forbidden from "../forbidden";
@@ -76,7 +77,7 @@ function StateSummary({ state }: { state: SubscriptionState }): ReactElement {
     rows.push(["Access ends", fmtDate(state.periodEnd)]);
   } else if (state.kind === "canceled_grace") {
     const graceUntil = new Date(
-      state.archivedAt.getTime() + 30 * 24 * 60 * 60 * 1000,
+      state.archivedAt.getTime() + GRACE_WINDOW_MS,
     );
     rows.push(["Read-only until", fmtDate(graceUntil)]);
   }
@@ -94,7 +95,7 @@ function StateSummary({ state }: { state: SubscriptionState }): ReactElement {
   );
 }
 
-type InvoiceRow = {
+export type InvoiceRow = {
   stripeInvoiceId: string;
   amountPaid: number | null;
   amountDue: number | null;
@@ -120,12 +121,13 @@ function InvoiceList({ rows }: { rows: InvoiceRow[] }): ReactElement {
       <h2 className="text-sm font-medium text-ink">Invoices</h2>
       <div className="overflow-hidden rounded border border-hair">
         <table className="w-full text-sm">
+          <caption className="sr-only">Invoices</caption>
           <thead className="bg-paper text-ink-4">
             <tr>
-              <th className="px-3 py-2 text-left font-normal">Date</th>
-              <th className="px-3 py-2 text-left font-normal">Amount</th>
-              <th className="px-3 py-2 text-left font-normal">Status</th>
-              <th className="px-3 py-2 text-right font-normal">Invoice</th>
+              <th scope="col" className="px-3 py-2 text-left font-normal">Date</th>
+              <th scope="col" className="px-3 py-2 text-left font-normal">Amount</th>
+              <th scope="col" className="px-3 py-2 text-left font-normal">Status</th>
+              <th scope="col" className="px-3 py-2 text-right font-normal">Invoice</th>
             </tr>
           </thead>
           <tbody>
@@ -170,6 +172,8 @@ function InvoiceList({ rows }: { rows: InvoiceRow[] }): ReactElement {
   );
 }
 
+const INVOICE_PAGE_LIMIT = 24; // ~2 years of monthly invoices
+
 export async function NonFounderBillingPanel(): Promise<ReactElement> {
   const [{ orgId }, state] = await Promise.all([auth(), getSubscriptionState()]);
 
@@ -190,7 +194,7 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
         .from(invoices)
         .where(eq(invoices.firmId, orgId))
         .orderBy(desc(invoices.createdAt))
-        .limit(24)
+        .limit(INVOICE_PAGE_LIMIT)
     : [];
 
   return (

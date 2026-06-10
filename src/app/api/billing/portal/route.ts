@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { subscriptions } from "@/db/schema";
@@ -9,6 +9,9 @@ import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
+// Returns the origin used solely as Stripe's `return_url` (the "return to merchant"
+// link inside Stripe's hosted portal) — not a server-controlled redirect, so a
+// caller-supplied Origin header cannot cause an open redirect.
 function originFor(req: Request): string {
   const fromHeader = req.headers.get("origin");
   if (fromHeader) return fromHeader;
@@ -34,6 +37,7 @@ export async function POST(req: Request): Promise<Response> {
     .select({ stripeCustomerId: subscriptions.stripeCustomerId })
     .from(subscriptions)
     .where(eq(subscriptions.firmId, orgId))
+    .orderBy(desc(subscriptions.createdAt))
     .then((r) => r[0]);
 
   const customer = row?.stripeCustomerId;

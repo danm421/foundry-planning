@@ -8,22 +8,10 @@ vi.mock("@/lib/billing/subscription-state", () => ({
 }));
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
 
-import { NonFounderBillingPanel } from "../page";
+import { NonFounderBillingPanel, type InvoiceRow } from "../page";
 import { auth } from "@clerk/nextjs/server";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
 import { db } from "@/db";
-
-type InvoiceRow = {
-  stripeInvoiceId: string;
-  amountPaid: number | null;
-  amountDue: number | null;
-  currency: string | null;
-  status: string | null;
-  paidAt: Date | null;
-  createdAt: Date;
-  hostedInvoiceUrl: string | null;
-  invoicePdf: string | null;
-};
 
 function mockInvoices(rows: InvoiceRow[]) {
   vi.mocked(db.select).mockReturnValue({

@@ -25,11 +25,13 @@ import { UnauthorizedError } from "@/lib/db-helpers";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 
-// db.select().from().where() resolves to an array of rows.
+// db.select().from().where().orderBy() resolves to an array of rows.
 function mockSubscriptionRows(rows: { stripeCustomerId: string }[]) {
   vi.mocked(db.select).mockReturnValue({
     from: vi.fn().mockReturnValue({
-      where: vi.fn().mockResolvedValue(rows),
+      where: vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockResolvedValue(rows),
+      }),
     }),
   } as never);
 }

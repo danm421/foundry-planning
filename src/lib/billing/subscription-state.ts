@@ -10,7 +10,7 @@ export type SubscriptionState =
   | { kind: "canceled_locked" }
   | { kind: "missing"; reason: "no_metadata" };
 
-const GRACE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+export const GRACE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 type OrgMeta = {
   is_founder?: boolean;
