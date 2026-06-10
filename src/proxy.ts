@@ -9,9 +9,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/",
-  "/pricing(.*)",
   "/checkout/(.*)",
-  "/legal(.*)",
   "/api/checkout/(.*)",
   // Vercel Cron hits these GET routes with no session cookie; each route
   // self-protects via a Bearer CRON_SECRET check (see reconcile-billing,
