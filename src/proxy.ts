@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
 import { decideAccess } from "@/lib/billing/access-policy";
 import { recordAudit } from "@/lib/audit";
+import { operationsBlocked } from "@/lib/operations-route-guard";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -53,7 +54,7 @@ export default clerkMiddleware(async (auth, request) => {
 
   if (isPublicRoute(request)) return passthroughResponse;
 
-  const { userId, orgId, sessionClaims } = await auth();
+  const { userId, orgId, orgRole, sessionClaims } = await auth();
 
   if (!userId) {
     await auth.protect();
@@ -66,6 +67,17 @@ export default clerkMiddleware(async (auth, request) => {
   // skip the redirect so fetch()/XHR callers still get a clean 401.
   if (!orgId && !isOrgPickerRoute(request) && !request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL("/select-organization", request.url));
+  }
+
+  // Role gate: operations is CRM + Tasks only. Block any other authenticated
+  // surface (planning, CMA, admin settings) at the chokepoint — authoritative
+  // for both pages and API routes by path. Pages redirect to the CRM home;
+  // API calls get a clean 403 so fetch()/XHR callers don't follow a redirect.
+  if (orgId && operationsBlocked(orgRole, request.nextUrl.pathname)) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "forbidden_role" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/crm", request.url));
   }
 
   // Billing access enforcement (AD-1). Reads subscription state from session
