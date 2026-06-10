@@ -51,7 +51,7 @@ describe("<SubscriptionGuard>", () => {
   });
 
   it("renders past_due banner with persistent (non-dismissible) variant", async () => {
-    await renderGuard({ kind: "past_due" });
+    await renderGuard({ kind: "past_due", pastDueSince: null });
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Payment failed");
     expect(alert.querySelector('[data-dismiss="true"]')).toBeNull();

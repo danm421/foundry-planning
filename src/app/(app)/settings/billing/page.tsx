@@ -64,6 +64,8 @@ const STATUS_LABEL: Record<SubscriptionState["kind"], string> = {
   active: "Active",
   active_canceling: "Canceling at period end",
   past_due: "Past due",
+  unpaid: "Unpaid",
+  paused: "Paused",
   canceled_grace: "Canceled — read-only grace",
   canceled_locked: "Canceled — locked",
   missing: "Unknown",

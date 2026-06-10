@@ -17,7 +17,7 @@ async function renderState(state: SubscriptionState) {
 
 describe("<SubscriptionGuard> CTAs route to the portal entry point", () => {
   it("past_due 'Update card' links to the billing manage anchor", async () => {
-    await renderState({ kind: "past_due" });
+    await renderState({ kind: "past_due", pastDueSince: null });
     const link = screen.getByRole("link", { name: /update card/i });
     expect(link.getAttribute("href")).toBe("/settings/billing#manage");
   });
