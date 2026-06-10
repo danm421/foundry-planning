@@ -14,7 +14,7 @@ import { useMemo, useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { Ordering } from "@/lib/estate/yearly-estate-report";
 import { buildEstateComparison } from "@/lib/estate/estate-comparison";
-import { useThemeName } from "@/lib/chart-colors";
+import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { data as brandData, dataLight as brandDataLight } from "@/brand";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
@@ -132,13 +132,18 @@ export function EstateComparisonChart({
     [comparison, palette],
   );
 
+  const chrome = chartChrome(theme);
+
   const chartOptions: ChartOptions<"bar"> = useMemo(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: "bottom" as const },
+        legend: { position: "bottom" as const, labels: { color: chrome.legend } },
         tooltip: {
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
           callbacks: {
             label: (ctx) =>
               `${ctx.dataset.label}: ${fmtUsd(ctx.parsed.y ?? 0)}`,
@@ -146,12 +151,14 @@ export function EstateComparisonChart({
         },
       },
       scales: {
+        x: { ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
         y: {
-          ticks: { callback: (v: unknown) => fmtUsd(Number(v)) },
+          ticks: { color: chrome.tick, callback: (v: unknown) => fmtUsd(Number(v)) },
+          grid: { color: chrome.grid },
         },
       },
     }),
-    [],
+    [chrome],
   );
 
   return (
