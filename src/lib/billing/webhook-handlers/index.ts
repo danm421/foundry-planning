@@ -7,6 +7,7 @@ import { handleInvoiceUpserted } from "./invoice-upserted";
 import { handleInvoicePaymentFailed } from "./invoice-payment-failed";
 import { handleInvoicePaymentActionRequired } from "./invoice-payment-action-required";
 import { handleChargeDisputeCreated } from "./charge-dispute-created";
+import { handleChargeDisputeClosed } from "./charge-dispute-closed";
 import { handleCheckoutSessionCompleted } from "./checkout-session-completed";
 
 export type WebhookHandler = (event: Stripe.Event) => Promise<void>;
@@ -19,6 +20,7 @@ export const handlers: Partial<Record<string, WebhookHandler>> = {
   "checkout.session.completed": handleCheckoutSessionCompleted,
   "customer.subscription.created": handleSubscriptionUpsert,
   "customer.subscription.updated": handleSubscriptionUpsert,
+  "customer.subscription.resumed": handleSubscriptionUpsert,
   "customer.subscription.deleted": handleSubscriptionDeleted,
   "customer.subscription.paused": handleSubscriptionPaused,
   "customer.subscription.trial_will_end": handleTrialWillEnd,
@@ -28,4 +30,5 @@ export const handlers: Partial<Record<string, WebhookHandler>> = {
   "invoice.payment_failed": handleInvoicePaymentFailed,
   "invoice.payment_action_required": handleInvoicePaymentActionRequired,
   "charge.dispute.created": handleChargeDisputeCreated,
+  "charge.dispute.closed": handleChargeDisputeClosed,
 };

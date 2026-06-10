@@ -17,20 +17,38 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 
 const mockSelectFirms = vi.fn();
+const mockSelectActiveSub = vi.fn();
 const mockSubsUpsert = vi.fn();
 const mockItemsUpsert = vi.fn();
-vi.mock("@/db", () => ({
-  db: {
-    select: () => ({ from: () => ({ where: () => mockSelectFirms() }) }),
-    insert: () => ({
-      values: (v: unknown) => ({
-        onConflictDoUpdate: () => ({
-          returning: () =>
-            Array.isArray(v) ? mockItemsUpsert(v) : mockSubsUpsert(v),
+vi.mock("@/db", async (orig) => {
+  const schema = (await import("@/db/schema")) as Record<string, unknown>;
+  return {
+    ...((await orig()) as object),
+    db: {
+      select: () => ({
+        from: (tbl: unknown) => ({
+          where: () => {
+            if (tbl === schema.firms) return mockSelectFirms();
+            if (tbl === schema.subscriptions) return mockSelectActiveSub();
+            return [];
+          },
         }),
       }),
-    }),
-  },
+      insert: () => ({
+        values: (v: unknown) => ({
+          onConflictDoUpdate: () => ({
+            returning: () =>
+              Array.isArray(v) ? mockItemsUpsert(v) : mockSubsUpsert(v),
+          }),
+        }),
+      }),
+    },
+  };
+});
+
+const mockCaptureMessage = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureMessage: (...a: unknown[]) => mockCaptureMessage(...a),
 }));
 
 const mockRecordAudit = vi.fn();
@@ -47,6 +65,9 @@ beforeEach(() => {
   mockSubsUpsert.mockReset();
   mockItemsUpsert.mockReset();
   mockRecordAudit.mockReset();
+  mockSelectActiveSub.mockReset();
+  mockSelectActiveSub.mockResolvedValue([]); // default: no conflicting active sub
+  mockCaptureMessage.mockReset();
 });
 
 describe("handleSubscriptionUpsert", () => {
@@ -175,5 +196,34 @@ describe("handleSubscriptionUpsert", () => {
     expect(mockSubsUpsert).not.toHaveBeenCalled();
     expect(mockUpdateOrgMeta).not.toHaveBeenCalled();
     expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+
+  it("skips + Sentry-pages when the firm already has a different active subscription", async () => {
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_new",
+      customer: "cus_1",
+      status: "active",
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "org_1" },
+      items: { data: [] },
+    });
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, aiImportsUsed: 0 }]);
+    // An existing active row for the firm with a DIFFERENT stripe sub id.
+    mockSelectActiveSub.mockResolvedValue([
+      { stripeSubscriptionId: "sub_old", status: "active" },
+    ]);
+
+    await handleSubscriptionUpsert({
+      id: "evt_dbl",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_new" } },
+    } as never);
+
+    expect(mockCaptureMessage).toHaveBeenCalled();
+    expect(mockSubsUpsert).not.toHaveBeenCalled();
+    expect(mockUpdateOrgMeta).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
+import * as Sentry from "@sentry/nextjs";
 import { clerkClient } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { firms, subscriptions, subscriptionItems } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -50,6 +51,45 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     return;
   }
   const aiImportsUsed = firmRow.aiImportsUsed ?? 0;
+
+  // In-firm double-subscription guard. The subscriptions_firm_active_unique
+  // partial index forbids two live rows per firm; if a second active sub with a
+  // different id arrives (e.g. a duplicate Checkout), upserting it would throw a
+  // 23505 → unhandled 500. Detect it, page ops, and skip rather than crash the
+  // webhook. Reconcile/manual cleanup picks the survivor.
+  const conflicting = await db
+    .select({ stripeSubscriptionId: subscriptions.stripeSubscriptionId })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.firmId, firmId),
+        ne(subscriptions.stripeSubscriptionId, sub.id),
+      ),
+    )
+    .then((rows) =>
+      rows.find((r) =>
+        // only live rows collide with the partial unique index
+        true,
+      ),
+    );
+  if (
+    conflicting &&
+    ["trialing", "active", "past_due", "unpaid"].includes(sub.status)
+  ) {
+    Sentry.captureMessage("Firm has a second active Stripe subscription", {
+      level: "error",
+      extra: {
+        firmId,
+        incomingSubscriptionId: sub.id,
+        existingSubscriptionId: conflicting.stripeSubscriptionId,
+        status: sub.status,
+      },
+    });
+    console.error(
+      `[webhook] ${event.type} ${sub.id}: firm ${firmId} already has active sub ${conflicting.stripeSubscriptionId} — skipping to avoid unique-index 500`,
+    );
+    return;
+  }
 
   const customerId =
     typeof sub.customer === "string" ? sub.customer : sub.customer.id;
