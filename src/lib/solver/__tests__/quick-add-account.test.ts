@@ -38,7 +38,8 @@ describe("quick-add account builder", () => {
       id: "acct-uuid", name: "John — Roth IRA", category: "retirement", subType: "roth_ira",
       value: 0, basis: 0, growthRate: 0.06, rmdEnabled: false, titlingType: "jtwros",
     });
-    expect(account.owners).toEqual([{ kind: "family_member", familyMemberId: "fm-1", percent: 100 }]);
+    // Solo ownership is a fraction (engine ownersForYear validates owners sum to 1, not 100).
+    expect(account.owners).toEqual([{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }]);
     expect(rule).toMatchObject({
       id: "rule-uuid", accountId: "acct-uuid", annualAmount: 7000,
       isDeductible: false, startYear: 2026, endYear: 2045, rothPercent: 1,
@@ -59,6 +60,9 @@ describe("additional-savings account (min-savings solve)", () => {
       accountId: "acct", ruleId: "rule",
     });
     expect(account).toMatchObject({ category: "taxable", subType: "brokerage", name: "Additional Savings", value: 0 });
+    // Solo owner must be a fraction summing to 1 — a percent of 100 makes the
+    // engine's ownersForYear throw "sum to 100, expected 1" on every projection.
+    expect(account.owners).toEqual([{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }]);
     expect(rule).toMatchObject({ accountId: "acct", annualAmount: 0, isDeductible: false, fundFromExpenseReduction: true });
   });
 

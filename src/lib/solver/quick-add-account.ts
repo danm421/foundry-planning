@@ -54,7 +54,7 @@ export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; ru
     growthRate: args.growthRate,
     rmdEnabled: map.rmdEnabled,
     titlingType: "jtwros", // engine ignores titling for solo-owned accounts; field is still required
-    owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 100 }],
+    owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 1 }],
   };
   const rule: SavingsRule = {
     id: args.ruleId,
@@ -97,7 +97,7 @@ export function buildAdditionalSavingsAccount(args: AdditionalSavingsArgs): { ac
     growthRate: args.growthRate,
     rmdEnabled: false,
     titlingType: "jtwros",
-    owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 100 }],
+    owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 1 }],
     ...(args.realization ? { realization: args.realization } : {}),
   };
   const rule: SavingsRule = {
