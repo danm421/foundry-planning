@@ -543,4 +543,87 @@ describe("applyContributionLimits HSA bucket", () => {
     expect(cappedByRuleId.r1).toBe(3_000);
     expect(adjustments).toHaveLength(0);
   });
+
+  // ── Shared family-coverage cap (IRC §223(b)(5) / Pub 969) ────────────────
+  // The family HSA limit is ONE shared limit for both spouses under the same
+  // family HDHP, divided between them; only the $1,000 age-55 catch-up is
+  // per-individual. Capping each spouse's bucket at the full family limit
+  // independently lets a couple double the shared cap (bug `#12`).
+
+  const SPOUSE_FMS_AGE40 = [
+    { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other" as const, firstName: "Client", lastName: null, dateOfBirth: "1985-01-01" },
+    { id: LEGACY_FM_SPOUSE, role: "spouse" as const, relationship: "other" as const, firstName: "Spouse", lastName: null, dateOfBirth: "1985-01-01" },
+  ];
+  const SPOUSE_FMS_AGE55 = [
+    { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other" as const, firstName: "Client", lastName: null, dateOfBirth: "1970-01-01" },
+    { id: LEGACY_FM_SPOUSE, role: "spouse" as const, relationship: "other" as const, firstName: "Spouse", lastName: null, dateOfBirth: "1970-01-01" },
+  ];
+
+  it("caps the HOUSEHOLD total at one family limit when both spouses hold family-coverage HSAs (both age 40)", () => {
+    const accounts = [hsaAcct("h1", "family", "client"), hsaAcct("h2", "family", "spouse")];
+    const rules = [rule("r1", "h1"), rule("r2", "h2")];
+    const client = { ...clientInfoAge40, spouseDob: "1985-01-01" }; // both age 40
+    const { cappedByRuleId } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 8_750, r2: 8_750 }, // each contributes the family max
+      familyMembers: SPOUSE_FMS_AGE40,
+    });
+    // Shared family limit is 8_750 for the couple, NOT 17_500.
+    const household = cappedByRuleId.r1 + cappedByRuleId.r2;
+    expect(household).toBeCloseTo(8_750, 2);
+  });
+
+  it("adds each spouse's age-55 catch-up on top of the one shared family limit", () => {
+    const accounts = [hsaAcct("h1", "family", "client"), hsaAcct("h2", "family", "spouse")];
+    const rules = [rule("r1", "h1"), rule("r2", "h2")];
+    const client = { ...clientInfoAge55, spouseDob: "1970-01-01" }; // both age 55
+    const { cappedByRuleId } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 20_000, r2: 20_000 },
+      familyMembers: SPOUSE_FMS_AGE55,
+    });
+    // 8_750 base + 1_000 client catch-up + 1_000 spouse catch-up = 10_750.
+    const household = cappedByRuleId.r1 + cappedByRuleId.r2;
+    expect(household).toBeCloseTo(10_750, 2);
+  });
+
+  it("still gives a lone family-covered owner the full family limit (no spouse HSA — no regression)", () => {
+    const accounts = [hsaAcct("h1", "family", "client")];
+    const rules = [rule("r1", "h1")];
+    const client = { ...clientInfoAge40, spouseDob: "1985-01-01" };
+    const { cappedByRuleId } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 20_000 },
+      familyMembers: SPOUSE_FMS_AGE40,
+    });
+    expect(cappedByRuleId.r1).toBeCloseTo(8_750, 2);
+  });
+
+  it("still gives a lone family-covered owner family limit + own catch-up at 55 (no regression)", () => {
+    const accounts = [hsaAcct("h1", "family", "client")];
+    const rules = [rule("r1", "h1")];
+    const client = { ...clientInfoAge55, spouseDob: "1970-01-01" };
+    const { cappedByRuleId } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client,
+      taxYearParams: HSA_PARAMS,
+      resolvedByRuleId: { r1: 20_000 },
+      familyMembers: SPOUSE_FMS_AGE55,
+    });
+    expect(cappedByRuleId.r1).toBeCloseTo(9_750, 2);
+  });
 });

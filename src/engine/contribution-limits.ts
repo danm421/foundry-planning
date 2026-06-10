@@ -181,12 +181,39 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
     },
   };
 
+  // Shared-family HSA case (IRC §223(b)(5) / Pub 969): the family HSA maximum
+  // is ONE limit shared by both spouses under the same family HDHP, divided
+  // between them — only the $1,000 age-55 catch-up is per-individual. When
+  // BOTH a client-owned and a spouse-owned HSA carry family coverage, their
+  // contributions share a single family base; capping each owner bucket at
+  // the full family limit independently would let the couple double the cap.
+  const sharedFamilyHsa =
+    hsaCoverageFor("client") === "family" && hsaCoverageFor("spouse") === "family";
+  // Combined cap: one family base + each spouse's own catch-up (faithful to
+  // §223(b)(5)'s "any agreed division" — cap the SUM, leave the split open).
+  const sharedFamilyHsaLimit =
+    taxYearParams.contribLimits.hsaLimitFamily +
+    (clientAge >= 55 ? taxYearParams.contribLimits.hsaCatchup55 : 0) +
+    (spouseAge >= 55 ? taxYearParams.contribLimits.hsaCatchup55 : 0);
+
+  // Bucket key for an owner+group. In the shared-family-HSA case the client
+  // and spouse HSA buckets merge into one so the family base is capped once.
+  const SHARED_HSA_OWNER = "joint" as const; // placeholder owner for the merged bucket
+  function bucketKeyFor(owner: OwnerKey, group: "deferral" | "ira" | "hsa"): string {
+    if (group === "hsa" && sharedFamilyHsa && (owner === "client" || owner === "spouse")) {
+      return `shared:hsa`;
+    }
+    return `${owner}:${group}`;
+  }
+
   // Bucket capped-in rules by owner+group.
   interface Bucket {
     owner: OwnerKey;
     group: "deferral" | "ira" | "hsa";
     ruleIds: string[];
     total: number;
+    /** Pre-resolved limit for the merged shared-family HSA bucket. */
+    sharedLimit?: number;
   }
   const buckets = new Map<string, Bucket>();
   for (const rule of rules) {
@@ -204,8 +231,17 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
     const amount = resolvedByRuleId[rule.id] ?? 0;
     if (amount <= 0) continue;
     const owner = ownerKeyFor(acct);
-    const key = `${owner}:${group}`;
-    const b = buckets.get(key) ?? { owner, group, ruleIds: [], total: 0 };
+    const merged = group === "hsa" && sharedFamilyHsa && (owner === "client" || owner === "spouse");
+    const key = bucketKeyFor(owner, group);
+    const b =
+      buckets.get(key) ??
+      {
+        owner: merged ? SHARED_HSA_OWNER : owner,
+        group,
+        ruleIds: [],
+        total: 0,
+        ...(merged ? { sharedLimit: sharedFamilyHsaLimit } : {}),
+      };
     b.ruleIds.push(rule.id);
     b.total += amount;
     buckets.set(key, b);
@@ -213,7 +249,7 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
 
   // Scale each over-cap bucket down proportionally.
   for (const bucket of buckets.values()) {
-    const limit = limits[bucket.owner][bucket.group];
+    const limit = bucket.sharedLimit ?? limits[bucket.owner][bucket.group];
     if (bucket.total <= limit) continue;
     const scale = limit / bucket.total;
     for (const id of bucket.ruleIds) {
