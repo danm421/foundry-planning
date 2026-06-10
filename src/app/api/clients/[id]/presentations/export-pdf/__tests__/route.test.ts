@@ -94,7 +94,7 @@ vi.mock("@react-pdf/renderer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@react-pdf/renderer")>();
   return {
     ...actual,
-    renderToStream: vi.fn(async () => new ReadableStream()),
+    renderToBuffer: vi.fn(async () => Buffer.from("%PDF-1.7 test")),
   };
 });
 

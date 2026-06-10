@@ -36,7 +36,7 @@ vi.mock("@/components/pdf/artifact-document", () => ({
 }));
 
 vi.mock("@react-pdf/renderer", () => ({
-  renderToStream: vi.fn().mockResolvedValue("PDFSTREAM"),
+  renderToBuffer: vi.fn().mockResolvedValue(Buffer.from("%PDF-1.7 test")),
 }));
 
 const fetchDataMock = vi.fn();
