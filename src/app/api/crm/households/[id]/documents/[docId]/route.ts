@@ -13,9 +13,9 @@ export const maxDuration = 30;
 
 /**
  * Stream a CRM household document to the caller. Authn/authz is enforced
- * by `getCrmDocument` (org-scoped via `requireCrmHouseholdAccess`). The
- * blob is fetched server-side via `@vercel/blob`'s `get()` — we never
- * expose the raw blob URL to the client.
+ * by `getCrmDocument` (org-scoped via `requireVaultAccess`). The blob is
+ * fetched server-side via `@vercel/blob`'s `get()` — we never expose the
+ * raw blob URL to the client.
  */
 export async function GET(
   _req: NextRequest,
