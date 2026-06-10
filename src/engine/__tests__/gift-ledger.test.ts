@@ -426,3 +426,88 @@ describe("computeGiftLedger — unified Crummey model", () => {
     expect(row.perGrantor.client.taxableGiftsThisYear).toBe(14_000); // 50k − 36k
   });
 });
+
+describe("computeGiftLedger — §2503(b) one exclusion per donee per year (BUG #8)", () => {
+  // 1-beneficiary Crummey trust: shares ONE annual exclusion (AE × 1) across all
+  // Crummey-eligible cash reaching it in a year, regardless of how many distinct
+  // gift events route there.
+  const ilit1Ben = {
+    id: "t1",
+    name: "ILIT",
+    entityType: "trust",
+    isIrrevocable: true,
+    crummeyPowers: true,
+    beneficiaries: [
+      { id: "b1", tier: "primary", percentage: 100, familyMemberId: "k1", sortOrder: 0 },
+    ],
+  } as unknown as import("@/engine/types").EntitySummary;
+
+  it("two cash gifts to the same 1-ben Crummey trust in one year share ONE exclusion", () => {
+    // A premium gift (sourcePolicyAccountId) + a series gift (seriesId), both
+    // $19k, both Crummey, both to t1 in 2026. Total $38k − ONE $19k exclusion
+    // = $19k taxable. BEFORE FIX each gift claimed its own $19k exclusion → $0.
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [ilit1Ben],
+      annualExclusionsByYear: { 2026: 19_000 },
+      giftEvents: [
+        { kind: "cash", year: 2026, amount: 19_000, grantor: "client", useCrummeyPowers: true, recipientEntityId: "t1", sourcePolicyAccountId: "pol1" },
+        { kind: "cash", year: 2026, amount: 19_000, grantor: "client", useCrummeyPowers: true, recipientEntityId: "t1", seriesId: "series-1" },
+      ],
+    });
+    const row = ledger.find((r) => r.year === 2026)!;
+    expect(row.giftsGiven).toBe(38_000);
+    expect(row.perGrantor.client.taxableGiftsThisYear).toBe(19_000);
+  });
+
+  it("GUARD: a single normal gift to a donee still gets exactly one full exclusion", () => {
+    // No regression: one $50k Crummey cash gift to the 1-ben trust →
+    // 50k − 19k = 31k taxable (unchanged from the per-gift path).
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [ilit1Ben],
+      annualExclusionsByYear: { 2026: 19_000 },
+      giftEvents: [
+        { kind: "cash", year: 2026, amount: 50_000, grantor: "client", useCrummeyPowers: true, recipientEntityId: "t1", seriesId: "series-1" },
+      ],
+    });
+    const row = ledger.find((r) => r.year === 2026)!;
+    expect(row.perGrantor.client.taxableGiftsThisYear).toBe(31_000);
+  });
+
+  it("mixed group: Crummey cash + asset to the SAME ILIT do not pool the cash exclusion", () => {
+    // $19k Crummey cash (AE-eligible) + $200k asset transfer (no-AE,
+    // useCrummeyPowers forced false) to the same trust in one year.
+    // Cash nets to 0 against its single $19k exclusion; the asset stays fully
+    // taxable. Total taxable = 0 + 200_000 = 200_000 (NOT 200_000 − 19_000).
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [ilit1Ben],
+      annualExclusionsByYear: { 2026: 19_000 },
+      giftEvents: [
+        { kind: "cash", year: 2026, amount: 19_000, grantor: "client", useCrummeyPowers: true, recipientEntityId: "t1", seriesId: "series-1" },
+        { kind: "asset", year: 2026, grantor: "client", accountId: "acct-1", percent: 1, amountOverride: 200_000, recipientEntityId: "t1" } as unknown as GiftEvent,
+      ],
+    });
+    const row = ledger.find((r) => r.year === 2026)!;
+    expect(row.perGrantor.client.taxableGiftsThisYear).toBe(200_000);
+  });
+
+  it("two gifts to DIFFERENT donees each keep their own full exclusion", () => {
+    // A $19k Crummey cash to t1 and a $19k cash to a family member: distinct
+    // donees → two separate exclusions → both net to 0.
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      entities: [ilit1Ben],
+      annualExclusionsByYear: { 2026: 19_000 },
+      gifts: [
+        { id: "gfm", year: 2026, amount: 19_000, grantor: "client", recipientFamilyMemberId: "fm1", useCrummeyPowers: false } as Gift,
+      ],
+      giftEvents: [
+        { kind: "cash", year: 2026, amount: 19_000, grantor: "client", useCrummeyPowers: true, recipientEntityId: "t1", seriesId: "series-1" },
+      ],
+    });
+    const row = ledger.find((r) => r.year === 2026)!;
+    expect(row.perGrantor.client.taxableGiftsThisYear).toBe(0);
+  });
+});

@@ -116,6 +116,36 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   return result;
 }
 
+/**
+ * §2503(b): exactly ONE annual exclusion per donee per calendar year (for a
+ * Crummey trust, AE × beneficiaryCount per year). A canonical gift is
+ * AE-eligible — i.e. `treatCanonicalGift` would apply an annual exclusion — for
+ * cash to a natural person (family member / external individual / unmodeled
+ * individual) and for Crummey-eligible cash to a trust. Asset and
+ * business-interest transfers (forced `useCrummeyPowers: false` in
+ * normalize-gifts) and charitable gifts are NOT AE-eligible.
+ */
+function isAnnualExclusionEligible(cg: CanonicalGift): boolean {
+  if (cg.recipientEntityId) {
+    return cg.useCrummeyPowers && cg.crummeyBeneficiaryCount > 0;
+  }
+  if (cg.recipientExternalBeneficiaryId) {
+    return cg.external?.kind !== "charity";
+  }
+  // Family member or unmodeled individual — both draw a single AE.
+  return true;
+}
+
+/** Donee identity for pooling the §2503(b) exclusion. AE-eligible cash to the
+ *  same donee in the same year shares one exclusion cap. */
+function recipientGroupKey(cg: CanonicalGift): string {
+  if (cg.recipientEntityId) return `ent:${cg.recipientEntityId}`;
+  if (cg.recipientFamilyMemberId) return `fm:${cg.recipientFamilyMemberId}`;
+  if (cg.recipientExternalBeneficiaryId)
+    return `ext:${cg.recipientExternalBeneficiaryId}`;
+  return "unmodeled-individual";
+}
+
 function stepGrantor(
   grantor: Grantor,
   year: number,
@@ -124,9 +154,36 @@ function stepGrantor(
   canonical: CanonicalGift[],
 ): GrantorYearState {
   const exclusion = input.annualExclusionsByYear[year] ?? 0;
-  const taxableGiftsThisYear = canonical
-    .filter((cg) => cg.grantor === grantor && cg.year === year)
-    .reduce((sum, cg) => sum + treatCanonicalGift(cg, exclusion).lifetimeUsed, 0);
+  const thisYears = canonical.filter(
+    (cg) => cg.grantor === grantor && cg.year === year,
+  );
+
+  // §2503(b): aggregate AE-eligible transfers by donee so each donee claims at
+  // most ONE annual exclusion (AE × beneficiaryCount) per year, then treat the
+  // pooled amount once. Per-group context (entity/Crummey count, external kind)
+  // is identical within a group, so the first gift's canonical form represents
+  // the group; only its `amount` differs. Non-AE-eligible transfers (asset /
+  // business / charitable) get no exclusion to pool — pass each through
+  // unchanged so a mixed group to the same trust never nets a cash exclusion
+  // against an asset amount.
+  const aggregated = new Map<string, CanonicalGift>();
+  let taxableGiftsThisYear = 0;
+  for (const cg of thisYears) {
+    if (!isAnnualExclusionEligible(cg)) {
+      taxableGiftsThisYear += treatCanonicalGift(cg, exclusion).lifetimeUsed;
+      continue;
+    }
+    const key = recipientGroupKey(cg);
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.amount += cg.amount;
+    } else {
+      aggregated.set(key, { ...cg });
+    }
+  }
+  for (const group of aggregated.values()) {
+    taxableGiftsThisYear += treatCanonicalGift(group, exclusion).lifetimeUsed;
+  }
 
   const cumulativeBefore = prev.cumulativeTaxableGifts;
   const cumulativeAfter = cumulativeBefore + taxableGiftsThisYear;
