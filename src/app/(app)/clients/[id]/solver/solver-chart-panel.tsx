@@ -11,8 +11,9 @@ import { LiNeedOverTimeView } from "./li-need-over-time-view";
 import { useNeedOverTime } from "./use-need-over-time";
 import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { SolverYearTablePanel } from "./solver-year-table-panel";
+import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";
 
-type ChartTab = "portfolio" | "cashflow" | "liquidity" | "lifeInsurance";
+type ChartTab = "portfolio" | "cashflow" | "liquidity" | "lifeInsurance" | "estate";
 
 const BASE_TABS: { id: ChartTab; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
@@ -23,6 +24,11 @@ const BASE_TABS: { id: ChartTab; label: string }[] = [
 const LI_TAB: { id: ChartTab; label: string } = {
   id: "lifeInsurance",
   label: "Life Insurance Need",
+};
+
+const ESTATE_TAB: { id: ChartTab; label: string } = {
+  id: "estate",
+  label: "Estate",
 };
 
 interface Props {
@@ -37,6 +43,10 @@ interface Props {
   spouseName: string;
   /** True while the Life Insurance solver tab is active below the grid. */
   showLifeInsuranceTab: boolean;
+  /** True while the Estate Planning solver tab is active below the grid. */
+  showEstateTab: boolean;
+  /** Base-case effective tree, for the Base series of the estate chart. */
+  baseTree: ClientData;
 }
 
 export function SolverChartPanel({
@@ -49,9 +59,11 @@ export function SolverChartPanel({
   clientName,
   spouseName,
   showLifeInsuranceTab,
+  showEstateTab,
+  baseTree,
 }: Props) {
   const [tab, setTab] = useState<ChartTab>(
-    showLifeInsuranceTab ? "lifeInsurance" : "portfolio",
+    showLifeInsuranceTab ? "lifeInsurance" : showEstateTab ? "estate" : "portfolio",
   );
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
   const [showTable, setShowTable] = useState(false);
@@ -77,13 +89,25 @@ export function SolverChartPanel({
     );
   }
 
+  const [prevShowEstateTab, setPrevShowEstateTab] = useState(showEstateTab);
+  if (showEstateTab !== prevShowEstateTab) {
+    setPrevShowEstateTab(showEstateTab);
+    setTab((t) =>
+      showEstateTab ? "estate" : t === "estate" ? "portfolio" : t,
+    );
+  }
+
   // Aborting an in-flight over-time fetch is a genuine external-system
   // teardown, so it stays in an effect — it does not call setState.
   useEffect(() => {
     if (!showLifeInsuranceTab) cancelOverTime();
   }, [showLifeInsuranceTab, cancelOverTime]);
 
-  const tabs = showLifeInsuranceTab ? [...BASE_TABS, LI_TAB] : BASE_TABS;
+  const tabs = [
+    ...BASE_TABS,
+    ...(showLifeInsuranceTab ? [LI_TAB] : []),
+    ...(showEstateTab ? [ESTATE_TAB] : []),
+  ];
   // Toggle visibility must match the over-time engine's own spouse check
   // (need-over-time.ts `hasSpouse`) so the client/spouse toggle never offers
   // a series the engine returned as null, nor hides one it computed.
@@ -141,6 +165,17 @@ export function SolverChartPanel({
           clientName={clientName}
           spouseName={spouseName}
         />
+      ) : null}
+      {tab === "estate" ? (
+        <div style={{ height: 360 }}>
+          <EstateComparisonChart
+            baseProjection={baseProjection}
+            proposedProjection={currentProjection}
+            baseTree={baseTree}
+            proposedTree={workingTree}
+            isMarried={isMarried}
+          />
+        </div>
       ) : null}
 
       <div className="mt-3 flex items-center justify-between gap-3">

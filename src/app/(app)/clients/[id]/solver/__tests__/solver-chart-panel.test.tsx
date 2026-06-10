@@ -23,6 +23,9 @@ vi.mock("@/lib/estate/yearly-liquidity-report", () => ({
 vi.mock("../li-need-over-time-view", () => ({
   LiNeedOverTimeView: () => <div data-testid="chart-li-need" />,
 }));
+vi.mock("@/components/charts/estate-comparison-chart", () => ({
+  EstateComparisonChart: () => <div data-testid="chart-estate" />,
+}));
 
 import { SolverChartPanel } from "../solver-chart-panel";
 
@@ -36,18 +39,22 @@ const workingTree = {
 
 const liAssumptions = {} as LiAssumptions;
 
-function renderPanel(overrides: { showLifeInsuranceTab?: boolean } = {}) {
+function renderPanel(
+  overrides: { showLifeInsuranceTab?: boolean; showEstateTab?: boolean } = {},
+) {
   return render(
     <SolverChartPanel
       currentProjection={[] as ProjectionYear[]}
       baseProjection={[] as ProjectionYear[]}
       workingTree={workingTree}
+      baseTree={workingTree}
       computeStatus="fresh"
       clientId="client-1"
       liAssumptions={liAssumptions}
       clientName="Pat"
       spouseName="Spouse"
       showLifeInsuranceTab={overrides.showLifeInsuranceTab ?? false}
+      showEstateTab={overrides.showEstateTab ?? false}
     />,
   );
 }
@@ -86,12 +93,14 @@ describe("SolverChartPanel", () => {
         currentProjection={[] as ProjectionYear[]}
         baseProjection={[] as ProjectionYear[]}
         workingTree={workingTree}
+        baseTree={workingTree}
         computeStatus="computing"
         clientId="client-1"
         liAssumptions={liAssumptions}
         clientName="Pat"
         spouseName="Spouse"
         showLifeInsuranceTab={false}
+        showEstateTab={false}
       />,
     );
     expect(screen.getByText(/recalculating/i)).toBeInTheDocument();
@@ -111,16 +120,25 @@ describe("SolverChartPanel", () => {
     expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
   });
 
+  it("shows and auto-selects the Estate tab when active", () => {
+    renderPanel({ showEstateTab: true });
+    const tab = screen.getByRole("tab", { name: "Estate" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("chart-estate")).toBeInTheDocument();
+  });
+
   it("auto-selects LI tab on enter, keeps it switchable, hides it on leave", async () => {
     const baseProps = {
       currentProjection: [] as ProjectionYear[],
       baseProjection: [] as ProjectionYear[],
       workingTree,
+      baseTree: workingTree,
       computeStatus: "fresh" as const,
       clientId: "client-1",
       liAssumptions,
       clientName: "Pat",
       spouseName: "Spouse",
+      showEstateTab: false,
     };
 
     // 1. Start with LI tab hidden — Portfolio chart is shown, no LI tab present.
