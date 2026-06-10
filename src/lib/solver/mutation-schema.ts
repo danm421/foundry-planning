@@ -166,6 +166,26 @@ const EXTERNAL_BENEFICIARY_VALUE = z.object({
   charityType: z.enum(["public", "private"]),
 });
 
+const TRUST_SUB_TYPE = z.enum(["irrevocable", "ilit", "clt", "idgt", "crt"]);
+const ENTITY_TYPE = z.enum(["trust", "llc", "s_corp", "c_corp", "partnership", "other", "foundation"]);
+
+const ENTITY_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    entityType: ENTITY_TYPE,
+    isIrrevocable: z.boolean(),
+    isGrantor: z.boolean(),
+    includeInPortfolio: z.boolean(),
+    grantor: z.enum(["client", "spouse"]).optional(),
+    trustSubType: TRUST_SUB_TYPE.optional(),
+    crummeyPowers: z.boolean().optional(),
+    accessibleToClient: z.boolean().optional(),
+    trustEnds: z.enum(["client_death", "spouse_death", "survivorship"]).nullable().optional(),
+    grantorStatusEndYear: z.number().int().optional(),
+  })
+  .passthrough();
+
 export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   // Goals
   z.object({
@@ -363,6 +383,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("external-beneficiary-upsert"),
     id: z.string().min(1),
     value: EXTERNAL_BENEFICIARY_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("entity-upsert"),
+    id: z.string().min(1),
+    value: ENTITY_VALUE.nullable(),
   }),
 ]);
 
