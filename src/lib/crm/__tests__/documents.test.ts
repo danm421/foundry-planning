@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   crmHouseholds,
   crmHouseholdDocuments,
+  crmDocumentFolders,
   crmActivity,
   auditLog,
 } from "@/db/schema";
@@ -32,6 +33,7 @@ vi.mock("@clerk/nextjs/server", async () => {
     auth: vi.fn().mockResolvedValue({
       userId: "test_user_documents",
       orgId: "test_org_documents",
+      orgRole: "org:admin",
     }),
   };
 });
@@ -48,6 +50,8 @@ import { requireOrgId } from "@/lib/db-helpers";
 const ORG = "test_org_documents";
 const OTHER_ORG = "test_org_documents_other";
 
+let householdId: string;
+
 async function cleanup() {
   for (const firm of [ORG, OTHER_ORG]) {
     const hh = await db.query.crmHouseholds.findMany({
@@ -55,6 +59,9 @@ async function cleanup() {
       columns: { id: true },
     });
     for (const h of hh) {
+      await db
+        .delete(crmDocumentFolders)
+        .where(eq(crmDocumentFolders.householdId, h.id));
       await db
         .delete(crmHouseholdDocuments)
         .where(eq(crmHouseholdDocuments.householdId, h.id));
@@ -81,6 +88,11 @@ beforeEach(async () => {
   vi.mocked(del).mockResolvedValue(undefined);
   vi.mocked(requireOrgId).mockResolvedValue(ORG);
   await cleanup();
+  const [h] = await db
+    .insert(crmHouseholds)
+    .values({ firmId: ORG, advisorId: "test_advisor", name: "Shared Household" })
+    .returning();
+  householdId = h.id;
 });
 
 async function makeHousehold(firmId: string, name = "Doc Household") {
@@ -205,5 +217,20 @@ describe("deleteCrmDocument", () => {
     const actions = audits.map((a) => a.action).sort();
     expect(actions).toContain("crm.document.create");
     expect(actions).toContain("crm.document.delete");
+  });
+});
+
+describe("upload into a folder", () => {
+  it("stores folderId and description", async () => {
+    const [folder] = await db.insert(crmDocumentFolders).values({
+      householdId, firmId: "test_org_documents", name: "F", isSystem: false, sortOrder: 0,
+    }).returning();
+    vi.mocked(put).mockResolvedValue({ pathname: "crm/p" } as never);
+    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"), {
+      folderId: folder.id, description: "Q1 statement",
+    });
+    expect(doc.folderId).toBe(folder.id);
+    expect(doc.description).toBe("Q1 statement");
+    expect(doc.sourceKind).toBe("upload");
   });
 });

@@ -11,12 +11,15 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    const docs = await listCrmDocuments(id);
+    const folderId = req.nextUrl.searchParams.get("folderId");
+    const docs = await listCrmDocuments(id, {
+      folderId: folderId === null ? undefined : folderId === "root" ? null : folderId,
+    });
     return NextResponse.json({ documents: docs });
   } catch (err) {
     if (err instanceof UnauthorizedError) {
@@ -69,7 +72,12 @@ export async function POST(
       );
     }
 
-    const doc = await uploadCrmDocument(id, file);
+    const folderIdRaw = formData.get("folderId");
+    const descriptionRaw = formData.get("description");
+    const folderId = typeof folderIdRaw === "string" && folderIdRaw !== "" ? folderIdRaw : null;
+    const description = typeof descriptionRaw === "string" && descriptionRaw !== "" ? descriptionRaw : null;
+
+    const doc = await uploadCrmDocument(id, file, { folderId, description });
     return NextResponse.json({ document: doc }, { status: 201 });
   } catch (err) {
     if (err instanceof UnauthorizedError) {

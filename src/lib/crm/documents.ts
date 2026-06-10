@@ -3,8 +3,8 @@ import { put, del } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { crmHouseholdDocuments } from "@/db/schema";
-import { and, desc, eq } from "drizzle-orm";
-import { requireCrmHouseholdAccess } from "./authz";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { requireVaultAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { MAX_DOCUMENT_SIZE_BYTES } from "./document-constants";
@@ -39,6 +39,7 @@ export type CrmDocumentRow = typeof crmHouseholdDocuments.$inferSelect;
 export async function uploadCrmDocument(
   householdId: string,
   file: File,
+  opts: { folderId?: string | null; description?: string | null } = {},
 ): Promise<CrmDocumentRow> {
   if (file.size > MAX_SIZE_BYTES) {
     throw new Error(
@@ -46,7 +47,7 @@ export async function uploadCrmDocument(
     );
   }
 
-  const { orgId } = await requireCrmHouseholdAccess(householdId);
+  const { orgId } = await requireVaultAccess(householdId);
   const { userId } = await auth();
 
   const safe = sanitizeFilename(file.name || "document");
@@ -71,6 +72,9 @@ export async function uploadCrmDocument(
       mimeType: file.type || null,
       sizeBytes: file.size,
       uploadedBy: userId ?? null,
+      folderId: opts.folderId ?? null,
+      description: opts.description ?? null,
+      sourceKind: "upload",
     })
     .returning();
 
@@ -83,6 +87,7 @@ export async function uploadCrmDocument(
       filename: file.name,
       sizeBytes: file.size,
       mimeType: file.type || null,
+      folderId: opts.folderId ?? null,
     },
   });
 
@@ -99,10 +104,20 @@ export async function uploadCrmDocument(
 
 export async function listCrmDocuments(
   householdId: string,
+  opts: { folderId?: string | null } = {},
 ): Promise<CrmDocumentRow[]> {
-  await requireCrmHouseholdAccess(householdId);
+  await requireVaultAccess(householdId);
+  const where =
+    opts.folderId === undefined
+      ? eq(crmHouseholdDocuments.householdId, householdId)
+      : and(
+          eq(crmHouseholdDocuments.householdId, householdId),
+          opts.folderId === null
+            ? isNull(crmHouseholdDocuments.folderId)
+            : eq(crmHouseholdDocuments.folderId, opts.folderId),
+        );
   return db.query.crmHouseholdDocuments.findMany({
-    where: eq(crmHouseholdDocuments.householdId, householdId),
+    where,
     orderBy: [desc(crmHouseholdDocuments.createdAt)],
   });
 }
@@ -116,7 +131,7 @@ export async function getCrmDocument(
   if (!doc) {
     throw new Error("Document not found");
   }
-  await requireCrmHouseholdAccess(doc.householdId);
+  await requireVaultAccess(doc.householdId);
   return doc;
 }
 
@@ -127,7 +142,7 @@ export async function deleteCrmDocument(documentId: string): Promise<void> {
   if (!doc) {
     throw new Error("Document not found");
   }
-  const { orgId } = await requireCrmHouseholdAccess(doc.householdId);
+  const { orgId } = await requireVaultAccess(doc.householdId);
 
   // Best-effort blob delete — if it 404s we still want the DB row gone.
   // storageKey is null for generated/import-ref docs (no blob to delete).
