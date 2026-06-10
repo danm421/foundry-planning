@@ -3,12 +3,13 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { savePlanToVault } from "@/lib/crm/vault-plans";
 import {
   checkExportPdfRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
 import { runProjectionWithEvents } from "@/engine/projection";
-import { renderToStream } from "@react-pdf/renderer";
+import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { YearlyLiquidityPdfDocument } from "@/components/yearly-liquidity-report-pdf/document";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
@@ -111,18 +112,29 @@ export async function POST(
       chartPng,
     }) as React.ReactElement<DocumentProps>;
 
-    const stream = await Promise.race<Awaited<ReturnType<typeof renderToStream>>>([
-      renderToStream(doc),
-      new Promise((_, reject) =>
+    const buffer = await Promise.race<Buffer>([
+      renderToBuffer(doc),
+      new Promise<Buffer>((_, reject) =>
         setTimeout(() => reject(new Error("PDF render timed out")), 25_000),
       ),
     ]);
 
-    return new NextResponse(stream as unknown as ReadableStream, {
+    const downloadName = `liquidity-${(clientLastName ?? "client").toLowerCase()}.pdf`;
+
+    await savePlanToVault({
+      clientId: id,
+      firmId,
+      reportType: "liquidity",
+      scenarioId: scenarioParam,
+      filename: downloadName,
+      buffer,
+    });
+
+    return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="liquidity-${(clientLastName ?? "client").toLowerCase()}.pdf"`,
+        "Content-Disposition": `attachment; filename="${downloadName}"`,
         "Cache-Control": "no-store",
       },
     });
