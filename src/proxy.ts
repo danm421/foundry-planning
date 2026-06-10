@@ -71,13 +71,15 @@ export default clerkMiddleware(async (auth, request) => {
 
   // Role gate: operations is CRM + Tasks only. Block any other authenticated
   // surface (planning, CMA, admin settings) at the chokepoint — authoritative
-  // for both pages and API routes by path. Pages redirect to the CRM home;
+  // for both pages and API routes by path. Pages redirect to the Tasks home;
   // API calls get a clean 403 so fetch()/XHR callers don't follow a redirect.
+  // NB: target /tasks, NOT /crm — /crm just `redirect("/clients")`s, and /clients
+  // is itself blocked here, so /crm would bounce ops into an infinite loop.
   if (orgId && operationsBlocked(orgRole, request.nextUrl.pathname)) {
     if (request.nextUrl.pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "forbidden_role" }, { status: 403 });
     }
-    return NextResponse.redirect(new URL("/crm", request.url));
+    return NextResponse.redirect(new URL("/tasks", request.url));
   }
 
   // Billing access enforcement (AD-1). Reads subscription state from session
