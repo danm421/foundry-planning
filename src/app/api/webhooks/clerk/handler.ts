@@ -17,9 +17,12 @@ export type ClerkEvent = {
  * are accepted (200) but ignored, so adding new Clerk subscriptions in
  * the dashboard never breaks this endpoint.
  */
-export async function handleClerkEvent(evt: ClerkEvent): Promise<Response> {
+export async function handleClerkEvent(
+  evt: ClerkEvent,
+  svixId: string,
+): Promise<Response> {
   if (evt.type !== "organization.created") {
-    const dispatched = await dispatchClerkMembership(evt);
+    const dispatched = await dispatchClerkMembership(evt, svixId);
     if (dispatched) return dispatched;
     return NextResponse.json({ ok: true, ignored: evt.type }, { status: 200 });
   }

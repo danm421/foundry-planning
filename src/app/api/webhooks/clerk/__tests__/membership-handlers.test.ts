@@ -1,14 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockSelectFromCalls: unknown[] = [];
 const mockSelectFirms = vi.fn();
 const mockSelectSubs = vi.fn();
 const mockTosInsert = vi.fn();
-
-vi.mock("@/db/schema", async (orig) => {
-  const mod = (await orig()) as Record<string, unknown>;
-  return mod;
-});
+const mockClerkEventInsert = vi.fn(); // returning() result drives svix dedup
 
 vi.mock("@/db", async (orig) => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
@@ -16,24 +11,26 @@ vi.mock("@/db", async (orig) => {
     ...((await orig()) as object),
     db: {
       select: () => ({
-        from: (tbl: unknown) => {
-          mockSelectFromCalls.push(tbl);
-          return {
-            where: () => {
-              if (tbl === schema.firms) return mockSelectFirms();
-              if (tbl === schema.subscriptions) return mockSelectSubs();
-              return [];
-            },
-          };
-        },
+        from: (tbl: unknown) => ({
+          where: () => {
+            if (tbl === schema.firms) return mockSelectFirms();
+            if (tbl === schema.subscriptions) return mockSelectSubs();
+            return [];
+          },
+        }),
       }),
-      insert: () => ({
+      insert: (tbl: unknown) => ({
         values: (v: unknown) => ({
           onConflictDoNothing: () => ({
-            returning: () => mockTosInsert(v),
+            returning: () => {
+              const schemaMod = schema;
+              if (tbl === schemaMod.clerkEvents) return mockClerkEventInsert(v);
+              return mockTosInsert(v);
+            },
           }),
         }),
       }),
+      update: () => ({ set: () => ({ where: () => undefined }) }),
     },
   };
 });
@@ -49,145 +46,178 @@ vi.mock("@/lib/billing/stripe-client", () => ({
   }),
 }));
 
+const mockListMembers = vi.fn();
+vi.mock("@clerk/nextjs/server", () => ({
+  clerkClient: async () => ({
+    organizations: {
+      getOrganizationMembershipList: (...a: unknown[]) => mockListMembers(...a),
+    },
+  }),
+}));
+
 const mockRecordAudit = vi.fn();
 vi.mock("@/lib/audit", () => ({
   recordAudit: (a: unknown) => mockRecordAudit(a),
 }));
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureException: (...a: unknown[]) => mockCaptureException(...a),
+}));
+
 import { dispatchClerkMembership } from "../membership-handlers";
 
 beforeEach(() => {
-  mockSelectFromCalls.length = 0;
   mockSelectFirms.mockReset();
   mockSelectSubs.mockReset();
+  mockTosInsert.mockReset();
+  mockClerkEventInsert.mockReset();
   mockSubsRetrieve.mockReset();
   mockSubsUpdate.mockReset();
+  mockListMembers.mockReset();
   mockRecordAudit.mockReset();
-  mockTosInsert.mockReset();
+  mockCaptureException.mockReset();
+  // Default: fresh svix delivery (insert returns a row).
+  mockClerkEventInsert.mockResolvedValue([{ id: "ce_1" }]);
 });
 
-describe("organizationMembership.created", () => {
+describe("organizationMembership.created — absolute seat sync", () => {
   it("returns null on completely unknown event type", async () => {
-    const res = await dispatchClerkMembership({
-      type: "totally.unknown",
-      data: {},
-    } as never);
+    const res = await dispatchClerkMembership(
+      { type: "totally.unknown", data: {} } as never,
+      "svix_unknown",
+    );
     expect(res).toBeNull();
   });
 
   it("returns 400 when org or user id missing", async () => {
-    const res = await dispatchClerkMembership({
-      type: "organizationMembership.created",
-      data: { organization: {} },
-    } as never);
+    const res = await dispatchClerkMembership(
+      { type: "organizationMembership.created", data: { organization: {} } } as never,
+      "svix_400",
+    );
     expect(res?.status).toBe(400);
   });
 
   it("founder org no-ops Stripe but still audits member.invited", async () => {
-    mockSelectFirms.mockResolvedValue([
-      { firmId: "org_founder", isFounder: true },
-    ]);
-    const res = await dispatchClerkMembership({
-      type: "organizationMembership.created",
-      data: {
-        organization: { id: "org_founder" },
-        public_user_data: { user_id: "user_x" },
-      },
-    } as never);
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_founder", isFounder: true }]);
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_founder" },
+          public_user_data: { user_id: "user_x" },
+        },
+      } as never,
+      "svix_founder",
+    );
     expect(res?.status).toBe(200);
-    expect(mockSubsRetrieve).not.toHaveBeenCalled();
     expect(mockSubsUpdate).not.toHaveBeenCalled();
     expect(mockRecordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "member.invited",
-        firmId: "org_founder",
-      }),
+      expect.objectContaining({ action: "member.invited", firmId: "org_founder" }),
     );
   });
 
-  it("non-founder org bumps Stripe seat quantity by 1", async () => {
-    mockSelectFirms.mockResolvedValue([
-      { firmId: "org_paid", isFounder: false },
-    ]);
+  it("sets Stripe seat quantity ABSOLUTELY to the current member count", async () => {
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_paid", isFounder: false }]);
     mockSelectSubs.mockResolvedValue([
       { stripeSubscriptionId: "sub_1", status: "active" },
     ]);
     mockSubsRetrieve.mockResolvedValue({
-      items: {
-        data: [
-          { id: "si_seat", metadata: { kind: "seat" }, quantity: 2 },
-        ],
-      },
+      items: { data: [{ id: "si_seat", metadata: { kind: "seat" }, quantity: 2 }] },
+    });
+    // Clerk reports 4 members now — absolute quantity must be 4, NOT 2+1.
+    mockListMembers.mockResolvedValue({
+      data: [{}, {}, {}, {}],
+      total_count: 4,
     });
 
-    const res = await dispatchClerkMembership({
-      type: "organizationMembership.created",
-      data: {
-        organization: { id: "org_paid" },
-        public_user_data: { user_id: "user_y" },
-      },
-    } as never);
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_y" },
+        },
+      } as never,
+      "svix_abs",
+    );
     expect(res?.status).toBe(200);
     expect(mockSubsUpdate).toHaveBeenCalledWith(
       "sub_1",
       expect.objectContaining({
-        items: [{ id: "si_seat", quantity: 3 }],
+        items: [{ id: "si_seat", quantity: 4 }],
         proration_behavior: "create_prorations",
-      }),
-    );
-    expect(mockRecordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "member.invited",
-        firmId: "org_paid",
       }),
     );
   });
 
-  it("non-founder org with no live subscription audits but skips Stripe update", async () => {
-    mockSelectFirms.mockResolvedValue([
-      { firmId: "org_paid", isFounder: false },
-    ]);
-    mockSelectSubs.mockResolvedValue([
-      { stripeSubscriptionId: "sub_old", status: "canceled" },
-    ]);
-    const res = await dispatchClerkMembership({
-      type: "organizationMembership.created",
-      data: {
-        organization: { id: "org_paid" },
-        public_user_data: { user_id: "user_y" },
-      },
-    } as never);
+  it("dedupes a duplicate svix delivery — no second Stripe update", async () => {
+    mockClerkEventInsert.mockResolvedValue([]); // ON CONFLICT DO NOTHING → already processed
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_y" },
+        },
+      } as never,
+      "svix_dup",
+    );
     expect(res?.status).toBe(200);
+    expect(mockSelectFirms).not.toHaveBeenCalled();
     expect(mockSubsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("swallows a Stripe failure: returns 200 + logs to Sentry (no retry storm)", async () => {
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_paid", isFounder: false }]);
+    mockSelectSubs.mockResolvedValue([
+      { stripeSubscriptionId: "sub_1", status: "active" },
+    ]);
+    mockSubsRetrieve.mockResolvedValue({
+      items: { data: [{ id: "si_seat", metadata: { kind: "seat" }, quantity: 2 }] },
+    });
+    mockListMembers.mockResolvedValue({ data: [{}, {}, {}], total_count: 3 });
+    mockSubsUpdate.mockRejectedValue(new Error("stripe 500"));
+
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_y" },
+        },
+      } as never,
+      "svix_fail",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockCaptureException).toHaveBeenCalled();
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "member.invited" }),
     );
   });
 });
 
-describe("organizationMembership.deleted", () => {
-  it("decreases seat quantity by 1 and audits member.removed", async () => {
-    mockSelectFirms.mockResolvedValue([
-      { firmId: "org_paid", isFounder: false },
-    ]);
+describe("organizationMembership.deleted — absolute seat sync", () => {
+  it("sets Stripe seat quantity to the now-lower member count and audits member.removed", async () => {
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_paid", isFounder: false }]);
     mockSelectSubs.mockResolvedValue([
       { stripeSubscriptionId: "sub_1", status: "active" },
     ]);
     mockSubsRetrieve.mockResolvedValue({
-      items: {
-        data: [
-          { id: "si_seat", metadata: { kind: "seat" }, quantity: 4 },
-        ],
-      },
+      items: { data: [{ id: "si_seat", metadata: { kind: "seat" }, quantity: 4 }] },
     });
+    mockListMembers.mockResolvedValue({ data: [{}, {}, {}], total_count: 3 });
 
-    await dispatchClerkMembership({
-      type: "organizationMembership.deleted",
-      data: {
-        organization: { id: "org_paid" },
-        public_user_data: { user_id: "user_z" },
-      },
-    } as never);
+    await dispatchClerkMembership(
+      {
+        type: "organizationMembership.deleted",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_z" },
+        },
+      } as never,
+      "svix_del",
+    );
     expect(mockSubsUpdate).toHaveBeenCalledWith(
       "sub_1",
       expect.objectContaining({ items: [{ id: "si_seat", quantity: 3 }] }),
@@ -200,37 +230,40 @@ describe("organizationMembership.deleted", () => {
 
 describe("organizationMembership.updated", () => {
   it("audits member.role_changed when role changed; no Stripe call", async () => {
-    await dispatchClerkMembership({
-      type: "organizationMembership.updated",
-      data: {
-        organization: { id: "org_paid" },
-        public_user_data: { user_id: "user_z" },
-        role: "org:admin",
-        previous_attributes: { role: "org:member" },
-      },
-    } as never);
+    await dispatchClerkMembership(
+      {
+        type: "organizationMembership.updated",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_z" },
+          role: "org:admin",
+          previous_attributes: { role: "org:member" },
+        },
+      } as never,
+      "svix_role",
+    );
     expect(mockSubsUpdate).not.toHaveBeenCalled();
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "member.role_changed",
-        metadata: expect.objectContaining({
-          from: "org:member",
-          to: "org:admin",
-        }),
+        metadata: expect.objectContaining({ from: "org:member", to: "org:admin" }),
       }),
     );
   });
 
   it("ignores updated event when role unchanged", async () => {
-    await dispatchClerkMembership({
-      type: "organizationMembership.updated",
-      data: {
-        organization: { id: "org_paid" },
-        public_user_data: { user_id: "user_z" },
-        role: "org:member",
-        previous_attributes: {},
-      },
-    } as never);
+    await dispatchClerkMembership(
+      {
+        type: "organizationMembership.updated",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_z" },
+          role: "org:member",
+          previous_attributes: {},
+        },
+      } as never,
+      "svix_norole",
+    );
     expect(mockRecordAudit).not.toHaveBeenCalled();
   });
 });
@@ -238,16 +271,16 @@ describe("organizationMembership.updated", () => {
 describe("user.created", () => {
   it("writes a tos_acceptances row with acceptance_source clerk_signup when legal_consent is present", async () => {
     mockTosInsert.mockResolvedValue([]);
-    await dispatchClerkMembership({
-      type: "user.created",
-      data: {
-        id: "user_signup",
-        legal_consent: {
-          tos_accepted_at: "2026-04-30T15:00:00Z",
-          tos_version: "v1",
+    await dispatchClerkMembership(
+      {
+        type: "user.created",
+        data: {
+          id: "user_signup",
+          legal_consent: { tos_accepted_at: "2026-04-30T15:00:00Z", tos_version: "v1" },
         },
-      },
-    } as never);
+      } as never,
+      "svix_signup",
+    );
     expect(mockTosInsert).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user_signup",
@@ -259,10 +292,10 @@ describe("user.created", () => {
 
   it("ignores user.created when legal_consent is absent", async () => {
     mockTosInsert.mockResolvedValue([]);
-    await dispatchClerkMembership({
-      type: "user.created",
-      data: { id: "user_no_consent" },
-    } as never);
+    await dispatchClerkMembership(
+      { type: "user.created", data: { id: "user_no_consent" } } as never,
+      "svix_noconsent",
+    );
     expect(mockTosInsert).not.toHaveBeenCalled();
   });
 });

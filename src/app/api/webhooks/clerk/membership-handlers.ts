@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import * as Sentry from "@sentry/nextjs";
+import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { firms, subscriptions, tosAcceptances } from "@/db/schema";
+import {
+  clerkEvents,
+  firms,
+  subscriptions,
+  tosAcceptances,
+} from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { recordAudit } from "@/lib/audit";
 import type { ClerkEvent } from "./handler";
@@ -19,16 +26,30 @@ type UserCreatedData = {
 };
 
 /**
- * Adjust the seat quantity on the firm's Stripe subscription by `delta`.
- * No-op for founder orgs (no subscription mapped) and for firms without a
- * live subscription. Reads current seat quantity from Stripe, applies
- * delta, writes back. The webhook subscription.updated will fire the
- * DB+Clerk metadata sync downstream.
+ * Record this svix delivery; returns true if it's NEW (process it) or false
+ * if a row already exists (duplicate — skip). The UNIQUE(svix_id) constraint
+ * + ON CONFLICT DO NOTHING makes this the idempotency gate.
  */
-async function adjustSeatQuantity(
-  firmId: string,
-  delta: 1 | -1,
-): Promise<void> {
+async function claimSvixDelivery(
+  svixId: string,
+  eventType: string,
+): Promise<boolean> {
+  const rows = await db
+    .insert(clerkEvents)
+    .values({ svixId, eventType, result: null })
+    .onConflictDoNothing()
+    .returning({ id: clerkEvents.id });
+  return rows.length > 0;
+}
+
+/**
+ * Absolute seat sync. Sets the firm's Stripe seat quantity to the CURRENT
+ * org member count (never +/- delta — deltas drift under duplicate/concurrent
+ * webhooks). No-op for founder orgs and firms without a live subscription.
+ * A Stripe failure is swallowed (logged + Sentry) so Clerk doesn't retry-storm;
+ * the daily reconcile cron self-heals the quantity.
+ */
+async function syncSeatQuantity(firmId: string): Promise<void> {
   const firmRows = await db.select().from(firms).where(eq(firms.firmId, firmId));
   const firm = firmRows[0];
   if (!firm || firm.isFounder) return;
@@ -42,57 +63,63 @@ async function adjustSeatQuantity(
   );
   if (!sub) return;
 
-  const stripe = getStripe();
-  const liveSub = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId, {
-    expand: ["items.data.price"],
-  });
-  const seat = liveSub.items.data.find(
-    (it) =>
-      ((it.metadata as Record<string, string | undefined>).kind ?? "seat") !==
-      "addon",
-  );
-  if (!seat) return;
-  const newQuantity = Math.max(0, (seat.quantity ?? 1) + delta);
-  await stripe.subscriptions.update(sub.stripeSubscriptionId, {
-    items: [{ id: seat.id, quantity: newQuantity }],
-    proration_behavior: "create_prorations",
-  });
+  try {
+    const cc = await clerkClient();
+    const members = await cc.organizations.getOrganizationMembershipList({
+      organizationId: firmId,
+      limit: 100,
+    });
+    const memberCount =
+      (members as { total_count?: number }).total_count ?? members.data.length;
+
+    const stripe = getStripe();
+    const liveSub = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId, {
+      expand: ["items.data.price"],
+    });
+    const seat = liveSub.items.data.find(
+      (it) =>
+        ((it.metadata as Record<string, string | undefined>).kind ?? "seat") !==
+        "addon",
+    );
+    if (!seat) return;
+    const quantity = Math.max(1, memberCount);
+    await stripe.subscriptions.update(sub.stripeSubscriptionId, {
+      items: [{ id: seat.id, quantity }],
+      proration_behavior: "create_prorations",
+    });
+  } catch (err) {
+    // Best-effort: Clerk membership is already correct; the seat count is the
+    // only thing out of sync, and the reconcile cron heals it. Returning lets
+    // the route reply 200 so Clerk doesn't hammer retries.
+    console.error(
+      `[webhook.clerk] seat sync failed for firm ${firmId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    Sentry.captureException(err, { extra: { firmId, where: "syncSeatQuantity" } });
+  }
 }
 
 export async function dispatchClerkMembership(
   evt: ClerkEvent,
+  svixId: string,
 ): Promise<Response | null> {
   const t = evt.type;
 
-  if (t === "organizationMembership.created") {
+  if (t === "organizationMembership.created" || t === "organizationMembership.deleted") {
     const d = evt.data as MembershipEventData;
     const firmId = d.organization?.id;
     const userId = d.public_user_data?.user_id;
     if (!firmId || !userId) {
       return NextResponse.json({ error: "missing IDs" }, { status: 400 });
     }
-    await adjustSeatQuantity(firmId, 1);
-    await recordAudit({
-      action: "member.invited",
-      resourceType: "membership",
-      resourceId: `${firmId}:${userId}`,
-      firmId,
-      actorId: "clerk:webhook",
-      metadata: { user_id: userId },
-    });
-    return NextResponse.json({ ok: true, handled: t }, { status: 200 });
-  }
-
-  if (t === "organizationMembership.deleted") {
-    const d = evt.data as MembershipEventData;
-    const firmId = d.organization?.id;
-    const userId = d.public_user_data?.user_id;
-    if (!firmId || !userId) {
-      return NextResponse.json({ error: "missing IDs" }, { status: 400 });
+    // svix-id dedupe: a duplicate delivery must not re-issue the Stripe update.
+    const isNew = await claimSvixDelivery(svixId, t);
+    if (!isNew) {
+      return NextResponse.json({ ok: true, skipped_duplicate: t }, { status: 200 });
     }
-    await adjustSeatQuantity(firmId, -1);
+    await syncSeatQuantity(firmId);
     await recordAudit({
-      action: "member.removed",
+      action: t === "organizationMembership.created" ? "member.invited" : "member.removed",
       resourceType: "membership",
       resourceId: `${firmId}:${userId}`,
       firmId,

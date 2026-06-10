@@ -52,5 +52,5 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return handleClerkEvent(evt);
+  return handleClerkEvent(evt, svixId);
 }
