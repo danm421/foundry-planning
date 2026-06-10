@@ -169,6 +169,22 @@ const EXTERNAL_BENEFICIARY_VALUE = z.object({
 const TRUST_SUB_TYPE = z.enum(["irrevocable", "ilit", "clt", "idgt", "crt"]);
 const ENTITY_TYPE = z.enum(["trust", "llc", "s_corp", "c_corp", "partnership", "other", "foundation"]);
 
+const SPLIT_INTEREST_SNAPSHOT = z.object({
+  inceptionYear: z.number().int(),
+  inceptionValue: z.number().nonnegative(),
+  payoutType: z.enum(["unitrust", "annuity"]),
+  payoutPercent: z.number().nullable(),
+  payoutAmount: z.number().nullable(),
+  irc7520Rate: z.number().nonnegative(),
+  termType: z.enum(["years", "single_life", "joint_life", "shorter_of_years_or_life"]),
+  termYears: z.number().nullable(),
+  measuringLife1Id: z.string().nullable(),
+  measuringLife2Id: z.string().nullable(),
+  charityId: z.string().min(1),
+  originalIncomeInterest: z.number().nonnegative(),
+  originalRemainderInterest: z.number().nonnegative(),
+});
+
 const ENTITY_VALUE = z
   .object({
     id: z.string().min(1),
@@ -183,6 +199,7 @@ const ENTITY_VALUE = z
     accessibleToClient: z.boolean().optional(),
     trustEnds: z.enum(["client_death", "spouse_death", "survivorship"]).nullable().optional(),
     grantorStatusEndYear: z.number().int().optional(),
+    splitInterest: SPLIT_INTEREST_SNAPSHOT.optional(),
   })
   .passthrough();
 
