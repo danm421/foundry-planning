@@ -712,7 +712,7 @@ export default function FamilyView({
                     }}
                   >
                     <td className="px-4 py-2 text-sm text-ink">{t.name}</td>
-                    <td className="px-4 py-2 text-sm text-ink-3 tabular">
+                    <td className="px-4 py-2 text-sm text-ink-3 tabular-nums">
                       {t.accountIds.length} {t.accountIds.length === 1 ? "asset" : "assets"}
                     </td>
                     <td className="px-4 py-2 text-right text-xs text-ink-4">Edit →</td>
