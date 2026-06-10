@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { renderToStream } from "@react-pdf/renderer";
+import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { inArray } from "drizzle-orm";
 import { db } from "@/db";
@@ -31,6 +31,7 @@ import {
 } from "@/components/presentations/registry";
 import { dateLong } from "@/lib/presentations/format";
 import { recordAudit } from "@/lib/audit";
+import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
@@ -531,15 +532,9 @@ export async function POST(
       lifeInsurance,
     }) as unknown as React.ReactElement<DocumentProps>;
 
-    // @react-pdf/renderer has a memory-leak history on large docs, and
-    // a malformed doc could send it into an unbounded paginate loop.
-    // Race the render against a 25 s timeout so a pathological PDF can
-    // never pin the serverless function to its maxDuration.
-    const stream = await Promise.race<
-      Awaited<ReturnType<typeof renderToStream>>
-    >([
-      renderToStream(doc),
-      new Promise((_, reject) =>
+    const buffer = await Promise.race<Buffer>([
+      renderToBuffer(doc),
+      new Promise<Buffer>((_, reject) =>
         setTimeout(() => reject(new Error("PDF render timed out")), 25_000),
       ),
     ]);
@@ -557,15 +552,25 @@ export async function POST(
       metadata: {
         pages: parsed.data.pages.map((p) => p.pageId),
         scenarioId: parsed.data.scenarioId,
-        hasOverrides: parsed.data.pages.some(
-          (p) => p.scenarioOverride !== undefined,
-        ),
+        hasOverrides: parsed.data.pages.some((p) => p.scenarioOverride !== undefined),
         distinctScenarioCount: plan.distinct.size,
       },
     });
 
+    // Best-effort vault capture — never on previews, never blocks the download path.
+    if (!isPreview) {
+      await savePlanToVault({
+        clientId: id,
+        firmId,
+        reportType: "presentation",
+        scenarioId: parsed.data.scenarioId,
+        filename,
+        buffer,
+      });
+    }
+
     const safeFilename = filename.replace(/["\\\r\n;]/g, "");
-    return new NextResponse(stream as unknown as ReadableStream, {
+    return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
