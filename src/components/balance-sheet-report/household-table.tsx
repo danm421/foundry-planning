@@ -52,6 +52,11 @@ export default function HouseholdTable({ model, clientLabel, spouseLabel }: Hous
       <td className="px-3 py-1.5 pl-6 text-ink-2">
         {r.name}
         {r.hasLinkedMortgage && <span className="ml-1 text-[10px] text-ink-4">(M)</span>}
+        {r.revocableTrustName && (
+          <span className="ml-2 rounded bg-data-teal/15 px-1.5 py-0.5 text-[10px] font-medium text-data-teal">
+            {r.revocableTrustName}
+          </span>
+        )}
       </td>
       {negative ? negCols(r) : cols(r)}
     </tr>

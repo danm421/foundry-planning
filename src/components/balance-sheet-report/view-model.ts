@@ -30,6 +30,9 @@ export interface AccountLike {
    *  (`category === "business"`, `parentAccountId == null`). Drives the
    *  entity-card type chip on the By-Entity tab. */
   businessType?: string | null;
+  /** Set when the account is tagged into a revocable trust. Drives the
+   *  balance-sheet badge. Does not affect grouping or values. */
+  revocableTrustName?: string | null;
 }
 
 export interface LiabilityLike {
