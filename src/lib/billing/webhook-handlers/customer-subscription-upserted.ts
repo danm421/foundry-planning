@@ -11,6 +11,11 @@ import {
 } from "@/lib/billing/entitlements";
 import { recordAudit } from "@/lib/audit";
 
+// The partial unique index subscriptions_firm_active_unique only indexes rows in
+// these "live" statuses, so only another LIVE row can collide. A canceled prior
+// subscription (cancel-then-resubscribe) must NOT count as a double-subscription.
+const LIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "unpaid"];
+
 /**
  * Handler for customer.subscription.created and customer.subscription.updated.
  * Both events share this code path: re-fetch live → upsert DB → sync Clerk
@@ -58,7 +63,10 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
   // 23505 → unhandled 500. Detect it, page ops, and skip rather than crash the
   // webhook. Reconcile/manual cleanup picks the survivor.
   const conflicting = await db
-    .select({ stripeSubscriptionId: subscriptions.stripeSubscriptionId })
+    .select({
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+      status: subscriptions.status,
+    })
     .from(subscriptions)
     .where(
       and(
@@ -67,15 +75,9 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
       ),
     )
     .then((rows) =>
-      rows.find((r) =>
-        // only live rows collide with the partial unique index
-        true,
-      ),
+      rows.find((r) => LIVE_SUBSCRIPTION_STATUSES.includes(r.status)),
     );
-  if (
-    conflicting &&
-    ["trialing", "active", "past_due", "unpaid"].includes(sub.status)
-  ) {
+  if (conflicting && LIVE_SUBSCRIPTION_STATUSES.includes(sub.status)) {
     Sentry.captureMessage("Firm has a second active Stripe subscription", {
       level: "error",
       extra: {

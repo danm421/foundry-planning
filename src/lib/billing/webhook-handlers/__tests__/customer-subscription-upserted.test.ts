@@ -226,4 +226,36 @@ describe("handleSubscriptionUpsert", () => {
     expect(mockSubsUpsert).not.toHaveBeenCalled();
     expect(mockUpdateOrgMeta).not.toHaveBeenCalled();
   });
+
+  it("upserts normally when the only other subscription is canceled (cancel-then-resubscribe)", async () => {
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_new",
+      customer: "cus_1",
+      status: "active",
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "org_1" },
+      items: { data: [] },
+    });
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, aiImportsUsed: 0 }]);
+    // The firm's previous subscription is CANCELED — not a live conflict, so the
+    // partial unique index would not throw and the new sub must upsert.
+    mockSelectActiveSub.mockResolvedValue([
+      { stripeSubscriptionId: "sub_old", status: "canceled" },
+    ]);
+    mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-uuid" }]);
+    mockItemsUpsert.mockResolvedValue([]);
+
+    await handleSubscriptionUpsert({
+      id: "evt_resub",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_new" } },
+    } as never);
+
+    expect(mockCaptureMessage).not.toHaveBeenCalled();
+    expect(mockSubsUpsert).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOrgMeta).toHaveBeenCalled();
+  });
 });
