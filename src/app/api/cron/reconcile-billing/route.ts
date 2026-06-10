@@ -148,7 +148,15 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
-  const webhookErrors24h = await checkRecentWebhookErrors();
+  // Observability is best-effort — a telemetry-query failure must not fail an
+  // otherwise-successful reconcile run (which would trigger a wasteful Vercel
+  // cron retry even though reconciliation already committed).
+  let webhookErrors24h: number | null = null;
+  try {
+    webhookErrors24h = await checkRecentWebhookErrors();
+  } catch (err) {
+    console.error("[reconcile-billing] webhook error count failed:", err);
+  }
 
   return NextResponse.json(
     { runId, status, discrepanciesFound: drift.length, webhookErrors24h },

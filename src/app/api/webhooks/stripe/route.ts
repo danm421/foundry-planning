@@ -116,9 +116,6 @@ export async function POST(req: NextRequest) {
     // Console gets the full err object (with stack + cause chain) so truncated
     // DB rows don't hide the root cause when debugging webhook failures.
     console.error(`[webhook.stripe] handler failed for ${event.type}:`, err);
-    Sentry.captureException(err, {
-      extra: { eventType: event.type, eventId: event.id, rowId },
-    });
     await db
       .update(billingEvents)
       .set({
@@ -128,6 +125,15 @@ export async function POST(req: NextRequest) {
         processingDurationMs: Date.now() - startedAt,
       })
       .where(eq(billingEvents.id, rowId));
+    // Page ops only AFTER the error row is persisted, and never let a Sentry
+    // transport hiccup mask the 500 that tells Stripe to retry.
+    try {
+      Sentry.captureException(err, {
+        extra: { eventType: event.type, eventId: event.id, rowId },
+      });
+    } catch {
+      // best-effort telemetry
+    }
     return NextResponse.json({ error: "handler failed" }, { status: 500 });
   }
 }

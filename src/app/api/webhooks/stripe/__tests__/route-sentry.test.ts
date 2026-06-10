@@ -61,7 +61,7 @@ describe("POST /api/webhooks/stripe — Sentry on handler failure", () => {
     const [errArg, ctxArg] = mockCaptureException.mock.calls[0]!;
     expect((errArg as Error).message).toBe("handler boom");
     expect(ctxArg).toMatchObject({
-      extra: { eventType: "invoice.payment_failed", eventId: "evt_1" },
+      extra: { eventType: "invoice.payment_failed", eventId: "evt_1", rowId: "row_1" },
     });
   });
 
