@@ -86,7 +86,7 @@ import {
   applyFinalDeath,
 } from "./death-event";
 import { computeHypotheticalEstateTax } from "./what-if/hypothetical-estate-tax";
-import { calcSeca } from "../lib/tax/fica";
+import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
 import { computePortfolioSnapshot } from "./portfolio-snapshot";
@@ -3014,14 +3014,34 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       seEarnings += amount;
     }
     const secaResult = useBracket && resolved
-      ? calcSeca({
-          seEarnings,
-          ssTaxRate: resolved.params.ssTaxRate,
-          ssWageBase: resolved.params.ssWageBase,
-          medicareTaxRate: resolved.params.medicareTaxRate,
-          ficaSsWages: taxDetail.earnedIncome,
-        })
-      : { seTax: 0, deductibleHalf: 0 };
+      ? (() => {
+          const seca = calcSeca({
+            seEarnings,
+            ssTaxRate: resolved.params.ssTaxRate,
+            ssWageBase: resolved.params.ssWageBase,
+            medicareTaxRate: resolved.params.medicareTaxRate,
+            ficaSsWages: taxDetail.earnedIncome,
+          });
+          // SE-side 0.9% Additional Medicare surtax (IRC §1401(b)(2)). Same
+          // filing-status threshold source as the wage-side surtax in
+          // calculate.ts (mfj / mfs / single, with HoH → single); wages
+          // (taxDetail.earnedIncome) consume the threshold first so it's
+          // applied exactly once across wage- and SE-sides.
+          const addlMedicareThreshold =
+            filingStatus === "married_joint"
+              ? resolved.params.addlMedicareThreshold.mfj
+              : filingStatus === "married_separate"
+                ? resolved.params.addlMedicareThreshold.mfs
+                : resolved.params.addlMedicareThreshold.single;
+          const additionalMedicare = calcSeAdditionalMedicare({
+            seEarnings,
+            ficaSsWages: taxDetail.earnedIncome,
+            threshold: addlMedicareThreshold,
+            rate: resolved.params.addlMedicareRate,
+          });
+          return { ...seca, additionalMedicare };
+        })()
+      : { seTax: 0, deductibleHalf: 0, additionalMedicare: 0 };
     // Plan 3a — collect external-charity gifts so the tax helper can apply IRC §170(b)
     // AGI limits + decay + FIFO carryforward consumption. Bucket cash gifts as
     // public/private; v1 simplification: gift events carry no asset-class metadata yet.

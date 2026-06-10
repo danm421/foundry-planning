@@ -85,4 +85,58 @@ describe("computeTaxForYear", () => {
       base.taxResult.flow.totalFederalTax + 1_000,
     );
   });
+
+  it("BUG #18: SE-side Additional Medicare surtax flows into flow.additionalMedicare and totals", () => {
+    const inputWith = (secaResult: {
+      seTax: number;
+      deductibleHalf: number;
+      additionalMedicare?: number;
+    }) => ({
+      taxDetail: {
+        earnedIncome: 0,
+        ordinaryIncome: 0,
+        dividends: 0,
+        capitalGains: 0,
+        stCapitalGains: 0,
+        qbi: 0,
+        taxExempt: 0,
+        taxExemptInterest: 0,
+        bySource: {},
+      },
+      socialSecurityGross: 0,
+      totalIncome: 0,
+      taxableIncome: 0,
+      filingStatus: "single" as const,
+      year: 2026,
+      planSettings: basePlanSettings,
+      resolved: null,
+      useBracket: false,
+      aboveLineDeductions: 0,
+      itemizedDeductions: 0,
+      charityCarryforwardIn: emptyCharityCarryforward(),
+      charityGiftsThisYear: [],
+      secaResult,
+      transferEarlyWithdrawalPenalty: 0,
+      interestIncomeForTax: 0,
+      deductionBreakdownIn: null,
+    });
+
+    // $400k SE earnings, $0 wages → SE tax + $1,524.60 SE-side surtax.
+    const withSurtax = computeTaxForYear(
+      inputWith({ seTax: 50_000, deductibleHalf: 25_000, additionalMedicare: 1_524.6 }),
+    );
+    const withoutSurtax = computeTaxForYear(
+      inputWith({ seTax: 50_000, deductibleHalf: 25_000, additionalMedicare: 0 }),
+    );
+
+    expect(withSurtax.taxResult.flow.additionalMedicare).toBeCloseTo(1_524.6, 2);
+    expect(withSurtax.taxResult.flow.totalTax).toBeCloseTo(
+      withoutSurtax.taxResult.flow.totalTax + 1_524.6,
+      2,
+    );
+    expect(withSurtax.taxResult.flow.totalFederalTax).toBeCloseTo(
+      withoutSurtax.taxResult.flow.totalFederalTax + 1_524.6,
+      2,
+    );
+  });
 });
