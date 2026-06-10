@@ -1,0 +1,235 @@
+"use client";
+
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Tooltip,
+  Legend,
+  type ChartOptions,
+} from "chart.js";
+import { Bar } from "react-chartjs-2";
+import { useMemo, useState } from "react";
+import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { Ordering } from "@/lib/estate/yearly-estate-report";
+import { buildEstateComparison } from "@/lib/estate/estate-comparison";
+import { useThemeName } from "@/lib/chart-colors";
+import { data as brandData, dataLight as brandDataLight } from "@/brand";
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+
+const BUCKET_LABELS = ["Total to Heirs", "Total Taxes & Expenses", "Total to Charity"];
+
+function fmtUsd(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}K`;
+  return `${sign}$${Math.round(abs)}`;
+}
+
+function fmtDelta(n: number): string {
+  if (n === 0) return "—";
+  const arrow = n > 0 ? "▲" : "▼";
+  return `${arrow} ${n > 0 ? "+" : "−"}${fmtUsd(Math.abs(n))}`;
+}
+
+export interface EstateComparisonChartProps {
+  baseProjection: ProjectionYear[];
+  proposedProjection: ProjectionYear[];
+  baseTree: ClientData;
+  proposedTree: ClientData;
+  isMarried: boolean;
+}
+
+export function EstateComparisonChart({
+  baseProjection,
+  proposedProjection,
+  baseTree,
+  proposedTree,
+  isMarried,
+}: EstateComparisonChartProps) {
+  const theme = useThemeName();
+
+  const years = proposedProjection
+    .filter((y) => y.hypotheticalEstateTax)
+    .map((y) => y.year);
+  const minYear = years[0] ?? proposedProjection[0]?.year ?? 0;
+  const maxYear = years[years.length - 1] ?? minYear;
+
+  const [selectedYear, setSelectedYear] = useState(maxYear);
+  const [prevMaxYear, setPrevMaxYear] = useState(maxYear);
+  if (maxYear !== prevMaxYear) {
+    setPrevMaxYear(maxYear);
+    setSelectedYear(maxYear);
+  }
+
+  const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
+
+  const c = proposedTree.client;
+
+  const comparison = useMemo(
+    () =>
+      buildEstateComparison({
+        baseProjection,
+        proposedProjection,
+        baseTree,
+        proposedTree,
+        ordering: isMarried ? ordering : "primaryFirst",
+        year: selectedYear,
+        ownerNames: {
+          clientName: `${c.firstName} ${c.lastName}`.trim(),
+          spouseName: c.spouseName ?? null,
+        },
+        ownerDobs: {
+          clientDob: c.dateOfBirth,
+          spouseDob: c.spouseDob ?? null,
+        },
+      }),
+    [
+      baseProjection,
+      proposedProjection,
+      baseTree,
+      proposedTree,
+      ordering,
+      isMarried,
+      selectedYear,
+      c.firstName,
+      c.lastName,
+      c.spouseName,
+      c.dateOfBirth,
+      c.spouseDob,
+    ],
+  );
+
+  const palette = theme === "light" ? brandDataLight : brandData;
+
+  const chartData = useMemo(
+    () => ({
+      labels: BUCKET_LABELS,
+      datasets: [
+        {
+          label: "Base Facts",
+          data: [
+            comparison.base.toHeirs,
+            comparison.base.taxesAndExpenses,
+            comparison.base.toCharity,
+          ],
+          backgroundColor: palette.grey,
+        },
+        {
+          label: "Proposed Plan",
+          data: [
+            comparison.proposed.toHeirs,
+            comparison.proposed.taxesAndExpenses,
+            comparison.proposed.toCharity,
+          ],
+          backgroundColor: palette.blue,
+        },
+      ],
+    }),
+    [comparison, palette],
+  );
+
+  const chartOptions: ChartOptions<"bar"> = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" as const },
+        tooltip: {
+          callbacks: {
+            label: (ctx) =>
+              `${ctx.dataset.label}: ${fmtUsd(ctx.parsed.y ?? 0)}`,
+          },
+        },
+      },
+      scales: {
+        y: {
+          ticks: { callback: (v: unknown) => fmtUsd(Number(v)) },
+        },
+      },
+    }),
+    [],
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[13px] font-medium text-ink">
+            Estate distribution if both die in{" "}
+            <span className="text-accent">{selectedYear}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-ink-3">
+          <span>{minYear}</span>
+          <input
+            type="range"
+            min={minYear}
+            max={maxYear}
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="w-40 accent-accent"
+            aria-label="Death year"
+          />
+          <span>{maxYear}</span>
+        </div>
+      </div>
+
+      {isMarried ? (
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-ink-3">Death order:</span>
+          {(["primaryFirst", "spouseFirst"] as const).map((o) => (
+            <button
+              key={o}
+              type="button"
+              onClick={() => setOrdering(o)}
+              className={
+                ordering === o
+                  ? "rounded-full bg-accent px-2 py-0.5 text-white"
+                  : "rounded-full bg-hair-2 px-2 py-0.5 text-ink-3 hover:text-ink"
+              }
+            >
+              {o === "primaryFirst" ? "Client first" : "Spouse first"}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div style={{ height: 260 }}>
+        <Bar data={chartData} options={chartOptions} />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {(
+          [
+            ["Total to Heirs", comparison.deltas.toHeirs, true],
+            ["Total Taxes & Expenses", comparison.deltas.taxesAndExpenses, false],
+            ["Total to Charity", comparison.deltas.toCharity, true],
+          ] as const
+        ).map(([label, delta, higherIsBetter]) => {
+          const favorable =
+            delta === 0 ? false : higherIsBetter ? delta > 0 : delta < 0;
+          return (
+            <div key={label}>
+              <div className="text-[11px] font-medium text-ink-2">{label}</div>
+              <div
+                className={
+                  delta === 0
+                    ? "text-[11px] text-ink-3"
+                    : favorable
+                      ? "text-[11px] font-semibold text-good"
+                      : "text-[11px] font-semibold text-crit"
+                }
+              >
+                {fmtDelta(delta)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
