@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { accounts, accountOwners, clients, crmHouseholdContacts, familyMembers } from "@/db/schema";
+import { accounts, accountOwners, crmHouseholdContacts, familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireClientAccess } from "@/lib/clients/authz";
 import { recordCreate, recordDelete } from "@/lib/audit";
 import { toAccountSnapshot } from "@/lib/audit/snapshots/account";
 import { parseBody } from "@/lib/schemas/common";
@@ -15,16 +15,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) {
+    const access = await requireClientAccess(id).catch(() => null);
+    if (!access) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
+    const { client, firmId } = access;
 
     // CRM contact — source for the split account label.
     const [primaryContact] = client.crmHouseholdId

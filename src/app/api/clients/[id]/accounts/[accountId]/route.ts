@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, accounts, familyMembers, accountOwners } from "@/db/schema";
+import { accounts, familyMembers, accountOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { toAccountSnapshot, ACCOUNT_FIELD_LABELS } from "@/lib/audit/snapshots/account";
@@ -29,13 +30,7 @@ export async function PUT(
     const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
-    // Verify client belongs to this firm
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-
-    if (!client) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -218,13 +213,7 @@ export async function PATCH(
     const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
-    // Verify client belongs to this firm
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-
-    if (!client) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -318,13 +307,7 @@ export async function DELETE(
     const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
-    // Verify client belongs to this firm
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-
-    if (!client) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

@@ -5,7 +5,6 @@ import {
   holdingAssetClassOverrides,
   assetClasses,
   accounts,
-  clients,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
@@ -13,6 +12,7 @@ import { parseBody } from "@/lib/schemas/common";
 import { holdingOverrideSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -22,17 +22,16 @@ async function assertHoldingInFirm(
   holdingId: string,
   firmId: string,
 ) {
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
   const [row] = await db
     .select({ id: accountHoldings.id })
     .from(accountHoldings)
     .innerJoin(accounts, eq(accounts.id, accountHoldings.accountId))
-    .innerJoin(clients, eq(clients.id, accounts.clientId))
     .where(
       and(
         eq(accountHoldings.id, holdingId),
         eq(accountHoldings.accountId, accountId),
         eq(accounts.clientId, clientId),
-        eq(clients.firmId, firmId),
       ),
     );
   return row ?? null;

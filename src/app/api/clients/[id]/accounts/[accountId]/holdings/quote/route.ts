@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { accounts, clients } from "@/db/schema";
+import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { quoteTickerSchema } from "@/lib/schemas/holdings";
 import { fetchEodClose } from "@/lib/investments/quote";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
   const [acct] = await db
     .select({ id: accounts.id })
     .from(accounts)
-    .innerJoin(clients, eq(clients.id, accounts.clientId))
-    .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId), eq(clients.firmId, firmId)));
+    .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
   return acct ?? null;
 }
 

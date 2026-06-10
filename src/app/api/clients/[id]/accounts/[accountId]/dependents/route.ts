@@ -1,18 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, accounts } from "@/db/schema";
+import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { listAccountCascadeDependents } from "@/lib/accounts/cascade-dependents";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function verifyClient(clientId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
+  return verifyClientAccess(clientId, firmId);
 }
 
 // GET /api/clients/[id]/accounts/[accountId]/dependents — transfers + Roth
