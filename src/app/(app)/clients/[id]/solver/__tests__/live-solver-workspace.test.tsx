@@ -9,22 +9,29 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
 }));
 
-// Mock the shared MC hook so the workspace's auto-run never hits the network /
-// engine in tests. `mcStateRef.current` lets individual tests drive the gauge
-// state; `mcCalls` records every invocation's enabled flag + plan ids.
+// Mock the cached-endpoint MC hook so the workspace's auto-run never hits the
+// network in tests. `mcStateRef.current` lets individual tests drive the gauge
+// state; `mcCalls` records every invocation's enabled flag + includeBase, which
+// (post-refactor) is how a first/auto run — Base + Scenario — is distinguished
+// from a working-only Recalculate.
 const { mcStateRef, mcCalls } = vi.hoisted(() => ({
   mcStateRef: {
-    current: { status: "idle" } as {
+    current: {
+      status: "idle",
+      baseSuccessRate: null,
+      workingSuccessRate: null,
+    } as {
       status: "idle" | "loading" | "ready" | "error";
-      result?: { perPlan: Array<{ planId: string; successRate: number }> };
+      baseSuccessRate: number | null;
+      workingSuccessRate: number | null;
     },
   },
-  mcCalls: [] as Array<{ enabled: boolean; planIds: string[] }>,
+  mcCalls: [] as Array<{ enabled: boolean; includeBase: boolean }>,
 }));
-vi.mock("@/hooks/use-shared-mc-run", () => ({
-  useSharedMcRun: (args: { enabled: boolean; plans: Array<{ id: string }> }) => {
-    mcCalls.push({ enabled: args.enabled, planIds: args.plans.map((p) => p.id) });
-    return { ...mcStateRef.current, retry: vi.fn() };
+vi.mock("../use-solver-mc", () => ({
+  useSolverMc: (args: { enabled: boolean; includeBase: boolean }) => {
+    mcCalls.push({ enabled: args.enabled, includeBase: args.includeBase });
+    return mcStateRef.current;
   },
 }));
 
@@ -48,7 +55,11 @@ beforeEach(() => {
   routerRefresh.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   mcCalls.length = 0;
-  mcStateRef.current = { status: "idle" };
+  mcStateRef.current = {
+    status: "idle",
+    baseSuccessRate: null,
+    workingSuccessRate: null,
+  };
 });
 
 const baseProps = {
@@ -330,28 +341,20 @@ describe("LiveSolverWorkspace — right-column source change", () => {
 });
 
 describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
-  it("auto-runs MC with both plans on first mount", async () => {
+  it("auto-runs MC including Base on first mount", async () => {
     render(<LiveSolverWorkspace {...baseProps} />);
+    // The first/auto run is enabled and includes the Base column.
     await waitFor(() => {
-      expect(
-        mcCalls.some((c) => c.enabled && c.planIds.length === 2),
-      ).toBe(true);
+      expect(mcCalls.some((c) => c.enabled && c.includeBase)).toBe(true);
     });
-    const autoRun = mcCalls.find((c) => c.enabled && c.planIds.length === 2)!;
-    expect(autoRun.planIds.some((id) => id.startsWith("base:"))).toBe(true);
-    expect(autoRun.planIds.some((id) => id.startsWith("working:"))).toBe(true);
   });
 
   it("shows the Recalculate overlay after an edit and re-runs the working plan only", async () => {
     // Hook reports a ready result so the Scenario gauge starts fresh.
     mcStateRef.current = {
       status: "ready",
-      result: {
-        perPlan: [
-          { planId: "base:v1", successRate: 0.8 },
-          { planId: "working:v1", successRate: 0.85 },
-        ],
-      },
+      baseSuccessRate: 0.8,
+      workingSuccessRate: 0.85,
     };
     fetchMock.mockResolvedValue({
       ok: true,
@@ -373,11 +376,11 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     const callsBefore = mcCalls.length;
     fireEvent.click(recalc);
 
-    // The Recalculate launch passes a single (working-only) plan.
+    // The Recalculate launch is working-only — Base is already cached, so it
+    // refetches the Scenario column without re-including Base.
     await waitFor(() => {
       const launched = mcCalls.slice(callsBefore).find((c) => c.enabled);
-      expect(launched?.planIds).toHaveLength(1);
-      expect(launched?.planIds[0]?.startsWith("working:")).toBe(true);
+      expect(launched?.includeBase).toBe(false);
     });
   });
 
@@ -386,12 +389,8 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     // and sets cachedBaseSuccess=0.8. The Base gauge should show "80%".
     mcStateRef.current = {
       status: "ready",
-      result: {
-        perPlan: [
-          { planId: "base:v1", successRate: 0.8 },
-          { planId: "working:v1", successRate: 0.85 },
-        ],
-      },
+      baseSuccessRate: 0.8,
+      workingSuccessRate: 0.85,
     };
     fetchMock.mockResolvedValue({
       ok: true,
@@ -423,7 +422,11 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
   it("auto-run failure is recoverable: Recalculate re-includes Base while uncached", async () => {
     // Simulate a failed auto-run: hook starts in error state, so cachedBaseSuccess
     // is never set. The Scenario gauge is in error → overlay shows immediately.
-    mcStateRef.current = { status: "error" };
+    mcStateRef.current = {
+      status: "error",
+      baseSuccessRate: null,
+      workingSuccessRate: null,
+    };
 
     render(<LiveSolverWorkspace {...baseProps} />);
 
@@ -433,12 +436,11 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     const callsBefore = mcCalls.length;
     fireEvent.click(recalc);
 
-    // With the fix: cachedBaseSuccess===null → launchMc(true) → 2 plans (base + working).
-    // Without the fix: launchMc(false) always → 1 plan → toHaveLength(2) fails.
+    // With the fix: cachedBaseSuccess===null → launchMc(true) → includeBase true.
+    // Without the fix: launchMc(false) always → includeBase false → assertion fails.
     await waitFor(() => {
       const launched = mcCalls.slice(callsBefore).find((c) => c.enabled);
-      expect(launched?.planIds).toHaveLength(2);
-      expect(launched?.planIds.some((id) => id.startsWith("base:"))).toBe(true);
+      expect(launched?.includeBase).toBe(true);
     });
   });
 });
