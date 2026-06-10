@@ -839,8 +839,9 @@ export const entities = pgTable("entities", {
   // Trust-only. Nullable on non-trust rows (LLC / S-Corp / etc.). API-level
   // rule: required when entity_type = 'trust', forbidden otherwise.
   trustSubType: trustSubTypeEnum("trust_sub_type"),
-  // Trust-only. Must stay consistent with trust_sub_type (revocable → false;
-  // all others → true). API-enforced via deriveIsIrrevocable.
+  // Trust-only. Every supported trust sub-type is irrevocable, so this is
+  // always true for valid trusts (API-enforced via deriveIsIrrevocable). The
+  // deprecated `revocable` enum value is a DB-only orphan and never set here.
   isIrrevocable: boolean("is_irrevocable"),
   // Free-text display-only field. Co-trustees as comma-separated.
   trustee: text("trustee"),
