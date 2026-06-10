@@ -99,7 +99,9 @@ describe("applyMutations — ILIT premium-gift fix (live ≡ reload)", () => {
 
   it("leaves a non-premium scenario gift untouched (synthesis is additive)", () => {
     const cashGift: EstateFlowGift = { kind: "cash-once", id: "g-c", year: 2030, amount: 25_000, grantor: "client", recipient: { kind: "external_beneficiary", id: "c1" }, crummey: false };
-    const out = applyMutations(tree({ externalBeneficiaries: [{ id: "c1", name: "Red Cross", kind: "charity", charityType: "public" }] }), [
+    // Include policyAccount so the life_insurance guard fires and withSynthesizedPremiumGifts
+    // actually runs — verifying the non-premium gift survives the additive synthesis pass.
+    const out = applyMutations(tree({ accounts: [policyAccount], externalBeneficiaries: [{ id: "c1", name: "Red Cross", kind: "charity", charityType: "public" }] }), [
       { kind: "gift-upsert", id: "g-c", value: cashGift },
     ]);
     expect(out.giftEvents.some((e) => e.kind === "cash" && e.year === 2030 && e.amount === 25_000)).toBe(true);
