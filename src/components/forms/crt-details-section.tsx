@@ -27,6 +27,8 @@ interface CrtDetailsSectionProps {
   fundingPicks?: SplitInterestFundingPick[];
   onFundingPicksChange?: (next: SplitInterestFundingPick[]) => void;
   defaultGrantor?: "client" | "spouse";
+  /** Hide the new/existing origin radio (solver only ever creates "new" trusts). */
+  hideOrigin?: boolean;
 }
 
 export default function CrtDetailsSection({
@@ -38,6 +40,7 @@ export default function CrtDetailsSection({
   fundingPicks,
   onFundingPicksChange,
   defaultGrantor,
+  hideOrigin,
 }: CrtDetailsSectionProps) {
   const origin = value.origin ?? "new";
   const isNew = origin === "new";
@@ -113,39 +116,41 @@ export default function CrtDetailsSection({
       <legend className="px-2 text-sm font-semibold text-ink">CRT Details</legend>
 
       {/* Origin radio (same UX as CLT) */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5">
-          <span className={fieldLabelClassName}>Trust origin</span>
-          <FieldTooltip text="New: we compute the charitable deduction & income interest from the inputs below. Existing: enter the values that were recorded when the CRT was funded — they were calculated from the §7520 rate and mortality table in effect at that time." />
+      {!hideOrigin && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5">
+            <span className={fieldLabelClassName}>Trust origin</span>
+            <FieldTooltip text="New: we compute the charitable deduction & income interest from the inputs below. Existing: enter the values that were recorded when the CRT was funded — they were calculated from the §7520 rate and mortality table in effect at that time." />
+          </div>
+          <div role="radiogroup" aria-label="Trust origin" className="flex gap-2">
+            {(
+              [
+                ["new", "New (funded in plan)"],
+                ["existing", "Existing (already funded)"],
+              ] as const
+            ).map(([val, label]) => {
+              const active = origin === val;
+              return (
+                <button
+                  key={val}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => set("origin", val)}
+                  className={
+                    "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
+                    (active
+                      ? "border-accent bg-accent/15 text-accent"
+                      : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div role="radiogroup" aria-label="Trust origin" className="flex gap-2">
-          {(
-            [
-              ["new", "New (funded in plan)"],
-              ["existing", "Existing (already funded)"],
-            ] as const
-          ).map(([val, label]) => {
-            const active = origin === val;
-            return (
-              <button
-                key={val}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => set("origin", val)}
-                className={
-                  "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
-                  (active
-                    ? "border-accent bg-accent/15 text-accent"
-                    : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
-                }
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      )}
 
       {/* Payment type radio: CRUT vs CRAT */}
       <div className="space-y-1">

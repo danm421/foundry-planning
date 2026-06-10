@@ -30,6 +30,8 @@ interface CltDetailsSectionProps {
   onFundingPicksChange?: (next: SplitInterestFundingPick[]) => void;
   /** Default grantor for new cash picks (the trust's grantor). Defaults to "client". */
   defaultGrantor?: "client" | "spouse";
+  /** Hide the new/existing origin radio (solver only ever creates "new" trusts). */
+  hideOrigin?: boolean;
 }
 
 export default function CltDetailsSection({
@@ -41,6 +43,7 @@ export default function CltDetailsSection({
   fundingPicks,
   onFundingPicksChange,
   defaultGrantor,
+  hideOrigin,
 }: CltDetailsSectionProps) {
   const origin = value.origin ?? "new";
   const isNew = origin === "new";
@@ -99,39 +102,41 @@ export default function CltDetailsSection({
       <legend className="px-2 text-sm font-semibold text-ink">CLT Details</legend>
 
       {/* Origin: new (funded in plan) vs existing (funded historically) */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5">
-          <span className={fieldLabelClassName}>Trust origin</span>
-          <FieldTooltip text="New: we compute the income & remainder interest from the inputs below and emit the remainder-interest gift on save. Existing: enter the historical values from the return — no fresh deduction or gift is emitted, we just project payments and termination forward." />
+      {!hideOrigin && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5">
+            <span className={fieldLabelClassName}>Trust origin</span>
+            <FieldTooltip text="New: we compute the income & remainder interest from the inputs below and emit the remainder-interest gift on save. Existing: enter the historical values from the return — no fresh deduction or gift is emitted, we just project payments and termination forward." />
+          </div>
+          <div role="radiogroup" aria-label="Trust origin" className="flex gap-2">
+            {(
+              [
+                ["new", "New (funded in plan)"],
+                ["existing", "Existing (already funded)"],
+              ] as const
+            ).map(([val, label]) => {
+              const active = origin === val;
+              return (
+                <button
+                  key={val}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => set("origin", val)}
+                  className={
+                    "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
+                    (active
+                      ? "border-accent bg-accent/15 text-accent"
+                      : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div role="radiogroup" aria-label="Trust origin" className="flex gap-2">
-          {(
-            [
-              ["new", "New (funded in plan)"],
-              ["existing", "Existing (already funded)"],
-            ] as const
-          ).map(([val, label]) => {
-            const active = origin === val;
-            return (
-              <button
-                key={val}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => set("origin", val)}
-                className={
-                  "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
-                  (active
-                    ? "border-accent bg-accent/15 text-accent"
-                    : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
-                }
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      )}
 
       {/* Payment type: CLUT (unitrust — % of trust value) vs CLAT (annuity — fixed $) */}
       <div className="space-y-1">

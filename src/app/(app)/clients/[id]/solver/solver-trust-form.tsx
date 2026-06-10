@@ -11,29 +11,45 @@ import {
   buildRetitleFundingMutation,
   isRetitleFundingEligible,
 } from "@/lib/solver/trust-levers";
+import { SolverSplitInterestForm } from "./solver-split-interest-form";
 
-const SUBTYPE_LABELS: Record<SolverTrustSubType3a, string> = {
+/** 3a subtypes plus the 3b split-interest subtypes the picker can now create. */
+type SolverTrustSubType = SolverTrustSubType3a | "crt" | "clt";
+
+const SUBTYPE_LABELS: Record<SolverTrustSubType, string> = {
   ilit: "ILIT (life-insurance trust)",
   idgt: "IDGT (intentionally defective grantor trust)",
   irrevocable: "Irrevocable (generic)",
+  crt: "CRT (charitable remainder trust)",
+  clt: "CLT (charitable lead trust)",
 };
 
 export interface SolverTrustDraft {
   entity: EntitySummary;
   /** Accounts retitled into the trust, captured BEFORE retitle (for revert). */
   fundedOriginals: Account[];
+  /** CLT only: id of the auto-emitted remainder-interest gift, cleared on removal. */
+  remainderGiftId?: string;
 }
 
 interface Props {
   clientData: ClientData;
   isMarried: boolean;
+  /** Emits an external-beneficiary-upsert for a new charity; returns its id. */
+  onCreateCharity: (name: string, charityType: "public" | "private") => string;
   /** Returns the ordered primitive mutations to emit (entity first) + the draft. */
   onApply: (mutations: SolverMutation[], draft: SolverTrustDraft) => void;
   onClose: () => void;
 }
 
-export function SolverTrustForm({ clientData, isMarried, onApply, onClose }: Props) {
-  const [subType, setSubType] = useState<SolverTrustSubType3a>("ilit");
+export function SolverTrustForm({
+  clientData,
+  isMarried,
+  onCreateCharity,
+  onApply,
+  onClose,
+}: Props) {
+  const [subType, setSubType] = useState<SolverTrustSubType>("ilit");
   const [name, setName] = useState("New Trust");
   const [grantor, setGrantor] = useState<"client" | "spouse">("client");
   const [policyId, setPolicyId] = useState<string>("");
@@ -59,6 +75,7 @@ export function SolverTrustForm({ clientData, isMarried, onApply, onClose }: Pro
 
   function apply() {
     if (!name.trim()) return;
+    if (subType === "crt" || subType === "clt") return; // handled by the sub-form
     const entityId = crypto.randomUUID();
     const entity = buildTrustEntity({ id: entityId, name: name.trim(), subType, grantor });
     const mutations: SolverMutation[] = [{ kind: "entity-upsert", id: entityId, value: entity }];
@@ -100,7 +117,7 @@ export function SolverTrustForm({ clientData, isMarried, onApply, onClose }: Pro
         Type
         <select
           value={subType}
-          onChange={(e) => setSubType(e.target.value as SolverTrustSubType3a)}
+          onChange={(e) => setSubType(e.target.value as SolverTrustSubType)}
           className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
         >
           {SOLVER_TRUST_SUBTYPES_3A.map((s) => (
@@ -108,15 +125,75 @@ export function SolverTrustForm({ clientData, isMarried, onApply, onClose }: Pro
               {SUBTYPE_LABELS[s]}
             </option>
           ))}
-          <option disabled value="crt">
-            CRT — coming in 3b
-          </option>
-          <option disabled value="clt">
-            CLT — coming in 3b
-          </option>
+          <option value="crt">{SUBTYPE_LABELS.crt}</option>
+          <option value="clt">{SUBTYPE_LABELS.clt}</option>
         </select>
       </label>
 
+      {subType === "crt" || subType === "clt" ? (
+        <SolverSplitInterestForm
+          clientData={clientData}
+          subType={subType}
+          isMarried={isMarried}
+          onCreateCharity={onCreateCharity}
+          onApply={onApply}
+          onClose={onClose}
+        />
+      ) : (
+        <SolverTrustForm3aBody
+          isMarried={isMarried}
+          name={name}
+          setName={setName}
+          grantor={grantor}
+          setGrantor={setGrantor}
+          subType={subType}
+          policies={policies}
+          policyId={policyId}
+          setPolicyId={setPolicyId}
+          retitleEligible={retitleEligible}
+          retitleIds={retitleIds}
+          toggleRetitle={toggleRetitle}
+          apply={apply}
+        />
+      )}
+    </div>
+  );
+}
+
+interface TrustForm3aBodyProps {
+  isMarried: boolean;
+  name: string;
+  setName: (v: string) => void;
+  grantor: "client" | "spouse";
+  setGrantor: (v: "client" | "spouse") => void;
+  subType: SolverTrustSubType3a;
+  policies: Account[];
+  policyId: string;
+  setPolicyId: (v: string) => void;
+  retitleEligible: Account[];
+  retitleIds: Set<string>;
+  toggleRetitle: (id: string) => void;
+  apply: () => void;
+}
+
+/** The Phase 3a ILIT / IDGT / irrevocable body — byte-unchanged from before 3b. */
+function SolverTrustForm3aBody({
+  isMarried,
+  name,
+  setName,
+  grantor,
+  setGrantor,
+  subType,
+  policies,
+  policyId,
+  setPolicyId,
+  retitleEligible,
+  retitleIds,
+  toggleRetitle,
+  apply,
+}: TrustForm3aBodyProps) {
+  return (
+    <>
       <label className="block text-[12px] text-ink-2">
         Name
         <input
@@ -196,6 +273,6 @@ export function SolverTrustForm({ clientData, isMarried, onApply, onClose }: Pro
       >
         Add trust
       </button>
-    </div>
+    </>
   );
 }
