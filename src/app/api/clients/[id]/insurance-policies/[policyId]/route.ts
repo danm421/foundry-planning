@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   accounts,
   accountOwners,
   familyMembers,
@@ -17,6 +16,7 @@ import {
   ownerRefToAccountOwnerRows,
   type OwnerRef,
 } from "@/lib/insurance-policies/owner-ref";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +50,8 @@ export async function PATCH(
     const firmId = await requireOrgId();
     const { id, policyId } = await params;
 
-    // Verify client belongs to this firm.
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) {
+    // Verify client belongs to this firm (+ staff scope).
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -276,12 +272,8 @@ export async function DELETE(
     const firmId = await requireOrgId();
     const { id, policyId } = await params;
 
-    // Verify client belongs to this firm.
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) {
+    // Verify client belongs to this firm (+ staff scope).
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   accounts,
   stockOptionGrants,
   stockOptionVestTranches,
@@ -12,6 +11,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { grantCreateSchema } from "@/lib/schemas/stock-options";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +28,7 @@ async function resolveAccountOrError(
 > {
   const firmId = await requireOrgId();
 
-  const [client] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-  if (!client) {
+  if (!(await verifyClientAccess(id, firmId))) {
     return {
       ok: false,
       response: NextResponse.json({ error: "Client not found" }, { status: 404 }),
