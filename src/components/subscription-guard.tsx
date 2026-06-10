@@ -77,6 +77,24 @@ function bannerFor(state: SubscriptionState): Banner | null {
         dismissible: false,
         dismissKey: "canceled_locked:persistent",
       };
+    case "unpaid":
+      return {
+        severity: "urgent-red",
+        message: "Payment unresolved — update your card to restore access.",
+        actionHref: "/settings/billing",
+        actionLabel: "Update card",
+        dismissible: false,
+        dismissKey: "unpaid:persistent",
+      };
+    case "paused":
+      return {
+        severity: "urgent-red",
+        message: "Subscription paused. Resume billing to restore access.",
+        actionHref: "/settings/billing",
+        actionLabel: "Resume",
+        dismissible: false,
+        dismissKey: "paused:persistent",
+      };
     case "missing":
       return {
         severity: "info-yellow",
@@ -98,7 +116,9 @@ const PREVIEW_STATES: Record<string, (date?: string) => SubscriptionState> = {
     kind: "active_canceling",
     periodEnd: new Date(date ?? "2026-06-01"),
   }),
-  past_due: () => ({ kind: "past_due" }),
+  past_due: () => ({ kind: "past_due", pastDueSince: null }),
+  unpaid: () => ({ kind: "unpaid" }),
+  paused: () => ({ kind: "paused" }),
   canceled_grace: (date) => ({
     kind: "canceled_grace",
     archivedAt: new Date(date ?? new Date()),

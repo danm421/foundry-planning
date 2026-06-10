@@ -6,17 +6,27 @@ import Footer from "@/components/footer";
 import Sidebar from "@/components/sidebar";
 import SidebarFrame from "@/components/sidebar-frame";
 import { SidebarProvider } from "@/components/sidebar-provider";
+import { SubscriptionGuard } from "@/components/subscription-guard";
 import Topbar from "@/components/topbar";
 import { countCrmHouseholdsForFirm } from "@/lib/crm/households";
+import { getSubscriptionState } from "@/lib/billing/subscription-state";
 
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }): Promise<ReactElement> {
-  const [{ orgId }, jar] = await Promise.all([auth(), cookies()]);
+  const [{ orgId, sessionClaims }, jar, state] = await Promise.all([
+    auth(),
+    cookies(),
+    getSubscriptionState(),
+  ]);
   const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
   const clientsCount = orgId ? await countCrmHouseholdsForFirm(orgId) : 0;
+  const meta =
+    (sessionClaims as { org_public_metadata?: { is_founder?: boolean } } | null)
+      ?.org_public_metadata ?? {};
+  const isFounder = meta.is_founder === true;
 
   return (
     <SidebarProvider initialCollapsed={collapsed}>
@@ -30,6 +40,9 @@ export default async function AppLayout({
         <BackNavProvider>
           <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
             <Topbar />
+            <div className="px-[var(--pad-card)] pt-[var(--pad-card)] empty:hidden">
+              <SubscriptionGuard state={state} isFounder={isFounder} />
+            </div>
             <main className="flex-1 bg-paper">{children}</main>
             <Footer />
           </div>
