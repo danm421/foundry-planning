@@ -156,7 +156,7 @@ describe("buildRecipientDrilldown", () => {
     });
   });
 
-  it("multiple gifts to the same recipient roll up under one group with subtotal", () => {
+  it("pools one §2503(b) annual exclusion across multiple gifts to the same donee", () => {
     const g1: Gift = {
       id: "g1",
       year: 2028,
@@ -176,11 +176,112 @@ describe("buildRecipientDrilldown", () => {
     const groups = buildRecipientDrilldown(baseInput({ gifts: [g1, g2] }));
     expect(groups).toHaveLength(1);
     expect(groups[0].rows).toHaveLength(2);
+    // §2503(b): ONE $20k annual exclusion for the donee that year — not one per
+    // gift. The pooled exclusion is allocated earliest-row-first.
+    expect(groups[0].rows[0]).toMatchObject({
+      amount: 30_000,
+      exclusion: 20_000,
+      taxableGift: 10_000,
+    });
+    expect(groups[0].rows[1]).toMatchObject({
+      amount: 50_000,
+      exclusion: 0,
+      taxableGift: 50_000,
+    });
     expect(groups[0].subtotal).toMatchObject({
       amount: 80_000,
-      exclusion: 40_000,
-      taxableGift: 40_000,
+      exclusion: 20_000,
+      taxableGift: 60_000,
     });
+    // Per-row exclusion sums to the group exclusion.
+    expect(
+      groups[0].rows.reduce((s, r) => s + r.exclusion, 0),
+    ).toBe(groups[0].subtotal.exclusion);
+  });
+
+  it("a single gift to a donee still claims one full annual exclusion (no regression)", () => {
+    const g1: Gift = {
+      id: "g1",
+      year: 2028,
+      amount: 50_000,
+      grantor: "client",
+      recipientFamilyMemberId: "fm-1",
+      useCrummeyPowers: false,
+    };
+    const groups = buildRecipientDrilldown(baseInput({ gifts: [g1] }));
+    expect(groups[0].rows).toHaveLength(1);
+    expect(groups[0].rows[0]).toMatchObject({
+      amount: 50_000,
+      exclusion: 20_000,
+      taxableGift: 30_000,
+    });
+    expect(groups[0].subtotal).toMatchObject({
+      exclusion: 20_000,
+      taxableGift: 30_000,
+    });
+  });
+
+  it("a mixed cash + asset group does not pool the cash exclusion against the asset", () => {
+    // Crummey cash to the trust is AE-eligible; the asset transfer is not. The
+    // shared exclusion must apply only to the cash, never to the asset amount.
+    const trust = {
+      id: "t1",
+      name: "Mixed ILIT",
+      entityType: "trust",
+      isIrrevocable: true,
+      crummeyPowers: true,
+      includeInPortfolio: false,
+      isGrantor: false,
+      beneficiaries: [
+        {
+          id: "b1",
+          tier: "primary",
+          percentage: 100,
+          familyMemberId: "k1",
+          sortOrder: 0,
+        },
+      ],
+    } as unknown as EntitySummary;
+    const cash: GiftEvent = {
+      kind: "cash",
+      year: 2028,
+      amount: 30_000,
+      grantor: "client",
+      useCrummeyPowers: true,
+      recipientEntityId: "t1",
+      sourcePolicyAccountId: "p1",
+    };
+    const asset: GiftEvent = {
+      kind: "asset",
+      year: 2028,
+      grantor: "client",
+      accountId: "acc-1",
+      percent: 1,
+      amountOverride: 100_000,
+      recipientEntityId: "t1",
+    };
+    const groups = buildRecipientDrilldown({
+      year: 2028,
+      gifts: [],
+      giftEvents: [cash, asset],
+      familyMembersById: new Map(),
+      entitiesById: new Map([["t1", { name: "Mixed ILIT" }]]),
+      externalBeneficiariesById: new Map(),
+      entities: [trust],
+      annualExclusion: 18_000,
+      accountValueAtYear: () => 0,
+    });
+    const grp = groups.find((g) => g.label === "Mixed ILIT")!;
+    // Cash row: 30k − 18k AE = 12k taxable. Asset row: full 100k taxable, 0 AE.
+    expect(grp.subtotal).toMatchObject({
+      amount: 130_000,
+      exclusion: 18_000,
+      taxableGift: 112_000,
+    });
+    const assetRow = grp.rows.find((r) => r.amount === 100_000)!;
+    expect(assetRow).toMatchObject({ exclusion: 0, taxableGift: 100_000 });
+    const cashRow = grp.rows.find((r) => r.amount === 30_000)!;
+    expect(cashRow).toMatchObject({ exclusion: 18_000, taxableGift: 12_000 });
   });
 
   it("filters out gifts from other years", () => {

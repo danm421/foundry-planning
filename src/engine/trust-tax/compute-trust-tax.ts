@@ -52,7 +52,14 @@ export function computeTrustTax(inp: ComputeTrustTaxInputs): TrustTaxBreakdown {
 
   const totalRetainedOrdinary = retainedOrdinary + retainedDividends;
   const federalOrdinaryTax = calcFederalTax(totalRetainedOrdinary, inp.trustIncomeBrackets);
-  const federalCapGainsTax = calcFederalTax(recognizedCapGains, inp.trustCapGainsBrackets);
+  // §1(h): recognized LTCG stack ON TOP of the trust's retained ordinary income
+  // when picking the 0/15/20% rate (same as individuals). Compute the cap-gains
+  // tax as the §1(h) bracket tax on (ordinary + gains) minus the tax the ordinary
+  // base alone would incur — so retained-ordinary bracket usage is respected and
+  // gains can't fall back into the bottom 0% band.
+  const federalCapGainsTax =
+    calcFederalTax(totalRetainedOrdinary + recognizedCapGains, inp.trustCapGainsBrackets) -
+    calcFederalTax(totalRetainedOrdinary, inp.trustCapGainsBrackets);
   const niitBase = Math.max(0, totalRetainedOrdinary + recognizedCapGains - inp.niitThreshold);
   const niit = niitBase * inp.niitRate;
   const stateTax = (totalRetainedOrdinary + recognizedCapGains) * inp.flatStateRate;

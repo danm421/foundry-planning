@@ -1,3 +1,4 @@
+import { resolveScheduledColumnForYear } from "../life-insurance-schedule";
 import type {
   Account,
   EntitySummary,
@@ -95,7 +96,21 @@ export function computeSection2035Lookback(
     if (yearsSince >= 3) continue; // outside the 3-year window
 
     const percent = ev.percent;
-    const faceValue = policy.lifeInsurance.faceValue * percent;
+    // Mirror the life-insurance payout transform: resolve the scheduled death
+    // benefit for the death year when the policy uses a death-benefit schedule,
+    // falling back to the static faceValue otherwise. For an ILIT-gifted policy
+    // the §2035 line is the sole inclusion path, so a scheduled (non-flat) death
+    // benefit must drive the add-back amount.
+    const scheduledDb =
+      policy.lifeInsurance.deathBenefitScheduleMode === "scheduled"
+        ? resolveScheduledColumnForYear(
+            policy.lifeInsurance.cashValueSchedule,
+            input.deathYear,
+            "deathBenefit",
+          )
+        : null;
+    const dbAtDeath = scheduledDb ?? policy.lifeInsurance.faceValue;
+    const faceValue = dbAtDeath * percent;
     if (faceValue <= 0) continue;
 
     addBackLines.push({

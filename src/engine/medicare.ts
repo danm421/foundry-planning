@@ -59,9 +59,13 @@ function pickTier(magi: number, tiers: IrmaaTier[]): {
   surchargeD: number;
   upperBound: number | null;
 } {
+  // IRMAA tiers are MAGI > lower AND MAGI <= upper (20 CFR 418.2120): lower
+  // EXCLUSIVE, upper INCLUSIVE. Adjacent tiers share a boundary value in the
+  // seeded data, so a threshold-exact MAGI must stay in the LOWER tier.
   for (const t of tiers) {
-    const upperMatch = t.magiUpperBound === null || magi < t.magiUpperBound;
-    if (magi >= t.magiLowerBound && upperMatch) {
+    const lowerMatch = magi > t.magiLowerBound;
+    const upperMatch = t.magiUpperBound === null || magi <= t.magiUpperBound;
+    if (lowerMatch && upperMatch) {
       return {
         tier: t.tier,
         surchargeB: t.partBSurcharge,
@@ -70,7 +74,8 @@ function pickTier(magi: number, tiers: IrmaaTier[]): {
       };
     }
   }
-  // Below tier 1 — implicit tier 0; headroom = distance to tier 1 entry.
+  // MAGI at or below tier 1's lower bound — implicit tier 0 (standard premium);
+  // headroom = distance to tier 1 entry.
   return { tier: 0, surchargeB: 0, surchargeD: 0, upperBound: tiers[0]?.magiLowerBound ?? null };
 }
 

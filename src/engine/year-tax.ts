@@ -31,8 +31,10 @@ export interface YearTaxInput {
   charityCarryforwardIn: CharityCarryforward;
   /** charity gifts to apply this year, bucketed */
   charityGiftsThisYear: { amount: number; bucket: CharityBucket }[];
-  /** SECA result (already computed upstream) */
-  secaResult: { seTax: number; deductibleHalf: number };
+  /** SECA result (already computed upstream). `additionalMedicare` is the
+   *  SE-side 0.9% surtax (IRC §1401(b)(2)) — added to flow.additionalMedicare
+   *  and the federal/total tax here alongside seTax. */
+  secaResult: { seTax: number; deductibleHalf: number; additionalMedicare?: number };
   /** transfer early-withdrawal penalty (rolled into total tax) */
   transferEarlyWithdrawalPenalty: number;
   /** realization OI to peel out of ordinaryIncome for NIIT interest classification */
@@ -158,6 +160,16 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
   if (secaResult.seTax > 0) {
     taxResult.flow.totalTax += secaResult.seTax;
     taxResult.flow.totalFederalTax += secaResult.seTax;
+  }
+  // Add SE-side 0.9% Additional Medicare surtax (IRC §1401(b)(2)). The
+  // wage-side surtax is already inside taxResult.flow.additionalMedicare /
+  // totalFederalTax / totalTax (computed in calculateTaxYearBracket); the
+  // SE-side base is threshold-coordinated upstream so there's no double-count.
+  const seAdditionalMedicare = secaResult.additionalMedicare ?? 0;
+  if (seAdditionalMedicare > 0) {
+    taxResult.flow.additionalMedicare += seAdditionalMedicare;
+    taxResult.flow.totalTax += seAdditionalMedicare;
+    taxResult.flow.totalFederalTax += seAdditionalMedicare;
   }
 
   const marginalFedRate = useBracket ? taxResult.diag.marginalFederalRate : planSettings.flatFederalRate;

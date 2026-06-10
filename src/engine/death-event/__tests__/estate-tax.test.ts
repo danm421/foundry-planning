@@ -4,8 +4,11 @@ import {
   computeDeductions,
   computeGrossEstate,
 } from "../estate-tax";
+import { applyFirstDeath } from "../index";
+import type { DeathEventInput } from "../index";
 import type {
   Account, Liability, DeathTransfer, EntitySummary, GrossEstateLine, PlanSettings,
+  FamilyMember,
 } from "../../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
 
@@ -1357,5 +1360,101 @@ describe("computeDeductions", () => {
       deathOrder: 1,
     });
     expect(r.charitableDeduction).toBeCloseTo(50_000, 2);
+  });
+});
+
+// Bug #5 — Marital deduction must NOT be denied when the surviving spouse is
+// named on a beneficiary designation by their explicit FamilyMember id
+// (familyMemberId), rather than by householdRole:"spouse". Before the fix,
+// applyBeneficiaryDesignations tagged the transfer recipientKind:"family_member"
+// for the familyMemberId case, so the unlimited IRC §2056 marital deduction was
+// $0 and the asset stayed fully taxable (phantom estate tax). The control case
+// (householdRole:"spouse") was already correct; both must now produce parity.
+describe("Bug #5 — spouse-by-familyMemberId beneficiary earns the marital deduction", () => {
+  const FMS: FamilyMember[] = [
+    { id: LEGACY_FM_CLIENT, role: "client", relationship: "other", firstName: "Pat", lastName: null, dateOfBirth: "1970-01-01" },
+    { id: LEGACY_FM_SPOUSE, role: "spouse", relationship: "other", firstName: "Sam", lastName: null, dateOfBirth: "1972-01-01" },
+  ];
+
+  const PLAN: PlanSettings = {
+    flatFederalRate: 0,
+    flatStateRate: 0,
+    inflationRate: 0,
+    planStartYear: 2026,
+    planEndYear: 2080,
+    estateAdminExpenses: 0,
+    flatStateEstateRate: 0,
+  } as PlanSettings;
+
+  function brokerageWithPrimaryBene(
+    bene: { familyMemberId?: string; householdRole?: "client" | "spouse" },
+  ): Account {
+    return {
+      id: "acc-brokerage",
+      name: "Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 5_000_000,
+      basis: 5_000_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, sortOrder: 0, ...bene },
+      ],
+    } as Account;
+  }
+
+  function mkInput(account: Account): DeathEventInput {
+    return {
+      year: 2026,
+      deceased: "client",
+      survivor: "spouse",
+      will: null,
+      incomes: [],
+      liabilities: [],
+      familyMembers: FMS,
+      externalBeneficiaries: [],
+      entities: [],
+      planSettings: PLAN,
+      gifts: [],
+      annualExclusionsByYear: {},
+      dsueReceived: 0,
+      priorTaxableGifts: { client: 0, spouse: 0 },
+      accounts: [account],
+      accountBalances: { [account.id]: account.value },
+      basisMap: { [account.id]: account.basis },
+    } as DeathEventInput;
+  }
+
+  it("names the survivor by familyMemberId: maritalDeduction = full value, taxableEstate = 0", () => {
+    const result = applyFirstDeath(
+      mkInput(brokerageWithPrimaryBene({ familyMemberId: LEGACY_FM_SPOUSE })),
+    );
+
+    const beneTransfer = result.transfers.find(
+      (t) => t.via === "beneficiary_designation" && t.sourceAccountId === "acc-brokerage",
+    );
+    expect(beneTransfer).toBeDefined();
+    expect(beneTransfer!.recipientKind).toBe("spouse");
+    expect(beneTransfer!.recipientId).toBe(LEGACY_FM_SPOUSE);
+
+    expect(result.estateTax.maritalDeduction).toBeCloseTo(5_000_000, 2);
+    expect(result.estateTax.taxableEstate).toBe(0);
+  });
+
+  it("control — names the survivor by householdRole:\"spouse\": same result (parity)", () => {
+    const result = applyFirstDeath(
+      mkInput(brokerageWithPrimaryBene({ householdRole: "spouse" })),
+    );
+
+    const beneTransfer = result.transfers.find(
+      (t) => t.via === "beneficiary_designation" && t.sourceAccountId === "acc-brokerage",
+    );
+    expect(beneTransfer).toBeDefined();
+    expect(beneTransfer!.recipientKind).toBe("spouse");
+
+    expect(result.estateTax.maritalDeduction).toBeCloseTo(5_000_000, 2);
+    expect(result.estateTax.taxableEstate).toBe(0);
   });
 });

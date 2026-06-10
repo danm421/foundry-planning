@@ -90,8 +90,7 @@ export function computeStateIncomeTax(
   if (input.state === "WA") {
     const ltcg = Math.max(0, input.federalIncome.capitalGains - input.federalIncome.shortCapitalGains);
     const waStateFs = mapFilingStatus(input.filingStatus);
-    const waAge = Math.max(input.primaryAge, input.spouseAge ?? 0);
-    const exclusion = getStdDeduction("WA", input.year, waStateFs, waAge);
+    const exclusion = getStdDeduction("WA", input.year, waStateFs, input.primaryAge, input.spouseAge);
     const taxableLtcg = Math.max(0, ltcg - exclusion);
     const tax = computeWaCapGainsTax(taxableLtcg);
     return {
@@ -116,7 +115,7 @@ export function computeStateIncomeTax(
       diag: {
         notes: [
           `WA standard exclusion: $${exclusion.toLocaleString()} applied to LTCG before brackets.`,
-          "WA gains-only tax: 7% first $1M, 9% above.",
+          "WA gains-only tax: 7% first $1M, 9.9% above.",
         ],
       },
     };
@@ -219,7 +218,7 @@ export function computeStateIncomeTax(
   // Section D will subtract retirement; Section E cap gains / pre-tax contrib; etc.
   const stateFs = mapFilingStatus(input.filingStatus);
   const brackets = getBrackets(input.state, input.year, stateFs);
-  const stdDed = getStdDeduction(input.state, input.year, stateFs, input.primaryAge);
+  const stdDed = getStdDeduction(input.state, input.year, stateFs, input.primaryAge, input.spouseAge);
   const exemption = getExemption(input.state, input.year, stateFs);
   const stateAGI = startingIncome + addbacks.total - subtractions.total;
   const personalExemptionDeduction = exemption.type === "exemption" ? exemption.amount : 0;
@@ -286,13 +285,23 @@ function getStdDeduction(
   state: USPSStateCode,
   year: number,
   fs: StateFilingStatus,
-  age: number,
+  primaryAge: number,
+  spouseAge?: number,
 ): number {
   const yearSet = STD_DEDUCTIONS[year] ?? STD_DEDUCTIONS[2026];
   const row = yearSet[state];
   if (!row) return 0;
   const base = fs === "joint" ? row.joint : row.single;
-  const age65 = age >= 65 ? (fs === "joint" ? row.add65Joint : row.add65Single) : 0;
+  // The 65+ add-on is PER FILER. For joint returns, count each spouse who is 65+
+  // and apply add65Joint that many times (the data stores it as a per-filer amount).
+  // For single/self-only, only the primary filer can qualify.
+  const age65 =
+    fs === "joint"
+      ? row.add65Joint *
+        ((primaryAge >= 65 ? 1 : 0) + ((spouseAge ?? 0) >= 65 ? 1 : 0))
+      : primaryAge >= 65
+        ? row.add65Single
+        : 0;
   return base + age65;
 }
 

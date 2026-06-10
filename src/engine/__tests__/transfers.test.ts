@@ -175,6 +175,68 @@ describe("applyTransfers", () => {
     expect(balances["checking-1"]).toBe(100000);
   });
 
+  it("decrements Roth source basis contributions-first, not pro-rata (BUG #11)", () => {
+    // Roth value $100k / basis $60k. Transfer $50k to checking pre-59.5.
+    // Tax math (_classifyRothDistribution) consumes basis FIRST: $50k <= $60k → tax-free.
+    // Basis map must mirror that: remaining Roth basis = 60k − 50k = 10k (NOT the
+    // pro-rata residual 60k × (1 − 50k/100k) = 30k). Conserved basis lands on the
+    // cash target as ordinary cost basis: 0 + 50k = 50k (NOT the pro-rata 30k).
+    const transfers: Transfer[] = [{
+      id: "t1", name: "Roth to checking", sourceAccountId: "roth-1",
+      targetAccountId: "checking-1", amount: 50000, mode: "one_time",
+      startYear: 2028, growthRate: 0, schedules: [],
+    }];
+    const balances: Record<string, number> = { "roth-1": 100000, "checking-1": 50000 };
+    const basisMap: Record<string, number> = { "roth-1": 60000, "checking-1": 0 };
+    const ledgers: Record<string, AccountLedger> = {
+      "roth-1": makeLedger(100000),
+      "checking-1": makeLedger(50000),
+    };
+
+    applyTransfers({
+      transfers, accounts: [rothAccount, checkingAccount], accountBalances: balances,
+      basisMap, accountLedgers: ledgers, year: 2028, ownerAges: { client: 50 },
+    });
+
+    expect(basisMap["roth-1"]).toBe(10000); // 60k − 50k, NOT 30k pro-rata residual
+    expect(basisMap["checking-1"]).toBe(50000); // conserved, NOT 30k
+  });
+
+  it("downstream pre-59.5 Roth transfer taxes earnings once basis is truly drained (BUG #11)", () => {
+    // After a $50k contributions-first transfer the Roth has value $50k / basis $10k.
+    // A follow-on $30k Roth→cash transfer pre-59.5 should read true remaining basis
+    // ($10k), taxing $20k of earnings as OI with a $2k (10%) penalty. With the old
+    // pro-rata residual ($30k basis) the engine would wrongly treat the whole $30k as
+    // tax-free, under-taxing and under-penalizing.
+    const transfers: Transfer[] = [
+      {
+        id: "t1", name: "Roth to checking #1", sourceAccountId: "roth-1",
+        targetAccountId: "checking-1", amount: 50000, mode: "one_time",
+        startYear: 2028, growthRate: 0, schedules: [],
+      },
+      {
+        id: "t2", name: "Roth to checking #2", sourceAccountId: "roth-1",
+        targetAccountId: "checking-1", amount: 30000, mode: "one_time",
+        startYear: 2028, growthRate: 0, schedules: [],
+      },
+    ];
+    const balances: Record<string, number> = { "roth-1": 100000, "checking-1": 50000 };
+    const basisMap: Record<string, number> = { "roth-1": 60000, "checking-1": 0 };
+    const ledgers: Record<string, AccountLedger> = {
+      "roth-1": makeLedger(100000),
+      "checking-1": makeLedger(50000),
+    };
+
+    const result = applyTransfers({
+      transfers, accounts: [rothAccount, checkingAccount], accountBalances: balances,
+      basisMap, accountLedgers: ledgers, year: 2028, ownerAges: { client: 50 },
+    });
+
+    expect(basisMap["roth-1"]).toBe(0); // 10k remaining basis fully consumed by the $30k draw
+    expect(result.taxableOrdinaryIncome).toBe(20000); // $30k − $10k remaining basis
+    expect(result.earlyWithdrawalPenalty).toBe(2000); // 10% of $20k
+  });
+
   it("taxes earnings + penalizes when Roth → cash exceeds source basis (F2)", () => {
     // Roth basis = $60k, value = $100k, withdraw $80k pre-59.5.
     // Expected: $60k from basis (tax-free), $20k earnings → OI + 10% penalty.

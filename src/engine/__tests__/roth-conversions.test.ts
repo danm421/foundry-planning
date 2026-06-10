@@ -307,6 +307,87 @@ describe("applyRothConversions", () => {
     expect(s.accountBalances["ira-a"]).toBe(400000);
   });
 
+  it("Form 8606: basis removed from source equals the basis used to shield income (pool ratio, not single-account ratio)", () => {
+    // Pool = ira-a (400k bal / 150k basis) + ira-b (200k bal / 0 basis)
+    //      = 600k bal / 150k basis → 25% basis fraction.
+    // Convert 100k from ira-a. Form 8606: taxable = 100k * (1 - 150k/600k) = 75k,
+    // so basis USED to shield income = 25k. The basis leaving the source pool
+    // must equal 25k → basisMap['ira-a'] = 150k - 25k = 125000.
+    //
+    // The single-account-ratio bug removed 150k * (100k/400k) = 37500 instead,
+    // leaving basisMap['ira-a'] = 112500 (basis not conserved at the pool level).
+    const conv: RothConversion = {
+      id: "rc8", name: "Pro-rata convert", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fixed_amount",
+      fixedAmount: 100000, startYear: 2026, indexingRate: 0,
+    };
+    const s = freshState();
+    s.basisMap["ira-a"] = 150000; // 150k basis on 600k pool = 25%
+    // Pass rothValueMap so the production path (_updateRothValueAndDestBasis) runs.
+    const rothValueMap: Record<string, number> = { "ira-a": 0, "ira-b": 0, "roth-1": 0 };
+    const r = applyRothConversions({
+      conversions: [conv], ...s, rothValueMap, year: 2026, ownerAges: { client: 60 },
+    });
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(75000, 0);
+    expect(s.basisMap["ira-a"]).toBeCloseTo(125000, 0);
+  });
+
+  it("Form 8606: total taxable income over full depletion equals balance minus basis (basis conserved)", () => {
+    // Pool = 600k bal / 150k basis. Deplete the whole pool over two conversions.
+    // Total taxable ordinary income must equal balance - basis = 450000,
+    // regardless of which account each slice is drawn from.
+    const convA: RothConversion = {
+      id: "rcD1", name: "Convert A", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "full_account",
+      fixedAmount: 0, startYear: 2026, indexingRate: 0,
+    };
+    const convB: RothConversion = {
+      id: "rcD2", name: "Convert B", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-b"], conversionType: "full_account",
+      fixedAmount: 0, startYear: 2026, indexingRate: 0,
+    };
+    const s = freshState();
+    s.basisMap["ira-a"] = 150000; // all 150k pool basis sits on ira-a
+    const rothValueMap: Record<string, number> = { "ira-a": 0, "ira-b": 0, "roth-1": 0 };
+    const r = applyRothConversions({
+      conversions: [convA, convB], ...s, rothValueMap, year: 2026, ownerAges: { client: 60 },
+    });
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(450000, 0);
+    // Pool fully drained, all basis consumed.
+    expect(s.accountBalances["ira-a"]).toBeCloseTo(0, 0);
+    expect(s.accountBalances["ira-b"]).toBeCloseTo(0, 0);
+    expect(s.basisMap["ira-a"]).toBeCloseTo(0, 0);
+    expect(s.basisMap["ira-b"]).toBeCloseTo(0, 0);
+  });
+
+  it("destination Roth basis credited exactly the converted amount, not amount + basisMoved", () => {
+    // Single 400k trad-IRA with 150k basis (pool = this account alone).
+    // Convert 100k → every converted dollar becomes Roth basis: basisMap['roth-1'] = 100000.
+    //
+    // The double-credit bug added basisMoved (150k * 100k/400k = 37500) via
+    // _updateBasis AND the full 100k via _updateRothValueAndDestBasis = 137500,
+    // overstating Roth basis and letting pre-59.5 earnings escape OI + penalty.
+    const conv: RothConversion = {
+      id: "rcDest", name: "Convert to Roth", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fixed_amount",
+      fixedAmount: 100000, startYear: 2026, indexingRate: 0,
+    };
+    // Single-account pool: only ira-a + roth dest in the account set.
+    const accounts = [iraA, rothDest] as Account[];
+    const accountBalances: Record<string, number> = { "ira-a": 400000, "roth-1": 0 };
+    const basisMap: Record<string, number> = { "ira-a": 150000, "roth-1": 0 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "ira-a": makeLedger(400000),
+      "roth-1": makeLedger(0),
+    };
+    const rothValueMap: Record<string, number> = { "ira-a": 0, "roth-1": 0 };
+    applyRothConversions({
+      conversions: [conv], accounts, accountBalances, basisMap, accountLedgers,
+      rothValueMap, year: 2026, ownerAges: { client: 60 },
+    });
+    expect(basisMap["roth-1"]).toBeCloseTo(100000, 0);
+  });
+
   it("byConversion: gross and taxable diverge when Trad-IRA pool has after-tax basis", () => {
     // Form 8606 pro-rata aggregates ALL Trad IRAs. Pool = 600k (ira-a + ira-b).
     // Set 150k of basis on ira-a → 25% basis fraction across the pool →

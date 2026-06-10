@@ -147,4 +147,108 @@ describe("computeExemptionLedger", () => {
     const r = computeExemptionLedger(gifts, ctx);
     expect(r).toEqual([]);
   });
+
+  // §2503(b): ONE annual exclusion per donee per year (BUG #8). Two gifts to the
+  // same Crummey trust in the same year share a single AE × beneficiaryCount cap.
+  const crummeyCtx: LedgerContext = {
+    entitiesById: { trust1: { isIrrevocable: true, entityType: "trust" } },
+    externalsById: {},
+    beneficiaryCountsByEntityId: { trust1: 1 },
+    annualExclusionByYear: { 2026: 19_000 },
+  };
+
+  it("two Crummey cash gifts to the same trust in one year share ONE exclusion", () => {
+    const gifts: LedgerGift[] = [
+      {
+        id: "g1",
+        year: 2026,
+        amount: 19_000,
+        grantor: "client",
+        useCrummeyPowers: true,
+        recipientEntityId: "trust1",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+      },
+      {
+        id: "g2",
+        year: 2026,
+        amount: 19_000,
+        grantor: "client",
+        useCrummeyPowers: true,
+        recipientEntityId: "trust1",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+      },
+    ];
+    // 38k − one 19k exclusion = 19k lifetime used. BEFORE FIX: each gift claimed
+    // its own 19k exclusion → both fully excluded → no ledger entry at all.
+    const r = computeExemptionLedger(gifts, crummeyCtx);
+    expect(r).toEqual([
+      {
+        grantor: "client",
+        year: 2026,
+        lifetimeUsedThisYear: 19_000,
+        cumulativeLifetimeUsed: 19_000,
+      },
+    ]);
+  });
+
+  it("GUARD: a single Crummey cash gift still gets one full exclusion", () => {
+    const gifts: LedgerGift[] = [
+      {
+        id: "g1",
+        year: 2026,
+        amount: 50_000,
+        grantor: "client",
+        useCrummeyPowers: true,
+        recipientEntityId: "trust1",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+      },
+    ];
+    const r = computeExemptionLedger(gifts, crummeyCtx);
+    expect(r).toEqual([
+      {
+        grantor: "client",
+        year: 2026,
+        lifetimeUsedThisYear: 31_000,
+        cumulativeLifetimeUsed: 31_000,
+      },
+    ]);
+  });
+
+  it("mixed group: Crummey cash + asset (no-AE) to the SAME trust do not pool the cash exclusion", () => {
+    const gifts: LedgerGift[] = [
+      {
+        id: "cash",
+        year: 2026,
+        amount: 19_000,
+        grantor: "client",
+        useCrummeyPowers: true,
+        recipientEntityId: "trust1",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+      },
+      {
+        id: "asset",
+        year: 2026,
+        amount: 200_000,
+        grantor: "client",
+        useCrummeyPowers: false, // asset transfer: no AE
+        recipientEntityId: "trust1",
+        recipientFamilyMemberId: null,
+        recipientExternalBeneficiaryId: null,
+      },
+    ];
+    // Cash nets to 0 against its 19k exclusion; asset stays fully taxable.
+    const r = computeExemptionLedger(gifts, crummeyCtx);
+    expect(r).toEqual([
+      {
+        grantor: "client",
+        year: 2026,
+        lifetimeUsedThisYear: 200_000,
+        cumulativeLifetimeUsed: 200_000,
+      },
+    ]);
+  });
 });

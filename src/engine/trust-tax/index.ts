@@ -87,7 +87,13 @@ export function applyTrustAnnualPass(
     const nonHouseholdTotal =
       Object.values(routing.toFamilyMember).reduce((s, v) => s + v, 0) +
       Object.values(routing.toExternal).reduce((s, v) => s + v, 0);
-    estimatedBeneficiaryTax += nonHouseholdTotal * inp.outOfHouseholdRate;
+    // Distributed tax-exempt interest retains its exempt character in the
+    // beneficiary's hands (IRC §652(b)/§662(b)), so tax only the taxable slice
+    // of the routed DNI. Routing itself stays gross (reporting needs distributed
+    // dollars); we scale by the taxable fraction before applying the flat rate.
+    const taxableDni = distribution.dniOrdinary + distribution.dniDividends;
+    const taxableFraction = totalDni > 0 ? taxableDni / totalDni : 0;
+    estimatedBeneficiaryTax += nonHouseholdTotal * taxableFraction * inp.outOfHouseholdRate;
 
     const retainedOrdinary = income.ordinary - distribution.dniOrdinary;
     const retainedDividends = income.dividends - distribution.dniDividends;

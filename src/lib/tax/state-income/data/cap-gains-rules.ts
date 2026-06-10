@@ -9,9 +9,12 @@ export const CAP_GAINS_RULES: Partial<Record<USPSStateCode, CapGainsRule>> = {
   WI: { ltcgExemptPct: 0.3, notes: "30% LTCG exempt." },
   WA: {
     gainsOnly: {
+      // 7% on the first $1M of taxable WA LTCG; 9.9% above (7% base + 2.9%
+      // surtax added by SB 5813, effective tax year 2025+). The engine only
+      // projects 2025+, so the surtax applies unconditionally.
       brackets: [
         { from: 0, to: 1_000_000, rate: 0.07 },
-        { from: 1_000_000, to: null, rate: 0.09 },
+        { from: 1_000_000, to: null, rate: 0.099 },
       ],
     },
     notes: "WA taxes long-term capital gains only.",

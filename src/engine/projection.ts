@@ -86,7 +86,7 @@ import {
   applyFinalDeath,
 } from "./death-event";
 import { computeHypotheticalEstateTax } from "./what-if/hypothetical-estate-tax";
-import { calcSeca } from "../lib/tax/fica";
+import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
 import { computePortfolioSnapshot } from "./portfolio-snapshot";
@@ -115,7 +115,11 @@ import {
   LEGACY_FM_CLIENT,
   LEGACY_FM_SPOUSE,
 } from "./ownership";
-import { resolveEntityFlowAmount } from "./entity-flows";
+import {
+  resolveEntityFlowAmount,
+  computeBusinessEntityNetIncome,
+  resolveDistributionPercent,
+} from "./entity-flows";
 import { type CharityBucket } from "./charitable-deduction";
 import {
   emptyCharityCarryforward,
@@ -2602,9 +2606,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // portion of the original income-interest deduction is recaptured as
     // ordinary income on the grantor's final 1040. Recapture =
     //   originalIncomeInterest − PV(actual payments) at the original §7520 rate.
-    // Floored at 0; only fires for term-certain ('years' or
-    // 'shorter_of_years_or_life') CLTs — for pure life CLTs the death IS
-    // the term-end and there's no recapture.
+    // Floored at 0.
+    //
+    // Recapture fires whenever the dying grantor's CLT income interest has NOT
+    // yet terminated at death:
+    //   - term-certain ('years' / 'shorter_of_years_or_life'): skip once the
+    //     full term has elapsed (yearsElapsed >= termYears).
+    //   - life-measured ('single_life' / 'joint_life'): skip ONLY when the
+    //     measuring life(s) coincide with the dying grantor — then the death
+    //     IS the term-end (no recapture). Treas. Reg. 1.170A-6(c)(4): when the
+    //     measuring life is a THIRD party (e.g. a child) still alive at the
+    //     grantor's death, the income interest is still running and the
+    //     unrecovered deduction is recaptured.
+    // In all cases, also skip if the trust has already terminated by this year.
     const decedentRoleThisYear: "client" | "spouse" | null =
       year === firstDeathYear
         ? firstDeathDeceased
@@ -2612,16 +2626,58 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ? finalDeceased
           : null;
     if (decedentRoleThisYear != null) {
+      // Household death years, by role, for the termination check below.
+      // (The engine only tracks client/spouse deaths; a non-household
+      //  measuring life — e.g. a child — has no death event and stays alive.)
+      const clientDeathYear =
+        firstDeathDeceased === "client"
+          ? firstDeathYear
+          : finalDeceased === "client"
+            ? finalDeathYear
+            : null;
+      const spouseDeathYear =
+        firstDeathDeceased === "spouse"
+          ? firstDeathYear
+          : finalDeceased === "spouse"
+            ? finalDeathYear
+            : null;
+      const deathYearForFm = (fmId: string | null): number | undefined => {
+        if (fmId == null) return undefined;
+        if (fmId === clientFmId) return clientDeathYear ?? undefined;
+        if (fmId === spouseFmId) return spouseDeathYear ?? undefined;
+        return undefined;
+      };
       for (const trust of currentEntities) {
         if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
         if (trust.grantor !== decedentRoleThisYear) continue;
         const si = trust.splitInterest;
+        const grantorFmId =
+          trust.grantor === "client" ? clientFmId : spouseFmId;
         const isYearsLeg =
           si.termType === "years" ||
           si.termType === "shorter_of_years_or_life";
-        if (!isYearsLeg) continue;
-        const yearsElapsed = year - si.inceptionYear + 1;
-        if (yearsElapsed >= (si.termYears ?? 0)) continue;
+        // True when the dying grantor's own life measures the lead term, so
+        // the death coincides with term-end (no recapture). For joint_life
+        // (last-to-die) the grantor being either measuring life counts.
+        const measuredOnGrantor =
+          grantorFmId != null &&
+          (si.termType === "single_life"
+            ? si.measuringLife1Id === grantorFmId
+            : si.termType === "joint_life"
+              ? si.measuringLife1Id === grantorFmId ||
+                si.measuringLife2Id === grantorFmId
+              : false);
+        // Whether the trust's income interest is still running this year.
+        const stillRunning = !isTrustTerminationYear(trust, year, {
+          measuringLife1: deathYearForFm(si.measuringLife1Id),
+          measuringLife2: deathYearForFm(si.measuringLife2Id),
+        });
+        if (isYearsLeg) {
+          const yearsElapsed = year - si.inceptionYear + 1;
+          if (yearsElapsed >= (si.termYears ?? 0)) continue;
+        } else if (measuredOnGrantor || !stillRunning) {
+          continue;
+        }
         const payments = cltPaymentsByTrustId.get(trust.id) ?? [];
         const { recaptureAmount } = computeCltRecapture({
           originalIncomeInterest: Number(si.originalIncomeInterest),
@@ -2958,14 +3014,34 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       seEarnings += amount;
     }
     const secaResult = useBracket && resolved
-      ? calcSeca({
-          seEarnings,
-          ssTaxRate: resolved.params.ssTaxRate,
-          ssWageBase: resolved.params.ssWageBase,
-          medicareTaxRate: resolved.params.medicareTaxRate,
-          ficaSsWages: taxDetail.earnedIncome,
-        })
-      : { seTax: 0, deductibleHalf: 0 };
+      ? (() => {
+          const seca = calcSeca({
+            seEarnings,
+            ssTaxRate: resolved.params.ssTaxRate,
+            ssWageBase: resolved.params.ssWageBase,
+            medicareTaxRate: resolved.params.medicareTaxRate,
+            ficaSsWages: taxDetail.earnedIncome,
+          });
+          // SE-side 0.9% Additional Medicare surtax (IRC §1401(b)(2)). Same
+          // filing-status threshold source as the wage-side surtax in
+          // calculate.ts (mfj / mfs / single, with HoH → single); wages
+          // (taxDetail.earnedIncome) consume the threshold first so it's
+          // applied exactly once across wage- and SE-sides.
+          const addlMedicareThreshold =
+            filingStatus === "married_joint"
+              ? resolved.params.addlMedicareThreshold.mfj
+              : filingStatus === "married_separate"
+                ? resolved.params.addlMedicareThreshold.mfs
+                : resolved.params.addlMedicareThreshold.single;
+          const additionalMedicare = calcSeAdditionalMedicare({
+            seEarnings,
+            ficaSsWages: taxDetail.earnedIncome,
+            threshold: addlMedicareThreshold,
+            rate: resolved.params.addlMedicareRate,
+          });
+          return { ...seca, additionalMedicare };
+        })()
+      : { seTax: 0, deductibleHalf: 0, additionalMedicare: 0 };
     // Plan 3a — collect external-charity gifts so the tax helper can apply IRC §170(b)
     // AGI limits + decay + FIFO carryforward consumption. Bucket cash gifts as
     // public/private; v1 simplification: gift events carry no asset-class metadata yet.
@@ -3692,6 +3768,74 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         label: `Distribution from ${business.name}`,
         sourceId: business.id,
         counterpartyId: business.id, // received from the business
+      });
+    }
+
+    // ── Phase 3 (entity model): EntitySummary business distribution ──────────
+    // Account-model counterpart of the loop above, for businesses modeled as
+    // EntitySummary rows (entityType llc|s_corp|c_corp|partnership|foundation|
+    // other) rather than top-level business *accounts*. Their income/expense
+    // already landed on the entity's own checking via resolveCashAccount in the
+    // income/expense routing above (ownerEntityId rows). Without this sweep the
+    // net income strands in entity checking forever, annualDistribution is
+    // structurally 0, and the entity's value/basis overstate every year
+    // (BUG #17). Same mechanics as the account-model sweep: debit the entity's
+    // cash account, credit the primary family-member owner's default cash
+    // (else household defaultChecking). Trusts use the 1041/grantor passes and
+    // are excluded.
+    for (const entity of currentEntities) {
+      if (entity.entityType === "trust") continue;
+      const flowMode = entity.flowMode ?? "annual";
+      const netIncome = computeBusinessEntityNetIncome(
+        entity.id,
+        currentIncomes,
+        allExpenses,
+        year,
+        data.entityFlowOverrides ?? [],
+        flowMode,
+        data.client,
+      );
+      // Losses → no distribution (P3-8). The loss stays in the entity's
+      // checking (and is liquidated / overdrafted by the per-entity gap-fill,
+      // same as the account model).
+      if (netIncome <= 0) continue;
+      const distPercent = resolveDistributionPercent(
+        entity,
+        year,
+        data.entityFlowOverrides ?? [],
+      );
+      const distAmount = netIncome * distPercent;
+      if (distAmount === 0) continue;
+      // Destination: primary family-member owner's default cash account, else
+      // household defaultChecking — mirrors the account-model resolution.
+      const primaryOwner = (entity.owners ?? [])
+        .filter((o) => o.kind === "family_member")
+        .slice()
+        .sort((x, y) => y.percent - x.percent)[0] as
+        | { kind: "family_member"; familyMemberId: string; percent: number }
+        | undefined;
+      const destinationId =
+        (primaryOwner
+          ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId)
+          : undefined) ?? defaultChecking?.id;
+      const entityCashId = resolveCashAccount(entity.id);
+      // Debit the entity's cash account (only if one exists — without it the
+      // retained share has nowhere to land and the credit flows straight from
+      // entity to owner, same as the account model's no-child-cash mode).
+      if (entityCashId) {
+        creditCash(entityCashId, -distAmount, {
+          category: "entity_distribution",
+          label: `Distribution from ${entity.name ?? "Entity"}`,
+          sourceId: entity.id,
+          counterpartyId: destinationId,
+        });
+      }
+      // Credit owner's default cash account.
+      creditCash(destinationId, distAmount, {
+        category: "entity_distribution",
+        label: `Distribution from ${entity.name ?? "Entity"}`,
+        sourceId: entity.id,
+        counterpartyId: entity.id,
       });
     }
 

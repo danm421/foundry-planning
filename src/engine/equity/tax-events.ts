@@ -175,12 +175,18 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
         if (qualifying) {
           res.capitalGains += ROUND(shares * Math.max(0, f - lot.basisPerShare));
         } else {
-          // Disqualifying: bargain element at exercise → ordinary income; rest → cap gain.
-          const bargain = ROUND(shares * Math.max(0, lot.fmvAtExercise - lot.strike));
-          res.ordinaryIncome += bargain;
-          const remainder = ROUND(shares * (f - lot.fmvAtExercise));
-          if (remainder >= 0) res.capitalGains += remainder; // post-exercise appreciation
-          else res.capitalGains += remainder; // a loss reduces gains
+          // Disqualifying disposition (IRC §422(c)(2)/§421, Pub 525): ordinary income is the
+          // LESSER of the exercise-date bargain element or the actual gain on sale. A drop after
+          // exercise caps OI at (salePrice − strike) and is NOT a separate capital loss.
+          const oiPerShare = Math.min(Math.max(0, lot.fmvAtExercise - lot.strike), Math.max(0, f - lot.strike));
+          res.ordinaryIncome += ROUND(shares * oiPerShare);
+          // Residual vs stepped-up basis (strike + OI/share). Up → post-exercise appreciation;
+          // flat-after-drop → 0; below strike → a true capital loss.
+          const gain = ROUND(shares * (f - lot.strike) - shares * oiPerShare);
+          // A disqualifying disposition fails the holding-period test, so the residual is usually
+          // short-term. Same whole-year proxy as the non-ISO branch; acquisitionYear == exerciseYear.
+          const longTerm = year - lot.exerciseYear >= 2;
+          if (longTerm) res.capitalGains += gain; else res.stCapitalGains += gain;
         }
       } else {
         const gain = ROUND(shares * (f - lot.basisPerShare));

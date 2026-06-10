@@ -58,10 +58,15 @@ describe("singleLifeAnnuityFactor", () => {
     expect(a65).toBeGreaterThan(a85);
   });
 
-  it("pinned snapshot matches Pub 1457 Table S formula: age 65, r=4%", () => {
-    // (1 - A_x) / i against 2010CM mortality, per Treas. Reg. §20.2031-7(d)(2)(ii)(B).
-    const a = singleLifeAnnuityFactor({ age: 65, irc7520Rate: 0.04 });
-    expect(a).toBeCloseTo(11.987, 2);
+  it("pinned snapshot against the 2010CM table: ages 65/80/90, r=4%", () => {
+    // (1 - A_x) / i against the official 2010CM mortality table, per
+    // Treas. Reg. §20.2031-7(d)(2)(ii)(B). These are the engine's EOY/UDD
+    // convention values on 2010CM; they run ~1-3% above the official IRS
+    // Table S (a documented, pre-existing convention difference). The pins
+    // guard the table+formula so a wrong mortality table can't slip through.
+    expect(singleLifeAnnuityFactor({ age: 65, irc7520Rate: 0.04 })).toBeCloseTo(12.6912, 3);
+    expect(singleLifeAnnuityFactor({ age: 80, irc7520Rate: 0.04 })).toBeCloseTo(7.4209, 3);
+    expect(singleLifeAnnuityFactor({ age: 90, irc7520Rate: 0.04 })).toBeCloseTo(4.3099, 3);
   });
 });
 

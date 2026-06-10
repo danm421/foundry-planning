@@ -22,6 +22,12 @@ export interface AmtParams {
  * `capGainsBrackets` is the filing-status-specific 0/15/20 thresholds. When
  * omitted, falls back to the old ordinary-only behavior (back-compat for
  * callers that haven't been updated yet).
+ *
+ * `regularOrdinaryBase` is the regular ordinary taxable base (calculate.ts's
+ * `incomeTaxBase`). The 0/15/20% breakpoints are regular taxable-income
+ * thresholds, and Form 6251 Part III stacks the preferential amounts on the
+ * same regular Schedule D base — NOT on the post-exemption AMTI ordinary
+ * portion. Falls back to that ordinary portion when omitted (back-compat).
  */
 export function calcAmtTentative(
   amti: number,
@@ -30,6 +36,7 @@ export function calcAmtTentative(
     year: number;
     ltcgPlusQdiv?: number;
     capGainsBrackets?: CapGainsTier;
+    regularOrdinaryBase?: number;
   } = { year: new Date().getFullYear() },
 ): number {
   if (amti <= 0) return 0;
@@ -51,7 +58,7 @@ export function calcAmtTentative(
 
   const capGainsPortion =
     ltcg > 0 && opts.capGainsBrackets
-      ? calcCapGainsTax(ltcg, ordinaryAmti, opts.capGainsBrackets)
+      ? calcCapGainsTax(ltcg, opts.regularOrdinaryBase ?? ordinaryAmti, opts.capGainsBrackets)
       : 0;
 
   return ordinaryPortion + capGainsPortion;
