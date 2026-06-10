@@ -3623,6 +3623,26 @@ export const billingEvents = pgTable(
   ],
 );
 
+// Clerk webhook idempotency log. UNIQUE on `svix_id` is THE idempotency key —
+// duplicate Svix deliveries short-circuit at INSERT time. Mirrors
+// billing_events but keyed on the Svix delivery id; `result` is free-text
+// ('ok' | 'ignored' | 'error', null while pending) and intentionally NOT the
+// Stripe billing_event_result enum.
+export const clerkEvents = pgTable(
+  "clerk_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    svixId: text("svix_id").notNull().unique(),
+    eventType: text("event_type").notNull(),
+    result: text("result"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    processingDurationMs: integer("processing_duration_ms"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("clerk_events_created_idx").on(t.createdAt)],
+);
+
 // Click-through ToS / DPA / Privacy consent log. P2 Privacy evidence.
 // Three sources: stripe_checkout (pre-account), clerk_signup (invite
 // accepted), in_app_modal (re-consent on version bump). firm_id is
