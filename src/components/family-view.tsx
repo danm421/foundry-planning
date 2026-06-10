@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
-import RevocableTrustDialog from "./revocable-trust-dialog";
+import RevocableTrustTagDialog from "./revocable-trust-tag-dialog";
 import BeneficiarySummary from "./beneficiary-summary";
 import GiftDialog from "@/components/gift-dialog";
 import AddAccountDialog from "./add-account-dialog";
@@ -125,6 +125,12 @@ export type AccountLite = {
   category: string;
   ownerFamilyMemberId: string | null;
   ownerEntityId: string | null;
+};
+
+export type RevocableTrustTag = {
+  id: string;
+  name: string;
+  accountIds: string[];
 };
 
 export type Tier = "primary" | "contingent";
@@ -334,7 +340,6 @@ export default function FamilyView({
   const [membersEdit, setMembersEdit] = useState(false);
 
   const [entityDialogOpen, setEntityDialogOpen] = useState(false);
-  const [revocableDialogOpen, setRevocableDialogOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
@@ -344,16 +349,34 @@ export default function FamilyView({
     else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
   };
 
-  // Revocable trusts use a dedicated simplified dialog; everything else uses the
-  // full EntityDialog. Shared `editingEntity` feeds whichever dialog is open.
+  // All entity types (irrevocable trusts, LLCs, etc.) use the full EntityDialog.
+  // Revocable trusts are now a separate tag model — they no longer route here.
   const openEntityEditor = (e: Entity) => {
     setEditingEntity(e);
-    if (e.entityType === "trust" && e.trustSubType === "revocable") {
-      setRevocableDialogOpen(true);
-    } else {
-      setEntityDialogOpen(true);
-    }
+    setEntityDialogOpen(true);
   };
+
+  // ── Revocable Trusts (tag model) ──────────────────────────────────────────
+
+  const [revocableTrusts, setRevocableTrusts] = useState<RevocableTrustTag[]>([]);
+  const [revocableTagDialogOpen, setRevocableTagDialogOpen] = useState(false);
+  const [editingRevocableTrust, setEditingRevocableTrust] = useState<RevocableTrustTag | undefined>();
+
+  const fetchRevocableTrusts = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/clients/${clientId}/revocable-trusts`);
+      if (res.ok) {
+        const data = (await res.json()) as RevocableTrustTag[];
+        setRevocableTrusts(data);
+      }
+    } catch {
+      // silently ignore fetch errors on mount
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    void fetchRevocableTrusts();
+  }, [fetchRevocableTrusts]);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountDialogEditing, setAccountDialogEditing] = useState<AccountFormInitial | undefined>(undefined);
@@ -587,15 +610,6 @@ export default function FamilyView({
             <button
               onClick={() => {
                 setEditingEntity(undefined);
-                setRevocableDialogOpen(true);
-              }}
-              className="inline-flex items-center rounded-md border border-accent px-3 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent/10"
-            >
-              + Add Revocable Trust
-            </button>
-            <button
-              onClick={() => {
-                setEditingEntity(undefined);
                 setEntityDialogOpen(true);
               }}
               className="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
@@ -645,6 +659,63 @@ export default function FamilyView({
                         </button>
                       )}
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      )}
+
+      {/* Revocable Trusts — tag model, separate from entity cards above */}
+      {(embed !== "wizard" || section === "entities") && (
+      <section>
+        <header className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-100">Revocable Trusts</h2>
+            <p className="text-xs text-gray-400">
+              Living trusts that tag accounts for probate-avoidance tracking.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setEditingRevocableTrust(undefined);
+              setRevocableTagDialogOpen(true);
+            }}
+            className="inline-flex items-center rounded-md border border-accent px-3 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent/10"
+          >
+            + Add Revocable Trust
+          </button>
+        </header>
+
+        {revocableTrusts.length === 0 ? (
+          <EmptyState label="No revocable trusts added yet." />
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-hair bg-card/50">
+            <table className="min-w-full divide-y divide-hair">
+              <thead className="bg-card-2/60">
+                <tr className="text-left text-xs font-medium uppercase tracking-wider text-ink-3">
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2">Accounts</th>
+                  <th className="px-4 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-hair">
+                {revocableTrusts.map((t) => (
+                  <tr
+                    key={t.id}
+                    className="cursor-pointer hover:bg-card-2/50"
+                    onClick={() => {
+                      setEditingRevocableTrust(t);
+                      setRevocableTagDialogOpen(true);
+                    }}
+                  >
+                    <td className="px-4 py-2 text-sm text-ink">{t.name}</td>
+                    <td className="px-4 py-2 text-sm text-ink-3 tabular">
+                      {t.accountIds.length} {t.accountIds.length === 1 ? "asset" : "assets"}
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs text-ink-4">Edit →</td>
                   </tr>
                 ))}
               </tbody>
@@ -761,33 +832,17 @@ export default function FamilyView({
         />
       )}
 
-      {revocableDialogOpen && (
-        <RevocableTrustDialog
-          key={editingEntity?.id ?? "new-revocable"}
+      {revocableTagDialogOpen && (
+        <RevocableTrustTagDialog
+          key={editingRevocableTrust?.id ?? "new-revocable-tag"}
           clientId={clientId}
-          open={revocableDialogOpen}
-          onOpenChange={setRevocableDialogOpen}
-          editing={editingEntity}
-          household={{
-            client: { firstName: primary.firstName },
-            spouse: primary.spouseName ? { firstName: primary.spouseName } : null,
+          editing={editingRevocableTrust}
+          accounts={accounts}
+          onSaved={async () => {
+            await fetchRevocableTrusts();
+            setRevocableTagDialogOpen(false);
           }}
-          members={members}
-          externals={externals}
-          otherEntities={entities
-            .filter((e) => e.id !== editingEntity?.id)
-            .map((e) => ({ id: e.id, name: e.name }))}
-          initialDesignations={designations}
-          accounts={initialFullAccounts}
-          liabilities={initialFullLiabilities}
-          incomes={initialFullIncomes}
-          expenses={initialFullExpenses}
-          assetFamilyMembers={initialAssetFamilyMembers}
-          onSaved={handleEntitySaved}
-          onAutoSaved={handleEntitySaved}
-          onRequestDelete={() => {
-            if (editingEntity) setDeletingEntity(editingEntity);
-          }}
+          onClose={() => setRevocableTagDialogOpen(false)}
         />
       )}
 
@@ -852,7 +907,6 @@ export default function FamilyView({
           if (res.ok || res.status === 204) {
             setEntities((prev) => prev.filter((e) => e.id !== deletingEntity.id));
             setEntityDialogOpen(false);
-            setRevocableDialogOpen(false);
             setDeletingEntity(null);
           }
         }}
