@@ -12,11 +12,11 @@
 // =============================================================================
 
 export const colors = {
-  // Brand
-  accent:      "#f59e0b",
-  accentInk:   "#fbbf24",
-  accentDeep:  "#b45309",
-  accentOn:    "#1a1205",
+  // Brand — Verdigris (v2.2). Action only; amber survives only as `warn`.
+  accent:      "#1f9e8c",
+  accentInk:   "#4fd0bf",
+  accentDeep:  "#0c5a4f",
+  accentOn:    "#03140f",
 
   secondary:    "#6366f1",
   secondaryInk: "#818cf8",
@@ -55,10 +55,11 @@ export const colors = {
 } as const;
 
 export const colorsLight = {
-  accent:      "#d97706",
-  accentInk:   "#b45309",
-  accentDeep:  "#92400e",
-  accentOn:    "#fffbeb",
+  // Brand — Verdigris deepened for contrast on cream (v2.2).
+  accent:      "#0f7d6c",
+  accentInk:   "#0b5d50",
+  accentDeep:  "#08463b",
+  accentOn:    "#f3fbf8",
 
   secondary:    "#4f46e5",
   secondaryInk: "#4338ca",
@@ -121,10 +122,10 @@ export const dataLight = {
 /** A Deep Jewel data palette key — the stable identity used to color a series. */
 export type DataColorKey = keyof typeof data;
 
-// Accent-wash (active/selected backgrounds) per theme.
+// Accent-wash (active/selected backgrounds) per theme — Verdigris (v2.2).
 export const accentWash = {
-  dark:  "rgba(245, 158, 11, 0.16)",
-  light: "rgba(217, 119, 6, 0.16)",
+  dark:  "rgba(31, 158, 140, 0.16)",
+  light: "rgba(15, 125, 108, 0.10)",
 } as const;
 
 // Secondary-wash (indigo active/selected backgrounds) per theme.
@@ -135,7 +136,7 @@ export const secondaryWash = {
 
 // Deterministic categorical scale, in the Deep Jewel palette's perceptual band.
 // Band per theme (OKLCH): dark L 0.78 · C 0.15, light L 0.58 · C 0.15.
-// The accent-amber hue band (~55–85°) is reserved so data never reads as a CTA.
+// The accent-verdigris hue band (~165–195°) is reserved so data never reads as a CTA.
 const DATA_BAND = { dark: { L: 0.78, C: 0.15 }, light: { L: 0.58, C: 0.15 } } as const;
 
 export function dataScale(n: number, theme: "dark" | "light" = "dark"): string[] {
@@ -143,7 +144,7 @@ export function dataScale(n: number, theme: "dark" | "light" = "dark"): string[]
   const out: string[] = [];
   for (let i = 0; i < n; i++) {
     let h = (15 + (i * 360) / n) % 360; // even hue spacing, start ~red-orange
-    if (h > 55 && h < 85) h = (h + 40) % 360; // reserve the accent-amber band
+    if (h > 165 && h < 195) h = (h + 40) % 360; // reserve the accent-verdigris band
     out.push(`oklch(${L} ${C} ${h.toFixed(1)})`);
   }
   return out;

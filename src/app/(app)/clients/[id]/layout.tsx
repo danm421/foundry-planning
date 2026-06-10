@@ -100,7 +100,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
       />
       <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
       <ScenarioDrawerProvider>
-        <section className="px-[var(--pad-card)] py-6">{children}</section>
+        <section className="px-[var(--pad-card)] pb-6">{children}</section>
       </ScenarioDrawerProvider>
     </ScenarioModeWrapper>
   );

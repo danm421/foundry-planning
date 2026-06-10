@@ -10,10 +10,10 @@ describe("PRESENTATION_THEME", () => {
     expect(PRESENTATION_THEME.crit).toBe(colorsLight.crit);
   });
 
-  it("maps steel to the brand data blue and keeps amber-harmonized tints", () => {
+  it("maps steel to the brand data blue and keeps verdigris-harmonized tints", () => {
     expect(PRESENTATION_THEME.steel).toBe(dataLight.blue);
-    expect(PRESENTATION_THEME.accentMuted).toBe("#e3a857");
-    expect(PRESENTATION_THEME.accentTint).toBe("#f8e9cf");
+    expect(PRESENTATION_THEME.accentMuted).toBe("#5fa597");
+    expect(PRESENTATION_THEME.accentTint).toBe("#e4f1ec");
   });
 
   it("defines the cash-flow chart palette in stack-render order (Deep Jewel light)", () => {

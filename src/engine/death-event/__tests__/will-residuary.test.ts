@@ -107,6 +107,31 @@ describe("applyWillResiduary — first death (primary tier)", () => {
     expect(t!.recipientId).toBe(CHILD_A);
   });
 
+  it("still routes a revocable-trust-tagged account through the will (tag does not divert distribution)", () => {
+    // The revocableTrustName tag pulls the account out of the probate base
+    // (isNonProbateAccount), but distribution is structurally decoupled from
+    // that flag — the will residuary must still route the asset to its
+    // recipient. Mirrors the primary-tier test above with the tag added and no
+    // beneficiary designation.
+    const acct: Account = {
+      ...soleAccount(LEGACY_FM_CLIENT, "acc-1", 400_000),
+      revocableTrustName: "Pat Family Trust",
+    };
+    const will = willWithResiduary("client", [
+      { recipientKind: "family_member", recipientId: CHILD_A, tier: "primary", percentage: 100, sortOrder: 0 },
+    ]);
+
+    const result = applyFirstDeath(
+      mkInput({ deceased: "client", survivor: "spouse", will, accounts: [acct] }),
+    );
+
+    const t = result.transfers.find(
+      (x) => x.via === "will_residuary" && x.sourceAccountId === "acc-1",
+    );
+    expect(t).toBeDefined();
+    expect(t!.recipientId).toBe(CHILD_A);
+  });
+
   it("ignores contingent recipients at first death", () => {
     const acct = soleAccount(LEGACY_FM_CLIENT, "acc-1", 400_000);
     const will = willWithResiduary("client", [

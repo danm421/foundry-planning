@@ -275,7 +275,7 @@ function StepCircle({
 
   let cls: string;
   if (isActive) {
-    cls = "bg-accent text-accent-on shadow-[0_0_0_4px_rgba(245,158,11,0.18)]";
+    cls = "bg-accent text-accent-on shadow-[0_0_0_4px_rgba(31,158,140,0.18)]";
   } else if (isComplete) {
     cls = "bg-accent/15 text-accent-ink border border-accent/40";
   } else if (isInProgress) {

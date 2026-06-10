@@ -3,7 +3,6 @@ import type { DeathTransfer, EntitySummary } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
 
 const SUBTYPE_PILL: Record<TrustSubType, string> = {
-  revocable: "bg-cat-portfolio/15 text-cat-portfolio",
   irrevocable: "bg-warn/15 text-warn",
   ilit: "bg-warn/15 text-warn",
   clt: "bg-cat-life/15 text-cat-life",

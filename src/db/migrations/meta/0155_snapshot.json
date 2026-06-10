@@ -1,6 +1,6 @@
 {
-  "id": "18d219d9-61ee-4684-956a-c4cf4e176316",
-  "prevId": "b7625109-30da-4791-b2a9-86edf87de894",
+  "id": "791cbc44-3663-4e34-9d4a-65b493714afb",
+  "prevId": "18d219d9-61ee-4684-956a-c4cf4e176316",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3345,6 +3345,142 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.crm_document_folders": {
+      "name": "crm_document_folders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "firm_id": {
+          "name": "firm_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_folder_id": {
+          "name": "parent_folder_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_system": {
+          "name": "is_system",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "crm_document_folders_household_idx": {
+          "name": "crm_document_folders_household_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_document_folders_parent_idx": {
+          "name": "crm_document_folders_parent_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_folder_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "crm_document_folders_household_id_crm_households_id_fk": {
+          "name": "crm_document_folders_household_id_crm_households_id_fk",
+          "tableFrom": "crm_document_folders",
+          "tableTo": "crm_households",
+          "columnsFrom": [
+            "household_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "crm_document_folders_parent_folder_id_crm_document_folders_id_fk": {
+          "name": "crm_document_folders_parent_folder_id_crm_document_folders_id_fk",
+          "tableFrom": "crm_document_folders",
+          "tableTo": "crm_document_folders",
+          "columnsFrom": [
+            "parent_folder_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.crm_household_accounts": {
       "name": "crm_household_accounts",
       "schema": "",
@@ -3747,7 +3883,7 @@
           "name": "storage_key",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "mime_type": {
           "name": "mime_type",
@@ -3773,6 +3909,64 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "folder_id": {
+          "name": "folder_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "crm_document_source_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'upload'"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version_group_id": {
+          "name": "version_group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version_no": {
+          "name": "version_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "is_current_version": {
+          "name": "is_current_version",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "import_file_id": {
+          "name": "import_file_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "report_type": {
+          "name": "report_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scenario_id": {
+          "name": "scenario_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -3781,6 +3975,36 @@
           "columns": [
             {
               "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_documents_version_group_idx": {
+          "name": "crm_documents_version_group_idx",
+          "columns": [
+            {
+              "expression": "version_group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_documents_folder_idx": {
+          "name": "crm_documents_folder_idx",
+          "columns": [
+            {
+              "expression": "folder_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3804,6 +4028,45 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "crm_household_documents_folder_id_crm_document_folders_id_fk": {
+          "name": "crm_household_documents_folder_id_crm_document_folders_id_fk",
+          "tableFrom": "crm_household_documents",
+          "tableTo": "crm_document_folders",
+          "columnsFrom": [
+            "folder_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "crm_household_documents_import_file_id_client_import_files_id_fk": {
+          "name": "crm_household_documents_import_file_id_client_import_files_id_fk",
+          "tableFrom": "crm_household_documents",
+          "tableTo": "client_import_files",
+          "columnsFrom": [
+            "import_file_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "crm_household_documents_scenario_id_scenarios_id_fk": {
+          "name": "crm_household_documents_scenario_id_scenarios_id_fk",
+          "tableFrom": "crm_household_documents",
+          "tableTo": "scenarios",
+          "columnsFrom": [
+            "scenario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -13556,6 +13819,15 @@
         "spouse",
         "dependent",
         "other"
+      ]
+    },
+    "public.crm_document_source_kind": {
+      "name": "crm_document_source_kind",
+      "schema": "public",
+      "values": [
+        "upload",
+        "generated_plan",
+        "import_ref"
       ]
     },
     "public.crm_household_status": {

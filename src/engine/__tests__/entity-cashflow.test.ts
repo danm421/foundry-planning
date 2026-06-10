@@ -354,7 +354,7 @@ describe("computeEntityCashFlow", () => {
       id: "g-1",
       name: "Grantor",
       entityType: "trust" as const,
-      trustSubType: "revocable" as const,
+      trustSubType: "irrevocable" as const,
       isGrantor: true,
       initialValue: 0,
       initialBasis: 0,

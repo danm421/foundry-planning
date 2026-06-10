@@ -187,3 +187,66 @@ describe("computeProbateEstate", () => {
     expect(probateEstate).toBe(500_000);
   });
 });
+
+describe("revocable-trust probate exclusion", () => {
+  const grossBase = {
+    deceased: "client" as const,
+    deathOrder: 1 as const,
+    liabilities: [],
+    entities: [],
+    deceasedFmId: "fm-c",
+    survivorFmId: "fm-s",
+  };
+
+  it("tagged account is in the gross estate but excluded from probate", () => {
+    const tagged = acct({
+      id: "tagged",
+      category: "taxable",
+      owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }],
+      revocableTrustName: "Smith Family Trust",
+    });
+    const gross = computeGrossEstate({
+      ...grossBase,
+      accounts: [tagged],
+      accountBalances: { tagged: 100_000 },
+    });
+
+    // Ownership still drives inclusion — the tag does not remove it from gross.
+    expect(gross.total).toBe(100_000);
+
+    const probate = computeProbateEstate({
+      gross,
+      accounts: [tagged],
+      deathOrder: 1,
+    });
+    // ...but the tag pulls it out of the probate base.
+    expect(probate).toBe(0);
+
+    const line = gross.lines.find((l) => l.accountId === "tagged");
+    expect(line?.isProbate).toBe(false);
+    expect(line?.revocableTrustName).toBe("Smith Family Trust");
+  });
+
+  it("an identical untagged account IS in the probate base", () => {
+    const plain = acct({
+      id: "plain",
+      category: "taxable",
+      owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }],
+    });
+    const gross = computeGrossEstate({
+      ...grossBase,
+      accounts: [plain],
+      accountBalances: { plain: 100_000 },
+    });
+
+    const probate = computeProbateEstate({
+      gross,
+      accounts: [plain],
+      deathOrder: 1,
+    });
+    expect(probate).toBe(100_000);
+
+    const line = gross.lines.find((l) => l.accountId === "plain");
+    expect(line?.isProbate).toBe(true);
+  });
+});

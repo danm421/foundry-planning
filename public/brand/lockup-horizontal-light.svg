@@ -5,14 +5,14 @@
       <stop offset="100%" stop-color="#f5f1e6"></stop>
     </linearGradient>
     <linearGradient id="goldFrontLhh" x1="384" y1="342" x2="885" y2="764" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#fbbf24"></stop>
-      <stop offset="42%" stop-color="#f59e0b"></stop>
-      <stop offset="100%" stop-color="#e58a00"></stop>
+      <stop offset="0%" stop-color="#5fd6c5"></stop>
+      <stop offset="42%" stop-color="#1f9e8c"></stop>
+      <stop offset="100%" stop-color="#1a8e7d"></stop>
     </linearGradient>
     <linearGradient id="goldDeepLhh" x1="515" y1="640" x2="621" y2="997" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#f59e0b"></stop>
-      <stop offset="52%" stop-color="#d97706"></stop>
-      <stop offset="100%" stop-color="#92400e"></stop>
+      <stop offset="0%" stop-color="#1f9e8c"></stop>
+      <stop offset="52%" stop-color="#15806f"></stop>
+      <stop offset="100%" stop-color="#0a4a40"></stop>
     </linearGradient>
   </defs>
   <svg x="16" y="16" width="96" height="96" viewBox="157 151 942 949" preserveAspectRatio="xMidYMid meet">
@@ -22,6 +22,6 @@
     <path d="M533 674 L618 756 L618 998 L533 931 Z" fill="url(#goldDeepLhh)"></path>
     <path d="M393 810 L476 888 L477 433 L393 351 Z" fill="url(#goldFrontLhh)" opacity=".96"></path>
   </svg>
-  <text x="132" y="78" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="700" letter-spacing="-1.5" fill="#0f1115">Foundry<tspan fill="#f59e0b" dx="-2">.</tspan></text>
+  <text x="132" y="78" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="700" letter-spacing="-1.5" fill="#0f1115">Foundry<tspan fill="#1f9e8c" dx="-2">.</tspan></text>
   <text x="134" y="102" font-family="&#39;JetBrains Mono&#39;, ui-monospace, monospace" font-size="11" font-weight="500" letter-spacing="3" fill="#6b7280">PLANNING</text>
 </svg>

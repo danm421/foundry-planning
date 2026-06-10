@@ -12,7 +12,7 @@ export const PDF_THEME = {
   ink2: colorsLight.ink2,     // #474c59
   ink3: colorsLight.ink3,     // #767a86
   hair: colorsLight.hair,     // #e8e4d6
-  accent: colorsLight.accent, // #d97706 (firm override applied via resolveAccentColor)
+  accent: colorsLight.accent, // #0f7d6c verdigris (firm override applied via resolveAccentColor)
   good: colorsLight.good,     // #047857
   warn: colorsLight.warn,     // #b45309
   crit: colorsLight.crit,     // #b91c1c
