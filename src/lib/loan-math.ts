@@ -109,6 +109,11 @@ export interface ScheduleExtraPayment {
 /**
  * Full amortization schedule from loan parameters + optional extra payments.
  * Returns one row per year from startYear until payoff or contractual end.
+ *
+ * `startMonth` (1-12) is the calendar month the loan originates in. A loan that
+ * starts mid-year only makes `12 − startMonth + 1` payments in its first
+ * calendar year, so the startYear row simulates that many months instead of a
+ * full 12. Defaults to 1 (January) — a January origination is unchanged.
  */
 export function computeAmortizationSchedule(
   balance: number,
@@ -116,7 +121,8 @@ export function computeAmortizationSchedule(
   monthlyPayment: number,
   startYear: number,
   termMonths: number,
-  extraPayments: ScheduleExtraPayment[] = []
+  extraPayments: ScheduleExtraPayment[] = [],
+  startMonth = 1
 ): AmortizationScheduleRow[] {
   const endYear = startYear + Math.ceil(termMonths / 12) - 1;
   const rows: AmortizationScheduleRow[] = [];
@@ -136,14 +142,19 @@ export function computeAmortizationSchedule(
       .filter((ep) => ep.year === year && ep.type === "lump_sum")
       .reduce((sum, ep) => sum + ep.amount, 0);
 
-    // Simulate 12 months of amortization for this year
+    // A mid-year-originated loan makes fewer than 12 payments in its first
+    // calendar year (e.g. a July start makes Jul–Dec = 6). Every later calendar
+    // year still simulates a full 12 months.
+    const monthsThisYear = year === startYear ? 12 - startMonth + 1 : 12;
+
+    // Simulate this calendar year's months of amortization
     let yearInterest = 0;
     let yearScheduledPayment = 0;
     let yearPrincipal = 0;
     let yearExtraPayment = 0;
     let lumpApplied = false;
 
-    for (let m = 0; m < 12; m++) {
+    for (let m = 0; m < monthsThisYear; m++) {
       if (bal <= 0) break;
 
       const monthlyInterest = bal * r;
