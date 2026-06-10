@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
+import * as Sentry from "@sentry/nextjs";
 import { db } from "@/db";
 import { billingEvents } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -115,6 +116,9 @@ export async function POST(req: NextRequest) {
     // Console gets the full err object (with stack + cause chain) so truncated
     // DB rows don't hide the root cause when debugging webhook failures.
     console.error(`[webhook.stripe] handler failed for ${event.type}:`, err);
+    Sentry.captureException(err, {
+      extra: { eventType: event.type, eventId: event.id, rowId },
+    });
     await db
       .update(billingEvents)
       .set({
