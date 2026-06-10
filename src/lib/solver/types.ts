@@ -11,7 +11,9 @@ import type {
   Reinvestment,
   Account,
   SavingsRule,
+  ExternalBeneficiary,
 } from "@/engine/types";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 export type SolverPerson = "client" | "spouse";
 
@@ -69,7 +71,9 @@ export type SolverMutation =
   | { kind: "asset-transaction-upsert"; id: string; value: AssetTransaction | null }
   | { kind: "reinvestment-upsert"; id: string; value: Reinvestment | null }
   | { kind: "account-upsert"; id: string; value: Account | null }
-  | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null };
+  | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
+  | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
+  | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =
@@ -107,7 +111,9 @@ export type SolverMutationKey =
   | `asset-transaction-upsert:${string}`
   | `reinvestment-upsert:${string}`
   | `account-upsert:${string}`
-  | `savings-rule-upsert:${string}`;
+  | `savings-rule-upsert:${string}`
+  | `gift-upsert:${string}`
+  | `external-beneficiary-upsert:${string}`;
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
   switch (m.kind) {
@@ -181,6 +187,10 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `account-upsert:${m.id}`;
     case "savings-rule-upsert":
       return `savings-rule-upsert:${m.id}`;
+    case "gift-upsert":
+      return `gift-upsert:${m.id}`;
+    case "external-beneficiary-upsert":
+      return `external-beneficiary-upsert:${m.id}`;
   }
 }
 
@@ -217,7 +227,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment";
+  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;
