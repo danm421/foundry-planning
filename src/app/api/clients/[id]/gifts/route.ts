@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   gifts,
   liabilities,
   accounts,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { giftCreateSchema } from "@/lib/schemas/gifts";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   applyOwnershipTransfer,
   getProjectionStartYearForScenario,
@@ -26,14 +26,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-async function verifyClient(clientId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
-
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -41,7 +33,7 @@ export async function GET(
   try {
     const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const rows = await db
@@ -66,7 +58,7 @@ export async function POST(
   try {
     const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const body = await request.json();
