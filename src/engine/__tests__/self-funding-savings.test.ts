@@ -24,10 +24,19 @@ const LIVING = 50_000;
  */
 function fixtureWithSelfFunding(
   S: number,
-  opts: { salary: number; livingExpense?: number; growthRate?: number },
+  opts: {
+    salary: number;
+    livingExpense?: number;
+    growthRate?: number;
+    // Share of leftover surplus the household SPENDS (rest is retained in the
+    // portfolio). Self-funding draws only from the spent share, since retained
+    // surplus is already in the portfolio. Defaults to 1 (legacy: spend it all).
+    surplusSpendPct?: number;
+  },
 ): ClientData {
   const living = opts.livingExpense ?? LIVING;
   const synthGrowth = opts.growthRate ?? 0.05;
+  const surplusSpendPct = opts.surplusSpendPct ?? 1;
 
   const client: ClientInfo = {
     firstName: "Solo",
@@ -134,6 +143,7 @@ function fixtureWithSelfFunding(
       inflationRate: 0,
       planStartYear: PLAN_START,
       planEndYear: PLAN_END,
+      surplusSpendPct,
     },
     familyMembers: [
       {
@@ -162,9 +172,11 @@ describe("self-funding (fundFromExpenseReduction) savings", () => {
   });
 
   it("cuts living expenses for the shortfall when surplus < S", () => {
-    // Modest salary → small positive surplus. Measure it, then ask for $5k more.
+    // Modest salary → small positive surplus. The fixture spends it all
+    // (surplusSpendPct defaults to 1), so the spendable surplus the waterfall can
+    // draw on shows up as discretionary spend. Measure it, then ask for $5k more.
     const baseline = runProjection(fixtureWithSelfFunding(0, { salary: 90_000 }));
-    const surplus0 = baseline[0].netCashFlow;
+    const surplus0 = baseline[0].expenses.discretionary;
     expect(surplus0).toBeGreaterThan(5_000); // sanity: clean split below
     const S = surplus0 + 5_000;
 
@@ -214,5 +226,49 @@ describe("self-funding (fundFromExpenseReduction) savings", () => {
     const synthBalLater = years.at(-1)!.accountLedgers[SYNTH_ACCT]?.endingValue ?? 0;
     expect(synthBalAtRet).toBeGreaterThan(0); // accumulated during working years
     expect(synthBalLater).toBeGreaterThan(synthBalAtRet); // growth continues
+  });
+});
+
+// Sum every account's ending value in a given year — the whole portfolio, so a
+// relocation between accounts nets to zero while real new money shows up.
+function totalPortfolioInYear(data: ClientData, year: number): number {
+  const years = runProjection(data);
+  const y = years.find((r) => r.year === year)!;
+  return Object.values(y.accountLedgers).reduce((s, l) => s + (l.endingValue ?? 0), 0);
+}
+
+// When surplus is RETAINED in the portfolio (surplusSpendPct < 1), it is already
+// invested — so self-funding must NOT draw on it (that would merely relocate cash
+// from checking to the brokerage, adding no new money and leaving PoS flat). It must
+// instead reduce consumption: cut living expenses. This is the min-savings
+// "unreachable at $100k/yr" root cause — the lever was inert against retained surplus.
+describe("self-funding draws only from SPENT surplus, not retained surplus", () => {
+  it("spendPct=0: funds entirely from expense reduction, never from retained cash flow", () => {
+    const baseline = runProjection(
+      fixtureWithSelfFunding(0, { salary: 200_000, surplusSpendPct: 0 }),
+    );
+    const years = runProjection(
+      fixtureWithSelfFunding(20_000, { salary: 200_000, surplusSpendPct: 0 }),
+    );
+    const y = years[0];
+    expect(y.hypotheticalSavings?.contribution).toBeCloseTo(20_000, 0);
+    expect(y.hypotheticalSavings?.fromCashFlow).toBeCloseTo(0, 0); // retained surplus is off-limits
+    expect(y.hypotheticalSavings?.fromExpenseReduction).toBeCloseTo(20_000, 0);
+    // living cut by the full amount
+    expect(y.expenses.living).toBeCloseTo(baseline[0].expenses.living - 20_000, 0);
+  });
+
+  it("spendPct=0: the lever adds REAL money to the portfolio (not a relocation no-op)", () => {
+    const base = totalPortfolioInYear(
+      fixtureWithSelfFunding(0, { salary: 200_000, surplusSpendPct: 0 }),
+      LAST_WORKING,
+    );
+    const withLever = totalPortfolioInYear(
+      fixtureWithSelfFunding(20_000, { salary: 200_000, surplusSpendPct: 0 }),
+      LAST_WORKING,
+    );
+    // 9 working years of $20k deposits, grown — well above any growth-differential
+    // lift the old relocation behavior could produce (~$50k).
+    expect(withLever - base).toBeGreaterThan(150_000);
   });
 });

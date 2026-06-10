@@ -3942,9 +3942,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let hypoFromCashFlow = 0;
     let hypoFromExpenseReduction = 0;
     if (selfFundingRules.length > 0) {
-      // Cash flow available to the hypothetical = surplus before savings, minus
-      // what the normal (real) savings rules already consumed. Floored at 0.
-      let surplusAvailable = Math.max(0, surplusBeforeSavings - savings.total);
+      // Cash flow available to the hypothetical = only the share of surplus the
+      // household would otherwise SPEND (phase 14's discretionary split). The
+      // retained share is already invested in the portfolio, so funding the
+      // hypothetical from it would merely relocate cash (checking → brokerage),
+      // adding no new money — leaving PoS flat and the min-savings goal-seek
+      // "unreachable" however high the lever. Only spent-but-now-redirected cash
+      // (and expense cuts below) genuinely raise the portfolio. Mirror phase 14's
+      // clamp of surplusSpendPct (default 0 ⇒ fund entirely from expense cuts).
+      const selfFundingSpendPct = Math.min(1, Math.max(0, data.planSettings.surplusSpendPct ?? 0));
+      let surplusAvailable =
+        Math.max(0, surplusBeforeSavings - savings.total) * selfFundingSpendPct;
       // Living expense pool still available to cut this year.
       let livingAvailable = Math.max(0, expenseBreakdown.living);
       for (const rule of selfFundingRules) {
