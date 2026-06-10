@@ -52,11 +52,12 @@ describe("asset-ledger per-entry basis", () => {
 
   it("roth-conversion legs carry basis == the actual basisMap delta (Form-8606 pro-rata)", () => {
     // Trad IRA pool = 600k (ira-a 400k + ira-b 200k); 150k after-tax basis on
-    // ira-a. _updateBasis moves basis by the SOURCE account's own ratio:
-    // 150k/400k = 37.5% × 100k slice = 37.5k of basis out of the source —
-    // strictly less than the 100k slice (non-tautological: basisMoved < slice,
-    // so basis !== amount). (The 25% aggregate-pool fraction drives the
-    // *taxable* figure in classifyTransferTax, a separate calc.)
+    // ira-a. Per Form 8606 the nontaxable (basis) fraction is computed on the
+    // AGGREGATED pool: 150k/600k = 25% × 100k slice = 25k of basis leaves the
+    // source — strictly less than the 100k slice (non-tautological: basisMoved
+    // < slice, so basis !== amount). The same 25% pool fraction drives the
+    // taxable figure in classifyTransferTax, so the basis decrement and the
+    // taxable calc agree and pool basis is conserved.
     const iraA: Account = {
       id: "ira-a", name: "IRA A", category: "retirement", subType: "traditional_ira",
       titlingType: "jtwros", value: 400_000, basis: 150_000, growthRate: 0,
@@ -116,9 +117,9 @@ describe("asset-ledger per-entry basis", () => {
     expect(srcEntry!.amount).toBe(-100_000);
     expect(srcEntry!.basis, "source basis == actual basisMap decrease").toBeCloseTo(srcBasisDelta, 6);
     expect(srcEntry!.basis!, "source basis is negative (basis leaves)").toBeLessThan(0);
-    // Non-tautological: pro-rata basis moved (37.5k) < slice (100k) → basis ≠ amount.
+    // Non-tautological: pool-ratio basis moved (25k) < slice (100k) → basis ≠ amount.
     expect(Math.abs(srcEntry!.basis!)).toBeLessThan(Math.abs(srcEntry!.amount));
-    expect(srcEntry!.basis!).toBeCloseTo(-37_500, 0);
+    expect(srcEntry!.basis!).toBeCloseTo(-25_000, 0);
 
     // Dest (Roth) leg: a contribution entry whose basis is the positive
     // basisMap increase the engine applied.

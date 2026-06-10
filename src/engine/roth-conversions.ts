@@ -436,19 +436,22 @@ function _updateRothValueAndDestBasis(
   rothValueMap: Record<string, number> | undefined,
   basisMap: Record<string, number>,
 ): void {
-  if (!rothValueMap || sourceBalanceBefore <= 0) return;
+  if (sourceBalanceBefore <= 0) return;
+  // Roth IRA destination: the entire converted amount becomes already-taxed
+  // basis (pre-tax slice was just taxed at conversion; Roth slice was already
+  // after-tax). This is independent of rothValue tracking, so credit it before
+  // the rothValueMap guard — a caller that omits rothValueMap (some unit tests)
+  // must still see the destination Roth basis grow by the converted amount.
+  if (targetSubType === "roth_ira") {
+    basisMap[targetId] = (basisMap[targetId] ?? 0) + amount;
+  }
+  // rothValue (401k/403b Roth sub-portion) tracking requires the rothValueMap.
+  if (!rothValueMap) return;
   const sourceRoth = rothValueMap[sourceId] ?? 0;
   const fractionMoved = amount / sourceBalanceBefore;
   const rothMoved = sourceRoth * fractionMoved;
   if (sourceRoth > 0) {
     rothValueMap[sourceId] = Math.max(0, sourceRoth - rothMoved);
-  }
-  // Roth IRA destination: the entire converted amount becomes already-taxed
-  // basis (pre-tax slice was just taxed at conversion; Roth slice was already
-  // after-tax). Roth IRA tracks this via basisMap.
-  if (targetSubType === "roth_ira") {
-    basisMap[targetId] = (basisMap[targetId] ?? 0) + amount;
-    return;
   }
   // 401k / 403b destination: just the Roth slice carries over as rothValue.
   if (targetSubType === "401k" || targetSubType === "403b") {
