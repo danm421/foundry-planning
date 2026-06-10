@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { crmHouseholdDocuments } from "@/db/schema";
+import { crmHouseholdDocuments, crmDocumentFolders } from "@/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { requireVaultAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
@@ -179,4 +179,56 @@ export async function deleteCrmDocument(documentId: string): Promise<void> {
     metadata: { documentId, filename: doc.filename },
     occurredAt: new Date(),
   });
+}
+
+export async function updateCrmDocument(
+  documentId: string,
+  patch: { folderId?: string | null; filename?: string; description?: string | null },
+): Promise<CrmDocumentRow> {
+  const doc = await db.query.crmHouseholdDocuments.findFirst({
+    where: eq(crmHouseholdDocuments.id, documentId),
+  });
+  if (!doc) throw new Error("Document not found");
+  const { orgId } = await requireVaultAccess(doc.householdId);
+
+  // A destination folder must belong to the same household.
+  if (patch.folderId) {
+    const folder = await db.query.crmDocumentFolders.findFirst({
+      where: and(
+        eq(crmDocumentFolders.id, patch.folderId),
+        eq(crmDocumentFolders.householdId, doc.householdId),
+      ),
+      columns: { id: true },
+    });
+    if (!folder) throw new Error("Destination folder not found in this household");
+  }
+
+  const updates: Partial<typeof crmHouseholdDocuments.$inferInsert> = {};
+  if (patch.folderId !== undefined) updates.folderId = patch.folderId;
+  if (patch.filename !== undefined) {
+    const name = patch.filename.trim();
+    if (!name) throw new Error("Filename is required");
+    updates.filename = name;
+  }
+  if (patch.description !== undefined) updates.description = patch.description;
+
+  const [updated] = await db
+    .update(crmHouseholdDocuments)
+    .set(updates)
+    .where(
+      and(
+        eq(crmHouseholdDocuments.id, documentId),
+        eq(crmHouseholdDocuments.householdId, doc.householdId),
+      ),
+    )
+    .returning();
+
+  await recordAudit({
+    action: patch.folderId !== undefined ? "vault.document.move" : "vault.document.update",
+    resourceType: "crm_document",
+    resourceId: documentId,
+    firmId: orgId,
+    metadata: { folderId: patch.folderId, filename: patch.filename },
+  });
+  return updated;
 }

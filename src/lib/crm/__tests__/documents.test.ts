@@ -43,6 +43,7 @@ import {
   uploadCrmDocument,
   listCrmDocuments,
   deleteCrmDocument,
+  updateCrmDocument,
   MAX_SIZE_BYTES,
 } from "../documents";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -232,5 +233,35 @@ describe("upload into a folder", () => {
     expect(doc.folderId).toBe(folder.id);
     expect(doc.description).toBe("Q1 statement");
     expect(doc.sourceKind).toBe("upload");
+  });
+});
+
+describe("updateCrmDocument", () => {
+  it("moves a document to a folder and renames it", async () => {
+    vi.mocked(put).mockResolvedValue({ pathname: "crm/p" } as never);
+    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    const [folder] = await db.insert(crmDocumentFolders).values({
+      householdId, firmId: "test_org_documents", name: "Dest", isSystem: false, sortOrder: 0,
+    }).returning();
+    const updated = await updateCrmDocument(doc.id, {
+      folderId: folder.id, filename: "renamed.pdf", description: "note",
+    });
+    expect(updated.folderId).toBe(folder.id);
+    expect(updated.filename).toBe("renamed.pdf");
+    expect(updated.description).toBe("note");
+  });
+
+  it("rejects moving into a folder from another household", async () => {
+    vi.mocked(put).mockResolvedValue({ pathname: "crm/p" } as never);
+    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    const [otherHH] = await db.insert(crmHouseholds).values({
+      firmId: "test_org_documents", advisorId: "x", name: "Other",
+    }).returning();
+    const [foreign] = await db.insert(crmDocumentFolders).values({
+      householdId: otherHH.id, firmId: "test_org_documents", name: "F", isSystem: false, sortOrder: 0,
+    }).returning();
+    await expect(
+      updateCrmDocument(doc.id, { folderId: foreign.id }),
+    ).rejects.toThrow(/folder/i);
   });
 });
