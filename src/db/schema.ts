@@ -247,6 +247,11 @@ export const trustEndsEnum = pgEnum("trust_ends", [
 ]);
 
 export const trustSubTypeEnum = pgEnum("trust_sub_type", [
+  // `revocable` is a DEPRECATED orphan: revocable trusts are now modeled as a
+  // tag (separate table), not as an entity. The value is intentionally retained
+  // in this pgEnum so drizzle-kit does NOT emit a DROP VALUE migration — the
+  // live Postgres column still allows it and legacy rows may hold it. It is no
+  // longer a member of the app-level TrustSubType union (see lib/entities/trust).
   "revocable",
   "irrevocable",
   "ilit",
@@ -254,13 +259,14 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "idgt",
   "crt",
 ]);
-// Compile-time guard: trustSubTypeEnum and engine/types.ts TrustSubType (via lib/entities/trust)
-// must stay in sync. Adding/removing a member on either side breaks tsc.
-// See canonical union: src/lib/entities/trust.ts → TRUST_SUB_TYPES / TrustSubType.
+// Compile-time guard: every app-level TrustSubType member must exist in this DB
+// enum (forward direction stays strict — a new union member missing from the DB
+// enum breaks tsc). The reverse direction is NOT asserted, because the DB enum
+// intentionally carries the deprecated `revocable` orphan that the app union
+// dropped. See canonical union: src/lib/entities/trust.ts → TRUST_SUB_TYPES.
 type _TrustSubTypeEnumValues = (typeof trustSubTypeEnum.enumValues)[number];
-const _assertTrustSubTypeInSync: TrustSubType = null as unknown as _TrustSubTypeEnumValues;
-const _assertTrustSubTypeInSyncReverse: _TrustSubTypeEnumValues = null as unknown as TrustSubType;
-void _assertTrustSubTypeInSync; void _assertTrustSubTypeInSyncReverse;
+const _assertTrustSubTypeInEnum: _TrustSubTypeEnumValues = null as unknown as TrustSubType;
+void _assertTrustSubTypeInEnum;
 
 export const trustTermTypeEnum = pgEnum("trust_term_type", [
   "years",

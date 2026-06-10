@@ -16,7 +16,7 @@ function fixture(): { tree: ClientData; withResult: ProjectionYear[] } {
     entities: [
       { id: ILIT_ID, name: "ILIT", entityType: "trust", isIrrevocable: true, trustSubType: "ilit", grantor: "client" },
       { id: SLAT_ID, name: "SLAT", entityType: "trust", isIrrevocable: true, trustSubType: "irrevocable", grantor: "client" },
-      { id: REVOC_ID, name: "Revocable Trust", entityType: "trust", isIrrevocable: false, trustSubType: "revocable", grantor: "client" },
+      { id: REVOC_ID, name: "Revocable Trust", entityType: "trust", isIrrevocable: false, grantor: "client" },
     ],
     accounts: [
       {

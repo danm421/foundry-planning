@@ -101,7 +101,6 @@ async function fetchJson<T>(url: string): Promise<T> {
 // ── Trust type labels ─────────────────────────────────────────────────────────
 
 const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
-  revocable: "Revocable",
   irrevocable: "Irrevocable (generic)",
   ilit: "ILIT",
   clt: "CLT (Charitable Lead Trust)",
@@ -596,13 +595,11 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     setLoading(true);
     setError(null);
     try {
-      // includeInPortfolio is no longer user-controlled. Revocable trusts pass
-      // through to the household portfolio; all other trust types are out of estate.
-      // For existing rows whose value was set by the old toggle, preserve it
-      // unless the trust subtype implies otherwise — avoids silent behavior
-      // changes when an advisor opens an old trust just to edit notes.
-      const derivedIncludeInPortfolio =
-        trustSubType === "revocable" ? true : editingIncludeInPortfolio;
+      // includeInPortfolio is no longer user-controlled. Every trust subtype is
+      // now out of estate (revocable trusts are modeled as a tag, not an entity),
+      // so we just preserve any value an old row's toggle set — avoids silent
+      // behavior changes when an advisor opens an old trust just to edit notes.
+      const derivedIncludeInPortfolio = editingIncludeInPortfolio;
 
       // Build entity body — mirrors the old handleSubmit payload exactly.
       const entityBody = {
@@ -806,10 +803,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             <label className={fieldLabelClassName} htmlFor="trust-type">Type <span className="text-red-500">*</span></label>
             <select id="trust-type" required value={trustSubType} onChange={(e) => setTrustSubType(e.target.value as TrustSubType | "")} className={selectClassName}>
               <option value="" disabled>— select type —</option>
-              {/* Revocable trusts are created via the dedicated "Add Revocable Trust"
-                  dialog, so they're omitted here. The subtype stays valid in the union. */}
               {Object.entries(TRUST_TYPE_LABELS)
-                .filter(([v]) => v !== "revocable")
                 .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>

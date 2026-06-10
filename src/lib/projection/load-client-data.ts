@@ -1078,7 +1078,15 @@ export const loadClientDataWithContext = cache(
       crummeyPowers: e.crummeyPowers,
       grantorStatusEndYear: e.grantorStatusEndYear ?? undefined,
       beneficiaries: trustBens.get(e.id) ?? undefined,
-      trustSubType: e.trustSubType ?? undefined,
+      // `revocable` is a deprecated DB-enum orphan (revocable trusts are now a
+      // tag, not an entity) and is no longer part of the TrustSubType union.
+      // Legacy rows may still carry it; map it to undefined so the engine sees a
+      // valid subtype. The engine's revocable behavior keys off isIrrevocable,
+      // which is loaded faithfully below, so dropping the cosmetic subtype is safe.
+      trustSubType:
+        e.trustSubType != null && e.trustSubType !== "revocable"
+          ? e.trustSubType
+          : undefined,
       isIrrevocable: e.isIrrevocable ?? undefined,
       trustee: e.trustee ?? undefined,
       exemptionConsumed: exemptionByEntity.get(e.id) ?? 0,

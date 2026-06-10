@@ -56,16 +56,6 @@ describe("entityCreateSchema — trust", () => {
     expect(r.success).toBe(true);
   });
 
-  it("accepts a revocable trust with isIrrevocable=false", () => {
-    const r = entityCreateSchema.safeParse({
-      name: "Smith Rev Trust",
-      entityType: "trust",
-      trustSubType: "revocable",
-      isIrrevocable: false,
-    });
-    expect(r.success).toBe(true);
-  });
-
   it("rejects a trust with inconsistent sub-type + irrevocable", () => {
     const r = entityCreateSchema.safeParse({
       name: "Bad SLAT",
@@ -159,9 +149,9 @@ describe("entityCreateSchema — distribution policy", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects distribution on revocable trust", () => {
+  it("rejects distribution on a non-irrevocable trust", () => {
     const result = entityCreateSchema.safeParse({
-      name: "Revocable", entityType: "trust", trustSubType: "revocable", isIrrevocable: false,
+      name: "Bad", entityType: "trust", trustSubType: "irrevocable", isIrrevocable: false,
       distributionMode: "fixed", distributionAmount: 50_000,
     });
     expect(result.success).toBe(false);
