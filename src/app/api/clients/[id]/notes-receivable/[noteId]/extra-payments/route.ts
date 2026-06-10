@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  clients,
   noteExtraPayments,
   notesReceivable,
 } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { noteReceivableExtraPaymentsReplaceSchema } from "@/lib/schemas/note-receivable";
 
@@ -22,11 +22,7 @@ export async function PATCH(
     const firmId = await requireOrgId();
     const { id, noteId } = await params;
 
-    const [client] = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

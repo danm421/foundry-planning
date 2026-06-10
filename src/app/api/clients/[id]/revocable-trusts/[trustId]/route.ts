@@ -1,20 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import { clients, revocableTrusts, accounts } from "@/db/schema";
+import { revocableTrusts, accounts } from "@/db/schema";
 import { eq, and, inArray, notInArray } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function verifyClient(clientId: string, firmId: string): Promise<boolean> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
+  return verifyClientAccess(clientId, firmId);
 }
 
 /** Verify the trust row belongs to clientId (and thus firmId by FK chain).
