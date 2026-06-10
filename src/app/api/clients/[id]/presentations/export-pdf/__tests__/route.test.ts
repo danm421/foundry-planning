@@ -199,6 +199,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — request validation
     const res = await POST(
       makeReq({
         scenarioId: null,
+        preview: true,
         pages: [
           { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
         ],
@@ -219,6 +220,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     const res = await POST(
       makeReq({
         scenarioId: null,
+        preview: true,
         pages: [
           { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
         ],
@@ -236,6 +238,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     await POST(
       makeReq({
         scenarioId: "moderate",
+        preview: true,
         pages: [
           { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
         ],
@@ -244,7 +247,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "presentations.export_pdf",
+        action: "presentations.preview_pdf",
         metadata: expect.objectContaining({
           pages: ["cashFlow"],
           scenarioId: "moderate",
@@ -260,6 +263,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     await POST(
       makeReq({
         scenarioId: null,
+        preview: true,
         pages: [
           {
             pageId: "cashFlow",
@@ -282,6 +286,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     const res = await POST(
       makeReq({
         scenarioId: "moderate",
+        preview: true,
         pages: [{ pageId: "monteCarlo", options: { highlight: "fan" } }],
       }) as never,
       { params: Promise.resolve({ id: "client-1" }) },
@@ -301,6 +306,7 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     const res = await POST(
       makeReq({
         scenarioId: null,
+        preview: true,
         filename: "custom-report.pdf",
         pages: [
           { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
@@ -312,26 +318,20 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     expect(disposition).toContain('filename="custom-report.pdf"');
   });
 
-  it("captures a non-preview export to the vault as reportType 'presentation'", async () => {
-    const { savePlanToVault } = await import("@/lib/crm/vault-plans");
+  it("rejects a non-preview (saved deck) request with 400 — use /runs instead", async () => {
     const { POST } = await import("../route");
-    await POST(
+    const res = await POST(
       makeReq({
-        scenarioId: "moderate",
+        scenarioId: null,
         pages: [
           { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
         ],
       }) as never,
       { params: Promise.resolve({ id: "client-1" }) },
     );
-    expect(savePlanToVault).toHaveBeenCalledWith(
-      expect.objectContaining({
-        clientId: "client-1",
-        firmId: "firm-1",
-        reportType: "presentation",
-        scenarioId: "moderate",
-      }),
-    );
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/presentations\/runs/);
   });
 });
 
@@ -379,16 +379,15 @@ describe("POST /api/clients/[id]/presentations/export-pdf — preview mode", () 
     );
   });
 
-  it("still audits presentations.export_pdf when preview is absent", async () => {
+  it("returns 400 and does not audit when preview is absent", async () => {
     const { recordAudit } = await import("@/lib/audit");
     const { POST } = await import("../route");
-    await POST(
+    const res = await POST(
       makeReq({ scenarioId: null, pages: previewBody.pages }) as never,
       { params: Promise.resolve({ id: "client-1" }) },
     );
-    expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "presentations.export_pdf" }),
-    );
+    expect(res.status).toBe(400);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("calls rateLimitErrorResponse and skips audit when preview rate limit is denied", async () => {

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
-  checkExportPdfRateLimit,
   checkPreviewPdfRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
@@ -10,7 +9,6 @@ import {
   ProjectionInputError,
 } from "@/lib/projection/load-client-data";
 import { recordAudit } from "@/lib/audit";
-import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { renderPresentationPdf, BodySchema } from "@/components/presentations/render-presentation-pdf";
 
 export const dynamic = "force-dynamic";
@@ -42,16 +40,18 @@ export async function POST(
       );
     }
 
-    const isPreview = parsed.data.preview;
-    const rl = isPreview
-      ? await checkPreviewPdfRateLimit(firmId)
-      : await checkExportPdfRateLimit(firmId);
+    if (!parsed.data.preview) {
+      return NextResponse.json(
+        { error: "Use POST /presentations/runs to generate a saved deck." },
+        { status: 400 },
+      );
+    }
+
+    const rl = await checkPreviewPdfRateLimit(firmId);
     if (!rl.allowed) {
       return rateLimitErrorResponse(
         rl,
-        isPreview
-          ? "Too many previews. Please wait a moment and try again."
-          : "Too many PDF exports. Please wait a moment and try again.",
+        "Too many previews. Please wait a moment and try again.",
       );
     }
 
@@ -59,7 +59,7 @@ export async function POST(
       await renderPresentationPdf(id, firmId, parsed.data);
 
     await recordAudit({
-      action: isPreview ? "presentations.preview_pdf" : "presentations.export_pdf",
+      action: "presentations.preview_pdf",
       resourceType: "client",
       resourceId: id,
       clientId: id,
@@ -72,24 +72,12 @@ export async function POST(
       },
     });
 
-    // Best-effort vault capture — never on previews, never blocks the download path.
-    if (!isPreview) {
-      await savePlanToVault({
-        clientId: id,
-        firmId,
-        reportType: "presentation",
-        scenarioId: parsed.data.scenarioId,
-        filename,
-        buffer,
-      });
-    }
-
     const safeFilename = filename.replace(/["\\\r\n;]/g, "");
     return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `${isPreview ? "inline" : "attachment"}; filename="${safeFilename}"`,
+        "Content-Disposition": `inline; filename="${safeFilename}"`,
         "Cache-Control": "no-store",
       },
     });
