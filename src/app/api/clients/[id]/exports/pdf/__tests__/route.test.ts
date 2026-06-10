@@ -35,6 +35,10 @@ vi.mock("@/components/pdf/artifact-document", () => ({
   ArtifactDocument: ({ children }: { children: unknown }) => children,
 }));
 
+vi.mock("@/lib/crm/vault-plans", () => ({
+  savePlanToVault: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("@react-pdf/renderer", () => ({
   renderToBuffer: vi.fn().mockResolvedValue(Buffer.from("%PDF-1.7 test")),
 }));
@@ -159,6 +163,26 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");
     expect(renderPdfMock).toHaveBeenCalledOnce();
+  });
+
+  it("captures the PDF export to the vault as reportType 'report:<id>'", async () => {
+    const { savePlanToVault } = await import("@/lib/crm/vault-plans");
+    const res = await POST(makeReq({ reportId: "investments", variant: "data" }), { params });
+    expect(res.status).toBe(200);
+    expect(savePlanToVault).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "c1",
+        firmId: "firm_test",
+        reportType: "report:investments",
+        scenarioId: null,
+      }),
+    );
+  });
+
+  it("does NOT capture CSV exports to the vault", async () => {
+    const { savePlanToVault } = await import("@/lib/crm/vault-plans");
+    await POST(makeReq({ reportId: "investments", variant: "csv" }), { params });
+    expect(savePlanToVault).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an unsafe chart dataUrl", async () => {
