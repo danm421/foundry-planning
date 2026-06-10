@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { eq } from "drizzle-orm";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
@@ -58,11 +59,24 @@ export async function handleCheckoutSessionCompleted(
 
   const cc = await clerkClient();
 
-  // 1. Create Clerk org.
-  const org = await cc.organizations.createOrganization({
-    name: firmName,
-  });
-  const firmId = org.id;
+  // 1. Idempotency: a redelivery after a partial failure must converge on the
+  //    original firm, not mint a second Clerk org. Look up any subscription we
+  //    already recorded for this Stripe customer; reuse its firmId if present.
+  const existingSub = await db
+    .select({ firmId: subscriptions.firmId })
+    .from(subscriptions)
+    .where(eq(subscriptions.stripeCustomerId, customerId))
+    .then((r) => r[0]);
+
+  let firmId: string;
+  if (existingSub?.firmId) {
+    firmId = existingSub.firmId;
+  } else {
+    const org = await cc.organizations.createOrganization({
+      name: firmName,
+    });
+    firmId = org.id;
+  }
 
   // 2. Stamp Stripe subscription with the firm_id so future webhooks resolve.
   await stripe.subscriptions.update(subId, {

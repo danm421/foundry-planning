@@ -32,8 +32,10 @@ const mockFirmInsert = vi.fn();
 const mockSubsInsert = vi.fn();
 const mockItemsInsert = vi.fn();
 const mockTosInsert = vi.fn();
+const mockSubLookup = vi.fn(); // SELECT existing sub by stripeCustomerId
 vi.mock("@/db", () => ({
   db: {
+    select: () => ({ from: () => ({ where: () => mockSubLookup() }) }),
     insert: (table: { _: { name: string } } | unknown) => ({
       values: (v: unknown) => ({
         onConflictDoNothing: () => ({
@@ -73,6 +75,8 @@ beforeEach(() => {
   mockItemsInsert.mockReset();
   mockTosInsert.mockReset();
   mockRecordAudit.mockReset();
+  mockSubLookup.mockReset();
+  mockSubLookup.mockResolvedValue([]); // default: brand-new firm
 });
 
 describe("handleCheckoutSessionCompleted", () => {
@@ -183,6 +187,46 @@ describe("handleCheckoutSessionCompleted", () => {
         firmId: "org_beta",
         acceptanceSource: "stripe_checkout",
       }),
+    );
+  });
+
+  it("converges on re-run: existing sub for the customer skips createOrganization", async () => {
+    mockSessionsRetrieve.mockResolvedValue({
+      id: "cs_dup",
+      customer: "cus_existing",
+      subscription: "sub_existing",
+      customer_details: { email: "buyer@example.com" },
+      custom_fields: [{ key: "firm_name", text: { value: "Acme Advisors" } }],
+      metadata: {},
+    });
+    // A prior (partial) run already wrote firms + subscriptions for this customer.
+    mockSubLookup.mockResolvedValue([
+      { firmId: "org_existing", stripeSubscriptionId: "sub_existing" },
+    ]);
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_existing",
+      customer: "cus_existing",
+      status: "trialing",
+      cancel_at_period_end: false,
+      trial_start: null,
+      trial_end: 1700000000,
+      items: { data: [] },
+      metadata: { firm_id: "org_existing" },
+    });
+    mockFirmInsert.mockResolvedValue([{ firmId: "org_existing" }]);
+    mockSubsInsert.mockResolvedValue([{ id: "internal-sub" }]);
+    mockItemsInsert.mockResolvedValue([]);
+    mockTosInsert.mockResolvedValue([]);
+
+    await handleCheckoutSessionCompleted({
+      id: "evt_co_dup",
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_dup" } },
+    } as never);
+
+    expect(mockCreateOrg).not.toHaveBeenCalled(); // no second Clerk org
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ firmId: "org_existing" }),
     );
   });
 });
