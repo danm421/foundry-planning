@@ -413,6 +413,13 @@ export type GiftEvent =
       eventKind?: GiftEventKind;
     };
 
+export interface ExternalBeneficiary {
+  id: string;
+  name: string;
+  kind: "charity" | "individual";
+  charityType: "public" | "private";
+}
+
 export interface ClientData {
   client: ClientInfo;
   accounts: Account[];

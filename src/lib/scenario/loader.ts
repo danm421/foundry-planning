@@ -28,6 +28,7 @@ import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expens
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { resolveRefYears } from "@/lib/year-refs";
+import { normalizeScenarioGifts } from "./normalize-scenario-gifts";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
 /**
@@ -122,8 +123,24 @@ export function applyScenarioChangesWithRefs(
 
   const refResolved = resolveRefYears(effectiveTree);
 
-  if (resolutionContext && refResolved.reinvestments) {
-    refResolved.reinvestments = resolveReinvestments(refResolved.reinvestments, {
+  // Approach A: re-derive giftEvents from any scenario gift drafts that
+  // applyScenarioChanges appended to tree.gifts. A solver-saved planned gift is
+  // persisted as a `gift` overlay carrying an EstateFlowGift draft; the generic
+  // replay appends it to `tree.gifts` (typed Gift[]) without rebuilding the
+  // engine's derived `giftEvents`. This runs the drafts through the same
+  // applyGiftsToClientData bridge the live solver uses and merges the derived
+  // gifts/giftEvents back in. Must run before the premium chain
+  // (withSynthesizedPremiumGifts strips only policy-sourced cash events, so
+  // scenario gifts survive). No-op (returns the same tree reference) when no
+  // draft entries are present, so the no-gift path is byte-identical.
+  const giftCpi =
+    refResolved.planSettings.taxInflationRate ??
+    refResolved.planSettings.inflationRate ??
+    0;
+  const giftNormalized = normalizeScenarioGifts(refResolved, giftCpi);
+
+  if (resolutionContext && giftNormalized.reinvestments) {
+    giftNormalized.reinvestments = resolveReinvestments(giftNormalized.reinvestments, {
       resolver: resolutionContext.resolver,
       accountBaseAllocByAccountId:
         resolutionContext.accountBaseAllocByAccountId ?? new Map(),
@@ -136,8 +153,8 @@ export function applyScenarioChangesWithRefs(
   // expense / savings rule must follow. No-ops (returns the same tree) when the
   // rate is unchanged, so non-inflation scenarios stay byte-identical.
   const inflationResolved = resolutionContext
-    ? reResolveInflationGrowth(refResolved, resolutionContext)
-    : refResolved;
+    ? reResolveInflationGrowth(giftNormalized, resolutionContext)
+    : giftNormalized;
 
   // Re-synthesize life-insurance premium expenses over the effective accounts.
   // Base-load synthesis ran on the BASE accounts, so a scenario that added,

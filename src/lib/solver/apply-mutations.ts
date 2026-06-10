@@ -9,6 +9,7 @@
 
 import type { ClientData } from "@/engine/types";
 import { resolveRefYears } from "@/lib/year-refs";
+import { applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation } from "./types";
 
@@ -17,6 +18,7 @@ export function applyMutations(
   mutations: SolverMutation[],
 ): ClientData {
   const result = structuredClone(data);
+  const giftDrafts = new Map<string, EstateFlowGift | null>();
   for (const m of mutations) {
     switch (m.kind) {
       case "retirement-age": {
@@ -270,7 +272,37 @@ export function applyMutations(
         result.savingsRules = list;
         break;
       }
+      case "external-beneficiary-upsert": {
+        const list = (result.externalBeneficiaries ?? []).filter((b) => b.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.externalBeneficiaries = list;
+        break;
+      }
+      case "gift-upsert": {
+        // Deferred: applied once after the loop so giftEvents is rebuilt from the
+        // full scenario draft set (last-write-wins; null marks a delete).
+        giftDrafts.set(m.id, m.value);
+        break;
+      }
     }
+  }
+  if (giftDrafts.size > 0) {
+    const scenarioDrafts = [...giftDrafts.values()].filter(
+      (v): v is EstateFlowGift => v !== null,
+    );
+    const cpi =
+      result.planSettings.taxInflationRate ??
+      result.planSettings.inflationRate ??
+      0;
+    const derived = applyGiftsToClientData(
+      { ...result, gifts: [], giftEvents: [] },
+      scenarioDrafts,
+      cpi,
+    );
+    result.gifts = [...(result.gifts ?? []), ...derived.gifts];
+    result.giftEvents = [...(result.giftEvents ?? []), ...derived.giftEvents].sort(
+      (a, b) => a.year - b.year,
+    );
   }
   // Reshift every milestone-anchored startYear/endYear so a retirement-age
   // (or any other anchor-moving) mutation flows through to dependent

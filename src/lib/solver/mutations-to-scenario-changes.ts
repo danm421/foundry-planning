@@ -484,6 +484,30 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "gift-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "gift",
+          (source.gifts ?? []).find((g) => g.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
+      case "external-beneficiary-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "external_beneficiary",
+          (source.externalBeneficiaries ?? []).find((b) => b.id === m.id) as
+            | Record<string, unknown>
+            | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
     }
   }
 
@@ -571,7 +595,7 @@ function diffTechniqueFields(
 
 function pushTechniqueUpsert(
   drafts: SolverScenarioChangeDraft[],
-  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "expense",
+  targetKind: "account" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "expense" | "gift" | "external_beneficiary",
   existing: Record<string, unknown> | undefined,
   id: string,
   value: Record<string, unknown> | null,

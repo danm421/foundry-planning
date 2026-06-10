@@ -116,6 +116,56 @@ const SAVINGS_RULE_VALUE = z
   })
   .passthrough();
 
+const GRANTOR = z.enum(["client", "spouse", "joint"]);
+const GIFT_EVENT_KIND = z.enum(["outright", "clt_remainder_interest"]);
+const GIFT_RECIPIENT = z.object({
+  kind: z.enum(["entity", "family_member", "external_beneficiary"]),
+  id: z.string().min(1),
+});
+
+const GIFT_VALUE = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("cash-once"),
+    id: z.string().min(1),
+    year: YEAR,
+    amount: MONEY,
+    grantor: GRANTOR,
+    recipient: GIFT_RECIPIENT,
+    crummey: z.boolean(),
+    eventKind: GIFT_EVENT_KIND.optional(),
+  }),
+  z.object({
+    kind: z.literal("asset-once"),
+    id: z.string().min(1),
+    year: YEAR,
+    accountId: z.string().min(1),
+    percent: z.number().min(0).max(1),
+    grantor: GRANTOR,
+    recipient: GIFT_RECIPIENT,
+    amountOverride: MONEY.optional(),
+    eventKind: GIFT_EVENT_KIND.optional(),
+  }),
+  z.object({
+    kind: z.literal("series"),
+    id: z.string().min(1),
+    startYear: YEAR,
+    endYear: YEAR,
+    annualAmount: MONEY,
+    amountMode: z.enum(["fixed", "annual_exclusion"]),
+    inflationAdjust: z.boolean(),
+    grantor: GRANTOR,
+    recipient: GIFT_RECIPIENT,
+    crummey: z.boolean(),
+  }),
+]);
+
+const EXTERNAL_BENEFICIARY_VALUE = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: z.enum(["charity", "individual"]),
+  charityType: z.enum(["public", "private"]),
+});
+
 export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   // Goals
   z.object({
@@ -303,6 +353,16 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("savings-rule-upsert"),
     id: z.string().min(1),
     value: SAVINGS_RULE_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("gift-upsert"),
+    id: z.string().min(1),
+    value: GIFT_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("external-beneficiary-upsert"),
+    id: z.string().min(1),
+    value: EXTERNAL_BENEFICIARY_VALUE.nullable(),
   }),
 ]);
 
