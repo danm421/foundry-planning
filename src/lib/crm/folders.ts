@@ -86,3 +86,94 @@ export async function createFolder(
 
   return folder;
 }
+
+/** Walk up from `candidateParentId`; if we reach `folderId`, the move would
+ *  create a cycle. Also treats self-parenting as a cycle. */
+async function wouldCreateCycle(
+  householdId: string,
+  folderId: string,
+  candidateParentId: string,
+): Promise<boolean> {
+  if (candidateParentId === folderId) return true;
+  let cursor: string | null = candidateParentId;
+  // Bound the walk to the folder count to avoid infinite loops on corrupt data.
+  for (let guard = 0; cursor && guard < 10_000; guard++) {
+    if (cursor === folderId) return true;
+    const ancestor: Pick<CrmDocumentFolderRow, "parentFolderId"> | undefined =
+      await db.query.crmDocumentFolders.findFirst({
+        where: and(
+          eq(crmDocumentFolders.id, cursor),
+          eq(crmDocumentFolders.householdId, householdId),
+        ),
+        columns: { parentFolderId: true },
+      });
+    cursor = ancestor?.parentFolderId ?? null;
+  }
+  return false;
+}
+
+export async function updateFolder(
+  householdId: string,
+  folderId: string,
+  patch: { name?: string; parentFolderId?: string | null },
+): Promise<CrmDocumentFolderRow> {
+  const { orgId } = await requireVaultAccess(householdId);
+
+  const folder = await db.query.crmDocumentFolders.findFirst({
+    where: and(
+      eq(crmDocumentFolders.id, folderId),
+      eq(crmDocumentFolders.householdId, householdId),
+    ),
+  });
+  if (!folder) throw new Error("Folder not found in this household");
+
+  const updates: Partial<typeof crmDocumentFolders.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+
+  if (patch.name !== undefined) {
+    if (folder.isSystem) throw new Error("Cannot rename a system folder");
+    const name = patch.name.trim();
+    if (!name) throw new Error("Folder name is required");
+    updates.name = name;
+  }
+
+  if (patch.parentFolderId !== undefined) {
+    const newParent = patch.parentFolderId;
+    if (newParent) {
+      const exists = await db.query.crmDocumentFolders.findFirst({
+        where: and(
+          eq(crmDocumentFolders.id, newParent),
+          eq(crmDocumentFolders.householdId, householdId),
+        ),
+        columns: { id: true },
+      });
+      if (!exists) throw new Error("Destination folder not found in this household");
+      if (await wouldCreateCycle(householdId, folderId, newParent)) {
+        throw new Error("Move would create a folder cycle (descendant of itself)");
+      }
+    }
+    updates.parentFolderId = newParent;
+  }
+
+  const [updated] = await db
+    .update(crmDocumentFolders)
+    .set(updates)
+    .where(
+      and(
+        eq(crmDocumentFolders.id, folderId),
+        eq(crmDocumentFolders.householdId, householdId),
+      ),
+    )
+    .returning();
+
+  await recordAudit({
+    action: "vault.folder.rename",
+    resourceType: "crm_document_folder",
+    resourceId: folderId,
+    firmId: orgId,
+    metadata: { name: patch.name, parentFolderId: patch.parentFolderId },
+  });
+
+  return updated;
+}

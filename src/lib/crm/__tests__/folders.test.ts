@@ -16,7 +16,7 @@ vi.mock("@clerk/nextjs/server", async () => {
 });
 
 import { auth } from "@clerk/nextjs/server";
-import { listFolders, SYSTEM_FOLDERS, createFolder } from "../folders";
+import { listFolders, SYSTEM_FOLDERS, createFolder, updateFolder } from "../folders";
 
 const ORG = "org_folders_test";
 let householdId: string;
@@ -72,5 +72,45 @@ describe("createFolder", () => {
 
   it("rejects an empty name", async () => {
     await expect(createFolder(householdId, { name: "  " })).rejects.toThrow();
+  });
+});
+
+describe("updateFolder", () => {
+  it("renames a custom folder", async () => {
+    const f = await createFolder(householdId, { name: "Old" });
+    const updated = await updateFolder(householdId, f.id, { name: "New" });
+    expect(updated.name).toBe("New");
+  });
+
+  it("refuses to rename a system folder", async () => {
+    const [plans] = await listFolders(householdId); // "Plans", isSystem
+    await expect(
+      updateFolder(householdId, plans.id, { name: "Renamed" }),
+    ).rejects.toThrow(/system folder/i);
+  });
+
+  it("moves a folder under a new parent", async () => {
+    const a = await createFolder(householdId, { name: "A" });
+    const b = await createFolder(householdId, { name: "B" });
+    const moved = await updateFolder(householdId, b.id, {
+      parentFolderId: a.id,
+    });
+    expect(moved.parentFolderId).toBe(a.id);
+  });
+
+  it("rejects a move that would create a cycle (parent into its own descendant)", async () => {
+    const a = await createFolder(householdId, { name: "A" });
+    const b = await createFolder(householdId, { name: "B", parentFolderId: a.id });
+    // Moving A under B (B is A's child) → cycle.
+    await expect(
+      updateFolder(householdId, a.id, { parentFolderId: b.id }),
+    ).rejects.toThrow(/cycle|descendant/i);
+  });
+
+  it("rejects making a folder its own parent", async () => {
+    const a = await createFolder(householdId, { name: "A" });
+    await expect(
+      updateFolder(householdId, a.id, { parentFolderId: a.id }),
+    ).rejects.toThrow();
   });
 });
