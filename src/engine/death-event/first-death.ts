@@ -402,6 +402,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     deathOrder: 1,
     accounts: prepared.accounts,
     accountBalances: prepared.accountBalances,
+    basisMap: prepared.basisMap,
     will: input.will ?? null,
     familyMembers: input.familyMembers,
     externalBeneficiaries: input.externalBeneficiaries,

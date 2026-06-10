@@ -1,8 +1,10 @@
 import type {
   Account, DeathTransfer, FamilyMember, Will, WillBequest,
 } from "../types";
+import { collectBusinessTree } from "../business/business-tree";
 import { businessConsolidatedValue } from "./business-value";
 import {
+  computeSteppedUpBasis,
   deceasedBusinessAccountShare,
   type ExternalBeneficiarySummary,
   firesAtDeath,
@@ -138,6 +140,10 @@ export function applyBusinessSuccession(input: {
   deathOrder: 1 | 2;
   accounts: Account[];
   accountBalances: Record<string, number>;
+  /** Year-end income-tax basis per account id. Used to §1014-step-up the
+   *  deceased's share of each business CHILD account's appreciated balance —
+   *  the parent's flat-value basis is handled separately via business.basis. */
+  basisMap: Record<string, number>;
   will: Will | null;
   familyMembers: FamilyMember[];
   externalBeneficiaries: ExternalBeneficiarySummary[]; // reserved for future external-recipient labeling; not yet consumed
@@ -209,6 +215,42 @@ export function applyBusinessSuccession(input: {
     basisUpdates.push({
       accountId: business.id, newBasis: oldBasis * (1 - share) + flatValue * share,
     });
+
+    // §1014 step-up on the deceased's share of each CHILD account's appreciated
+    // balance. The gross estate includes the business at its CONSOLIDATED value
+    // (parent flat value + every child balance), so the decedent's share of each
+    // child's FMV must reset its income-tax basis too — otherwise the bulk of an
+    // LLC's value (e.g. an appreciated brokerage sub-account) keeps its pre-death
+    // basis and overstates later capital-gains tax on sale.
+    //
+    // "Joint at first death" follows the parent's titling: the business is held
+    // jointly when, at first death, the surviving spouse co-owns the parent as a
+    // second family-member row (deceased share < 1 and a survivor FM owner
+    // exists). Then half-step-up (JTWROS) / full-step-up (community property)
+    // applies per computeSteppedUpBasis. Child accounts carry titlingType for
+    // schema completeness but inherit ownership from the parent, so the parent's
+    // titlingType governs.
+    const businessHeldJointly =
+      input.survivorFmId != null &&
+      business.owners.some(
+        (o) => o.kind === "family_member" && o.familyMemberId === input.survivorFmId,
+      );
+    const isJointAtFirstDeath = input.deathOrder === 1 && businessHeldJointly;
+    const titlingType =
+      business.titlingType === "community_property" ? "community_property" : "jtwros";
+
+    for (const childAcct of collectBusinessTree(business.id, input.accounts)) {
+      if (childAcct.id === business.id) continue;
+      const fmv = input.accountBalances[childAcct.id] ?? 0;
+      if (fmv <= 0) continue;
+      const oldChildBasis = input.basisMap[childAcct.id] ?? 0;
+      const stepped = computeSteppedUpBasis(childAcct.category, fmv, oldChildBasis, {
+        isJointAtFirstDeath,
+        titlingType,
+      });
+      const newChildBasis = oldChildBasis * (1 - share) + stepped * share;
+      basisUpdates.push({ accountId: childAcct.id, newBasis: newChildBasis });
+    }
   }
 
   // Warn on will bequests whose subject doesn't name a top-level business

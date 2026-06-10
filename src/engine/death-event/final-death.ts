@@ -413,6 +413,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     deathOrder: 2,
     accounts: prepared.accounts,
     accountBalances: prepared.accountBalances,
+    basisMap: prepared.basisMap,
     will: input.will ?? null,
     familyMembers: input.familyMembers,
     externalBeneficiaries: input.externalBeneficiaries,
