@@ -135,4 +135,53 @@ describe("Topbar", () => {
 
     expect(container.querySelector("[role='menu'][aria-label='Ledgers views']")).not.toBeNull();
   });
+
+  it("exposes a sub-report's query-param views in a nested flyout (Estate Tax → Estate Tax/State Death Tax)", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/estate-planning/estate-tax");
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("view=state") as unknown as ReturnType<typeof useSearchParams>,
+    );
+    const { container } = render(
+      <BackNavProvider>
+        <Topbar />
+      </BackNavProvider>,
+    );
+
+    // The nested view menu carries both views with their `?view=` hrefs. Scope to the
+    // menu so the default view's "Estate Tax" link isn't confused with the parent trigger.
+    const viewsMenu = container.querySelector("[role='menu'][aria-label='Estate Tax views']");
+    expect(viewsMenu).not.toBeNull();
+    const viewLink = (label: string) =>
+      Array.from(viewsMenu!.querySelectorAll("a")).find((a) => a.textContent?.trim() === label);
+
+    expect(viewLink("Estate Tax")?.getAttribute("href")).toContain(
+      "/clients/c1/estate-planning/estate-tax?view=estate",
+    );
+    expect(viewLink("State Death Tax")?.getAttribute("href")).toContain(
+      "/clients/c1/estate-planning/estate-tax?view=state",
+    );
+
+    // `?view=state` → State Death Tax is the active view; the default (estate) is not.
+    expect(viewLink("State Death Tax")?.className).toContain("text-accent");
+    expect(viewLink("Estate Tax")?.className).not.toContain("text-accent");
+  });
+
+  it("highlights a query-param sub-report's default view when ?view= is absent", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/estate-planning/estate-tax");
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>,
+    );
+    const { container } = render(
+      <BackNavProvider>
+        <Topbar />
+      </BackNavProvider>,
+    );
+    const viewsMenu = container.querySelector("[role='menu'][aria-label='Estate Tax views']")!;
+    const viewLink = (label: string) =>
+      Array.from(viewsMenu.querySelectorAll("a")).find((a) => a.textContent?.trim() === label);
+
+    // Bare report URL → the defaultView ("estate") highlights; State Death Tax does not.
+    expect(viewLink("Estate Tax")?.className).toContain("text-accent");
+    expect(viewLink("State Death Tax")?.className).not.toContain("text-accent");
+  });
 });

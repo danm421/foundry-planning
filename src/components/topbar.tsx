@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState, type ReactElement } from "react";
 import BackButton from "./back-button";
 import Breadcrumb from "./breadcrumb";
@@ -11,7 +11,17 @@ import { ChevronRightIcon } from "./icons";
 
 /** A `view` is the third tier: an alternate presentation within one sub-report. */
 type View = { label: string; path: string };
-type SubTab = { label: string; path: string; views?: ReadonlyArray<View> };
+type SubTab = {
+  label: string;
+  path: string;
+  views?: ReadonlyArray<View>;
+  /**
+   * For query-param views (`?view=…`), the view id shown when the param is
+   * absent — so the default view highlights on the bare report URL. Omit for
+   * route-based views (Ledgers), which are distinguished by pathname alone.
+   */
+  defaultView?: string;
+};
 
 const TABS: ReadonlyArray<{
   label: string;
@@ -24,7 +34,15 @@ const TABS: ReadonlyArray<{
     label: "Assets",
     href: "assets",
     subTabs: [
-      { label: "Balance Sheet", path: "/balance-sheet-report" },
+      {
+        label: "Balance Sheet",
+        path: "/balance-sheet-report",
+        defaultView: "household",
+        views: [
+          { label: "Household", path: "/balance-sheet-report?view=household" },
+          { label: "By Entity", path: "/balance-sheet-report?view=entities" },
+        ],
+      },
       { label: "Investments", path: "/investments" },
     ],
   },
@@ -33,7 +51,18 @@ const TABS: ReadonlyArray<{
     href: "cashflow",
     subTabs: [
       { label: "Cash Flow", path: "" },
-      { label: "Income Tax", path: "/income-tax" },
+      {
+        label: "Income Tax",
+        path: "/income-tax",
+        defaultView: "income",
+        views: [
+          { label: "Income Breakdown", path: "/income-tax?view=income" },
+          { label: "Federal Tax Breakdown", path: "/income-tax?view=federal" },
+          { label: "State Tax Breakdown", path: "/income-tax?view=state" },
+          { label: "Tax Bracket", path: "/income-tax?view=bracket" },
+          { label: "Medicare & IRMAA", path: "/income-tax?view=medicare" },
+        ],
+      },
       {
         label: "Ledgers",
         path: "/ledgers",
@@ -45,7 +74,16 @@ const TABS: ReadonlyArray<{
       { label: "Monte Carlo", path: "/monte-carlo" },
       { label: "Timeline", path: "/timeline" },
       { label: "Entities", path: "/entities" },
-      { label: "Stock Options", path: "/stock-options" },
+      {
+        label: "Stock Options",
+        path: "/stock-options",
+        defaultView: "vesting",
+        views: [
+          { label: "Vesting Schedule", path: "/stock-options?view=vesting" },
+          { label: "Future Activity", path: "/stock-options?view=activity" },
+          { label: "Tax Impact", path: "/stock-options?view=tax-impact" },
+        ],
+      },
     ],
   },
   { label: "Solver", href: "solver" },
@@ -53,9 +91,34 @@ const TABS: ReadonlyArray<{
     label: "Estate Planning",
     href: "estate-planning",
     subTabs: [
-      { label: "Estate Flow", path: "/estate-flow" },
-      { label: "Estate Tax", path: "/estate-tax" },
-      { label: "Estate Transfer", path: "/estate-transfer" },
+      {
+        label: "Estate Flow",
+        path: "/estate-flow",
+        defaultView: "report",
+        views: [
+          { label: "Report", path: "/estate-flow?view=report" },
+          { label: "Flow Chart", path: "/estate-flow?view=chart" },
+          { label: "Comparison", path: "/estate-flow?view=comparison" },
+        ],
+      },
+      {
+        label: "Estate Tax",
+        path: "/estate-tax",
+        defaultView: "estate",
+        views: [
+          { label: "Estate Tax", path: "/estate-tax?view=estate" },
+          { label: "State Death Tax", path: "/estate-tax?view=state" },
+        ],
+      },
+      {
+        label: "Estate Transfer",
+        path: "/estate-transfer",
+        defaultView: "yearly",
+        views: [
+          { label: "Year-by-Year", path: "/estate-transfer?view=yearly" },
+          { label: "Transfer Detail", path: "/estate-transfer?view=transfers" },
+        ],
+      },
       { label: "Liquidity", path: "/liquidity" },
       { label: "Gift Tax", path: "/gift-tax" },
     ],
@@ -69,6 +132,7 @@ interface TopbarProps {
 
 export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElement {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const withScenario = useScenarioPreservingHref();
   const match = pathname.match(/^\/clients\/([^/]+)/);
   const clientId = match?.[1];
@@ -162,8 +226,21 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
                               <div className="min-w-[150px] rounded-md border border-hair bg-paper py-1 shadow-lg">
                                 {sub.views.map((view) => {
                                   const viewHref = `${href}${view.path}`;
-                                  const viewActive =
-                                    pathname === viewHref || pathname.startsWith(viewHref + "/");
+                                  const [viewPath, viewQuery] = view.path.split("?");
+                                  const viewBase = `${href}${viewPath}`;
+                                  const onViewBase =
+                                    pathname === viewBase || pathname.startsWith(viewBase + "/");
+                                  const viewId = viewQuery
+                                    ? new URLSearchParams(viewQuery).get("view")
+                                    : null;
+                                  // Query-param views (e.g. Income Tax → Federal) share the
+                                  // report's pathname and are told apart by `?view=`; an absent
+                                  // param resolves to the sub-report's `defaultView`. Route-based
+                                  // views (Ledgers) are told apart by pathname alone.
+                                  const viewActive = viewId
+                                    ? onViewBase &&
+                                      (searchParams.get("view") ?? sub.defaultView) === viewId
+                                    : onViewBase;
                                   const viewClassName = viewActive
                                     ? "block px-3 py-1.5 text-[12px] font-medium text-accent bg-card-2"
                                     : "block px-3 py-1.5 text-[12px] text-ink-2 hover:bg-card-2 hover:text-ink";

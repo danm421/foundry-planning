@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useViewParam } from "@/hooks/use-view-param";
 import DialogTabs from "@/components/dialog-tabs";
 import VestingScheduleTable from "@/components/stock-options/vesting-schedule-table";
 import FutureActivityLedger from "@/components/stock-options/future-activity-ledger";
@@ -26,7 +26,10 @@ export default function StockOptionsReportView({
   futureActivityModel: FutureActivityModel;
   taxImpactModel: EquityTaxImpactModel;
 }) {
-  const [activeTab, setActiveTab] = useState<TabId>("vesting");
+  const [activeTab, setActiveTab] = useViewParam<TabId>(
+    ["vesting", "activity", "tax-impact"],
+    "vesting",
+  );
 
   return (
     <div className="rounded-[var(--radius)] border border-hair bg-card">

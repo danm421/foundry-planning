@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useViewParam } from "@/hooks/use-view-param";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { diffWorkingCopy } from "@/lib/estate/estate-flow-diff";
 import {
@@ -155,8 +156,10 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
 
-  const [activeTab, setActiveTab] =
-    useState<"report" | "chart" | "comparison">("report");
+  const [activeTab, setActiveTab] = useViewParam<"report" | "chart" | "comparison">(
+    ["report", "chart", "comparison"],
+    "report",
+  );
   // Residuary ("remainder estate") clause dialog.
   const [remainderDialogOpen, setRemainderDialogOpen] = useState(false);
 

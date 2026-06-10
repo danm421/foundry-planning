@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useViewParam } from "@/hooks/use-view-param";
 import type { FamilyMember } from "@/engine/types";
 import type { LiabilityLike, EntityInfo, ProjectionYearLike } from "./view-model";
 import { buildViewModel } from "./view-model";
@@ -41,7 +42,7 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
   const [year, setYear] = useState(
     selectableYears.includes(defaultYear) ? defaultYear : selectableYears[0],
   );
-  const [tab, setTab] = useState<Tab>("household");
+  const [tab, setTab] = useViewParam<Tab>(["household", "entities"], "household");
 
   const household = useMemo(
     () =>

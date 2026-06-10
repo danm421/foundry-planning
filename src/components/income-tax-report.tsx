@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useViewParam } from "@/hooks/use-view-param";
 import IncomeTaxSkeleton from "@/app/(app)/clients/[id]/cashflow/income-tax/loading-skeleton";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine";
@@ -42,13 +43,17 @@ interface Props {
 
 export default function IncomeTaxReport({ clientId }: Props) {
   const searchParams = useSearchParams();
+  const scenarioParam = searchParams?.get("scenario") ?? null;
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [accountNames, setAccountNames] = useState<Record<string, string>>({});
   const [years, setYears] = useState<ProjectionYear[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<TaxDetailTabId>("income");
+  const [activeTab, setActiveTab] = useViewParam<TaxDetailTabId>(
+    TAX_DETAIL_TABS.map((t) => t.id),
+    "income",
+  );
   const [taxDrill, setTaxDrill] = useState<TaxDrillState | null>(null);
   const [stateDrill, setStateDrill] = useState<{
     year: number;
@@ -203,7 +208,6 @@ export default function IncomeTaxReport({ clientId }: Props) {
 
     async function load() {
       try {
-        const scenarioParam = searchParams?.get("scenario");
         const url = scenarioParam
           ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
           : `/api/clients/${clientId}/projection-data`;
@@ -228,7 +232,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
       }
     }
     load();
-  }, [clientId, searchParams]);
+  }, [clientId, scenarioParam]);
 
   if (loading) {
     return <IncomeTaxSkeleton />;

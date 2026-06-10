@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useViewParam } from "@/hooks/use-view-param";
 import DialogTabs from "@/components/dialog-tabs";
 import EstateTransferReportView from "./estate-transfer-report-view";
 import YearlyEstateReportView from "./yearly-estate-report-view";
@@ -28,7 +28,7 @@ export default function EstateTransferTabbedView({
   ownerDobs,
   retirementYear,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<TabId>("yearly");
+  const [activeTab, setActiveTab] = useViewParam<TabId>(["yearly", "transfers"], "yearly");
 
   return (
     <div className="rounded-[var(--radius)] border border-hair bg-card">
