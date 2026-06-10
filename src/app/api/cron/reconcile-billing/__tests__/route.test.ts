@@ -45,9 +45,13 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 
 const mockGetOrg = vi.fn();
+const mockUpdateOrgMeta = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
-    organizations: { getOrganization: (...a: unknown[]) => mockGetOrg(...a) },
+    organizations: {
+      getOrganization: (...a: unknown[]) => mockGetOrg(...a),
+      updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrgMeta(...a),
+    },
   }),
 }));
 
@@ -55,6 +59,12 @@ const mockSentryCapture = vi.fn();
 vi.mock("@sentry/nextjs", () => ({
   captureMessage: (...a: unknown[]) => mockSentryCapture(...a),
 }));
+
+// Task 4.5b folded auto-heal + audit into the per-firm loop, so any drift case
+// now reaches updateOrganizationMetadata + recordAudit. Mock both so the drift
+// test exercises the real heal path instead of silently falling into the
+// per-firm catch (which would push a spurious "<error>" drift entry).
+vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { GET } from "../route";
 
@@ -66,6 +76,7 @@ beforeEach(() => {
   mockReconcileUpdate.mockReset();
   mockSubsRetrieve.mockReset();
   mockGetOrg.mockReset();
+  mockUpdateOrgMeta.mockReset();
   mockSentryCapture.mockReset();
   process.env.CRON_SECRET = "secret_t";
 });
