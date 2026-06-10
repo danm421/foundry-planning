@@ -300,6 +300,8 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/notes-receivable/[noteId]/extra-payments/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/solver/monte-carlo/route.ts":
+    "MC probability-of-success compute — read-only on DB, no mutation; parity with other solver routes",
   "src/app/api/clients/[id]/solver/project/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/solver/save-scenario/route.ts":

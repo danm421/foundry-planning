@@ -101,7 +101,6 @@ export function useSolverMc({
       }
     })();
     return () => ac.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, source, includeBase, enabled, nonce]);
 
   return state;
