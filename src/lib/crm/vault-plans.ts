@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { db } from "@/db";
 import {
   clients, crmHouseholdDocuments, crmDocumentFolders, scenarios,
@@ -7,6 +7,7 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { ensureSystemFolders } from "./folders";
 import { recordAudit } from "@/lib/audit";
+import type { CrmDocumentRow } from "./documents";
 
 const SAFE_FILENAME_RE = /[^A-Za-z0-9._-]/g;
 const DOT_RUN_RE = /\.{2,}/g;
@@ -26,8 +27,6 @@ export type SavePlanToVaultArgs = {
   uploadedBy?: string | null;
 };
 
-type DocRow = typeof crmHouseholdDocuments.$inferSelect;
-
 /**
  * Best-effort: save a freshly-rendered report PDF into the household's Plans
  * folder as a versioned `generated_plan` row. NEVER throws — a vault failure
@@ -35,7 +34,8 @@ type DocRow = typeof crmHouseholdDocuments.$inferSelect;
  */
 export async function savePlanToVault(
   args: SavePlanToVaultArgs,
-): Promise<DocRow | null> {
+): Promise<CrmDocumentRow | null> {
+  let uploadedKey: string | null = null;
   try {
     const [client] = await db
       .select({ crmHouseholdId: clients.crmHouseholdId })
@@ -70,6 +70,7 @@ export async function savePlanToVault(
       access: "private",
       addRandomSuffix: false,
     });
+    uploadedKey = result.pathname;
 
     const scenarioMatch = scenarioId
       ? eq(crmHouseholdDocuments.scenarioId, scenarioId)
@@ -131,7 +132,15 @@ export async function savePlanToVault(
     return row;
   } catch (err) {
     const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
-    console.error("[vault-plans] savePlanToVault failed (non-fatal):", msg);
+    console.error("[vault-plans] savePlanToVault failed (non-fatal):", {
+      clientId: args.clientId,
+      firmId: args.firmId,
+      reportType: args.reportType,
+      err: msg,
+    });
+    if (uploadedKey) {
+      await del(uploadedKey).catch(() => {});
+    }
     return null;
   }
 }
