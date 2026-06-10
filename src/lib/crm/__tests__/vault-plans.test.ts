@@ -16,7 +16,8 @@ vi.mock("@clerk/nextjs/server", async () => {
 });
 
 import { put } from "@vercel/blob";
-import { savePlanToVault } from "../vault-plans";
+import { savePlanToVault, linkImportFilesToVault } from "../vault-plans";
+import { clientImports, clientImportFiles } from "@/db/schema";
 
 const ORG = "org_plans_test";
 let householdId: string;
@@ -96,5 +97,49 @@ describe("savePlanToVault", () => {
       scenarioId: null, filename: "p.pdf", buffer: Buffer.from("x"),
     });
     expect(row).toBeNull();
+  });
+});
+
+describe("linkImportFilesToVault", () => {
+  async function seedImportWithFiles(n: number) {
+    const [imp] = await db.insert(clientImports).values({
+      clientId, orgId: ORG, mode: "onboarding", createdByUserId: "u",
+    }).returning();
+    for (let i = 0; i < n; i++) {
+      await db.insert(clientImportFiles).values({
+        importId: imp.id, blobUrl: `https://b/${i}`, blobPathname: `imports/${i}`,
+        originalFilename: `stmt-${i}.pdf`, contentHash: `h${i}`, sizeBytes: 100,
+        detectedKind: "pdf",
+      });
+    }
+    return imp.id;
+  }
+
+  it("creates one import_ref per non-deleted file in the Imported Documents folder", async () => {
+    const importId = await seedImportWithFiles(2);
+    const created = await linkImportFilesToVault({ importId, clientId, firmId: ORG });
+    expect(created).toBe(2);
+    const refs = await db.query.crmHouseholdDocuments.findMany({
+      where: and(eq(crmHouseholdDocuments.householdId, householdId),
+                 eq(crmHouseholdDocuments.sourceKind, "import_ref")),
+    });
+    expect(refs).toHaveLength(2);
+    const folder = await db.query.crmDocumentFolders.findFirst({
+      where: and(eq(crmDocumentFolders.householdId, householdId),
+                 eq(crmDocumentFolders.name, "Imported Documents")),
+    });
+    expect(refs.every((r) => r.folderId === folder!.id)).toBe(true);
+    expect(refs.every((r) => r.storageKey === null)).toBe(true);
+  });
+
+  it("is idempotent — re-running does not duplicate links", async () => {
+    const importId = await seedImportWithFiles(2);
+    await linkImportFilesToVault({ importId, clientId, firmId: ORG });
+    const second = await linkImportFilesToVault({ importId, clientId, firmId: ORG });
+    expect(second).toBe(0);
+    const refs = await db.query.crmHouseholdDocuments.findMany({
+      where: eq(crmHouseholdDocuments.sourceKind, "import_ref"),
+    });
+    expect(refs).toHaveLength(2);
   });
 });

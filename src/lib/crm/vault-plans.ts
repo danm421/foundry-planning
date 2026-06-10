@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { db } from "@/db";
 import {
-  clients, crmHouseholdDocuments, crmDocumentFolders, scenarios,
+  clients, crmHouseholdDocuments, crmDocumentFolders, scenarios, clientImportFiles,
 } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { ensureSystemFolders } from "./folders";
@@ -142,5 +142,73 @@ export async function savePlanToVault(
       await del(uploadedKey).catch(() => {});
     }
     return null;
+  }
+}
+
+/**
+ * Best-effort: surface a committed import's files as `import_ref` rows in the
+ * household's "Imported Documents" folder. Idempotent (dedup by importFileId).
+ * NEVER throws — a failure must not break the import commit. Returns the count
+ * of new links created.
+ */
+export async function linkImportFilesToVault(args: {
+  importId: string;
+  clientId: string;
+  firmId: string;
+}): Promise<number> {
+  try {
+    const [client] = await db
+      .select({ crmHouseholdId: clients.crmHouseholdId })
+      .from(clients)
+      .where(and(eq(clients.id, args.clientId), eq(clients.firmId, args.firmId)));
+    if (!client?.crmHouseholdId) return 0;
+    const householdId = client.crmHouseholdId;
+
+    await ensureSystemFolders(householdId, args.firmId);
+    const folder = await db.query.crmDocumentFolders.findFirst({
+      where: and(
+        eq(crmDocumentFolders.householdId, householdId),
+        eq(crmDocumentFolders.isSystem, true),
+        eq(crmDocumentFolders.name, "Imported Documents"),
+      ),
+      columns: { id: true },
+    });
+
+    const files = await db
+      .select()
+      .from(clientImportFiles)
+      .where(and(
+        eq(clientImportFiles.importId, args.importId),
+        isNull(clientImportFiles.deletedAt),
+      ));
+
+    let created = 0;
+    for (const f of files) {
+      const existing = await db.query.crmHouseholdDocuments.findFirst({
+        where: and(
+          eq(crmHouseholdDocuments.householdId, householdId),
+          eq(crmHouseholdDocuments.importFileId, f.id),
+        ),
+        columns: { id: true },
+      });
+      if (existing) continue;
+      await db.insert(crmHouseholdDocuments).values({
+        householdId,
+        filename: f.originalFilename,
+        storageProvider: "vercel-blob",
+        storageKey: null,
+        mimeType: "application/octet-stream",
+        sizeBytes: f.sizeBytes,
+        folderId: folder?.id ?? null,
+        sourceKind: "import_ref",
+        importFileId: f.id,
+      });
+      created++;
+    }
+    return created;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
+    console.error("[vault-plans] linkImportFilesToVault failed (non-fatal):", msg);
+    return 0;
   }
 }
