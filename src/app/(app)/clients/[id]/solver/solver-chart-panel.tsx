@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
@@ -30,6 +30,62 @@ const ESTATE_TAB: { id: ChartTab; label: string } = {
   id: "estate",
   label: "Estate",
 };
+
+// Resizable chart area. Default sits below the old fixed 300/360px so more of
+// the data-entry grid shows on first paint; the advisor can drag it taller and
+// the choice persists per browser.
+const MIN_CHART_HEIGHT = 140;
+const MAX_CHART_HEIGHT = 560;
+const DEFAULT_CHART_HEIGHT = 240;
+const CHART_HEIGHT_KEY = "foundry:solver:chartHeight";
+
+const clampChartHeight = (h: number) =>
+  Math.min(MAX_CHART_HEIGHT, Math.max(MIN_CHART_HEIGHT, h));
+
+// A tiny external store backed by localStorage, read through
+// useSyncExternalStore. This keeps the persisted height working without a mount
+// effect (which would trip react-hooks/set-state-in-effect) and without an SSR
+// hydration mismatch — the server snapshot is the default and the client
+// reconciles to the stored value after hydration.
+let cachedChartHeight: number | null = null;
+const chartHeightListeners = new Set<() => void>();
+
+function readStoredChartHeight(): number {
+  try {
+    const raw = window.localStorage.getItem(CHART_HEIGHT_KEY);
+    if (raw !== null) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return clampChartHeight(n);
+    }
+  } catch {
+    // localStorage unavailable (private mode) — fall through to the default.
+  }
+  return DEFAULT_CHART_HEIGHT;
+}
+
+function getChartHeightSnapshot(): number {
+  if (cachedChartHeight === null) cachedChartHeight = readStoredChartHeight();
+  return cachedChartHeight;
+}
+
+function subscribeChartHeight(onChange: () => void): () => void {
+  chartHeightListeners.add(onChange);
+  return () => chartHeightListeners.delete(onChange);
+}
+
+// `persist` is false during a drag (re-render only) and true on release / nudge
+// / reset, so we write to localStorage once per gesture rather than per pixel.
+function setChartHeightStore(height: number, persist: boolean): void {
+  cachedChartHeight = clampChartHeight(height);
+  if (persist) {
+    try {
+      window.localStorage.setItem(CHART_HEIGHT_KEY, String(cachedChartHeight));
+    } catch {
+      // localStorage unavailable — keep the in-memory value only.
+    }
+  }
+  for (const listener of chartHeightListeners) listener();
+}
 
 interface Props {
   currentProjection: ProjectionYear[];
@@ -67,6 +123,39 @@ export function SolverChartPanel({
   );
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
   const [showTable, setShowTable] = useState(false);
+  const chartHeight = useSyncExternalStore(
+    subscribeChartHeight,
+    getChartHeightSnapshot,
+    () => DEFAULT_CHART_HEIGHT,
+  );
+
+  // Pointer-drag resize: track the gesture with window listeners so the drag
+  // keeps working when the cursor leaves the thin handle. Re-render on every
+  // move; persist once on release.
+  const startChartResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = chartHeight;
+    const onMove = (ev: PointerEvent) => {
+      setChartHeightStore(startHeight + (ev.clientY - startY), false);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setChartHeightStore(getChartHeightSnapshot(), true);
+    };
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const nudgeChartHeight = (delta: number) =>
+    setChartHeightStore(chartHeight + delta, true);
+
+  const resetChartHeight = () => setChartHeightStore(DEFAULT_CHART_HEIGHT, true);
 
   const overTime = useNeedOverTime(clientId);
   const { cancel: cancelOverTime } = overTime;
@@ -135,7 +224,7 @@ export function SolverChartPanel({
   return (
     <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
       {tab === "portfolio" ? (
-        <div style={{ height: 300 }}>
+        <div style={{ height: chartHeight }}>
           <PortfolioBarsChart
             current={currentProjection}
             baseline={baseProjection}
@@ -143,7 +232,7 @@ export function SolverChartPanel({
         </div>
       ) : null}
       {tab === "cashflow" ? (
-        <div style={{ height: 300 }}>
+        <div style={{ height: chartHeight }}>
           <SolverCashFlowChart years={currentProjection} />
         </div>
       ) : null}
@@ -167,7 +256,7 @@ export function SolverChartPanel({
         />
       ) : null}
       {tab === "estate" ? (
-        <div style={{ height: 360 }}>
+        <div style={{ height: chartHeight }}>
           <EstateComparisonChart
             baseProjection={baseProjection}
             proposedProjection={currentProjection}
@@ -175,6 +264,33 @@ export function SolverChartPanel({
             proposedTree={workingTree}
             isMarried={isMarried}
           />
+        </div>
+      ) : null}
+
+      {tab === "portfolio" || tab === "cashflow" || tab === "estate" ? (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize chart height"
+          aria-valuenow={chartHeight}
+          aria-valuemin={MIN_CHART_HEIGHT}
+          aria-valuemax={MAX_CHART_HEIGHT}
+          tabIndex={0}
+          title="Drag to resize · double-click to reset"
+          onPointerDown={startChartResize}
+          onDoubleClick={resetChartHeight}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              nudgeChartHeight(-16);
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              nudgeChartHeight(16);
+            }
+          }}
+          className="group mt-1 flex h-3 cursor-ns-resize touch-none items-center justify-center rounded outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          <span className="h-[3px] w-8 rounded-full bg-hair-2 transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
         </div>
       ) : null}
 
