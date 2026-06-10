@@ -45,6 +45,7 @@ import {
   deleteCrmDocument,
   updateCrmDocument,
   resolveDocumentBlobPathname,
+  listDocumentVersions,
   MAX_SIZE_BYTES,
 } from "../documents";
 import { clientImports, clientImportFiles, clients } from "@/db/schema";
@@ -324,5 +325,32 @@ describe("resolveDocumentBlobPathname", () => {
       importFileId: null,
     }).returning();
     expect(await resolveDocumentBlobPathname(ref)).toBeNull();
+  });
+});
+
+describe("listDocumentVersions", () => {
+  it("returns the full version group ordered newest-first", async () => {
+    const groupId = crypto.randomUUID();
+    const base = {
+      householdId, storageProvider: "vercel-blob", sourceKind: "generated_plan" as const,
+      versionGroupId: groupId, reportType: "presentation",
+    };
+    await db.insert(crmHouseholdDocuments).values([
+      { ...base, filename: "v1", storageKey: "k1", versionNo: 1, isCurrentVersion: false },
+      { ...base, filename: "v2", storageKey: "k2", versionNo: 2, isCurrentVersion: true },
+    ]);
+    const current = await db.query.crmHouseholdDocuments.findFirst({
+      where: and(eq(crmHouseholdDocuments.versionGroupId, groupId), eq(crmHouseholdDocuments.isCurrentVersion, true)),
+    });
+    const versions = await listDocumentVersions(current!.id);
+    expect(versions.map((v) => v.versionNo)).toEqual([2, 1]);
+  });
+
+  it("returns a single-element list for a non-grouped document", async () => {
+    vi.mocked(put).mockResolvedValue({ pathname: "crm/own" } as never);
+    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    const versions = await listDocumentVersions(doc.id);
+    expect(versions).toHaveLength(1);
+    expect(versions[0].id).toBe(doc.id);
   });
 });

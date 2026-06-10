@@ -234,6 +234,24 @@ export async function updateCrmDocument(
   return updated;
 }
 
+export async function listDocumentVersions(
+  documentId: string,
+): Promise<CrmDocumentRow[]> {
+  const doc = await db.query.crmHouseholdDocuments.findFirst({
+    where: eq(crmHouseholdDocuments.id, documentId),
+  });
+  if (!doc) throw new Error("Document not found");
+  await requireVaultAccess(doc.householdId);
+  if (!doc.versionGroupId) return [doc];
+  return db.query.crmHouseholdDocuments.findMany({
+    where: and(
+      eq(crmHouseholdDocuments.householdId, doc.householdId),
+      eq(crmHouseholdDocuments.versionGroupId, doc.versionGroupId),
+    ),
+    orderBy: [desc(crmHouseholdDocuments.versionNo)],
+  });
+}
+
 /**
  * Where does this document's bytes live? Uploads and generated plans carry
  * their own `storageKey`. `import_ref` rows have a null storageKey and point
