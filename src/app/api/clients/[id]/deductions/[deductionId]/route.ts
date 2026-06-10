@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, clientDeductions } from "@/db/schema";
+import { clientDeductions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function ownsDeduction(clientId: string, deductionId: string, firmId: string): Promise<boolean> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return false;
+  if (!(await verifyClientAccess(clientId, firmId))) return false;
 
   const [row] = await db
     .select()
