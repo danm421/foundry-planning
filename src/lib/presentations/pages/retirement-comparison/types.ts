@@ -1,4 +1,5 @@
 // src/lib/presentations/pages/retirement-comparison/types.ts
+import type { TaxBuckets } from "./tax-buckets";
 
 export interface RetirementComparisonAiConfig {
   tone: "concise" | "detailed" | "plain";
@@ -76,11 +77,23 @@ export interface ConfidencePoint {
 
 export interface ConfidenceBlock { show: boolean; points: ConfidencePoint[] }
 
-export interface StatCard {
-  show: boolean;
+/** One page-1 headline KPI: the same metric for both plans, plus a signed
+ *  delta. `show` is false when the underlying figure is unavailable. */
+export interface KpiCard {
+  label: string;
   base: string;       // formatted
   scenario: string;   // formatted
-  delta: string;      // formatted signed delta or note ("Funded for life")
+  delta: string;      // formatted signed delta, e.g. "+16 pts" / "+$23.6M"
+  show: boolean;
+}
+
+/** Liquid portfolio assets at one horizon, split by tax treatment, for both
+ *  plans. Drives the page-1 at-retirement comparison and the page-2 condensed
+ *  end-of-life table. Zero buckets are hidden at render time. */
+export interface TaxTreatmentBreakdown {
+  year: number;
+  base: TaxBuckets;
+  scenario: TaxBuckets;
 }
 
 export interface RetirementComparisonPageData {
@@ -88,13 +101,16 @@ export interface RetirementComparisonPageData {
   subtitle: string;
   isEmpty: boolean;
   verdict: VerdictBanner;
+  /** Page-1 headline strip — the metrics that improve (success, legacy, max
+   *  spend, downside). Always built; individual cards self-hide when missing. */
+  kpis: KpiCard[];
   overlay: OverlayBar[];
-  matrix: PortfolioMatrix | null;
+  /** Page-1 composition comparison: assets by tax treatment at retirement. */
+  atRetirement: TaxTreatmentBreakdown;
+  /** Page-2 condensed matrix: assets by tax treatment at end of life. */
+  atEndOfLife: TaxTreatmentBreakdown;
   maxSpend: MaxSpendBlock;
   confidence: ConfidenceBlock;
-  legacy: StatCard;       // always show
-  taxSaved: StatCard;     // show only when favorable
-  lastsToAge: StatCard;   // show only when favorable
   showPortfolioMatrix: boolean;
   showAiSummary: boolean;
   aiMarkdown: string;

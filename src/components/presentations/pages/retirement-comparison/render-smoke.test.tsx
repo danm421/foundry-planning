@@ -1,40 +1,71 @@
 // src/components/presentations/pages/retirement-comparison/render-smoke.test.tsx
 import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { renderToBuffer, Document } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { SECTION_ACCENTS } from "@/lib/presentations/theme";
 import { RetirementComparisonPagePdf } from "./page-pdf";
-import type { RetirementComparisonPageData } from "@/lib/presentations/pages/retirement-comparison/types";
+import type {
+  RetirementComparisonPageData,
+  OverlayBar,
+  ConfidencePoint,
+  MaxSpendPoint,
+} from "@/lib/presentations/pages/retirement-comparison/types";
+
+// Cooper-representative synthetic series so the rendered preview matches the
+// shape of a real report (45-year projection, retirement at 2037).
+const overlay: OverlayBar[] = Array.from({ length: 45 }, (_, i) => {
+  const year = 2026 + i;
+  const base = 1_000_000 * Math.pow(1.04, i);
+  const scn = 1_000_000 * Math.pow(1.082, i);
+  return { year, floor: Math.min(base, scn), scenarioAhead: Math.max(0, scn - base), baseAhead: Math.max(0, base - scn) };
+});
+
+const maxSpendSeries: MaxSpendPoint[] = Array.from({ length: 34 }, (_, i) => {
+  const year = 2037 + i;
+  const f = Math.pow(1.02, year - 2026);
+  return { year, base: Math.round(92_000 * f), scenario: Math.round(214_000 * f) };
+});
+
+const confidence: ConfidencePoint[] = Array.from({ length: 34 }, (_, i) => {
+  const year = 2037 + i;
+  const bMid = 4_000_000 * Math.pow(1.03, i);
+  const sMid = 6_000_000 * Math.pow(1.05, i);
+  return {
+    year,
+    baseP20: bMid * 0.14, baseP50: bMid, baseP80: bMid * 1.7,
+    scnP20: sMid * 0.46, scnP50: sMid, scnP80: sMid * 1.6,
+  };
+});
 
 const data: RetirementComparisonPageData = {
   title: "Retirement Comparison",
-  subtitle: "Base Case vs. Roth + Delay RE",
+  subtitle: "Base Case vs. New Plan",
   isEmpty: false,
-  verdict: { headline: "91% chance your plan fully funds your life — up from 72%." },
-  overlay: [
-    { year: 2026, floor: 90, scenarioAhead: 30, baseAhead: 0 },
-    { year: 2027, floor: 80, scenarioAhead: 70, baseAhead: 0 },
+  verdict: { headline: "99% chance your plan fully funds your life — up from 83%." },
+  kpis: [
+    { label: "Probability of success", base: "83%", scenario: "99%", delta: "+16 pts", show: true },
+    { label: "Legacy to heirs", base: "$10.8M", scenario: "$34.4M", delta: "+$23.6M", show: true },
+    { label: "Max sustainable spend", base: "$92K/yr", scenario: "$214K/yr", delta: "+$122K/yr", show: true },
+    { label: "Downside ending balance", base: "$1.5M", scenario: "$13.9M", delta: "+$12.4M", show: true },
   ],
-  matrix: {
-    retirementYear: 2028, endOfLifeYear: 2060,
-    baseAtRetirement: { total: 4_100_000, cash: 400_000, retirement: 2_000_000, taxable: 1_700_000 },
-    scenarioAtRetirement: { total: 4_300_000, cash: 420_000, retirement: 2_100_000, taxable: 1_780_000 },
-    baseAtEnd: { total: 2_000_000, cash: 200_000, retirement: 900_000, taxable: 900_000 },
-    scenarioAtEnd: { total: 5_300_000, cash: 500_000, retirement: 2_600_000, taxable: 2_200_000 },
+  overlay,
+  atRetirement: {
+    year: 2037,
+    base: { cash: 352_000, taxable: 1_700_000, preTax: 2_050_000, roth: 100_000, hsa: 50_000 },
+    scenario: { cash: 683_000, taxable: 3_500_000, preTax: 1_600_000, roth: 600_000, hsa: 80_000 },
   },
-  maxSpend: { show: true, baseToday: 90_000, scenarioToday: 110_000, series: [
-    { year: 2028, base: 90_000, scenario: 110_000 },
-    { year: 2029, base: 92_250, scenario: 112_750 },
-  ] },
-  confidence: { show: true, points: [
-    { year: 2028, baseP20: 700_000, baseP50: 900_000, baseP80: 1_100_000, scnP20: 850_000, scnP50: 1_050_000, scnP80: 1_300_000 },
-    { year: 2029, baseP20: 690_000, baseP50: 910_000, baseP80: 1_150_000, scnP20: 870_000, scnP50: 1_080_000, scnP80: 1_350_000 },
-  ] },
-  legacy: { show: true, base: "$2.0M", scenario: "$5.3M", delta: "+$3.3M" },
-  taxSaved: { show: true, base: "$1.2M", scenario: "$0.9M", delta: "−$0.3M" },
-  lastsToAge: { show: true, base: "age 86", scenario: "Funded for life", delta: "" },
-  showPortfolioMatrix: true, showAiSummary: true,
-  aiMarkdown: "Delaying real estate and adding Roth conversions lifts your probability of success from 72% to 91%.",
+  atEndOfLife: {
+    year: 2070,
+    base: { cash: 736_000, taxable: 5_700_000, preTax: 4_200_000, roth: 150_000, hsa: 0 },
+    scenario: { cash: 29_000, taxable: 20_400_000, preTax: 12_000_000, roth: 1_900_000, hsa: 0 },
+  },
+  maxSpend: { show: true, baseToday: 92_000, scenarioToday: 214_000, series: maxSpendSeries },
+  confidence: { show: true, points: confidence },
+  showPortfolioMatrix: true,
+  showAiSummary: true,
+  aiMarkdown:
+    "Your New Plan is meaningfully stronger: the probability of success rises from 83% to 99%, and total portfolio assets grow from $4.2M to $6.5M by retirement and from $10.8M to $34.4M by the end of life. The downside picture improves too, with the poor-market ending balance moving from $1.5M to $13.9M, and the plan can support much higher retirement spending at the same confidence level — $214K versus $92K. That improvement reflects several changes working together: delaying retirement to 67 adds earning and compounding years, while the added business cash, real estate changes, asset sales, and more aggressive reinvestment increase the capital working for you. The Roth contributions and Roth conversion shift some tax cost earlier — lifetime taxes rise from $3.7M to $4.0M — but in return create more tax-free growth and flexibility later, helping support the larger ending balances.",
 };
 
 describe("RetirementComparisonPagePdf render", () => {
@@ -43,12 +74,13 @@ describe("RetirementComparisonPagePdf render", () => {
     const buf = await renderToBuffer(
       <Document>
         {RetirementComparisonPagePdf({
-          data, firmName: "Acme Advisors", clientName: "Smith", reportDate: "June 4, 2026",
-          pageIndex: 1, totalPages: 1, accent: SECTION_ACCENTS.Comparison,
+          data, firmName: "Ethos Financial Group", clientName: "Cooper Sample", reportDate: "June 10, 2026",
+          pageIndex: 1, totalPages: 2, accent: SECTION_ACCENTS.Comparison,
         })}
       </Document>,
     );
     expect(buf.byteLength).toBeGreaterThan(1000);
+    if (process.env.EMIT_PDF) writeFileSync(process.env.EMIT_PDF, buf);
   });
 
   it("renders the empty state without throwing", async () => {
@@ -57,8 +89,8 @@ describe("RetirementComparisonPagePdf render", () => {
       <Document>
         {RetirementComparisonPagePdf({
           data: { ...data, isEmpty: true },
-          firmName: "Acme", clientName: "Smith", reportDate: "June 4, 2026",
-          pageIndex: 1, totalPages: 1, accent: SECTION_ACCENTS.Comparison,
+          firmName: "Ethos", clientName: "Cooper Sample", reportDate: "June 10, 2026",
+          pageIndex: 1, totalPages: 2, accent: SECTION_ACCENTS.Comparison,
         })}
       </Document>,
     );

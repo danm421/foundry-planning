@@ -1,16 +1,16 @@
 import type { BuildDataContext } from "@/components/presentations/registry";
-import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { Account, ClientData, ProjectionYear } from "@/engine/types";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
 import { buildRetirementComparisonMetrics } from "./metrics";
-import { lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
-import { deriveRetirementSummary } from "@/lib/retirement/derive-retirement-summary";
+import { buildTaxBuckets, type TaxBuckets } from "./tax-buckets";
 import { fmtUsdCompact } from "./format";
 import type {
   RetirementComparisonOptions,
   RetirementComparisonPageData,
   MaxSpendPoint,
   ConfidencePoint,
-  StatCard,
+  KpiCard,
+  TaxTreatmentBreakdown,
 } from "./types";
 
 function retirementYearOf(clientData: ClientData): number | null {
@@ -20,19 +20,20 @@ function retirementYearOf(clientData: ClientData): number | null {
   return birthYear + retirementAge;
 }
 
-const HIDDEN_CARD: StatCard = { show: false, base: "", scenario: "", delta: "" };
+const EMPTY_BUCKETS: TaxBuckets = { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa: 0 };
+const EMPTY_BREAKDOWN: TaxTreatmentBreakdown = { year: 0, base: EMPTY_BUCKETS, scenario: EMPTY_BUCKETS };
 
 const EMPTY = (title: string): RetirementComparisonPageData => ({
   title, subtitle: "", isEmpty: true,
   verdict: { headline: "" },
-  overlay: [], matrix: null,
+  kpis: [],
+  overlay: [],
+  atRetirement: EMPTY_BREAKDOWN,
+  atEndOfLife: EMPTY_BREAKDOWN,
   maxSpend: { show: false, baseToday: 0, scenarioToday: 0, series: [] },
   confidence: { show: false, points: [] },
-  legacy: HIDDEN_CARD, taxSaved: HIDDEN_CARD, lastsToAge: HIDDEN_CARD,
   showPortfolioMatrix: false, showAiSummary: false, aiMarkdown: "",
 });
-
-const TAX_SAVED_THRESHOLD = 2000;
 
 function verdictHeadline(base: number | null, scn: number | null): string {
   if (base == null || scn == null) return "Your plan compared to your current path.";
@@ -43,13 +44,20 @@ function verdictHeadline(base: number | null, scn: number | null): string {
   return `${s}% chance your plan fully funds your life (was ${b}%).`;
 }
 
-/** "Money lasts to age" string per plan; "Funded for life" when never short. */
-function lastsLabel(years: ProjectionYear[]): { label: string; age: number | null } {
-  const summary = deriveRetirementSummary(years);
-  if (summary.fullyFunded || summary.ageAssetsLastUntil == null) {
-    return { label: "Funded for life", age: null };
-  }
-  return { label: `age ${summary.ageAssetsLastUntil.client}`, age: summary.ageAssetsLastUntil.client };
+/** The projection year matching `year`, or the last year if it runs short. */
+function yearAt(years: ProjectionYear[], year: number): ProjectionYear {
+  return years.find((r) => r.year === year) ?? years[years.length - 1];
+}
+
+/** p20 (poor-market) ending balance from the last MC year, or null. */
+function endingP20(byYear: { balance: { p20: number } }[] | undefined): number | null {
+  if (!byYear || byYear.length === 0) return null;
+  return byYear[byYear.length - 1].balance.p20;
+}
+
+/** Signed compact-USD delta, e.g. "+$23.6M" / "−$1.2M". */
+function signedUsd(delta: number): string {
+  return `${delta >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(delta))}`;
 }
 
 export function buildRetirementComparisonData(
@@ -111,41 +119,73 @@ export function buildRetirementComparisonData(
   }
   const confidenceShow = points.length > 0;
 
-  // ── Stat cards ──
-  const legacyDelta = metrics.matrix.scenarioAtEnd.total - metrics.matrix.baseAtEnd.total;
-  const legacy: StatCard = {
-    show: true,
-    base: fmtUsdCompact(metrics.matrix.baseAtEnd.total),
-    scenario: fmtUsdCompact(metrics.matrix.scenarioAtEnd.total),
-    delta: `${legacyDelta >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(legacyDelta))}`,
+  // ── Portfolio assets by tax treatment (per plan, at each horizon) ──
+  const baseAccounts: Account[] = baseBundle.clientData.accounts ?? [];
+  const scnAccounts: Account[] = scnBundle.clientData.accounts ?? [];
+  const atRetirement: TaxTreatmentBreakdown = {
+    year: retirementYear,
+    base: buildTaxBuckets(yearAt(baseYears, retirementYear), baseAccounts),
+    scenario: buildTaxBuckets(yearAt(scenarioYears, retirementYear), scnAccounts),
+  };
+  const atEndOfLife: TaxTreatmentBreakdown = {
+    year: endOfLifeYear,
+    base: buildTaxBuckets(yearAt(baseYears, endOfLifeYear), baseAccounts),
+    scenario: buildTaxBuckets(yearAt(scenarioYears, endOfLifeYear), scnAccounts),
   };
 
-  const baseTax = lifetimeTaxes(baseYears);
-  const scnTax = lifetimeTaxes(scenarioYears);
-  const taxSaving = baseTax - scnTax;
-  const taxSaved: StatCard = taxSaving > TAX_SAVED_THRESHOLD
-    ? { show: true, base: fmtUsdCompact(baseTax), scenario: fmtUsdCompact(scnTax), delta: `−${fmtUsdCompact(taxSaving)}` }
-    : HIDDEN_CARD;
+  // ── Page-1 headline KPI strip — the metrics that improve ──
+  const successPts =
+    baseSuccess != null && scnSuccess != null
+      ? Math.round(scnSuccess * 100) - Math.round(baseSuccess * 100)
+      : null;
+  const baseLegacy = metrics.matrix.baseAtEnd.total;
+  const scnLegacy = metrics.matrix.scenarioAtEnd.total;
+  const baseDownside = endingP20(baseBundle.monteCarlo?.summary.byYear);
+  const scnDownside = endingP20(scnBundle.monteCarlo?.summary.byYear);
+  const maxSpendAvailable = baseBundle.maxSpend != null && scnBundle.maxSpend != null;
 
-  const baseLasts = lastsLabel(baseYears);
-  const scnLasts = lastsLabel(scenarioYears);
-  const scnLastsLonger =
-    (scnLasts.age == null && baseLasts.age != null) ||
-    (scnLasts.age != null && baseLasts.age != null && scnLasts.age > baseLasts.age);
-  const lastsToAge: StatCard = scnLastsLonger
-    ? { show: true, base: baseLasts.label, scenario: scnLasts.label, delta: "" }
-    : HIDDEN_CARD;
+  const kpis: KpiCard[] = [
+    {
+      label: "Probability of success",
+      base: baseSuccess == null ? "—" : `${Math.round(baseSuccess * 100)}%`,
+      scenario: scnSuccess == null ? "—" : `${Math.round(scnSuccess * 100)}%`,
+      delta: successPts == null ? "" : `${successPts >= 0 ? "+" : "−"}${Math.abs(successPts)} pts`,
+      show: successPts != null,
+    },
+    {
+      label: "Legacy to heirs",
+      base: fmtUsdCompact(baseLegacy),
+      scenario: fmtUsdCompact(scnLegacy),
+      delta: signedUsd(scnLegacy - baseLegacy),
+      show: true,
+    },
+    {
+      label: "Max sustainable spend",
+      base: `${fmtUsdCompact(baseToday)}/yr`,
+      scenario: `${fmtUsdCompact(scnToday)}/yr`,
+      delta: `${signedUsd(scnToday - baseToday)}/yr`,
+      show: maxSpendAvailable,
+    },
+    {
+      label: "Downside ending balance",
+      base: baseDownside == null ? "—" : fmtUsdCompact(baseDownside),
+      scenario: scnDownside == null ? "—" : fmtUsdCompact(scnDownside),
+      delta: baseDownside == null || scnDownside == null ? "" : signedUsd(scnDownside - baseDownside),
+      show: baseDownside != null && scnDownside != null,
+    },
+  ];
 
   return {
     title,
     subtitle: `Base Case vs. ${scnBundle.scenarioLabel}`,
     isEmpty: false,
     verdict: { headline: verdictHeadline(baseSuccess, scnSuccess) },
+    kpis,
     overlay: metrics.overlay,
-    matrix: metrics.matrix,
+    atRetirement,
+    atEndOfLife,
     maxSpend: { show: maxSpendShow, baseToday, scenarioToday: scnToday, series },
     confidence: { show: confidenceShow, points },
-    legacy, taxSaved, lastsToAge,
     showPortfolioMatrix: options.showPortfolioMatrix,
     showAiSummary: options.showAiSummary,
     aiMarkdown: options.ai.generatedText,
