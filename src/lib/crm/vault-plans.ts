@@ -75,6 +75,13 @@ export async function savePlanToVault(
     const scenarioMatch = scenarioId
       ? eq(crmHouseholdDocuments.scenarioId, scenarioId)
       : isNull(crmHouseholdDocuments.scenarioId);
+    // Read-then-write: this lookup runs before the demote+insert transaction
+    // and there is no DB unique constraint on the current-version tuple, so two
+    // concurrent exports of the same (report, scenario) could both read the same
+    // `current` and produce two isCurrentVersion=true rows. Accepted benign
+    // TOCTOU (same class as linkImportFilesToVault's dedup): exports are
+    // rate-limited + user-initiated, and this helper is best-effort. A partial
+    // unique index WHERE is_current_version would close it if it ever matters.
     const current = await db.query.crmHouseholdDocuments.findFirst({
       where: and(
         eq(crmHouseholdDocuments.householdId, householdId),
