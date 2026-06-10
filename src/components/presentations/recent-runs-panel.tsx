@@ -69,19 +69,22 @@ const POLL_MS = 3000;
 
 export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
   const [runs, setRuns] = useState<Run[] | null>(null);
+  const [pollNonce, setPollNonce] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchRuns = useCallback(async () => {
+  const fetchRuns = useCallback(async (): Promise<Run[] | null> => {
     try {
       const res = await fetch(`/api/clients/${clientId}/generation-runs`, {
         cache: "no-store",
       });
-      if (!res.ok) return;
+      if (!res.ok) return null;
       const json = await res.json();
-      if (!Array.isArray(json.runs)) return;
-      setRuns(json.runs as Run[]);
+      if (!Array.isArray(json.runs)) return null;
+      const next = json.runs as Run[];
+      setRuns(next);
+      return next;
     } catch {
-      // transient — keep last good state, next poll retries
+      return null; // transient — keep last good state, next poll retries
     }
   }, [clientId]);
 
@@ -94,34 +97,31 @@ export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify(run.requestPayload),
         });
-        await fetchRuns();
+        setPollNonce((n) => n + 1); // restart the poll cycle so the new queued run is tracked
       } catch {
         // best-effort — next poll/refresh will reflect state
       }
     },
-    [clientId, fetchRuns],
+    [clientId],
   );
 
   // Poll while anything is in flight; stop when all settled.
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      await fetchRuns();
+      const latest = await fetchRuns();
       if (cancelled) return;
-      setRuns((cur) => {
-        const inFlight = cur?.some(
-          (r) => r.status === "queued" || r.status === "running",
-        );
-        if (inFlight) timer.current = setTimeout(tick, POLL_MS);
-        return cur;
-      });
+      const inFlight = latest?.some(
+        (r) => r.status === "queued" || r.status === "running",
+      );
+      if (inFlight) timer.current = setTimeout(tick, POLL_MS);
     };
     tick();
     return () => {
       cancelled = true;
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [fetchRuns, refreshKey]);
+  }, [fetchRuns, refreshKey, pollNonce]);
 
   return (
     <aside className="w-full lg:w-80 shrink-0">

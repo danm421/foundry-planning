@@ -5,8 +5,6 @@ import { PresentationsLauncher } from "../launcher";
 
 const originalFetch = global.fetch;
 beforeEach(() => {
-  URL.createObjectURL = vi.fn(() => "blob:mock-url");
-  URL.revokeObjectURL = vi.fn();
   global.fetch = vi.fn(async (url: string) => {
     if (String(url).includes("/presentations/runs")) {
       return new Response(JSON.stringify({ runId: "r1" }), { status: 202 });
