@@ -2,9 +2,9 @@ import Link from "next/link";
 import type { ReactElement } from "react";
 import { Card, CardBody, CardFooter, CardHeader } from "@/components/card";
 import MoneyText from "@/components/money-text";
-import SectionMarker from "@/components/section-marker";
 import { PieChartIcon } from "@/components/icons";
 import EmptyBlock from "./empty-block";
+import PanelHeading from "./panel-heading";
 import type { Rollup } from "@/lib/overview/get-asset-allocation-by-type";
 
 interface Props {
@@ -18,7 +18,7 @@ const SWATCH_CLASS: Record<string, string> = {
   cash: "bg-alloc-cash",
   real_estate: "bg-alloc-re",
   alternatives: "bg-alloc-alt",
-  other: "bg-ink-4",
+  other: "bg-alloc-other",
 };
 
 const LABELS: Record<string, string> = {
@@ -45,10 +45,10 @@ export default function AllocationPanel({ clientId, rollup }: Props): ReactEleme
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-0.5">
-          <SectionMarker num="04" label="Asset allocation" />
-          <p className="text-[14px] font-semibold text-ink">Asset allocation</p>
-        </div>
+        <PanelHeading
+          icon={<PieChartIcon width={16} height={16} />}
+          title="Asset allocation"
+        />
       </CardHeader>
       <CardBody className="flex flex-col gap-4">
         <div className="flex h-[10px] gap-[2px] overflow-hidden">

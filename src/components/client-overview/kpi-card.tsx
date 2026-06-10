@@ -7,7 +7,6 @@ import DeltaPill from "./delta-pill";
 
 interface KpiCardProps {
   href: string;
-  num: string;
   categoryLabel: string;
   category: Category;
   label: string;
@@ -26,11 +25,7 @@ export default function KpiCard(p: KpiCardProps): ReactElement {
         <CardBody className="flex flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-0.5">
-              <CategoryChip
-                num={p.num}
-                label={p.categoryLabel}
-                category={p.category}
-              />
+              <CategoryChip label={p.categoryLabel} category={p.category} />
               <p className="text-[12.5px] text-ink-3">{p.label}</p>
             </div>
           </div>

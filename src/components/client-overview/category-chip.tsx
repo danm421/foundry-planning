@@ -9,37 +9,38 @@ export type Category =
   | "transactions";
 
 interface CategoryChipProps {
-  num: string;
   label: string;
   category: Category;
   className?: string;
 }
 
-const CATEGORY_TEXT_CLASS: Record<Category, string> = {
-  income: "text-cat-income",
-  portfolio: "text-cat-portfolio",
-  life: "text-cat-life",
-  tax: "text-cat-tax",
-  insurance: "text-cat-insurance",
-  transactions: "text-cat-transactions",
+const CATEGORY_DOT_CLASS: Record<Category, string> = {
+  income: "bg-cat-income",
+  portfolio: "bg-cat-portfolio",
+  life: "bg-cat-life",
+  tax: "bg-cat-tax",
+  insurance: "bg-cat-insurance",
+  transactions: "bg-cat-transactions",
 };
 
 export default function CategoryChip({
-  num,
   label,
   category,
   className,
 }: CategoryChipProps): ReactElement {
   const classes = [
-    "font-mono text-xs font-semibold uppercase tracking-[0.08em]",
+    "inline-flex items-center gap-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-4",
     className,
   ]
     .filter(Boolean)
     .join(" ");
   return (
     <span className={classes}>
-      <span className={CATEGORY_TEXT_CLASS[category]}>§.{num}</span>
-      <span className="text-ink-4"> · {label.toUpperCase()}</span>
+      <span
+        aria-hidden
+        className={`inline-block h-1.5 w-1.5 rounded-full ${CATEGORY_DOT_CLASS[category]}`}
+      />
+      {label.toUpperCase()}
     </span>
   );
 }

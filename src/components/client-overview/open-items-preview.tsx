@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { Card, CardBody, CardFooter, CardHeader } from "@/components/card";
-import SectionMarker from "@/components/section-marker";
+import { ListCheckIcon } from "@/components/icons";
+import PanelHeading from "./panel-heading";
 import type { OpenItemRow } from "@/lib/overview/list-open-items";
 
 interface Props {
@@ -40,10 +41,11 @@ export default function OpenItemsPreview({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-0.5">
-          <SectionMarker num="06" label="Open items preview" />
-          <p className="text-[14px] font-semibold text-ink">Open items</p>
-        </div>
+        <PanelHeading
+          icon={<ListCheckIcon width={16} height={16} />}
+          title="Open items"
+          meta={totalOpen > 0 ? `${totalOpen} open` : undefined}
+        />
       </CardHeader>
       <CardBody className="flex flex-col">
         {items.length === 0 ? (

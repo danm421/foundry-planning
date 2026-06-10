@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useThemeName, chartChrome } from "@/lib/chart-colors";
-import { colors, colorsLight } from "@/brand";
+import { useThemeName, chartChrome, dataPalette } from "@/lib/chart-colors";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -36,7 +35,8 @@ interface Props {
 export default function PortfolioGrowthChart({ years }: Props) {
   const theme = useThemeName();
   const chrome = chartChrome(theme);
-  const seriesColor = theme === "light" ? colorsLight.cat.portfolio : colors.cat.portfolio;
+  // Deep Jewel blue — the "portfolio" anchor of the chart palette.
+  const seriesColor = dataPalette(theme).blue;
 
   const data = useMemo(
     () => ({

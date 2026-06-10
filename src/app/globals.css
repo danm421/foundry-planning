@@ -58,12 +58,16 @@
   --color-inherit: #355267;
   --color-heirs: #5d6a45;
 
-  /* Allocation palette (semantic aliases — follow the category theme) */
-  --color-alloc-equities: var(--color-cat-income);
-  --color-alloc-fi: var(--color-cat-portfolio);
-  --color-alloc-cash: var(--color-cat-life);
-  --color-alloc-re: var(--color-cat-tax);
-  --color-alloc-alt: var(--color-cat-insurance);
+  /* Allocation palette (semantic aliases — Deep Jewel data family).
+     Aliased to --data-* (not the brighter category hues) so portfolio
+     breakdowns read as one calm, premium chart family. --data-* is defined
+     per-theme below, so these follow dark/light automatically. */
+  --color-alloc-equities: var(--data-blue);
+  --color-alloc-fi: var(--data-teal);
+  --color-alloc-cash: var(--data-yellow);
+  --color-alloc-re: var(--data-orange);
+  --color-alloc-alt: var(--data-purple);
+  --color-alloc-other: var(--data-grey);
 
   /* Deep Jewel data palette — six anchors + three fills, dark theme. */
   --data-red: #c0392b;
@@ -224,6 +228,7 @@
   --color-alloc-cash: var(--color-alloc-cash);
   --color-alloc-re: var(--color-alloc-re);
   --color-alloc-alt: var(--color-alloc-alt);
+  --color-alloc-other: var(--color-alloc-other);
 
   --color-data-red: var(--data-red);
   --color-data-blue: var(--data-blue);

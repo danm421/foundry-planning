@@ -1,7 +1,8 @@
 import type { ReactElement } from "react";
 import Link from "next/link";
 import { Card, CardBody, CardHeader } from "@/components/card";
-import SectionMarker from "@/components/section-marker";
+import { FlowIcon } from "@/components/icons";
+import PanelHeading from "./panel-heading";
 import { formatAuditRow } from "@/lib/overview/format-audit";
 import type { AuditRowSummary } from "@/lib/overview/list-audit-rows";
 
@@ -49,15 +50,17 @@ export default function RecentActivityPanel({ clientId, rows }: Props): ReactEle
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-0.5">
-          <SectionMarker num="08" label="Recent activity" />
-          <Link
-            href={`/clients/${clientId}/activity`}
-            className="text-[14px] font-semibold text-ink underline-offset-2 hover:underline"
-          >
-            Recent activity
-          </Link>
-        </div>
+        <PanelHeading
+          icon={<FlowIcon width={16} height={16} />}
+          title={
+            <Link
+              href={`/clients/${clientId}/activity`}
+              className="underline-offset-2 hover:underline"
+            >
+              Recent activity
+            </Link>
+          }
+        />
       </CardHeader>
       <CardBody>
         {rows.length === 0 ? (

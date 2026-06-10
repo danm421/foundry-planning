@@ -4,7 +4,6 @@ export function MonteCarloKpiSkeleton({ clientId }: { clientId: string }) {
   return (
     <KpiCard
       href={`/clients/${clientId}/cashflow/monte-carlo`}
-      num="03"
       categoryLabel="Resilience"
       category="life"
       label="Monte Carlo success"

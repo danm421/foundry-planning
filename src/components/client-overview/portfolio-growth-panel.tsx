@@ -2,10 +2,10 @@ import Link from "next/link";
 import type { ReactElement } from "react";
 import { Card, CardBody, CardFooter, CardHeader } from "@/components/card";
 import MoneyText from "@/components/money-text";
-import SectionMarker from "@/components/section-marker";
 import { ChartLineIcon } from "@/components/icons";
 import type { ProjectionYear } from "@/engine";
 import EmptyBlock from "./empty-block";
+import PanelHeading from "./panel-heading";
 import PortfolioGrowthChart from "./portfolio-growth-chart";
 
 interface Props {
@@ -37,15 +37,11 @@ export default function PortfolioGrowthPanel({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-0.5">
-          <SectionMarker num="03" label="Portfolio assets growth" />
-          <p className="text-[14px] font-semibold text-ink">
-            Portfolio assets growth{" "}
-            <span className="text-[12.5px] font-normal text-ink-3">
-              · {startYear}–{endYear}
-            </span>
-          </p>
-        </div>
+        <PanelHeading
+          icon={<ChartLineIcon width={16} height={16} />}
+          title="Portfolio assets growth"
+          meta={`${startYear}–${endYear}`}
+        />
       </CardHeader>
       <CardBody className="flex flex-col gap-4">
         <div className="flex gap-6">

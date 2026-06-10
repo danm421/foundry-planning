@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { Card, CardBody, CardHeader } from "@/components/card";
-import SectionMarker from "@/components/section-marker";
-import { AlertCircleIcon, CheckCircleIcon } from "@/components/icons";
+import { AlertCircleIcon, BellIcon, CheckCircleIcon } from "@/components/icons";
+import PanelHeading from "./panel-heading";
 import type { Alert } from "@/lib/alerts";
 
 interface Props {
@@ -28,10 +28,7 @@ export default function AlertsStrip({ alerts, loading }: Props): ReactElement {
     return (
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-0.5">
-            <SectionMarker num="07" label="Alerts" />
-            <p className="text-[14px] font-semibold text-ink">Alerts</p>
-          </div>
+          <PanelHeading icon={<BellIcon width={16} height={16} />} title="Alerts" />
         </CardHeader>
         <CardBody className="flex flex-col gap-2">
           <div className="h-[18px] w-[60%] rounded-md bg-ink-4/15 animate-pulse" aria-hidden />
@@ -45,10 +42,11 @@ export default function AlertsStrip({ alerts, loading }: Props): ReactElement {
     return (
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-0.5">
-            <SectionMarker num="07" label="Alerts · 0 firing" />
-            <p className="text-[14px] font-semibold text-ink">Alerts</p>
-          </div>
+          <PanelHeading
+            icon={<BellIcon width={16} height={16} />}
+            title="Alerts"
+            meta="All clear"
+          />
         </CardHeader>
         <CardBody className="flex flex-col items-start gap-2">
           <span className="text-good">
@@ -66,10 +64,11 @@ export default function AlertsStrip({ alerts, loading }: Props): ReactElement {
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-0.5">
-          <SectionMarker num="07" label={`Alerts · ${alerts.length} firing`} />
-          <p className="text-[14px] font-semibold text-ink">Alerts</p>
-        </div>
+        <PanelHeading
+          icon={<BellIcon width={16} height={16} />}
+          title="Alerts"
+          meta={`${alerts.length} firing`}
+        />
       </CardHeader>
       <CardBody className="flex flex-col">
         {alerts.map((a, idx) => {
