@@ -30,6 +30,9 @@ export interface AccountLike {
    *  (`category === "business"`, `parentAccountId == null`). Drives the
    *  entity-card type chip on the By-Entity tab. */
   businessType?: string | null;
+  /** Set when the account is tagged into a revocable trust. Drives the
+   *  balance-sheet badge. Does not affect grouping or values. */
+  revocableTrustName?: string | null;
 }
 
 export interface LiabilityLike {
@@ -142,6 +145,8 @@ export interface AssetRow {
    *  drifted to ~0% / ~100%. False for single-owner accounts and flat
    *  business-value rows. */
   accountHasMultipleOwners: boolean;
+  /** Trust name when the source account is tagged into a revocable trust. */
+  revocableTrustName?: string | null;
 }
 
 export interface AssetCategoryGroup {
@@ -328,6 +333,8 @@ interface SliceCommon {
    *  drift to ~0% / ~100% in a given year remains visible. Single-owner
    *  accounts hide the label (it's always 100% by definition). */
   accountHasMultipleOwners: boolean;
+  /** Trust name when the source account is tagged into a revocable trust. */
+  revocableTrustName?: string | null;
 }
 
 interface FamilySlice extends SliceCommon {
@@ -493,6 +500,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         value: sliceValue,
         hasLinkedMortgage,
         accountHasMultipleOwners: acct.owners.length > 1,
+        revocableTrustName: acct.revocableTrustName ?? null,
       };
 
       if (owner.kind === "family_member") {
@@ -1148,6 +1156,7 @@ function sliceToRow(slice: Slice): AssetRow {
       hasLinkedMortgage: slice.hasLinkedMortgage,
       isFlatBusinessValue: false,
       accountHasMultipleOwners: slice.accountHasMultipleOwners,
+      revocableTrustName: slice.revocableTrustName ?? null,
     };
   }
   return {
@@ -1162,6 +1171,7 @@ function sliceToRow(slice: Slice): AssetRow {
     hasLinkedMortgage: slice.hasLinkedMortgage,
     isFlatBusinessValue: false,
     accountHasMultipleOwners: slice.accountHasMultipleOwners,
+    revocableTrustName: slice.revocableTrustName ?? null,
   };
 }
 

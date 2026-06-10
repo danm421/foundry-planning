@@ -211,7 +211,6 @@ describe("view-adapters", () => {
         id: "e1",
         includeInPortfolio: true,
         isGrantor: true,
-        trustSubType: "revocable",
         isIrrevocable: false,
         exemptionConsumed: 100_000,
         grantor: "client",

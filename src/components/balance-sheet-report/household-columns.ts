@@ -46,6 +46,7 @@ export interface OwnerColumnRow extends OwnerColumns {
   key: string;
   name: string;
   hasLinkedMortgage: boolean;
+  revocableTrustName?: string | null;
 }
 
 export interface OwnerColumnCategory extends OwnerColumns {
@@ -177,6 +178,7 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
       key: acct.id,
       name: acct.name,
       hasLinkedMortgage: cat === "realEstate" && linkedPropertyIds.has(acct.id),
+      revocableTrustName: acct.revocableTrustName ?? null,
       ...cols,
     });
   }

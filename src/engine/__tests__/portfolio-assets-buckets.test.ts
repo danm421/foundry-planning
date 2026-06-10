@@ -13,7 +13,6 @@ const entities: EntitySummary[] = [
     id: ENT_IIP,
     name: "Revocable Trust",
     entityType: "trust",
-    trustSubType: "revocable",
     isIrrevocable: false,
     isGrantor: true,
     includeInPortfolio: true,

@@ -232,8 +232,7 @@ export const entityCreateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["isIrrevocable"],
-        message:
-          "isIrrevocable must match trustSubType (revocable → false; all others → true)",
+        message: "isIrrevocable must match trustSubType (every trust subtype is irrevocable)",
       });
     }
 
@@ -313,8 +312,7 @@ export const entityUpdateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["isIrrevocable"],
-        message:
-          "isIrrevocable must match trustSubType (revocable → false; all others → true)",
+        message: "isIrrevocable must match trustSubType (every trust subtype is irrevocable)",
       });
     }
 

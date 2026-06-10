@@ -53,6 +53,7 @@ import {
   holdingAssetClassOverrides,
   medicareCoverage,
   securityAssetClassWeights,
+  revocableTrusts,
 } from "@/db/schema";
 import type {
   AccountFlowOverride,
@@ -236,6 +237,13 @@ export const loadClientDataWithContext = cache(
       // medicare_coverage is client-scoped (shared across scenarios), not scenario-scoped.
       db.select().from(medicareCoverage).where(eq(medicareCoverage.clientId, id)),
     ]);
+
+    // revocable_trusts is client-scoped (not scenario-scoped) — one fetch, reused below
+    const revocableTrustRows = await db
+      .select({ id: revocableTrusts.id, name: revocableTrusts.name })
+      .from(revocableTrusts)
+      .where(eq(revocableTrusts.clientId, id));
+    const revocableTrustNameById = new Map(revocableTrustRows.map((t) => [t.id, t.name]));
 
     // Load schedule overrides for all incomes, expenses, and savings rules
     const incomeIds = incomeRows.map((i) => i.id);
@@ -731,8 +739,8 @@ export const loadClientDataWithContext = cache(
       accountPropertyTaxFromInflation,
     };
 
-    const mappedAccounts = accountRows.map((a) =>
-      resolveAccountFromRaw(
+    const mappedAccounts = accountRows.map((a) => {
+      const acct = resolveAccountFromRaw(
         {
           id: a.id,
           name: a.name,
@@ -765,8 +773,12 @@ export const loadClientDataWithContext = cache(
           parentAccountId: a.parentAccountId,
         },
         resolutionCtx,
-      ),
-    );
+      );
+      acct.revocableTrustName = a.revocableTrustId
+        ? (revocableTrustNameById.get(a.revocableTrustId) ?? null)
+        : null;
+      return acct;
+    });
 
     const mappedIncomes = incomeRows.map((i) =>
       resolveIncomeFromRaw(
@@ -1066,7 +1078,15 @@ export const loadClientDataWithContext = cache(
       crummeyPowers: e.crummeyPowers,
       grantorStatusEndYear: e.grantorStatusEndYear ?? undefined,
       beneficiaries: trustBens.get(e.id) ?? undefined,
-      trustSubType: e.trustSubType ?? undefined,
+      // `revocable` is a deprecated DB-enum orphan (revocable trusts are now a
+      // tag, not an entity) and is no longer part of the TrustSubType union.
+      // Legacy rows may still carry it; map it to undefined so the engine sees a
+      // valid subtype. The engine's revocable behavior keys off isIrrevocable,
+      // which is loaded faithfully below, so dropping the cosmetic subtype is safe.
+      trustSubType:
+        e.trustSubType != null && e.trustSubType !== "revocable"
+          ? e.trustSubType
+          : undefined,
       isIrrevocable: e.isIrrevocable ?? undefined,
       trustee: e.trustee ?? undefined,
       exemptionConsumed: exemptionByEntity.get(e.id) ?? 0,

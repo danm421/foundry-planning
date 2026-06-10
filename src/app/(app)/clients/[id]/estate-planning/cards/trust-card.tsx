@@ -15,7 +15,6 @@ interface Props {
 const SUBTYPE_PILL_CLASS: Record<string, string> = {
   ilit: "bg-[var(--color-warn)]/15 text-[var(--color-warn)]",
   slat: "bg-[var(--color-accent)]/15 text-[var(--color-accent-ink)]",
-  rev: "bg-[var(--color-cat-portfolio)]/15 text-[var(--color-cat-portfolio)]",
   irrev: "bg-[var(--color-cat-life)]/15 text-[var(--color-cat-life)]",
 };
 

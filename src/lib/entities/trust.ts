@@ -1,5 +1,4 @@
 export const TRUST_SUB_TYPES = [
-  "revocable",
   "irrevocable",
   "ilit",
   "clt",
@@ -8,10 +7,6 @@ export const TRUST_SUB_TYPES = [
 ] as const;
 export type TrustSubType = (typeof TRUST_SUB_TYPES)[number];
 
-export const REVOCABLE_SUB_TYPES: ReadonlySet<TrustSubType> = new Set([
-  "revocable",
-]);
-
-export function deriveIsIrrevocable(subType: TrustSubType): boolean {
-  return !REVOCABLE_SUB_TYPES.has(subType);
+export function deriveIsIrrevocable(_subType: TrustSubType): boolean {
+  return true; // every remaining trust subtype is irrevocable
 }

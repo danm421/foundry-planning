@@ -167,7 +167,11 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
     grantor: (e.grantor as "client" | "spouse" | null) ?? null,
     beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
-    trustSubType: e.trustSubType ?? null,
+    // `revocable` is a deprecated DB-enum orphan no longer in the TrustSubType
+    // union (revocable trusts are modeled as a tag now). Legacy rows may still
+    // carry it — map it to null so it fits the narrowed Entity type.
+    trustSubType:
+      e.trustSubType != null && e.trustSubType !== "revocable" ? e.trustSubType : null,
     isIrrevocable: e.isIrrevocable ?? null,
     trustee: e.trustee ?? null,
     trustEnds: (e.trustEnds as "client_death" | "spouse_death" | "survivorship" | null) ?? null,

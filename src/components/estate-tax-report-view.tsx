@@ -468,7 +468,7 @@ function DecedentBreakdown({
               key={`${line.accountId ?? line.liabilityId ?? line.entityId ?? "line"}-${idx}`}
               label={line.label}
               hint={line.percentage !== 1 ? pct.format(line.percentage) : undefined}
-              badge={line.isProbate ? "Probate" : undefined}
+              badge={line.revocableTrustName ?? (line.isProbate ? "Probate" : undefined)}
               amount={line.amount}
             />
           ))}

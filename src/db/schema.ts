@@ -247,6 +247,11 @@ export const trustEndsEnum = pgEnum("trust_ends", [
 ]);
 
 export const trustSubTypeEnum = pgEnum("trust_sub_type", [
+  // `revocable` is a DEPRECATED orphan: revocable trusts are now modeled as a
+  // tag (separate table), not as an entity. The value is intentionally retained
+  // in this pgEnum so drizzle-kit does NOT emit a DROP VALUE migration — the
+  // live Postgres column still allows it and legacy rows may hold it. It is no
+  // longer a member of the app-level TrustSubType union (see lib/entities/trust).
   "revocable",
   "irrevocable",
   "ilit",
@@ -254,13 +259,14 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "idgt",
   "crt",
 ]);
-// Compile-time guard: trustSubTypeEnum and engine/types.ts TrustSubType (via lib/entities/trust)
-// must stay in sync. Adding/removing a member on either side breaks tsc.
-// See canonical union: src/lib/entities/trust.ts → TRUST_SUB_TYPES / TrustSubType.
+// Compile-time guard: every app-level TrustSubType member must exist in this DB
+// enum (forward direction stays strict — a new union member missing from the DB
+// enum breaks tsc). The reverse direction is NOT asserted, because the DB enum
+// intentionally carries the deprecated `revocable` orphan that the app union
+// dropped. See canonical union: src/lib/entities/trust.ts → TRUST_SUB_TYPES.
 type _TrustSubTypeEnumValues = (typeof trustSubTypeEnum.enumValues)[number];
-const _assertTrustSubTypeInSync: TrustSubType = null as unknown as _TrustSubTypeEnumValues;
-const _assertTrustSubTypeInSyncReverse: _TrustSubTypeEnumValues = null as unknown as TrustSubType;
-void _assertTrustSubTypeInSync; void _assertTrustSubTypeInSyncReverse;
+const _assertTrustSubTypeInEnum: _TrustSubTypeEnumValues = null as unknown as TrustSubType;
+void _assertTrustSubTypeInEnum;
 
 export const trustTermTypeEnum = pgEnum("trust_term_type", [
   "years",
@@ -833,8 +839,9 @@ export const entities = pgTable("entities", {
   // Trust-only. Nullable on non-trust rows (LLC / S-Corp / etc.). API-level
   // rule: required when entity_type = 'trust', forbidden otherwise.
   trustSubType: trustSubTypeEnum("trust_sub_type"),
-  // Trust-only. Must stay consistent with trust_sub_type (revocable → false;
-  // all others → true). API-enforced via deriveIsIrrevocable.
+  // Trust-only. Every supported trust sub-type is irrevocable, so this is
+  // always true for valid trusts (API-enforced via deriveIsIrrevocable). The
+  // deprecated `revocable` enum value is a DB-only orphan and never set here.
   isIrrevocable: boolean("is_irrevocable"),
   // Free-text display-only field. Co-trustees as comma-separated.
   trustee: text("trustee"),
@@ -1435,6 +1442,23 @@ export const holdingPriceRefreshRuns = pgTable("holding_price_refresh_runs", {
   failures: jsonb("failures"), // [{ stage, ref, message }]
 });
 
+// A revocable living trust is NOT an entity in this app — it is a lightweight,
+// named probate-skip tag. Assets keep their existing owner; tagging one only
+// (a) excludes it from the probate total and (b) shows the trust's name as a
+// badge on the estate-tax + balance-sheet reports. Client-scoped (mirrors
+// entities); membership lives on accounts.revocable_trust_id (scenario-scoped).
+export const revocableTrusts = pgTable("revocable_trusts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  clientIdx: index("revocable_trusts_client_idx").on(t.clientId),
+}));
+
 export const accounts = pgTable("accounts", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1520,6 +1544,12 @@ export const accounts = pgTable("accounts", {
     onDelete: "set null",
   }),
   notes: text("notes"),
+  // Revocable-trust membership tag. Null = not in a revocable trust. ON DELETE
+  // SET NULL so deleting a trust just untags its accounts (no asset loss).
+  revocableTrustId: uuid("revocable_trust_id").references(
+    (): AnyPgColumn => revocableTrusts.id,
+    { onDelete: "set null" },
+  ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({

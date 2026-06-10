@@ -47,6 +47,7 @@ const baseRow: typeof accounts.$inferSelect = {
   flowMode: "annual",
   businessTaxTreatment: null,
   parentAccountId: null,
+  revocableTrustId: null,
   plaidItemId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
