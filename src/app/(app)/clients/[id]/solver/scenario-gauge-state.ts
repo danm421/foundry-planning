@@ -6,7 +6,7 @@ export type ScenarioGaugeDisplayState =
   | "error";
 
 interface Input {
-  /** Status of the shared Monte Carlo controller. */
+  /** Status of the cached Monte Carlo run (useSolverMc). */
   mcStatus: "idle" | "loading" | "ready" | "error";
   /** Working-plan success rate from the latest MC result, if any. */
   mcWorkingSuccess: number | null;
