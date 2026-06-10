@@ -115,7 +115,11 @@ import {
   LEGACY_FM_CLIENT,
   LEGACY_FM_SPOUSE,
 } from "./ownership";
-import { resolveEntityFlowAmount } from "./entity-flows";
+import {
+  resolveEntityFlowAmount,
+  computeBusinessEntityNetIncome,
+  resolveDistributionPercent,
+} from "./entity-flows";
 import { type CharityBucket } from "./charitable-deduction";
 import {
   emptyCharityCarryforward,
@@ -3744,6 +3748,74 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         label: `Distribution from ${business.name}`,
         sourceId: business.id,
         counterpartyId: business.id, // received from the business
+      });
+    }
+
+    // ── Phase 3 (entity model): EntitySummary business distribution ──────────
+    // Account-model counterpart of the loop above, for businesses modeled as
+    // EntitySummary rows (entityType llc|s_corp|c_corp|partnership|foundation|
+    // other) rather than top-level business *accounts*. Their income/expense
+    // already landed on the entity's own checking via resolveCashAccount in the
+    // income/expense routing above (ownerEntityId rows). Without this sweep the
+    // net income strands in entity checking forever, annualDistribution is
+    // structurally 0, and the entity's value/basis overstate every year
+    // (BUG #17). Same mechanics as the account-model sweep: debit the entity's
+    // cash account, credit the primary family-member owner's default cash
+    // (else household defaultChecking). Trusts use the 1041/grantor passes and
+    // are excluded.
+    for (const entity of currentEntities) {
+      if (entity.entityType === "trust") continue;
+      const flowMode = entity.flowMode ?? "annual";
+      const netIncome = computeBusinessEntityNetIncome(
+        entity.id,
+        currentIncomes,
+        allExpenses,
+        year,
+        data.entityFlowOverrides ?? [],
+        flowMode,
+        data.client,
+      );
+      // Losses → no distribution (P3-8). The loss stays in the entity's
+      // checking (and is liquidated / overdrafted by the per-entity gap-fill,
+      // same as the account model).
+      if (netIncome <= 0) continue;
+      const distPercent = resolveDistributionPercent(
+        entity,
+        year,
+        data.entityFlowOverrides ?? [],
+      );
+      const distAmount = netIncome * distPercent;
+      if (distAmount === 0) continue;
+      // Destination: primary family-member owner's default cash account, else
+      // household defaultChecking — mirrors the account-model resolution.
+      const primaryOwner = (entity.owners ?? [])
+        .filter((o) => o.kind === "family_member")
+        .slice()
+        .sort((x, y) => y.percent - x.percent)[0] as
+        | { kind: "family_member"; familyMemberId: string; percent: number }
+        | undefined;
+      const destinationId =
+        (primaryOwner
+          ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId)
+          : undefined) ?? defaultChecking?.id;
+      const entityCashId = resolveCashAccount(entity.id);
+      // Debit the entity's cash account (only if one exists — without it the
+      // retained share has nowhere to land and the credit flows straight from
+      // entity to owner, same as the account model's no-child-cash mode).
+      if (entityCashId) {
+        creditCash(entityCashId, -distAmount, {
+          category: "entity_distribution",
+          label: `Distribution from ${entity.name ?? "Entity"}`,
+          sourceId: entity.id,
+          counterpartyId: destinationId,
+        });
+      }
+      // Credit owner's default cash account.
+      creditCash(destinationId, distAmount, {
+        category: "entity_distribution",
+        label: `Distribution from ${entity.name ?? "Entity"}`,
+        sourceId: entity.id,
+        counterpartyId: entity.id,
       });
     }
 

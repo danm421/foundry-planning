@@ -548,6 +548,115 @@ describe("Phase 3: distribution routes to owner's default cash account", () => {
   });
 });
 
+describe("Phase 3 (entity model): EntitySummary business distributes to household", () => {
+  // BUG #17 regression. Entity-model businesses (EntitySummary rows with
+  // entityType "llc"|"s_corp"|"partnership", income/expense tagged via
+  // ownerEntityId) never distributed: the engine wrote NO entity_distribution
+  // entries for them, so annualDistribution was structurally 0 and
+  // endingTotalValue compounded by the full net income forever.
+  //
+  // Setup: LLC entity, $1M flat value (0% growth), distributionPolicyPercent
+  // 0.6. Income $400k and expense $100k tagged via ownerEntityId → net income
+  // $300k. Distribution = $300k × 0.6 = $180k; retained = $120k.
+  const llcEntity: EntitySummary = {
+    id: "llc-ent",
+    name: "Entity-Model LLC",
+    includeInPortfolio: true,
+    isGrantor: false,
+    entityType: "llc",
+    distributionPolicyPercent: 0.6,
+    distributionMode: null,
+    flowMode: "annual",
+    value: 1_000_000,
+    basis: 1_000_000,
+    valueGrowthRate: 0,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+  const entChecking: Account = {
+    id: "llc-ent-checking",
+    name: "LLC Entity Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value: 0,
+    basis: 0,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: "llc-ent", percent: 1 }],
+    isDefaultChecking: true,
+  } as Account;
+  const entIncome: Income = {
+    id: "ei1",
+    type: "business",
+    name: "LLC Entity Revenue",
+    annualAmount: 400_000,
+    startYear: 2026,
+    endYear: 2050,
+    growthRate: 0,
+    owner: "client",
+    ownerEntityId: "llc-ent",
+  };
+  const entExpense: Expense = {
+    id: "ex1",
+    type: "other",
+    name: "LLC Entity Expense",
+    annualAmount: 100_000,
+    startYear: 2026,
+    endYear: 2050,
+    growthRate: 0,
+    ownerEntityId: "llc-ent",
+  };
+
+  function mkEntityData(): ClientData {
+    return {
+      client,
+      accounts: [hhChecking, entChecking],
+      incomes: [entIncome],
+      expenses: [entExpense],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [llcEntity],
+      giftEvents: [],
+    };
+  }
+
+  it("writes an entity_distribution debit of $180k on the entity's cash account", () => {
+    const y0 = runProjection(mkEntityData())[0];
+    const entEntries = y0.accountLedgers["llc-ent-checking"].entries;
+    const distDebit = entEntries.find(
+      (e) => e.category === "entity_distribution" && e.amount < 0,
+    );
+    expect(distDebit).toBeDefined();
+    expect(distDebit!.amount).toBeCloseTo(-180_000, 0);
+  });
+
+  it("credits the household checking with a matching $180k distribution", () => {
+    const y0 = runProjection(mkEntityData())[0];
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    const distCredit = hhEntries.find(
+      (e) => e.category === "entity_distribution" && e.amount > 0,
+    );
+    expect(distCredit).toBeDefined();
+    expect(distCredit!.amount).toBeCloseTo(180_000, 0);
+  });
+
+  it("entity cashflow row: annualDistribution $180k, retainedEarnings $120k, endingTotalValue $1.12M", () => {
+    const y0 = runProjection(mkEntityData())[0];
+    const row = y0.entityCashFlow.get("llc-ent");
+    expect(row).toBeDefined();
+    expect(row!.kind).toBe("business");
+    if (row!.kind !== "business") throw new Error("expected business row");
+    expect(row!.annualDistribution).toBeCloseTo(180_000, 0);
+    expect(row!.retainedEarnings).toBeCloseTo(120_000, 0);
+    // Pre-fix: endingTotalValue = $1M + full $300k net income = $1.3M.
+    // Post-fix: $1M + retained $120k = $1.12M.
+    expect(row!.endingTotalValue).toBeCloseTo(1_120_000, 0);
+  });
+});
+
 describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => {
   // $100k income, $150k expense → -$50k loss.
   const lossExpense: Expense = {
