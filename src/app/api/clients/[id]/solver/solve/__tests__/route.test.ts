@@ -150,4 +150,26 @@ describe("POST /api/clients/[id]/solver/solve", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it("threads extraAccountMixes into loadMonteCarloData", async () => {
+    vi.mocked(solveTarget).mockResolvedValueOnce({
+      status: "converged",
+      solvedValue: 100,
+      achievedPoS: 0.85,
+      iterations: 1,
+      finalProjection: [],
+    } as never);
+    const body = {
+      source: "base",
+      mutations: [],
+      target: { kind: "savings-contribution", accountId: "11111111-1111-1111-1111-111111111111" },
+      targetPoS: 0.85,
+      extraAccountMixes: [
+        { accountId: "11111111-1111-1111-1111-111111111111", mix: [{ assetClassId: "ac-1", weight: 0.6 }] },
+      ],
+    };
+    await POST(makeRequest(body), ctx);
+    // 4th positional arg of loadMonteCarloData is extraAccountMixes
+    expect(vi.mocked(loadMonteCarloData).mock.calls[0][3]).toEqual(body.extraAccountMixes);
+  });
 });
