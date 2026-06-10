@@ -240,6 +240,10 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/crm/households/[id]/documents/[docId]/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/folders/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/folders/[folderId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/crm/import/preview/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/crm/import/commit/route.ts":

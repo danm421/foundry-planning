@@ -61,7 +61,7 @@ export default function FolderContentsPane({
   const [renameTarget, setRenameTarget] = useState<VaultDoc | null>(null);
   const [moveTarget, setMoveTarget] = useState<VaultDoc | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VaultDoc | null>(null);
-  const [staleIds, setStaleIds] = useState<Set<string>>(new Set());
+  const [staleIds, setStaleIds] = useState<Set<string>>(() => new Set());
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

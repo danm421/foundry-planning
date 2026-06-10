@@ -68,7 +68,7 @@ export default function FolderTreePane({
 
   // Track explicitly-collapsed ids; everything else is open by default so the
   // structure is visible. This survives async folder loads cleanly.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [menuId, setMenuId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [moveTarget, setMoveTarget] = useState<VaultFolder | null>(null);
