@@ -18,7 +18,7 @@ import { isPolicyInForce } from "./insurance-in-force";
 export type Ordering = "primaryFirst" | "spouseFirst";
 
 export interface YearlyEstateReportInput {
-  projection: ProjectionResult;
+  projection: Pick<ProjectionResult, "years">;
   clientData: ClientData;
   ordering: Ordering;
   ownerNames: { clientName: string; spouseName: string | null };
@@ -372,7 +372,7 @@ function cumulativeCharityGifts(
 }
 
 function pickAvailableOrdering(
-  projection: ProjectionResult,
+  projection: Pick<ProjectionResult, "years">,
   requested: Ordering,
 ): Ordering {
   const sample = projection.years.find((y) => y.hypotheticalEstateTax)
