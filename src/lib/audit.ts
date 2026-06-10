@@ -200,6 +200,7 @@ export type AuditAction =
   | "import.commit.tab"
   // Billing (Phase 1+ — written by webhook handlers and admin endpoints)
   | "billing.checkout_started"
+  | "billing.portal_opened"
   | "billing.subscription_created"
   | "billing.subscription_updated"
   | "billing.canceled"
