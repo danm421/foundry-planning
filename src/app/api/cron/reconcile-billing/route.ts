@@ -29,8 +29,10 @@ export const dynamic = "force-dynamic";
  * Anyone hitting this without the bearer gets 401.
  *
  * Per-firm flow: re-fetch live Stripe sub → compare to DB rows + Clerk
- * metadata → push DriftEntry rows when sources disagree. We DO NOT auto-heal;
- * drift is recorded and Sentry-paged for ops review (CC7.1 detective control).
+ * metadata → push DriftEntry rows when sources disagree. Status + entitlements
+ * drift is auto-healed back to Clerk (Stripe is source of truth) and each heal
+ * is audited; ambiguous item drift stays detect-only. All drift is still
+ * recorded and Sentry-paged for ops review (CC7.1 detective control).
  */
 export async function GET(req: NextRequest): Promise<Response> {
   const secret = process.env.CRON_SECRET;
