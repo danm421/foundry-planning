@@ -12,6 +12,7 @@ import type {
   Account,
   SavingsRule,
   ExternalBeneficiary,
+  EntitySummary,
 } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
@@ -73,7 +74,8 @@ export type SolverMutation =
   | { kind: "account-upsert"; id: string; value: Account | null }
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
-  | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null };
+  | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null }
+  | { kind: "entity-upsert";               id: string; value: EntitySummary | null };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =
@@ -113,7 +115,8 @@ export type SolverMutationKey =
   | `account-upsert:${string}`
   | `savings-rule-upsert:${string}`
   | `gift-upsert:${string}`
-  | `external-beneficiary-upsert:${string}`;
+  | `external-beneficiary-upsert:${string}`
+  | `entity-upsert:${string}`;
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
   switch (m.kind) {
@@ -191,6 +194,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `gift-upsert:${m.id}`;
     case "external-beneficiary-upsert":
       return `external-beneficiary-upsert:${m.id}`;
+    case "entity-upsert":
+      return `entity-upsert:${m.id}`;
   }
 }
 
@@ -227,7 +232,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary";
+  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;
