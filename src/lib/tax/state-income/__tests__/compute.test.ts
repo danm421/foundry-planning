@@ -303,6 +303,103 @@ describe("computeStateIncomeTax — bracket recapture", () => {
   });
 });
 
+describe("computeStateIncomeTax — age-65 standard-deduction add-on (per filer)", () => {
+  // BUG #20: add65Joint is a PER-FILER amount; a couple where BOTH spouses are
+  // 65+ gets 2× the joint add-on, not 1×.
+  // BUG #23: getStdDeduction must honor an older spouse, not just primaryAge.
+  // VT 2026: joint base 15300, add65Joint 1250 (per filer).
+  it("VT 2026 MFJ both age 70 → stdDeduction = 17800 (15300 + 2×1250)", () => {
+    const r = computeStateIncomeTax({
+      state: "VT",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 70,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.stdDeduction).toBe(17_800);
+  });
+
+  it("VT 2026 MFJ primary 60, spouse 70 → stdDeduction = 16550 (15300 + 1×1250)", () => {
+    // Proves spouseAge is honored even when primaryAge < 65.
+    const r = computeStateIncomeTax({
+      state: "VT",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 60,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.stdDeduction).toBe(16_550);
+  });
+
+  it("VT 2026 single age 70 → stdDeduction = 8900 (7650 + 1×1250) unchanged", () => {
+    // Single-filer behavior must be untouched: base single 7650 + add65Single 1250.
+    const r = computeStateIncomeTax({
+      state: "VT",
+      year: 2026,
+      filingStatus: "single",
+      primaryAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.stdDeduction).toBe(8_900);
+  });
+
+  it("NE 2026 MFJ both age 70 → stdDeduction = 20400 (17700 + 2×1350)", () => {
+    const r = computeStateIncomeTax({
+      state: "NE",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 70,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.stdDeduction).toBe(20_400);
+  });
+
+  it("DE 2026 MFJ both age 70 → stdDeduction = 11500 (6500 + 2×2500)", () => {
+    const r = computeStateIncomeTax({
+      state: "DE",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 70,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.stdDeduction).toBe(11_500);
+  });
+
+  it("VT 2026 MFJ both under 65 → stdDeduction = 15300 (no add-on)", () => {
+    const r = computeStateIncomeTax({
+      state: "VT",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 60,
+      spouseAge: 60,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.stdDeduction).toBe(15_300);
+  });
+});
+
 describe("computeStateIncomeTax — easy FAGI-base states", () => {
   it("AZ 2026 single, $100K FAGI, no SS/retirement → flat 2.5% on (AGI − std ded)", () => {
     const r = computeStateIncomeTax({
