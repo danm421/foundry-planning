@@ -6,7 +6,9 @@ import {
     clientImports,
     clientImportFiles,
     clientImportExtractions,
+    firms,
 } from "@/db/schema";
+import { canExtract } from "@/lib/billing/extract-gate";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { requireActiveSubscription } from "@/lib/authz";
 import {
@@ -68,6 +70,33 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
 
         await requireImportAccess({ importId, clientId, firmId, userId });
+
+        // Defense-in-depth (#7): the middleware allowed the POST; this route
+        // enforces the paid entitlement where Azure COGS leak. Allow when the
+        // firm holds the ai_import entitlement OR has free-quota headroom.
+        const { sessionClaims } = await auth();
+        const entitlements =
+          (sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null)
+            ?.org_public_metadata?.entitlements;
+        const [firmRow] = await db
+            .select({ aiImportsUsed: firms.aiImportsUsed })
+            .from(firms)
+            .where(eq(firms.firmId, firmId))
+            .limit(1);
+        if (!canExtract({ entitlements, aiImportsUsed: firmRow?.aiImportsUsed ?? 0 })) {
+            await recordAudit({
+                action: "billing.access_denied",
+                resourceType: "firm",
+                resourceId: firmId,
+                clientId,
+                firmId,
+                metadata: { reason: "ai_import_quota_exhausted", importId },
+            });
+            return NextResponse.json(
+                { error: "ai_import_quota_exhausted" },
+                { status: 402 },
+            );
+        }
 
         const body = (await request.json().catch(() => ({}))) as BodyArgs;
         const model = body.model === "full" ? "full" : "mini";
