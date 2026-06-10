@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
+import type { ClientData, EntitySummary } from "@/engine/types";
 import { computeCrtInceptionInterests } from "@/lib/entities/compute-crt-inception";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
+import { applyMutations } from "../apply-mutations";
 import {
   splitInterestInputToInceptionInput,
   buildSplitInterestSnapshot,
   buildSplitInterestTrustEntity,
+  buildCltRemainderGiftMutation,
 } from "../split-interest-levers";
 
 /** Unitrust, term-of-years input (no measuring lives). */
@@ -227,5 +230,72 @@ describe("buildSplitInterestTrustEntity", () => {
       isIrrevocable: true,
     });
     expect(e.splitInterest).toBe(splitInterest);
+  });
+});
+
+// ── buildCltRemainderGiftMutation ─────────────────────────────────────────────
+
+function cltTree(over: Partial<ClientData> = {}): ClientData {
+  return {
+    client: { dateOfBirth: "1960-01-01", retirementAge: 65, lifeExpectancy: 90 },
+    planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate: 0.025 },
+    accounts: [],
+    incomes: [], expenses: [], savingsRules: [], liabilities: [], withdrawalStrategy: [],
+    entities: [], externalBeneficiaries: [], gifts: [], giftEvents: [],
+    taxYearRows: [],
+    familyMembers: [
+      { id: "fm-client", role: "client", firstName: "Pat", dateOfBirth: "1960-01-01" },
+    ],
+    ...over,
+  } as unknown as ClientData;
+}
+
+describe("buildCltRemainderGiftMutation", () => {
+  const snapshot = buildSplitInterestSnapshot(unitrustInput(), "clt", {
+    age1: undefined,
+    age2: undefined,
+  });
+
+  it("returns a gift-upsert with the correct cash-once shape", () => {
+    const mutation = buildCltRemainderGiftMutation("clt-1", snapshot, "client", "gift-1");
+    expect(mutation).toEqual({
+      kind: "gift-upsert",
+      id: "gift-1",
+      value: {
+        kind: "cash-once",
+        id: "gift-1",
+        year: snapshot.inceptionYear,
+        amount: snapshot.originalRemainderInterest,
+        grantor: "client",
+        recipient: { kind: "entity", id: "clt-1" },
+        crummey: false,
+        eventKind: "clt_remainder_interest",
+      },
+    });
+  });
+
+  it("end-to-end: applyMutations emits a cash GiftEvent with eventKind=clt_remainder_interest", () => {
+    const cltEntity: EntitySummary = {
+      id: "clt-1",
+      name: "Charitable Lead Trust",
+      entityType: "trust",
+      isIrrevocable: true,
+      includeInPortfolio: false,
+      isGrantor: false,
+      grantor: "client",
+      trustSubType: "clt",
+      crummeyPowers: false,
+      splitInterest: snapshot,
+    };
+    const base = cltTree({ entities: [cltEntity] });
+    const out = applyMutations(base, [
+      buildCltRemainderGiftMutation("clt-1", snapshot, "client", "gift-1"),
+    ]);
+    const ev = out.giftEvents.find(
+      (e) => e.kind === "cash" && e.recipientEntityId === "clt-1",
+    );
+    if (ev?.kind !== "cash") throw new Error("expected a cash GiftEvent for the CLT remainder");
+    expect(ev.eventKind).toBe("clt_remainder_interest");
+    expect(ev.amount).toBe(snapshot.originalRemainderInterest);
   });
 });

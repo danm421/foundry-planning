@@ -5,6 +5,8 @@ import {
 } from "@/lib/entities/compute-crt-inception";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import type { SolverMutation } from "./types";
 import { buildTrustEntity } from "./trust-levers";
 
 /** The actuarial inception input shared by CRT and CLT (CrtInceptionInput and
@@ -114,4 +116,36 @@ export function buildSplitInterestTrustEntity({
 }: BuildSplitInterestTrustEntityArgs): EntitySummary {
   const base = buildTrustEntity({ id, name, subType, grantor });
   return { ...base, splitInterest };
+}
+
+/**
+ * Build the `gift-upsert` SolverMutation that records the CLT remainder-interest
+ * gift at inception. A CLT makes a taxable gift of its remainder interest to heirs
+ * when funded; this mutation mirrors the `clt_remainder_interest` GiftEvent that
+ * the estate-flow DB route auto-emits.
+ *
+ * @param cltEntityId   - The CLT EntitySummary id (gift recipient).
+ * @param snapshot      - Frozen split-interest snapshot (supplies inceptionYear and
+ *                        originalRemainderInterest).
+ * @param grantor       - Which person funded the CLT.
+ * @param giftId        - Stable, caller-supplied id (deterministic; do NOT call
+ *                        crypto.randomUUID() inside this builder).
+ */
+export function buildCltRemainderGiftMutation(
+  cltEntityId: string,
+  snapshot: TrustSplitInterestSnapshot,
+  grantor: "client" | "spouse",
+  giftId: string,
+): SolverMutation {
+  const gift: EstateFlowGift = {
+    kind: "cash-once",
+    id: giftId,
+    year: snapshot.inceptionYear,
+    amount: snapshot.originalRemainderInterest,
+    grantor,
+    recipient: { kind: "entity", id: cltEntityId },
+    crummey: false,
+    eventKind: "clt_remainder_interest",
+  };
+  return { kind: "gift-upsert", id: giftId, value: gift };
 }
