@@ -31,7 +31,8 @@ export function SolverTabEstatePlanning({ accounts, onChange }: Props) {
 
   function toggleEnabled(on: boolean) {
     setEnabled(on);
-    // Disabling clears every tag (empty selection → null-clearing upserts).
+    // On enable: preserve the previous selection (user can refine before re-dispatch).
+    // On disable: clear the selection so every eligible account gets a null-clearing upsert.
     const next = on ? taggedIds : new Set<string>();
     if (!on) setTaggedIds(next);
     apply(next, trustName);
