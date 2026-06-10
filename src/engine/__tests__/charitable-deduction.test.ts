@@ -4,6 +4,11 @@ import {
   type ComputeCharitableDeductionInput,
 } from "../charitable-deduction";
 import { emptyCharityCarryforward } from "../types";
+import type { CarryforwardEntry } from "../types";
+
+function sumCarryforward(entries: CarryforwardEntry[]): number {
+  return entries.reduce((sum, e) => sum + e.amount, 0);
+}
 
 function baseInput(over: Partial<ComputeCharitableDeductionInput> = {}): ComputeCharitableDeductionInput {
   return {
@@ -139,6 +144,60 @@ describe("computeCharitableDeductionForYear — carryforward consumption", () =>
     // 2020 entry expired before consumption. 2021 + 2025 entries fully consumed.
     expect(result.deductionThisYear).toBe(200_000);
     expect(result.carryforwardOut.cashPublic).toEqual([]);
+  });
+});
+
+describe("computeCharitableDeductionForYear — overall §170(b) AGI ceiling across buckets", () => {
+  it("cashPublic at the 60% ceiling crowds out a same-year appreciatedPublic gift", () => {
+    // AGI 1M. 600K cash-to-public exhausts the overall 60% ceiling (600K).
+    // The 300K appreciated-to-public gift gets ZERO deduction this year and
+    // carries forward in full — the categories share the overall ceiling, they
+    // are NOT each entitled to a fresh slice of full AGI.
+    const result = computeCharitableDeductionForYear(
+      baseInput({
+        giftsThisYear: [
+          { amount: 600_000, bucket: "cashPublic" },
+          { amount: 300_000, bucket: "appreciatedPublic" },
+        ],
+        agi: 1_000_000,
+        currentYear: 2026,
+      }),
+    );
+    expect(result.deductionThisYear).toBe(600_000);
+    expect(result.byBucket.cashPublic).toBe(600_000);
+    expect(result.byBucket.appreciatedPublic).toBe(0);
+    expect(result.carryforwardOut.appreciatedPublic).toEqual([
+      { amount: 300_000, originYear: 2026 },
+    ]);
+  });
+
+  it("four-bucket gifts never exceed the overall 60% AGI ceiling in one year", () => {
+    // AGI 1M. Gifts: 600K cashPublic + 300K cashPrivate + 300K appreciatedPublic
+    // + 200K appreciatedPrivate = 1.4M of gifts. With the bug, every bucket got a
+    // fresh slice of AGI and the year deducted all 1.4M. The overall ceiling caps
+    // the year's deduction at 60% × AGI = 600K; the remaining 800K carries forward.
+    const result = computeCharitableDeductionForYear(
+      baseInput({
+        giftsThisYear: [
+          { amount: 600_000, bucket: "cashPublic" },
+          { amount: 300_000, bucket: "cashPrivate" },
+          { amount: 300_000, bucket: "appreciatedPublic" },
+          { amount: 200_000, bucket: "appreciatedPrivate" },
+        ],
+        agi: 1_000_000,
+        currentYear: 2026,
+      }),
+    );
+    expect(result.deductionThisYear).toBeLessThanOrEqual(600_000);
+    expect(result.deductionThisYear).toBe(600_000);
+
+    // 1.4M gifted − 600K deducted = 800K carried forward across the buckets.
+    const carriedForward =
+      sumCarryforward(result.carryforwardOut.cashPublic) +
+      sumCarryforward(result.carryforwardOut.cashPrivate) +
+      sumCarryforward(result.carryforwardOut.appreciatedPublic) +
+      sumCarryforward(result.carryforwardOut.appreciatedPrivate);
+    expect(carriedForward).toBe(800_000);
   });
 });
 

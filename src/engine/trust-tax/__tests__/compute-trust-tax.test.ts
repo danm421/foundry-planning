@@ -66,6 +66,25 @@ describe("computeTrustTax", () => {
     expect(r.federalCapGainsTax).toBeCloseTo(2682.5, 1);
   });
 
+  it("stacks recognized cap gains on top of retained ordinary income", () => {
+    const r = computeTrustTax({
+      entityId: "t1",
+      retainedOrdinary: 10_000,
+      retainedDividends: 0,
+      recognizedCapGains: 10_000,
+      trustIncomeBrackets: trustIncome2026,
+      trustCapGainsBrackets: trustCapGains2026,
+      niitRate: 0.038,
+      niitThreshold: 16_250,
+      flatStateRate: 0,
+    });
+    // Gains stack from 10000 to 20000: 0% band (top 3350) is already used by
+    // ordinary income, so it is skipped. 15% from 10000–16300 = 6300*.15 = 945,
+    // 20% from 16300–20000 = 3700*.20 = 740 → 1685.
+    // (Buggy isolated walk would give calcFederalTax(10000) = 6650*.15 = 997.5.)
+    expect(r.federalCapGainsTax).toBeCloseTo(1685, 1);
+  });
+
   it("applies flat state rate to retained ordinary + gains (not NIIT base)", () => {
     const r = computeTrustTax({
       entityId: "t1",

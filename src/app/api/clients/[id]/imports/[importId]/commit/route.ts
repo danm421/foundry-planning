@@ -23,6 +23,7 @@ import {
 import { WillCommitValidationError } from "@/lib/imports/commit/will-types";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { checkImportRateLimit } from "@/lib/rate-limit";
+import { linkImportFilesToVault } from "@/lib/crm/vault-plans";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -191,6 +192,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                 }),
             ),
         );
+
+        await linkImportFilesToVault({ importId, clientId, firmId });
 
         return NextResponse.json({
             ok: true,

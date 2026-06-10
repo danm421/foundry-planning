@@ -39,6 +39,7 @@ export function buildLiabilitySchedule(
     liability.startYear,
     liability.termMonths,
     extras,
+    liability.startMonth,
   );
 }
 

@@ -6,11 +6,20 @@
  * deduction subject to AGI percentage limits per IRC §170(b). Unused deduction
  * carries forward up to 5 years (FIFO).
  *
- * Buckets by (asset class, charity type):
+ * Buckets by (asset class, charity type), each with a per-bucket AGI sub-cap:
  *   cash → public:        60% AGI limit
  *   cash → private:       30% AGI limit
  *   appreciated → public: 30% AGI limit
  *   appreciated → private: 20% AGI limit
+ *
+ * §170(b)(1): these sub-caps share an overall AGI ceiling — the categories do
+ * NOT each get a fresh slice of full AGI. We apply the conservative single
+ * 60%-of-AGI overall ceiling: cash-to-public consumes the ceiling first and
+ * crowds out the 30%/20% property categories, so the aggregate deduction in any
+ * one year cannot exceed 60% of AGI (overflow carries forward). A fully precise
+ * impl would split this into a 60% cash pool and a separate 50% pool with a 30%
+ * sub-cap for appreciated property; the single-ceiling version is the agreed
+ * conservative fix that eliminates the >100%-of-AGI over-deduction.
  *
  * Itemize-vs-standard branch: the deduction only flows through if total
  * itemized deductions exceed the standard deduction for the filing status.
@@ -95,16 +104,27 @@ export function computeCharitableDeductionForYear(
 
   let deductionThisYear = 0;
 
+  // §170(b)(1) — the per-bucket AGI ceilings share an overall AGI ceiling; they
+  // are NOT each entitled to a fresh slice of full AGI. cashPublic (first in
+  // BUCKET_ORDER) is the only category entitled to the 60% headroom, so the
+  // overall ceiling is 60% × AGI and every deducted dollar — carryforward or
+  // this-year gift — draws down the shared pool. This is the conservative
+  // single-60%-ceiling model: it eliminates the >100%-of-AGI over-deduction
+  // while keeping each bucket's own sub-cap (AGI_LIMITS[bucket] × AGI) via min().
+  const overallCeiling = 0.6 * agi;
+  let overallRemaining = overallCeiling;
+
   for (const bucket of BUCKET_ORDER) {
-    const limit = AGI_LIMITS[bucket] * agi;
-    let remainingCapacity = limit;
+    const remainingCapacity = Math.min(AGI_LIMITS[bucket] * agi, overallRemaining);
+    let bucketRemaining = remainingCapacity;
 
     // Consume carryforward FIFO (oldest first)
     const cf = carryforwardWorking[bucket];
-    while (cf.length > 0 && remainingCapacity > 0) {
+    while (cf.length > 0 && bucketRemaining > 0) {
       const head = cf[0];
-      const consume = Math.min(head.amount, remainingCapacity);
-      remainingCapacity -= consume;
+      const consume = Math.min(head.amount, bucketRemaining);
+      bucketRemaining -= consume;
+      overallRemaining -= consume;
       head.amount -= consume;
       deductionThisYear += consume;
       byBucket[bucket] += consume;
@@ -115,7 +135,8 @@ export function computeCharitableDeductionForYear(
 
     // Then consume this-year gift
     const giftThisYear = giftsByBucket[bucket];
-    const deductFromGift = Math.min(giftThisYear, remainingCapacity);
+    const deductFromGift = Math.min(giftThisYear, bucketRemaining);
+    overallRemaining -= deductFromGift;
     deductionThisYear += deductFromGift;
     byBucket[bucket] += deductFromGift;
     const overflow = giftThisYear - deductFromGift;

@@ -11,9 +11,8 @@ import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/
 import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
-import { buildSolverComparisonPlan } from "@/lib/solver/build-solver-comparison-plan";
 import { useSolverSolve } from "./use-solver-solve";
-import { useSharedMcRun } from "@/hooks/use-shared-mc-run";
+import { useSolverMc } from "./use-solver-mc";
 import { deriveScenarioGaugeState } from "./scenario-gauge-state";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
@@ -139,7 +138,7 @@ export function LiveSolverWorkspace({
   const [mcEditNonce, setMcEditNonce] = useState<number | null>(null);
 
   // Canonical 1,000-trial PoS from the most recent converged solve, on the
-  // converged tree. Shown on the working gauge until the shared MC run produces
+  // converged tree. Shown on the working gauge until the useSolverMc run produces
   // a fresh result for the current edits (which then supersedes it). Cleared on
   // any further edit so it can't go stale.
   const [solvedPoS, setSolvedPoS] = useState<number | null>(null);
@@ -282,70 +281,38 @@ export function LiveSolverWorkspace({
       }));
   }, [baseClientData.accounts, workingTree.savingsRules]);
 
-  const mcPlans = useMemo(() => {
-    const workingPlan = buildSolverComparisonPlan({
-      id: `working:v${mcVersion}`,
-      label: "Working",
-      tree: workingTree,
-      years: currentProjection,
-      isBaseline: false,
-    });
-    if (!includeBase) return [workingPlan];
-    return [
-      buildSolverComparisonPlan({
-        id: `base:v${mcVersion}`,
-        label: "Base Facts",
-        tree: baseClientData,
-        years: baseProjection,
-        isBaseline: true,
-      }),
-      workingPlan,
-    ];
-  }, [
-    baseClientData,
-    baseProjection,
-    workingTree,
-    currentProjection,
-    mcVersion,
-    includeBase,
-  ]);
-
-  const mcController = useSharedMcRun({
+  const mc = useSolverMc({
     clientId,
-    plans: mcPlans,
+    source: initialSource,
+    mutations,
+    includeBase,
     enabled: mcRequested,
+    nonce: mcVersion,
   });
 
   // Base facts can't change in the solver, so the Base PoS is computed once on
   // the first (Base-inclusive) run and retained — a working-only Recalculate
-  // returns no Base entry, so we keep the cached value instead of overwriting.
+  // doesn't refetch Base, so we keep the cached value instead of overwriting.
   useEffect(() => {
-    if (mcController.status !== "ready") return;
-    const baseEntry = mcController.result?.perPlan.find((p) =>
-      p.planId.startsWith("base:"),
-    );
-    if (baseEntry) setCachedBaseSuccess(baseEntry.successRate);
-  }, [mcController.status, mcController.result]);
+    if (mc.status !== "ready") return;
+    if (mc.baseSuccessRate !== null) setCachedBaseSuccess(mc.baseSuccessRate);
+  }, [mc.status, mc.baseSuccessRate]);
 
   const baseState: "idle" | "computing" | "ready" | "error" =
     cachedBaseSuccess !== null
       ? "ready"
-      : mcController.status === "loading"
+      : mc.status === "loading"
         ? "computing"
-        : mcController.status === "error"
+        : mc.status === "error"
           ? "error"
           : "idle";
   const baseSuccess = cachedBaseSuccess;
 
   const mcWorkingSuccess =
-    mcController.status === "ready"
-      ? (mcController.result?.perPlan.find((p) =>
-          p.planId.startsWith("working:"),
-        )?.successRate ?? null)
-      : null;
+    mc.status === "ready" ? mc.workingSuccessRate : null;
 
   const scenarioGauge = deriveScenarioGaugeState({
-    mcStatus: mcController.status,
+    mcStatus: mc.status,
     mcWorkingSuccess,
     solvedPoS,
     editNonce,
@@ -383,7 +350,7 @@ export function LiveSolverWorkspace({
       : (availableScenarios.find((s) => s.id === initialSource)?.name ??
         "Base Facts");
 
-  // Launch a shared MC run. `withBase` true on the first/auto run (computes and
+  // Launch an MC run. `withBase` true on the first/auto run (computes and
   // caches Base + Scenario); false on Recalculate (Scenario only). Clearing
   // solvedPoS lets the fresh MC result supersede a prior solve's canonical PoS.
   const launchMc = useCallback(

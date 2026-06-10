@@ -5,6 +5,7 @@ import {
   date,
   integer,
   decimal,
+  doublePrecision,
   numeric,
   boolean,
   timestamp,
@@ -3789,3 +3790,37 @@ export const scenarioComputeCache = pgTable(
 
 export type ScenarioComputeCacheRow = InferSelectModel<typeof scenarioComputeCache>;
 export type NewScenarioComputeCacheRow = InferInsertModel<typeof scenarioComputeCache>;
+
+/**
+ * Transient Monte Carlo cache for the Live Solver's *edited* working trees.
+ *
+ * The solver only needs probability-of-success (a single float). Unedited
+ * entry hits the persistent `scenario_compute_cache` via getOrComputeMonteCarlo;
+ * edited (transient) trees land here, keyed by a sha256 of all MC inputs
+ * (hashMonteCarloInputs — folds in engineVersion + trials, so a bump
+ * auto-invalidates). Rows are pruned by age (~7 days) opportunistically on write.
+ */
+export const solverMcCache = pgTable(
+  "solver_mc_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    inputHash: text("input_hash").notNull(),
+    successRate: doublePrecision("success_rate").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("solver_mc_cache_client_hash_idx").on(t.clientId, t.inputHash),
+    index("solver_mc_cache_computed_at_idx").on(t.computedAt),
+  ],
+);
+
+export type SolverMcCacheRow = InferSelectModel<typeof solverMcCache>;
+export type NewSolverMcCacheRow = InferInsertModel<typeof solverMcCache>;

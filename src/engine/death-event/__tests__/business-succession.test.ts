@@ -32,13 +32,16 @@ function llcAccount(owners: Array<{ familyMemberId: string; percent: number }>):
 
 /** balances Record keyed on the business account so businessConsolidatedValue sees its flat value. */
 const balances = { "biz-1": 10_000 };
+/** Per-account income-tax basis fixture. Only consulted for child sub-accounts;
+ *  the single-parent tests have no children so the value is immaterial to them. */
+const basisMap = { "biz-1": 4_000 };
 
 describe("applyBusinessSuccession", () => {
   it("first death, no will, spouse survives → routes to spouse, basis steps up", () => {
     const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, accounts: [biz], accountBalances: balances,
+      deathOrder: 1, accounts: [biz], accountBalances: balances, basisMap,
       will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers).toHaveLength(1);
@@ -56,7 +59,7 @@ describe("applyBusinessSuccession", () => {
     const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
-      deathOrder: 2, accounts: [biz], accountBalances: balances,
+      deathOrder: 2, accounts: [biz], accountBalances: balances, basisMap,
       will: null, familyMembers: [cooper, child], externalBeneficiaries: [], year: 2040,
     });
     expect(r.transfers[0].recipientKind).toBe("family_member");
@@ -72,7 +75,7 @@ describe("applyBusinessSuccession", () => {
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
       deathOrder: 1,
-      accounts: [biz], accountBalances: balances,
+      accounts: [biz], accountBalances: balances, basisMap,
       will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers[0].amount).toBe(6_000); // 10k × 0.6
@@ -92,7 +95,7 @@ describe("applyBusinessSuccession", () => {
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, accounts: [biz], accountBalances: balances,
+      deathOrder: 1, accounts: [biz], accountBalances: balances, basisMap,
       will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers[0].recipientId).toBe("fmChild");
@@ -111,7 +114,7 @@ describe("applyBusinessSuccession", () => {
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, accounts: [biz], accountBalances: balances,
+      deathOrder: 1, accounts: [biz], accountBalances: balances, basisMap,
       will, familyMembers: [cooper, spouse],
       externalBeneficiaries: [{ id: "charity1", name: "Charity", kind: "charity" }],
       year: 2030,
@@ -128,7 +131,7 @@ describe("applyBusinessSuccession", () => {
     zeroBiz.basis = 0;
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, accounts: [zeroBiz], accountBalances: { "biz-1": 0 },
+      deathOrder: 1, accounts: [zeroBiz], accountBalances: { "biz-1": 0 }, basisMap: { "biz-1": 0 },
       will: null, familyMembers: [cooper, spouse], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers).toHaveLength(0);
@@ -140,7 +143,7 @@ describe("applyBusinessSuccession", () => {
     const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
-      deathOrder: 2, accounts: [biz], accountBalances: balances,
+      deathOrder: 2, accounts: [biz], accountBalances: balances, basisMap,
       will: null, familyMembers: [cooper], externalBeneficiaries: [], year: 2045,
     });
     expect(r.transfers).toHaveLength(1);
@@ -164,7 +167,7 @@ describe("applyBusinessSuccession", () => {
     } as Will;
     const r = applyBusinessSuccession({
       deceased: "spouse", deceasedFmId: "fmSpouse", survivorFmId: null,
-      deathOrder: 2, accounts: [biz], accountBalances: balances,
+      deathOrder: 2, accounts: [biz], accountBalances: balances, basisMap,
       will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2045,
     });
     expect(r.transfers).toHaveLength(1);
@@ -187,7 +190,7 @@ describe("applyBusinessSuccession", () => {
     } as Will;
     const r = applyBusinessSuccession({
       deceased: "spouse", deceasedFmId: "fmSpouse", survivorFmId: null,
-      deathOrder: 2, accounts: [biz], accountBalances: balances,
+      deathOrder: 2, accounts: [biz], accountBalances: balances, basisMap,
       will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2045,
     });
     expect(r.transfers).toHaveLength(1);
@@ -210,7 +213,7 @@ describe("applyBusinessSuccession", () => {
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
-      deathOrder: 1, accounts: [biz], accountBalances: balances,
+      deathOrder: 1, accounts: [biz], accountBalances: balances, basisMap,
       will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2030,
     });
     expect(r.transfers[0].recipientKind).toBe("spouse");
@@ -230,11 +233,63 @@ describe("applyBusinessSuccession", () => {
     };
     const r = applyBusinessSuccession({
       deceased: "client", deceasedFmId: "fmCooper", survivorFmId: null,
-      deathOrder: 2, accounts: [biz], accountBalances: balances,
+      deathOrder: 2, accounts: [biz], accountBalances: balances, basisMap,
       will, familyMembers: [cooper, child], externalBeneficiaries: [], year: 2035,
     });
     expect(r.transfers[0].recipientId).toBe("fmChild");
     expect(r.ownerUpdates[0].successors).toEqual([{ familyMemberId: "fmChild", percent: 1 }]);
+  });
+});
+
+describe("applyBusinessSuccession — §1014 step-up on child sub-account balances (bug #14)", () => {
+  // An LLC parent valued at $10k flat / $4k basis, with one taxable brokerage
+  // sub-account ($90k balance / $30k basis). Client is 100% owner (non-joint)
+  // and dies first; spouse survives. The decedent's share of the appreciated
+  // sub-account must step up to FMV at death — newBasis for the child === $90k.
+  it("steps up the child sub-account basis to FMV when the 100% owner dies first", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
+    const childTaxable: Account = {
+      id: "biz-1-cash",
+      name: "LLC Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 90_000,
+      basis: 30_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      parentAccountId: "biz-1",
+      owners: [],
+    } as Account;
+
+    const r = applyBusinessSuccession({
+      deceased: "client",
+      deceasedFmId: "fmCooper",
+      survivorFmId: "fmSpouse",
+      deathOrder: 1,
+      accounts: [biz, childTaxable],
+      accountBalances: { "biz-1": 10_000, "biz-1-cash": 90_000 },
+      basisMap: { "biz-1": 4_000, "biz-1-cash": 30_000 },
+      will: null,
+      familyMembers: [cooper, spouse],
+      externalBeneficiaries: [],
+      year: 2026,
+    });
+
+    // The child sub-account gets its own basisUpdate, fully stepped up to FMV
+    // (decedent owned 100% of the business → 100% of the child's value steps up).
+    const childUpdate = r.basisUpdates.find((u) => u.accountId === "biz-1-cash");
+    expect(childUpdate).toBeDefined();
+    expect(childUpdate!.newBasis).toBe(90_000);
+
+    // The parent business §1014 step-up on its flat value is unchanged.
+    const parentUpdate = r.basisUpdates.find((u) => u.accountId === "biz-1");
+    expect(parentUpdate!.newBasis).toBe(10_000);
+
+    // Ownership cascade is untouched — only the parent appears in ownerUpdates.
+    expect(r.ownerUpdates).toHaveLength(1);
+    expect(r.ownerUpdates[0].accountId).toBe("biz-1");
+    expect(childTaxable.owners).toEqual([]);
   });
 });
 
@@ -268,6 +323,7 @@ describe("applyBusinessSuccession — child accounts cascade via parentAccountId
       accounts: [biz, childCash],
       // Consolidated value picks up the child: biz $10k + child $5k = $15k.
       accountBalances: { "biz-1": 10_000, "biz-1-cash": 5_000 },
+      basisMap: { "biz-1": 4_000, "biz-1-cash": 5_000 },
       will: null,
       familyMembers: [cooper, spouse],
       externalBeneficiaries: [],

@@ -27,9 +27,12 @@ describe("computeCapGainsAdjustment", () => {
 });
 
 describe("computeWaCapGainsTax", () => {
-  it("applies 7% on first $1M, 9% above", () => {
+  it("applies 7% on first $1M, 9.9% above (SB 5813 surtax, 2025+)", () => {
     expect(computeWaCapGainsTax(500_000)).toBe(35_000);
-    expect(computeWaCapGainsTax(1_500_000)).toBe(70_000 + 45_000);
+    // 7% × $1M + 9.9% × $0.5M = 70,000 + 49,500
+    expect(computeWaCapGainsTax(1_500_000)).toBe(70_000 + 49_500);
+    // 7% × $1M + 9.9% × $2M = 70,000 + 198,000
+    expect(computeWaCapGainsTax(3_000_000)).toBe(70_000 + 198_000);
   });
   it("returns 7% × $1M at the exact $1M boundary", () => {
     expect(computeWaCapGainsTax(1_000_000)).toBe(70_000);

@@ -92,4 +92,54 @@ describe("CLAT — full lifecycle integration", () => {
       expect(entry!.amount).toBeGreaterThan(0);
     });
   });
+
+  // §170(f)(2)(B) / Treas. Reg. 1.170A-6(c)(4): a grantor CLT can be measured
+  // on a THIRD party's life. If the grantor dies while that measuring life is
+  // still alive, the income interest has NOT terminated, so the unrecovered
+  // portion of the original deduction is recaptured. The death does NOT equal
+  // the term-end here (the measuring life is the child, not the grantor).
+  describe("single_life measured on a child, grantor dies mid-term", () => {
+    const base = buildCltLifecycleFixture({
+      inceptionYear: 2026,
+      payoutType: "annuity",
+      payoutAmount: 60_000,
+      payoutPercent: 0,
+      termYears: 10, // term-certain factor used by the fixture for the split
+      inceptionValue: 1_000_000,
+      charityType: "public",
+      grantorAgi: 500_000,
+      irc7520Rate: 0.04,
+      grantorDeathYear: 2030,
+      remainderBeneficiaries: [{ childIndex: 1, percentage: 100 }],
+    });
+    // Re-point the trust onto the CHILD's life (a non-grantor family member).
+    // The child (DOB 2000) has no death event, so it stays alive throughout —
+    // the trust's income interest is still running when the grantor dies.
+    const si = base.entities![0].splitInterest!;
+    si.termType = "single_life";
+    si.measuringLife1Id = CLT_FIXTURE_IDS.CHILD_1_FM_ID;
+    si.measuringLife2Id = null;
+    const years = runProjection(base);
+
+    it("emits recapture in taxDetail.bySource on the grantor's death year", () => {
+      const death = years.find((y) => y.year === 2030)!;
+      const key = `clt_recapture:${CLT_FIXTURE_IDS.CLT_ENTITY_ID}`;
+      const entry = death.taxDetail?.bySource?.[key];
+      expect(entry).toBeDefined();
+      expect(entry!.amount).toBeGreaterThan(0);
+    });
+
+    it("recapture ≈ originalIncomeInterest − PV(payments made through death)", () => {
+      const death = years.find((y) => y.year === 2030)!;
+      const key = `clt_recapture:${CLT_FIXTURE_IDS.CLT_ENTITY_ID}`;
+      const entry = death.taxDetail!.bySource![key]!;
+      // 5 annuity payments of 60k (2026..2030) discounted at the original
+      // §7520 rate (4%); offsets t=1..5.
+      const r = 0.04;
+      let pv = 0;
+      for (let t = 1; t <= 5; t++) pv += 60_000 / Math.pow(1 + r, t);
+      const expected = Number(si.originalIncomeInterest) - pv;
+      expect(entry.amount).toBeCloseTo(expected, 0);
+    });
+  });
 });

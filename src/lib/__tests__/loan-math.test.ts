@@ -151,4 +151,44 @@ describe("computeAmortizationSchedule", () => {
     const payoffRow = rows.find((r) => r.year === 2030);
     expect(payoffRow?.endingBalance).toBe(0);
   });
+
+  it("startMonth=7 makes only 6 payments (Jul–Dec) in the first calendar year", () => {
+    // $300k @ 6.5%, $1896.20/mo, originating July 2020. The first calendar
+    // year (2020) should amortize 6 months, not a full 12. After 6 payments
+    // the balance is ~$298,350.61; a buggy 12-payment first year would
+    // over-amortize down to ~$296,646.87.
+    const rows = computeAmortizationSchedule(
+      300000,
+      0.065,
+      1896.2,
+      2020,
+      360,
+      [],
+      7,
+    );
+    const firstYear = rows[0];
+    expect(firstYear.year).toBe(2020);
+    // 6 payments of $1896.20 = $11,377.20 scheduled in the first calendar year
+    expect(firstYear.payment).toBeCloseTo(1896.2 * 6, 2);
+    // 6-payment ending balance, not the 12-payment over-amortized value
+    expect(firstYear.endingBalance).toBeCloseTo(298350.61, 0);
+    expect(firstYear.endingBalance).toBeGreaterThan(296646.87 + 1);
+  });
+
+  it("startMonth=1 (default) is unchanged — full 12 payments in the first year", () => {
+    const explicit = computeAmortizationSchedule(
+      300000,
+      0.065,
+      1896.2,
+      2020,
+      360,
+      [],
+      1,
+    );
+    const implicit = computeAmortizationSchedule(300000, 0.065, 1896.2, 2020, 360);
+    // Passing startMonth=1 must produce an identical schedule to omitting it.
+    expect(explicit).toEqual(implicit);
+    // First calendar year amortizes a full 12 payments.
+    expect(implicit[0].payment).toBeCloseTo(1896.2 * 12, 2);
+  });
 });

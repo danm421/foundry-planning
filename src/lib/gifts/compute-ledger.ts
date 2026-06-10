@@ -28,13 +28,55 @@ export type LedgerEntry = {
   cumulativeLifetimeUsed: number;
 };
 
+/** Donee identity for pooling the §2503(b) annual exclusion. AE-eligible cash to
+ *  the same donee/grantor in the same year shares one exclusion cap. */
+function recipientGroupKey(g: LedgerGift): string {
+  if (g.recipientEntityId) return `ent:${g.recipientEntityId}`;
+  if (g.recipientFamilyMemberId) return `fm:${g.recipientFamilyMemberId}`;
+  if (g.recipientExternalBeneficiaryId)
+    return `ext:${g.recipientExternalBeneficiaryId}`;
+  return "unmodeled-individual";
+}
+
 export function computeExemptionLedger(
   gifts: LedgerGift[],
   ctx: LedgerContext,
 ): LedgerEntry[] {
   const byKey = new Map<string, number>();
 
+  // §2503(b): exactly ONE annual exclusion per donee per calendar year. Pool
+  // AE-eligible cash to the same donee (per grantor + year) so the shared
+  // AE × beneficiaryCount cap is applied once. Non-AE-eligible transfers (a
+  // trust gift without Crummey, asset transfers with useCrummeyPowers=false,
+  // charitable) get no exclusion to pool — they pass through individually so a
+  // mixed group never nets a cash exclusion against an asset amount.
+  const aggregated = new Map<string, LedgerGift>();
+  const passthrough: LedgerGift[] = [];
   for (const g of gifts) {
+    const external = g.recipientExternalBeneficiaryId
+      ? ctx.externalsById[g.recipientExternalBeneficiaryId]
+      : undefined;
+    const crummeyBeneficiaryCount = g.recipientEntityId
+      ? ctx.beneficiaryCountsByEntityId[g.recipientEntityId] ?? 0
+      : 0;
+    const aeEligible = g.recipientEntityId
+      ? g.useCrummeyPowers && crummeyBeneficiaryCount > 0
+      : g.recipientExternalBeneficiaryId
+        ? external?.kind !== "charity"
+        : true; // family member or unmodeled individual
+
+    if (!aeEligible) {
+      passthrough.push(g);
+      continue;
+    }
+    const key = `${g.grantor}|${g.year}|${recipientGroupKey(g)}`;
+    const existing = aggregated.get(key);
+    if (existing) existing.amount += g.amount;
+    else aggregated.set(key, { ...g });
+  }
+
+  const toTreat = [...aggregated.values(), ...passthrough];
+  for (const g of toTreat) {
     const entity = g.recipientEntityId ? ctx.entitiesById[g.recipientEntityId] : undefined;
     const external = g.recipientExternalBeneficiaryId
       ? ctx.externalsById[g.recipientExternalBeneficiaryId]

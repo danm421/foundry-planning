@@ -107,15 +107,19 @@ export async function listCrmDocuments(
   opts: { folderId?: string | null } = {},
 ): Promise<CrmDocumentRow[]> {
   await requireVaultAccess(householdId);
-  const where =
+  // Collapse versioned plans to their current version — superseded generated
+  // plans (is_current_version = false) never appear in the folder listing; the
+  // version-history endpoint (`listDocumentVersions`) still returns the full set.
+  const currentOnly = eq(crmHouseholdDocuments.isCurrentVersion, true);
+  const folderScope =
     opts.folderId === undefined
-      ? eq(crmHouseholdDocuments.householdId, householdId)
-      : and(
-          eq(crmHouseholdDocuments.householdId, householdId),
-          opts.folderId === null
-            ? isNull(crmHouseholdDocuments.folderId)
-            : eq(crmHouseholdDocuments.folderId, opts.folderId),
-        );
+      ? undefined
+      : opts.folderId === null
+        ? isNull(crmHouseholdDocuments.folderId)
+        : eq(crmHouseholdDocuments.folderId, opts.folderId);
+  const where = folderScope
+    ? and(eq(crmHouseholdDocuments.householdId, householdId), currentOnly, folderScope)
+    : and(eq(crmHouseholdDocuments.householdId, householdId), currentOnly);
   return db.query.crmHouseholdDocuments.findMany({
     where,
     orderBy: [desc(crmHouseholdDocuments.createdAt)],

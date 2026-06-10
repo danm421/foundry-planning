@@ -90,15 +90,22 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // 10. AMT
   // Simplified AMTI: taxable income before QBI + ISO bargain element (the one
   // AMT preference item wired in v1). Other preference items are still omitted.
+  // QBI IS allowed for AMT, so starting before QBI is correct. The standard
+  // deduction is NOT allowed for AMT (IRC §56(b)(1)(E) / Form 6251 line 2a), so
+  // when it was the deduction taken it must be added back. (No SALT add-back for
+  // itemizers — SALT isn't tracked as a separate input.)
   // Form 6251 Part III: LTCG + qualified dividends inside AMTI are taxed at
-  // 0/15/20% (the same preferential rates as regular), not 26/28%. Passing
-  // them through so calcAmtTentative can split the base.
-  const amti = taxableIncomeBeforeQbi + (input.isoSpread ?? 0);
+  // 0/15/20% (the same preferential rates as regular), not 26/28%. Passing them
+  // through — with the regular ordinary base as the stacking floor — so
+  // calcAmtTentative can split the base.
+  const stdDeductionAddBack = belowLineDeductions === stdDeduction ? stdDeduction : 0;
+  const amti = taxableIncomeBeforeQbi + stdDeductionAddBack + (input.isoSpread ?? 0);
   const amtParams = filingAmtParams(fs, p);
   const tentativeAmt = calcAmtTentative(amti, amtParams, {
     year: input.year,
     ltcgPlusQdiv: capitalGains + dividends,
     capGainsBrackets: p.capGainsBrackets[fs],
+    regularOrdinaryBase: incomeTaxBase,
   });
   const amtAdditional = calcAmtAdditional(tentativeAmt, regularTaxCalc + capitalGainsTax);
 

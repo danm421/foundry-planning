@@ -128,6 +128,18 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
         const consumed = Math.min(sourceFresh, actualAmount);
         freshBasisMap[transfer.sourceAccountId] = Math.max(0, sourceFresh - consumed);
       }
+    } else if (sourceAccount.subType === "roth_ira") {
+      // BUG #11: a Roth IRA distribution is contributions-first (basis FIRST),
+      // mirroring _classifyRothDistribution above. Pro-rata _updateBasis would
+      // leave residual Roth basis overstated, under-taxing a later pre-59.5 draw.
+      const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
+      const consumed = Math.min(actualAmount, srcBasisBefore);
+      basisMap[transfer.sourceAccountId] = srcBasisBefore - consumed;
+      basisMoved = consumed;
+      // Conserve basis onto a cash/taxable target (becomes ordinary cost basis there).
+      if (targetAccount.category === "cash" || targetAccount.category === "taxable") {
+        basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + consumed;
+      }
     } else {
       basisMoved = _updateBasis(transfer.sourceAccountId, transfer.targetAccountId, actualAmount, sourceBalance, basisMap);
     }

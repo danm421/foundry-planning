@@ -242,6 +242,10 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/crm/households/[id]/documents/[docId]/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/folders/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/crm/households/[id]/folders/[folderId]/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/crm/import/preview/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/crm/import/commit/route.ts":
@@ -302,6 +306,8 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/notes-receivable/[noteId]/extra-payments/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/solver/monte-carlo/route.ts":
+    "MC probability-of-success compute — read-only on DB, no mutation; parity with other solver routes",
   "src/app/api/clients/[id]/solver/project/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/solver/save-scenario/route.ts":
