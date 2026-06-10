@@ -220,6 +220,7 @@ export type AuditAction =
   // Firm-level lifecycle
   | "firm.name_changed"
   | "firm.archived"
+  | "firm.purged"
   | "firm.founder_initialized"
   | "firm.branding_logo_changed"
   | "firm.branding_favicon_changed"
