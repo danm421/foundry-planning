@@ -84,7 +84,7 @@ export function SolverMinSavingsPanel({
           <button
             type="button"
             onClick={onIncludeSelfFunding}
-            className="h-7 rounded-md bg-accent px-2.5 text-[12px] font-semibold text-white hover:bg-accent/90"
+            className="h-7 rounded-md bg-accent px-2.5 text-[12px] font-semibold text-accent-on hover:bg-accent/90"
           >
             Keep self-funding
           </button>
@@ -158,7 +158,7 @@ export function SolverMinSavingsPanel({
             type="button"
             disabled={!canSolve}
             onClick={() => { setConfiguring(false); onSolve(portfolioId, targetPct / 100); }}
-            className="h-7 rounded-md bg-accent px-2.5 text-[12px] font-semibold text-white hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-7 rounded-md bg-accent px-2.5 text-[12px] font-semibold text-accent-on hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Solve
           </button>
@@ -177,7 +177,7 @@ export function SolverMinSavingsPanel({
           setConfiguring(true);
         }}
         disabled={disabled || portfolios.length === 0}
-        className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
       >
         Solve minimum additional savings
       </button>

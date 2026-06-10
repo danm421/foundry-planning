@@ -217,7 +217,7 @@ function Checkbox({
       <svg
         aria-hidden="true"
         viewBox="0 0 12 12"
-        className="pointer-events-none absolute h-3 w-3 text-white opacity-0 transition-opacity peer-checked:opacity-100"
+        className="pointer-events-none absolute h-3 w-3 text-accent-on opacity-0 transition-opacity peer-checked:opacity-100"
       >
         <path
           d="M2.5 6.25 5 8.75l4.5-5.5"
