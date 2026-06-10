@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { DownloadIcon } from "@/components/icons";
 
@@ -41,21 +41,24 @@ export default function VersionHistoryDialog({ householdId, docId, onClose }: Pr
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!docId) return;
-    let cancelled = false;
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    fetch(`/api/crm/households/${householdId}/documents/${docId}/versions`, { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to load versions (${res.status})`);
-        const json = (await res.json()) as { versions: Version[] };
-        if (!cancelled) setVersions(json.versions ?? []);
-      })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load versions"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    try {
+      const res = await fetch(`/api/crm/households/${householdId}/documents/${docId}/versions`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Failed to load versions (${res.status})`);
+      const json = (await res.json()) as { versions: Version[] };
+      setVersions(json.versions ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load versions");
+    } finally {
+      setLoading(false);
+    }
   }, [householdId, docId]);
+
+  useEffect(() => {
+    if (docId) void load();
+  }, [docId, load]);
 
   if (!docId) return null;
 
