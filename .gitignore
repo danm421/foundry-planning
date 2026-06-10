@@ -73,3 +73,6 @@ scripts/output/
 # Sentry Config File
 .env.sentry-build-plugin
 .env*.local
+
+# Brainstorming visual companion
+.superpowers/
