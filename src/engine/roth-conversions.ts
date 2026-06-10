@@ -164,13 +164,31 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
       const srcBasisBefore = basisMap[src.id] ?? 0;
       const destBasisBefore = basisMap[destAccount.id] ?? 0;
 
-      // Move proportional basis
-      _updateBasis(src.id, destAccount.id, slice, srcBalance, basisMap);
+      // Move basis out of the source. For a Trad-IRA → Roth conversion the
+      // basis that leaves the AGGREGATED pool must equal the basis used to
+      // shield income (Form 8606): basisUsed = slice − taxableOrdinaryIncome
+      // == slice * poolBasis/poolBalance. Using the source account's own ratio
+      // (the legacy _updateBasis path) breaks pool-level basis conservation
+      // when basis is concentrated in one IRA among several. The destination
+      // Roth credit is written solely by _updateRothValueAndDestBasis below, so
+      // we must NOT also credit it here.
+      const isPooledTradToRoth =
+        _isPooledTradIra(src) && destAccount.subType === "roth_ira";
+      if (isPooledTradToRoth) {
+        const basisUsed = slice - taxResult.taxableOrdinaryIncome;
+        _removePoolBasis(accounts, src.id, basisUsed, basisMap);
+      } else {
+        // Non-pooled paths (e.g. Roth-source basis ordering, retirement →
+        // retirement rollover to a non-Roth target): the source IS the whole
+        // basis universe, so the per-account ratio is correct, and the basis
+        // legitimately follows to the (non-Roth) target.
+        _updateBasis(src.id, destAccount.id, slice, srcBalance, basisMap);
+      }
 
       // Move proportional rothValue out of 401k/403b sources. The Roth slice
       // transferred — plus the (now-taxed) pre-tax slice — both land as Roth
       // basis on a Roth IRA destination, so the destination's basis bumps by
-      // the full slice amount.
+      // the full slice amount. This is the SOLE writer of dest Roth basis.
       _updateRothValueAndDestBasis(
         src.id,
         destAccount.id,
@@ -333,21 +351,65 @@ function _resolveTargetAmount(
   }
 }
 
+const TRAD_IRA_SUBTYPES = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
+
+function _isPooledTradIra(account: Account): boolean {
+  return account.category === "retirement" && TRAD_IRA_SUBTYPES.has(account.subType);
+}
+
 function _computeTradIraPool(
   accounts: Account[],
   accountBalances: Record<string, number>,
   basisMap: Record<string, number>,
 ): { allTraditionalIraBalance: number; allTraditionalIraBasis: number } {
-  const TRAD_IRA_SUBTYPES = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
   let allTraditionalIraBalance = 0;
   let allTraditionalIraBasis = 0;
   for (const account of accounts) {
-    if (account.category === "retirement" && TRAD_IRA_SUBTYPES.has(account.subType)) {
+    if (_isPooledTradIra(account)) {
       allTraditionalIraBalance += accountBalances[account.id] ?? 0;
       allTraditionalIraBasis += basisMap[account.id] ?? 0;
     }
   }
   return { allTraditionalIraBalance, allTraditionalIraBasis };
+}
+
+/**
+ * Removes `basisUsed` from the aggregated Trad-IRA pool's basis for a
+ * Trad-IRA → Roth conversion slice (Form 8606). `basisUsed` is the NONTAXABLE
+ * portion of the slice == slice − taxableOrdinaryIncome == slice * poolBasis/poolBalance.
+ *
+ * The pool-level decrement must equal `basisUsed` exactly so total taxable
+ * income over a full depletion equals (poolBalance − poolBasis). Take it from
+ * the source account first; if the source's own basis can't cover it (basis is
+ * concentrated in a sibling IRA), spread the remainder pro-rata across the
+ * OTHER pooled Trad IRAs by their remaining basis.
+ */
+function _removePoolBasis(
+  accounts: Account[],
+  sourceId: string,
+  basisUsed: number,
+  basisMap: Record<string, number>,
+): void {
+  if (basisUsed <= 0) return;
+
+  const fromSource = Math.min(basisMap[sourceId] ?? 0, basisUsed);
+  basisMap[sourceId] = (basisMap[sourceId] ?? 0) - fromSource;
+  let remainder = basisUsed - fromSource;
+  if (remainder <= 1e-9) return;
+
+  // Spread the shortfall across the other pooled Trad IRAs, weighted by their
+  // remaining basis (the only accounts that can absorb basis at the pool level).
+  const others = accounts.filter(
+    (a) => a.id !== sourceId && _isPooledTradIra(a) && (basisMap[a.id] ?? 0) > 0,
+  );
+  const otherBasisTotal = others.reduce((sum, a) => sum + (basisMap[a.id] ?? 0), 0);
+  if (otherBasisTotal <= 0) return;
+
+  for (const a of others) {
+    const share = (basisMap[a.id] ?? 0) / otherBasisTotal;
+    const take = Math.min(basisMap[a.id] ?? 0, remainder * share);
+    basisMap[a.id] = (basisMap[a.id] ?? 0) - take;
+  }
 }
 
 function _updateBasis(
