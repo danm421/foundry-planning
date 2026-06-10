@@ -11,6 +11,8 @@ import {
   isRevocableTagEligible,
   buildRevocableTagMutations,
 } from "@/lib/solver/estate-levers";
+import { buildRevertFundingMutation } from "@/lib/solver/trust-levers";
+import { SolverTrustForm, type SolverTrustDraft } from "./solver-trust-form";
 
 interface Props {
   accounts: Account[];
@@ -49,6 +51,23 @@ export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Prop
   // Inline charity sub-form (the DB-coupled ExternalBeneficiaryDialog is unusable here).
   const [charityName, setCharityName] = useState("");
   const [charityType, setCharityType] = useState<"public" | "private">("public");
+
+  // ── Trusts ──────────────────────────────────────────────────────────────────
+  const [trusts, setTrusts] = useState<SolverTrustDraft[]>([]);
+  const [addingTrust, setAddingTrust] = useState(false);
+  const isMarried = clientData.client.spouseDob != null;
+
+  function addTrust(mutations: SolverMutation[], draft: SolverTrustDraft) {
+    for (const m of mutations) onChange(m);
+    setTrusts((ts) => [...ts, draft]);
+  }
+
+  function removeTrust(draft: SolverTrustDraft) {
+    // Revert each funded account, then delete the entity.
+    for (const orig of draft.fundedOriginals) onChange(buildRevertFundingMutation(orig));
+    onChange({ kind: "entity-upsert", id: draft.entity.id, value: null });
+    setTrusts((ts) => ts.filter((t) => t.entity.id !== draft.entity.id));
+  }
 
   const ps = clientData.planSettings;
   const taxInflationRate = ps.taxInflationRate ?? ps.inflationRate ?? 0;
@@ -265,6 +284,58 @@ export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Prop
             Add
           </button>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-hair bg-card p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-medium text-ink">Trusts</span>
+          {!addingTrust && (
+            <button
+              type="button"
+              onClick={() => setAddingTrust(true)}
+              className="text-[12px] text-accent hover:underline"
+            >
+              Add trust
+            </button>
+          )}
+        </div>
+
+        {trusts.length === 0 ? (
+          <p className="mt-2 text-[12px] text-ink-3">
+            No trusts created in this scenario.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {trusts.map((t) => (
+              <li
+                key={t.entity.id}
+                className="flex items-center justify-between text-[13px] text-ink"
+              >
+                <span>
+                  {t.entity.name} · {t.entity.trustSubType?.toUpperCase()}
+                </span>
+                <button
+                  type="button"
+                  className="text-[12px] text-crit hover:underline"
+                  onClick={() => removeTrust(t)}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {addingTrust && (
+          <div className="mt-3">
+            <SolverTrustForm
+              clientData={clientData}
+              isMarried={isMarried}
+              onApply={addTrust}
+              onClose={() => setAddingTrust(false)}
+            />
+          </div>
+        )}
       </section>
 
       {(adding || editing) && (

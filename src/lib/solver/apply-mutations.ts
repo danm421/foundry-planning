@@ -10,6 +10,7 @@
 import type { ClientData } from "@/engine/types";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation } from "./types";
 
@@ -278,6 +279,12 @@ export function applyMutations(
         result.externalBeneficiaries = list;
         break;
       }
+      case "entity-upsert": {
+        const list = (result.entities ?? []).filter((e) => e.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.entities = list;
+        break;
+      }
       case "gift-upsert": {
         // Deferred: applied once after the loop so giftEvents is rebuilt from the
         // full scenario draft set (last-write-wins; null marks a delete).
@@ -304,6 +311,17 @@ export function applyMutations(
       (a, b) => a.year - b.year,
     );
   }
+  // Re-derive Crummey premium gifts from the MUTATED tree so a policy retitled
+  // into an ILIT (with crummeyPowers) shows its premium gifts live — the loader
+  // runs this before applyMutations, so a same-batch retitle would otherwise get
+  // them only after save+reload. Idempotent: strips+re-derives only
+  // sourcePolicyAccountId cash events, so Phase 2 scenario gifts survive.
+  // Only runs when a policy exists (the synthesis reads client.dateOfBirth,
+  // which minimal non-estate solver fixtures omit; no policy → no premium gift).
+  if (result.accounts.some((a) => a.category === "life_insurance")) {
+    result.giftEvents = withSynthesizedPremiumGifts(result).giftEvents;
+  }
+
   // Reshift every milestone-anchored startYear/endYear so a retirement-age
   // (or any other anchor-moving) mutation flows through to dependent
   // incomes/expenses/savings rules/transfers/roth conversions. Without this,
