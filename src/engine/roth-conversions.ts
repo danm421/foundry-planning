@@ -394,7 +394,7 @@ function _removePoolBasis(
 
   const fromSource = Math.min(basisMap[sourceId] ?? 0, basisUsed);
   basisMap[sourceId] = (basisMap[sourceId] ?? 0) - fromSource;
-  let remainder = basisUsed - fromSource;
+  const remainder = basisUsed - fromSource;
   if (remainder <= 1e-9) return;
 
   // Spread the shortfall across the other pooled Trad IRAs, weighted by their
