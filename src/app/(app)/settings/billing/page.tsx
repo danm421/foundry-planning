@@ -1,7 +1,15 @@
 import type { ReactElement } from "react";
 import { auth } from "@clerk/nextjs/server";
+import { desc, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { invoices } from "@/db/schema";
 import { ForbiddenError, requireOrgOwner } from "@/lib/authz";
+import {
+  getSubscriptionState,
+  type SubscriptionState,
+} from "@/lib/billing/subscription-state";
 import Forbidden from "../forbidden";
+import ManageBillingButton from "./manage-billing-button";
 
 function FounderBillingPanel(): ReactElement {
   return (
@@ -33,11 +41,169 @@ function FounderBillingPanel(): ReactElement {
   );
 }
 
-function NonFounderBillingPanel(): ReactElement {
+function fmtDate(d: Date): string {
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function fmtAmount(cents: number | null, currency: string | null): string {
+  if (cents == null) return "—";
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: (currency ?? "usd").toUpperCase(),
+  }).format(cents / 100);
+}
+
+const STATUS_LABEL: Record<SubscriptionState["kind"], string> = {
+  founder: "Founder",
+  trialing: "Trialing",
+  active: "Active",
+  active_canceling: "Canceling at period end",
+  past_due: "Past due",
+  canceled_grace: "Canceled — read-only grace",
+  canceled_locked: "Canceled — locked",
+  missing: "Unknown",
+};
+
+function StateSummary({ state }: { state: SubscriptionState }): ReactElement {
+  const rows: [string, string][] = [["Status", STATUS_LABEL[state.kind]]];
+  if (state.kind === "trialing") {
+    rows.push(["Trial ends", fmtDate(state.trialEndsAt)]);
+  } else if (state.kind === "active_canceling") {
+    rows.push(["Access ends", fmtDate(state.periodEnd)]);
+  } else if (state.kind === "canceled_grace") {
+    const graceUntil = new Date(
+      state.archivedAt.getTime() + 30 * 24 * 60 * 60 * 1000,
+    );
+    rows.push(["Read-only until", fmtDate(graceUntil)]);
+  }
   return (
-    <div className="flex flex-col gap-2">
-      <h1 className="text-base font-medium text-ink">Billing</h1>
-      <p className="text-sm text-ink-3">Billing details coming soon.</p>
+    <div className="rounded border border-hair bg-card p-4 text-sm">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-ink-4">{label}</dt>
+            <dd className="text-ink">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+type InvoiceRow = {
+  stripeInvoiceId: string;
+  amountPaid: number | null;
+  amountDue: number | null;
+  currency: string | null;
+  status: string | null;
+  paidAt: Date | null;
+  createdAt: Date;
+  hostedInvoiceUrl: string | null;
+  invoicePdf: string | null;
+};
+
+function InvoiceList({ rows }: { rows: InvoiceRow[] }): ReactElement {
+  if (rows.length === 0) {
+    return (
+      <section className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium text-ink">Invoices</h2>
+        <p className="text-sm text-ink-3">No invoices yet.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-medium text-ink">Invoices</h2>
+      <div className="overflow-hidden rounded border border-hair">
+        <table className="w-full text-sm">
+          <thead className="bg-paper text-ink-4">
+            <tr>
+              <th className="px-3 py-2 text-left font-normal">Date</th>
+              <th className="px-3 py-2 text-left font-normal">Amount</th>
+              <th className="px-3 py-2 text-left font-normal">Status</th>
+              <th className="px-3 py-2 text-right font-normal">Invoice</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((inv) => (
+              <tr key={inv.stripeInvoiceId} className="border-t border-hair">
+                <td className="px-3 py-2 text-ink">
+                  {fmtDate(inv.paidAt ?? inv.createdAt)}
+                </td>
+                <td className="px-3 py-2 text-ink">
+                  {fmtAmount(inv.amountPaid ?? inv.amountDue, inv.currency)}
+                </td>
+                <td className="px-3 py-2 text-ink-3">{inv.status ?? "—"}</td>
+                <td className="px-3 py-2 text-right">
+                  {inv.hostedInvoiceUrl ? (
+                    <a
+                      href={inv.hostedInvoiceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-accent underline"
+                    >
+                      View
+                    </a>
+                  ) : inv.invoicePdf ? (
+                    <a
+                      href={inv.invoicePdf}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-accent underline"
+                    >
+                      PDF
+                    </a>
+                  ) : (
+                    <span className="text-ink-4">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+export async function NonFounderBillingPanel(): Promise<ReactElement> {
+  const [{ orgId }, state] = await Promise.all([auth(), getSubscriptionState()]);
+
+  // firmId === Clerk org id. Skip the query entirely if there's no org.
+  const rows: InvoiceRow[] = orgId
+    ? await db
+        .select({
+          stripeInvoiceId: invoices.stripeInvoiceId,
+          amountPaid: invoices.amountPaid,
+          amountDue: invoices.amountDue,
+          currency: invoices.currency,
+          status: invoices.status,
+          paidAt: invoices.paidAt,
+          createdAt: invoices.createdAt,
+          hostedInvoiceUrl: invoices.hostedInvoiceUrl,
+          invoicePdf: invoices.invoicePdf,
+        })
+        .from(invoices)
+        .where(eq(invoices.firmId, orgId))
+        .orderBy(desc(invoices.createdAt))
+        .limit(24)
+    : [];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-base font-medium text-ink">Billing</h1>
+        <p className="text-sm text-ink-3">
+          Manage your subscription, update your card, or download invoices.
+        </p>
+      </header>
+      <StateSummary state={state} />
+      <ManageBillingButton />
+      <InvoiceList rows={rows} />
     </div>
   );
 }
