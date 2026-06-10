@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { crmDocumentFolders } from "@/db/schema";
+import { crmDocumentFolders, crmHouseholdDocuments } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { requireVaultAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
@@ -176,4 +176,56 @@ export async function updateFolder(
   });
 
   return updated;
+}
+
+export async function deleteFolder(
+  householdId: string,
+  folderId: string,
+): Promise<void> {
+  const { orgId } = await requireVaultAccess(householdId);
+
+  const folder = await db.query.crmDocumentFolders.findFirst({
+    where: and(
+      eq(crmDocumentFolders.id, folderId),
+      eq(crmDocumentFolders.householdId, householdId),
+    ),
+  });
+  if (!folder) throw new Error("Folder not found in this household");
+  if (folder.isSystem) throw new Error("Cannot delete a system folder");
+
+  await db.transaction(async (tx) => {
+    // Child folders re-parent to this folder's parent (grandparent).
+    await tx
+      .update(crmDocumentFolders)
+      .set({ parentFolderId: folder.parentFolderId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(crmDocumentFolders.householdId, householdId),
+          eq(crmDocumentFolders.parentFolderId, folderId),
+        ),
+      );
+    // Contained documents fall to root (folderId = null). The FK is
+    // ON DELETE set null, but we do it explicitly so it's transactional
+    // and not dependent on delete ordering.
+    await tx
+      .update(crmHouseholdDocuments)
+      .set({ folderId: null })
+      .where(
+        and(
+          eq(crmHouseholdDocuments.householdId, householdId),
+          eq(crmHouseholdDocuments.folderId, folderId),
+        ),
+      );
+    await tx
+      .delete(crmDocumentFolders)
+      .where(eq(crmDocumentFolders.id, folderId));
+  });
+
+  await recordAudit({
+    action: "vault.folder.delete",
+    resourceType: "crm_document_folder",
+    resourceId: folderId,
+    firmId: orgId,
+    metadata: { name: folder.name },
+  });
 }

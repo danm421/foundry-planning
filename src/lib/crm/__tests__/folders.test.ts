@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
-import { crmHouseholds, crmDocumentFolders } from "@/db/schema";
+import { crmHouseholds, crmDocumentFolders, crmHouseholdDocuments } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -16,7 +16,7 @@ vi.mock("@clerk/nextjs/server", async () => {
 });
 
 import { auth } from "@clerk/nextjs/server";
-import { listFolders, SYSTEM_FOLDERS, createFolder, updateFolder } from "../folders";
+import { listFolders, SYSTEM_FOLDERS, createFolder, updateFolder, deleteFolder } from "../folders";
 
 const ORG = "org_folders_test";
 let householdId: string;
@@ -112,5 +112,41 @@ describe("updateFolder", () => {
     await expect(
       updateFolder(householdId, a.id, { parentFolderId: a.id }),
     ).rejects.toThrow();
+  });
+});
+
+describe("deleteFolder", () => {
+  it("refuses to delete a system folder", async () => {
+    const [plans] = await listFolders(householdId);
+    await expect(deleteFolder(householdId, plans.id)).rejects.toThrow(
+      /system folder/i,
+    );
+  });
+
+  it("re-parents child folders to the grandparent on delete", async () => {
+    const parent = await createFolder(householdId, { name: "Parent" });
+    const mid = await createFolder(householdId, { name: "Mid", parentFolderId: parent.id });
+    const child = await createFolder(householdId, { name: "Child", parentFolderId: mid.id });
+    await deleteFolder(householdId, mid.id);
+    const reloaded = await db.query.crmDocumentFolders.findFirst({
+      where: eq(crmDocumentFolders.id, child.id),
+    });
+    expect(reloaded?.parentFolderId).toBe(parent.id); // grandparent
+  });
+
+  it("sets contained documents' folderId to null (fall to root)", async () => {
+    const folder = await createFolder(householdId, { name: "Docs" });
+    const [doc] = await db.insert(crmHouseholdDocuments).values({
+      householdId,
+      filename: "x.pdf",
+      storageProvider: "vercel-blob",
+      storageKey: "crm/x",
+      folderId: folder.id,
+    }).returning();
+    await deleteFolder(householdId, folder.id);
+    const reloaded = await db.query.crmHouseholdDocuments.findFirst({
+      where: eq(crmHouseholdDocuments.id, doc.id),
+    });
+    expect(reloaded?.folderId).toBeNull();
   });
 });
