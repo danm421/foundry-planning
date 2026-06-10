@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { crmHouseholdDocuments, crmDocumentFolders } from "@/db/schema";
+import { crmHouseholdDocuments, crmDocumentFolders, clientImportFiles } from "@/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { requireVaultAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
@@ -146,7 +146,8 @@ export async function deleteCrmDocument(documentId: string): Promise<void> {
 
   // Best-effort blob delete — if it 404s we still want the DB row gone.
   // storageKey is null for generated/import-ref docs (no blob to delete).
-  if (doc.storageKey) {
+  // import_ref rows have no own blob — never delete the linked import file.
+  if (doc.storageKey && doc.sourceKind !== "import_ref") {
     try {
       await del(doc.storageKey);
     } catch (err) {
@@ -231,4 +232,25 @@ export async function updateCrmDocument(
     metadata: { folderId: patch.folderId, filename: patch.filename },
   });
   return updated;
+}
+
+/**
+ * Where does this document's bytes live? Uploads and generated plans carry
+ * their own `storageKey`. `import_ref` rows have a null storageKey and point
+ * at a `client_import_files` row; a null result means the link is stale
+ * (the underlying import file was discarded) → callers should 410.
+ */
+export async function resolveDocumentBlobPathname(
+  doc: CrmDocumentRow,
+): Promise<string | null> {
+  if (doc.sourceKind === "import_ref") {
+    if (!doc.importFileId) return null;
+    const file = await db.query.clientImportFiles.findFirst({
+      where: eq(clientImportFiles.id, doc.importFileId),
+      columns: { blobPathname: true, deletedAt: true },
+    });
+    if (!file || file.deletedAt) return null;
+    return file.blobPathname;
+  }
+  return doc.storageKey ?? null;
 }

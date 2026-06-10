@@ -44,8 +44,10 @@ import {
   listCrmDocuments,
   deleteCrmDocument,
   updateCrmDocument,
+  resolveDocumentBlobPathname,
   MAX_SIZE_BYTES,
 } from "../documents";
+import { clientImports, clientImportFiles, clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 
 const ORG = "test_org_documents";
@@ -60,6 +62,9 @@ async function cleanup() {
       columns: { id: true },
     });
     for (const h of hh) {
+      // clients references crmHouseholds with onDelete: "restrict" — delete
+      // clients (and their cascaded clientImports / clientImportFiles) first.
+      await db.delete(clients).where(eq(clients.crmHouseholdId, h.id));
       await db
         .delete(crmDocumentFolders)
         .where(eq(crmDocumentFolders.householdId, h.id));
@@ -263,5 +268,61 @@ describe("updateCrmDocument", () => {
     await expect(
       updateCrmDocument(doc.id, { folderId: foreign.id }),
     ).rejects.toThrow(/folder/i);
+  });
+});
+
+describe("resolveDocumentBlobPathname", () => {
+  it("returns own storageKey for an upload", async () => {
+    vi.mocked(put).mockResolvedValue({ pathname: "crm/own" } as never);
+    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    expect(await resolveDocumentBlobPathname(doc)).toBe("crm/own");
+  });
+
+  it("returns the import file's blobPathname for an import_ref", async () => {
+    // Minimal client + import + import file fixture.
+    // clients.crmHouseholdId is NOT NULL and UNIQUE, so reuse householdId.
+    const [client] = await db.insert(clients).values({
+      firmId: "test_org_documents",
+      advisorId: "x",
+      crmHouseholdId: householdId,
+      retirementAge: 65,
+      planEndAge: 95,
+    }).returning();
+    const [imp] = await db.insert(clientImports).values({
+      clientId: client.id,
+      orgId: "test_org_documents",
+      mode: "onboarding",
+      createdByUserId: "x",
+    }).returning();
+    const [file] = await db.insert(clientImportFiles).values({
+      importId: imp.id,
+      blobUrl: "https://b/x",
+      blobPathname: "imports/x",
+      originalFilename: "stmt.pdf",
+      contentHash: "h",
+      sizeBytes: 10,
+      detectedKind: "pdf",
+    }).returning();
+    const [ref] = await db.insert(crmHouseholdDocuments).values({
+      householdId,
+      filename: "stmt.pdf",
+      storageProvider: "vercel-blob",
+      storageKey: null,
+      sourceKind: "import_ref",
+      importFileId: file.id,
+    }).returning();
+    expect(await resolveDocumentBlobPathname(ref)).toBe("imports/x");
+  });
+
+  it("returns null for a stale import_ref (import file gone)", async () => {
+    const [ref] = await db.insert(crmHouseholdDocuments).values({
+      householdId,
+      filename: "x",
+      storageProvider: "vercel-blob",
+      storageKey: null,
+      sourceKind: "import_ref",
+      importFileId: null,
+    }).returning();
+    expect(await resolveDocumentBlobPathname(ref)).toBeNull();
   });
 });

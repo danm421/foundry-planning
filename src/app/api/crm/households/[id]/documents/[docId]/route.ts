@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { get } from "@vercel/blob";
+import { z } from "zod";
 import {
   deleteCrmDocument,
   getCrmDocument,
+  updateCrmDocument,
+  resolveDocumentBlobPathname,
 } from "@/lib/crm/documents";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +33,11 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (!doc.storageKey) {
-      return NextResponse.json({ error: "Document blob not available" }, { status: 404 });
+    const pathname = await resolveDocumentBlobPathname(doc);
+    if (!pathname) {
+      return NextResponse.json({ error: "Document is no longer available" }, { status: 410 });
     }
-    const result = await get(doc.storageKey, { access: "private" });
+    const result = await get(pathname, { access: "private" });
     if (!result || result.statusCode !== 200 || !result.stream) {
       return NextResponse.json({ error: "Document blob not available" }, { status: 404 });
     }
@@ -96,5 +100,34 @@ export async function DELETE(
     }
     console.error("DELETE /api/crm/households/[id]/documents/[docId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+const PatchSchema = z.object({
+  folderId: z.string().uuid().nullable().optional(),
+  filename: z.string().trim().min(1).max(255).optional(),
+  description: z.string().max(2000).nullable().optional(),
+});
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; docId: string }> },
+) {
+  try {
+    const { id, docId } = await params;
+    const parsed = PatchSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid body", issues: parsed.error.issues }, { status: 400 });
+    }
+    const doc = await updateCrmDocument(docId, parsed.data);
+    if (doc.householdId !== id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ document: doc });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "error";
+    if (/not found/i.test(msg)) return NextResponse.json({ error: msg }, { status: 404 });
+    if (/required|folder/i.test(msg)) return NextResponse.json({ error: msg }, { status: 400 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
