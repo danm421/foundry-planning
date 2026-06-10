@@ -15,6 +15,7 @@ import {
   type ReconcileItem,
   type DriftEntry,
 } from "@/lib/billing/reconcile";
+import { checkRecentWebhookErrors } from "@/lib/billing/webhook-error-check";
 
 export const dynamic = "force-dynamic";
 
@@ -147,8 +148,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
+  const webhookErrors24h = await checkRecentWebhookErrors();
+
   return NextResponse.json(
-    { runId, status, discrepanciesFound: drift.length },
+    { runId, status, discrepanciesFound: drift.length, webhookErrors24h },
     { status: 200 },
   );
 }
