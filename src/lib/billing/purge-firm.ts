@@ -32,7 +32,9 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     .from(crmHouseholds)
     .where(eq(crmHouseholds.firmId, firmId));
   for (const h of households) {
-    await purgeCrmHouseholdById(h.id, firmId);
+    // force=true: a purged firm's households are live (not individually
+    // trashed), so bypass the manual-delete "must be trashed first" guard.
+    await purgeCrmHouseholdById(h.id, firmId, true);
   }
 
   // 2. Billing mirror rows.

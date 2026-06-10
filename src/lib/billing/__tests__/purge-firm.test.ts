@@ -63,8 +63,8 @@ describe("purgeFirmById", () => {
     await purgeFirmById("org_1");
 
     // every household for the firm is force-purged (firm-agnostic deletePII path)
-    expect(mocks.purgeHousehold).toHaveBeenCalledWith("h1", "org_1");
-    expect(mocks.purgeHousehold).toHaveBeenCalledWith("h2", "org_1");
+    expect(mocks.purgeHousehold).toHaveBeenCalledWith("h1", "org_1", true);
+    expect(mocks.purgeHousehold).toHaveBeenCalledWith("h2", "org_1", true);
     // billing rows dropped
     expect(mocks.deleteInvoices).toHaveBeenCalledTimes(1);
     expect(mocks.deleteSubs).toHaveBeenCalledTimes(1);

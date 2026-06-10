@@ -386,13 +386,19 @@ export async function restoreCrmHousehold(id: string) {
  * views / documents / activity. Firm-agnostic so the purge cron can call it
  * across firms; the manual-delete endpoint supplies the caller's firmId.
  */
-export async function purgeCrmHouseholdById(id: string, firmId: string) {
+export async function purgeCrmHouseholdById(
+  id: string,
+  firmId: string,
+  force = false,
+) {
   const household = await db.query.crmHouseholds.findFirst({
     where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
     with: { planningClient: { columns: { id: true } } },
   });
   if (!household) throw new Error("Household not found");
-  if (!household.deletedAt) {
+  if (!force && !household.deletedAt) {
+    // Manual UI deletes must trash first; the GDPR retention purge cron passes
+    // force=true to erase the live households of an already-archived firm.
     throw new Error("Household must be trashed before it can be purged");
   }
 
