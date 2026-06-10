@@ -21,14 +21,15 @@ vi.mock("@/engine", () => ({
   runMonteCarlo: vi.fn(async () => ({ successRate: 0.42 })),
 }));
 
-// Chainable db mock: select→from→where resolves to `selectRows`;
+// Chainable db mock: select→from→where resolves via `selectWhere` (reconfigurable);
 // insert/delete are no-ops we can assert were called.
 const selectRows: unknown[] = [];
+const selectWhere = vi.fn(() => Promise.resolve(selectRows));
 const insertValues = vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) });
 const deleteWhere = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/db", () => ({
   db: {
-    select: () => ({ from: () => ({ where: () => Promise.resolve(selectRows) }) }),
+    select: () => ({ from: () => ({ where: () => selectWhere() }) }),
     insert: () => ({ values: insertValues }),
     delete: () => ({ where: deleteWhere }),
   },
@@ -44,6 +45,7 @@ import { runMonteCarlo } from "@/engine";
 beforeEach(() => {
   vi.clearAllMocks();
   selectRows.length = 0;
+  selectWhere.mockImplementation(() => Promise.resolve(selectRows));
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: { client: {} } as never,
     warnings: [],
@@ -106,6 +108,18 @@ describe("getOrComputeSolverMc", () => {
       clientId: "c1", firmId: "f1", source: "base",
       mutations: [{ kind: "retirement-age", person: "client", age: 67 } as never],
       forceRefresh: true,
+    });
+
+    expect(out).toEqual({ successRate: 0.42 });
+    expect(runMonteCarlo).toHaveBeenCalledOnce();
+  });
+
+  it("cache read throws → fails open, computes fresh result", async () => {
+    selectWhere.mockImplementation(() => { throw new Error("DB down"); });
+
+    const out = await getOrComputeSolverMc({
+      clientId: "c1", firmId: "f1", source: "base",
+      mutations: [{ kind: "retirement-age", person: "client", age: 67 } as never],
     });
 
     expect(out).toEqual({ successRate: 0.42 });

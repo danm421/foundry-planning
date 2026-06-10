@@ -18,6 +18,7 @@ import { createReturnEngine, runMonteCarlo } from "@/engine";
 import type { SolverMutation } from "@/lib/solver/types";
 
 const CANONICAL_TRIALS = 1000;
+// Transient rows expire after 7 days; keyed by input hash so stale entries are harmless.
 const PRUNE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface SolverMcResult {
