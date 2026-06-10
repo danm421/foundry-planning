@@ -100,6 +100,9 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "customPctQualifiedDividends",
     "customPctTaxExempt",
   ],
+  // Solver gift overlays carry an EstateFlowGift draft. These flat numeric fields
+  // are coerced before normalizeScenarioGifts re-derives giftEvents.
+  gift: ["year", "amount", "percent", "amountOverride", "startYear", "endYear", "annualAmount"],
   // The withdrawal-strategy form posts startYear/endYear as strings
   // (String(...) in withdrawal-strategy-section.tsx), so coerce them before the
   // engine's year-window filter (year >= s.startYear && year <= s.endYear) and
