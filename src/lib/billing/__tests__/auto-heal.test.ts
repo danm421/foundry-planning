@@ -32,8 +32,8 @@ describe("planAutoHeal", () => {
       { firmId: "org_1", field: "entitlements", stripeValue: ["ai_import"], clerkValue: [] },
     ];
     const plan = planAutoHeal(drift);
-    expect(plan.patch).toEqual({ subscription_status: "active", entitlements: ["ai_import"] });
-    expect(plan.healedFields.sort()).toEqual(["entitlements", "status"]);
+    expect(plan!.patch).toEqual({ subscription_status: "active", entitlements: ["ai_import"] });
+    expect(plan!.healedFields.sort()).toEqual(["entitlements", "status"]);
   });
 
   it("stays detect-only for ambiguous item drift", () => {
