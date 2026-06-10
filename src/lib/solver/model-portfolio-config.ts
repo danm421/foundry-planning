@@ -14,8 +14,8 @@ export interface SolverModelPortfolio {
   mix: AccountAssetMix[];
 }
 
-/** Mirrors resolve-entity.ts (model-portfolio account path), which sets
- *  growthRate = geoReturn and turnoverPct = 0. */
+/** Mirrors resolvePostPayoutPortfolio() in resolve-entity.ts — a virtual
+ *  account with no DB turnoverPct column, so turnoverPct is hard-coded 0. */
 export function growthAndRealizationFromPortfolio(p: ResolvedGrowth): {
   growthRate: number;
   realization: AccountRealization;

@@ -40,6 +40,15 @@ describe("mixFromAllocationRows", () => {
 });
 
 describe("assembleSolverPortfolios", () => {
+  it("falls back to [] mix when portfolio id is absent from allocsByPortfolio", () => {
+    const out = assembleSolverPortfolios(
+      [{ id: "p-unknown", name: "Orphan" }],
+      new Map(), // no entry for "p-unknown"
+      (_id) => ({ geoReturn: 0.04, pctOi: 0, pctLtcg: 1, pctQdiv: 0, pctTaxEx: 0 }),
+    );
+    expect(out[0].mix).toEqual([]);
+  });
+
   it("joins names, resolved growth, and per-portfolio mix", () => {
     const out = assembleSolverPortfolios(
       [{ id: "p1", name: "Balanced 60/40" }],
