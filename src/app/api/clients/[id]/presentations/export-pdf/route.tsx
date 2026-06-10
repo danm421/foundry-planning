@@ -510,7 +510,7 @@ export async function POST(
     const firmName = branding.firmName;
     const firmLogoDataUrl = branding.logoDataUrl ?? (await foundryDefaultLogoDataUrl());
 
-    // Cast required: renderToStream expects ReactElement<DocumentProps> but
+    // Cast required: renderToBuffer expects ReactElement<DocumentProps> but
     // createElement infers ReactElement<PresentationDocumentProps>. The element
     // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
     const doc = React.createElement(PresentationDocument, {
