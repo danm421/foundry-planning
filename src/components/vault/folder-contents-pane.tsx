@@ -12,6 +12,8 @@ import ConfirmDeleteDialog from "@/components/confirm-delete-dialog";
 import DialogShell from "@/components/dialog-shell";
 import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
 import type { VaultDoc, VaultFolder } from "./use-vault-data";
+import { useVaultMutate } from "./use-vault-mutate";
+import { humanSize, formatTimestamp } from "./format";
 
 type Props = {
   householdId: string;
@@ -21,25 +23,6 @@ type Props = {
   onMutated: () => void; // reloadDocs
   onOpenHistory: (docId: string) => void;
 };
-
-function humanSize(bytes: number | null): string {
-  if (bytes == null || !Number.isFinite(bytes)) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 const MAX_MB = Math.floor(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024));
 
@@ -52,6 +35,7 @@ export default function FolderContentsPane({
   onOpenHistory,
 }: Props) {
   const { showToast } = useToast();
+  const mutate = useVaultMutate(onMutated);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const [dragOver, setDragOver] = useState(false);
@@ -124,22 +108,6 @@ export default function FolderContentsPane({
       URL.revokeObjectURL(url);
     } catch (err) {
       showToast({ message: err instanceof Error ? err.message : "Download failed" });
-    }
-  }
-
-  async function mutate(url: string, init: RequestInit, okMsg: string): Promise<boolean> {
-    try {
-      const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: unknown };
-        throw new Error(typeof j.error === "string" ? j.error : `Request failed (${res.status})`);
-      }
-      showToast({ message: okMsg });
-      onMutated();
-      return true;
-    } catch (err) {
-      showToast({ message: err instanceof Error ? err.message : "Something went wrong" });
-      return false;
     }
   }
 

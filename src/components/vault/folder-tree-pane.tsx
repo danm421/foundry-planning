@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { FolderIcon } from "@/components/icons";
-import { useToast } from "@/components/toast";
 import ConfirmDeleteDialog from "@/components/confirm-delete-dialog";
 import DialogShell from "@/components/dialog-shell";
 import {
@@ -11,6 +10,7 @@ import {
   type FolderNode,
 } from "@/lib/crm/folder-tree";
 import type { VaultFolder } from "./use-vault-data";
+import { useVaultMutate } from "./use-vault-mutate";
 
 type Props = {
   householdId: string;
@@ -63,7 +63,7 @@ export default function FolderTreePane({
   onSelect,
   onMutated,
 }: Props) {
-  const { showToast } = useToast();
+  const mutate = useVaultMutate(onMutated);
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
 
   // Track explicitly-collapsed ids; everything else is open by default so the
@@ -81,26 +81,6 @@ export default function FolderTreePane({
       else next.add(id);
       return next;
     });
-
-  async function mutate(
-    url: string,
-    init: RequestInit,
-    okMsg: string,
-  ): Promise<boolean> {
-    try {
-      const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: unknown };
-        throw new Error(typeof j.error === "string" ? j.error : `Request failed (${res.status})`);
-      }
-      showToast({ message: okMsg });
-      onMutated();
-      return true;
-    } catch (err) {
-      showToast({ message: err instanceof Error ? err.message : "Something went wrong" });
-      return false;
-    }
-  }
 
   const createFolder = (name: string, parentId: string | null) =>
     mutate(

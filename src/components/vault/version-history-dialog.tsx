@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { DownloadIcon } from "@/components/icons";
+import { humanSize, formatTimestamp } from "./format";
 
 type Props = {
   householdId: string;
@@ -16,25 +17,6 @@ type Version = {
   createdAt: string;
   sizeBytes: number | null;
 };
-
-function humanSize(bytes: number | null): string {
-  if (bytes == null || !Number.isFinite(bytes)) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export default function VersionHistoryDialog({ householdId, docId, onClose }: Props) {
   const [versions, setVersions] = useState<Version[]>([]);
