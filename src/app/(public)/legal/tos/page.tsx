@@ -90,7 +90,11 @@ export default function TosPage() {
         <p>
           You may cancel at any time through the Customer Portal accessible
           from your settings. Cancellation takes effect at the end of the
-          current billing period; we do not pro-rate partial periods. We may
+          current billing period; we do not prorate partial periods on
+          cancellation. If you switch billing cadence, upgrading from monthly
+          to annual takes effect immediately and we credit the unused portion
+          of your current period; downgrading from annual to monthly takes
+          effect at the end of the current period with no refund. We may
           change pricing on at least 30 days&rsquo; written notice (email to the
           Firm owner of record); changes apply to your next renewal.
         </p>

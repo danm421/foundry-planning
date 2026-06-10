@@ -1,6 +1,6 @@
 # Foundry Planning — Subprocessors & Vendors
 
-Last updated 2026-05-01. Linked from [`/legal/dpa`](/legal/dpa).
+Last updated 2026-06-09. Linked from [`/legal/dpa`](/legal/dpa).
 
 This list names every third-party service that processes Foundry Planning
 customer data on our behalf. We update it whenever a subprocessor is added
