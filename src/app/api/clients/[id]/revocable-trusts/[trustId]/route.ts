@@ -3,7 +3,7 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { clients, revocableTrusts, accounts } from "@/db/schema";
 import { eq, and, inArray, notInArray } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
 
@@ -60,7 +60,7 @@ export async function PATCH(
     const [updated] = await db
       .update(revocableTrusts)
       .set({ name, updatedAt: new Date() })
-      .where(eq(revocableTrusts.id, trustId))
+      .where(and(eq(revocableTrusts.id, trustId), eq(revocableTrusts.clientId, id)))
       .returning();
 
     // Membership diff:
@@ -130,7 +130,7 @@ export async function PATCH(
 
     return NextResponse.json({ ...updated, accountIds: finalAccountIds });
   } catch (err) {
-    if (err instanceof Error && err.message.includes("Unauthorized")) {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("PATCH /api/clients/[id]/revocable-trusts/[trustId] error:", err);
@@ -159,7 +159,7 @@ export async function DELETE(
     // untags all member accounts automatically.
     await db
       .delete(revocableTrusts)
-      .where(eq(revocableTrusts.id, trustId));
+      .where(and(eq(revocableTrusts.id, trustId), eq(revocableTrusts.clientId, id)));
 
     await recordAudit({
       action: "revocable_trust.delete",
@@ -172,7 +172,7 @@ export async function DELETE(
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message.includes("Unauthorized")) {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("DELETE /api/clients/[id]/revocable-trusts/[trustId] error:", err);

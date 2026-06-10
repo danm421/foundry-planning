@@ -3,7 +3,7 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { clients, revocableTrusts, accounts } from "@/db/schema";
 import { eq, and, inArray, asc } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
 
@@ -63,7 +63,7 @@ export async function GET(
 
     return NextResponse.json(enriched);
   } catch (err) {
-    if (err instanceof Error && err.message.includes("Unauthorized")) {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("GET /api/clients/[id]/revocable-trusts error:", err);
@@ -121,7 +121,7 @@ export async function POST(
 
     return NextResponse.json({ ...trust, accountIds }, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message.includes("Unauthorized")) {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("POST /api/clients/[id]/revocable-trusts error:", err);
