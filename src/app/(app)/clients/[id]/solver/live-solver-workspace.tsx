@@ -527,7 +527,12 @@ export function LiveSolverWorkspace({
   }
 
   const handleSolveStart = useCallback(
-    (target: SolveLeverKey, targetPoS?: number, extraMutations: SolverMutation[] = []) => {
+    (
+      target: SolveLeverKey,
+      targetPoS?: number,
+      extraMutations: SolverMutation[] = [],
+      extraMixes: { accountId: string; mix: { assetClassId: string; weight: number }[] }[] = [],
+    ) => {
       if (activeSolve) return;
       setSolveError(null);
       setActiveSolve({
@@ -552,12 +557,21 @@ export function LiveSolverWorkspace({
       // the conversion (F4).
       const targetKey = mutationKey(buildLeverMutation(target, 0, workingTree));
       merged.delete(targetKey);
+      // Merge caller-supplied per-account mixes over the memoized ones, with
+      // extraMixes winning on accountId collision. Same flush-timing reason as
+      // extraMutations: a just-created account's setSavingsAccountMixes hasn't
+      // flushed yet, so extraAccountMixes is stale this render and would omit
+      // the new account's mix — leaving it at MC's zero-variance fallback.
+      const startMixes = [
+        ...extraAccountMixes.filter((x) => !extraMixes.some((e) => e.accountId === x.accountId)),
+        ...extraMixes,
+      ];
       void solveController.start({
         source: initialSource,
         mutations: Array.from(merged.values()),
         target,
         targetPoS,
-        extraAccountMixes,
+        extraAccountMixes: startMixes,
       });
     },
     [activeSolve, mutations, initialSource, solveController, workingTree, extraAccountMixes],
@@ -612,10 +626,12 @@ export function LiveSolverWorkspace({
       // Pass the account+rule as extra baseline mutations: pushMutation's state
       // updates haven't flushed yet, so the solve must be told about them
       // directly or the search range would resolve against a tree with no rule.
-      handleSolveStart({ kind: "savings-contribution", accountId }, targetPoS, [
-        accountMutation,
-        ruleMutation,
-      ]);
+      handleSolveStart(
+        { kind: "savings-contribution", accountId },
+        targetPoS,
+        [accountMutation, ruleMutation],
+        [{ accountId, mix: portfolio.mix }],
+      );
     },
     // pushMutation is a plain component-scope function; its identity is
     // irrelevant here, so it's intentionally not a dependency.
