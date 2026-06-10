@@ -28,6 +28,7 @@ export interface StartArgs {
   target: SolveLeverKey;
   /** Omitted for the deterministic ss-claim-age solve. */
   targetPoS?: number;
+  extraAccountMixes?: { accountId: string; mix: { assetClassId: string; weight: number }[] }[];
 }
 
 export interface SolverSolveController {

@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  const { source, mutations, target, targetPoS } = parsed.data;
+  const { source, mutations, target, targetPoS, extraAccountMixes } = parsed.data;
 
   const encoder = new TextEncoder();
   const abortController = new AbortController();
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             signal: abortController.signal,
           });
         } else {
-          const mcPayload = await loadMonteCarloData(clientId, firmId);
+          const mcPayload = await loadMonteCarloData(clientId, firmId, "base", extraAccountMixes ?? []);
           result = await solveTarget({
             effectiveTree,
             mcPayload,

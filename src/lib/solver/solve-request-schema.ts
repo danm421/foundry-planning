@@ -26,6 +26,17 @@ export const SOLVE_REQUEST_SCHEMA = z
     // Optional: required only for the PoS-bisection levers. The deterministic
     // ss-claim-age solve has no target PoS.
     targetPoS: z.number().min(0.01).max(0.99).optional(),
+    // Optional per-account asset mixes for synthetic (non-DB) accounts injected
+    // by the solver (e.g. the "Additional Savings" account). Forwarded to
+    // loadMonteCarloData so their asset classes reach the MC correlation matrix.
+    extraAccountMixes: z
+      .array(
+        z.object({
+          accountId: z.string().min(1),
+          mix: z.array(z.object({ assetClassId: z.string().min(1), weight: z.number() })),
+        }),
+      )
+      .optional(),
   })
   .refine(
     (b) => b.target.kind === "ss-claim-age" || b.targetPoS !== undefined,

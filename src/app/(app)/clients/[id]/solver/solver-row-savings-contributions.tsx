@@ -32,6 +32,8 @@ interface Props {
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
+  /** fundFromExpenseReduction accounts the advisor chose to surface as boxes. */
+  visibleSelfFundingAccts?: Set<string>;
 }
 
 export function SolverRowSavingsContributions({
@@ -42,13 +44,15 @@ export function SolverRowSavingsContributions({
   activeSolve,
   onSolveStart,
   onSolveCancel,
+  visibleSelfFundingAccts,
 }: Props) {
   const side = useSolverSide();
   const baseActive = activeSavingsRules(baseClientData.savingsRules, currentYear);
+  const visible = visibleSelfFundingAccts ?? new Set<string>();
 
   const baseRuleIds = new Set(baseClientData.savingsRules.map((r) => r.id));
   const workingAdded = activeSavingsRules(workingClientData.savingsRules, currentYear)
-    .filter((r) => !baseRuleIds.has(r.id) && !r.fundFromExpenseReduction);
+    .filter((r) => !baseRuleIds.has(r.id) && (!r.fundFromExpenseReduction || visible.has(r.accountId)));
 
   if (baseActive.length === 0 && (side === "base" || workingAdded.length === 0)) return null;
 

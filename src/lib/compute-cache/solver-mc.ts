@@ -16,6 +16,7 @@ import { getOrComputeMonteCarlo } from "./monte-carlo";
 import { hashMonteCarloInputs } from "./hash";
 import { createReturnEngine, runMonteCarlo } from "@/engine";
 import type { SolverMutation } from "@/lib/solver/types";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 
 const CANONICAL_TRIALS = 1000;
 // Transient rows expire after 7 days; keyed by input hash so stale entries are harmless.
@@ -30,9 +31,10 @@ export async function getOrComputeSolverMc(args: {
   firmId: string;
   source: string | "base";
   mutations: SolverMutation[];
+  extraAccountMixes?: ReadonlyArray<{ accountId: string; mix: AccountAssetMix[] }>;
   forceRefresh?: boolean;
 }): Promise<SolverMcResult> {
-  const { clientId, firmId, source, mutations, forceRefresh } = args;
+  const { clientId, firmId, source, mutations, extraAccountMixes, forceRefresh } = args;
 
   // No edits → the effective tree is the source scenario itself. Reuse the
   // persistent per-scenario cache (warmed by the report/overview pages).
@@ -57,7 +59,7 @@ export async function getOrComputeSolverMc(args: {
   if (resolutionContext) {
     mutated = resolveTechniqueMutations(mutated, mutations, resolutionContext);
   }
-  const mcPayload = await loadMonteCarloData(clientId, firmId, source, [], mutated);
+  const mcPayload = await loadMonteCarloData(clientId, firmId, source, extraAccountMixes ?? [], mutated);
   const inputHash = hashMonteCarloInputs({
     tree: mutated,
     mcPayload,

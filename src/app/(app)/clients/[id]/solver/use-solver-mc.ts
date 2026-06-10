@@ -21,6 +21,8 @@ interface Args {
   clientId: string;
   source: "base" | string;
   mutations: SolverMutation[];
+  /** Model portfolio asset mixes to inject for the working-tree gauge. */
+  extraAccountMixes?: { accountId: string; mix: { assetClassId: string; weight: number }[] }[];
   /** Refetch the Base column too (first/auto run); false on working-only Recalculate. */
   includeBase: boolean;
   enabled: boolean;
@@ -32,12 +34,13 @@ async function fetchSuccessRate(
   clientId: string,
   source: string,
   mutations: SolverMutation[],
+  extraAccountMixes: { accountId: string; mix: { assetClassId: string; weight: number }[] }[],
   signal: AbortSignal,
 ): Promise<number> {
   const res = await fetch(`/api/clients/${clientId}/solver/monte-carlo`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source, mutations }),
+    body: JSON.stringify({ source, mutations, ...(extraAccountMixes.length ? { extraAccountMixes } : {}) }),
     signal,
   });
   if (!res.ok) {
@@ -52,6 +55,7 @@ export function useSolverMc({
   clientId,
   source,
   mutations,
+  extraAccountMixes = [],
   includeBase,
   enabled,
   nonce,
@@ -79,9 +83,9 @@ export function useSolverMc({
       try {
         const m = mutationsRef.current;
         const [workingSuccessRate, baseSuccessRate] = await Promise.all([
-          fetchSuccessRate(clientId, source, m, ac.signal),
+          fetchSuccessRate(clientId, source, m, extraAccountMixes, ac.signal),
           includeBase
-            ? fetchSuccessRate(clientId, "base", [], ac.signal)
+            ? fetchSuccessRate(clientId, "base", [], [], ac.signal)
             : Promise.resolve(null),
         ]);
         if (ac.signal.aborted) return;
@@ -101,7 +105,8 @@ export function useSolverMc({
       }
     })();
     return () => ac.abort();
-  }, [clientId, source, includeBase, enabled, nonce]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, source, includeBase, enabled, nonce, JSON.stringify(extraAccountMixes)]);
 
   return state;
 }

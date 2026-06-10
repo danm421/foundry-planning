@@ -53,6 +53,26 @@ describe("SolverRowSavingsContributions working-added rows", () => {
     expect(screen.queryByLabelText("Additional Savings")).toBeNull();
   });
 
+  it("shows a self-funding rule once its account is in visibleSelfFundingAccts", () => {
+    const base = clientData({ savingsRules: [baseRule] });
+    const working = clientData({ savingsRules: [baseRule, minSavingsRule] });
+    render(
+      <SolverSideContext.Provider value="working">
+        <SolverRowSavingsContributions
+          baseClientData={base}
+          workingClientData={working}
+          currentYear={2026}
+          onChange={vi.fn()}
+          activeSolve={null}
+          onSolveStart={vi.fn()}
+          onSolveCancel={vi.fn()}
+          visibleSelfFundingAccts={new Set(["acct-min"])}
+        />
+      </SolverSideContext.Provider>,
+    );
+    expect(screen.getByLabelText("Additional Savings")).toBeInTheDocument();
+  });
+
   it("renders the section when only a working-added rule exists (no base rules)", () => {
     const base = clientData({ savingsRules: [] });
     const working = clientData({ savingsRules: [addedRule] });

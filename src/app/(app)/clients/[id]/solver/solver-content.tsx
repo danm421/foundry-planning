@@ -1,10 +1,11 @@
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { db } from "@/db";
-import { scenarios, modelPortfolios } from "@/db/schema";
+import { scenarios, modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
+import { assembleSolverPortfolios, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
 
 interface Props {
@@ -33,7 +34,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
     ? runProjection(sourceLoaded.effectiveTree)
     : baseProjection;
 
-  const [scenarioRows, modelPortfolioRows] = await Promise.all([
+  const [scenarioRows, modelPortfolioRows, allocationRows] = await Promise.all([
     db
       .select({ id: scenarios.id, name: scenarios.name })
       .from(scenarios)
@@ -42,7 +43,27 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)
       .where(eq(modelPortfolios.firmId, firmId)),
+    db
+      .select({
+        modelPortfolioId: modelPortfolioAllocations.modelPortfolioId,
+        assetClassId: modelPortfolioAllocations.assetClassId,
+        weight: modelPortfolioAllocations.weight,
+      })
+      .from(modelPortfolioAllocations)
+      .innerJoin(modelPortfolios, eq(modelPortfolioAllocations.modelPortfolioId, modelPortfolios.id))
+      .where(eq(modelPortfolios.firmId, firmId)),
   ]);
+
+  const allocsByPortfolio = new Map<string, { assetClassId: string; weight: string }[]>();
+  for (const a of allocationRows) {
+    const list = allocsByPortfolio.get(a.modelPortfolioId) ?? [];
+    list.push({ assetClassId: a.assetClassId, weight: a.weight });
+    allocsByPortfolio.set(a.modelPortfolioId, list);
+  }
+
+  const solverPortfolios: SolverModelPortfolio[] = growthResolver
+    ? assembleSolverPortfolios(modelPortfolioRows, allocsByPortfolio, (id) => growthResolver.resolvePortfolio(id))
+    : [];
 
   const milestones = buildClientMilestones(
     baseLoaded.effectiveTree.client,
@@ -75,7 +96,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       initialSourceClientData={sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree}
       initialSourceProjection={sourceProjection}
       availableScenarios={scenarioRows}
-      modelPortfolios={modelPortfolioRows}
+      modelPortfolios={solverPortfolios}
       milestones={milestones}
       lifeInsuranceSettings={lifeInsuranceSettings}
       clientName={clientName}

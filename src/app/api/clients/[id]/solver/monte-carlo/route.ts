@@ -25,6 +25,14 @@ const BODY = z.object({
   source: z.union([z.literal("base"), z.string().uuid()]),
   mutations: z.array(SOLVER_MUTATION_SCHEMA),
   forceRefresh: z.boolean().optional(),
+  extraAccountMixes: z
+    .array(
+      z.object({
+        accountId: z.string().min(1),
+        mix: z.array(z.object({ assetClassId: z.string().min(1), weight: z.number() })),
+      }),
+    )
+    .optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -56,13 +64,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations, forceRefresh } = parsed.data;
+    const { source, mutations, forceRefresh, extraAccountMixes } = parsed.data;
 
     const result = await getOrComputeSolverMc({
       clientId,
       firmId,
       source,
       mutations: mutations as SolverMutation[],
+      ...(extraAccountMixes ? { extraAccountMixes } : {}),
       ...(forceRefresh ? { forceRefresh } : {}),
     });
 
