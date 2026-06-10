@@ -3543,6 +3543,33 @@ export const firms = pgTable("firms", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Maps a staff member (org:operations / org:planner) to the advisors whose
+// book they may view. Many-to-many: one row per (staff, advisor) edge. The
+// role itself lives in Clerk; only the visibility edges are persisted here.
+// firmId is the Clerk org id (text, no FK — matches the crm_* convention so
+// insert order is never coupled to the firms row).
+export const staffAdvisorVisibility = pgTable(
+  "staff_advisor_visibility",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    staffUserId: text("staff_user_id").notNull(),
+    advisorUserId: text("advisor_user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdBy: text("created_by"),
+  },
+  (t) => [
+    index("staff_advisor_visibility_firm_staff_idx").on(t.firmId, t.staffUserId),
+    uniqueIndex("staff_advisor_visibility_unique_edge").on(
+      t.firmId,
+      t.staffUserId,
+      t.advisorUserId,
+    ),
+  ],
+);
+
 // One Stripe subscription per firm. UNIQUE filter ensures a firm can only
 // have one *live* sub at a time — canceled rows stay for history.
 // `current_period_*` mirrors Stripe so middleware can compute grace

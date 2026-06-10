@@ -10,6 +10,8 @@ import {
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireCrmHouseholdAccess } from "./authz";
+import { auth } from "@clerk/nextjs/server";
+import { resolveVisibleAdvisorIds, advisorScopeCondition } from "@/lib/visibility";
 import { recordAudit } from "@/lib/audit";
 import { recordDelete } from "@/lib/audit/record-helpers";
 import { toHouseholdSnapshot } from "@/lib/audit/snapshots/household";
@@ -39,6 +41,10 @@ export async function listCrmHouseholds(opts?: {
     conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
   }
   if (opts?.search) conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
+  const { userId, orgRole } = await auth();
+  const visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
+  const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
+  if (scope) conditions.push(scope);
 
   return db.query.crmHouseholds.findMany({
     where: and(...conditions),
@@ -97,6 +103,10 @@ export async function listRecentlyOpenedHouseholds(opts: {
   if (opts.search) {
     conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
   }
+  const { userId: callerId, orgRole } = await auth();
+  const visible = await resolveVisibleAdvisorIds(callerId ?? "", orgRole, firmId);
+  const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
+  if (scope) conditions.push(scope);
 
   const rows = await db.query.crmHouseholds.findMany({
     where: and(...conditions),

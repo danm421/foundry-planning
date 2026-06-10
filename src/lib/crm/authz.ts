@@ -4,6 +4,8 @@ import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { auth } from "@clerk/nextjs/server";
 import { ForbiddenError } from "@/lib/authz";
+import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
+import { STAFF_ROLES } from "@/lib/capabilities";
 
 /**
  * Org-scoped accessor for a CRM household. Mirrors the pattern in
@@ -32,10 +34,18 @@ export async function requireVaultAccess(householdId: string) {
   const { household, orgId } = await requireCrmHouseholdAccess(householdId);
   const { userId, orgRole } = await auth();
   const isAdmin = orgRole === "org:admin" || orgRole === "org:owner";
-  if (!isAdmin && household.advisorId !== userId) {
-    throw new ForbiddenError("You do not have access to this household's vault");
+  if (isAdmin) return { household, orgId };
+  if (userId && household.advisorId === userId) return { household, orgId };
+  // Staff (operations/planner): allowed iff the household's advisor is in their
+  // mapped set. Firm-wide members never reach this branch (STAFF_ROLES gate),
+  // so a member still only gets their own assigned households.
+  if (userId && orgRole && STAFF_ROLES.has(orgRole)) {
+    const visible = await resolveVisibleAdvisorIds(userId, orgRole, orgId);
+    if (visible !== VISIBLE_ALL && visible.has(household.advisorId)) {
+      return { household, orgId };
+    }
   }
-  return { household, orgId };
+  throw new ForbiddenError("You do not have access to this household's vault");
 }
 
 /**

@@ -14,6 +14,7 @@ import {
 } from "@/db/schema";
 import { eq, and, asc, isNull } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { resolveVisibleAdvisorIds, advisorScopeCondition } from "@/lib/visibility";
 import { requireActiveSubscription } from "@/lib/authz";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
@@ -39,6 +40,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const firmId = await requireOrgId();
+    const { userId, orgRole } = await auth();
+    const visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
+    const scope = advisorScopeCondition(clients.advisorId, visible);
 
     // Tight projection: the list UI only needs identity + the fields
     // shown in the table. Identity (firstName/lastName/spouse names) now lives
@@ -64,7 +68,13 @@ export async function GET() {
           eq(primaryContact.role, "primary"),
         ),
       )
-      .where(and(eq(clients.firmId, firmId), isNull(crmHouseholds.deletedAt)))
+      .where(
+        and(
+          eq(clients.firmId, firmId),
+          isNull(crmHouseholds.deletedAt),
+          ...(scope ? [scope] : []),
+        ),
+      )
       .orderBy(asc(primaryContact.lastName), asc(primaryContact.firstName));
 
     return NextResponse.json(rows);

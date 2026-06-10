@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { UnauthorizedError } from "./db-helpers";
+import { roleHasCapability, type Capability } from "./capabilities";
 
 /**
  * Forbidden — the caller is authenticated but lacks the required role
@@ -35,6 +36,20 @@ export async function requireOrgAdminOrOwner(): Promise<void> {
   if (!userId) throw new UnauthorizedError();
   if (orgRole !== "org:admin" && orgRole !== "org:owner") {
     throw new ForbiddenError("Organization admin or owner role required");
+  }
+}
+
+/**
+ * Generalized role gate. Prefer this over hard-coded role-string checks: it
+ * routes through the capability table in `capabilities.ts` so the role→surface
+ * mapping has one home. `requireOrgOwner`/`requireOrgAdminOrOwner` remain as
+ * thin convenience wrappers for existing call sites.
+ */
+export async function requireCapability(cap: Capability): Promise<void> {
+  const { userId, orgRole } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  if (!roleHasCapability(orgRole, cap)) {
+    throw new ForbiddenError(`Capability '${cap}' required`);
   }
 }
 

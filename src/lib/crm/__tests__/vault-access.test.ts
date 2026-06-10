@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
-import { crmHouseholds } from "@/db/schema";
+import { crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -58,6 +58,46 @@ describe("requireVaultAccess", () => {
 
   it("rejects another advisor in the same firm", async () => {
     setAuth(OTHER, "org:member");
+    await expect(requireVaultAccess(householdId)).rejects.toThrow();
+  });
+});
+
+describe("requireVaultAccess — staff roles", () => {
+  beforeEach(async () => {
+    await db
+      .delete(staffAdvisorVisibility)
+      .where(eq(staffAdvisorVisibility.firmId, ORG));
+  });
+
+  it("allows a planner mapped to the household's advisor", async () => {
+    await db.insert(staffAdvisorVisibility).values({
+      firmId: ORG,
+      staffUserId: "user_planner",
+      advisorUserId: ADVISOR,
+    });
+    setAuth("user_planner", "org:planner");
+    await expect(requireVaultAccess(householdId)).resolves.toMatchObject({
+      orgId: ORG,
+    });
+  });
+
+  it("allows an operations member mapped to the household's advisor", async () => {
+    await db.insert(staffAdvisorVisibility).values({
+      firmId: ORG,
+      staffUserId: "user_ops",
+      advisorUserId: ADVISOR,
+    });
+    setAuth("user_ops", "org:operations");
+    await expect(requireVaultAccess(householdId)).resolves.toBeTruthy();
+  });
+
+  it("rejects a staff member NOT mapped to the household's advisor", async () => {
+    await db.insert(staffAdvisorVisibility).values({
+      firmId: ORG,
+      staffUserId: "user_planner",
+      advisorUserId: OTHER, // mapped to a different advisor
+    });
+    setAuth("user_planner", "org:planner");
     await expect(requireVaultAccess(householdId)).rejects.toThrow();
   });
 });
