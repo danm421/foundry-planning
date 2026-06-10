@@ -35,7 +35,7 @@ describe("handleClerkEvent", () => {
       data: { id: "org_abc123" },
     };
 
-    const res = await handleClerkEvent(evt);
+    const res = await handleClerkEvent(evt, "svix_test");
 
     expect(res.status).toBe(200);
     expect(seedCmaForFirm).toHaveBeenCalledWith("org_abc123");
@@ -63,7 +63,7 @@ describe("handleClerkEvent", () => {
       data: { id: "user_abc" },
     };
 
-    const res = await handleClerkEvent(evt);
+    const res = await handleClerkEvent(evt, "svix_test");
 
     expect(res.status).toBe(200);
     expect(seedCmaForFirm).not.toHaveBeenCalled();
@@ -75,7 +75,7 @@ describe("handleClerkEvent", () => {
       data: {},
     } as unknown as ClerkEvent;
 
-    const res = await handleClerkEvent(evt);
+    const res = await handleClerkEvent(evt, "svix_test");
 
     expect(res.status).toBe(400);
     expect(seedCmaForFirm).not.toHaveBeenCalled();
@@ -90,7 +90,7 @@ describe("handleClerkEvent", () => {
       data: { id: "org_fail" },
     };
 
-    const res = await handleClerkEvent(evt);
+    const res = await handleClerkEvent(evt, "svix_test");
 
     expect(res.status).toBe(500);
   });
