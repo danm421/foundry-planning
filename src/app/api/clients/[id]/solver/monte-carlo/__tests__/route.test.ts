@@ -70,4 +70,13 @@ describe("POST /api/clients/[id]/solver/monte-carlo", () => {
       mutations: [],
     });
   });
+
+  it("forwards extraAccountMixes to getOrComputeSolverMc", async () => {
+    const mixes = [{ accountId: "acct-min", mix: [{ assetClassId: "ac-1", weight: 0.6 }] }];
+    const req = makeRequest({ source: "base", mutations: [], extraAccountMixes: mixes });
+    await POST(req, ctx);
+    expect(vi.mocked(getOrComputeSolverMc)).toHaveBeenCalledWith(
+      expect.objectContaining({ extraAccountMixes: mixes }),
+    );
+  });
 });
