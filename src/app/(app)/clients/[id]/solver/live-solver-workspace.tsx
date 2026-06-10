@@ -36,10 +36,8 @@ import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
-
-// Matches the 85% default the per-lever Solve popovers offer (defaultTargetPct=85,
-// which the popover submits as value/100).
-const MIN_SAVINGS_TARGET_POS = 0.85;
+import { SolverMinSavingsPanel, type MinSavingsResult } from "./solver-min-savings-panel";
+import { buildLockInCutMutations } from "@/lib/solver/lock-in-cut";
 
 function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
   if (type === "cash") return d.cash;
@@ -168,9 +166,20 @@ export function LiveSolverWorkspace({
     accountId: string;
     ruleId: string;
     rule: SavingsRule;
+    portfolio: SolverModelPortfolio;
+    targetPoS: number;
   } | null>(null);
   const minSavingsRef = useRef<typeof minSavings>(null);
   minSavingsRef.current = minSavings;
+
+  // Min-savings result currently shown in the panel (null = idle/no result).
+  const [minSavingsResult, setMinSavingsResult] = useState<MinSavingsResult | null>(null);
+  // Synthetic-account asset mixes to inject into MC, keyed by account id.
+  const [savingsAccountMixes, setSavingsAccountMixes] = useState<Map<string, { assetClassId: string; weight: number }[]>>(() => new Map());
+  // fundFromExpenseReduction accounts surfaced as editable boxes ("Keep self-funding").
+  const [visibleSelfFundingAccts, setVisibleSelfFundingAccts] = useState<Set<string>>(() => new Set());
+  // Working-tree year-0 living captured at solve start, for the outcome delta.
+  const baselineLivingRef = useRef<number>(0);
 
   const solveController = useSolverSolve({
     clientId,
@@ -242,7 +251,29 @@ export function LiveSolverWorkspace({
         next.set(mutationKey(mutation), mutation);
         return next;
       });
-      if (isMinSavings) setMinSavings(null);
+      if (isMinSavings && ms) {
+        // Build the panel's outcome summary from the converged year-0 row:
+        // updated living + the savings waterfall split (cash flow vs. expense
+        // reduction). e.status is safe here — the min-savings branch is always
+        // objective: "pos".
+        const y0 = e.finalProjection[0];
+        const updatedLiving = y0?.expenses.living ?? 0;
+        const hs = y0?.hypotheticalSavings;
+        setMinSavingsResult({
+          status: e.objective === "pos" ? e.status : "converged",
+          savings: e.solvedValue,
+          portfolioName: ms.portfolio.name,
+          startYear: ms.rule.startYear,
+          endYear: ms.rule.endYear,
+          targetPoS: ms.targetPoS,
+          baselineLiving: baselineLivingRef.current,
+          updatedLiving,
+          fromCashFlow: hs?.fromCashFlow ?? 0,
+          fromExpenseReduction:
+            hs?.fromExpenseReduction ?? Math.max(0, baselineLivingRef.current - updatedLiving),
+        });
+        setMinSavings(null);
+      }
       setCurrentProjection(e.finalProjection);
       // Surface the canonical 1,000-trial PoS (computed on the converged tree)
       // as the advisor-facing solved result so it matches the MC report/PDF,
@@ -264,6 +295,17 @@ export function LiveSolverWorkspace({
     () => applyMutations(initialSourceClientData, mutations),
     [initialSourceClientData, mutations],
   );
+
+  // Asset mixes for synthetic savings accounts, threaded into MC so the
+  // additional-savings dollars grow on the chosen portfolio's allocation rather
+  // than the deterministic growthRate fallback. Drop entries whose account no
+  // longer exists in the working tree (e.g. after a reset).
+  const extraAccountMixes = useMemo(() => {
+    const ids = new Set(workingTree.accounts.map((a) => a.id));
+    return Array.from(savingsAccountMixes.entries())
+      .filter(([accountId]) => ids.has(accountId))
+      .map(([accountId, mix]) => ({ accountId, mix }));
+  }, [workingTree.accounts, savingsAccountMixes]);
 
   const existingAddable = useMemo(() => {
     const withRule = new Set(workingTree.savingsRules.map((r) => r.accountId));
@@ -289,6 +331,7 @@ export function LiveSolverWorkspace({
     includeBase,
     enabled: mcRequested,
     nonce: mcVersion,
+    extraAccountMixes,
   });
 
   // Base facts can't change in the solver, so the Base PoS is computed once on
@@ -514,9 +557,10 @@ export function LiveSolverWorkspace({
         mutations: Array.from(merged.values()),
         target,
         targetPoS,
+        extraAccountMixes,
       });
     },
-    [activeSolve, mutations, initialSource, solveController, workingTree],
+    [activeSolve, mutations, initialSource, solveController, workingTree, extraAccountMixes],
   );
 
   const handleSolveCancel = useCallback(() => {
@@ -524,22 +568,29 @@ export function LiveSolverWorkspace({
     setActiveSolve(null);
   }, [solveController]);
 
-  // "Solve minimum additional savings": stand up a real, savable taxable
-  // account + a fundFromExpenseReduction rule at $0, push both into the
-  // baseline (so the search sees them), then goal-seek the rule's contribution
+  // "Solve minimum additional savings": stand up a real, savable account on the
+  // chosen model portfolio's growth/realization + a fundFromExpenseReduction
+  // rule at $0, push both into the baseline (so the search sees them), register
+  // the portfolio's asset mix for MC, then goal-seek the rule's contribution
   // toward the target PoS. onResult writes back the solved annualAmount.
   const handleSolveMinSavings = useCallback(
-    (targetPoS: number) => {
+    (modelPortfolioId: string, targetPoS: number) => {
       if (activeSolve) return;
       const owner = ownerOptions[0];
       if (!owner) return; // no owner → nothing to solve against
+      const portfolio = modelPortfolios.find((p) => p.id === modelPortfolioId);
+      if (!portfolio) return; // unknown portfolio → nothing to invest in
+      // Capture working-tree year-0 living before the solve so onResult can show
+      // the before→after delta of the expense-reduction self-funding.
+      baselineLivingRef.current = currentProjection[0]?.expenses.living ?? 0;
       const accountId = crypto.randomUUID();
       const ruleId = crypto.randomUUID();
       const { account, rule } = buildAdditionalSavingsAccount({
         ownerFamilyMemberId: owner.familyMemberId,
         startYear: currentYear,
         endYear: retirementYearForOwner(owner.familyMemberId),
-        growthRate: categoryGrowthDefaults.taxable,
+        growthRate: portfolio.growthRate,
+        realization: portfolio.realization,
         accountId,
         ruleId,
       });
@@ -555,7 +606,9 @@ export function LiveSolverWorkspace({
       };
       pushMutation(accountMutation);
       pushMutation(ruleMutation);
-      setMinSavings({ accountId, ruleId, rule });
+      setMinSavings({ accountId, ruleId, rule, portfolio, targetPoS });
+      setMinSavingsResult(null);
+      setSavingsAccountMixes((prev) => new Map(prev).set(accountId, portfolio.mix));
       // Pass the account+rule as extra baseline mutations: pushMutation's state
       // updates haven't flushed yet, so the solve must be told about them
       // directly or the search range would resolve against a tree with no rule.
@@ -569,12 +622,50 @@ export function LiveSolverWorkspace({
     [
       activeSolve,
       ownerOptions,
+      modelPortfolios,
+      currentProjection,
       currentYear,
       retirementYearForOwner,
-      categoryGrowthDefaults,
       handleSolveStart,
     ],
   );
+
+  // "Keep self-funding": the synthetic fundFromExpenseReduction rule is already
+  // in the tree (written back by onResult). Just surface it as an editable box.
+  const handleIncludeSelfFunding = useCallback(() => {
+    if (!minSavingsResult) return;
+    const acct = workingTree.savingsRules.find((r) => r.fundFromExpenseReduction)?.accountId;
+    if (acct) setVisibleSelfFundingAccts((prev) => new Set(prev).add(acct));
+    setMinSavingsResult(null);
+  }, [minSavingsResult, workingTree.savingsRules]);
+
+  // "Lock in cut": convert the synthetic rule to a normal savings rule and lower
+  // working-years living expenses by the year-0 expense-reduction amount.
+  const handleIncludeLockInCut = useCallback(() => {
+    if (!minSavingsResult) return;
+    const selfRule = workingTree.savingsRules.find((r) => r.fundFromExpenseReduction);
+    if (!selfRule) { setMinSavingsResult(null); return; }
+    const normalRule: SavingsRule = {
+      id: selfRule.id,
+      accountId: selfRule.accountId,
+      annualAmount: selfRule.annualAmount,
+      isDeductible: selfRule.isDeductible,
+      startYear: selfRule.startYear,
+      endYear: selfRule.endYear,
+      ...(selfRule.rothPercent != null ? { rothPercent: selfRule.rothPercent } : {}),
+    };
+    pushMutation({ kind: "savings-rule-upsert", id: normalRule.id, value: normalRule });
+    for (const m of buildLockInCutMutations(
+      workingTree.expenses,
+      workingTree.planSettings.planStartYear,
+      currentYear,
+      minSavingsResult.fromExpenseReduction,
+    )) {
+      pushMutation(m);
+    }
+    setVisibleSelfFundingAccts((prev) => { const n = new Set(prev); n.delete(selfRule.accountId); return n; });
+    setMinSavingsResult(null);
+  }, [minSavingsResult, workingTree, currentYear]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -822,6 +913,7 @@ export function LiveSolverWorkspace({
                 activeSolve={activeSolve}
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
+                visibleSelfFundingAccts={visibleSelfFundingAccts}
               />
               <SolverWorkingOnly>
                 <SolverQuickAddAccount
@@ -832,16 +924,29 @@ export function LiveSolverWorkspace({
                   growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
                   onChange={pushMutation}
                 />
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => handleSolveMinSavings(MIN_SAVINGS_TARGET_POS)}
-                    disabled={activeSolve !== null || ownerOptions.length === 0}
-                    className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Solve minimum additional savings
-                  </button>
-                </div>
+                <SolverMinSavingsPanel
+                  portfolios={modelPortfolios}
+                  disabled={activeSolve !== null || ownerOptions.length === 0}
+                  phase={
+                    activeSolve?.target.kind === "savings-contribution" &&
+                    minSavings?.accountId ===
+                      (activeSolve.target as { kind: "savings-contribution"; accountId: string }).accountId
+                      ? "solving"
+                      : minSavingsResult
+                        ? "result"
+                        : "idle"
+                  }
+                  progress={
+                    activeSolve && minSavings
+                      ? { iteration: activeSolve.iteration, candidateValue: activeSolve.candidateValue, achievedPoS: activeSolve.achievedPoS, targetPoS: minSavings.targetPoS }
+                      : null
+                  }
+                  result={minSavingsResult}
+                  onSolve={handleSolveMinSavings}
+                  onIncludeSelfFunding={handleIncludeSelfFunding}
+                  onIncludeLockInCut={handleIncludeLockInCut}
+                  onDismissResult={() => { handleSolveCancel(); setMinSavingsResult(null); }}
+                />
               </SolverWorkingOnly>
             </SolverSection>
           </>
