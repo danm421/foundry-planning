@@ -5,7 +5,7 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: () => mockAuth(),
 }));
 
-import { getSubscriptionState } from "../subscription-state";
+import { getSubscriptionState, stateFromMeta } from "../subscription-state";
 
 beforeEach(() => mockAuth.mockReset());
 
@@ -50,7 +50,7 @@ describe("getSubscriptionState", () => {
 
   it("returns past_due for subscription_status=past_due", async () => {
     withMeta({ subscription_status: "past_due" });
-    expect(await getSubscriptionState()).toEqual({ kind: "past_due" });
+    expect(await getSubscriptionState()).toEqual({ kind: "past_due", pastDueSince: null });
   });
 
   it("returns canceled_grace within 30 days of archived_at", async () => {
@@ -126,5 +126,80 @@ describe("getSubscriptionState", () => {
   it("returns canceled_locked when canceled has malformed archived_at", async () => {
     withMeta({ subscription_status: "canceled", archived_at: "garbage" });
     expect(await getSubscriptionState()).toEqual({ kind: "canceled_locked" });
+  });
+
+  it("returns unpaid for subscription_status=unpaid (terminal)", async () => {
+    withMeta({ subscription_status: "unpaid" });
+    expect(await getSubscriptionState()).toEqual({ kind: "unpaid" });
+  });
+
+  it("returns paused for subscription_status=paused (terminal)", async () => {
+    withMeta({ subscription_status: "paused" });
+    expect(await getSubscriptionState()).toEqual({ kind: "paused" });
+  });
+
+  it("treats incomplete_expired like canceled with no archived_at (locked)", async () => {
+    withMeta({ subscription_status: "incomplete_expired" });
+    expect(await getSubscriptionState()).toEqual({ kind: "canceled_locked" });
+  });
+
+  it("treats incomplete_expired within 30d of archived_at as grace", async () => {
+    const archivedAt = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    withMeta({ subscription_status: "incomplete_expired", archived_at: archivedAt });
+    const state = await getSubscriptionState();
+    expect(state.kind).toBe("canceled_grace");
+  });
+
+  it("returns past_due with pastDueSince parsed from current_period_end", async () => {
+    const periodEnd = "2026-06-01T00:00:00Z";
+    withMeta({ subscription_status: "past_due", current_period_end: periodEnd });
+    expect(await getSubscriptionState()).toEqual({
+      kind: "past_due",
+      pastDueSince: new Date(periodEnd),
+    });
+  });
+
+  it("returns past_due with null pastDueSince when no current_period_end", async () => {
+    withMeta({ subscription_status: "past_due" });
+    expect(await getSubscriptionState()).toEqual({
+      kind: "past_due",
+      pastDueSince: null,
+    });
+  });
+});
+
+describe("stateFromMeta (pure)", () => {
+  it("returns missing for empty meta", () => {
+    expect(stateFromMeta({})).toEqual({ kind: "missing", reason: "no_metadata" });
+    expect(stateFromMeta(undefined)).toEqual({ kind: "missing", reason: "no_metadata" });
+  });
+
+  it("returns founder for is_founder=true regardless of status", () => {
+    expect(stateFromMeta({ is_founder: true, subscription_status: "canceled" })).toEqual({
+      kind: "founder",
+    });
+  });
+
+  it("maps unpaid and paused to their terminal kinds", () => {
+    expect(stateFromMeta({ subscription_status: "unpaid" })).toEqual({ kind: "unpaid" });
+    expect(stateFromMeta({ subscription_status: "paused" })).toEqual({ kind: "paused" });
+  });
+
+  it("maps active+cancel_at_period_end to active_canceling", () => {
+    const periodEnd = "2026-06-01T00:00:00Z";
+    expect(
+      stateFromMeta({
+        subscription_status: "active",
+        cancel_at_period_end: true,
+        current_period_end: periodEnd,
+      }),
+    ).toEqual({ kind: "active_canceling", periodEnd: new Date(periodEnd) });
+  });
+
+  it("carries pastDueSince for past_due", () => {
+    const periodEnd = "2026-06-01T00:00:00Z";
+    expect(
+      stateFromMeta({ subscription_status: "past_due", current_period_end: periodEnd }),
+    ).toEqual({ kind: "past_due", pastDueSince: new Date(periodEnd) });
   });
 });

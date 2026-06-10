@@ -5,20 +5,23 @@ export type SubscriptionState =
   | { kind: "trialing"; trialEndsAt: Date }
   | { kind: "active" }
   | { kind: "active_canceling"; periodEnd: Date }
-  | { kind: "past_due" }
+  | { kind: "past_due"; pastDueSince: Date | null }
+  | { kind: "unpaid" }
+  | { kind: "paused" }
   | { kind: "canceled_grace"; archivedAt: Date; mutationsAllowed: false }
   | { kind: "canceled_locked" }
   | { kind: "missing"; reason: "no_metadata" };
 
 export const GRACE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-type OrgMeta = {
+export type OrgMeta = {
   is_founder?: boolean;
   subscription_status?: string;
   trial_ends_at?: string;
   current_period_end?: string;
   cancel_at_period_end?: boolean;
   archived_at?: string;
+  entitlements?: string[];
 };
 
 function parseDate(s: string | undefined): Date | null {
@@ -28,18 +31,15 @@ function parseDate(s: string | undefined): Date | null {
 }
 
 /**
- * Read Clerk org public metadata via sessionClaims and project it into
- * one of the seven banner states (or `missing` if metadata is absent).
+ * Project Clerk org public metadata into one of the banner/access states.
+ * Pure: no DB, no Clerk API, no `auth()` call — takes the already-read meta.
+ * Shared by `getSubscriptionState` (server components) and `src/proxy.ts`
+ * (middleware hot path), so both branch on identical logic.
  *
- * Pure: no DB, no extra Clerk API call. Intended for both the
- * <SubscriptionGuard> banner and any future server logic that needs to
- * branch on subscription state without Stripe.
+ * `incomplete_expired` is treated exactly like `canceled` (a sub that never
+ * activated and is dead). `unpaid` and `paused` are terminal → caller locks.
  */
-export async function getSubscriptionState(): Promise<SubscriptionState> {
-  const { sessionClaims } = await auth();
-  const meta =
-    (sessionClaims as { org_public_metadata?: OrgMeta } | null)
-      ?.org_public_metadata;
+export function stateFromMeta(meta: OrgMeta | undefined): SubscriptionState {
   if (!meta || Object.keys(meta).length === 0) {
     return { kind: "missing", reason: "no_metadata" };
   }
@@ -61,8 +61,12 @@ export async function getSubscriptionState(): Promise<SubscriptionState> {
     }
     return { kind: "active" };
   }
-  if (status === "past_due") return { kind: "past_due" };
-  if (status === "canceled") {
+  if (status === "past_due") {
+    return { kind: "past_due", pastDueSince: parseDate(meta.current_period_end) };
+  }
+  if (status === "unpaid") return { kind: "unpaid" };
+  if (status === "paused") return { kind: "paused" };
+  if (status === "canceled" || status === "incomplete_expired") {
     const archivedAt = parseDate(meta.archived_at);
     if (archivedAt) {
       const ageMs = Date.now() - archivedAt.getTime();
@@ -74,4 +78,17 @@ export async function getSubscriptionState(): Promise<SubscriptionState> {
     return { kind: "canceled_locked" };
   }
   return { kind: "missing", reason: "no_metadata" };
+}
+
+/**
+ * Read Clerk org public metadata via sessionClaims and project it into a
+ * SubscriptionState. Thin wrapper over the pure `stateFromMeta` so server
+ * components and middleware share one mapping.
+ */
+export async function getSubscriptionState(): Promise<SubscriptionState> {
+  const { sessionClaims } = await auth();
+  const meta =
+    (sessionClaims as { org_public_metadata?: OrgMeta } | null)
+      ?.org_public_metadata;
+  return stateFromMeta(meta);
 }
