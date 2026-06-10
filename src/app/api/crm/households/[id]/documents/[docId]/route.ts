@@ -7,6 +7,7 @@ import {
   updateCrmDocument,
   resolveDocumentBlobPathname,
 } from "@/lib/crm/documents";
+import { ForbiddenError } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -65,6 +66,9 @@ export async function GET(
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     console.error("GET /api/crm/households/[id]/documents/[docId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -98,6 +102,9 @@ export async function DELETE(
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     console.error("DELETE /api/crm/households/[id]/documents/[docId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -125,6 +132,9 @@ export async function PATCH(
     }
     return NextResponse.json({ document: doc });
   } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     const msg = err instanceof Error ? err.message : "error";
     if (/not found/i.test(msg)) return NextResponse.json({ error: msg }, { status: 404 });
     if (/required|folder/i.test(msg)) return NextResponse.json({ error: msg }, { status: 400 });

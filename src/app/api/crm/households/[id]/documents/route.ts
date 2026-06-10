@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { ForbiddenError } from "@/lib/authz";
 import { checkImportRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import {
   listCrmDocuments,
@@ -33,6 +34,12 @@ export async function GET(
       err.message.startsWith("CRM household not found or access denied")
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    // Staff (operations/planner) not mapped to the household's advisor:
+    // requireVaultAccess throws ForbiddenError. Map to 403 (not 500) so the
+    // denial is a clean status, consistent with the sibling zip route.
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
     }
     console.error("GET /api/crm/households/[id]/documents error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -94,6 +101,9 @@ export async function POST(
     }
     if (err instanceof Error && err.message.startsWith("File too large")) {
       return NextResponse.json({ error: err.message }, { status: 413 });
+    }
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
     }
     const safeMessage =
       err instanceof Error ? err.message.slice(0, 200) : "unknown error";
