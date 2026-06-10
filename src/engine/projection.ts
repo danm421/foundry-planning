@@ -2602,9 +2602,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // portion of the original income-interest deduction is recaptured as
     // ordinary income on the grantor's final 1040. Recapture =
     //   originalIncomeInterest − PV(actual payments) at the original §7520 rate.
-    // Floored at 0; only fires for term-certain ('years' or
-    // 'shorter_of_years_or_life') CLTs — for pure life CLTs the death IS
-    // the term-end and there's no recapture.
+    // Floored at 0.
+    //
+    // Recapture fires whenever the dying grantor's CLT income interest has NOT
+    // yet terminated at death:
+    //   - term-certain ('years' / 'shorter_of_years_or_life'): skip once the
+    //     full term has elapsed (yearsElapsed >= termYears).
+    //   - life-measured ('single_life' / 'joint_life'): skip ONLY when the
+    //     measuring life(s) coincide with the dying grantor — then the death
+    //     IS the term-end (no recapture). Treas. Reg. 1.170A-6(c)(4): when the
+    //     measuring life is a THIRD party (e.g. a child) still alive at the
+    //     grantor's death, the income interest is still running and the
+    //     unrecovered deduction is recaptured.
+    // In all cases, also skip if the trust has already terminated by this year.
     const decedentRoleThisYear: "client" | "spouse" | null =
       year === firstDeathYear
         ? firstDeathDeceased
@@ -2612,16 +2622,58 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ? finalDeceased
           : null;
     if (decedentRoleThisYear != null) {
+      // Household death years, by role, for the termination check below.
+      // (The engine only tracks client/spouse deaths; a non-household
+      //  measuring life — e.g. a child — has no death event and stays alive.)
+      const clientDeathYear =
+        firstDeathDeceased === "client"
+          ? firstDeathYear
+          : finalDeceased === "client"
+            ? finalDeathYear
+            : null;
+      const spouseDeathYear =
+        firstDeathDeceased === "spouse"
+          ? firstDeathYear
+          : finalDeceased === "spouse"
+            ? finalDeathYear
+            : null;
+      const deathYearForFm = (fmId: string | null): number | undefined => {
+        if (fmId == null) return undefined;
+        if (fmId === clientFmId) return clientDeathYear ?? undefined;
+        if (fmId === spouseFmId) return spouseDeathYear ?? undefined;
+        return undefined;
+      };
       for (const trust of currentEntities) {
         if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
         if (trust.grantor !== decedentRoleThisYear) continue;
         const si = trust.splitInterest;
+        const grantorFmId =
+          trust.grantor === "client" ? clientFmId : spouseFmId;
         const isYearsLeg =
           si.termType === "years" ||
           si.termType === "shorter_of_years_or_life";
-        if (!isYearsLeg) continue;
-        const yearsElapsed = year - si.inceptionYear + 1;
-        if (yearsElapsed >= (si.termYears ?? 0)) continue;
+        // True when the dying grantor's own life measures the lead term, so
+        // the death coincides with term-end (no recapture). For joint_life
+        // (last-to-die) the grantor being either measuring life counts.
+        const measuredOnGrantor =
+          grantorFmId != null &&
+          (si.termType === "single_life"
+            ? si.measuringLife1Id === grantorFmId
+            : si.termType === "joint_life"
+              ? si.measuringLife1Id === grantorFmId ||
+                si.measuringLife2Id === grantorFmId
+              : false);
+        // Whether the trust's income interest is still running this year.
+        const stillRunning = !isTrustTerminationYear(trust, year, {
+          measuringLife1: deathYearForFm(si.measuringLife1Id),
+          measuringLife2: deathYearForFm(si.measuringLife2Id),
+        });
+        if (isYearsLeg) {
+          const yearsElapsed = year - si.inceptionYear + 1;
+          if (yearsElapsed >= (si.termYears ?? 0)) continue;
+        } else if (measuredOnGrantor || !stillRunning) {
+          continue;
+        }
         const payments = cltPaymentsByTrustId.get(trust.id) ?? [];
         const { recaptureAmount } = computeCltRecapture({
           originalIncomeInterest: Number(si.originalIncomeInterest),
