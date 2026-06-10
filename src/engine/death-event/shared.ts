@@ -615,13 +615,27 @@ export function applyBeneficiaryDesignations(
     let removed = false;
 
     if (b.familyMemberId) {
-      ownerMutation = { owners: [{ kind: "family_member", familyMemberId: b.familyMemberId, percent: 1 }] };
-      recipientKind = "family_member";
-      recipientId = b.familyMemberId;
-      const fam = famMap.get(b.familyMemberId);
-      recipientLabel = fam
-        ? `${fam.firstName}${fam.lastName ? " " + fam.lastName : ""}`
-        : "Family member";
+      // Bug #5: a designation naming the surviving spouse by explicit FM id must
+      // be tagged "spouse" (not "family_member") so the unlimited IRC §2056
+      // marital deduction applies — identical to the householdRole:"spouse" and
+      // joint-titling paths. Without this the survivor's inheritance earns $0
+      // marital deduction and stays fully taxable (phantom estate tax). Tagging
+      // it "spouse" also keeps the account out of the first-death estate-tax
+      // drain (which excludes recipientKind:"spouse" accounts).
+      if (b.familyMemberId === survivorFmId) {
+        ownerMutation = { owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }] };
+        recipientKind = "spouse";
+        recipientId = survivorFmId;
+        recipientLabel = "Spouse";
+      } else {
+        ownerMutation = { owners: [{ kind: "family_member", familyMemberId: b.familyMemberId, percent: 1 }] };
+        recipientKind = "family_member";
+        recipientId = b.familyMemberId;
+        const fam = famMap.get(b.familyMemberId);
+        recipientLabel = fam
+          ? `${fam.firstName}${fam.lastName ? " " + fam.lastName : ""}`
+          : "Family member";
+      }
     } else if (b.externalBeneficiaryId) {
       removed = true;
       recipientKind = "external_beneficiary";
@@ -774,6 +788,19 @@ function resolveRecipientLabelAndMutation(
     };
   }
   if (r.recipientKind === "family_member") {
+    // Bug #5 (parallel to applyBeneficiaryDesignations): a will/bequest recipient
+    // naming the surviving spouse by explicit FM id must be tagged "spouse" so
+    // the unlimited IRC §2056 marital deduction applies, matching the
+    // recipientKind:"spouse" branch above.
+    if (r.recipientId != null && r.recipientId === survivorFmId) {
+      return {
+        ownerMutation: { owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }] },
+        removed: false,
+        recipientKind: "spouse",
+        recipientId: survivorFmId,
+        recipientLabel: "Spouse",
+      };
+    }
     const fam = familyMembers.find((f) => f.id === r.recipientId);
     return {
       ownerMutation: { owners: [{ kind: "family_member", familyMemberId: r.recipientId!, percent: 1 }] },
