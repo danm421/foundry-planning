@@ -36,7 +36,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     try {
         const firmId = await requireOrgId();
         await requireActiveSubscription();
-        const { userId } = await auth();
+        const { userId, sessionClaims } = await auth();
         if (!userId) {
             throw new UnauthorizedError();
         }
@@ -74,7 +74,6 @@ export async function POST(request: NextRequest, { params }: Params) {
         // Defense-in-depth (#7): the middleware allowed the POST; this route
         // enforces the paid entitlement where Azure COGS leak. Allow when the
         // firm holds the ai_import entitlement OR has free-quota headroom.
-        const { sessionClaims } = await auth();
         const entitlements =
           (sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null)
             ?.org_public_metadata?.entitlements;
