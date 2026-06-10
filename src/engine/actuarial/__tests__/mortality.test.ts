@@ -6,6 +6,17 @@ describe("mortality (Table 2010CM)", () => {
     expect(lx(0)).toBe(100000);
   });
 
+  it("pins published 2010CM lx anchors (guards against a wrong table)", () => {
+    // Official Table 2010CM values, Treas. Reg. §20.2031-7(d)(7)(ii).
+    expect(lx(1)).toBe(99382.28);
+    expect(lx(50)).toBe(94225.5);
+    expect(lx(65)).toBe(84221.59);
+    expect(lx(80)).toBe(57080.84);
+    expect(lx(100)).toBe(1882.108);
+    expect(lx(109)).toBe(15.47804);
+    expect(lx(110)).toBe(0);
+  });
+
   it("returns monotonically decreasing lx", () => {
     expect(lx(50)).toBeGreaterThan(lx(60));
     expect(lx(60)).toBeGreaterThan(lx(80));
