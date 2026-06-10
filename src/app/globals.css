@@ -10,12 +10,12 @@
 
 :root,
 :root[data-theme="dark"] {
-  /* Brand */
-  --color-accent: #f59e0b;
-  --color-accent-ink: #fbbf24;
-  --color-accent-deep: #b45309;
-  --color-accent-on: #1a1205;
-  --color-accent-wash: rgba(245, 158, 11, 0.16);
+  /* Brand — Verdigris (v2.2). Action only; amber now lives only as `warn`. */
+  --color-accent: #1f9e8c;
+  --color-accent-ink: #4fd0bf;
+  --color-accent-deep: #0c5a4f;
+  --color-accent-on: #03140f;
+  --color-accent-wash: rgba(31, 158, 140, 0.16);
 
   /* Secondary — indigo (links, secondary CTAs, AI treatment, focus/selection) */
   --color-secondary: #6366f1;
@@ -101,12 +101,12 @@
 }
 
 :root[data-theme="light"] {
-  /* Brand — light mode shifts to amber-600 for contrast on cream */
-  --color-accent: #d97706;
-  --color-accent-ink: #b45309;
-  --color-accent-deep: #92400e;
-  --color-accent-on: #fffbeb;
-  --color-accent-wash: rgba(217, 119, 6, 0.16);
+  /* Brand — Verdigris deepened for contrast on cream (v2.2) */
+  --color-accent: #0f7d6c;
+  --color-accent-ink: #0b5d50;
+  --color-accent-deep: #08463b;
+  --color-accent-on: #f3fbf8;
+  --color-accent-wash: rgba(15, 125, 108, 0.10);
 
   /* Secondary — indigo-600/700 for AA contrast on cream */
   --color-secondary: #4f46e5;
@@ -426,7 +426,7 @@ html {
 }
 
 /* ------------------------------------------------------------------ */
-/* Scenario mode — amber-muted left border on editable inputs          */
+/* Scenario mode — verdigris-muted left border on editable inputs      */
 /* Applied via <ScenarioInputStyling> context when a non-base scenario */
 /* is active. Subtle visual cue that edits target a scenario overlay,  */
 /* not the base case.                                                  */
@@ -434,7 +434,7 @@ html {
 
 .scenario-editable {
   border-left-width: 2px;
-  border-left-color: #7a5b29;
+  border-left-color: #2f5d54;
 }
 
 /* High-contrast white outline on OTP / verification-code boxes. */

@@ -14,7 +14,7 @@ export default function AuthLayout({
         className="pointer-events-none absolute -right-32 -top-40 h-[42rem] w-[42rem] rounded-full opacity-60 blur-3xl"
         style={{
           background:
-            "radial-gradient(closest-side, rgba(245,158,11,0.18), transparent 70%)",
+            "radial-gradient(closest-side, rgba(31,158,140,0.18), transparent 70%)",
         }}
       />
       <div
