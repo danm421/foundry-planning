@@ -16,7 +16,7 @@ export const SYSTEM_FOLDERS = [
 export type CrmDocumentFolderRow = typeof crmDocumentFolders.$inferSelect;
 
 /** Idempotently create the system folder set for a household. */
-async function ensureSystemFolders(householdId: string, firmId: string) {
+export async function ensureSystemFolders(householdId: string, firmId: string) {
   const existing = await db.query.crmDocumentFolders.findFirst({
     where: and(
       eq(crmDocumentFolders.householdId, householdId),
