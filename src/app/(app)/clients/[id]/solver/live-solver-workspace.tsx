@@ -35,6 +35,7 @@ import { SolverTechniquesTab } from "./solver-techniques-tab";
 import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 
 // Matches the 85% default the per-lever Solve popovers offer (defaultTargetPct=85,
 // which the popover submits as value/100).
@@ -54,7 +55,7 @@ interface Props {
   initialSourceClientData: ClientData;
   initialSourceProjection: ProjectionYear[];
   availableScenarios: { id: string; name: string }[];
-  modelPortfolios: { id: string; name: string }[];
+  modelPortfolios: SolverModelPortfolio[];
   milestones: import("@/lib/milestones").ClientMilestones;
   lifeInsuranceSettings: LiAssumptions;
   clientName: string;
