@@ -20,7 +20,8 @@ export function computeCapGainsAdjustment(
 
 /**
  * Computes Washington's gains-only capital-gains tax: 7% on the first $1M,
- * 9% above. Negative or zero gains return 0.
+ * 9.9% above (7% base + 2.9% SB 5813 surtax, 2025+). Negative or zero gains
+ * return 0.
  */
 export function computeWaCapGainsTax(longTermGains: number): number {
   const rule = CAP_GAINS_RULES.WA;
