@@ -177,7 +177,7 @@ const ENTITY_VALUE = z
     isIrrevocable: z.boolean(),
     isGrantor: z.boolean(),
     includeInPortfolio: z.boolean(),
-    grantor: z.enum(["client", "spouse"]).optional(),
+    grantor: PERSON.optional(),
     trustSubType: TRUST_SUB_TYPE.optional(),
     crummeyPowers: z.boolean().optional(),
     accessibleToClient: z.boolean().optional(),
