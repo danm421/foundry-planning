@@ -299,7 +299,7 @@ export function applyMutations(
       scenarioDrafts,
       cpi,
     );
-    result.gifts = [...(result.gifts ?? []), ...derived.gifts];
+    result.gifts = [...(result.gifts ?? []), ...(derived.gifts ?? [])];
     result.giftEvents = [...(result.giftEvents ?? []), ...derived.giftEvents].sort(
       (a, b) => a.year - b.year,
     );
