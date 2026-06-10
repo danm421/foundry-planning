@@ -21,6 +21,9 @@ export default async function EntitiesStep({ clientId, tree }: EntitiesStepProps
       initialAccounts={data.accts}
       initialDesignations={data.designations}
       initialGifts={data.giftsList}
+      initialGiftSeries={[]}
+      annualExclusionByYear={{}}
+      scenarioId="base"
       initialFullAccounts={[]}
       initialFullLiabilities={[]}
       initialFullIncomes={[]}

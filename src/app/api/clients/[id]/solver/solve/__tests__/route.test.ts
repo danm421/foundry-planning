@@ -90,11 +90,14 @@ describe("POST /api/clients/[id]/solver/solve", () => {
       args.onProgress?.({ iteration: 2, candidateValue: 80, achievedPoS: 0.95 });
       args.onProgress?.({ iteration: 3, candidateValue: 65, achievedPoS: 0.85 });
       return {
+        objective: "pos",
         status: "converged",
         solvedValue: 65,
         achievedPoS: 0.85,
+        canonicalPoS: 0.85,
         iterations: 3,
         finalProjection: [{ year: 2026 } as never],
+        seed: 1,
       };
     });
 

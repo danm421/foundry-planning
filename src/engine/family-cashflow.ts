@@ -58,7 +58,7 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
   // writes ledger entries with sourceId = recipientEntityId, not the gift
   // event id, so we can't join on entry.sourceId — keying by (account, year)
   // instead.
-  const cashGiftsByAccountYear = new Map<string, Array<{ grantor: "client" | "spouse"; amount: number }>>();
+  const cashGiftsByAccountYear = new Map<string, Array<{ grantor: "client" | "spouse" | "joint"; amount: number }>>();
   const giftKey = (accountId: string, year: number) => `${accountId}|${year}`;
   for (const g of gifts) {
     if (g.kind !== "cash") continue;

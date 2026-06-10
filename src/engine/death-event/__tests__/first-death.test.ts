@@ -386,7 +386,7 @@ describe("applyFirstDeath — probate cost integration", () => {
     basis: 500_000,
     growthRate: 0,
     rmdEnabled: false,
-    titlingType: "individual",
+    titlingType: "jtwros",
     owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
 

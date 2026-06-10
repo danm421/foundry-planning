@@ -31,7 +31,8 @@ export type AccountCategory =
   | "real_estate"
   | "business"
   | "life_insurance"
-  | "notes_receivable";
+  | "notes_receivable"
+  | "stock_options";
 
 export type AccountSubType =
   | "brokerage"

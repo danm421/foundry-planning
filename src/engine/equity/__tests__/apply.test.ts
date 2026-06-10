@@ -3,7 +3,7 @@ import { applyEquityYear } from "../apply";
 import type { EquityYearResult } from "../tax-events";
 
 function res(over: Partial<EquityYearResult> = {}): EquityYearResult {
-  return { ordinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0, ...over };
+  return { ordinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0, details: [], ...over };
 }
 
 describe("applyEquityYear", () => {
