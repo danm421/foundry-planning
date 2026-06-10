@@ -92,6 +92,50 @@ describe("applyTrustAnnualPass", () => {
     expect(tax.federalCapGainsTax).toBeCloseTo(198_682.5, 0);
   });
 
+  it("tax-exempt DNI routed to a non-household beneficiary is NOT taxed at the flat rate (IRC §652(b)/§662(b))", () => {
+    // Non-household beneficiary (familyMemberId, no householdRole) receives 100% of DNI.
+    // Income: ordinary 60k, dividends 20k, tax-exempt 10k → totalDni 90k.
+    // Only the taxable slice (60k + 20k = 80k) should be taxed at the out-of-household rate.
+    const r = applyTrustAnnualPass({
+      year: 2026,
+      nonGrantorTrusts: [
+        {
+          ...SLAT,
+          distributionPolicy: {
+            ...SLAT.distributionPolicy,
+            beneficiaryKind: "non_household",
+            beneficiaryFamilyMemberId: "fm-child",
+            beneficiaryExternalId: null,
+          },
+          incomeBeneficiaries: [
+            { familyMemberId: "fm-child", percentage: 100 },
+          ],
+        },
+      ],
+      yearRealizations: [
+        { accountId: "a1", ownerEntityId: "e1", ordinary: 60_000, dividends: 20_000, taxExempt: 10_000, capGains: 0 },
+      ],
+      assetTransactionGains: [],
+      trustLiquidity: new Map([["e1", { cash: 100_000, taxableBrokerage: 500_000, retirementInRmdPhase: 0 }]]),
+      trustIncomeBrackets: trustIncome2026,
+      trustCapGainsBrackets: trustCapGains2026,
+      niitRate: 0.038,
+      niitThreshold: 16_250,
+      flatStateRate: 0,
+      outOfHouseholdRate: 0.37,
+    });
+
+    // Taxable slice only: (60_000 + 20_000) * 0.37 = 29_600, NOT 90_000 * 0.37 = 33_300.
+    expect(r.estimatedBeneficiaryTax).toBeCloseTo(29_600, 0);
+
+    // Gross routed dollars to the beneficiary are still the full DNI (routing unchanged).
+    const grossRouted =
+      r.distributionsByEntity.get("e1")!.dniOrdinary +
+      r.distributionsByEntity.get("e1")!.dniDividends +
+      r.distributionsByEntity.get("e1")!.dniTaxExempt;
+    expect(grossRouted).toBeCloseTo(90_000, 0);
+  });
+
   it("propagates warnings from sub-modules", () => {
     const r = applyTrustAnnualPass({
       year: 2026,
