@@ -1,9 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import type { ReactElement } from "react";
 import { db } from "@/db";
-import { clients, crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
-import { and, eq, desc, asc } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
+import { eq, desc, asc } from "drizzle-orm";
+import { requireClientAccess } from "@/lib/clients/authz";
 import ClientHeader from "@/components/client-header";
 import HeaderSubtabs from "@/components/header-subtabs";
 import type { PersonInfo } from "@/components/client-identity-menu";
@@ -19,14 +19,10 @@ interface Props {
 }
 
 export default async function ClientLayout({ children, params }: Props): Promise<ReactElement> {
-  const [{ id }, firmId] = await Promise.all([params, requireOrgId()]);
-
-  const [clientRow] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
-    .limit(1);
-  if (!clientRow) notFound();
+  const { id } = await params;
+  const access = await requireClientAccess(id).catch(() => null);
+  if (!access) notFound();
+  const { client: clientRow } = access;
 
   const [household] = await db
     .select({ deletedAt: crmHouseholds.deletedAt })
