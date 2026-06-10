@@ -138,7 +138,7 @@ export function LiveSolverWorkspace({
   const [mcEditNonce, setMcEditNonce] = useState<number | null>(null);
 
   // Canonical 1,000-trial PoS from the most recent converged solve, on the
-  // converged tree. Shown on the working gauge until the shared MC run produces
+  // converged tree. Shown on the working gauge until the useSolverMc run produces
   // a fresh result for the current edits (which then supersedes it). Cleared on
   // any further edit so it can't go stale.
   const [solvedPoS, setSolvedPoS] = useState<number | null>(null);
@@ -350,7 +350,7 @@ export function LiveSolverWorkspace({
       : (availableScenarios.find((s) => s.id === initialSource)?.name ??
         "Base Facts");
 
-  // Launch a shared MC run. `withBase` true on the first/auto run (computes and
+  // Launch an MC run. `withBase` true on the first/auto run (computes and
   // caches Base + Scenario); false on Recalculate (Scenario only). Clearing
   // solvedPoS lets the fresh MC result supersede a prior solve's canonical PoS.
   const launchMc = useCallback(
