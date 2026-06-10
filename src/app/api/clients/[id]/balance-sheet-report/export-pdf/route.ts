@@ -4,12 +4,13 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts, entities as entitiesTable } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { savePlanToVault } from "@/lib/crm/vault-plans";
 import {
   checkExportPdfRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
 import { runProjection } from "@/engine/projection";
-import { renderToStream } from "@react-pdf/renderer";
+import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
@@ -185,22 +186,29 @@ export async function POST(
       barPng,
     }) as React.ReactElement<DocumentProps>;
 
-    // @react-pdf/renderer has a memory-leak history on large docs, and
-     // a malformed view model can send it into an unbounded layout loop.
-     // Race the render against a 25 s timeout so a pathological PDF can
-     // never pin the serverless function to its maxDuration.
-    const stream = await Promise.race<Awaited<ReturnType<typeof renderToStream>>>([
-      renderToStream(doc),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("PDF render timed out")), 25_000)
+    const buffer = await Promise.race<Buffer>([
+      renderToBuffer(doc),
+      new Promise<Buffer>((_, reject) =>
+        setTimeout(() => reject(new Error("PDF render timed out")), 25_000),
       ),
     ]);
 
-    return new NextResponse(stream as unknown as ReadableStream, {
+    const downloadName = `balance-sheet-${(clientLastName ?? "client").toLowerCase()}-${year}.pdf`;
+
+    await savePlanToVault({
+      clientId: id,
+      firmId,
+      reportType: "balance_sheet",
+      scenarioId: scenarioParam,
+      filename: downloadName,
+      buffer,
+    });
+
+    return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="balance-sheet-${(clientLastName ?? "client").toLowerCase()}-${year}.pdf"`,
+        "Content-Disposition": `attachment; filename="${downloadName}"`,
         "Cache-Control": "no-store",
       },
     });

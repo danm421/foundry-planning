@@ -50,6 +50,10 @@ vi.mock("@/lib/audit", () => ({
   recordAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/lib/crm/vault-plans", () => ({
+  savePlanToVault: vi.fn().mockResolvedValue(null),
+}));
+
 // Firm branding + default cover logo (the route resolves these for the cover).
 vi.mock("@/lib/branding/branding", () => ({
   resolveBranding: vi.fn().mockResolvedValue({
@@ -94,7 +98,7 @@ vi.mock("@react-pdf/renderer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@react-pdf/renderer")>();
   return {
     ...actual,
-    renderToStream: vi.fn(async () => new ReadableStream()),
+    renderToBuffer: vi.fn(async () => Buffer.from("%PDF-1.7 test")),
   };
 });
 
@@ -307,6 +311,28 @@ describe("POST /api/clients/[id]/presentations/export-pdf — descriptor flow", 
     const disposition = res.headers.get("content-disposition") ?? "";
     expect(disposition).toContain('filename="custom-report.pdf"');
   });
+
+  it("captures a non-preview export to the vault as reportType 'presentation'", async () => {
+    const { savePlanToVault } = await import("@/lib/crm/vault-plans");
+    const { POST } = await import("../route");
+    await POST(
+      makeReq({
+        scenarioId: "moderate",
+        pages: [
+          { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
+        ],
+      }) as never,
+      { params: Promise.resolve({ id: "client-1" }) },
+    );
+    expect(savePlanToVault).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client-1",
+        firmId: "firm-1",
+        reportType: "presentation",
+        scenarioId: "moderate",
+      }),
+    );
+  });
 });
 
 describe("POST /api/clients/[id]/presentations/export-pdf — preview mode", () => {
@@ -381,5 +407,14 @@ describe("POST /api/clients/[id]/presentations/export-pdf — preview mode", () 
       "Too many previews. Please wait a moment and try again.",
     );
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("does NOT capture preview renders to the vault", async () => {
+    const { savePlanToVault } = await import("@/lib/crm/vault-plans");
+    const { POST } = await import("../route");
+    await POST(makeReq(previewBody) as never, {
+      params: Promise.resolve({ id: "client-1" }),
+    });
+    expect(savePlanToVault).not.toHaveBeenCalled();
   });
 });

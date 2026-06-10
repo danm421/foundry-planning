@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { renderToStream } from "@react-pdf/renderer";
+import { renderToBuffer } from "@react-pdf/renderer";
 import { db } from "@/db";
 import { firms } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
@@ -10,6 +10,7 @@ import {
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
 import { getArtifact } from "@/lib/report-artifacts/index";
+import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
 import { ArtifactDocument } from "@/components/pdf/artifact-document";
 import type { ChartImage, Variant } from "@/lib/report-artifacts/types";
@@ -126,8 +127,8 @@ export async function POST(
     const householdName = (data as { clientName?: string }).clientName ?? "Client";
 
     const blocks = artifact.renderPdf({ data, opts, variant, charts });
-    const stream = await Promise.race<Awaited<ReturnType<typeof renderToStream>>>([
-      renderToStream(
+    const buffer = await Promise.race<Buffer>([
+      renderToBuffer(
         <ArtifactDocument
           householdName={householdName}
           artifactTitle={artifact.title}
@@ -138,16 +139,27 @@ export async function POST(
           {blocks}
         </ArtifactDocument>,
       ),
-      new Promise((_, reject) =>
+      new Promise<Buffer>((_, reject) =>
         setTimeout(() => reject(new Error("PDF render timed out")), 25_000),
       ),
     ]);
 
-    return new NextResponse(stream as unknown as ReadableStream, {
+    const downloadName = `${safeFilename(reportId)}-${asOf.toISOString().slice(0, 10)}.pdf`;
+
+    await savePlanToVault({
+      clientId,
+      firmId,
+      reportType: `report:${reportId}`,
+      scenarioId: null,
+      filename: downloadName,
+      buffer,
+    });
+
+    return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${safeFilename(reportId)}-${asOf.toISOString().slice(0, 10)}.pdf"`,
+        "Content-Disposition": `attachment; filename="${downloadName}"`,
         "Cache-Control": "no-store",
       },
     });
