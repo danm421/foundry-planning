@@ -1107,6 +1107,13 @@
       "when": 1781099829504,
       "tag": "0157_known_zuras",
       "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1781100807135,
+      "tag": "0158_short_sinister_six",
+      "breakpoints": true
     }
   ]
 }

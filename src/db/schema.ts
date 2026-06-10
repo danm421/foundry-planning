@@ -600,6 +600,47 @@ export const crmDocumentFolders = pgTable("crm_document_folders", {
   index("crm_document_folders_parent_idx").on(t.householdId, t.parentFolderId),
 ]);
 
+export const generationRunStatusEnum = pgEnum("generation_run_status", [
+  "queued",
+  "running",
+  "done",
+  "failed",
+]);
+
+export const generationRuns = pgTable("generation_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  firmId: text("firm_id").notNull(),
+
+  kind: text("kind").notNull(),
+  status: generationRunStatusEnum("status").notNull().default("queued"),
+
+  triggeredBy: text("triggered_by"),
+  triggeredByEmail: text("triggered_by_email"),
+
+  scenarioId: uuid("scenario_id").references(() => scenarios.id, {
+    onDelete: "set null",
+  }),
+  requestPayload: jsonb("request_payload"),
+  resultDocumentId: uuid("result_document_id").references(
+    () => crmHouseholdDocuments.id,
+    { onDelete: "set null" },
+  ),
+  error: text("error"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  startedAt: timestamp("started_at"),
+  finishedAt: timestamp("finished_at"),
+}, (t) => [
+  index("generation_runs_household_idx").on(t.householdId, t.createdAt),
+  index("generation_runs_status_idx").on(t.status, t.createdAt),
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
