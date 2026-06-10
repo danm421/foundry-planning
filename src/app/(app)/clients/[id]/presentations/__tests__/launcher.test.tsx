@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PresentationsLauncher } from "../launcher";
 
 const originalFetch = global.fetch;
@@ -8,6 +8,12 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => "blob:mock-url");
   URL.revokeObjectURL = vi.fn();
   global.fetch = vi.fn(async (url: string) => {
+    if (String(url).includes("/presentations/runs")) {
+      return new Response(JSON.stringify({ runId: "r1" }), { status: 202 });
+    }
+    if (String(url).includes("/generation-runs")) {
+      return new Response(JSON.stringify({ householdId: "hh-test", runs: [] }), { status: 200 });
+    }
     if (String(url).includes("/presentations/export-pdf")) {
       return new Response(new Blob(["%PDF-1.4"], { type: "application/pdf" }), {
         status: 200,
@@ -32,6 +38,7 @@ describe("PresentationsLauncher", () => {
         clientId="c1"
         currentUserId="me"
         clientLastName="Sample"
+        householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
@@ -53,6 +60,7 @@ describe("PresentationsLauncher", () => {
         clientId="c1"
         currentUserId="me"
         clientLastName="Sample"
+        householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
@@ -74,6 +82,7 @@ describe("PresentationsLauncher", () => {
         clientId="c1"
         currentUserId="me"
         clientLastName="Sample"
+        householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
@@ -97,6 +106,7 @@ describe("PresentationsLauncher", () => {
         clientId="c1"
         currentUserId="me"
         clientLastName="Sample"
+        householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
         initialTemplates={{ shared: [], mine: [] }}
@@ -111,5 +121,30 @@ describe("PresentationsLauncher", () => {
     const body = JSON.parse((exportCall![1] as RequestInit).body as string);
     expect(body.preview).toBe(true);
     expect(body.pages.length).toBeGreaterThan(1);
+  });
+
+  it("Generate posts to the background /presentations/runs route and shows a notice", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+    await waitFor(() => {
+      const runsCall = vi
+        .mocked(global.fetch)
+        .mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+      expect(runsCall).toBeTruthy();
+      expect((runsCall![1] as RequestInit).method).toBe("POST");
+    });
+    // success notice is specific to the generate flow (not the "Recent runs" panel heading)
+    await screen.findByText(/Generating your presentation/i);
   });
 });

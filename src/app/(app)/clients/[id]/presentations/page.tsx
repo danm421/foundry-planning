@@ -77,6 +77,7 @@ export default async function PresentationsPage({
         clientId={clientId}
         currentUserId={userId}
         clientLastName={clientLastName}
+        householdId={clientRow.crmHouseholdId}
         scenarios={scenarioRows}
         snapshots={snapshotRows}
         initialTemplates={templates}

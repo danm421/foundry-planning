@@ -36,6 +36,7 @@ import {
   type LoadedTemplate,
 } from "@/components/presentations/launcher/use-launcher-state";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
+import { RecentRunsPanel } from "@/components/presentations/recent-runs-panel";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
 
@@ -43,6 +44,7 @@ interface Props {
   clientId: string;
   currentUserId: string;
   clientLastName: string;
+  householdId: string;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
   initialTemplates: { shared: LoadedTemplate[]; mine: LoadedTemplate[] };
@@ -107,6 +109,8 @@ export function PresentationsLauncher(props: Props) {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [runsRefreshKey, setRunsRefreshKey] = useState(0);
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
   const [preparing, setPreparing] = useState(false);
 
@@ -292,11 +296,12 @@ export function PresentationsLauncher(props: Props) {
 
   async function handleGenerate() {
     setError(null);
+    setNotice(null);
     setGenerating(true);
     try {
       const fresh = await withFreshSummaries(allPageDescriptors());
       const res = await fetch(
-        `/api/clients/${props.clientId}/presentations/export-pdf`,
+        `/api/clients/${props.clientId}/presentations/runs`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -317,15 +322,8 @@ export function PresentationsLauncher(props: Props) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `HTTP ${res.status}`);
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const cd = res.headers.get("content-disposition") ?? "";
-      const match = /filename="([^"]+)"/.exec(cd);
-      a.download = match?.[1] ?? "presentation.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      setNotice("Generating your presentation — it'll appear in Recent runs.");
+      setRunsRefreshKey((k) => k + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -346,7 +344,8 @@ export function PresentationsLauncher(props: Props) {
 
   return (
     <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId, entities: props.entities ?? [] }}>
-    <div className="p-6">
+    <div className="flex flex-col gap-6 p-6 lg:flex-row">
+      <div className="min-w-0 flex-1">
       <h1 className="text-2xl font-semibold text-ink mb-4">
         Presentations<span className="dot">.</span>
       </h1>
@@ -488,11 +487,13 @@ export function PresentationsLauncher(props: Props) {
                       }}
                       onDownload={async () => {
                         const pageTitle = PRESENTATION_PAGES[p.pageId].title;
+                        setError(null);
+                        setNotice(null);
                         const fresh = await withFreshSummaries([
                           { descriptor: descriptorsFor([p])[0], index: i },
                         ]);
                         const res = await fetch(
-                          `/api/clients/${props.clientId}/presentations/export-pdf`,
+                          `/api/clients/${props.clientId}/presentations/runs`,
                           {
                             method: "POST",
                             headers: { "content-type": "application/json" },
@@ -505,16 +506,11 @@ export function PresentationsLauncher(props: Props) {
                         );
                         if (!res.ok) {
                           const j = await res.json().catch(() => ({}));
-                          setError(j.error ?? `Download failed: HTTP ${res.status}`);
+                          setError(j.error ?? `Generation failed: HTTP ${res.status}`);
                           return;
                         }
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `${slug(pageTitle)}.pdf`;
-                        a.click();
-                        URL.revokeObjectURL(url);
+                        setNotice(`Generating "${pageTitle}" — it'll appear in Recent runs.`);
+                        setRunsRefreshKey((k) => k + 1);
                       }}
                       scenarios={props.scenarios}
                       snapshots={props.snapshots}
@@ -552,6 +548,11 @@ export function PresentationsLauncher(props: Props) {
           {error}
         </p>
       )}
+      {notice && (
+        <p className="mt-3 text-sm text-accent" role="status">
+          {notice}
+        </p>
+      )}
 
       <SaveTemplateModal
         open={showSaveModal}
@@ -564,6 +565,12 @@ export function PresentationsLauncher(props: Props) {
         request={previewRequest}
         clientId={props.clientId}
         onClose={() => setPreviewRequest(null)}
+      />
+      </div>
+      <RecentRunsPanel
+        clientId={props.clientId}
+        householdId={props.householdId}
+        refreshKey={runsRefreshKey}
       />
     </div>
     </PresentationOptionsProvider>
