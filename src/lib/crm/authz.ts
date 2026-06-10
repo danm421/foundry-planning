@@ -2,6 +2,8 @@ import { db } from "@/db";
 import { crmHouseholds, crmTasks } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { auth } from "@clerk/nextjs/server";
+import { ForbiddenError } from "@/lib/authz";
 
 /**
  * Org-scoped accessor for a CRM household. Mirrors the pattern in
@@ -16,6 +18,22 @@ export async function requireCrmHouseholdAccess(householdId: string) {
   });
   if (!household) {
     throw new Error(`CRM household not found or access denied: ${householdId}`);
+  }
+  return { household, orgId };
+}
+
+/**
+ * Vault access gate. Layered on `requireCrmHouseholdAccess` (which proves the
+ * household belongs to the caller's firm), then narrows to the household's
+ * *current* assigned advisor OR a firm admin/owner. Because it keys off
+ * `household.advisorId`, reassigning a household moves vault access with it.
+ */
+export async function requireVaultAccess(householdId: string) {
+  const { household, orgId } = await requireCrmHouseholdAccess(householdId);
+  const { userId, orgRole } = await auth();
+  const isAdmin = orgRole === "org:admin" || orgRole === "org:owner";
+  if (!isAdmin && household.advisorId !== userId) {
+    throw new ForbiddenError("You do not have access to this household's vault");
   }
   return { household, orgId };
 }
