@@ -68,16 +68,61 @@ describe("ISO exercise + AMT", () => {
 });
 
 describe("ISO disqualifying disposition", () => {
-  it("converts the bargain element to ordinary income when sold too early", () => {
-    // exercise 2027 @ strike 10, FMV 100; sell 2028 (held <2yr from exercise → disqualifying)
-    const g: EquityGrant = { ...rsuFutureVest, id: "g4", grantType: "iso", strikePrice: 10, grantYear: 2024, expirationYear: 2034,
-      strategy: { sellTiming: "hold_then_sell_year", sellYear: 2028 },
-      tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
+  // Exercise in 2027 @ strike 10, fmvAtExercise 100, 100 shares, then drive the sale price by
+  // overriding lot fields + plan.pricePerShare so the exact f-per-share is deterministic.
+  function exerciseAndPrep(grantOver: Partial<EquityGrant>, sellYear: number) {
+    const g: EquityGrant = { ...rsuFutureVest, id: "g4", grantType: "iso", strikePrice: 10, expirationYear: 2034,
+      grantYear: 2024,
+      strategy: { sellTiming: "hold_then_sell_year", sellYear },
+      tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+      ...grantOver };
     const p = plan(g);
     const st = createEquityState([p], PSY);
-    computeEquityYear(p, st, 2027);            // exercise
-    const r = computeEquityYear(p, st, 2028);  // disqualifying sale
-    // bargain element at exercise = 100×(100−10)=9,000 → ordinary income
+    computeEquityYear(p, st, 2027); // exercise → seeds the lot
+    const lot = st.lots.get("g4:t1")!;
+    lot.fmvAtExercise = 100; lot.strike = 10; lot.basisPerShare = 10; lot.exerciseYear = 2027;
+    return { p, st };
+  }
+
+  it("converts the bargain element to ordinary income when sold too early (price flat)", () => {
+    // sell 2028 (1yr from exercise → disqualifying), f = 100 (flat). OI = full spread 9,000.
+    const { p, st } = exerciseAndPrep({}, 2028);
+    p.pricePerShare = 100; p.growthRate = 0;
+    const r = computeEquityYear(p, st, 2028);
     expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
+  });
+
+  it("caps OI at the actual sale gain and books NO cap gain/loss when price falls but stays above strike", () => {
+    // grant 2027 so 2029 sale fails the 3yr-from-grant test (disqualifying) but passes the
+    // 2yr-from-exercise proxy → long-term residual. f = 60.
+    // OI = lesser(spread 90, sale gain 50) = 50/sh → 5,000. residual = 0.
+    const { p, st } = exerciseAndPrep({ grantYear: 2027 }, 2029);
+    p.pricePerShare = 60; p.growthRate = 0;
+    const r = computeEquityYear(p, st, 2029);
+    expect(r.ordinaryIncome).toBeCloseTo(5000, 2);
+    expect(r.capitalGains).toBeCloseTo(0, 2);
+    expect(r.stCapitalGains).toBeCloseTo(0, 2);
+  });
+
+  it("books a capital loss and zero OI when sold below strike", () => {
+    // grant 2027, sell 2029 (disqualifying, long-term residual). f = 5 (below strike).
+    // OI = lesser(spread 90, max(0, 5−10)=0) = 0. residual = (5−10)×100 = −500 long-term loss.
+    const { p, st } = exerciseAndPrep({ grantYear: 2027 }, 2029);
+    p.pricePerShare = 5; p.growthRate = 0;
+    const r = computeEquityYear(p, st, 2029);
+    expect(r.ordinaryIncome).toBeCloseTo(0, 2);
+    expect(r.capitalGains).toBeCloseTo(-500, 2); // 2029−2027 ≥2yr → long-term
+    expect(r.stCapitalGains).toBeCloseTo(0, 2);
+  });
+
+  it("routes the post-exercise gain to SHORT-TERM when the disqualifying sale is within a year of exercise", () => {
+    // sell 2028 (1yr from exercise → disqualifying AND short-term). f = 150.
+    // OI = full spread 90/sh → 9,000. residual = (150−10−90)×100 = 5,000 → SHORT-TERM.
+    const { p, st } = exerciseAndPrep({}, 2028);
+    p.pricePerShare = 150; p.growthRate = 0;
+    const r = computeEquityYear(p, st, 2028);
+    expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
+    expect(r.stCapitalGains).toBeCloseTo(5000, 2); // held <2yr → short-term
+    expect(r.capitalGains).toBeCloseTo(0, 2);
   });
 });
