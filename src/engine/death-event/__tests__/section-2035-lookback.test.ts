@@ -183,4 +183,49 @@ describe("computeSection2035Lookback", () => {
     expect(r.addBackLines[0].amount).toBe(500_000);
     expect(r.addBackLines[0].percentage).toBe(0.5);
   });
+
+  it("uses the scheduled death benefit at the death year, not static faceValue (BUG #22)", () => {
+    const scheduledAccount: Account = {
+      ...policyAccount,
+      lifeInsurance: mkPolicy({
+        faceValue: 1_000_000,
+        deathBenefitScheduleMode: "scheduled",
+        cashValueSchedule: [
+          { year: 2030, deathBenefit: 1_500_000 },
+        ],
+      }),
+    };
+    const r = computeSection2035Lookback({
+      deceased: "client",
+      deathYear: 2030,
+      giftEvents: [assetGift(2030)], // percent: 1, within 3-year window
+      accounts: [scheduledAccount],
+      entities: [trust],
+    });
+    expect(r.addBackLines).toHaveLength(1);
+    expect(r.addBackLines[0].amount).toBe(1_500_000);
+  });
+
+  it("uses static faceValue when the schedule mode is off (no regression)", () => {
+    const flatAccount: Account = {
+      ...policyAccount,
+      lifeInsurance: mkPolicy({
+        faceValue: 1_000_000,
+        deathBenefitScheduleMode: "off",
+        // A populated schedule that must be ignored while mode is off.
+        cashValueSchedule: [
+          { year: 2030, deathBenefit: 1_500_000 },
+        ],
+      }),
+    };
+    const r = computeSection2035Lookback({
+      deceased: "client",
+      deathYear: 2030,
+      giftEvents: [assetGift(2030)],
+      accounts: [flatAccount],
+      entities: [trust],
+    });
+    expect(r.addBackLines).toHaveLength(1);
+    expect(r.addBackLines[0].amount).toBe(1_000_000);
+  });
 });
