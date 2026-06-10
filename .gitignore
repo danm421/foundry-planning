@@ -39,11 +39,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
-.env
-.env.local
-.env.*.local
+# env files — broad catch-all. `.env*` covers .env, .env.local, .env.*.local,
+# and stray backups like `.env.local.bak.<date>` (the 2026-06-09 billing audit
+# found one such file holding live secrets — finding #6). The negation keeps the
+# committed template visible.
+.env*
 !.env.example
+
+# backup files (e.g. *.bak left by editors / manual env snapshots)
+*.bak
 
 # vercel
 .vercel
