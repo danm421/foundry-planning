@@ -38,7 +38,7 @@ export default function Footer(): ReactElement {
               app.foundryplanning.com
             </a>
             <a
-              href="https://foundryplanning.com/privacy"
+              href="https://foundryplanning.com/legal/privacy"
               target="_blank"
               rel="noopener noreferrer"
               className="transition-colors hover:text-ink"
@@ -46,7 +46,7 @@ export default function Footer(): ReactElement {
               Privacy
             </a>
             <a
-              href="https://foundryplanning.com/terms"
+              href="https://foundryplanning.com/legal/tos"
               target="_blank"
               rel="noopener noreferrer"
               className="transition-colors hover:text-ink"
