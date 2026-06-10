@@ -277,6 +277,73 @@ describe("calcTaxableSocialSecurity — pia_at_fra-derived gross integration", (
   });
 });
 
+describe("calculateTaxYear — AMTI std-deduction add-back (Form 6251 line 2a)", () => {
+  // Bug #9: the standard deduction is NOT allowed for AMT (IRC §56(b)(1)(E)) and
+  // must be added back into AMTI. A standard-deduction filer's tentative minimum
+  // tax should therefore be computed on AMTI that includes the std deduction.
+  //
+  // Single, $250k ordinary, no LTCG. std 16100, exemption 90100, phaseout starts
+  // at 500000 (no phaseout). 244500 breakpoint not crossed → 26% only.
+  //   Buggy AMTI = 250000 - 16100 = 233900 → taxable 143800 → TMT 37388
+  //   Fixed AMTI = 250000           → taxable 159900 → TMT 41574
+  //
+  // Regular tax surfaces tentative AMT only via amtAdditional = max(0, TMT -
+  // regularTax). Regular single tax on 233900:
+  //   12400*.10 + (50400-12400)*.12 + (105700-50400)*.22 + (201775-105700)*.24
+  //   + (233900-201775)*.32 = 1240+4560+12166+23058+10280 = 51304
+  // Both TMTs are below 51304, so a no-ISO case yields amtAdditional 0 either
+  // way. To make the add-back load-bearing, add an ISO spread sized so the FIXED
+  // AMTI tips past regular tax while the BUGGY AMTI does not.
+  it("add-back raises tentative AMT past regular tax with an ISO spread the buggy AMTI would miss", () => {
+    // ISO spread 50000.
+    //   Fixed: AMTI 250000+50000=300000 → taxable 209900 → TMT 54574 > 51304
+    //          → amtAdditional = 54574 - 51304 = 3270
+    //   Buggy: AMTI 233900+50000=283900 → taxable 193800 → TMT 50388 < 51304
+    //          → amtAdditional 0
+    const withIso = calculateTaxYear(makeInput({
+      filingStatus: "single",
+      ordinaryIncome: 250_000,
+      isoSpread: 50_000,
+      flatStateRate: 0,
+    }));
+    expect(withIso.flow.amtAdditional).toBeGreaterThan(0);
+    expect(withIso.flow.amtAdditional).toBeCloseTo(54_574 - 51_304, 0);
+  });
+});
+
+describe("calculateTaxYear — AMT Part III stacks LTCG on the regular base (Bug #19)", () => {
+  // Form 6251 Part III computes preferential amounts off the regular Schedule D
+  // worksheet — gains stack on the same regular ordinary base (incomeTaxBase)
+  // used by the regular cap-gains tax, NOT the reduced post-exemption AMTI
+  // ordinary portion. Stacking on the AMTI ordinary portion (which the large AMT
+  // exemption pushes below the 0% cap-gains top) mis-prices gains at 0% and
+  // understates TMT.
+  //
+  // MFJ, ordinary 150000, LTCG 30000, ISO 50000, no state tax.
+  //   AGI 180000, std 32200, taxable-before-qbi 147800.
+  //   incomeTaxBase = 147800 - 30000 = 117800  (> 0% top 99200).
+  //   regularTax = 15340, regular capGainsTax = 30000×15% = 4500.
+  //   AMTI = 147800 + 32200 (std add-back) + 50000 (ISO) = 230000.
+  //   taxableAmti = 230000 - 140200 = 89800; ltcg 30000; ordinaryAmti 59800.
+  //   ordinary portion 26% = 15548.
+  //   Buggy floor = ordinaryAmti 59800 → stack top 89800 < 99200 → gains at 0%
+  //     → TMT 15548 < regular+cap 19840 → amtAdditional 0.
+  //   Fixed floor = incomeTaxBase 117800 → gains at 15% = 4500
+  //     → TMT 20048 > 19840 → amtAdditional 208.
+  const result = calculateTaxYear(makeInput({
+    filingStatus: "married_joint",
+    ordinaryIncome: 150_000,
+    longTermCapitalGains: 30_000,
+    isoSpread: 50_000,
+    flatStateRate: 0,
+  }));
+
+  it("places AMT LTCG in the 15% bracket via the regular ordinary base, raising TMT", () => {
+    expect(result.flow.amtAdditional).toBeGreaterThan(0);
+    expect(result.flow.amtAdditional).toBeCloseTo(208, 0);
+  });
+});
+
 describe("calculateTaxYear — ISO spread as an AMT preference item", () => {
   // Single filer with enough ordinary income that AMTI sits well above the
   // exemption edge, so an ISO bargain element pushes tentative AMT past regular.

@@ -51,6 +51,45 @@ describe("calcAmtTentative", () => {
   });
 });
 
+describe("calcAmtTentative — Part III cap-gains stacking floor (Bug #19)", () => {
+  // The 0/15/20% breakpoints are REGULAR taxable-income thresholds. Form 6251
+  // Part III stacks the preferential amounts on the same regular ordinary base
+  // used by the regular cap-gains tax — NOT on the post-exemption AMTI ordinary
+  // portion. Stacking on the reduced (post-exemption) AMTI mis-places gains into
+  // a too-low preferential bracket and understates TMT.
+  const MFJ_CAP_GAINS = { zeroPctTop: 99200, fifteenPctTop: 615900 };
+
+  it("stacks LTCG on the regular ordinary base, not on post-exemption AMTI", () => {
+    // AMTI 230000, exemption 140200 → taxableAmti 89800.
+    // ltcg 50000, ordinaryAmti = 89800 - 50000 = 39800.
+    //
+    // Buggy floor = ordinaryAmti 39800 < zeroPctTop 99200 → stack top
+    //   39800+50000 = 89800 < 99200 → all gains 0% → capGainsPortion 0.
+    // Correct floor = regularOrdinaryBase 150000 > 99200 → all 50000 in 15%
+    //   → 7500.
+    //
+    // Ordinary portion (26% on 39800) = 10348 in BOTH cases.
+    const ordinaryPortion = 39800 * 0.26;
+
+    const buggy = calcAmtTentative(230000, PARAMS_2026_MFJ, {
+      year: 2026,
+      ltcgPlusQdiv: 50000,
+      capGainsBrackets: MFJ_CAP_GAINS,
+    });
+    // Without threading the regular base, gains fall into 0% → no cap-gains tax.
+    expect(buggy).toBeCloseTo(ordinaryPortion, 2);
+
+    const fixed = calcAmtTentative(230000, PARAMS_2026_MFJ, {
+      year: 2026,
+      ltcgPlusQdiv: 50000,
+      capGainsBrackets: MFJ_CAP_GAINS,
+      regularOrdinaryBase: 150000,
+    });
+    // Gains now correctly stacked above the 0% top → 50000 × 15% = 7500.
+    expect(fixed).toBeCloseTo(ordinaryPortion + 7500, 2);
+  });
+});
+
 describe("calcAmtAdditional", () => {
   it("returns 0 when tentative AMT is less than regular tax", () => {
     expect(calcAmtAdditional(15548, 30000)).toBe(0);
