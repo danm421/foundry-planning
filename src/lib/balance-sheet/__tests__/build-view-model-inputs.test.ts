@@ -22,7 +22,7 @@ describe("buildViewModelInputs", () => {
 
   it("maps accounts to AccountLike (id, name, category, owners, business-as-asset fields)", () => {
     expect(out.accounts).toEqual([
-      { id: "a1", name: "Checking", category: "cash", owners: tree.accounts[0].owners, parentAccountId: null, businessType: null },
+      { id: "a1", name: "Checking", category: "cash", owners: tree.accounts[0].owners, parentAccountId: null, businessType: null, revocableTrustName: null },
     ]);
   });
 

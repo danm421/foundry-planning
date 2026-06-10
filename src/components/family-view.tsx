@@ -375,6 +375,7 @@ export default function FamilyView({
   }, [clientId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount fetch; setRevocableTrusts only runs after the awaited fetch resolves (no synchronous cascade). Re-fetched explicitly via the dialog's onSaved.
     void fetchRevocableTrusts();
   }, [fetchRevocableTrusts]);
 
