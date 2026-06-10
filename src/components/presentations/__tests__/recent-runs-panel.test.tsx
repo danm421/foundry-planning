@@ -24,15 +24,14 @@ beforeEach(() => {
 });
 
 describe("RecentRunsPanel", () => {
-  it("renders a done run with an Open link to the vault document", async () => {
+  it("renders a done run with a Done status and an Open link to the vault document", async () => {
     render(<RecentRunsPanel clientId="c1" householdId="hh1" refreshKey={0} />);
-    await waitFor(() => expect(screen.getByText("Presentation")).toBeInTheDocument());
-    expect(screen.getByText("advisor@firm.com")).toBeInTheDocument();
-    const open = screen.getByRole("link", { name: /open/i });
+    const open = await screen.findByRole("link", { name: /open/i });
     expect(open).toHaveAttribute(
       "href",
       "/api/crm/households/hh1/documents/doc1",
     );
+    expect(screen.getByText("Done")).toBeInTheDocument();
   });
 
   it("shows the empty state when there are no runs", async () => {

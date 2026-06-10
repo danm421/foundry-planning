@@ -22,21 +22,6 @@ interface Props {
   refreshKey: number;
 }
 
-const KIND_LABELS: Record<string, string> = {
-  presentation: "Presentation",
-  liquidity: "Liquidity",
-  balance_sheet: "Balance Sheet",
-};
-
-function kindLabel(kind: string): string {
-  if (KIND_LABELS[kind]) return KIND_LABELS[kind];
-  if (kind.startsWith("report:")) {
-    const r = kind.slice("report:".length);
-    return r.charAt(0).toUpperCase() + r.slice(1);
-  }
-  return kind;
-}
-
 /**
  * Status pill classes follow the codebase pattern established in crm-task-side-panel:
  * border-<token>/<opacity> text-<token> bg-<token>/<opacity>
@@ -124,7 +109,7 @@ export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
   }, [fetchRuns, refreshKey, pollNonce]);
 
   return (
-    <aside className="w-full lg:w-80 shrink-0">
+    <aside className="w-full">
       <h2 className="mb-2 text-sm font-semibold text-ink">Recent runs</h2>
       <div className="rounded border border-hair bg-card">
         {runs === null && (
@@ -139,9 +124,7 @@ export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-hair text-left text-[11px] uppercase tracking-[0.12em] text-ink-2">
-                <th className="px-3 py-2 font-medium">Kind</th>
                 <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Triggered by</th>
                 <th className="px-3 py-2 font-medium">Started</th>
                 <th className="px-3 py-2 font-medium">Result</th>
               </tr>
@@ -154,16 +137,12 @@ export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
                     key={r.id}
                     className="border-b border-hair last:border-0 align-top"
                   >
-                    <td className="px-3 py-2 text-ink">{kindLabel(r.kind)}</td>
                     <td className="px-3 py-2">
                       <span
                         className={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${pill.className}`}
                       >
                         {pill.label}
                       </span>
-                    </td>
-                    <td className="px-3 py-2 text-ink-2">
-                      {r.triggeredByEmail ?? "—"}
                     </td>
                     <td className="px-3 py-2 text-ink-2 tabular">
                       {new Date(r.createdAt).toLocaleString()}

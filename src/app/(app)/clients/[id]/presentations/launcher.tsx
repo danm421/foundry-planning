@@ -344,8 +344,7 @@ export function PresentationsLauncher(props: Props) {
 
   return (
     <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId, entities: props.entities ?? [] }}>
-    <div className="flex flex-col gap-6 p-6 lg:flex-row">
-      <div className="min-w-0 flex-1">
+    <div className="p-6">
       <h1 className="text-2xl font-semibold text-ink mb-4">
         Presentations<span className="dot">.</span>
       </h1>
@@ -522,7 +521,7 @@ export function PresentationsLauncher(props: Props) {
           )}
         </div>
 
-        <div>
+        <div className="space-y-4">
           <TemplatesPanel
             shared={templates.shared}
             mine={templates.mine}
@@ -533,6 +532,11 @@ export function PresentationsLauncher(props: Props) {
             onChangeVisibility={handleChangeVisibility}
             onDelete={handleDelete}
             onSaveAsNew={() => setShowSaveModal(true)}
+          />
+          <RecentRunsPanel
+            clientId={props.clientId}
+            householdId={props.householdId}
+            refreshKey={runsRefreshKey}
           />
         </div>
       </div>
@@ -565,12 +569,6 @@ export function PresentationsLauncher(props: Props) {
         request={previewRequest}
         clientId={props.clientId}
         onClose={() => setPreviewRequest(null)}
-      />
-      </div>
-      <RecentRunsPanel
-        clientId={props.clientId}
-        householdId={props.householdId}
-        refreshKey={runsRefreshKey}
       />
     </div>
     </PresentationOptionsProvider>
