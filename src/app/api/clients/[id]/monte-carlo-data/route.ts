@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios } from "@/db/schema";
+import { scenarios } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { checkProjectionRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,10 @@ export async function GET(
       rl,
       "Too many projection requests. Please wait and try again.",
     );
+  }
+
+  if (!(await verifyClientAccess(id, firmId))) {
+    return NextResponse.json({ error: "Client not found" }, { status: 404 });
   }
 
   try {
@@ -53,11 +58,9 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!(await verifyClientAccess(id, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const [scenario] = await db
       .select()
