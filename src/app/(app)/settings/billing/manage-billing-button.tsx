@@ -23,7 +23,7 @@ function SubmitButton(): ReactElement {
  */
 export default function ManageBillingButton(): ReactElement {
   return (
-    <form method="post" action="/api/billing/portal">
+    <form id="manage" method="post" action="/api/billing/portal">
       <SubmitButton />
     </form>
   );

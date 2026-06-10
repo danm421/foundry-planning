@@ -34,7 +34,7 @@ function bannerFor(state: SubscriptionState): Banner | null {
       return {
         severity: "info-yellow",
         message: `Trial ends ${fmt(state.trialEndsAt)}. Add a payment method to keep going.`,
-        actionHref: "/settings/billing",
+        actionHref: "/settings/billing#manage",
         actionLabel: "Add payment method",
         dismissible: true,
         dismissKey: `trialing:${state.trialEndsAt.toISOString()}`,
@@ -43,7 +43,7 @@ function bannerFor(state: SubscriptionState): Banner | null {
       return {
         severity: "info-gray",
         message: `Subscription ends ${fmt(state.periodEnd)}. Reactivate anytime in billing.`,
-        actionHref: "/settings/billing",
+        actionHref: "/settings/billing#manage",
         actionLabel: "Reactivate",
         dismissible: true,
         dismissKey: `active_canceling:${state.periodEnd.toISOString()}`,
@@ -52,7 +52,7 @@ function bannerFor(state: SubscriptionState): Banner | null {
       return {
         severity: "urgent-red",
         message: "Payment failed — update your card to avoid interruption.",
-        actionHref: "/settings/billing",
+        actionHref: "/settings/billing#manage",
         actionLabel: "Update card",
         dismissible: false,
         dismissKey: "past_due:persistent",
@@ -62,7 +62,7 @@ function bannerFor(state: SubscriptionState): Banner | null {
       return {
         severity: "urgent-red",
         message: `Subscription canceled. Read-only access until ${fmt(graceUntil)}. Reactivate to restore editing.`,
-        actionHref: "/settings/billing",
+        actionHref: "/settings/billing#manage",
         actionLabel: "Reactivate",
         dismissible: false,
         dismissKey: "canceled_grace:persistent",
@@ -72,7 +72,7 @@ function bannerFor(state: SubscriptionState): Banner | null {
       return {
         severity: "urgent-red",
         message: "Account locked. Reactivate billing to restore access.",
-        actionHref: "/settings/billing",
+        actionHref: "/settings/billing#manage",
         actionLabel: "Reactivate",
         dismissible: false,
         dismissKey: "canceled_locked:persistent",
