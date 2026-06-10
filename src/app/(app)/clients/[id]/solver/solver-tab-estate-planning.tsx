@@ -1,8 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Account } from "@/engine/types";
+import type { Account, ClientData } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { addGift, removeGift, updateGift } from "@/lib/estate/estate-flow-gifts";
+import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
+import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
 import {
   isRevocableTagEligible,
   buildRevocableTagMutations,
@@ -10,10 +14,24 @@ import {
 
 interface Props {
   accounts: Account[];
+  /**
+   * The working/proposed tree. Its `externalBeneficiaries` include
+   * scenario-added charities, and its accounts feed in-kind asset gifts.
+   */
+  clientData: ClientData;
   onChange: (m: SolverMutation) => void;
 }
 
-export function SolverTabEstatePlanning({ accounts, onChange }: Props) {
+/** One-line label for a planned gift in the list. */
+function giftSummary(g: EstateFlowGift): string {
+  if (g.kind === "series")
+    return `Series ${g.startYear}–${g.endYear}: $${g.annualAmount.toLocaleString()}/yr`;
+  if (g.kind === "asset-once")
+    return `Asset gift ${g.year}: ${Math.round(g.percent * 100)}%`;
+  return `Cash gift ${g.year}: $${g.amount.toLocaleString()}`;
+}
+
+export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Props) {
   const eligible = useMemo(
     () => accounts.filter(isRevocableTagEligible),
     [accounts],
@@ -22,6 +40,55 @@ export function SolverTabEstatePlanning({ accounts, onChange }: Props) {
   const [enabled, setEnabled] = useState(false);
   const [trustName, setTrustName] = useState("Revocable Living Trust");
   const [taggedIds, setTaggedIds] = useState<Set<string>>(new Set());
+
+  // ── Planned gifts ──────────────────────────────────────────────────────────
+  const [gifts, setGifts] = useState<EstateFlowGift[]>([]);
+  const [editing, setEditing] = useState<EstateFlowGift | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  // Inline charity sub-form (the DB-coupled ExternalBeneficiaryDialog is unusable here).
+  const [charityName, setCharityName] = useState("");
+  const [charityType, setCharityType] = useState<"public" | "private">("public");
+
+  const ps = clientData.planSettings;
+  const taxInflationRate = ps.taxInflationRate ?? ps.inflationRate ?? 0;
+  const annualExclusionByYear = useMemo(
+    () =>
+      buildAnnualExclusionMap(
+        clientData.taxYearRows ?? [],
+        ps.planStartYear,
+        ps.planEndYear,
+        taxInflationRate,
+      ),
+    [clientData.taxYearRows, ps.planStartYear, ps.planEndYear, taxInflationRate],
+  );
+
+  function upsertGift(draft: EstateFlowGift) {
+    setGifts((gs) =>
+      gs.some((g) => g.id === draft.id) ? updateGift(gs, draft) : addGift(gs, draft),
+    );
+    onChange({ kind: "gift-upsert", id: draft.id, value: draft });
+    setEditing(null);
+    setAdding(false);
+  }
+
+  function deleteGift(id: string) {
+    setGifts((gs) => removeGift(gs, id));
+    onChange({ kind: "gift-upsert", id, value: null });
+    setEditing(null);
+  }
+
+  function addCharity() {
+    const name = charityName.trim();
+    if (!name) return;
+    const id = crypto.randomUUID();
+    onChange({
+      kind: "external-beneficiary-upsert",
+      id,
+      value: { id, name, kind: "charity", charityType },
+    });
+    setCharityName("");
+  }
 
   function apply(nextTagged: Set<string>, nextName: string) {
     for (const m of buildRevocableTagMutations(accounts, nextTagged, nextName)) {
@@ -123,6 +190,98 @@ export function SolverTabEstatePlanning({ accounts, onChange }: Props) {
           </div>
         ) : null}
       </section>
+
+      <section className="rounded-lg border border-hair bg-card p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-medium text-ink">Planned gifts</span>
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setAdding(true);
+            }}
+            className="text-[12px] text-accent hover:underline"
+          >
+            Add gift
+          </button>
+        </div>
+
+        {gifts.length === 0 ? (
+          <p className="mt-2 text-[12px] text-ink-3">
+            No planned gifts in this scenario.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {gifts.map((g) => (
+              <li
+                key={g.id}
+                className="flex items-center justify-between text-[13px] text-ink"
+              >
+                <button
+                  type="button"
+                  className="text-left hover:underline"
+                  onClick={() => setEditing(g)}
+                >
+                  {giftSummary(g)}
+                </button>
+                <button
+                  type="button"
+                  className="text-[12px] text-crit hover:underline"
+                  onClick={() => deleteGift(g.id)}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Inline "add charity" — makes a new charity available as a gift recipient. */}
+        <div className="mt-3 flex items-end gap-2">
+          <label className="flex-1 text-[12px] text-ink-2">
+            New charity
+            <input
+              type="text"
+              value={charityName}
+              onChange={(e) => setCharityName(e.target.value)}
+              placeholder="Charity name"
+              className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            />
+          </label>
+          <select
+            aria-label="Charity type"
+            value={charityType}
+            onChange={(e) => setCharityType(e.target.value as "public" | "private")}
+            className="h-9 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          >
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+          <button
+            type="button"
+            onClick={addCharity}
+            className="h-9 rounded-md bg-accent px-3 text-[13px] text-white hover:bg-accent/90"
+          >
+            Add
+          </button>
+        </div>
+      </section>
+
+      {(adding || editing) && (
+        <EstateFlowAddGiftDialog
+          clientData={clientData}
+          ledger={[]}
+          taxInflationRate={taxInflationRate}
+          annualExclusionByYear={annualExclusionByYear}
+          editing={editing}
+          onApply={upsertGift}
+          onDelete={() => editing && deleteGift(editing.id)}
+          onClose={() => {
+            setAdding(false);
+            setEditing(null);
+          }}
+        />
+      )}
     </div>
   );
 }
