@@ -126,6 +126,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       // drift (Stripe is source of truth). Item drift stays detect-only.
       const heal = planAutoHeal(firmDrift);
       if (heal) {
+        // Clerk PATCH /metadata shallow-merges publicMetadata — only the keys
+        // present in heal.patch are overwritten, so a status-only heal leaves
+        // entitlements intact (and vice versa).
         await cc.organizations.updateOrganizationMetadata(firm.firmId, {
           publicMetadata: heal.patch,
         });
