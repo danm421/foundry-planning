@@ -179,6 +179,13 @@ export function LiveSolverWorkspace({
   const [savingsAccountMixes, setSavingsAccountMixes] = useState<Map<string, { assetClassId: string; weight: number }[]>>(() => new Map());
   // fundFromExpenseReduction accounts surfaced as editable boxes ("Keep self-funding").
   const [visibleSelfFundingAccts, setVisibleSelfFundingAccts] = useState<Set<string>>(() => new Set());
+  // The current still-UNCOMMITTED synthetic Additional Savings account from the
+  // last min-savings solve. Set when a solve mints the account, cleared when the
+  // advisor commits it (Keep self-funding / Lock in cut) or discards it (Dismiss).
+  // Lets a re-solve retire the prior uncommitted account instead of stacking a
+  // second one, and lets the include handlers target THIS account rather than a
+  // fragile `.find(fundFromExpenseReduction)` that grabs the oldest committed one.
+  const pendingSyntheticRef = useRef<{ accountId: string; ruleId: string } | null>(null);
   // Working-tree year-0 living captured at solve start, for the outcome delta.
   const baselineLivingRef = useRef<number>(0);
 
@@ -583,6 +590,26 @@ export function LiveSolverWorkspace({
     setActiveSolve(null);
   }, [solveController]);
 
+  // Build the deletion mutations that retire a previously-minted, still-
+  // uncommitted synthetic Additional Savings account (account + its rule), and
+  // drop its MC mix. Returns the mutations so a concurrent solve can carry them
+  // as baseline (pushMutation's state hasn't flushed when the solve starts).
+  const retireSyntheticMutations = useCallback(
+    (ids: { accountId: string; ruleId: string }): SolverMutation[] => {
+      setSavingsAccountMixes((prev) => {
+        if (!prev.has(ids.accountId)) return prev;
+        const next = new Map(prev);
+        next.delete(ids.accountId);
+        return next;
+      });
+      return [
+        { kind: "account-upsert", id: ids.accountId, value: null },
+        { kind: "savings-rule-upsert", id: ids.ruleId, value: null },
+      ];
+    },
+    [],
+  );
+
   // "Solve minimum additional savings": stand up a real, savable account on the
   // chosen model portfolio's growth/realization + a fundFromExpenseReduction
   // rule at $0, push both into the baseline (so the search sees them), register
@@ -598,6 +625,12 @@ export function LiveSolverWorkspace({
       // Capture working-tree year-0 living before the solve so onResult can show
       // the before→after delta of the expense-reduction self-funding.
       baselineLivingRef.current = currentProjection[0]?.expenses.living ?? 0;
+      // Retire any prior UNCOMMITTED synthetic account before minting a new one,
+      // so re-solving replaces rather than stacks a second self-funding rule.
+      // (Committed accounts cleared the ref on include, so they're left alone.)
+      const prevPending = pendingSyntheticRef.current;
+      const retireMutations = prevPending ? retireSyntheticMutations(prevPending) : [];
+      for (const m of retireMutations) pushMutation(m);
       const accountId = crypto.randomUUID();
       const ruleId = crypto.randomUUID();
       const { account, rule } = buildAdditionalSavingsAccount({
@@ -621,16 +654,17 @@ export function LiveSolverWorkspace({
       };
       pushMutation(accountMutation);
       pushMutation(ruleMutation);
+      pendingSyntheticRef.current = { accountId, ruleId };
       setMinSavings({ accountId, ruleId, rule, portfolio, targetPoS });
       setMinSavingsResult(null);
       setSavingsAccountMixes((prev) => new Map(prev).set(accountId, portfolio.mix));
-      // Pass the account+rule as extra baseline mutations: pushMutation's state
-      // updates haven't flushed yet, so the solve must be told about them
-      // directly or the search range would resolve against a tree with no rule.
+      // Pass the retire + account + rule as extra baseline mutations: pushMutation's
+      // state updates haven't flushed yet, so the solve must be told about them
+      // directly or the search range would resolve against a stale tree.
       handleSolveStart(
         { kind: "savings-contribution", accountId },
         targetPoS,
-        [accountMutation, ruleMutation],
+        [...retireMutations, accountMutation, ruleMutation],
         [{ accountId, mix: portfolio.mix }],
       );
     },
@@ -643,25 +677,32 @@ export function LiveSolverWorkspace({
       currentProjection,
       currentYear,
       retirementYearForOwner,
+      retireSyntheticMutations,
       handleSolveStart,
     ],
   );
 
   // "Keep self-funding": the synthetic fundFromExpenseReduction rule is already
-  // in the tree (written back by onResult). Just surface it as an editable box.
+  // in the tree (written back by onResult). Surface THIS solve's account as an
+  // editable box and commit it (clear the ref so a later solve won't retire it).
   const handleIncludeSelfFunding = useCallback(() => {
     if (!minSavingsResult) return;
-    const acct = workingTree.savingsRules.find((r) => r.fundFromExpenseReduction)?.accountId;
+    const acct = pendingSyntheticRef.current?.accountId;
     if (acct) setVisibleSelfFundingAccts((prev) => new Set(prev).add(acct));
+    pendingSyntheticRef.current = null;
     setMinSavingsResult(null);
-  }, [minSavingsResult, workingTree.savingsRules]);
+  }, [minSavingsResult]);
 
-  // "Lock in cut": convert the synthetic rule to a normal savings rule and lower
-  // working-years living expenses by the year-0 expense-reduction amount.
+  // "Lock in cut": convert THIS solve's synthetic rule to a normal savings rule
+  // and lower working-years living expenses by the year-0 expense-reduction
+  // amount. Commits the account (clear the ref) so a later solve won't retire it.
   const handleIncludeLockInCut = useCallback(() => {
     if (!minSavingsResult) return;
-    const selfRule = workingTree.savingsRules.find((r) => r.fundFromExpenseReduction);
-    if (!selfRule) { setMinSavingsResult(null); return; }
+    const ruleId = pendingSyntheticRef.current?.ruleId;
+    const selfRule = ruleId
+      ? workingTree.savingsRules.find((r) => r.id === ruleId)
+      : undefined;
+    if (!selfRule) { pendingSyntheticRef.current = null; setMinSavingsResult(null); return; }
     const normalRule: SavingsRule = {
       id: selfRule.id,
       accountId: selfRule.accountId,
@@ -681,8 +722,23 @@ export function LiveSolverWorkspace({
       pushMutation(m);
     }
     setVisibleSelfFundingAccts((prev) => { const n = new Set(prev); n.delete(selfRule.accountId); return n; });
+    pendingSyntheticRef.current = null;
     setMinSavingsResult(null);
   }, [minSavingsResult, workingTree, currentYear]);
+
+  // "Dismiss": discard this solve. Retire the uncommitted synthetic account (and
+  // prune its MC mix) so the projection returns to its pre-solve state — also
+  // cleans up a mid-solve cancel, which leaves the just-added $0 account behind.
+  const handleDismissResult = useCallback(() => {
+    handleSolveCancel();
+    const ids = pendingSyntheticRef.current;
+    if (ids) {
+      for (const m of retireSyntheticMutations(ids)) pushMutation(m);
+      pendingSyntheticRef.current = null;
+    }
+    setMinSavings(null);
+    setMinSavingsResult(null);
+  }, [handleSolveCancel, retireSyntheticMutations]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -977,7 +1033,7 @@ export function LiveSolverWorkspace({
                   onSolve={handleSolveMinSavings}
                   onIncludeSelfFunding={handleIncludeSelfFunding}
                   onIncludeLockInCut={handleIncludeLockInCut}
-                  onDismissResult={() => { handleSolveCancel(); setMinSavingsResult(null); }}
+                  onDismissResult={handleDismissResult}
                 />
               </SolverWorkingOnly>
             </SolverSection>

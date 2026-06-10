@@ -114,18 +114,45 @@ const baseProps = {
 };
 
 describe("LiveSolverWorkspace — solve minimum additional savings", () => {
-  it("pushes the account + rule into the solve baseline and targets the new account", () => {
-    render(<LiveSolverWorkspace {...baseProps} />);
-
-    // The compare grid renders the editing surface twice (visible + a measured
-    // copy), so the button appears more than once; clicking either drives the
-    // same handler.
+  // Open the min-savings config box (the compare grid renders the trigger twice
+  // — visible + a measured copy — so click either) and submit the default solve.
+  const openAndSolve = () => {
     fireEvent.click(
       screen.getAllByRole("button", { name: /Solve minimum additional savings/i })[0],
     );
-    // Config box opens — click the "Solve" submit (only ONE instance since the
-    // box is local state in one panel copy).
     fireEvent.click(screen.getByRole("button", { name: /^Solve$/i }));
+  };
+
+  // A converged min-savings result. The accountId isn't carried in the event —
+  // the workspace resolves it from its own ref — so the same payload drives
+  // whichever solve is in flight. finalProjection must include portfolioAssets
+  // so the liquidPortfolioTotal mock doesn't throw on re-render.
+  const convergedEvent = {
+    objective: "pos",
+    status: "converged",
+    solvedValue: 24500,
+    achievedPoS: 0.85,
+    canonicalPoS: 0.86,
+    iterations: 5,
+    seed: 1,
+    finalProjection: [
+      {
+        year: 2026,
+        portfolioAssets: { total: 1_000_000 },
+        expenses: { living: 108300 },
+        hypotheticalSavings: {
+          contribution: 24500,
+          fromCashFlow: 12800,
+          fromExpenseReduction: 11700,
+        },
+      },
+    ],
+  };
+
+  it("pushes the account + rule into the solve baseline and targets the new account", () => {
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    openAndSolve();
 
     expect(startMock).toHaveBeenCalledTimes(1);
     const args = startMock.mock.calls[0][0];
@@ -172,42 +199,14 @@ describe("LiveSolverWorkspace — solve minimum additional savings", () => {
   it("shows the outcome and 'Keep self-funding' surfaces the savings box", async () => {
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    // Open config box then submit.
-    fireEvent.click(
-      screen.getAllByRole("button", { name: /Solve minimum additional savings/i })[0],
-    );
-    fireEvent.click(screen.getByRole("button", { name: /^Solve$/i }));
+    openAndSolve();
 
     // Verify solve was kicked off and capturedOnResult is ready.
     expect(startMock).toHaveBeenCalledTimes(1);
     expect(typeof capturedOnResult).toBe("function");
 
     // Drive the converged result through the captured callback.
-    // finalProjection must include portfolioAssets so the liquidPortfolioTotal
-    // mock (which reads .portfolioAssets.total) doesn't throw on re-render.
-    act(() => {
-      capturedOnResult?.({
-        objective: "pos",
-        status: "converged",
-        solvedValue: 24500,
-        achievedPoS: 0.85,
-        canonicalPoS: 0.86,
-        iterations: 5,
-        seed: 1,
-        finalProjection: [
-          {
-            year: 2026,
-            portfolioAssets: { total: 1_000_000 },
-            expenses: { living: 108300 },
-            hypotheticalSavings: {
-              contribution: 24500,
-              fromCashFlow: 12800,
-              fromExpenseReduction: 11700,
-            },
-          },
-        ],
-      } as never);
-    });
+    act(() => capturedOnResult?.(convergedEvent as never));
 
     // Outcome panel renders (appears in both panel copies → findAllByText).
     expect((await screen.findAllByText(/24,500/)).length).toBeGreaterThan(0);
@@ -219,5 +218,60 @@ describe("LiveSolverWorkspace — solve minimum additional savings", () => {
     expect(
       (await screen.findAllByLabelText("Additional Savings")).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("Dismiss discards the uncommitted account; re-solving doesn't accumulate", () => {
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Solve #1 → converged → Dismiss.
+    openAndSolve();
+    const firstAccountId =
+      startMock.mock.calls[0][0].target.kind === "savings-contribution"
+        ? startMock.mock.calls[0][0].target.accountId
+        : "";
+    act(() => capturedOnResult?.(convergedEvent as never));
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss/i }));
+
+    // Solve #2 → mints a fresh account.
+    openAndSolve();
+    expect(startMock).toHaveBeenCalledTimes(2);
+    const secondArgs = startMock.mock.calls[1][0];
+    const secondAccountId =
+      secondArgs.target.kind === "savings-contribution" ? secondArgs.target.accountId : "";
+    expect(secondAccountId).toBeTruthy();
+    expect(secondAccountId).not.toBe(firstAccountId);
+
+    // The dismissed account was retired (account-upsert → null) in the baseline,
+    // and exactly ONE live synthetic account (the new one) remains — no stacking.
+    const retired = secondArgs.mutations.find(
+      (m) => m.kind === "account-upsert" && m.id === firstAccountId,
+    );
+    expect(retired?.kind === "account-upsert" && retired.value).toBeNull();
+
+    const liveAccountIds = secondArgs.mutations
+      .filter((m) => m.kind === "account-upsert" && m.value !== null)
+      .map((m) => (m.kind === "account-upsert" ? m.id : ""));
+    expect(liveAccountIds).toEqual([secondAccountId]);
+  });
+
+  it("after committing one account, re-solve + Keep self-funding surfaces the SECOND account", async () => {
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Solve #1 → converged → Keep self-funding (commits the first account).
+    openAndSolve();
+    act(() => capturedOnResult?.(convergedEvent as never));
+    fireEvent.click(screen.getAllByRole("button", { name: /Keep self-funding/i })[0]);
+    const afterFirst = (await screen.findAllByLabelText("Additional Savings")).length;
+    expect(afterFirst).toBeGreaterThan(0);
+
+    // Solve #2 → converged → Keep self-funding again. The include handler must
+    // target THIS solve's account (the ref), not `.find(fundFromExpenseReduction)`
+    // which grabs the already-committed first account, so a NEW box appears.
+    openAndSolve();
+    act(() => capturedOnResult?.(convergedEvent as never));
+    fireEvent.click(screen.getAllByRole("button", { name: /Keep self-funding/i })[0]);
+
+    const afterSecond = (await screen.findAllByLabelText("Additional Savings")).length;
+    expect(afterSecond).toBeGreaterThan(afterFirst);
   });
 });
