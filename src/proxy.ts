@@ -1,5 +1,8 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
+import { decideAccess } from "@/lib/billing/access-policy";
+import { recordAudit } from "@/lib/audit";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -28,6 +31,19 @@ const isOrgPickerRoute = createRouteMatcher([
   "/select-organization(.*)",
 ]);
 
+// Billing access enforcement (AD-1) must never block the very surface a
+// locked/blocked firm needs to fix billing — the billing settings page and
+// the Customer Portal route. Exempting them prevents a redirect loop.
+const isBillingExemptRoute = createRouteMatcher([
+  "/settings/billing(.*)",
+  "/api/billing/portal",
+]);
+
+type EnforcementMode = "log" | "enforce";
+function enforcementMode(): EnforcementMode {
+  return process.env.BILLING_ENFORCEMENT_MODE === "enforce" ? "enforce" : "log";
+}
+
 export default clerkMiddleware(async (auth, request) => {
   // Surface the request pathname so server components (e.g. SettingsTabs)
   // can read it via `headers().get("x-pathname")` for active-tab highlight.
@@ -37,7 +53,7 @@ export default clerkMiddleware(async (auth, request) => {
 
   if (isPublicRoute(request)) return passthroughResponse;
 
-  const { userId, orgId } = await auth();
+  const { userId, orgId, sessionClaims } = await auth();
 
   if (!userId) {
     await auth.protect();
@@ -50,6 +66,42 @@ export default clerkMiddleware(async (auth, request) => {
   // skip the redirect so fetch()/XHR callers still get a clean 401.
   if (!orgId && !isOrgPickerRoute(request) && !request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL("/select-organization", request.url));
+  }
+
+  // Billing access enforcement (AD-1). Reads subscription state from session
+  // claims only — no DB / no Clerk API on the hot path. Shipped in log-only
+  // mode (BILLING_ENFORCEMENT_MODE unset/"log"): audits the would-be denial
+  // without blocking. Flip to "enforce" to start blocking.
+  if (orgId && !isBillingExemptRoute(request)) {
+    const meta = (sessionClaims as { org_public_metadata?: OrgMeta } | null)
+      ?.org_public_metadata;
+    const state = stateFromMeta(meta);
+    const method = request.method;
+    const path = request.nextUrl.pathname;
+    const decision = decideAccess(state, method, path);
+
+    if (decision !== "allow") {
+      const mode = enforcementMode();
+      // Audit every (would-be) denial — evidence the control operated.
+      await recordAudit({
+        action: "billing.access_denied",
+        resourceType: "firm",
+        resourceId: orgId,
+        firmId: orgId,
+        actorId: userId,
+        metadata: { decision, mode, method, path, status: state.kind },
+      });
+
+      if (mode === "enforce") {
+        if (path.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "subscription_inactive" },
+            { status: 403 },
+          );
+        }
+        return NextResponse.redirect(new URL("/settings/billing", request.url));
+      }
+    }
   }
 
   return passthroughResponse;
