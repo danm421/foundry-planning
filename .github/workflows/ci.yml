@@ -1,0 +1,29 @@
+name: CI
+
+# Gate that catches the class of break that silently red-lined 6 production
+# deploys: a TypeScript error reaching origin/main. `next build` fails at its
+# type-check phase, so `tsc --noEmit` green ⟺ the production build's type-check
+# is green — and it needs no build-time secrets, so CI stays reliable.
+#
+# Lint and the vitest suite are intentionally NOT gated yet: both carry a
+# pre-existing baseline of failures on main. Add them here once they're green
+# so CI doesn't start life red (a red-by-default gate gets ignored).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: Type-check (tsc --noEmit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
