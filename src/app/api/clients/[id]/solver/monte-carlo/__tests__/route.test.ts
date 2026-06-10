@@ -20,6 +20,7 @@ vi.mock("@/lib/compute-cache/solver-mc", () => ({
 
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
+import { checkProjectionRateLimit } from "@/lib/rate-limit";
 import { getOrComputeSolverMc } from "@/lib/compute-cache/solver-mc";
 import { POST } from "../route";
 
@@ -35,6 +36,7 @@ const ctx = { params: Promise.resolve({ id: "c1" }) };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("firm-1");
+  vi.mocked(checkProjectionRateLimit).mockResolvedValue({ allowed: true, remaining: 29, reset: 0 });
   vi.mocked(findClientInFirm).mockResolvedValue({ id: "c1" } as never);
   vi.mocked(getOrComputeSolverMc).mockResolvedValue({ successRate: 0.88 });
 });
@@ -49,6 +51,12 @@ describe("POST /api/clients/[id]/solver/monte-carlo", () => {
     vi.mocked(findClientInFirm).mockResolvedValue(null as never);
     const res = await POST(makeRequest({ source: "base", mutations: [] }), ctx);
     expect(res.status).toBe(404);
+  });
+
+  it("returns 429 when the rate limit is exceeded", async () => {
+    vi.mocked(checkProjectionRateLimit).mockResolvedValueOnce({ allowed: false } as never);
+    const res = await POST(makeRequest({ source: "base", mutations: [] }), ctx);
+    expect(res.status).toBe(429);
   });
 
   it("returns the successRate from the helper", async () => {
