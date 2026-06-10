@@ -75,6 +75,9 @@ export interface AdditionalSavingsArgs {
   growthRate: number;
   accountId: string;
   ruleId: string;
+  /** When the savings are invested in a model portfolio, the resolved tax
+   *  realization (mirrors resolve-entity's model-portfolio account path). */
+  realization?: Account["realization"];
 }
 
 /**
@@ -95,6 +98,7 @@ export function buildAdditionalSavingsAccount(args: AdditionalSavingsArgs): { ac
     rmdEnabled: false,
     titlingType: "jtwros",
     owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 100 }],
+    ...(args.realization ? { realization: args.realization } : {}),
   };
   const rule: SavingsRule = {
     id: args.ruleId,

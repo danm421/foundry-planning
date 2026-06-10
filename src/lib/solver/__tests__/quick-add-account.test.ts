@@ -61,6 +61,38 @@ describe("additional-savings account (min-savings solve)", () => {
     expect(account).toMatchObject({ category: "taxable", subType: "brokerage", name: "Additional Savings", value: 0 });
     expect(rule).toMatchObject({ accountId: "acct", annualAmount: 0, isDeductible: false, fundFromExpenseReduction: true });
   });
+
+  it("stamps an optional realization onto the synthetic account", () => {
+    const { account } = buildAdditionalSavingsAccount({
+      ownerFamilyMemberId: "fm-1",
+      startYear: 2026,
+      endYear: 2039,
+      growthRate: 0.062,
+      accountId: "acct",
+      ruleId: "rule",
+      realization: {
+        pctOrdinaryIncome: 0.1,
+        pctLtCapitalGains: 0.7,
+        pctQualifiedDividends: 0.15,
+        pctTaxExempt: 0.05,
+        turnoverPct: 0,
+      },
+    });
+    expect(account.growthRate).toBeCloseTo(0.062, 6);
+    expect(account.realization).toMatchObject({ pctLtCapitalGains: 0.7, turnoverPct: 0 });
+  });
+
+  it("omits realization when not supplied (back-compat)", () => {
+    const { account } = buildAdditionalSavingsAccount({
+      ownerFamilyMemberId: "fm-1",
+      startYear: 2026,
+      endYear: 2039,
+      growthRate: 0.05,
+      accountId: "acct",
+      ruleId: "rule",
+    });
+    expect(account.realization).toBeUndefined();
+  });
 });
 
 describe("buildSavingsRuleForAccount", () => {
