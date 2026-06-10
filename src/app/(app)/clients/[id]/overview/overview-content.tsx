@@ -8,7 +8,6 @@ import RecentActivityPanel from "@/components/client-overview/recent-activity-pa
 import EmptyHouseholdBanner from "@/components/client-overview/empty-household-banner";
 import { isFreshHousehold } from "@/components/client-overview/is-fresh-household";
 import AlertsStrip from "@/components/client-overview/alerts-strip";
-import WelcomeHeader from "@/components/client-overview/welcome-header";
 
 export async function OverviewContent({
   clientId,
@@ -46,8 +45,6 @@ export async function OverviewContent({
 
   return (
     <div className="flex flex-col gap-[var(--gap-grid)]">
-      <WelcomeHeader name={d.householdName} updatedAt={d.client.updatedAt} />
-
       {isFreshHousehold(d.accountCount) && <EmptyHouseholdBanner clientId={clientId} />}
 
       <KpiStrip

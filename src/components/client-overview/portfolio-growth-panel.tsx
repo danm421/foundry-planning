@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { Card, CardBody, CardFooter, CardHeader } from "@/components/card";
 import MoneyText from "@/components/money-text";
 import { ChartLineIcon } from "@/components/icons";
+import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
 import type { ProjectionYear } from "@/engine";
 import EmptyBlock from "./empty-block";
 import PanelHeading from "./panel-heading";
@@ -28,7 +29,7 @@ export default function PortfolioGrowthPanel({
     );
   }
 
-  const totals = projection.map((y) => y.portfolioAssets.total);
+  const totals = projection.map((y) => liquidPortfolioTotal(y));
   const start = totals[0];
   const peak = Math.max(...totals);
   const startYear = projection[0].year;
@@ -39,7 +40,7 @@ export default function PortfolioGrowthPanel({
       <CardHeader>
         <PanelHeading
           icon={<ChartLineIcon width={16} height={16} />}
-          title="Portfolio assets growth"
+          title="Liquid portfolio growth"
           meta={`${startYear}–${endYear}`}
         />
       </CardHeader>

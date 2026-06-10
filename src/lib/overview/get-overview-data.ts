@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { accounts, clients, crmHouseholdContacts, crmHouseholds, entities, entityOwners } from "@/db/schema";
+import { accounts, clients, crmHouseholdContacts, entities, entityOwners } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { listOpenItems } from "./list-open-items";
 import { listAuditRows } from "./list-audit-rows";
@@ -51,45 +51,29 @@ export async function getOverviewData(
   const clientDob = primaryContact?.dateOfBirth;
   const spouseDob = spouseContact?.dateOfBirth;
 
-  const [
-    allocation,
-    openItemsAll,
-    openItemsPreview,
-    auditRows,
-    accountRows,
-    entityRows,
-    householdRows,
-  ] = await Promise.all([
-    getAssetAllocationByType(clientId, firmId),
-    listOpenItems(clientId, firmId, { open: false, limit: 500 }),
-    listOpenItems(clientId, firmId, { open: true, limit: 5 }),
-    listAuditRows(clientId, firmId, { limit: 10 }),
-    db
-      .select({
-        id: accounts.id,
-        category: accounts.category,
-        value: accounts.value,
-      })
-      .from(accounts)
-      .where(eq(accounts.clientId, clientId)),
-    db
-      .select({
-        id: entities.id,
-        entityType: entities.entityType,
-        value: entities.value,
-      })
-      .from(entities)
-      .where(eq(entities.clientId, clientId)),
-    // Display name for the overview header — the CRM household name is the
-    // advisor-set source of truth (the clients table has no name column).
-    client.crmHouseholdId
-      ? db
-          .select({ name: crmHouseholds.name })
-          .from(crmHouseholds)
-          .where(eq(crmHouseholds.id, client.crmHouseholdId))
-      : Promise.resolve([] as { name: string }[]),
-  ]);
-  const householdName = householdRows[0]?.name ?? "Household";
+  const [allocation, openItemsAll, openItemsPreview, auditRows, accountRows, entityRows] =
+    await Promise.all([
+      getAssetAllocationByType(clientId, firmId),
+      listOpenItems(clientId, firmId, { open: false, limit: 500 }),
+      listOpenItems(clientId, firmId, { open: true, limit: 5 }),
+      listAuditRows(clientId, firmId, { limit: 10 }),
+      db
+        .select({
+          id: accounts.id,
+          category: accounts.category,
+          value: accounts.value,
+        })
+        .from(accounts)
+        .where(eq(accounts.clientId, clientId)),
+      db
+        .select({
+          id: entities.id,
+          entityType: entities.entityType,
+          value: entities.value,
+        })
+        .from(entities)
+        .where(eq(entities.clientId, clientId)),
+    ]);
 
   // Family-owned share of each business-entity flat valuation. Mirrors the
   // balance-sheet rule: missing entity_owners rows → fully family-owned
@@ -204,7 +188,6 @@ export async function getOverviewData(
 
   return {
     client,
-    householdName,
     kpi: { netWorth, liquidPortfolio, yearsToRetirement },
     runway: { netWorthSeries, minNetWorth },
     projection: projection ?? [],

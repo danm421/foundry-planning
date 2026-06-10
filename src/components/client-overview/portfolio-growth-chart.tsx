@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useThemeName, chartChrome, dataPalette } from "@/lib/chart-colors";
+import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -43,8 +44,11 @@ export default function PortfolioGrowthChart({ years }: Props) {
       labels: years.map((y) => String(y.year)),
       datasets: [
         {
-          label: "Portfolio assets",
-          data: years.map((y) => y.portfolioAssets.total),
+          label: "Liquid portfolio",
+          // Liquid investable total only (taxable + cash + retirement + life
+          // insurance + accessible trusts) — the same basis the Cash Flow chart
+          // uses. Excludes real estate, business, and locked trusts.
+          data: years.map((y) => liquidPortfolioTotal(y)),
           backgroundColor: seriesColor,
           borderRadius: 2,
         },
@@ -65,7 +69,7 @@ export default function PortfolioGrowthChart({ years }: Props) {
           bodyColor: chrome.tooltipBody,
           callbacks: {
             label: (ctx: { raw: unknown }) =>
-              `Portfolio assets: ${fmtFull.format(Number(ctx.raw))}`,
+              `Liquid portfolio: ${fmtFull.format(Number(ctx.raw))}`,
           },
         },
       },
