@@ -210,6 +210,7 @@ export type AuditAction =
   | "billing.payment_recovered"
   | "billing.email_queued"
   | "billing.dispute_created"
+  | "billing.reconcile_healed"
   | "billing.access_denied"
   | "billing.dispute_closed"
   // Org membership lifecycle (mirrors Clerk events)

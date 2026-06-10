@@ -16,6 +16,8 @@ import {
   type DriftEntry,
 } from "@/lib/billing/reconcile";
 import { checkRecentWebhookErrors } from "@/lib/billing/webhook-error-check";
+import { recordAudit } from "@/lib/audit";
+import { planAutoHeal } from "@/lib/billing/auto-heal";
 
 export const dynamic = "force-dynamic";
 
@@ -98,26 +100,42 @@ export async function GET(req: NextRequest): Promise<Response> {
         removed: false,
       }));
 
-      drift.push(
-        ...diffReconciliation({
+      const firmDrift = diffReconciliation({
+        firmId: firm.firmId,
+        stripe: { status: stripeSub.status, items: stripeItems },
+        db: {
+          status: liveSub.status,
+          items: dbItems,
+          aiImportsUsed: firm.aiImportsUsed,
+        },
+        clerk: {
+          subscriptionStatus:
+            typeof clerkMeta.subscription_status === "string"
+              ? clerkMeta.subscription_status
+              : "missing",
+          entitlements: Array.isArray(clerkMeta.entitlements)
+            ? (clerkMeta.entitlements as string[])
+            : [],
+        },
+      });
+      drift.push(...firmDrift);
+
+      // Auto-heal: write Stripe-derived status/entitlements back to Clerk on
+      // drift (Stripe is source of truth). Item drift stays detect-only.
+      const heal = planAutoHeal(firmDrift);
+      if (heal) {
+        await cc.organizations.updateOrganizationMetadata(firm.firmId, {
+          publicMetadata: heal.patch,
+        });
+        await recordAudit({
+          action: "billing.reconcile_healed",
+          resourceType: "firm",
+          resourceId: firm.firmId,
           firmId: firm.firmId,
-          stripe: { status: stripeSub.status, items: stripeItems },
-          db: {
-            status: liveSub.status,
-            items: dbItems,
-            aiImportsUsed: firm.aiImportsUsed,
-          },
-          clerk: {
-            subscriptionStatus:
-              typeof clerkMeta.subscription_status === "string"
-                ? clerkMeta.subscription_status
-                : "missing",
-            entitlements: Array.isArray(clerkMeta.entitlements)
-              ? (clerkMeta.entitlements as string[])
-              : [],
-          },
-        }),
-      );
+          actorId: "system:reconcile-cron",
+          metadata: { healedFields: heal.healedFields, patch: heal.patch },
+        });
+      }
       checked++;
     } catch (err) {
       drift.push({
