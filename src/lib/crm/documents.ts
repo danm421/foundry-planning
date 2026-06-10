@@ -130,11 +130,14 @@ export async function deleteCrmDocument(documentId: string): Promise<void> {
   const { orgId } = await requireCrmHouseholdAccess(doc.householdId);
 
   // Best-effort blob delete — if it 404s we still want the DB row gone.
-  try {
-    await del(doc.storageKey);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
-    console.error("[crm.documents] failed to delete blob:", { storageKey: doc.storageKey, err: msg });
+  // storageKey is null for generated/import-ref docs (no blob to delete).
+  if (doc.storageKey) {
+    try {
+      await del(doc.storageKey);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
+      console.error("[crm.documents] failed to delete blob:", { storageKey: doc.storageKey, err: msg });
+    }
   }
 
   await db

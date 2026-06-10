@@ -418,6 +418,12 @@ export const crmActivityKindEnum = pgEnum("crm_activity_kind", [
   "planning_link",
 ]);
 
+export const crmDocumentSourceKindEnum = pgEnum("crm_document_source_kind", [
+  "upload",
+  "generated_plan",
+  "import_ref",
+]);
+
 // ── CRM tables ───────────────────────────────────────────────────────────────
 
 export const crmHouseholds = pgTable("crm_households", {
@@ -541,13 +547,50 @@ export const crmHouseholdDocuments = pgTable("crm_household_documents", {
     .references(() => crmHouseholds.id, { onDelete: "cascade" }),
   filename: text("filename").notNull(),
   storageProvider: text("storage_provider").notNull(),
-  storageKey: text("storage_key").notNull(),
+  storageKey: text("storage_key"),
   mimeType: text("mime_type"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   uploadedBy: text("uploaded_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  folderId: uuid("folder_id").references(() => crmDocumentFolders.id, {
+    onDelete: "set null",
+  }),
+  sourceKind: crmDocumentSourceKindEnum("source_kind").notNull().default("upload"),
+  description: text("description"),
+  versionGroupId: uuid("version_group_id"),
+  versionNo: integer("version_no").notNull().default(1),
+  isCurrentVersion: boolean("is_current_version").notNull().default(true),
+  importFileId: uuid("import_file_id").references(() => clientImportFiles.id, {
+    onDelete: "set null",
+  }),
+  reportType: text("report_type"),
+  scenarioId: uuid("scenario_id").references(() => scenarios.id, {
+    onDelete: "set null",
+  }),
 }, (t) => [
   index("crm_documents_household_idx").on(t.householdId),
+  index("crm_documents_version_group_idx").on(t.versionGroupId),
+  index("crm_documents_folder_idx").on(t.folderId),
+]);
+
+export const crmDocumentFolders = pgTable("crm_document_folders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  firmId: text("firm_id").notNull(),
+  parentFolderId: uuid("parent_folder_id").references(
+    (): AnyPgColumn => crmDocumentFolders.id,
+    { onDelete: "set null" },
+  ),
+  name: text("name").notNull(),
+  isSystem: boolean("is_system").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("crm_document_folders_household_idx").on(t.householdId),
+  index("crm_document_folders_parent_idx").on(t.householdId, t.parentFolderId),
 ]);
 
 // ── Tables ───────────────────────────────────────────────────────────────────

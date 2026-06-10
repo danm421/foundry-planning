@@ -252,7 +252,14 @@ export type AuditAction =
   // Account groups
   | "account_group.create"
   | "account_group.update"
-  | "account_group.delete";
+  | "account_group.delete"
+  // Document Vault (foldered per-household document store)
+  | "vault.folder.create"
+  | "vault.folder.rename"
+  | "vault.folder.delete"
+  | "vault.document.update"
+  | "vault.document.move"
+  | "vault.document.version_added";
 
 type Args = {
   action: AuditAction;

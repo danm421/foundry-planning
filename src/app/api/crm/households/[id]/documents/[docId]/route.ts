@@ -30,6 +30,9 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    if (!doc.storageKey) {
+      return NextResponse.json({ error: "Document blob not available" }, { status: 404 });
+    }
     const result = await get(doc.storageKey, { access: "private" });
     if (!result || result.statusCode !== 200 || !result.stream) {
       return NextResponse.json({ error: "Document blob not available" }, { status: 404 });
