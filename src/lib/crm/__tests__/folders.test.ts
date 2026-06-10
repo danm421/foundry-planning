@@ -16,7 +16,7 @@ vi.mock("@clerk/nextjs/server", async () => {
 });
 
 import { auth } from "@clerk/nextjs/server";
-import { listFolders, SYSTEM_FOLDERS } from "../folders";
+import { listFolders, SYSTEM_FOLDERS, createFolder } from "../folders";
 
 const ORG = "org_folders_test";
 let householdId: string;
@@ -49,5 +49,28 @@ describe("listFolders + system seed", () => {
       where: eq(crmDocumentFolders.householdId, householdId),
     });
     expect(rows).toHaveLength(SYSTEM_FOLDERS.length);
+  });
+});
+
+describe("createFolder", () => {
+  it("creates a custom folder at root", async () => {
+    await listFolders(householdId); // ensure seeded
+    const folder = await createFolder(householdId, { name: "2026 Reviews" });
+    expect(folder.name).toBe("2026 Reviews");
+    expect(folder.isSystem).toBe(false);
+    expect(folder.parentFolderId).toBeNull();
+  });
+
+  it("creates a nested folder under a parent", async () => {
+    const [parent] = await listFolders(householdId);
+    const child = await createFolder(householdId, {
+      name: "Q1",
+      parentFolderId: parent.id,
+    });
+    expect(child.parentFolderId).toBe(parent.id);
+  });
+
+  it("rejects an empty name", async () => {
+    await expect(createFolder(householdId, { name: "  " })).rejects.toThrow();
   });
 });
