@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import DialogShell from "./dialog-shell";
+import { FieldTooltip } from "./forms/field-tooltip";
 import type { AccountLite } from "./family-view";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -48,6 +49,13 @@ export default function RevocableTrustTagDialog({
     ELIGIBLE_CATEGORIES.has(a.category)
   );
 
+  const allEligibleSelected =
+    eligibleAccounts.length > 0 &&
+    eligibleAccounts.every((a) => selectedIds.has(a.id));
+  const someEligibleSelected = eligibleAccounts.some((a) =>
+    selectedIds.has(a.id)
+  );
+
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   function toggleAccount(id: string) {
@@ -55,6 +63,19 @@ export default function RevocableTrustTagDialog({
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }
+
+  /** Select-all convenience: tick every eligible account, or clear them all. */
+  function toggleAllEligible() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allEligibleSelected) {
+        eligibleAccounts.forEach((a) => next.delete(a.id));
+      } else {
+        eligibleAccounts.forEach((a) => next.add(a.id));
+      }
       return next;
     });
   }
@@ -150,6 +171,24 @@ export default function RevocableTrustTagDialog({
       }
     >
       <div className="flex flex-col gap-5">
+        {/* Transfer probate assets — select-all convenience */}
+        <label className="flex cursor-pointer items-center gap-2.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2.5 hover:border-hair-2">
+          <input
+            type="checkbox"
+            ref={(el) => {
+              if (el) el.indeterminate = someEligibleSelected && !allEligibleSelected;
+            }}
+            checked={allEligibleSelected}
+            onChange={toggleAllEligible}
+            disabled={loading || eligibleAccounts.length === 0}
+            className="h-4 w-4 rounded accent-accent disabled:opacity-50"
+          />
+          <span className="flex items-center gap-1.5 text-[14px] font-medium text-ink">
+            Transfer probate assets to trust
+            <FieldTooltip text="Tags every eligible account (cash, taxable, and real estate) into this trust. Tagged accounts skip probate but stay in the gross estate." />
+          </span>
+        </label>
+
         {/* Trust name */}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="trust-name" className="text-[13px] font-medium text-ink-2">
