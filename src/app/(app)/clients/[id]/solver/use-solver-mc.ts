@@ -69,11 +69,12 @@ export function useSolverMc({
 
   useEffect(() => {
     if (!enabled) {
+      // Disabling intentionally drops prior results back to idle.
       setState({ status: "idle", baseSuccessRate: null, workingSuccessRate: null });
       return;
     }
     const ac = new AbortController();
-    setState((s) => ({ ...s, status: "loading" }));
+    setState((s) => ({ ...s, status: "loading", error: undefined }));
     (async () => {
       try {
         const m = mutationsRef.current;

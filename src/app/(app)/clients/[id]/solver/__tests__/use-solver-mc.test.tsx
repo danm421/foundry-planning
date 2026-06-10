@@ -72,4 +72,36 @@ describe("useSolverMc", () => {
     );
     await waitFor(() => expect(result.current.status).toBe("error"));
   });
+
+  it("aborted run does not clobber the result of the subsequent run (nonce race)", async () => {
+    // First run: deferred — stays in-flight while nonce bumps.
+    let resolveFirst!: (v: Response) => void;
+    const firstPromise = new Promise<Response>((r) => { resolveFirst = r; });
+    fetchMock.mockReturnValueOnce(firstPromise); // consumed by nonce=1 run
+    fetchMock.mockResolvedValueOnce(ok(0.99));   // consumed by nonce=2 run
+
+    const baseProps = {
+      clientId: "c1", source: "base", mutations: [] as [],
+      includeBase: false, enabled: true, nonce: 1,
+    };
+    const { result, rerender } = renderHook(
+      (props: typeof baseProps) => useSolverMc(props),
+      { initialProps: baseProps },
+    );
+
+    // nonce=2 launches a second run; its fetch resolves immediately to 0.99.
+    rerender({ ...baseProps, nonce: 2 });
+
+    // Wait for the second run to land.
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.workingSuccessRate).toBe(0.99);
+
+    // Now the first (aborted) run resolves late — the guard must drop it.
+    resolveFirst(ok(0.5));
+    await Promise.resolve(); // flush microtasks
+
+    // State must remain the second run's value.
+    expect(result.current.workingSuccessRate).toBe(0.99);
+    expect(result.current.status).toBe("ready");
+  });
 });
