@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockConstructEvent = vi.fn();
-const mockSubscriptionsRetrieve = vi.fn();
 vi.mock("@/lib/billing/stripe-client", () => ({
   getStripe: () => ({
     webhooks: { constructEvent: (...a: unknown[]) => mockConstructEvent(...a) },
-    subscriptions: { retrieve: (...a: unknown[]) => mockSubscriptionsRetrieve(...a) },
   }),
 }));
 
+// db.insert(...).onConflictDoNothing().returning() resolves mockInsert();
+// db.select(...).from().where() resolves mockSelectResult() (conflict re-read);
+// db.update(...).set().where() resolves mockUpdate().
 const mockInsert = vi.fn();
+const mockSelectResult = vi.fn();
 const mockUpdate = vi.fn();
 vi.mock("@/db", () => ({
   db: {
@@ -18,7 +20,16 @@ vi.mock("@/db", () => ({
         onConflictDoNothing: () => ({ returning: () => mockInsert() }),
       }),
     }),
+    select: () => ({ from: () => ({ where: () => mockSelectResult() }) }),
     update: () => ({ set: () => ({ where: () => mockUpdate() }) }),
+  },
+}));
+
+// Handler dispatch table — controllable per test.
+const mockHandler = vi.fn();
+vi.mock("@/lib/billing/webhook-handlers", () => ({
+  handlers: {
+    "customer.subscription.updated": (...a: unknown[]) => mockHandler(...a),
   },
 }));
 
@@ -27,7 +38,9 @@ import { POST } from "../route";
 beforeEach(() => {
   mockConstructEvent.mockReset();
   mockInsert.mockReset();
+  mockSelectResult.mockReset();
   mockUpdate.mockReset();
+  mockHandler.mockReset();
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
 });
 
@@ -61,17 +74,56 @@ describe("POST /api/webhooks/stripe", () => {
     expect(res.status).toBe(400);
   });
 
-  it("soc2: CC7.5 duplicate stripe_event_id returns skipped_duplicate, no work", async () => {
+  it("soc2: CC7.5 duplicate of a TERMINAL-SUCCESS event returns skipped_duplicate, no work", async () => {
     mockConstructEvent.mockReturnValue({
       id: "evt_dup",
       type: "customer.subscription.updated",
       data: { object: { id: "sub_1" } },
     });
-    mockInsert.mockResolvedValue([]);
+    mockInsert.mockResolvedValue([]); // ON CONFLICT DO NOTHING → no row returned
+    mockSelectResult.mockResolvedValue([{ id: "row_dup", result: "ok" }]);
     const res = await POST(makeReq("{}") as never);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true, result: "skipped_duplicate" });
+    expect(mockHandler).not.toHaveBeenCalled();
+  });
+
+  it("re-runs the handler when a prior delivery is in error (replayable retry)", async () => {
+    mockConstructEvent.mockReturnValue({
+      id: "evt_retry",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_1" } },
+    });
+    mockInsert.mockResolvedValue([]); // conflict: row already exists
+    mockSelectResult.mockResolvedValue([{ id: "row_err", result: "error" }]); // prior failure
+    mockHandler.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(undefined);
+
+    const res = await POST(makeReq("{}") as never);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ ok: true, result: "ok" });
+    expect(mockHandler).toHaveBeenCalledTimes(1); // NOT skipped_duplicate
+    expect(mockUpdate).toHaveBeenCalled(); // row flipped error → ok
+  });
+
+  it("re-runs the handler when a prior delivery is still pending (result null)", async () => {
+    mockConstructEvent.mockReturnValue({
+      id: "evt_pending",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_1" } },
+    });
+    mockInsert.mockResolvedValue([]);
+    mockSelectResult.mockResolvedValue([{ id: "row_pending", result: null }]);
+    mockHandler.mockResolvedValue(undefined);
+    mockUpdate.mockResolvedValue(undefined);
+
+    const res = await POST(makeReq("{}") as never);
+
+    expect(res.status).toBe(200);
+    expect(mockHandler).toHaveBeenCalledTimes(1);
   });
 
   it("returns 200 ignored for unknown event types", async () => {
@@ -80,7 +132,7 @@ describe("POST /api/webhooks/stripe", () => {
       type: "totally.unknown.event",
       data: { object: {} },
     });
-    mockInsert.mockResolvedValue([{ id: "row_1" }]);
+    mockInsert.mockResolvedValue([{ id: "row_1" }]); // fresh insert
     mockUpdate.mockResolvedValue(undefined);
     const res = await POST(makeReq("{}") as never);
     expect(res.status).toBe(200);

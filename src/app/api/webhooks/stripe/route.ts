@@ -14,7 +14,10 @@ export const dynamic = "force-dynamic";
  *   1. Read raw body (HMAC verification requires bytes-as-sent).
  *   2. Verify signature via Stripe SDK. Reject 400 on mismatch.
  *   3. INSERT billing_events ON CONFLICT DO NOTHING. Empty returning =
- *      duplicate delivery (already processed) → 200 skipped_duplicate.
+ *      a prior delivery exists → re-read its result. Skip ONLY when that
+ *      result is terminal-success ('ok' / 'ignored'); on 'error'/null the
+ *      prior attempt failed or never finished, so re-run the (idempotent)
+ *      handler and UPDATE the existing row.
  *   4. Look up handler by event type. Missing = 200 ignored.
  *   5. Run handler. Throw → 500 (Stripe retries up to 72h).
  *   6. UPDATE billing_events with result/duration/error.
@@ -59,10 +62,27 @@ export async function POST(req: NextRequest) {
     .onConflictDoNothing()
     .returning({ id: billingEvents.id });
 
+  let rowId: string;
   if (inserted.length === 0) {
-    return NextResponse.json({ ok: true, result: "skipped_duplicate" }, { status: 200 });
+    // A row for this event id already exists. Skip ONLY on terminal success;
+    // otherwise this is a Stripe redelivery of a failed/pending attempt and we
+    // must re-run the idempotent handler.
+    const existing = await db
+      .select({ id: billingEvents.id, result: billingEvents.result })
+      .from(billingEvents)
+      .where(eq(billingEvents.stripeEventId, event.id))
+      .then((r) => r[0]);
+    if (existing && (existing.result === "ok" || existing.result === "ignored")) {
+      return NextResponse.json(
+        { ok: true, result: "skipped_duplicate" },
+        { status: 200 },
+      );
+    }
+    // Defensive: if the row somehow vanished, fall back to a new id surrogate.
+    rowId = existing?.id ?? event.id;
+  } else {
+    rowId = inserted[0].id;
   }
-  const rowId = inserted[0].id;
   const startedAt = Date.now();
 
   const handler = handlers[event.type];
@@ -84,6 +104,7 @@ export async function POST(req: NextRequest) {
       .update(billingEvents)
       .set({
         result: "ok",
+        errorMessage: null,
         processedAt: new Date(),
         processingDurationMs: Date.now() - startedAt,
       })
