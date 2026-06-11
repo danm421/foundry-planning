@@ -6,7 +6,7 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 vi.mock("@/lib/authz", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
-  return { ...actual, requireOrgOwner: vi.fn() };
+  return { ...actual, requireBillingContact: vi.fn() };
 });
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("@/lib/audit", () => ({
 
 import { POST } from "../route";
 import { getStripe } from "@/lib/billing/stripe-client";
-import { requireOrgOwner, ForbiddenError } from "@/lib/authz";
+import { requireBillingContact, ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
@@ -46,7 +46,7 @@ function makeRequest(headers: Record<string, string> = {}) {
 describe("POST /api/billing/portal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(requireOrgOwner).mockResolvedValue(undefined);
+    vi.mocked(requireBillingContact).mockResolvedValue(undefined);
     vi.mocked(auth).mockResolvedValue({ orgId: "org_abc" } as never);
   });
 
@@ -86,7 +86,7 @@ describe("POST /api/billing/portal", () => {
   });
 
   it("403s when the caller is not the org owner", async () => {
-    vi.mocked(requireOrgOwner).mockRejectedValue(
+    vi.mocked(requireBillingContact).mockRejectedValue(
       new ForbiddenError("Organization owner role required"),
     );
     const res = await POST(makeRequest());
@@ -97,7 +97,7 @@ describe("POST /api/billing/portal", () => {
   });
 
   it("401s when there is no session", async () => {
-    vi.mocked(requireOrgOwner).mockRejectedValue(new UnauthorizedError());
+    vi.mocked(requireBillingContact).mockRejectedValue(new UnauthorizedError());
     const res = await POST(makeRequest());
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });

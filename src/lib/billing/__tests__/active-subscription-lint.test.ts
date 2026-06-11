@@ -34,7 +34,7 @@ const ALLOWLIST: Record<string, string> = {
     "system cron — not a user mutation",
   "src/app/api/csp-report/route.ts": "CSP telemetry — public, pre-auth",
   "src/app/api/billing/portal/route.ts":
-    "Stripe Customer Portal session — must stay reachable for past-due/unpaid/canceled owners to fix payment; gated by requireOrgOwner",
+    "Stripe Customer Portal session — must stay reachable for past-due/unpaid/canceled owners to fix payment; gated by requireBillingContact",
   "src/app/api/clients/[id]/accounts/[accountId]/allocations/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/accounts/[accountId]/beneficiaries/route.ts":

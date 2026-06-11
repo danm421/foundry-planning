@@ -4,7 +4,7 @@ import { SignOutButton } from "@clerk/nextjs";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
-import { ForbiddenError, requireOrgOwner } from "@/lib/authz";
+import { ForbiddenError, requireBillingContact } from "@/lib/authz";
 import {
   getSubscriptionState,
   GRACE_WINDOW_MS,
@@ -255,10 +255,10 @@ export async function NonFounderBillingPanel(): Promise<ReactElement> {
 
 export default async function BillingSettingsPage(): Promise<ReactElement> {
   try {
-    await requireOrgOwner();
+    await requireBillingContact();
   } catch (err) {
     if (err instanceof ForbiddenError) {
-      return <Forbidden requiredRole="owner" />;
+      return <Forbidden requiredRole="billing contact" />;
     }
     throw err;
   }

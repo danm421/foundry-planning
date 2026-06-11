@@ -4,7 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { subscriptions } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
-import { requireOrgOwner, authErrorResponse } from "@/lib/authz";
+import { requireBillingContact, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ function originFor(req: Request): string {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireOrgOwner();
+    await requireBillingContact();
   } catch (err) {
     const mapped = authErrorResponse(err);
     if (mapped) return NextResponse.json(mapped.body, { status: mapped.status });
