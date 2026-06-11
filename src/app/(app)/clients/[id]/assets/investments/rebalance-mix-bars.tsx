@@ -28,10 +28,20 @@ export function RebalanceMixBars({ result }: { result: RebalanceComputeResult })
               <span className="truncate text-xs text-ink-2">{row.name}</span>
               <div className="space-y-1">
                 <div className="h-2.5 overflow-hidden rounded bg-card-2">
-                  <div className="h-full rounded bg-ink-3" style={{ width: `${row.currentPct * 100}%` }} />
+                  <div
+                    className="h-full rounded bg-ink-3"
+                    style={{ width: `${row.currentPct * 100}%` }}
+                    role="img"
+                    aria-label={`Current ${row.name} ${(row.currentPct * 100).toFixed(1)}%`}
+                  />
                 </div>
                 <div className="h-2.5 overflow-hidden rounded bg-card-2">
-                  <div className="h-full rounded bg-accent" style={{ width: `${row.targetPct * 100}%` }} />
+                  <div
+                    className="h-full rounded bg-accent"
+                    style={{ width: `${row.targetPct * 100}%` }}
+                    role="img"
+                    aria-label={`Proposed ${row.name} ${(row.targetPct * 100).toFixed(1)}%`}
+                  />
                 </div>
               </div>
               <span className="text-right text-[11px] tabular-nums text-ink-3">

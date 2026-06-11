@@ -103,7 +103,7 @@ function HeadlineTiles({ result }: { result: RebalanceComputeResult }) {
   const prop = result.proposed.cma;
   const dReturn = prop.geometricReturn - cur.geometricReturn;
   const dVol = prop.stdDev - cur.stdDev;
-  const dSharpe = (prop.sharpe ?? 0) - (cur.sharpe ?? 0);
+  const dSharpe = prop.sharpe != null && cur.sharpe != null ? prop.sharpe - cur.sharpe : null;
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -120,10 +120,14 @@ function HeadlineTiles({ result }: { result: RebalanceComputeResult }) {
         </span>
       </HeadlineTile>
       <HeadlineTile label="Δ Sharpe (CMA)">
-        <span className={deltaColor(dSharpe, true)}>
-          {dSharpe > 0 ? "+" : ""}
-          {dSharpe.toFixed(2)}
-        </span>
+        {dSharpe != null ? (
+          <span className={deltaColor(dSharpe, true)}>
+            {dSharpe > 0 ? "+" : ""}
+            {dSharpe.toFixed(2)}
+          </span>
+        ) : (
+          <span className="text-ink-3">—</span>
+        )}
       </HeadlineTile>
       <HeadlineTile label="Estimated tax">
         <MoneyText value={result.tax.estimatedTax} format="currency" />

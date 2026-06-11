@@ -45,7 +45,7 @@ export function RebalanceRiskReturnScatter({
     backgroundColor: p.color,
     borderColor: "var(--color-card)",
     borderWidth: 1.5,
-    data: [{ x: p.stats.stdDev, y: p.stats.arithmeticMean, _label: p.label }],
+    data: [{ x: p.stats.stdDev, y: p.stats.arithmeticMean }],
   }));
 
   return (
@@ -62,7 +62,7 @@ export function RebalanceRiskReturnScatter({
                 min: xBounds.min,
                 max: xBounds.max,
                 title: { display: true, text: "Std deviation", color: chrome.title, font: { size: 12, weight: "bold" } },
-                ticks: { color: chrome.tick, callback: (v) => pct(Number(v)) },
+                ticks: { color: chrome.tick, stepSize: 0.01, callback: (v) => pct(Number(v)) },
                 grid: { color: chrome.grid },
                 border: { color: chrome.legend, width: 2 },
               },
@@ -70,7 +70,7 @@ export function RebalanceRiskReturnScatter({
                 min: yBounds.min,
                 max: yBounds.max,
                 title: { display: true, text: "Expected return", color: chrome.title, font: { size: 12, weight: "bold" } },
-                ticks: { color: chrome.tick, callback: (v) => pct(Number(v)) },
+                ticks: { color: chrome.tick, stepSize: 0.01, callback: (v) => pct(Number(v)) },
                 grid: { color: chrome.grid },
                 border: { color: chrome.legend, width: 2 },
               },
@@ -83,8 +83,8 @@ export function RebalanceRiskReturnScatter({
                 bodyColor: chrome.tooltipBody,
                 callbacks: {
                   label: (item) => {
-                    const d = item.raw as { x: number; y: number; _label: string };
-                    return `${d._label} — return ${pct(d.y)}, σ ${pct(d.x)}`;
+                    const d = item.raw as { x: number; y: number };
+                    return `${item.dataset.label} — return ${pct(d.y)}, σ ${pct(d.x)}`;
                   },
                 },
               },
