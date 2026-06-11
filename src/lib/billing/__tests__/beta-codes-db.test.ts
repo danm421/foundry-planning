@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { betaCodes } from "@/db/schema";
-import { mintCodes, validateCode, claimCode, hashCode } from "../beta-codes";
+import { mintCodes, validateCode, claimCode, hashCode, revokeCode } from "../beta-codes";
 
 const hashes: string[] = [];
 function track(codes: string[]) {
@@ -43,5 +43,26 @@ describe("claimCode (atomic single-use)", () => {
     const second = await claimCode(code, "user_bbb");
     expect(first.ok).toBe(true);
     expect(second).toEqual({ ok: false, reason: "already_used" });
+  });
+});
+
+describe("revokeCode", () => {
+  it("sets revoked_at and is a no-op on a second call", async () => {
+    const [code] = await mintCodes({ count: 1 });
+    track([code]);
+    const [row] = await db.select().from(betaCodes).where(eq(betaCodes.codeHash, hashCode(code)));
+    const first = await revokeCode(row.id);
+    const second = await revokeCode(row.id);
+    expect(first?.id).toBe(row.id);
+    expect(second).toBeUndefined(); // already revoked → WHERE matches zero rows
+  });
+
+  it("makes the code fail validateCode and claimCode (enforcement regression)", async () => {
+    const [code] = await mintCodes({ count: 1 });
+    track([code]);
+    const [row] = await db.select().from(betaCodes).where(eq(betaCodes.codeHash, hashCode(code)));
+    await revokeCode(row.id);
+    expect(await validateCode(code)).toEqual({ valid: false, reason: "revoked" });
+    expect(await claimCode(code, "user_x")).toEqual({ ok: false, reason: "already_used" });
   });
 });

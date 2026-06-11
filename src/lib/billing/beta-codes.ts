@@ -131,3 +131,13 @@ export async function releaseCode(id: string): Promise<void> {
     .set({ redeemedAt: null, redeemedByUserId: null, redeemedOrgId: null })
     .where(eq(betaCodes.id, id));
 }
+
+/** Revoke a code by id. Idempotent: returns the row, or undefined if already revoked / missing. */
+export async function revokeCode(id: string): Promise<{ id: string } | undefined> {
+  const [row] = await db
+    .update(betaCodes)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(betaCodes.id, id), isNull(betaCodes.revokedAt)))
+    .returning({ id: betaCodes.id });
+  return row;
+}
