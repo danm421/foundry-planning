@@ -29,6 +29,7 @@ function subjectFor(s: FeedbackSubmission): string {
   return `[${tag}] ${firstLine}`;
 }
 
+/* eslint-disable brand/no-raw-hex -- email HTML requires inline hex; email clients can't resolve CSS brand tokens (same rationale as the allow-listed PDF/print layers) */
 export function buildFeedbackEmail(
   s: FeedbackSubmission,
   ctx: FeedbackContext,
@@ -58,6 +59,7 @@ export function buildFeedbackEmail(
 
   return { subject: subjectFor(s), html };
 }
+/* eslint-enable brand/no-raw-hex */
 
 /**
  * Send a support/feedback submission to the support inbox. Mirrors
@@ -96,7 +98,6 @@ export async function sendFeedbackEmail(args: {
   const to = process.env.SUPPORT_EMAIL ?? "support@foundryplanning.com";
   if (!apiKey || !from) {
     if (process.env.NODE_ENV === "development") {
-      // eslint-disable-next-line no-console
       console.log(`[feedback-email] ${action} (Resend not configured)`, {
         to,
         submission,
