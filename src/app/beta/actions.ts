@@ -25,7 +25,9 @@ export async function validateAndStash(code: string, firmName: string): Promise<
   if (!rl.allowed) return { ok: false, error: "Too many attempts. Please wait a moment and try again." };
 
   const result = await validateCode(code);
-  if (!result.valid) return { ok: false, error: REASON_COPY[result.reason] };
+  if (!result.valid) {
+    return { ok: false, error: REASON_COPY[result.reason] ?? "That code isn't valid. Double-check it and try again." };
+  }
 
   await setPendingBeta({ code, firmName: firm });
   return { ok: true };

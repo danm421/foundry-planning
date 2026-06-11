@@ -13,15 +13,19 @@ export function BetaCodeForm({ initialCode }: { initialCode: string }) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (pending) return;
     setPending(true);
     setError(null);
-    const res = await validateAndStash(code, firmName);
-    if (!res.ok) {
-      setError(res.error);
+    try {
+      const res = await validateAndStash(code, firmName);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.push("/beta/signup");
+    } finally {
       setPending(false);
-      return;
     }
-    router.push("/beta/signup");
   }
 
   return (
@@ -45,7 +49,7 @@ export function BetaCodeForm({ initialCode }: { initialCode: string }) {
           className="rounded-md border border-[var(--color-hair-2)] bg-[var(--color-card)] px-3 py-2 text-[var(--color-ink)] focus:border-[var(--color-accent)] focus:outline-none"
         />
       </label>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
       <button
         type="submit"
         disabled={pending}
