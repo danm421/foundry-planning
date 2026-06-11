@@ -35,7 +35,7 @@ export function validateScreenshots(files: File[]): ScreenshotValidation {
     return { ok: false, error: `At most ${MAX_SCREENSHOTS} screenshots.` };
   }
   for (const f of files) {
-    if (!ALLOWED_SCREENSHOT_TYPES.includes(f.type as never)) {
+    if (!(ALLOWED_SCREENSHOT_TYPES as readonly string[]).includes(f.type)) {
       return { ok: false, error: `${f.name}: only PNG, JPG, or WebP images.` };
     }
     if (f.size > MAX_SCREENSHOT_BYTES) {
