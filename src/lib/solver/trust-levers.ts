@@ -9,7 +9,9 @@ export type SolverTrustSubType3a = (typeof SOLVER_TRUST_SUBTYPES_3A)[number];
 interface BuildTrustEntityArgs {
   id: string;
   name: string;
-  subType: SolverTrustSubType3a;
+  /** Full TrustSubType: 3a (ilit|idgt|irrevocable) + 3b split-interest (crt|clt).
+   *  crt/clt fall through to non-grantor / non-crummey, matching DB-created trusts. */
+  subType: TrustSubType;
   grantor: "client" | "spouse";
 }
 
@@ -34,7 +36,7 @@ export function buildTrustEntity({ id, name, subType, grantor }: BuildTrustEntit
     accessibleToClient: false,
     trustEnds: "survivorship",
     grantor,
-    trustSubType: subType as TrustSubType,
+    trustSubType: subType,
     crummeyPowers: subType === "ilit",
     isGrantor: subType === "idgt",
   };

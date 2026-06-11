@@ -66,6 +66,10 @@ export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Prop
     // Revert each funded account, then delete the entity.
     for (const orig of draft.fundedOriginals) onChange(buildRevertFundingMutation(orig));
     onChange({ kind: "entity-upsert", id: draft.entity.id, value: null });
+    // CLT: also clear the auto-emitted remainder-interest gift so it doesn't
+    // orphan onto a deleted entity.
+    if (draft.remainderGiftId)
+      onChange({ kind: "gift-upsert", id: draft.remainderGiftId, value: null });
     setTrusts((ts) => ts.filter((t) => t.entity.id !== draft.entity.id));
   }
 
@@ -97,15 +101,21 @@ export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Prop
     setEditing(null);
   }
 
-  function addCharity() {
-    const name = charityName.trim();
-    if (!name) return;
+  /** Mint a charity external-beneficiary, emit its upsert, and return its id. */
+  function createCharity(name: string, type: "public" | "private"): string {
     const id = crypto.randomUUID();
     onChange({
       kind: "external-beneficiary-upsert",
       id,
-      value: { id, name, kind: "charity", charityType },
+      value: { id, name, kind: "charity", charityType: type },
     });
+    return id;
+  }
+
+  function addCharity() {
+    const name = charityName.trim();
+    if (!name) return;
+    createCharity(name, charityType);
     setCharityName("");
   }
 
@@ -331,6 +341,7 @@ export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Prop
             <SolverTrustForm
               clientData={clientData}
               isMarried={isMarried}
+              onCreateCharity={createCharity}
               onApply={addTrust}
               onClose={() => setAddingTrust(false)}
             />
