@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   checkPreviewPdfRateLimit,
   rateLimitErrorResponse,
@@ -25,6 +26,10 @@ export async function POST(
     const firmId = await requireOrgId();
 
     const { id } = await params;
+
+    if (!(await verifyClientAccess(id, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     let json: unknown;
     try {

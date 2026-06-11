@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { checkProjectionRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
@@ -12,6 +13,10 @@ export async function GET(
 ) {
   const { id } = await params;
   const firmId = await requireOrgId();
+
+  if (!(await verifyClientAccess(id, firmId))) {
+    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  }
 
   const rl = await checkProjectionRateLimit(firmId);
   if (!rl.allowed) {

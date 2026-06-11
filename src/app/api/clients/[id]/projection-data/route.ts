@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkProjectionRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,10 @@ export async function GET(
 ) {
   const { id } = await params;
   const firmId = await requireOrgId();
+
+  if (!(await verifyClientAccess(id, firmId))) {
+    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  }
 
   const rl = await checkProjectionRateLimit(firmId);
   if (!rl.allowed) {
