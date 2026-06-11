@@ -111,6 +111,9 @@ export async function claimCode(input: string, userId: string): Promise<ClaimRes
       .from(betaCodes)
       .where(eq(betaCodes.codeHash, hash))
       .limit(1);
+    // A revoked or expired code that still exists also lands here and reports
+    // already_used — claimCode is only reached after validateCode, which surfaces
+    // those reasons distinctly, so the two-reason ClaimResult union is enough.
     return { ok: false, reason: exists ? "already_used" : "not_found" };
   }
   return { ok: true, id: row.id, entitlements: row.entitlements };
@@ -125,6 +128,6 @@ export async function finalizeCode(id: string, orgId: string): Promise<void> {
 export async function releaseCode(id: string): Promise<void> {
   await db
     .update(betaCodes)
-    .set({ redeemedAt: null, redeemedByUserId: null })
+    .set({ redeemedAt: null, redeemedByUserId: null, redeemedOrgId: null })
     .where(eq(betaCodes.id, id));
 }
