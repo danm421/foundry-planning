@@ -22,6 +22,7 @@ export function RebalanceClient({
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [target, setTarget] = useState<RebalanceTargetValue | null>(null);
+  const [unresolvedTickers, setUnresolvedTickers] = useState<string[]>([]);
 
   // ── Compute ────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export function RebalanceClient({
     if (!target || selectedIds.length === 0) return;
     setLoading(true);
     setError(null);
+    setUnresolvedTickers([]);
     try {
       let computeTarget:
         | { portfolioId: string }
@@ -80,7 +82,13 @@ export function RebalanceClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Compute failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (Array.isArray(data.unresolvedTickers) && data.unresolvedTickers.length > 0) {
+          setUnresolvedTickers(data.unresolvedTickers as string[]);
+        }
+        throw new Error(data.error ?? "Compute failed");
+      }
       setResult(await res.json());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Compute failed");
@@ -91,10 +99,13 @@ export function RebalanceClient({
 
   // ── Compute button enablement ──────────────────────────────────────────────
 
+  const newTargetTotal =
+    target?.kind === "new" ? target.holdings.reduce((s, h) => s + h.weight, 0) : 1;
   const canCompute =
     selectedIds.length > 0 &&
     target !== null &&
-    (target.kind !== "new" || target.holdings.length > 0);
+    (target.kind !== "new" ||
+      (target.holdings.length > 0 && Math.abs(newTargetTotal - 1) < 0.001));
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -114,6 +125,7 @@ export function RebalanceClient({
         fundPortfolios={fundPortfolios}
         value={target}
         onChange={setTarget}
+        unresolvedTickers={unresolvedTickers}
       />
 
       <button
@@ -124,6 +136,12 @@ export function RebalanceClient({
       >
         {loading ? "Computing…" : "Compute"}
       </button>
+
+      {target?.kind === "new" &&
+        target.holdings.length > 0 &&
+        Math.abs(newTargetTotal - 1) >= 0.001 && (
+          <p className="text-xs text-warn">Target weights must total 100% to compute.</p>
+        )}
 
       {error && <p className="text-sm text-crit">{error}</p>}
 

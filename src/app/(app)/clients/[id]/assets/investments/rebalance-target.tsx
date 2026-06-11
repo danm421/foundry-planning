@@ -13,6 +13,7 @@ export interface RebalanceTargetProps {
   fundPortfolios: { id: string; name: string }[];
   value: RebalanceTargetValue | null;
   onChange: (v: RebalanceTargetValue) => void;
+  unresolvedTickers?: string[];
 }
 
 // ── Row type (local editor state) ─────────────────────────────────────────────
@@ -25,7 +26,7 @@ interface HoldingRow {
 
 // ── RebalanceTarget ────────────────────────────────────────────────────────────
 
-export function RebalanceTarget({ fundPortfolios, value, onChange }: RebalanceTargetProps) {
+export function RebalanceTarget({ fundPortfolios, value, onChange, unresolvedTickers = [] }: RebalanceTargetProps) {
   const mode: "existing" | "new" = value?.kind === "new" ? "new" : "existing";
 
   // ── "Build new" local state ────────────────────────────────────────────────
@@ -108,6 +109,9 @@ export function RebalanceTarget({ fundPortfolios, value, onChange }: RebalanceTa
   const currentTotal = rows.reduce((s, r) => s + Number(r.weight), 0);
   const isValid = Math.abs(currentTotal - 100) < 0.1;
 
+  const isUnresolved = (t: string) =>
+    unresolvedTickers.includes(t.trim().toUpperCase());
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -188,8 +192,17 @@ export function RebalanceTarget({ fundPortfolios, value, onChange }: RebalanceTa
                         onChange={(e) => updateTicker(r._key, e.target.value)}
                         placeholder="e.g. SPY"
                         aria-label="Ticker symbol"
-                        className="w-36 rounded border border-hair bg-transparent px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+                        className={`w-36 rounded border bg-transparent px-2 py-1 text-sm text-ink focus:outline-none ${
+                          isUnresolved(r.displayTicker)
+                            ? "border-crit focus:border-crit"
+                            : "border-hair focus:border-accent"
+                        }`}
                       />
+                      {isUnresolved(r.displayTicker) && (
+                        <p className="mt-1 text-[11px] text-crit">
+                          Couldn&rsquo;t classify {r.displayTicker.trim().toUpperCase()}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex justify-end">
