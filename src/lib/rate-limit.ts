@@ -247,6 +247,18 @@ export async function checkBetaRedeemRateLimit(key: string): Promise<RateLimitRe
   return safeLimit(limiter, key);
 }
 
+// Support/feedback submissions. 5/min/firm — generous for a human filling a
+// form, tight enough to blunt abuse. Fail-closed like every other limiter.
+const getFeedbackLimiter = buildLimiter(5, "1 m", "rl:feedback");
+
+export async function checkFeedbackRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getFeedbackLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 /**
  * Build the standard error response for a denied rate-limit check.
  * Maps `exceeded` → 429, anything else → 503, and emits Retry-After
