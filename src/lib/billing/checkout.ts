@@ -27,14 +27,10 @@ type SessionLineItem = NonNullable<SessionCreateParams["line_items"]>[number];
 export function buildCheckoutSessionParams(args: {
   priceKey: CheckoutPriceKey;
   origin: string;
-  withAiImport?: boolean;
 }): SessionCreateParams {
   const catalog = getPriceCatalog();
   const priceId = catalog[args.priceKey];
   const line_items: SessionLineItem[] = [{ price: priceId, quantity: 1 }];
-  if (args.withAiImport) {
-    line_items.push({ price: catalog.aiImportMonthly, quantity: 1 });
-  }
   // Stripe's consent_collection.terms_of_service is intentionally NOT used.
   // Our app-side acceptance trail is stronger: /legal/tos page + per-checkout
   // tos_acceptances row (userId, firmId, version, IP, timestamp). The
