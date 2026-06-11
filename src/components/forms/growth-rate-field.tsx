@@ -20,6 +20,8 @@ export interface GrowthRateFieldProps {
   modelPortfolioId: string;
   growthRatePct: string;
   modelPortfolios?: GrowthRateModelPortfolio[];
+  tickerPortfolioId?: string;
+  fundPortfolios?: { id: string; name: string; blendedReturnPct: number | null }[];
   /** Resolved category-default % (0–100) or null when unknown. */
   defaultPctForCategory: number | null;
   /** Portfolio name shown in the "(default)" option label. */
@@ -30,20 +32,21 @@ export interface GrowthRateFieldProps {
   assetMixBlendedPct: number | null;
   /** Placeholder for the custom % input. */
   customPlaceholder?: string;
-  /** Receives the raw <select> value ("default" | "mp:<id>" | "asset_mix" | "inflation" | "custom"). */
+  /** Receives the raw <select> value ("default" | "mp:<id>" | "tp:<id>" | "asset_mix" | "inflation" | "custom"). */
   onSourceChange: (rawSelectValue: string) => void;
   onCustomPctChange: (raw: string) => void;
 }
 
-/** Pure mapping from the raw <select> value to (growthSource, modelPortfolioId). */
+/** Pure mapping from the raw <select> value to (growthSource, modelPortfolioId, tickerPortfolioId). */
 export function parseGrowthSourceSelection(
   raw: string,
-): { growthSource: GrowthSource; modelPortfolioId: string | null } {
-  if (raw.startsWith("mp:")) return { growthSource: "model_portfolio", modelPortfolioId: raw.slice(3) };
-  if (raw === "asset_mix") return { growthSource: "asset_mix", modelPortfolioId: null };
-  if (raw === "inflation") return { growthSource: "inflation", modelPortfolioId: null };
-  if (raw === "custom") return { growthSource: "custom", modelPortfolioId: null };
-  return { growthSource: "default", modelPortfolioId: null };
+): { growthSource: GrowthSource; modelPortfolioId: string | null; tickerPortfolioId: string | null } {
+  if (raw.startsWith("mp:")) return { growthSource: "model_portfolio", modelPortfolioId: raw.slice(3), tickerPortfolioId: null };
+  if (raw.startsWith("tp:")) return { growthSource: "ticker_portfolio", modelPortfolioId: null, tickerPortfolioId: raw.slice(3) };
+  if (raw === "asset_mix") return { growthSource: "asset_mix", modelPortfolioId: null, tickerPortfolioId: null };
+  if (raw === "inflation") return { growthSource: "inflation", modelPortfolioId: null, tickerPortfolioId: null };
+  if (raw === "custom") return { growthSource: "custom", modelPortfolioId: null, tickerPortfolioId: null };
+  return { growthSource: "default", modelPortfolioId: null, tickerPortfolioId: null };
 }
 
 export function GrowthRateField({
@@ -52,6 +55,8 @@ export function GrowthRateField({
   modelPortfolioId,
   growthRatePct,
   modelPortfolios,
+  tickerPortfolioId = "",
+  fundPortfolios,
   defaultPctForCategory,
   catDefaultPortfolioName,
   resolvedInflationRate,
@@ -64,7 +69,11 @@ export function GrowthRateField({
     <div>
       <label className={fieldLabelClassName}>Growth Rate</label>
       <select
-        value={growthSource === "model_portfolio" ? `mp:${modelPortfolioId}` : growthSource}
+        value={
+          growthSource === "model_portfolio" ? `mp:${modelPortfolioId}`
+          : growthSource === "ticker_portfolio" ? `tp:${tickerPortfolioId}`
+          : growthSource
+        }
         onChange={(e) => onSourceChange(e.target.value)}
         className={selectClassName}
       >
@@ -78,6 +87,16 @@ export function GrowthRateField({
             {(mp.blendedReturn * 100).toFixed(2)}% — {mp.name}
           </option>
         ))}
+        {fundPortfolios && fundPortfolios.length > 0 && (
+          <optgroup label="Fund portfolios">
+            {fundPortfolios.map((fp) => (
+              <option key={fp.id} value={`tp:${fp.id}`} disabled={fp.blendedReturnPct === null}>
+                {fp.blendedReturnPct !== null ? `${fp.blendedReturnPct.toFixed(2)}% — ` : ""}
+                {fp.name}{fp.blendedReturnPct === null ? " (needs classified holdings)" : ""}
+              </option>
+            ))}
+          </optgroup>
+        )}
         {ASSET_MIX_CATEGORIES.includes(category) && (
           <option value="asset_mix">
             {assetMixBlendedPct !== null ? `${assetMixBlendedPct.toFixed(2)}% — ` : ""}Asset mix (custom)
