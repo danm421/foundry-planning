@@ -88,6 +88,7 @@ function DraftStage(props: ImportFlowProps) {
   const router = useRouter();
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [extractHoldings, setExtractHoldings] = useState(false);
 
   const startExtraction = async () => {
     setExtracting(true);
@@ -98,7 +99,7 @@ function DraftStage(props: ImportFlowProps) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "mini" }),
+          body: JSON.stringify({ model: "mini", extractHoldings }),
         },
       );
       if (!res.ok) {
@@ -179,18 +180,32 @@ function DraftStage(props: ImportFlowProps) {
                 </li>
               ))}
             </ul>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-xs text-ink-3">
-                Extraction runs synchronously and may take 30–60 seconds per file.
+            <div className="mt-4 flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-xs text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={extractHoldings}
+                  onChange={(e) => setExtractHoldings(e.target.checked)}
+                  className="h-4 w-4 rounded border-hair accent-accent"
+                />
+                Extract individual holdings from statements
+              </label>
+              <p className="text-[11px] text-ink-4">
+                Pulls each position&apos;s ticker, shares, and cost basis from brokerage statements. Bonds, untickered funds, and cash are saved with the values shown on the statement.
               </p>
-              <button
-                type="button"
-                onClick={startExtraction}
-                disabled={extracting}
-                className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {extracting ? "Extracting…" : "Start extraction"}
-              </button>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-ink-3">
+                  Extraction runs synchronously and may take 30–60 seconds per file.
+                </p>
+                <button
+                  type="button"
+                  onClick={startExtraction}
+                  disabled={extracting}
+                  className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {extracting ? "Extracting…" : "Start extraction"}
+                </button>
+              </div>
             </div>
             {extractError ? (
               <p className="mt-2 text-xs text-bad">{extractError}</p>

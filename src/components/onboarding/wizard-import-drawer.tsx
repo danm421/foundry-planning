@@ -42,6 +42,7 @@ export default function WizardImportDrawer({
   const [error, setError] = useState<string | null>(null);
   const [imp, setImp] = useState<LoadedImport | null>(null);
   const [busy, setBusy] = useState(false);
+  const [extractHoldings, setExtractHoldings] = useState(false);
 
   /** PATCH onboarding_state.activeImportId (set or clear). Non-blocking. */
   const setActiveImportId = useCallback(
@@ -148,7 +149,7 @@ export default function WizardImportDrawer({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "mini" }),
+          body: JSON.stringify({ model: "mini", extractHoldings }),
         },
       );
       if (!extractRes.ok) {
@@ -186,7 +187,7 @@ export default function WizardImportDrawer({
     } finally {
       setBusy(false);
     }
-  }, [imp, clientId, loadImport]);
+  }, [imp, clientId, loadImport, extractHoldings]);
 
   const handleCommitted = useCallback(() => {
     router.refresh();
@@ -261,14 +262,28 @@ export default function WizardImportDrawer({
               />
               {error ? <p className="text-xs text-bad">{error}</p> : null}
               {imp && imp.fileCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={runExtraction}
-                  disabled={busy}
-                  className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:opacity-60"
-                >
-                  {busy ? "Extracting…" : "Extract data"}
-                </button>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 text-xs text-ink-2">
+                    <input
+                      type="checkbox"
+                      checked={extractHoldings}
+                      onChange={(e) => setExtractHoldings(e.target.checked)}
+                      className="h-4 w-4 rounded border-hair accent-accent"
+                    />
+                    Extract individual holdings from statements
+                  </label>
+                  <p className="text-[11px] text-ink-4">
+                    Pulls each position&apos;s ticker, shares, and cost basis from brokerage statements. Bonds, untickered funds, and cash are saved with the values shown on the statement.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={runExtraction}
+                    disabled={busy}
+                    className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:opacity-60"
+                  >
+                    {busy ? "Extracting…" : "Extract data"}
+                  </button>
+                </div>
               ) : (
                 <p className="text-xs text-ink-4">
                   Extraction runs after at least one file is uploaded.
