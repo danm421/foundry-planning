@@ -1,11 +1,11 @@
 import type Stripe from "stripe";
 import { eq } from "drizzle-orm";
-import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { subscriptions } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { sendBillingEmail } from "@/lib/billing/email-stub";
 import { recordAudit } from "@/lib/audit";
+import { resolveBillingContact } from "@/lib/billing/billing-contact";
 
 /**
  * invoice.payment_action_required — 3DS / SCA flow needs user action.
@@ -54,13 +54,8 @@ export async function handleInvoicePaymentActionRequired(
     return;
   }
 
-  const cc = await clerkClient();
-  const members = await cc.organizations.getOrganizationMembershipList({
-    organizationId: firmId,
-    limit: 100,
-  });
-  const owner = members.data.find((m) => m.role === "org:owner");
-  const email = owner?.publicUserData?.identifier;
+  const contact = await resolveBillingContact(firmId);
+  const email = contact?.email ?? null;
   if (email) {
     await sendBillingEmail({
       kind: "payment_action_required",

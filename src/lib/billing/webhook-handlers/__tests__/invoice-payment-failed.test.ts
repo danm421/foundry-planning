@@ -6,14 +6,16 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 
 const mockUpdateOrgMeta = vi.fn();
-const mockListMembers = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
       updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrgMeta(...a),
-      getOrganizationMembershipList: (...a: unknown[]) => mockListMembers(...a),
     },
   }),
+}));
+
+vi.mock("@/lib/billing/billing-contact", () => ({
+  resolveBillingContact: vi.fn().mockResolvedValue({ userId: "u_owner", email: "owner@example.com" }),
 }));
 
 const mockSubUpdate = vi.fn();
@@ -39,7 +41,6 @@ beforeEach(() => {
   mockSubSelect.mockReset();
   mockSubSelect.mockResolvedValue([]); // default: no existing row
   mockUpdateOrgMeta.mockReset();
-  mockListMembers.mockReset();
   mockSendBillingEmail.mockReset();
   mockRecordAudit.mockReset();
 });
@@ -57,9 +58,6 @@ describe("handleInvoicePaymentFailed", () => {
       metadata: {}, // Stripe never propagates firm_id onto invoices
     });
     mockSubSelect.mockResolvedValue([{ firmId: "org_1" }]);
-    mockListMembers.mockResolvedValue({
-      data: [{ role: "org:owner", publicUserData: { identifier: "owner@example.com" } }],
-    });
 
     await handleInvoicePaymentFailed({
       id: "evt_fail",
@@ -91,7 +89,6 @@ describe("handleInvoicePaymentFailed", () => {
       hosted_invoice_url: null,
       metadata: { firm_id: "org_override" },
     });
-    mockListMembers.mockResolvedValue({ data: [] });
 
     await handleInvoicePaymentFailed({
       id: "evt_ov",

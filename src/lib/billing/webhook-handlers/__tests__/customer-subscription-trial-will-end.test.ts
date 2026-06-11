@@ -7,18 +7,8 @@ vi.mock("@/lib/billing/stripe-client", () => ({
   }),
 }));
 
-const mockListMembers = vi.fn();
-vi.mock("@clerk/nextjs/server", () => ({
-  clerkClient: async () => ({
-    organizations: {
-      getOrganizationMembershipList: (...a: unknown[]) => mockListMembers(...a),
-    },
-    users: {
-      getUser: vi.fn().mockResolvedValue({
-        emailAddresses: [{ emailAddress: "owner@example.com" }],
-      }),
-    },
-  }),
+vi.mock("@/lib/billing/billing-contact", () => ({
+  resolveBillingContact: vi.fn().mockResolvedValue({ userId: "u_owner", email: "owner@example.com" }),
 }));
 
 const mockSendBillingEmail = vi.fn();
@@ -35,7 +25,6 @@ import { handleTrialWillEnd } from "../customer-subscription-trial-will-end";
 
 beforeEach(() => {
   mockSubsRetrieve.mockReset();
-  mockListMembers.mockReset();
   mockSendBillingEmail.mockReset();
   mockRecordAudit.mockReset();
 });
@@ -46,17 +35,6 @@ describe("handleTrialWillEnd", () => {
       id: "sub_1",
       trial_end: 1700000000,
       metadata: { firm_id: "org_1" },
-    });
-    mockListMembers.mockResolvedValue({
-      data: [
-        {
-          role: "org:owner",
-          publicUserData: {
-            userId: "user_owner",
-            identifier: "owner@example.com",
-          },
-        },
-      ],
     });
 
     await handleTrialWillEnd({

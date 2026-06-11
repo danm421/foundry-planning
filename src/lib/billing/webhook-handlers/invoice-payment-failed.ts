@@ -6,6 +6,7 @@ import { subscriptions } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { sendBillingEmail } from "@/lib/billing/email-stub";
 import { recordAudit } from "@/lib/audit";
+import { resolveBillingContact } from "@/lib/billing/billing-contact";
 
 /**
  * invoice.payment_failed — flips parent subscription to past_due so the
@@ -68,13 +69,9 @@ export async function handleInvoicePaymentFailed(event: Stripe.Event): Promise<v
     publicMetadata: { subscription_status: "past_due" },
   });
 
-  // Notify org owner.
-  const members = await cc.organizations.getOrganizationMembershipList({
-    organizationId: firmId,
-    limit: 100,
-  });
-  const owner = members.data.find((m) => m.role === "org:owner");
-  const email = owner?.publicUserData?.identifier;
+  // Notify billing contact.
+  const contact = await resolveBillingContact(firmId);
+  const email = contact?.email ?? null;
   if (email) {
     await sendBillingEmail({
       kind: "payment_failed",

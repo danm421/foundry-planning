@@ -7,13 +7,8 @@ vi.mock("@/lib/billing/stripe-client", () => ({
   }),
 }));
 
-const mockListMembers = vi.fn();
-vi.mock("@clerk/nextjs/server", () => ({
-  clerkClient: async () => ({
-    organizations: {
-      getOrganizationMembershipList: (...a: unknown[]) => mockListMembers(...a),
-    },
-  }),
+vi.mock("@/lib/billing/billing-contact", () => ({
+  resolveBillingContact: vi.fn().mockResolvedValue({ userId: "u_owner", email: "o@e.com" }),
 }));
 
 const mockSubSelect = vi.fn();
@@ -35,7 +30,6 @@ import { handleInvoicePaymentActionRequired } from "../invoice-payment-action-re
 
 beforeEach(() => {
   mockInvoicesRetrieve.mockReset();
-  mockListMembers.mockReset();
   mockSubSelect.mockReset();
   mockSubSelect.mockResolvedValue([]); // default: no existing row
   mockSendBillingEmail.mockReset();
@@ -54,9 +48,6 @@ describe("handleInvoicePaymentActionRequired", () => {
       metadata: {},
     });
     mockSubSelect.mockResolvedValue([{ firmId: "org_1" }]);
-    mockListMembers.mockResolvedValue({
-      data: [{ role: "org:owner", publicUserData: { identifier: "o@e.com" } }],
-    });
 
     await handleInvoicePaymentActionRequired({
       id: "evt_3ds",
@@ -66,7 +57,7 @@ describe("handleInvoicePaymentActionRequired", () => {
 
     expect(mockSubSelect).toHaveBeenCalledTimes(1);
     expect(mockSendBillingEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "payment_action_required", firmId: "org_1" }),
+      expect.objectContaining({ kind: "payment_action_required", firmId: "org_1", to: "o@e.com" }),
     );
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ firmId: "org_1" }),

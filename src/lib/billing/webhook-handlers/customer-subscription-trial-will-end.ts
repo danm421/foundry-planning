@@ -1,8 +1,8 @@
 import type Stripe from "stripe";
-import { clerkClient } from "@clerk/nextjs/server";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { sendBillingEmail } from "@/lib/billing/email-stub";
 import { recordAudit } from "@/lib/audit";
+import { resolveBillingContact } from "@/lib/billing/billing-contact";
 
 /**
  * trial_will_end — Stripe fires this 3 days before trial conversion.
@@ -19,18 +19,8 @@ export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
     throw new Error(`subscription ${sub.id} missing metadata.firm_id`);
   }
 
-  const cc = await clerkClient();
-  const members = await cc.organizations.getOrganizationMembershipList({
-    organizationId: firmId,
-    limit: 100,
-  });
-  const owner = members.data.find((m) => m.role === "org:owner");
-  const ownerEmail =
-    owner?.publicUserData?.identifier ??
-    (owner?.publicUserData?.userId
-      ? (await cc.users.getUser(owner.publicUserData.userId))
-          .emailAddresses[0]?.emailAddress
-      : undefined);
+  const contact = await resolveBillingContact(firmId);
+  const ownerEmail = contact?.email ?? undefined;
 
   if (ownerEmail) {
     await sendBillingEmail({
