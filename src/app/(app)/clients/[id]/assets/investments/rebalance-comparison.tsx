@@ -549,7 +549,13 @@ export function RebalanceComparison({ result, onOverrideRate }: RebalanceCompari
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <KpiPanel result={result} />
-        <TradesAndTaxPanel result={result} onOverrideRate={onOverrideRate} />
+        {/* Key on the tax rate so the panel's local override input resets to
+            reflect a fresh result instead of showing a stale typed value. */}
+        <TradesAndTaxPanel
+          key={`${result.tax.rateSource}:${result.tax.effectiveRate}`}
+          result={result}
+          onOverrideRate={onOverrideRate}
+        />
       </div>
       <CoverageBanner result={result} />
     </div>
