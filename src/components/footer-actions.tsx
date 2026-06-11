@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import FeedbackSupportDialog from "./feedback-support-dialog";
-
-type Mode = "support" | "feedback";
+import FeedbackSupportDialog, { type Mode } from "./feedback-support-dialog";
 
 export default function FooterActions() {
   const [mode, setMode] = useState<Mode | null>(null);

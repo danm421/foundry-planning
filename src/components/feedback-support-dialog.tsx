@@ -8,7 +8,7 @@ import {
   ALLOWED_SCREENSHOT_TYPES,
 } from "@/lib/feedback/schema";
 
-type Mode = "support" | "feedback";
+export type Mode = "support" | "feedback";
 type FeedbackType = "bug" | "feature";
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+
+const RESET_DELAY_MS = 200;
 
 const TITLES: Record<Mode, string> = {
   support: "Contact support",
@@ -44,8 +46,7 @@ export default function FeedbackSupportDialog({ mode, open, onOpenChange }: Prop
 
   function close() {
     onOpenChange(false);
-    // Defer reset so the closing dialog doesn't flash empty.
-    setTimeout(reset, 200);
+    setTimeout(reset, RESET_DELAY_MS);
   }
 
   function addFiles(incoming: File[]) {
@@ -61,13 +62,9 @@ export default function FeedbackSupportDialog({ mode, open, onOpenChange }: Prop
       setError(`${tooBig.name} exceeds 5 MB.`);
       return;
     }
-    setFiles((prev) => {
-      const next = [...prev, ...images].slice(0, MAX_SCREENSHOTS);
-      if (prev.length + images.length > MAX_SCREENSHOTS) {
-        setError(`At most ${MAX_SCREENSHOTS} screenshots.`);
-      }
-      return next;
-    });
+    const overflow = files.length + images.length > MAX_SCREENSHOTS;
+    setFiles((prev) => [...prev, ...images].slice(0, MAX_SCREENSHOTS));
+    if (overflow) setError(`At most ${MAX_SCREENSHOTS} screenshots.`);
   }
 
   function onPickFiles(e: ChangeEvent<HTMLInputElement>) {
@@ -146,6 +143,7 @@ export default function FeedbackSupportDialog({ mode, open, onOpenChange }: Prop
                 <button
                   key={t}
                   type="button"
+                  aria-pressed={type === t}
                   onClick={() => setType(t)}
                   className={`flex-1 rounded-[var(--radius-sm)] border px-3 py-2 text-[13px] ${
                     type === t
