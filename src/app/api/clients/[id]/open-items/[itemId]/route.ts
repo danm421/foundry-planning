@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { clientOpenItems } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
 import { openItemUpdateSchema } from "@/lib/schemas/open-items";
@@ -11,7 +11,7 @@ import { openItemUpdateSchema } from "@/lib/schemas/open-items";
 export const dynamic = "force-dynamic";
 
 async function verify(clientId: string, firmId: string) {
-  return !!(await findClientInFirm(clientId, firmId));
+  return verifyClientAccess(clientId, firmId);
 }
 
 export async function PATCH(

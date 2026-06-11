@@ -28,7 +28,7 @@ import { scenarioSnapshots } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { createSnapshot } from "@/lib/scenario/snapshot";
 import { refFromString } from "@/lib/scenario/scenario-from-search-params";
 
@@ -57,7 +57,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await findClientInFirm(clientId, firmId);
+    const inFirm = await verifyClientAccess(clientId, firmId);
     if (!inFirm) {
       return NextResponse.json(
         { error: "Client not found" },
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await findClientInFirm(clientId, firmId);
+    const inFirm = await verifyClientAccess(clientId, firmId);
     if (!inFirm) {
       return NextResponse.json(
         { error: "Client not found" },

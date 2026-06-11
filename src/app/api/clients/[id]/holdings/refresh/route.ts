@@ -3,7 +3,7 @@ import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { accountHoldings, accounts } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { refreshHoldings } from "@/lib/investments/refresh-holdings";
 
@@ -24,7 +24,7 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const client = await findClientInFirm(id, firmId);
+    const client = await verifyClientAccess(id, firmId);
     if (!client) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

@@ -20,7 +20,7 @@ import {
   checkProjectionRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { computeNeedOverTime } from "@/lib/life-insurance/need-over-time";
 import {
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     );
   }
 
-  const inFirm = await findClientInFirm(clientId, firmId);
+  const inFirm = await verifyClientAccess(clientId, firmId);
   if (!inFirm) {
     return new Response(JSON.stringify({ error: "Client not found" }), {
       status: 404,
