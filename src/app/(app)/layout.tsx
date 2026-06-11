@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import type { ReactElement } from "react";
+import AppShell from "@/components/app-shell";
 import { BackNavProvider } from "@/components/back-nav-provider";
 import Footer from "@/components/footer";
 import Sidebar from "@/components/sidebar";
@@ -30,10 +31,7 @@ export default async function AppLayout({
 
   return (
     <SidebarProvider initialCollapsed={collapsed}>
-      <div
-        className="grid min-h-screen"
-        style={{ gridTemplateColumns: "64px 1fr" }}
-      >
+      <AppShell>
         <SidebarFrame>
           <Sidebar clientsCount={clientsCount} />
         </SidebarFrame>
@@ -47,7 +45,7 @@ export default async function AppLayout({
             <Footer />
           </div>
         </BackNavProvider>
-      </div>
+      </AppShell>
     </SidebarProvider>
   );
 }
