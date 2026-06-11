@@ -15,7 +15,12 @@ import { monthlyReturns, type MonthlyReturn } from "@/lib/cma-stats";
 import { loadClientData } from "@/lib/projection/load-client-data";
 import { runProjection } from "@/engine/projection";
 import { classifySecurity } from "@/lib/investments/classification/classify";
-import { upsertClassifiedSecurity } from "@/lib/investments/classification/persist";
+import { upsertClassifiedSecurity, getSecurityByTicker } from "@/lib/investments/classification/persist";
+import {
+  resolveTargetAllocations,
+  UnclassifiableTickerError,
+  type ResolvedSecurity,
+} from "./resolve-target";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { RebalanceInputs, CurrentHolding, AssetClassFull } from "./assemble";
 import type { RebalanceRequest } from "./types";
@@ -266,30 +271,29 @@ export async function loadRebalanceInputs(
       .filter((a) => a.tickerPortfolioId === portfolioId)
       .map((a) => ({ assetClassId: a.assetClassId, weight: Number(a.weight) }));
   } else {
-    const slugWeightAccum = new Map<string, number>();
-    for (const { ticker, weight } of body.target.holdings) {
-      const classified = await classifyTickerForRebalance(ticker);
-      if (classified.securityId) {
-        targetHoldings.push({
-          securityId: classified.securityId,
-          ticker,
-          weight,
-        });
-      }
-      for (const sw of classified.slugWeights) {
-        const acId = slugToId.get(sw.slug);
-        if (acId) {
-          slugWeightAccum.set(
-            acId,
-            (slugWeightAccum.get(acId) ?? 0) + weight * sw.weight,
-          );
-        }
-      }
+    const lookupCached = async (ticker: string): Promise<ResolvedSecurity | null> => {
+      const found = await getSecurityByTicker(ticker);
+      if (!found || found.weights.length === 0) return null;
+      return {
+        securityId: found.security.id,
+        slugWeights: found.weights.map((w) => ({ slug: w.assetClassSlug, weight: parseFloat(w.weight) })),
+      };
+    };
+    const classifyLive = async (ticker: string): Promise<ResolvedSecurity | null> => {
+      const c = await classifyTickerForRebalance(ticker);
+      if (!c.securityId || c.slugWeights.length === 0) return null;
+      return { securityId: c.securityId, slugWeights: c.slugWeights };
+    };
+
+    const resolved = await resolveTargetAllocations(body.target.holdings, slugToId, {
+      lookupCached,
+      classifyLive,
+    });
+    if (resolved.unresolved.length > 0) {
+      throw new UnclassifiableTickerError(resolved.unresolved);
     }
-    targetAllocations = [...slugWeightAccum].map(([assetClassId, weight]) => ({
-      assetClassId,
-      weight,
-    }));
+    targetHoldings = resolved.targetHoldings;
+    targetAllocations = resolved.targetAllocations;
   }
 
   const targetReturnsBySecurity = await loadReturns(
