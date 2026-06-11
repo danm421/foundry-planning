@@ -13,8 +13,13 @@ export type RedeemResult =
   | { ok: false; error: string; needsManualEntry?: boolean };
 
 export async function redeemBetaCode(manual?: { code: string; firmName: string }): Promise<RedeemResult> {
-  const { userId } = await auth();
+  const { userId, orgId } = await auth();
   if (!userId) return { ok: false, error: "You need to be signed in." };
+
+  // One tester = one comped founder org. A user who already belongs to an org
+  // must not redeem a second code into a second fully-comped workspace, even
+  // with a valid single-use code (middleware lets org-having users reach here).
+  if (orgId) return { ok: false, error: "You already have a workspace." };
 
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? hdrs.get("x-real-ip") ?? "unknown";
