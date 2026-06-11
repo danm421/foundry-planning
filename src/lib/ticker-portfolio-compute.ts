@@ -121,7 +121,7 @@ export async function computeAndCacheTickerPortfolioStats(args: {
     // Keyed by the captured securityId (the canonical price-history key); the
     // ticker arg from TickerHistoryStore is intentionally unused here.
     const store = {
-      readBars: async (_ticker: string): Promise<MonthlyBar[]> => {
+      readBars: async (): Promise<MonthlyBar[]> => {
         if (!securityId) return [];
         const rows = await db
           .select()
