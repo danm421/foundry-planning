@@ -67,6 +67,13 @@ export interface LookThroughHolding { ticker: string; weight: number; slugWeight
 export interface LookThrough {
   allocation: { slug: string; weight: number }[];
   tax: TaxComposition;
+  /**
+   * Portfolio weight with no asset-class classification (holdings that failed
+   * to classify, or whose slug weights don't sum to their holding weight). The
+   * allocation + tax composition only cover `1 - unclassifiedWeight` of the
+   * book — surface this so the tax line isn't read as covering the whole book.
+   */
+  unclassifiedWeight: number;
 }
 
 export function computeLookThrough(
@@ -74,7 +81,9 @@ export function computeLookThrough(
   taxBySlug: Record<string, TaxComposition>,
 ): LookThrough {
   const allocBySlug = new Map<string, number>();
+  let totalWeight = 0;
   for (const h of holdings) {
+    totalWeight += h.weight;
     for (const sw of h.slugWeights) {
       allocBySlug.set(sw.slug, (allocBySlug.get(sw.slug) ?? 0) + h.weight * sw.weight);
     }
@@ -93,8 +102,10 @@ export function computeLookThrough(
     tax.pctQualifiedDividends += w * t.pctQualifiedDividends;
     tax.pctTaxExempt += w * t.pctTaxExempt;
   }
+  const classifiedWeight = [...allocBySlug.values()].reduce((s, w) => s + w, 0);
   return {
     allocation: [...allocBySlug.entries()].map(([slug, weight]) => ({ slug, weight })),
     tax,
+    unclassifiedWeight: Math.max(0, totalWeight - classifiedWeight),
   };
 }

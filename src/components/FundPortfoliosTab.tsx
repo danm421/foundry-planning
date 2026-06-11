@@ -46,6 +46,7 @@ interface PortfolioStats {
       pctQualifiedDividends: number;
       pctTaxExempt: number;
     };
+    unclassifiedWeight: number;
   };
 }
 
@@ -544,7 +545,8 @@ export default function FundPortfoliosTab() {
               </div>
 
               {/* Look-through panel */}
-              {stats.lookThrough.allocation.length > 0 && (
+              {(stats.lookThrough.allocation.length > 0 ||
+                stats.lookThrough.unclassifiedWeight > 0.0005) && (
                 <div className="rounded-lg border border-hair bg-card-2/40 p-4 space-y-3">
                   <p className="text-xs font-medium uppercase tracking-wider text-ink-3">
                     Asset Class Look-Through
@@ -568,8 +570,29 @@ export default function FundPortfoliosTab() {
                           </span>
                         </div>
                       ))}
+                    {stats.lookThrough.unclassifiedWeight > 0.0005 && (
+                      <div className="flex items-center gap-2">
+                        <span className="w-36 flex-shrink-0 text-xs text-warn truncate">
+                          Unclassified
+                        </span>
+                        <div className="flex-1 rounded bg-card-2 h-3 overflow-hidden">
+                          <div
+                            className="h-full rounded bg-warn/40"
+                            style={{
+                              width: `${stats.lookThrough.unclassifiedWeight * 100}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="w-12 text-right text-xs tabular-nums text-warn">
+                          {(stats.lookThrough.unclassifiedWeight * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <p className="text-xs text-ink-3 tabular-nums">
+                    {stats.lookThrough.unclassifiedWeight > 0.0005 && (
+                      <span className="text-warn">(of classified holdings) </span>
+                    )}
                     OI{" "}
                     {Math.round(
                       stats.lookThrough.tax.pctOrdinaryIncome * 100

@@ -44,5 +44,19 @@ describe("computeLookThrough", () => {
     expect(lt.allocation.find((a) => a.slug === "ten_year_treasury")!.weight).toBeCloseTo(0.5, 10);
     expect(lt.tax.pctOrdinaryIncome).toBeCloseTo(0.5, 10); // 0.5*0 + 0.5*1
     expect(lt.tax.pctLtCapitalGains).toBeCloseTo(0.4, 10); // 0.5*0.8
+    expect(lt.unclassifiedWeight).toBeCloseTo(0, 10); // fully classified
+  });
+
+  it("reports unclassifiedWeight for holdings with no slug weights", () => {
+    const holdings = [
+      { ticker: "AAA", weight: 0.7, slugWeights: [{ slug: "us_large_cap", weight: 1.0 }] },
+      { ticker: "BBB", weight: 0.3, slugWeights: [] }, // failed to classify
+    ];
+    const taxBySlug = {
+      us_large_cap: { pctOrdinaryIncome: 0, pctLtCapitalGains: 0.8, pctQualifiedDividends: 0.2, pctTaxExempt: 0 },
+    };
+    const lt = computeLookThrough(holdings, taxBySlug);
+    expect(lt.allocation.find((a) => a.slug === "us_large_cap")!.weight).toBeCloseTo(0.7, 10);
+    expect(lt.unclassifiedWeight).toBeCloseTo(0.3, 10); // BBB has no classification
   });
 });
