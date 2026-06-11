@@ -196,9 +196,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     }));
     const byClass = breakdownHoldingsByClass(positions, slugToAssetClassId);
     if (byClass.size === 0) continue;
-    const classMap: Record<string, HoldingClassContribution[]> = {};
-    for (const [classId, list] of byClass) classMap[classId] = list;
-    holdingsByAccountClass[accountId] = classMap;
+    holdingsByAccountClass[accountId] = Object.fromEntries(byClass);
   }
 
   const planLite: PlanSettingsLite = {
