@@ -28,6 +28,8 @@ interface LoadedImport {
   payload: ImportPayload | null;
   perTabCommittedAt: Record<string, string> | null;
   fileCount: number;
+  /** fileId → original filename, for the per-row source-document badge. */
+  fileNames: Record<string, string>;
 }
 
 export default function WizardImportDrawer({
@@ -71,7 +73,7 @@ export default function WizardImportDrawer({
           payloadJson: ImportPayloadJson | null;
           perTabCommittedAt: Record<string, string> | null;
         };
-        files: unknown[];
+        files: { id: string; originalFilename: string }[];
       };
       if (
         body.import.status === "committed" ||
@@ -84,6 +86,9 @@ export default function WizardImportDrawer({
         payload: body.import.payloadJson?.payload ?? null,
         perTabCommittedAt: body.import.perTabCommittedAt,
         fileCount: body.files.length,
+        fileNames: Object.fromEntries(
+          body.files.map((f) => [f.id, f.originalFilename]),
+        ),
       };
     },
     [clientId],
@@ -132,7 +137,7 @@ export default function WizardImportDrawer({
     }
     const body = (await res.json()) as { import: { id: string } };
     const importId = body.import.id;
-    setImp({ importId, payload: null, perTabCommittedAt: null, fileCount: 0 });
+    setImp({ importId, payload: null, perTabCommittedAt: null, fileCount: 0, fileNames: {} });
     void setActiveImportId(importId);
     return importId;
   }, [imp, clientId, baseScenarioId, setActiveImportId]);
@@ -253,6 +258,9 @@ export default function WizardImportDrawer({
                 clientId={clientId}
                 importId={imp?.importId ?? null}
                 ensureImport={ensureImport}
+                // fileNames isn't extended here; loadImport rebuilds the full
+                // map on extraction. The stale map is never user-visible since
+                // the SourceFilesContext provider only renders in stage "review".
                 onUploaded={() =>
                   setImp((cur) =>
                     cur ? { ...cur, fileCount: cur.fileCount + 1 } : cur,
@@ -322,6 +330,7 @@ export default function WizardImportDrawer({
               payload={imp.payload}
               perTabCommittedAt={imp.perTabCommittedAt}
               onCommitted={handleCommitted}
+              fileNames={imp.fileNames}
             />
           )}
 
