@@ -29,6 +29,7 @@ const baseRow: typeof accounts.$inferSelect = {
   growthSource: "default",
   deriveFromHoldings: true,
   modelPortfolioId: null,
+  tickerPortfolioId: null,
   turnoverPct: "0",
   overridePctOi: null,
   overridePctLtCg: null,

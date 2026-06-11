@@ -1135,6 +1135,13 @@
       "when": 1781142995215,
       "tag": "0161_steady_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1781187484420,
+      "tag": "0162_strong_proudstar",
+      "breakpoints": true
     }
   ]
 }
