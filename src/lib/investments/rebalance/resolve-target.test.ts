@@ -54,5 +54,9 @@ describe("resolveTargetAllocations", () => {
     );
     const sum = res.targetAllocations.reduce((s, a) => s + a.weight, 0);
     expect(sum).toBeCloseTo(1, 6);
+    expect(res.targetAllocations).toHaveLength(2);
+    const byId = Object.fromEntries(res.targetAllocations.map((a) => [a.assetClassId, a.weight]));
+    expect(byId["ac-us"]).toBeCloseTo(2 / 3, 6);
+    expect(byId["ac-bd"]).toBeCloseTo(1 / 3, 6);
   });
 });

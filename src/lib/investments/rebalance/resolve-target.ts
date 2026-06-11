@@ -3,6 +3,8 @@ import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 /** A ticker resolved to a security id + its look-through asset-class slug weights. */
 export interface ResolvedSecurity {
   securityId: string;
+  /** Look-through blend; expected to sum to ~1.0. If a stored blend is partial,
+   *  the resulting targetAllocations will not sum to 1.0. */
   slugWeights: { slug: string; weight: number }[];
 }
 
@@ -21,7 +23,8 @@ export interface ResolveTargetResult {
   unresolved: string[];
 }
 
-/** Thrown by the loader when any target ticker can't be classified. Route → 422. */
+/** Thrown by the loader when any target ticker can't be classified. Route → 422.
+ *  Not thrown in this module — `resolveTargetAllocations` returns `unresolved`; callers decide policy. */
 export class UnclassifiableTickerError extends Error {
   constructor(public readonly tickers: string[]) {
     super(`Couldn't classify: ${tickers.join(", ")}`);
