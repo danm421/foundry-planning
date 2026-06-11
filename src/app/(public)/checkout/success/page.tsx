@@ -1,4 +1,3 @@
-import Link from "next/link";
 import SuccessPolling from "./SuccessPolling";
 
 export const metadata = {
@@ -25,9 +24,12 @@ export default async function CheckoutSuccessPage({
         </h1>
         <p className="mt-4 text-ink-2">
           This page only makes sense after a Stripe Checkout. Head back to{" "}
-          <Link href="/pricing" className="text-accent hover:underline">
+          <a
+            href="https://foundryplanning.com/pricing"
+            className="text-accent hover:underline"
+          >
             pricing
-          </Link>{" "}
+          </a>{" "}
           to start.
         </p>
       </section>

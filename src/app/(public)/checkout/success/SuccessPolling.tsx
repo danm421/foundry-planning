@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 type Status =
   | { kind: "polling" }
@@ -145,9 +144,12 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
         .
       </p>
       <p className="mt-6">
-        <Link href="/pricing" className="text-sm text-accent hover:underline">
+        <a
+          href="https://foundryplanning.com/pricing"
+          className="text-sm text-accent hover:underline"
+        >
           Back to pricing
-        </Link>
+        </a>
       </p>
     </div>
   );
