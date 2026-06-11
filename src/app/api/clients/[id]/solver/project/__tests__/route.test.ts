@@ -32,7 +32,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 vi.mock("@/lib/clients/authz", () => ({
   verifyClientAccess: vi.fn().mockImplementation(async (clientId: string, firmId: string) => {
     const { findClientInFirm } = await import("@/lib/db-scoping");
-    const client = await (findClientInFirm as ReturnType<typeof vi.fn>)(clientId, firmId);
+    const client = await findClientInFirm(clientId, firmId);
     return client != null;
   }),
 }));
