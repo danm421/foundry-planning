@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { RebalanceComputeResult } from "@/lib/investments/rebalance/types";
+import { RebalanceSource } from "./rebalance-source";
 
 export interface RebalanceClientProps {
   clientId: string;
@@ -10,12 +11,13 @@ export interface RebalanceClientProps {
   assetClasses: { id: string; name: string }[];
 }
 
-export function RebalanceClient({}: RebalanceClientProps) {
+export function RebalanceClient({ accountsWithHoldings }: RebalanceClientProps) {
   const [result, setResult] = useState<RebalanceComputeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // result, setResult, setLoading, setError consumed in Tasks 11-13
+  // result, setResult, setLoading, setError consumed in Tasks 12-13
   void result;
   void setResult;
   void setLoading;
@@ -26,7 +28,11 @@ export function RebalanceClient({}: RebalanceClientProps) {
       <p className="text-sm text-ink-3">
         Model moving the selected holdings into a fund portfolio.
       </p>
-      {/* SourceSelector (Task 11) */}
+      <RebalanceSource
+        accounts={accountsWithHoldings}
+        selectedIds={selectedIds}
+        onChange={setSelectedIds}
+      />
       {/* TargetSelector (Task 12) */}
       {/* ComparisonPanels (Task 13) */}
       {error && <p className="text-sm text-crit">{error}</p>}
