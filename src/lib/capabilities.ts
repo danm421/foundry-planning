@@ -17,6 +17,11 @@ const PLANNING: Capability[] = ["planning:read", "planning:write"];
 const CRM: Capability[] = ["crm:read", "crm:write"];
 const TASKS: Capability[] = ["tasks:read", "tasks:write"];
 
+// DORMANT (pending the Clerk B2B "Roles & Permissions" add-on): org:owner,
+// org:operations, and org:planner are retired from the live path but kept here
+// so reactivation = recreate the Clerk roles + re-point provisioning. No user
+// can hold these keys today, so the extra entries are inert. Live roles:
+// org:admin, org:member. See spec 2026-06-11-role-downgrade-admin-member.
 const ROLE_CAPABILITIES: Record<string, ReadonlySet<Capability>> = {
   "org:owner": new Set<Capability>([
     ...PLANNING,
