@@ -41,7 +41,7 @@ export interface CommitTabsResult {
    * True iff THIS commit call caused the import to transition from
    * not-yet-fully-committed to all-tabs-committed. False on subsequent
    * commit calls against an already-committed import (avoids double-firing
-   * post-commit hooks like the AI import quota counter).
+   * post-commit hooks).
    */
   firstTimeAllCommitted: boolean;
 }
