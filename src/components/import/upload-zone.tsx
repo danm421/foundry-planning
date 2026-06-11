@@ -8,7 +8,11 @@ export type UploadState = "queued" | "uploading" | "uploaded" | "failed";
 
 export interface UploadingFile {
   id: string;
-  file: File;
+  /** Display name — present for both in-session uploads and seeded server files. */
+  name: string;
+  /** The browser File for an in-session upload. Absent for rows seeded from
+   *  already-uploaded server files (those never re-upload). */
+  file?: File;
   documentType: DocumentType | "auto";
   state: UploadState;
   /** 0–100. Browsers don't expose download progress for fetch, so XHR is used. */
@@ -23,11 +27,23 @@ export interface UploadedFileInfo {
   deduped: boolean;
 }
 
+/** A file already persisted on the server, used to seed the list on mount. */
+export interface InitialUploadedFile {
+  serverFileId: string;
+  name: string;
+  documentType: string;
+}
+
 interface UploadZoneProps {
   clientId: string;
   importId: string;
+  /** Files already uploaded for this import — seeded once as "uploaded" rows so
+   *  the list survives reloads and revisits. */
+  initialFiles?: InitialUploadedFile[];
   /** Called after each successful upload — parent typically router.refresh()es. */
   onUploaded?: (info: UploadedFileInfo) => void;
+  /** Called after a persisted file is removed (its server row is deleted). */
+  onRemoved?: () => void;
   disabled?: boolean;
 }
 
@@ -39,23 +55,47 @@ function detectTypeFromExtension(name: string): DocumentType | "auto" {
   return "auto";
 }
 
+/** Coerce a stored documentType string into a value the picker can render. */
+function normalizeDocType(type: string): DocumentType | "auto" {
+  if (type === "auto") return "auto";
+  return (DOCUMENT_TYPES as readonly string[]).includes(type)
+    ? (type as DocumentType)
+    : "auto";
+}
+
 export default function UploadZone({
   clientId,
   importId,
+  initialFiles,
   onUploaded,
+  onRemoved,
   disabled,
 }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [files, setFiles] = useState<UploadingFile[]>([]);
+  // Seed once from the files already persisted for this import so the list
+  // survives reloads/revisits. In-session uploads append to this state; the
+  // seed never re-runs, so a parent router.refresh() can't double-list a file.
+  const [files, setFiles] = useState<UploadingFile[]>(() =>
+    (initialFiles ?? []).map((f) => ({
+      id: f.serverFileId,
+      name: f.name,
+      documentType: normalizeDocType(f.documentType),
+      state: "uploaded" as const,
+      progress: 100,
+      serverFileId: f.serverFileId,
+    })),
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Pin the latest onUploaded callback in a ref so the upload XHR closure
-  // can read it without re-running startUpload's identity (which would
-  // otherwise restart in-flight uploads if the parent re-renders).
+  // Pin the latest callbacks in refs so closures (upload XHR, file delete) can
+  // read them without re-running startUpload's identity (which would otherwise
+  // restart in-flight uploads if the parent re-renders).
   const onUploadedRef = useRef(onUploaded);
+  const onRemovedRef = useRef(onRemoved);
   useEffect(() => {
     onUploadedRef.current = onUploaded;
-  }, [onUploaded]);
+    onRemovedRef.current = onRemoved;
+  }, [onUploaded, onRemoved]);
 
   const updateFile = useCallback(
     (id: string, patch: Partial<UploadingFile>) => {
@@ -66,6 +106,8 @@ export default function UploadZone({
 
   const startUpload = useCallback(
     (target: UploadingFile) => {
+      // Only in-session rows carry a File; seeded server rows never upload.
+      if (!target.file) return;
       const xhr = new XMLHttpRequest();
       const url = `/api/clients/${clientId}/imports/${importId}/files`;
       xhr.open("POST", url);
@@ -129,6 +171,7 @@ export default function UploadZone({
     (fileList: FileList | File[]) => {
       const newFiles: UploadingFile[] = Array.from(fileList).map((file) => ({
         id: crypto.randomUUID(),
+        name: file.name,
         file,
         documentType: detectTypeFromExtension(file.name),
         state: "queued",
@@ -160,9 +203,23 @@ export default function UploadZone({
     [files, startUpload, updateFile],
   );
 
-  const removeFile = useCallback((id: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
-  }, []);
+  const removeFile = useCallback(
+    (id: string) => {
+      const target = files.find((f) => f.id === id);
+      setFiles((prev) => prev.filter((f) => f.id !== id));
+      // A persisted file leaves a server row behind; delete it so it doesn't
+      // reappear on reload (and stays out of the next extraction run).
+      if (target?.serverFileId) {
+        fetch(
+          `/api/clients/${clientId}/imports/${importId}/files/${target.serverFileId}`,
+          { method: "DELETE" },
+        )
+          .then(() => onRemovedRef.current?.())
+          .catch((err) => console.error("Failed to delete file:", err));
+      }
+    },
+    [files, clientId, importId],
+  );
 
   const updateFileType = useCallback(
     (id: string, type: DocumentType | "auto") => {
@@ -294,7 +351,7 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
       <div className="flex items-center gap-3">
         <FileIcon />
         <span className="min-w-0 flex-1 truncate text-sm text-gray-200">
-          {file.file.name}
+          {file.name}
         </span>
         <select
           value={file.documentType}

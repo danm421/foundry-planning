@@ -159,56 +159,44 @@ function DraftStage(props: ImportFlowProps) {
         <UploadZone
           clientId={props.clientId}
           importId={props.importId}
+          initialFiles={props.files.map((f) => ({
+            serverFileId: f.id,
+            name: f.originalFilename,
+            documentType: f.documentType,
+          }))}
           onUploaded={() => router.refresh()}
+          onRemoved={() => router.refresh()}
           disabled={extracting}
         />
         {props.files.length > 0 ? (
-          <div className="mt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-3">
-              Uploaded ({props.files.length})
-            </h3>
-            <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-2">
-              {props.files.map((f) => (
-                <li
-                  key={f.id}
-                  className="flex items-center justify-between border-b border-hair py-1 last:border-0"
-                >
-                  <span className="truncate">{f.originalFilename}</span>
-                  <span className="font-mono text-xs text-ink-4">
-                    {f.documentType}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-4 flex flex-col gap-2">
-              <label className="flex items-center gap-2 text-xs text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={extractHoldings}
-                  onChange={(e) => setExtractHoldings(e.target.checked)}
-                  className="h-4 w-4 rounded border-hair accent-accent"
-                />
-                Extract individual holdings from statements
-              </label>
-              <p className="text-[11px] text-ink-4">
-                Pulls each position&apos;s ticker, shares, and cost basis from brokerage statements. Bonds, untickered funds, and cash are saved with the values shown on the statement.
+          <div className="mt-4 flex flex-col gap-2 border-t border-hair pt-4">
+            <label className="flex items-center gap-2 text-xs text-ink-2">
+              <input
+                type="checkbox"
+                checked={extractHoldings}
+                onChange={(e) => setExtractHoldings(e.target.checked)}
+                className="h-4 w-4 rounded border-hair accent-accent"
+              />
+              Extract individual holdings from statements
+            </label>
+            <p className="text-[11px] text-ink-4">
+              Pulls each position&apos;s ticker, shares, and cost basis from brokerage statements. Bonds, untickered funds, and cash are saved with the values shown on the statement.
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-ink-3">
+                Extraction runs synchronously and may take 30–60 seconds per file.
               </p>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-ink-3">
-                  Extraction runs synchronously and may take 30–60 seconds per file.
-                </p>
-                <button
-                  type="button"
-                  onClick={startExtraction}
-                  disabled={extracting}
-                  className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {extracting ? "Extracting…" : "Start extraction"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={startExtraction}
+                disabled={extracting}
+                className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {extracting ? "Extracting…" : "Start extraction"}
+              </button>
             </div>
             {extractError ? (
-              <p className="mt-2 text-xs text-bad">{extractError}</p>
+              <p className="text-xs text-bad">{extractError}</p>
             ) : null}
           </div>
         ) : null}
