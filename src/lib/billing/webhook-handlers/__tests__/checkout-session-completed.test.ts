@@ -139,7 +139,7 @@ describe("handleCheckoutSessionCompleted", () => {
       expect.objectContaining({
         organizationId: "org_new",
         emailAddress: "buyer@example.com",
-        role: "org:owner",
+        role: "org:admin",
       }),
     );
     expect(mockSubsUpdate).toHaveBeenCalledWith(

@@ -89,11 +89,11 @@ export async function handleCheckoutSessionCompleted(
     expand: ["items.data.price"],
   });
 
-  // 4. Send org-owner invitation.
+  // 4. Send org-admin invitation.
   await cc.organizations.createOrganizationInvitation({
     organizationId: firmId,
     emailAddress: buyerEmail,
-    role: "org:owner",
+    role: "org:admin",
   });
 
   // Stripe API v22 moved current_period_* off Subscription onto each
