@@ -46,8 +46,8 @@ describe("<SubscriptionGuard>", () => {
       kind: "trialing",
       trialEndsAt: new Date("2026-05-15T00:00:00Z"),
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Trial ends");
-    expect(screen.getByRole("status")).toHaveTextContent("payment method");
+    expect(screen.getByRole("status")).toHaveTextContent("Free trial ends");
+    expect(screen.getByRole("status")).toHaveTextContent("billed automatically");
   });
 
   it("renders past_due banner with persistent (non-dismissible) variant", async () => {
@@ -104,7 +104,7 @@ describe("<SubscriptionGuard>", () => {
       { kind: "active" },
       { isFounder: true, previewKind: "trialing", previewDate: "2026-05-15" },
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Trial ends");
+    expect(screen.getByRole("status")).toHaveTextContent("Free trial ends");
   });
 
   it("renders dismiss button only for info-severity banners", async () => {

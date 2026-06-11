@@ -47,12 +47,12 @@ describe("<SubscriptionGuard> CTAs route to the portal entry point", () => {
     expect(link.getAttribute("href")).toBe("/settings/billing#manage");
   });
 
-  it("trialing 'Add payment method' links to the billing manage anchor", async () => {
+  it("trialing 'Manage billing' links to the billing manage anchor", async () => {
     await renderState({
       kind: "trialing",
       trialEndsAt: new Date("2026-06-30"),
     });
-    const link = screen.getByRole("link", { name: /add payment method/i });
+    const link = screen.getByRole("link", { name: /manage billing/i });
     expect(link.getAttribute("href")).toBe("/settings/billing#manage");
   });
 });

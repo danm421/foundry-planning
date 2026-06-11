@@ -33,9 +33,9 @@ function bannerFor(state: SubscriptionState): Banner | null {
     case "trialing":
       return {
         severity: "info-yellow",
-        message: `Trial ends ${fmt(state.trialEndsAt)}. Add a payment method to keep going.`,
+        message: `Free trial ends ${fmt(state.trialEndsAt)}. You'll be billed automatically when it ends.`,
         actionHref: "/settings/billing#manage",
-        actionLabel: "Add payment method",
+        actionLabel: "Manage billing",
         dismissible: true,
         dismissKey: `trialing:${state.trialEndsAt.toISOString()}`,
       };
