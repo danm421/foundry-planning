@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { FoundryMark } from "./icons";
+import FooterActions from "./footer-actions";
 
 export default function Footer(): ReactElement {
   const year = new Date().getFullYear();
@@ -53,6 +54,7 @@ export default function Footer(): ReactElement {
             >
               Terms
             </a>
+            <FooterActions />
           </nav>
 
           <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-4">
