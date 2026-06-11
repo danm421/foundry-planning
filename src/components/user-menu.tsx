@@ -10,7 +10,7 @@ export default function UserMenu(): ReactElement {
     <div
       className={
         collapsed
-          ? "hidden"
+          ? "flex items-center justify-center px-2 py-3"
           : "flex items-center gap-3 px-[var(--pad-card)] py-3"
       }
     >
@@ -22,7 +22,7 @@ export default function UserMenu(): ReactElement {
             userButtonOuterIdentifier: "text-[13px] text-ink font-medium",
           },
         }}
-        showName
+        showName={!collapsed}
       />
     </div>
   );
