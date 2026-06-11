@@ -30,6 +30,7 @@ type Params = { params: Promise<{ id: string; importId: string }> };
 
 interface BodyArgs {
     model?: "mini" | "full";
+    extractHoldings?: boolean;
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -131,6 +132,11 @@ export async function POST(request: NextRequest, { params }: Params) {
             );
         }
 
+        const extractHoldings =
+            typeof body.extractHoldings === "boolean"
+                ? body.extractHoldings
+                : importRow.extractHoldings === true;
+
         const fileResults: Record<string, ExtractionResult> = {
             ...((importRow.payloadJson as { fileResults?: Record<string, ExtractionResult> })
                 ?.fileResults ?? {}),
@@ -183,6 +189,7 @@ export async function POST(request: NextRequest, { params }: Params) {
                     file.documentType as DocumentType | "auto",
                     model,
                     file.detectedKind as UploadKind,
+                    extractHoldings,
                 );
 
                 await db

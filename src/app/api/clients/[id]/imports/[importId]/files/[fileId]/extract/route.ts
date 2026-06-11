@@ -31,6 +31,7 @@ type Params = {
 interface BodyArgs {
     model?: "mini" | "full";
     documentType?: DocumentType | "auto";
+    extractHoldings?: boolean;
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -113,6 +114,11 @@ export async function POST(request: NextRequest, { params }: Params) {
             return NextResponse.json({ error: "Import not found" }, { status: 404 });
         }
 
+        const extractHoldings =
+            typeof body.extractHoldings === "boolean"
+                ? body.extractHoldings
+                : importRow.extractHoldings === true;
+
         const startedAt = new Date();
         const [extraction] = await db
             .insert(clientImportExtractions)
@@ -146,7 +152,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                 file.originalFilename,
                 documentType,
                 model,
-                file.detectedKind as UploadKind
+                file.detectedKind as UploadKind,
+                extractHoldings,
             );
 
             await db
