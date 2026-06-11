@@ -30,7 +30,14 @@ export function RedeemRunner() {
       setPending(false);
       return;
     }
-    await setActive({ organization: res.orgId });
+    try {
+      await setActive({ organization: res.orgId });
+    } catch (err) {
+      console.error("[beta-redeem] setActive failed:", err);
+      setError("Could not activate your firm. Refresh and try again.");
+      setPending(false);
+      return;
+    }
     router.push("/clients");
   }
 

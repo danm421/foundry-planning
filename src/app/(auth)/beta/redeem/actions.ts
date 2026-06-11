@@ -17,7 +17,7 @@ export async function redeemBetaCode(manual?: { code: string; firmName: string }
   if (!userId) return { ok: false, error: "You need to be signed in." };
 
   const hdrs = await headers();
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? hdrs.get("x-real-ip") ?? "unknown";
   const rl = await checkBetaRedeemRateLimit(ip);
   if (!rl.allowed) return { ok: false, error: "Too many attempts. Please wait a moment and try again." };
 
@@ -43,7 +43,13 @@ export async function redeemBetaCode(manual?: { code: string; firmName: string }
     }));
   } catch (err) {
     // Compensating reset so the tester's code is reusable after a transient failure.
-    await releaseCode(claim.id);
+    // Guard the compensation itself — if releaseCode also fails we still return the
+    // friendly error rather than throwing an unhandled exception at the client.
+    try {
+      await releaseCode(claim.id);
+    } catch (releaseErr) {
+      console.error("[beta-redeem] releaseCode compensation failed:", releaseErr);
+    }
     console.error("[beta-redeem] founder org creation failed:", err);
     return {
       ok: false,
@@ -52,8 +58,16 @@ export async function redeemBetaCode(manual?: { code: string; firmName: string }
     };
   }
 
-  await finalizeCode(claim.id, firmId);
-  await clearPendingBeta();
+  // The founder org now exists — past the point of no return. Backfilling the org
+  // id and clearing the cookie are best-effort bookkeeping: a transient failure
+  // here must NOT strand the tester with an org they can't activate, so we log and
+  // proceed. The audit row + the claimed code already record the redemption.
+  try {
+    await finalizeCode(claim.id, firmId);
+    await clearPendingBeta();
+  } catch (err) {
+    console.error("[beta-redeem] post-create bookkeeping failed (org already created):", err);
+  }
   await recordAudit({
     action: "beta_code.redeemed",
     resourceType: "firm",

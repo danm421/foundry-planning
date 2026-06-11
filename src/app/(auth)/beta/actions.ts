@@ -20,7 +20,7 @@ export async function validateAndStash(code: string, firmName: string): Promise<
   if (!code.trim()) return { ok: false, error: "Enter your beta code." };
 
   const hdrs = await headers();
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? hdrs.get("x-real-ip") ?? "unknown";
   const rl = await checkBetaValidateRateLimit(ip);
   if (!rl.allowed) return { ok: false, error: "Too many attempts. Please wait a moment and try again." };
 
