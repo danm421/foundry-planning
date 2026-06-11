@@ -78,6 +78,27 @@ export type EntityType =
   | "foundation"
   | "other";
 
+/**
+ * One position within an account, when holdings extraction is enabled.
+ * Tickered holdings are classified + live-priced at commit; untickered
+ * holdings (bonds, untickered funds, cash) are stored manual using the
+ * statement's own numbers, with the description (incl. any CUSIP) in `name`.
+ */
+export interface ExtractedHolding {
+  /** Ticker / symbol as written on the statement; omitted for bonds/cash. */
+  ticker?: string;
+  /** Description / name; for bonds include the CUSIP; cash = "Cash". */
+  name?: string;
+  /** Quantity of shares / units. */
+  shares?: number;
+  /** Per-share price. */
+  price?: number;
+  /** Total market value of the position. */
+  marketValue?: number;
+  /** Cost basis of the position. */
+  costBasis?: number;
+}
+
 export interface ExtractedAccount {
   name: string;
   category?: AccountCategory;
@@ -93,6 +114,8 @@ export interface ExtractedAccount {
   modelPortfolioId?: string | null;
   ownerNameHint?: string;
   owners?: AccountOwner[];
+  /** Individual positions, present only when holdings extraction was enabled. */
+  holdings?: ExtractedHolding[];
 }
 
 export interface ExtractedIncome {
