@@ -139,7 +139,7 @@ export function EstateComparisonChart({
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: "bottom" as const, labels: { color: chrome.legend } },
+        legend: { position: "top" as const, align: "end" as const, labels: { color: chrome.legend } },
         tooltip: {
           backgroundColor: chrome.tooltipBg,
           titleColor: chrome.tooltipTitle,
