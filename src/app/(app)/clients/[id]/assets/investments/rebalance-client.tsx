@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { RebalanceComputeResult } from "@/lib/investments/rebalance/types";
 import { RebalanceSource } from "./rebalance-source";
 import { RebalanceTarget, type RebalanceTargetValue } from "./rebalance-target";
+import { RebalanceComparison } from "./rebalance-comparison";
 
 export interface RebalanceClientProps {
   clientId: string;
@@ -128,11 +129,8 @@ export function RebalanceClient({
       {error && <p className="text-sm text-crit">{error}</p>}
       {loading && !error && <p className="text-sm text-ink-3">Computing…</p>}
 
-      {/* ComparisonPanels (Task 13) — temporary raw preview */}
       {result && (
-        <pre className="overflow-auto rounded border border-hair-2 bg-card p-3 text-xs text-ink-3">
-          {JSON.stringify(result, null, 2)}
-        </pre>
+        <RebalanceComparison result={result} onOverrideRate={(r) => void runCompute(r)} />
       )}
     </div>
   );
