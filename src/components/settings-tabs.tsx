@@ -2,21 +2,31 @@ import type { ReactElement } from "react";
 import Link from "next/link";
 
 interface Props {
-  /** Clerk orgRole, e.g. "org:owner" / "org:admin" / "org:member". */
+  /** Clerk orgRole, e.g. "org:admin" / "org:member". */
   role: string | null | undefined;
+  /** Whether the current user is the firm's billing contact. Gates the Billing tab. */
+  isBillingContact: boolean;
   /** Current pathname so we can highlight the active tab. Pass through from layout. */
   pathname: string;
 }
 
-const TABS: { label: string; href: string; roles: ReadonlyArray<string> }[] = [
+const TABS: {
+  label: string;
+  href: string;
+  roles?: ReadonlyArray<string>;
+  billingContact?: boolean;
+}[] = [
+  // org:owner kept transitionally; removed in the cleanup phase once migrated.
   { label: "Team", href: "/settings/team", roles: ["org:owner", "org:admin", "org:member"] },
   { label: "Firm", href: "/settings/firm", roles: ["org:owner", "org:admin"] },
   { label: "Branding", href: "/settings/branding", roles: ["org:owner", "org:admin"] },
-  { label: "Billing", href: "/settings/billing", roles: ["org:owner"] },
+  { label: "Billing", href: "/settings/billing", billingContact: true },
 ];
 
-export default function SettingsTabs({ role, pathname }: Props): ReactElement {
-  const visible = TABS.filter((t) => role && t.roles.includes(role));
+export default function SettingsTabs({ role, isBillingContact, pathname }: Props): ReactElement {
+  const visible = TABS.filter((t) =>
+    t.billingContact ? isBillingContact : !!(role && t.roles!.includes(role)),
+  );
   return (
     <nav className="flex gap-1 border-b border-hair px-[var(--pad-card)]">
       {visible.map((t) => {
