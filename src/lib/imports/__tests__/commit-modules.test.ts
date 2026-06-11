@@ -609,6 +609,63 @@ describe("commitAccounts", () => {
     await commitAccounts(tx, payload, ctx);
     expect(callsForTable(calls, "life_insurance_policies")).toHaveLength(0);
   });
+
+  it("inserts holdings for a new account", async () => {
+    const { tx, calls, setSelectResult, setInsertId } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    setInsertId("accounts", "acct-new");
+    const resolved = new Map([["VTI", { securityId: "sec-vti", price: 210, asOf: "2026-06-09" }]]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Brokerage", category: "taxable", owner: "client", match: { kind: "new" },
+          holdings: [
+            { ticker: "VTI", shares: 10, costBasis: 1500 },
+            { name: "Cash", shares: 500 },
+          ],
+        },
+      ],
+    };
+    const holdingsAccountIds: string[] = [];
+    await commitAccounts(tx, payload, { ...ctx, resolvedHoldings: resolved, holdingsAccountIds });
+    const hInserts = callsForTable(calls, "account_holdings").filter((c) => c.op === "insert");
+    expect(hInserts).toHaveLength(1);
+    const rows = (hInserts[0] as { values: Record<string, unknown>[] }).values;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].securityId).toBe("sec-vti");
+    expect(rows[0].price).toBe("210");
+    expect(rows[1].securityId).toBeNull();
+    expect(rows[1].price).toBe("1"); // cash defaulted
+    expect(holdingsAccountIds).toEqual(["acct-new"]);
+  });
+
+  it("replaces holdings on an exact-matched account", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Brokerage", category: "taxable", match: { kind: "exact", existingId: "acct-1" },
+          holdings: [{ ticker: "VTI", shares: 1, costBasis: 100 }],
+        },
+      ],
+    };
+    const resolved = new Map([["VTI", { securityId: "sec-vti", price: null, asOf: null }]]);
+    await commitAccounts(tx, payload, { ...ctx, resolvedHoldings: resolved, holdingsAccountIds: [] });
+    expect(callsForTable(calls, "account_holdings").filter((c) => c.op === "delete")).toHaveLength(1);
+    expect(callsForTable(calls, "account_holdings").filter((c) => c.op === "insert")).toHaveLength(1);
+  });
+
+  it("does not touch holdings when the account has none", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [{ name: "X", category: "taxable", match: { kind: "exact", existingId: "acct-9" } }],
+    };
+    await commitAccounts(tx, payload, { ...ctx, holdingsAccountIds: [] });
+    expect(callsForTable(calls, "account_holdings")).toHaveLength(0);
+  });
 });
 
 describe("commitIncomes", () => {

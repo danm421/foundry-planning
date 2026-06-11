@@ -10,6 +10,7 @@ import {
 
 import { getExistingId, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
+import { writeAccountHoldings } from "./holdings";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "variable"> = {
@@ -85,6 +86,14 @@ export async function commitAccounts(
         subType,
       );
       await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family, isRetirement);
+      await writeAccountHoldings(
+        tx,
+        inserted.id,
+        row.holdings ?? [],
+        ctx.resolvedHoldings ?? new Map(),
+        false,
+        ctx.holdingsAccountIds,
+      );
       // Defensive: a life-insurance account committed through the accounts
       // path (older drafts / excel imports) would otherwise have no policy
       // satellite, so the Insurance tab can't manage it. Net-worth-statement
@@ -118,6 +127,7 @@ export async function commitAccounts(
     if (row.growthSource !== undefined) updates.growthSource = row.growthSource;
     if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
     if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
+    if (row.holdings?.length) updates.deriveFromHoldings = true;
     await tx
       .update(accounts)
       .set(updates)
@@ -128,6 +138,14 @@ export async function commitAccounts(
           eq(accounts.scenarioId, ctx.scenarioId),
         ),
       );
+    await writeAccountHoldings(
+      tx,
+      existingId,
+      row.holdings ?? [],
+      ctx.resolvedHoldings ?? new Map(),
+      true,
+      ctx.holdingsAccountIds,
+    );
     result.updated += 1;
   }
 
