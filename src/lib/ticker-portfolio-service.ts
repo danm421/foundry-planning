@@ -55,3 +55,46 @@ export function computePortfolioPanel(
     shortHistory: blended.length < WARN_MONTHS,
   };
 }
+
+export interface SlugWeight { slug: string; weight: number; }
+export interface TaxComposition {
+  pctOrdinaryIncome: number;
+  pctLtCapitalGains: number;
+  pctQualifiedDividends: number;
+  pctTaxExempt: number;
+}
+export interface LookThroughHolding { ticker: string; weight: number; slugWeights: SlugWeight[]; }
+export interface LookThrough {
+  allocation: { slug: string; weight: number }[];
+  tax: TaxComposition;
+}
+
+export function computeLookThrough(
+  holdings: LookThroughHolding[],
+  taxBySlug: Record<string, TaxComposition>,
+): LookThrough {
+  const allocBySlug = new Map<string, number>();
+  for (const h of holdings) {
+    for (const sw of h.slugWeights) {
+      allocBySlug.set(sw.slug, (allocBySlug.get(sw.slug) ?? 0) + h.weight * sw.weight);
+    }
+  }
+  const tax: TaxComposition = {
+    pctOrdinaryIncome: 0,
+    pctLtCapitalGains: 0,
+    pctQualifiedDividends: 0,
+    pctTaxExempt: 0,
+  };
+  for (const [slug, w] of allocBySlug) {
+    const t = taxBySlug[slug];
+    if (!t) continue;
+    tax.pctOrdinaryIncome += w * t.pctOrdinaryIncome;
+    tax.pctLtCapitalGains += w * t.pctLtCapitalGains;
+    tax.pctQualifiedDividends += w * t.pctQualifiedDividends;
+    tax.pctTaxExempt += w * t.pctTaxExempt;
+  }
+  return {
+    allocation: [...allocBySlug.entries()].map(([slug, weight]) => ({ slug, weight })),
+    tax,
+  };
+}
