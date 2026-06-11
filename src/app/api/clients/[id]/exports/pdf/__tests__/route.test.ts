@@ -43,6 +43,18 @@ vi.mock("@/db", () => ({
   },
 }));
 
+// Phase-1b advisor gate. Delegate to the mocked requireOrgId so the "401 when
+// requireOrgId throws" case still surfaces, and return a client carrying
+// crmHouseholdId so the run-log capture branch runs (the route reads it off the
+// gated row now, not via a second @/db query).
+vi.mock("@/lib/clients/authz", () => ({
+  requireClientAccess: vi.fn().mockImplementation(async (clientId: string) => {
+    const { requireOrgId } = await import("@/lib/db-helpers");
+    const firmId = await requireOrgId();
+    return { client: { id: clientId, crmHouseholdId: "hh-test" }, firmId };
+  }),
+}));
+
 vi.mock("@/components/pdf/artifact-document", () => ({
   ArtifactDocument: ({ children }: { children: unknown }) => children,
 }));
