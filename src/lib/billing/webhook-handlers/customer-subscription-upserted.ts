@@ -9,6 +9,7 @@ import {
   deriveEntitlements,
   type StripeItemView,
 } from "@/lib/billing/entitlements";
+import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
 import { recordAudit } from "@/lib/audit";
 
 // The partial unique index subscriptions_firm_active_unique only indexes rows in
@@ -109,10 +110,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
   const periodEnd = firstItem?.current_period_end ?? null;
 
   const itemsView: StripeItemView[] = sub.items.data.map((it) => ({
-    kind: ((it.metadata?.kind as "seat" | "addon") ?? "seat") as
-      | "seat"
-      | "addon",
-    addonKey: it.metadata?.addon_key ?? null,
+    ...readSubscriptionItemMeta(it),
     removed: false,
   }));
   const entitlements = deriveEntitlements({ items: itemsView, aiImportsUsed });
@@ -152,24 +150,20 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     await db
       .insert(subscriptionItems)
       .values(
-        sub.items.data.map((it) => ({
-          subscriptionId: internalSubId,
-          firmId,
-          stripeItemId: it.id,
-          stripePriceId:
-            typeof it.price === "string" ? it.price : it.price?.id ?? "",
-          kind: ((it.metadata?.kind as "seat" | "addon") ?? "seat") as
-            | "seat"
-            | "addon",
-          addonKey: it.metadata?.addon_key ?? null,
-          quantity: it.quantity ?? 1,
-          unitAmount:
-            typeof it.price === "object" && it.price
-              ? it.price.unit_amount ?? 0
-              : 0,
-          currency:
-            typeof it.price === "object" && it.price ? it.price.currency : "usd",
-        })),
+        sub.items.data.map((it) => {
+          const price =
+            typeof it.price === "object" && it.price ? it.price : null;
+          return {
+            subscriptionId: internalSubId,
+            firmId,
+            stripeItemId: it.id,
+            stripePriceId: price?.id ?? "",
+            ...readSubscriptionItemMeta(it),
+            quantity: it.quantity ?? 1,
+            unitAmount: price?.unit_amount ?? 0,
+            currency: price?.currency ?? "usd",
+          };
+        }),
       )
       .onConflictDoUpdate({
         target: subscriptionItems.stripeItemId,

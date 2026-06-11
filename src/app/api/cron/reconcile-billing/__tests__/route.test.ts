@@ -174,4 +174,62 @@ describe("GET /api/cron/reconcile-billing", () => {
       expect.objectContaining({ status: "drift_detected" }),
     );
   });
+
+  it("no drift when a price-tagged add-on in Stripe matches the DB mirror + Clerk", async () => {
+    // Stripe stamps kind/addon_key on price.metadata (item metadata empty). If
+    // the cron read it.metadata it would see the add-on as a seat and flag
+    // false item + entitlement drift, paging ops on every add-on firm.
+    mockReconcileInsert.mockResolvedValue([{ id: "run_ok2" }]);
+    mockSelectFirms.mockResolvedValue([
+      { firmId: "org_ai", isFounder: false, archivedAt: null, aiImportsUsed: 3 },
+    ]);
+    mockSelectSubs.mockResolvedValue([
+      {
+        id: "internal-sub-ai",
+        firmId: "org_ai",
+        stripeSubscriptionId: "sub_ai",
+        status: "active",
+      },
+    ]);
+    mockSelectItems.mockResolvedValue([
+      { kind: "seat", addonKey: null, quantity: 1, removedAt: null },
+      { kind: "addon", addonKey: "ai_import", quantity: 1, removedAt: null },
+    ]);
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_ai",
+      status: "active",
+      items: {
+        data: [
+          {
+            id: "si_seat",
+            quantity: 1,
+            metadata: {},
+            price: { id: "price_seat", metadata: { kind: "seat" } },
+          },
+          {
+            id: "si_ai",
+            quantity: 1,
+            metadata: {},
+            price: {
+              id: "price_ai_import",
+              metadata: { kind: "addon", addon_key: "ai_import" },
+            },
+          },
+        ],
+      },
+    });
+    mockGetOrg.mockResolvedValue({
+      publicMetadata: {
+        subscription_status: "active",
+        entitlements: ["ai_import"],
+      },
+    });
+
+    const res = await GET(authedReq() as never);
+    expect(res.status).toBe(200);
+    expect(mockSentryCapture).not.toHaveBeenCalled();
+    expect(mockReconcileUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "ok" }),
+    );
+  });
 });

@@ -9,6 +9,7 @@ import {
   tosAcceptances,
 } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
+import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
 import { recordAudit } from "@/lib/audit";
 
 const TOS_VERSION_DEFAULT = "v1";
@@ -135,26 +136,19 @@ export async function handleCheckoutSessionCompleted(
     await db
       .insert(subscriptionItems)
       .values(
-        sub.items.data.map((it) => ({
-          subscriptionId: internalSubId,
-          firmId,
-          stripeItemId: it.id,
-          stripePriceId:
-            typeof it.price === "string" ? it.price : it.price?.id ?? "",
-          kind: ((it.metadata?.kind as "seat" | "addon") ?? "seat") as
-            | "seat"
-            | "addon",
-          addonKey: it.metadata?.addon_key ?? null,
-          quantity: it.quantity ?? 1,
-          unitAmount:
-            typeof it.price === "object" && it.price
-              ? it.price.unit_amount ?? 0
-              : 0,
-          currency:
-            typeof it.price === "object" && it.price
-              ? it.price.currency
-              : "usd",
-        })),
+        sub.items.data.map((it) => {
+          const price = typeof it.price === "object" && it.price ? it.price : null;
+          return {
+            subscriptionId: internalSubId,
+            firmId,
+            stripeItemId: it.id,
+            stripePriceId: price?.id ?? "",
+            ...readSubscriptionItemMeta(it),
+            quantity: it.quantity ?? 1,
+            unitAmount: price?.unit_amount ?? 0,
+            currency: price?.currency ?? "usd",
+          };
+        }),
       )
       .onConflictDoNothing()
       .returning({ id: subscriptionItems.id });
