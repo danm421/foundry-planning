@@ -76,7 +76,7 @@ describe("getFounderState", () => {
         "metadata.is_founder",
         "metadata.subscription_status",
         "metadata.entitlements",
-        "membership.role",
+        "metadata.billing_contact",
         "firms.row",
       ]),
     );
@@ -90,13 +90,14 @@ describe("getFounderState", () => {
         is_founder: true,
         subscription_status: "founder",
         entitlements: ["ai_import"],
+        billing_contact_userId: TEST_USER_ID,
       },
     });
     mockGetMembershipList.mockResolvedValue({
       data: [
         {
           publicUserData: { userId: TEST_USER_ID, identifier: OWNER_EMAIL },
-          role: "org:owner",
+          role: "org:admin",
           id: "mem_1",
         },
       ],
@@ -158,16 +159,12 @@ describe("applyFounderState", () => {
           is_founder: true,
           subscription_status: "founder",
           entitlements: ["ai_import"],
+          billing_contact_userId: TEST_USER_ID,
         }),
       }),
     );
-    expect(mockUpdateMembership).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizationId: TEST_FIRM_ID,
-        userId: TEST_USER_ID,
-        role: "org:owner",
-      }),
-    );
+    // createdBy already makes the user org:admin — no role promotion needed.
+    expect(mockUpdateMembership).not.toHaveBeenCalled();
     const rows = await db.select().from(firms).where(eq(firms.firmId, TEST_FIRM_ID));
     expect(rows).toHaveLength(1);
     expect(rows[0].isFounder).toBe(true);
@@ -190,13 +187,14 @@ describe("applyFounderState", () => {
         is_founder: true,
         subscription_status: "founder",
         entitlements: ["ai_import"],
+        billing_contact_userId: TEST_USER_ID,
       },
     });
     mockGetMembershipList.mockResolvedValue({
       data: [
         {
           publicUserData: { userId: TEST_USER_ID, identifier: OWNER_EMAIL },
-          role: "org:owner",
+          role: "org:admin",
           id: "mem_1",
         },
       ],
@@ -224,7 +222,7 @@ describe("applyFounderState", () => {
   });
 
   it("partial drift — only fixes the drifted fields", async () => {
-    // Org already founder + owner promoted, but firms row missing.
+    // Org already founder + admin role + billing contact pinned, but firms row missing.
     mockGetOrg.mockResolvedValue({
       id: TEST_FIRM_ID,
       name: "Foundry HQ",
@@ -232,13 +230,14 @@ describe("applyFounderState", () => {
         is_founder: true,
         subscription_status: "founder",
         entitlements: ["ai_import"],
+        billing_contact_userId: TEST_USER_ID,
       },
     });
     mockGetMembershipList.mockResolvedValue({
       data: [
         {
           publicUserData: { userId: TEST_USER_ID, identifier: OWNER_EMAIL },
-          role: "org:owner",
+          role: "org:admin",
           id: "mem_1",
         },
       ],
@@ -263,6 +262,55 @@ describe("applyFounderState", () => {
         metadata: expect.objectContaining({ drift: ["firms.row"] }),
       }),
     );
+  });
+
+  it("repairs a drifted membership role — promotes a non-admin owner back to org:admin", async () => {
+    // Everything is already in target state EXCEPT the owner's role, which has
+    // drifted to org:member. Exercises the membership.role repair backstop.
+    mockGetOrg.mockResolvedValue({
+      id: TEST_FIRM_ID,
+      name: "Foundry HQ",
+      publicMetadata: {
+        is_founder: true,
+        subscription_status: "founder",
+        entitlements: ["ai_import"],
+        billing_contact_userId: TEST_USER_ID,
+      },
+    });
+    mockGetMembershipList.mockResolvedValue({
+      data: [
+        {
+          publicUserData: { userId: TEST_USER_ID, identifier: OWNER_EMAIL },
+          role: "org:member",
+          id: "mem_1",
+        },
+      ],
+    });
+    await db.insert(firms).values({
+      firmId: TEST_FIRM_ID,
+      displayName: "Foundry HQ",
+      isFounder: true,
+    });
+    mockUpdateMembership.mockResolvedValue({});
+
+    await applyFounderState({
+      firmId: TEST_FIRM_ID,
+      displayName: "Foundry HQ",
+      ownerUserId: TEST_USER_ID,
+      entitlements: ["ai_import"],
+    });
+
+    // Only the role drifted: the membership is promoted to org:admin, and no
+    // org-name or metadata writes fire.
+    expect(mockUpdateMembership).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: TEST_FIRM_ID,
+        userId: TEST_USER_ID,
+        role: "org:admin",
+      }),
+    );
+    expect(mockUpdateOrg).not.toHaveBeenCalled();
+    expect(mockUpdateOrgMetadata).not.toHaveBeenCalled();
   });
 
   it("throws when the named owner email is not a member of the org", async () => {

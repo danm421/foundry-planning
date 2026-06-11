@@ -20,14 +20,19 @@ export type FounderState = {
   };
   target: {
     orgName: string;
-    publicMetadata: { is_founder: true; subscription_status: "founder"; entitlements: string[] };
-    ownerRole: "org:owner";
+    publicMetadata: {
+      is_founder: true;
+      subscription_status: "founder";
+      entitlements: string[];
+      billing_contact_userId: string;
+    };
+    ownerRole: "org:admin";
     firmsRowExists: true;
   };
   drift: string[];
 };
 
-const TARGET_ROLE = "org:owner";
+const TARGET_ROLE = "org:admin";
 const FOUNDER_STATUS = "founder";
 
 /**
@@ -66,6 +71,7 @@ export async function getFounderState(opts: FounderInitOptions): Promise<Founder
   ) {
     drift.push("metadata.entitlements");
   }
+  if (currentMeta.billing_contact_userId !== ownerUserId) drift.push("metadata.billing_contact");
   if (!ownerMembership) drift.push("membership.missing");
   else if (ownerMembership.role !== TARGET_ROLE) drift.push("membership.role");
   if (firmsRow.length === 0) drift.push("firms.row");
@@ -83,6 +89,7 @@ export async function getFounderState(opts: FounderInitOptions): Promise<Founder
         is_founder: true,
         subscription_status: FOUNDER_STATUS,
         entitlements,
+        billing_contact_userId: ownerUserId,
       },
       ownerRole: TARGET_ROLE,
       firmsRowExists: true,
@@ -122,7 +129,8 @@ export async function applyFounderState(opts: FounderInitOptions): Promise<void>
   const metadataDrifted =
     state.drift.includes("metadata.is_founder") ||
     state.drift.includes("metadata.subscription_status") ||
-    state.drift.includes("metadata.entitlements");
+    state.drift.includes("metadata.entitlements") ||
+    state.drift.includes("metadata.billing_contact");
   if (metadataDrifted) {
     // Clerk SDK signature: updateOrganizationMetadata(organizationId, params).
     await cc.organizations.updateOrganizationMetadata(firmId, {
@@ -131,6 +139,7 @@ export async function applyFounderState(opts: FounderInitOptions): Promise<void>
         is_founder: true,
         subscription_status: FOUNDER_STATUS,
         entitlements,
+        billing_contact_userId: ownerUserId,
       },
     });
   }
@@ -175,8 +184,8 @@ export async function createFounderOrgForUser(opts: {
 }): Promise<{ firmId: string }> {
   const { ownerUserId, displayName, entitlements } = opts;
   const cc = await clerkClient();
-  // `createdBy` makes the user a member (admin) of the new org; applyFounderState
-  // then promotes them to org:owner.
+  // `createdBy` makes the user an org:admin of the new org — that is already the
+  // target role, so applyFounderState writes metadata + firms row but skips promotion.
   const org = await cc.organizations.createOrganization({
     name: displayName,
     createdBy: ownerUserId,
