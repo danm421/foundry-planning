@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ExtractedAccount, AccountCategory, AccountSubType } from "@/lib/extraction/types";
+import type { ExtractedAccount, AccountCategory, AccountSubType, ExtractedHolding } from "@/lib/extraction/types";
+import { holdingsReconciliation, holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
 import { CurrencyInput } from "@/components/currency-input";
@@ -420,6 +421,62 @@ export default function ReviewStepAccounts({
                   />
                 </div>
               )}
+
+              {account.holdings && account.holdings.length > 0 ? (() => {
+                const recon = holdingsReconciliation(account.holdings, account.value);
+                const update = (next: ExtractedHolding[]) => {
+                  const copy = accounts.slice();
+                  copy[i] = { ...account, holdings: next };
+                  onChange(copy);
+                };
+                const setField = (hi: number, patch: Partial<ExtractedHolding>) =>
+                  update(account.holdings!.map((h, j) => (j === hi ? { ...h, ...patch } : h)));
+                const num = (v: string) => (v.trim() === "" ? undefined : Number(v));
+                return (
+                  <div className="mt-3 rounded border border-hair p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-medium uppercase tracking-wide text-ink-4">
+                        Holdings ({account.holdings.length})
+                      </span>
+                      <span className={recon.flagged ? "text-xs text-bad" : "text-xs text-ink-4"}>
+                        Holdings ${Math.round(recon.sum).toLocaleString()} vs. stated ${Math.round(recon.total).toLocaleString()}
+                        {recon.flagged ? " — review the gap" : ""}
+                      </span>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead className="text-ink-4">
+                        <tr>
+                          <th className="text-left font-normal">Ticker</th>
+                          <th className="text-left font-normal">Name</th>
+                          <th className="text-right font-normal">Shares</th>
+                          <th className="text-right font-normal">Price</th>
+                          <th className="text-right font-normal">Mkt value</th>
+                          <th className="text-right font-normal">Cost basis</th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {account.holdings.map((h, hi) => (
+                          <tr key={hi}>
+                            <td><input className="w-16 bg-transparent" value={h.ticker ?? ""} onChange={(e) => setField(hi, { ticker: e.target.value || undefined })} /></td>
+                            <td><input className="w-40 bg-transparent" value={h.name ?? ""} onChange={(e) => setField(hi, { name: e.target.value || undefined })} /></td>
+                            <td><input className="w-20 bg-transparent text-right" value={h.shares ?? ""} onChange={(e) => setField(hi, { shares: num(e.target.value) })} /></td>
+                            <td><input className="w-20 bg-transparent text-right" value={h.price ?? ""} onChange={(e) => setField(hi, { price: num(e.target.value) })} /></td>
+                            <td className="text-right text-ink-3">${Math.round(holdingMarketValue(h)).toLocaleString()}</td>
+                            <td><input className="w-24 bg-transparent text-right" value={h.costBasis ?? ""} onChange={(e) => setField(hi, { costBasis: num(e.target.value) })} /></td>
+                            <td className="text-right">
+                              <button type="button" className="text-ink-4 hover:text-bad" onClick={() => update(account.holdings!.filter((_, j) => j !== hi))}>×</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <button type="button" className="mt-2 text-xs text-accent" onClick={() => update([...account.holdings!, {}])}>
+                      + Add holding
+                    </button>
+                  </div>
+                );
+              })() : null}
             </div>
           );
         })}
