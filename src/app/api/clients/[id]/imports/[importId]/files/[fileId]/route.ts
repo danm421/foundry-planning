@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 
@@ -33,6 +34,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
       throw new UnauthorizedError();
     }
     const { id: clientId, importId, fileId } = await params;
+
+    if (!(await verifyClientAccess(clientId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     await requireImportAccess({ importId, clientId, firmId, userId });
 
@@ -154,6 +159,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     }
     const { id: clientId, importId, fileId } = await params;
 
+    if (!(await verifyClientAccess(clientId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     await requireImportAccess({ importId, clientId, firmId, userId });
 
     const body = (await request.json().catch(() => ({}))) as {
@@ -224,6 +233,10 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       throw new UnauthorizedError();
     }
     const { id: clientId, importId, fileId } = await params;
+
+    if (!(await verifyClientAccess(clientId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     await requireImportAccess({ importId, clientId, firmId, userId });
 

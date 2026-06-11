@@ -10,6 +10,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { detectUploadKind } from "@/lib/extraction/validate-upload";
 import { uploadImportFile } from "@/lib/imports/blob";
@@ -51,6 +52,10 @@ export async function POST(
       throw new UnauthorizedError();
     }
     const { id: clientId, importId } = await params;
+
+    if (!(await verifyClientAccess(clientId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const rl = await checkImportRateLimit(firmId, "upload");
     if (!rl.allowed) {

@@ -13,6 +13,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 
@@ -61,6 +62,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
       throw new UnauthorizedError();
     }
     const { id: clientId, importId } = await params;
+
+    if (!(await verifyClientAccess(clientId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const rl = await checkImportRateLimit(firmId, "view");
     if (!rl.allowed) {
@@ -166,6 +171,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       throw new UnauthorizedError();
     }
     const { id: clientId, importId } = await params;
+
+    if (!(await verifyClientAccess(clientId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     // No rate-limit on PATCH — low-cardinality, advisor-driven, same
     // posture as POST. requireImportAccess already enforces ownership.
