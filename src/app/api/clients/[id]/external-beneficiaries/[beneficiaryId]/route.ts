@@ -1,22 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import { clients, externalBeneficiaries } from "@/db/schema";
+import { externalBeneficiaries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { externalBeneficiaryUpdateSchema } from "@/lib/schemas/beneficiaries";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
 
 export async function PATCH(
   request: NextRequest,
@@ -25,7 +18,7 @@ export async function PATCH(
   try {
     const firmId = await requireOrgId();
     const { id, beneficiaryId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const body = await request.json();
@@ -66,7 +59,7 @@ export async function DELETE(
   try {
     const firmId = await requireOrgId();
     const { id, beneficiaryId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     // Delete the beneficiary and, atomically, any will-recipient rows that point

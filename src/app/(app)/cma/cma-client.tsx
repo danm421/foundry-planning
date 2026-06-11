@@ -13,6 +13,7 @@ import CmaMigrationDialog from "@/components/cma-migration-dialog";
 import CmaValueRefreshDialog from "@/components/cma-value-refresh-dialog";
 import CmaProjectedValueRefreshDialog from "@/components/cma-projected-value-refresh-dialog";
 import CmaSkeleton from "./loading-skeleton";
+import FundPortfoliosTab from "@/components/FundPortfoliosTab";
 
 interface AssetClass {
   id: string;
@@ -43,7 +44,7 @@ interface ModelPortfolio {
   allocations: Allocation[];
 }
 
-type Tab = "asset-classes" | "model-portfolios";
+type Tab = "asset-classes" | "model-portfolios" | "fund-portfolios";
 
 type CmaSetKey = "historical" | "projected" | "custom";
 interface CmaSet {
@@ -432,6 +433,14 @@ export default function CmaClient() {
         >
           Model Portfolios
         </button>
+        <button
+          onClick={() => setTab("fund-portfolios")}
+          className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "fund-portfolios" ? "bg-card text-ink" : "text-ink-3 hover:text-ink"
+          }`}
+        >
+          Fund Portfolios
+        </button>
       </div>
 
       {tab === "asset-classes" && (
@@ -459,6 +468,8 @@ export default function CmaClient() {
           onRefresh={fetchData}
         />
       )}
+
+      {tab === "fund-portfolios" && <FundPortfoliosTab />}
     </div>
   );
 }

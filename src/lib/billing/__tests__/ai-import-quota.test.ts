@@ -58,6 +58,62 @@ describe("syncAiImportEntitlement", () => {
     );
   });
 
+  it("grants ai_import from a price-tagged add-on after the free quota is spent", async () => {
+    const { db } = await import("@/db");
+    const { clerkClient } = await import("@clerk/nextjs/server");
+    const { getStripe } = await import("@/lib/billing/stripe-client");
+
+    // Quota exhausted (aiImportsUsed = 3): the entitlement can only come from
+    // the paid add-on, whose kind/addon_key live on price.metadata.
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => {
+        const where = {
+          where: () => ({
+            then: (cb: (r: unknown[]) => unknown) =>
+              Promise.resolve(
+                cb([{ aiImportsUsed: 3, stripeSubscriptionId: "sub_ai" }]),
+              ),
+          }),
+        };
+        return { leftJoin: () => where, ...where };
+      },
+    });
+    (getStripe as ReturnType<typeof vi.fn>).mockReturnValue({
+      subscriptions: {
+        retrieve: vi.fn().mockResolvedValue({
+          items: {
+            data: [
+              {
+                metadata: {},
+                price: { id: "price_seat", metadata: { kind: "seat" } },
+              },
+              {
+                metadata: {},
+                price: {
+                  id: "price_ai_import",
+                  metadata: { kind: "addon", addon_key: "ai_import" },
+                },
+              },
+            ],
+          },
+        }),
+      },
+    });
+    const updateMeta = vi.fn().mockResolvedValue(undefined);
+    (clerkClient as ReturnType<typeof vi.fn>).mockResolvedValue({
+      organizations: { updateOrganizationMetadata: updateMeta },
+    });
+
+    await syncAiImportEntitlement("org_ai");
+
+    expect(updateMeta).toHaveBeenCalledWith(
+      "org_ai",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ entitlements: ["ai_import"] }),
+      }),
+    );
+  });
+
   it("no-ops when firm has no live subscription (founder org case)", async () => {
     const { db } = await import("@/db");
     const { clerkClient } = await import("@clerk/nextjs/server");

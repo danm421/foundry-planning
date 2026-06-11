@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, clientDeductions } from "@/db/schema";
+import { scenarios, clientDeductions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-
-  if (!client) return null;
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
 
   const [scenario] = await db
     .select()

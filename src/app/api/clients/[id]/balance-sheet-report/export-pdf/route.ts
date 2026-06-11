@@ -1,9 +1,9 @@
 // src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, crmHouseholdContacts, entities as entitiesTable } from "@/db/schema";
+import { crmHouseholdContacts, entities as entitiesTable } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireClientAccess } from "@/lib/clients/authz";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordCompletedRun } from "@/lib/crm/generation-runs";
 import { auth, currentUser } from "@clerk/nextjs/server";
@@ -45,7 +45,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { id } = await params;
+    const access = await requireClientAccess(id).catch(() => null);
+    if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const { client, firmId } = access;
 
     const rl = await checkExportPdfRateLimit(firmId);
     if (!rl.allowed) {
@@ -54,14 +57,6 @@ export async function POST(
         "Too many PDF exports. Please wait a moment and try again.",
       );
     }
-
-    const { id } = await params;
-
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     // CRM contacts — source of client name for the PDF.
     const [primaryContact] = client.crmHouseholdId

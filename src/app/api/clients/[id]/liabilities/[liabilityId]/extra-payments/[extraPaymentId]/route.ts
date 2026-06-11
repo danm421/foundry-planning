@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, liabilities, extraPayments } from "@/db/schema";
+import { liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toExtraPaymentSnapshot, EXTRA_PAYMENT_FIELD_LABELS } from "@/lib/audit/snapshots/extra-payment";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +14,7 @@ type Params = {
 };
 
 async function verifyOwnership(clientId: string, liabilityId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return false;
+  if (!(await verifyClientAccess(clientId, firmId))) return false;
 
   const [liab] = await db
     .select()

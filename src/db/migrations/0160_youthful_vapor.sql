@@ -1,1 +1,0 @@
-ALTER TABLE "client_imports" ADD COLUMN "extract_holdings" boolean DEFAULT false NOT NULL;

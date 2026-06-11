@@ -1,26 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { accountAssetAllocations, assetClasses, accounts, clients } from "@/db/schema";
+import { accountAssetAllocations, assetClasses, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { allocationPutSchema } from "@/lib/schemas/allocations";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
   const [acct] = await db
     .select({ id: accounts.id })
     .from(accounts)
-    .innerJoin(clients, eq(clients.id, accounts.clientId))
-    .where(
-      and(
-        eq(accounts.id, accountId),
-        eq(accounts.clientId, clientId),
-        eq(clients.firmId, firmId)
-      )
-    );
+    .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
   return acct ?? null;
 }
 

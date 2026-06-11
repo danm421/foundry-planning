@@ -16,6 +16,11 @@ vi.mock("@/lib/imports/authz", async () => {
   );
   return { ...actual, requireImportAccess: vi.fn() };
 });
+// Phase-1b advisor gate runs before the quota check; this suite exercises the
+// entitlement/quota gate, not the access path, so let the client gate pass.
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue(true),
+}));
 vi.mock("@/lib/rate-limit", () => ({
   checkImportRateLimit: vi.fn(),
 }));

@@ -10,6 +10,7 @@ import {
   deriveEntitlements,
   type StripeItemView,
 } from "@/lib/billing/entitlements";
+import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
 import { getStripe } from "@/lib/billing/stripe-client";
 
 type AnyTx = PgTransaction<
@@ -92,10 +93,7 @@ export async function syncAiImportEntitlement(firmId: string): Promise<void> {
   });
 
   const itemsView: StripeItemView[] = sub.items.data.map((it) => ({
-    kind: ((it.metadata?.kind as "seat" | "addon") ?? "seat") as
-      | "seat"
-      | "addon",
-    addonKey: it.metadata?.addon_key ?? null,
+    ...readSubscriptionItemMeta(it),
     removed: false,
   }));
   const entitlements = deriveEntitlements({

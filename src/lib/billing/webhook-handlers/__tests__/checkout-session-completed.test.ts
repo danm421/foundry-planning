@@ -36,14 +36,16 @@ const mockSubLookup = vi.fn(); // SELECT existing sub by stripeCustomerId
 vi.mock("@/db", () => ({
   db: {
     select: () => ({ from: () => ({ where: () => mockSubLookup() }) }),
-    insert: (table: { _: { name: string } } | unknown) => ({
+    insert: (table: unknown) => ({
       values: (v: unknown) => ({
         onConflictDoNothing: () => ({
           returning: () => {
+            // drizzle stores the SQL table name at runtime under this symbol;
+            // `table._.name` is a TYPE-only brand and is absent at runtime
+            // (so the old `"_" in table` check always fell through to tos).
             const tname =
-              typeof table === "object" && table && "_" in table
-                ? (table as { _: { name?: string } })._.name
-                : "";
+              (table as Record<symbol, string>)[Symbol.for("drizzle:Name")] ??
+              "";
             if (tname === "firms") return mockFirmInsert(v);
             if (tname === "subscriptions") return mockSubsInsert(v);
             if (tname === "subscription_items") return mockItemsInsert(v);
@@ -104,9 +106,14 @@ describe("handleCheckoutSessionCompleted", () => {
         data: [
           {
             id: "si_seat",
-            price: { id: "price_seat", unit_amount: 9900, currency: "usd" },
+            price: {
+              id: "price_seat",
+              unit_amount: 9900,
+              currency: "usd",
+              metadata: { kind: "seat" }, // Stripe stamps kind on the PRICE
+            },
             quantity: 1,
-            metadata: { kind: "seat" },
+            metadata: {}, // ITEM metadata is empty in practice
             current_period_start: 1690000000,
             current_period_end: 1692592000,
           },
@@ -146,6 +153,90 @@ describe("handleCheckoutSessionCompleted", () => {
         action: "billing.subscription_created",
         firmId: "org_new",
       }),
+    );
+  });
+
+  it("tags subscription items from price.metadata, not item metadata (entitlement-critical)", async () => {
+    // Stripe stamps kind/addon_key on the PRICE metadata; the subscription
+    // ITEM metadata is empty. Reading it.metadata silently mislabels the
+    // AI-Import add-on as a seat (kind=seat, addonKey=null) → deriveEntitlements
+    // (which filters kind==="addon" && addonKey) never grants `ai_import`.
+    mockSessionsRetrieve.mockResolvedValue({
+      id: "cs_addon",
+      customer: "cus_addon",
+      subscription: "sub_addon",
+      customer_details: { email: "buyer3@example.com" },
+      custom_fields: [{ key: "firm_name", text: { value: "Gamma Advisors" } }],
+      metadata: {},
+    });
+    mockCreateOrg.mockResolvedValue({ id: "org_gamma", name: "Gamma Advisors" });
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_addon",
+      customer: "cus_addon",
+      status: "trialing",
+      cancel_at_period_end: false,
+      trial_start: null,
+      trial_end: 1700000000,
+      items: {
+        data: [
+          {
+            id: "si_seat",
+            price: {
+              id: "price_seat",
+              unit_amount: 9900,
+              currency: "usd",
+              metadata: { kind: "seat" },
+            },
+            quantity: 1,
+            metadata: {},
+            current_period_start: 1690000000,
+            current_period_end: 1692592000,
+          },
+          {
+            id: "si_ai",
+            price: {
+              id: "price_ai_import",
+              unit_amount: 19900,
+              currency: "usd",
+              metadata: { kind: "addon", addon_key: "ai_import" },
+            },
+            quantity: 1,
+            metadata: {},
+          },
+        ],
+      },
+      metadata: {},
+    });
+    mockFirmInsert.mockResolvedValue([{ firmId: "org_gamma" }]);
+    mockSubsInsert.mockResolvedValue([{ id: "internal-sub-gamma" }]);
+    mockItemsInsert.mockResolvedValue([]);
+    mockTosInsert.mockResolvedValue([]);
+
+    await handleCheckoutSessionCompleted({
+      id: "evt_co_addon",
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_addon" } },
+    } as never);
+
+    expect(mockItemsInsert).toHaveBeenCalledTimes(1);
+    const insertedItems = mockItemsInsert.mock.calls[0][0] as Array<{
+      stripePriceId: string;
+      kind: string;
+      addonKey: string | null;
+    }>;
+    expect(insertedItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stripePriceId: "price_seat",
+          kind: "seat",
+          addonKey: null,
+        }),
+        expect.objectContaining({
+          stripePriceId: "price_ai_import",
+          kind: "addon",
+          addonKey: "ai_import",
+        }),
+      ]),
     );
   });
 

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { clientOpenItems } from "@/db/schema";
 import { and, desc, eq, isNull, asc, gte, or } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
 import { openItemCreateSchema } from "@/lib/schemas/open-items";
@@ -18,7 +18,7 @@ export async function GET(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    if (!(await findClientInFirm(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -61,7 +61,7 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    if (!(await findClientInFirm(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

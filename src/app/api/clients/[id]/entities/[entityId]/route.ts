@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   entities,
   entityOwners,
   accounts,
@@ -14,6 +13,7 @@ import {
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
@@ -48,14 +48,6 @@ function deriveLegacyOwner(
 
 export const dynamic = "force-dynamic";
 
-async function verifyClient(clientId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
-
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; entityId: string }> }
@@ -63,7 +55,7 @@ export async function PUT(
   try {
     const firmId = await requireOrgId();
     const { id, entityId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -587,7 +579,7 @@ export async function DELETE(
   try {
     const firmId = await requireOrgId();
     const { id, entityId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

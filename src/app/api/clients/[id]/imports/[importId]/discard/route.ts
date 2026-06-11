@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,10 @@ export async function POST(_request: NextRequest, { params }: Params) {
       throw new UnauthorizedError();
     }
     const { id: clientId, importId } = await params;
+
+    if (!(await verifyClientAccess(clientId, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     // requireImportAccess filters out already-discarded imports
     // (isNull(discardedAt)), so a re-discard of a tombstoned row hits

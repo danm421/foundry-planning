@@ -28,7 +28,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   entities,
   entityOwners,
   familyMembers,
@@ -38,6 +37,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import type { EntityOwner } from "@/engine/ownership";
 import { applyEntityOwnersOp, EPSILON } from "@/lib/entity-owners-ops";
 
@@ -74,14 +74,6 @@ const assetOpSchema = z.discriminatedUnion("op", [
   }),
 ]);
 
-async function verifyClient(clientId: string, firmId: string): Promise<boolean> {
-  const [client] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; entityId: string }> },
@@ -90,7 +82,7 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id: clientId, entityId: trustId } = await params;
 
-    if (!(await verifyClient(clientId, firmId))) {
+    if (!(await verifyClientAccess(clientId, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

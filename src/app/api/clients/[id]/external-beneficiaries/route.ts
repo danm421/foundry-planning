@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import { clients, externalBeneficiaries } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { externalBeneficiaries } from "@/db/schema";
+import { eq, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { externalBeneficiaryCreateSchema } from "@/lib/schemas/beneficiaries";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
 
 export async function GET(
   _request: NextRequest,
@@ -23,7 +16,7 @@ export async function GET(
   try {
     const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const rows = await db
@@ -48,7 +41,7 @@ export async function POST(
   try {
     const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const body = await request.json();

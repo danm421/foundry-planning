@@ -59,6 +59,13 @@ vi.mock("@/lib/audit", () => ({
   recordDelete: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+
 const TEST_FIRM = "firm_gift_series_route_test";
 
 d("gift_series CRUD", () => {

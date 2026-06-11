@@ -56,6 +56,13 @@ vi.mock("@/lib/db-scoping", () => ({
   assertModelPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+
 const TEST_FIRM = "firm_owners_test";
 
 d("Account owners[] API — POST and PUT", () => {

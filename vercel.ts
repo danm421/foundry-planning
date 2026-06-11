@@ -24,5 +24,9 @@ export const config: VercelConfig = {
       path: "/api/cron/purge-expired-firms",
       schedule: "0 6 * * *",
     },
+    {
+      path: "/api/cron/refresh-ticker-portfolios",
+      schedule: "0 10 1 * *",
+    },
   ],
 };

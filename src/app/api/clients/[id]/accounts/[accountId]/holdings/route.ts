@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { accountHoldings, accounts, clients, holdingAssetClassOverrides, securityAssetClassWeights } from "@/db/schema";
+import { accountHoldings, accounts, holdingAssetClassOverrides, securityAssetClassWeights } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { holdingCreateSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -39,17 +40,11 @@ export function enrichHoldingRows(
 }
 
 async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
   const [acct] = await db
     .select({ id: accounts.id })
     .from(accounts)
-    .innerJoin(clients, eq(clients.id, accounts.clientId))
-    .where(
-      and(
-        eq(accounts.id, accountId),
-        eq(accounts.clientId, clientId),
-        eq(clients.firmId, firmId)
-      )
-    );
+    .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
   return acct ?? null;
 }
 

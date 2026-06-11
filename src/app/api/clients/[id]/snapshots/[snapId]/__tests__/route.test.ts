@@ -26,6 +26,16 @@ vi.mock("@/lib/db-scoping", () => ({
   >(),
 }));
 
+// Phase-1b: the route swapped findClientInFirm -> verifyClientAccess. Delegate
+// the boolean gate to the still-mocked findClientInFirm so the null-driven 404
+// tests and the happy path keep working without a real DB.
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn(async (clientId: string, firmId: string) => {
+    const { findClientInFirm } = await import("@/lib/db-scoping");
+    return (await findClientInFirm(clientId, firmId)) != null;
+  }),
+}));
+
 vi.mock("@/lib/audit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/audit")>(
     "@/lib/audit",

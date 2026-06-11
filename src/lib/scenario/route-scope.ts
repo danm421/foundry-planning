@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export type ScenarioRouteScope =
   | { kind: "ok"; scenario: typeof scenarios.$inferSelect }
@@ -34,8 +34,11 @@ export async function assertScenarioRouteScope(
   scenarioId: string,
   firmId: string,
 ): Promise<ScenarioRouteScope> {
-  const inFirm = await findClientInFirm(clientId, firmId);
-  if (!inFirm) {
+  // Advisor-scope gate (Phase 1b): firm membership + staff↔advisor visibility.
+  // Replaces the firm-only `findClientInFirm` so a planner can't reach a
+  // scenario under a client outside their mapped advisors. Covers every
+  // `scenarios/[sid]/*` route that routes through this shared helper.
+  if (!(await verifyClientAccess(clientId, firmId))) {
     return {
       kind: "miss",
       response: NextResponse.json(

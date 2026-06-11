@@ -5,10 +5,10 @@ import {
   scenarios,
   accounts,
   accountOwners,
-  clients,
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -37,11 +37,7 @@ export async function POST(
     const { id, entityId } = await params;
 
     // Org-scoping: client must belong to caller's firm.
-    const [client] = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

@@ -15,6 +15,7 @@ import {
   type ReconcileItem,
   type DriftEntry,
 } from "@/lib/billing/reconcile";
+import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
 import { checkRecentWebhookErrors } from "@/lib/billing/webhook-error-check";
 import { recordAudit } from "@/lib/audit";
 import { planAutoHeal } from "@/lib/billing/auto-heal";
@@ -91,13 +92,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         removed: r.removedAt !== null,
       }));
       const stripeItems: ReconcileItem[] = stripeSub.items.data.map((it) => ({
-        kind:
-          ((it.metadata as Record<string, string | undefined>).kind as
-            | "seat"
-            | "addon") ?? "seat",
-        addonKey:
-          (it.metadata as Record<string, string | undefined>).addon_key ??
-          null,
+        ...readSubscriptionItemMeta(it),
         quantity: it.quantity ?? 1,
         removed: false,
       }));

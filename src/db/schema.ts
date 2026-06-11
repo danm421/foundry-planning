@@ -1465,6 +1465,67 @@ export const securityAssetClassWeights = pgTable(
   (t) => [uniqueIndex("security_acw_uniq").on(t.securityId, t.assetClassSlug)]
 );
 
+// Firm-level CMA settings. One row per firm. Holds the risk-free rate used for
+// Sharpe/Sortino on Fund Portfolios.
+export const cmaSettings = pgTable("cma_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  riskFreeRate: decimal("risk_free_rate", { precision: 6, scale: 4 }).notNull().default("0.04"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("cma_settings_firm_uniq").on(t.firmId)]);
+
+// Ticker-based portfolios — peer to model_portfolios, but built from funds.
+export const tickerPortfolios = pgTable("ticker_portfolios", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [unique("ticker_portfolios_firm_id_name_unique").on(t.firmId, t.name)]);
+
+export const tickerPortfolioHoldings = pgTable("ticker_portfolio_holdings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tickerPortfolioId: uuid("ticker_portfolio_id")
+    .notNull()
+    .references(() => tickerPortfolios.id, { onDelete: "cascade" }),
+  securityId: uuid("security_id").references(() => securities.id, { onDelete: "set null" }),
+  displayTicker: text("display_ticker").notNull(),
+  weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => [uniqueIndex("ticker_portfolio_holdings_uniq").on(t.tickerPortfolioId, t.displayTicker)]);
+
+// Monthly EODHD adjusted-close cache (append-only). Keyed by (security, month).
+export const securityPriceHistory = pgTable("security_price_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  securityId: uuid("security_id")
+    .notNull()
+    .references(() => securities.id, { onDelete: "cascade" }),
+  month: date("month").notNull(), // month-end date "YYYY-MM-01" canonical
+  adjustedClose: decimal("adjusted_close", { precision: 18, scale: 6 }).notNull(),
+}, (t) => [uniqueIndex("security_price_history_uniq").on(t.securityId, t.month)]);
+
+// Cached computed metrics for a ticker portfolio. Recomputed on edit / monthly.
+export const tickerPortfolioStats = pgTable("ticker_portfolio_stats", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tickerPortfolioId: uuid("ticker_portfolio_id")
+    .notNull()
+    .references(() => tickerPortfolios.id, { onDelete: "cascade" }),
+  windowStart: date("window_start"),
+  windowEnd: date("window_end"),
+  nMonths: integer("n_months").notNull().default(0),
+  annArithMean: decimal("ann_arith_mean", { precision: 9, scale: 6 }),
+  annGeoReturn: decimal("ann_geo_return", { precision: 9, scale: 6 }),
+  annVolatility: decimal("ann_volatility", { precision: 9, scale: 6 }),
+  downsideDeviation: decimal("downside_deviation", { precision: 9, scale: 6 }),
+  sharpe: decimal("sharpe", { precision: 9, scale: 6 }),
+  sortino: decimal("sortino", { precision: 9, scale: 6 }),
+  maxDrawdown: decimal("max_drawdown", { precision: 9, scale: 6 }),
+  limitingTicker: text("limiting_ticker"),
+  computedAt: timestamp("computed_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("ticker_portfolio_stats_uniq").on(t.tickerPortfolioId)]);
+
 // Individual positions inside an investment account. Org-scoped via the
 // account → client → firm chain. When an account has holdings and its
 // growthSource is "holdings", these are authoritative for value + basis and

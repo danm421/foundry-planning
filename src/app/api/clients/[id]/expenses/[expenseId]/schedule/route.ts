@@ -1,20 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, expenses, expenseScheduleOverrides } from "@/db/schema";
+import { expenses, expenseScheduleOverrides } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string; expenseId: string }> };
 
 async function verifyOwnership(clientId: string, expenseId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return false;
+  if (!(await verifyClientAccess(clientId, firmId))) return false;
 
   const [exp] = await db
     .select()

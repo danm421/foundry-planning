@@ -128,6 +128,84 @@ describe("handleSubscriptionUpsert", () => {
     );
   });
 
+  it("grants the ai_import entitlement from a price-tagged add-on once the free quota is spent", async () => {
+    // Free quota exhausted (aiImportsUsed = 3) → ai_import can only come from
+    // the paid add-on line. kind/addon_key live on price.metadata; the item
+    // metadata is empty (reading it would mislabel the add-on as a seat and
+    // silently drop the entitlement).
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_ai",
+      customer: "cus_ai",
+      status: "active",
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "org_ai" },
+      items: {
+        data: [
+          {
+            id: "si_seat",
+            price: {
+              id: "price_seat",
+              unit_amount: 9900,
+              currency: "usd",
+              metadata: { kind: "seat" },
+            },
+            quantity: 1,
+            metadata: {},
+            current_period_start: 1700000000,
+            current_period_end: 1702592000,
+          },
+          {
+            id: "si_ai",
+            price: {
+              id: "price_ai_import",
+              unit_amount: 19900,
+              currency: "usd",
+              metadata: { kind: "addon", addon_key: "ai_import" },
+            },
+            quantity: 1,
+            metadata: {},
+          },
+        ],
+      },
+    });
+    mockSelectFirms.mockResolvedValue([
+      { firmId: "org_ai", isFounder: false, aiImportsUsed: 3 },
+    ]);
+    mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-ai" }]);
+    mockItemsUpsert.mockResolvedValue([]);
+
+    await handleSubscriptionUpsert({
+      id: "evt_ai",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_ai" } },
+    } as never);
+
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_ai",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ entitlements: ["ai_import"] }),
+      }),
+    );
+    // The DB mirror rows must carry the add-on taxonomy too (reconcile reads them).
+    const itemRows = mockItemsUpsert.mock.calls[0][0] as Array<{
+      stripePriceId: string;
+      kind: string;
+      addonKey: string | null;
+    }>;
+    expect(itemRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stripePriceId: "price_ai_import",
+          kind: "addon",
+          addonKey: "ai_import",
+        }),
+      ]),
+    );
+  });
+
   it("emits billing.subscription_created on the .created event type", async () => {
     mockSubsRetrieve.mockResolvedValue({
       id: "sub_3",

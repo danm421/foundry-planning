@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, reinvestments, reinvestmentAccounts, reinvestmentGroups } from "@/db/schema";
+import { scenarios, reinvestments, reinvestmentAccounts, reinvestmentGroups } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertModelPortfoliosInFirm } from "@/lib/db-scoping";
@@ -11,22 +11,17 @@ import {
 } from "@/lib/audit/snapshots/reinvestment";
 import { isDefaultKey } from "@/lib/account-groups/resolver";
 import { listAccountGroups } from "@/lib/account-groups/queries";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  const [[client], [scenario]] = await Promise.all([
-    db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId))),
-    db
-      .select()
-      .from(scenarios)
-      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true))),
-  ]);
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
 
-  if (!client) return null;
+  const [scenario] = await db
+    .select()
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
 
   return scenario?.id ?? null;
 }

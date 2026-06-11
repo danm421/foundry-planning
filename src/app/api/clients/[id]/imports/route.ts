@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { clientImports, clients, scenarios } from "@/db/schema";
+import { clientImports, scenarios } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { listClientImports } from "@/lib/imports/list";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -109,14 +110,9 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    // Verify the client belongs to this firm before any insert. Inline
-    // pattern (vs. requireImportAccess) because the import doesn't exist
-    // yet — same shape used by the upload route's pre-checks.
-    const [client] = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-    if (!client) {
+    // Verify the client belongs to this firm (and is accessible to the caller)
+    // before any insert.
+    if (!(await verifyClientAccess(clientId, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -216,11 +212,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: message }, { status, headers });
     }
 
-    const [client] = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-    if (!client) {
+    if (!(await verifyClientAccess(clientId, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   gifts,
   entities,
   familyMembers,
@@ -11,18 +10,11 @@ import {
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { giftUpdateSchema } from "@/lib/schemas/gifts";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string, firmId: string) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
 
 export async function PATCH(
   request: NextRequest,
@@ -31,7 +23,7 @@ export async function PATCH(
   try {
     const firmId = await requireOrgId();
     const { id, giftId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const body = await request.json();
@@ -195,7 +187,7 @@ export async function DELETE(
   try {
     const firmId = await requireOrgId();
     const { id, giftId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     let row: typeof gifts.$inferSelect | undefined;
