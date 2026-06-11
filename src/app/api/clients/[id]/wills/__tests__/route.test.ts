@@ -5,6 +5,13 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgId: vi.fn(),
 }));
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query against the state bucket).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+
 // ---------------------------------------------------------------------------
 // Shared state bucket — tests seed this before calling route handlers
 // ---------------------------------------------------------------------------

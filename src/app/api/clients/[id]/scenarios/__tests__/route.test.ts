@@ -58,6 +58,13 @@ vi.mock("@/lib/audit", async () => {
   return { ...actual, recordAudit: vi.fn().mockResolvedValue(undefined) };
 });
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
 const COOPER_FIRM_ID = "org_3CitTEIe8PJa1BVYw7LnEjkiP9r";
 const COOPER_BASE_SCENARIO_ID = "9fb9aa4e-99dd-467b-b731-43dc55fb40ea";

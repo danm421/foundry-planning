@@ -8,6 +8,23 @@ vi.mock("@/lib/db-scoping", () => ({
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+// Phase 1b: verifyClientAccess now owns the client-in-firm gate (replaces
+// findClientInFirm). Delegate to the already-mocked findClientInFirm so tests
+// that set findClientInFirm → null still exercise the 404 path.
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockImplementation(async (clientId: string, firmId: string) => {
+    const { findClientInFirm } = await import("@/lib/db-scoping");
+    const client = await (findClientInFirm as ReturnType<typeof vi.fn>)(clientId, firmId);
+    return client != null;
+  }),
+}));
+
 // Records every tx.insert(table).values(row) and tx.update(table).set(set).where(...)
 // so tests can assert the rows written and that updates are base-scenario scoped.
 type Insert = { table: unknown; values: unknown };

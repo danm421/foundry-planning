@@ -102,6 +102,18 @@ vi.mock("@react-pdf/renderer", async (importOriginal) => {
   };
 });
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+// Phase 1b: verifyClientAccess now owns the client-in-firm gate. This test
+// exercises the route logic beyond the access check, so gate is always open.
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue(true),
+}));
+
 function makeReq(body: unknown): Request {
   return new Request(
     "http://localhost/api/clients/client-1/presentations/export-pdf",
