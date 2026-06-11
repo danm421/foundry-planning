@@ -114,4 +114,42 @@ describe("extractDocument", () => {
 
         expect(result.warnings.some((w) => w.toLowerCase().includes("ssn"))).toBe(false);
     });
+
+    it("extracts nested holdings when extractHoldings is true", async () => {
+        mockedCallAI.mockResolvedValueOnce(
+            JSON.stringify({
+                accounts: [
+                    {
+                        name: "Schwab Brokerage",
+                        category: "taxable",
+                        subType: "brokerage",
+                        value: 2000,
+                        holdings: [{ ticker: "VTI", shares: 10, price: 200, costBasis: 1500 }],
+                    },
+                ],
+                liabilities: [],
+            }),
+        );
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "statement.pdf",
+            "account_statement",
+            "mini",
+            undefined,
+            true, // extractHoldings
+        );
+        expect(result.extracted.accounts[0].holdings).toHaveLength(1);
+        expect(result.extracted.accounts[0].holdings?.[0].ticker).toBe("VTI");
+        expect(result.promptVersion).toContain("holdings");
+    });
+
+    it("uses the holdings prompt only when the flag is set", async () => {
+        const { buildAccountStatementPrompt } = await import("../prompts/account-statement");
+        await extractDocument(Buffer.from("x"), "s.pdf", "account_statement", "mini", undefined, true);
+        expect(mockedCallAI).toHaveBeenLastCalledWith(
+            buildAccountStatementPrompt(true),
+            expect.any(String),
+            "mini",
+        );
+    });
 });

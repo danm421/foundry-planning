@@ -16,6 +16,8 @@ import { extractedPayloadSchema } from "./extraction-schema";
 import {
     ACCOUNT_STATEMENT_PROMPT,
     ACCOUNT_STATEMENT_VERSION,
+    ACCOUNT_STATEMENT_HOLDINGS_VERSION,
+    buildAccountStatementPrompt,
 } from "./prompts/account-statement";
 import { PAY_STUB_PROMPT, PAY_STUB_VERSION } from "./prompts/pay-stub";
 import { INSURANCE_PROMPT, INSURANCE_VERSION } from "./prompts/insurance";
@@ -128,7 +130,8 @@ export async function extractDocument(
     fileName: string,
     documentType: DocumentType | "auto",
     model: "mini" | "full",
-    uploadKind?: UploadKind
+    uploadKind?: UploadKind,
+    extractHoldings = false,
 ): Promise<ExtractionResult> {
     const ext = getFileExtension(fileName);
     const warnings: string[] = [];
@@ -241,7 +244,12 @@ export async function extractDocument(
     // alone (file content sits inside <document></document> tags;
     // the system prompt is the only authoritative instruction
     // surface). Verified during the Phase 8 smoke checkpoint.
-    const prompt = PROMPTS[documentType];
+    const useHoldings =
+        extractHoldings &&
+        (documentType === "account_statement" || documentType === "excel_import");
+    const prompt = useHoldings
+        ? buildAccountStatementPrompt(true)
+        : PROMPTS[documentType];
     const safeUser =
         "Extract the structured fields specified in the system prompt " +
         "from the file content shown between the <document></document> " +
@@ -302,6 +310,8 @@ export async function extractDocument(
         fileName,
         extracted,
         warnings,
-        promptVersion: promptVersionFor(documentType),
+        promptVersion: useHoldings
+            ? `${documentType}:${ACCOUNT_STATEMENT_HOLDINGS_VERSION}`
+            : promptVersionFor(documentType),
     };
 }
