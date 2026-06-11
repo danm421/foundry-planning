@@ -12,11 +12,11 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const firmId = await requireOrgId();
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const firmId = await requireOrgId();
 
     const rl = await checkFeedbackRateLimit(firmId);
     if (!rl.allowed) {
