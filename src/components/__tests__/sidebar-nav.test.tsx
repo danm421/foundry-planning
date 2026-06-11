@@ -56,7 +56,7 @@ describe("SidebarNav", () => {
   });
 
   it("marks the Clients item active when on a client sub-route", () => {
-    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients/abc-123/overview");
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients/abc-123/details");
     const { container } = render(<SidebarNav clientsCount={5} />);
     const clientsLink = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent?.includes("Clients")

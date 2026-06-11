@@ -17,7 +17,7 @@ describe("Breadcrumb", () => {
   });
 
   it("renders 'Clients / <householdTitle>' for a client sub-route", () => {
-    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients/abc-123/overview");
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients/abc-123/details");
     const { container } = render(<Breadcrumb clientHouseholdTitle="Dan & Sarah Carver" />);
     expect(container.textContent).toContain("Clients");
     expect(container.textContent).toContain("Dan & Sarah Carver");

@@ -13,7 +13,7 @@ describe("ClientRowActions", () => {
     );
     expect(screen.getByRole("link", { name: "Planning" })).toHaveAttribute(
       "href",
-      "/clients/C1/overview",
+      "/clients/C1/details",
     );
     expect(screen.queryByRole("link", { name: "Start planning" })).toBeNull();
   });

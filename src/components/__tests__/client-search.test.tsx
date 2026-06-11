@@ -81,7 +81,7 @@ describe("ClientSearch", () => {
     fireEvent.change(input, { target: { value: "a" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(pushMock).toHaveBeenCalledWith("/clients/abc/overview");
+    expect(pushMock).toHaveBeenCalledWith("/clients/abc/details");
   });
 
   it("closes on Escape", async () => {
@@ -106,7 +106,7 @@ describe("ClientSearch", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(pushMock).toHaveBeenCalledWith("/clients/2/overview");
+    expect(pushMock).toHaveBeenCalledWith("/clients/2/details");
   });
 
   it("silently hides dropdown on fetch error", async () => {

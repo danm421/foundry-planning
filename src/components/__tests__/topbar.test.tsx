@@ -77,7 +77,7 @@ describe("Topbar", () => {
   });
 
   it("preserves ?scenario= on every tab href when active", () => {
-    vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
     vi.mocked(useSearchParams).mockReturnValue(
       new URLSearchParams("scenario=sc-1") as unknown as ReturnType<typeof useSearchParams>,
     );
@@ -90,7 +90,7 @@ describe("Topbar", () => {
   });
 
   it("renders sub-tab links in a hover menu for tabs that have sub-reports", () => {
-    vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
     const { container } = render(<Topbar />);
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
       a.getAttribute("href") ?? "",

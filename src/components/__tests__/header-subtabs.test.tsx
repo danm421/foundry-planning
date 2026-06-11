@@ -18,8 +18,8 @@ beforeEach(() => {
 });
 
 describe("HeaderSubtabs", () => {
-  it("renders nothing on a section without sub-reports (overview)", () => {
-    vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
+  it("renders nothing on a section without sub-reports (details)", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
     const { container } = render(<HeaderSubtabs clientId="c1" />);
     expect(container.firstChild).toBeNull();
   });
