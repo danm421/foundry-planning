@@ -134,6 +134,52 @@ export function EstateRevocableTrustList({
   );
 }
 
+/** Planned Gifts section. Base side: read-only current gift summaries. Working
+ *  side: current gifts (read-only) + scenario draft gifts with Edit / Remove. */
+export function EstateGiftsList({
+  currentGifts,
+  draftGifts,
+  onEdit,
+  onRemove,
+}: {
+  currentGifts: { id: string; label: string }[];
+  draftGifts: EstateFlowGift[];
+  onEdit: (g: EstateFlowGift) => void;
+  onRemove: (id: string) => void;
+}) {
+  const side = useSolverSide();
+  const showDrafts = side === "working";
+
+  if (currentGifts.length === 0 && (!showDrafts || draftGifts.length === 0)) {
+    return <div className="col-span-2 text-[12px] text-ink-4">No planned gifts</div>;
+  }
+
+  return (
+    <div className="col-span-2 space-y-1">
+      {currentGifts.map((g) => (
+        <div key={g.id} className="text-[13px] text-ink-2">
+          {g.label}
+        </div>
+      ))}
+      {showDrafts &&
+        draftGifts.map((g) => (
+          <div key={g.id} className="flex items-center justify-between text-[13px] text-ink">
+            <button type="button" className="text-left hover:underline" onClick={() => onEdit(g)}>
+              {giftSummary(g)}
+            </button>
+            <button
+              type="button"
+              className="text-[12px] text-crit hover:underline"
+              onClick={() => onRemove(g.id)}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+    </div>
+  );
+}
+
 export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Props) {
   const eligible = useMemo(
     () => accounts.filter(isRevocableTagEligible),

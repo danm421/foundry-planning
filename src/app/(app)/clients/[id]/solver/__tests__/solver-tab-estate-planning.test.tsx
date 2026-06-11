@@ -4,6 +4,8 @@ import { render, screen } from "@testing-library/react";
 import type { Account } from "@/engine/types";
 import { SolverSideContext } from "../solver-section";
 import { EstateRevocableTrustList } from "../solver-tab-estate-planning";
+import { EstateGiftsList } from "../solver-tab-estate-planning";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 const acct = (over: Partial<Account>): Account =>
   ({
@@ -47,5 +49,43 @@ describe("EstateRevocableTrustList", () => {
   it("working side renders the create toggle", () => {
     renderRev("working");
     expect(screen.getByText("Create a revocable living trust")).toBeTruthy();
+  });
+});
+
+const draftGift: EstateFlowGift = {
+  kind: "cash-once", id: "d1", year: 2030, amount: 25000, grantor: "client",
+  recipient: { kind: "family_member", id: "f1" }, crummey: false,
+};
+
+function renderGifts(side: "base" | "working", over = {}) {
+  render(
+    <SolverSideContext.Provider value={side}>
+      <EstateGiftsList
+        currentGifts={[{ id: "g1", label: "Cash gift 2029: $10,000 → Jane Doe" }]}
+        draftGifts={[draftGift]}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        {...over}
+      />
+    </SolverSideContext.Provider>,
+  );
+}
+
+describe("EstateGiftsList", () => {
+  it("base side shows current gifts read-only and no draft Remove control", () => {
+    renderGifts("base");
+    expect(screen.getByText("Cash gift 2029: $10,000 → Jane Doe")).toBeTruthy();
+    expect(screen.queryByText("Remove")).toBeNull();
+  });
+
+  it("working side shows current gifts plus removable drafts", () => {
+    renderGifts("working");
+    expect(screen.getByText("Cash gift 2029: $10,000 → Jane Doe")).toBeTruthy();
+    expect(screen.getByText("Remove")).toBeTruthy();
+  });
+
+  it("shows an empty state when there are no gifts at all", () => {
+    renderGifts("base", { currentGifts: [], draftGifts: [] });
+    expect(screen.getByText("No planned gifts")).toBeTruthy();
   });
 });
