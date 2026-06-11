@@ -12,6 +12,7 @@ import { isAssetTypeId, type AssetTypeId } from "@/lib/investments/asset-types";
 import DriftChart from "./drift-chart";
 import type { HouseholdAllocation, DriftRow, AssetClassLite } from "@/lib/investments/allocation";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
+import type { HoldingClassContribution } from "@/lib/investments/holdings-rollup";
 import { colorForAssetClass, UNALLOCATED_COLOR } from "@/lib/investments/palette";
 import { ExportButton } from "@/components/exports/export-button";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
@@ -36,6 +37,7 @@ interface Props {
   customGroups: Array<{ id: string; name: string; color: string | null }>;
   strippedMemberCount?: number;
   analysisRows: AnalysisRow[];
+  holdingsByAccountClass: Record<string, Record<string, HoldingClassContribution[]>>;
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
@@ -60,6 +62,7 @@ export default function InvestmentsClient({
   customGroups,
   strippedMemberCount,
   analysisRows,
+  holdingsByAccountClass,
 }: Props) {
   const [pageView, setPageView] = useState<"allocation" | "analysis">("allocation");
   const [commentOpen, setCommentOpen] = useState(false);
@@ -256,6 +259,7 @@ export default function InvestmentsClient({
             />
           ) : drilledAssetClass ? (
             <AllocationDrillTable
+              key={drilledAssetClass.id}
               assetClassName={drilledAssetClass.name}
               assetClassColor={colorForAssetClass({ sortOrder: drilledAssetClass.sortOrder })}
               currentPct={drilledAssetClass.pctOfClassified}
@@ -263,6 +267,12 @@ export default function InvestmentsClient({
               contributions={household.contributionsByAssetClass[drilledAssetClass.id] ?? []}
               totalInClass={drilledAssetClass.value}
               onBack={() => setDrilledRowId(null)}
+              holdingsByAccount={Object.fromEntries(
+                (household.contributionsByAssetClass[drilledAssetClass.id] ?? []).map((c) => [
+                  c.accountId,
+                  holdingsByAccountClass[c.accountId]?.[drilledAssetClass.id] ?? [],
+                ]),
+              )}
             />
           ) : (
             // Fallback: drilledRowId is set but doesn't match any known class,
