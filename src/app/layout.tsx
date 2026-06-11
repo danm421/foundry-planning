@@ -48,6 +48,17 @@ export default async function RootLayout({
   const theme = resolveTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
     <ClerkProvider
+      localization={{
+        organizationProfile: {
+          invitePage: {
+            // Surface per-seat billing at the moment of invite. Each org member
+            // is a billable seat (syncSeatQuantity in the Clerk membership
+            // webhook sets the Stripe quantity to the live member count).
+            subtitle:
+              "Each person you invite is added as a billable seat on your subscription.",
+          },
+        },
+      }}
       appearance={{
         baseTheme: theme === "dark" ? dark : undefined,
         variables: {
