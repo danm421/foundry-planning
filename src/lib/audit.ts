@@ -265,6 +265,8 @@ export type AuditAction =
   | "presentation_template.create"
   | "presentation_template.update"
   | "presentation_template.delete"
+  | "presentation_template.dismiss_builtin"
+  | "presentation_template.restore_builtin"
   // Account groups
   | "account_group.create"
   | "account_group.update"
