@@ -1,6 +1,7 @@
 "use client";
 
 import type { ExtractedEntity, EntityType } from "@/lib/extraction/types";
+import SourceBadge from "./source-badge";
 
 const ENTITY_TYPE_OPTIONS: { value: EntityType; label: string }[] = [
   { value: "trust", label: "Trust" },
@@ -83,7 +84,8 @@ export default function ReviewStepEntities({
                   ))}
                 </select>
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end gap-2">
+                <SourceBadge row={entity} className="pb-1" />
                 <button
                   onClick={() => removeRow(i)}
                   className="pb-1 text-white hover:text-white"

@@ -244,6 +244,9 @@ function ReviewStage(props: ImportFlowProps) {
   }
 
   const currentYear = new Date().getFullYear();
+  const fileNames = Object.fromEntries(
+    props.files.map((f) => [f.id, f.originalFilename]),
+  );
 
   return (
     <Card>
@@ -261,6 +264,7 @@ function ReviewStage(props: ImportFlowProps) {
           defaultStartYear={currentYear}
           defaultEndYear={currentYear + 30}
           growthContext={props.growthContext}
+          fileNames={fileNames}
         />
       </CardBody>
     </Card>

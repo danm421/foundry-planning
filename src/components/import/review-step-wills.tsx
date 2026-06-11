@@ -1,8 +1,9 @@
 "use client";
 
 import type { CommitWill } from "@/lib/imports/commit/will-types";
-import type { MatchAnnotation } from "@/lib/imports/types";
+import type { MatchAnnotation, Provenance } from "@/lib/imports/types";
 import MatchColumn from "./match-column";
+import SourceBadge from "./source-badge";
 import type { MatchCandidate } from "./match-link-picker";
 import WillBequestMapper, {
   isBequestResolved,
@@ -21,6 +22,8 @@ export interface WizardWill {
   executor?: string;
   executionDate?: string;
   bequests: WizardBequest[];
+  /** Source-document provenance, carried through for the source badge. */
+  __provenance?: Provenance;
 }
 
 const INPUT_CLASS =
@@ -106,6 +109,7 @@ export default function ReviewStepWills({
                 <h4 className="text-sm font-semibold text-ink-2">
                   {grantorLabel}&rsquo;s Will
                 </h4>
+                <SourceBadge row={will} />
                 {matchingEnabled && (
                   <MatchColumn
                     match={matches?.[wIndex]}

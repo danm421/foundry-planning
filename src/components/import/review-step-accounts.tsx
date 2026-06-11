@@ -14,6 +14,7 @@ import type { AccountOwner } from "@/engine/ownership";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import DiffPreview from "./diff-preview";
+import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
 // to flag fields the AI didn't extract — same amber cue as the legacy
@@ -404,9 +405,10 @@ export default function ReviewStepAccounts({
                     />
                     RMD
                   </label>
+                  <SourceBadge row={account} className="ml-auto pb-1" />
                   <button
                     onClick={() => removeRow(i)}
-                    className="ml-auto pb-1 text-white hover:text-white"
+                    className="pb-1 text-white hover:text-white"
                     title="Remove"
                   >
                     <TrashIcon />

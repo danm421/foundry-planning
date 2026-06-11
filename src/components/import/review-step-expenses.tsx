@@ -3,6 +3,7 @@
 import type { ExtractedExpense, ExpenseType } from "@/lib/extraction/types";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
 // to flag fields the AI didn't extract.
@@ -130,7 +131,8 @@ export default function ReviewStepExpenses({
                   placeholder="0"
                 />
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end gap-2">
+                <SourceBadge row={expense} className="pb-1" />
                 <button
                   onClick={() => removeRow(i)}
                   className="pb-1 text-white hover:text-white"
