@@ -193,10 +193,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       );
     }
 
-    const { payloadJson, notes, status } = body as {
+    const { payloadJson, notes, status, extractHoldings } = body as {
       payloadJson?: unknown;
       notes?: unknown;
       status?: unknown;
+      extractHoldings?: unknown;
     };
 
     if (payloadJson !== undefined && !isPlainObject(payloadJson)) {
@@ -254,6 +255,9 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     }
     if (nextStatus !== undefined) {
       updates.status = nextStatus;
+    }
+    if (extractHoldings !== undefined) {
+      updates.extractHoldings = Boolean(extractHoldings);
     }
 
     const [updated] = await db
