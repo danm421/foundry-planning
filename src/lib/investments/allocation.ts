@@ -1,7 +1,7 @@
 import type { AssetClassWeight } from "./benchmarks";
 import { ASSET_TYPE_SORT_ORDER, ASSET_TYPE_LABELS, type AssetTypeId } from "./asset-types";
 
-export type GrowthSource = "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation";
+export type GrowthSource = "default" | "model_portfolio" | "ticker_portfolio" | "custom" | "asset_mix" | "inflation";
 
 /** Coerce a persisted `growth_source` enum value to the active `GrowthSource`
  *  union. The pg enum still carries the deprecated `"holdings"` member, but it
@@ -10,6 +10,7 @@ export type GrowthSource = "default" | "model_portfolio" | "custom" | "asset_mix
 export function toGrowthSource(value: string | null | undefined): GrowthSource {
   switch (value) {
     case "model_portfolio":
+    case "ticker_portfolio":
     case "custom":
     case "asset_mix":
     case "inflation":
