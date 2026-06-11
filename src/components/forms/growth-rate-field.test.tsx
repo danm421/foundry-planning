@@ -54,4 +54,26 @@ describe("GrowthRateField", () => {
     rerender(<GrowthRateField {...baseProps} growthSource="custom" />);
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
+
+  it("labels the inherit row as a plan default, not a bare portfolio name", () => {
+    render(
+      <GrowthRateField
+        category="taxable"
+        growthSource="default"
+        modelPortfolioId=""
+        growthRatePct=""
+        modelPortfolios={[{ id: "agg", name: "Aggressive (100/0)", blendedReturn: 0.0723 }]}
+        defaultPctForCategory={7.23}
+        catDefaultPortfolioName="Aggressive (100/0)"
+        resolvedInflationRate={0.024}
+        assetMixBlendedPct={null}
+        onSourceChange={() => {}}
+        onCustomPctChange={() => {}}
+      />,
+    );
+    // The inherit option now reads "Plan default — …", distinct from the pinned row.
+    expect(screen.getByRole("option", { name: /^Plan default — 7\.23% Aggressive \(100\/0\)$/ })).toBeInTheDocument();
+    // The pinned portfolio row still exists separately.
+    expect(screen.getByRole("option", { name: /^7\.23% — Aggressive \(100\/0\)$/ })).toBeInTheDocument();
+  });
 });

@@ -69,8 +69,9 @@ export function GrowthRateField({
         className={selectClassName}
       >
         <option value="default">
-          {defaultPctForCategory !== null ? `${defaultPctForCategory}% — ` : ""}
-          {catDefaultPortfolioName ?? "Category default"} (default)
+          Plan default
+          {defaultPctForCategory !== null ? ` — ${defaultPctForCategory}%` : ""}
+          {catDefaultPortfolioName ? ` ${catDefaultPortfolioName}` : " (category default)"}
         </option>
         {modelPortfolios?.map((mp) => (
           <option key={mp.id} value={`mp:${mp.id}`}>
