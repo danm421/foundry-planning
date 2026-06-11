@@ -18,6 +18,10 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
+    if (body.name !== undefined && (typeof body.name !== "string" || body.name.trim() === "")) {
+      return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
+    }
+
     const [updated] = await db
       .update(tickerPortfolios)
       .set({ name: body.name, description: body.description ?? null, updatedAt: new Date() })

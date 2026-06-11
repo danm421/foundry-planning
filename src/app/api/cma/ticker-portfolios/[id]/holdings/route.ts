@@ -51,6 +51,16 @@ export async function PUT(
     }
     const { holdings } = parsed.data;
 
+    // Guard against duplicate tickers (unique index on (tickerPortfolioId, displayTicker))
+    const seen = new Set<string>();
+    for (const h of holdings) {
+      const t = h.displayTicker.toUpperCase();
+      if (seen.has(t)) {
+        return NextResponse.json({ error: `Duplicate ticker: ${t}` }, { status: 400 });
+      }
+      seen.add(t);
+    }
+
     // Validate weights sum to ~1.0
     const totalWeight = holdings.reduce((s, h) => s + h.weight, 0);
     if (holdings.length > 0 && Math.abs(totalWeight - 1.0) > 0.001) {

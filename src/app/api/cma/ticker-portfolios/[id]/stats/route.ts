@@ -24,9 +24,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Coerce a number to a decimal string; returns null for NaN/Infinity. */
+/** Coerce a number to a decimal string; returns null for non-finite values or magnitudes
+ *  >= 1000 (which would overflow the decimal(9,6) schema columns). */
 function num(x: number): string | null {
-  return Number.isFinite(x) ? String(x) : null;
+  return Number.isFinite(x) && Math.abs(x) < 1000 ? String(x) : null;
 }
 
 export async function GET(
@@ -126,6 +127,8 @@ export async function GET(
 
       const securityId = resolvedSecurityId ?? holding.securityId ?? null;
 
+      // Keyed by the captured securityId (the canonical price-history key); the
+      // ticker arg from TickerHistoryStore is intentionally unused here.
       const store = {
         readBars: async (_ticker: string): Promise<MonthlyBar[]> => {
           if (!securityId) return [];
@@ -179,6 +182,15 @@ export async function GET(
 
     // 8. Upsert stats cache (nullify non-finite metrics)
     const hasWindow = panel.nMonths > 0;
+    const metrics = {
+      annArithMean: hasWindow ? num(panel.stats.annArithMean) : null,
+      annGeoReturn: hasWindow ? num(panel.stats.annGeoReturn) : null,
+      annVolatility: hasWindow ? num(panel.stats.annVolatility) : null,
+      downsideDeviation: hasWindow ? num(panel.stats.downsideDeviation) : null,
+      sharpe: hasWindow ? num(panel.stats.sharpe) : null,
+      sortino: hasWindow ? num(panel.stats.sortino) : null,
+      maxDrawdown: hasWindow ? num(panel.stats.maxDrawdown) : null,
+    };
     await db
       .insert(tickerPortfolioStats)
       .values({
@@ -186,13 +198,7 @@ export async function GET(
         windowStart: panel.windowStart ? `${panel.windowStart.slice(0, 7)}-01` : null,
         windowEnd: panel.windowEnd ? `${panel.windowEnd.slice(0, 7)}-01` : null,
         nMonths: panel.nMonths,
-        annArithMean: hasWindow ? num(panel.stats.annArithMean) : null,
-        annGeoReturn: hasWindow ? num(panel.stats.annGeoReturn) : null,
-        annVolatility: hasWindow ? num(panel.stats.annVolatility) : null,
-        downsideDeviation: hasWindow ? num(panel.stats.downsideDeviation) : null,
-        sharpe: hasWindow ? num(panel.stats.sharpe) : null,
-        sortino: hasWindow ? num(panel.stats.sortino) : null,
-        maxDrawdown: hasWindow ? num(panel.stats.maxDrawdown) : null,
+        ...metrics,
         limitingTicker: panel.limitingTicker,
         computedAt: new Date(),
       })
@@ -202,13 +208,7 @@ export async function GET(
           windowStart: panel.windowStart ? `${panel.windowStart.slice(0, 7)}-01` : null,
           windowEnd: panel.windowEnd ? `${panel.windowEnd.slice(0, 7)}-01` : null,
           nMonths: panel.nMonths,
-          annArithMean: hasWindow ? num(panel.stats.annArithMean) : null,
-          annGeoReturn: hasWindow ? num(panel.stats.annGeoReturn) : null,
-          annVolatility: hasWindow ? num(panel.stats.annVolatility) : null,
-          downsideDeviation: hasWindow ? num(panel.stats.downsideDeviation) : null,
-          sharpe: hasWindow ? num(panel.stats.sharpe) : null,
-          sortino: hasWindow ? num(panel.stats.sortino) : null,
-          maxDrawdown: hasWindow ? num(panel.stats.maxDrawdown) : null,
+          ...metrics,
           limitingTicker: panel.limitingTicker,
           computedAt: new Date(),
         },
