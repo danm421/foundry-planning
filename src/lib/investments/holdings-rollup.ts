@@ -87,3 +87,65 @@ export function rollupHoldings(
 
   return { value, basis, allocations };
 }
+
+/** One position to break down for the asset-class drill. Same blend inputs as
+ *  HoldingInput, plus the display fields the drill renders. `costBasis` is not
+ *  needed here. */
+export interface HoldingForBreakdown {
+  id: string;
+  ticker: string;
+  name: string;
+  securityId: string | null;
+  shares: number;
+  price: number;
+  securityWeights: { slug: string; weight: number }[];
+  overrides: { assetClassId: string; weight: number }[];
+}
+
+export interface HoldingClassContribution {
+  holdingId: string;
+  ticker: string;
+  name: string;
+  /** mv × blendWeight — the dollars this holding contributes to this class. */
+  valueInClass: number;
+  /** This class's weight within the holding (1 for a single-class holding). */
+  blendWeight: number;
+}
+
+/** Per-class breakdown of holdings, the position-level companion to
+ *  rollupHoldings. Override blend wins; else the security's slug blend is mapped
+ *  to firm asset-class ids (slugs with no firm id are dropped). A blended fund
+ *  appears under every class it touches, carrying only its slice. Each class's
+ *  list is sorted by valueInClass desc. */
+export function breakdownHoldingsByClass(
+  holdings: readonly HoldingForBreakdown[],
+  slugToAssetClassId: ReadonlyMap<string, string>,
+): Map<string, HoldingClassContribution[]> {
+  const byClass = new Map<string, HoldingClassContribution[]>();
+  for (const h of holdings) {
+    const mv = h.shares * h.price;
+    if (!Number.isFinite(mv) || mv <= 0) continue;
+
+    const blend: { assetClassId: string; weight: number }[] =
+      h.overrides.length > 0
+        ? h.overrides
+        : h.securityWeights
+            .map((w) => ({ assetClassId: slugToAssetClassId.get(w.slug), weight: w.weight }))
+            .filter((w): w is { assetClassId: string; weight: number } => w.assetClassId != null);
+
+    for (const b of blend) {
+      if (!Number.isFinite(b.weight) || b.weight <= 0) continue;
+      const list = byClass.get(b.assetClassId) ?? [];
+      list.push({
+        holdingId: h.id,
+        ticker: h.ticker,
+        name: h.name,
+        valueInClass: mv * b.weight,
+        blendWeight: b.weight,
+      });
+      byClass.set(b.assetClassId, list);
+    }
+  }
+  for (const list of byClass.values()) list.sort((a, b) => b.valueInClass - a.valueInClass);
+  return byClass;
+}
