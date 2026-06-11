@@ -1,6 +1,27 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-06-05.1";
+export const ACCOUNT_STATEMENT_VERSION = "2026-06-10.1";
+export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-06-10.1-holdings";
 
-export const ACCOUNT_STATEMENT_PROMPT = `You are a financial document extraction assistant.
+const HOLDINGS_FIELD = `,
+      "holdings": [
+        {
+          "ticker": "Ticker / symbol exactly as written (e.g. 'VTI', 'AAPL'). Omit for bonds and cash.",
+          "name": "Position description. For a BOND, put the full description INCLUDING the CUSIP here. For cash / sweep, use 'Cash'.",
+          "shares": 0,
+          "price": 0,
+          "marketValue": 0,
+          "costBasis": 0
+        }
+      ]`;
+
+const HOLDINGS_RULES = `
+- When a position table is shown, also populate each account's "holdings" array, one entry per position. Still report the account's total in "value" — "holdings" is the per-position breakdown.
+  - If the position has a ticker/symbol: set "ticker", "shares", and "costBasis". Include "price" and/or "marketValue" if shown.
+  - If the position has NO ticker (bonds, untickered funds): omit "ticker", put the description (for a bond INCLUDING its CUSIP) in "name", and set "shares" plus "price" and/or "marketValue", and "costBasis".
+  - For cash / money-market sweep with no ticker: set "name" to "Cash", "price" to 1, and "shares" to the cash dollar amount.
+  - Only set the numeric fields you can read from the statement; omit any you can't.`;
+
+export function buildAccountStatementPrompt(withHoldings: boolean): string {
+  return `You are a financial document extraction assistant.
 Extract structured data from the following account / net-worth statement.
 
 Return a JSON object with this exact structure:
@@ -15,7 +36,7 @@ Return a JSON object with this exact structure:
       "value": 0,
       "basis": 0,
       "accountNumberLast4": "Last 4 characters of the account number, digits or alphanumeric",
-      "custodian": "Custodian / institution name (e.g. 'Fidelity', 'Charles Schwab')"
+      "custodian": "Custodian / institution name (e.g. 'Fidelity', 'Charles Schwab')"${withHoldings ? HOLDINGS_FIELD : ""}
     }
   ],
   "lifePolicies": [
@@ -56,6 +77,9 @@ Extraction rules:
 - If a margin balance or loan appears, add it to "liabilities"
 - DO NOT extract the full account number. Capture only the last 4 characters in "accountNumberLast4". If the statement only shows masked digits like "****5678", use "5678".
 - "custodian" is the institution that holds the account. Use a clean, normalized name without LLC/Inc suffixes.
-- "ownerNameHint": copy the registration/title line verbatim (all names + any 'JTWROS'/'Joint'/'TOD' wording). Still also fill the coarse "owner" enum.
+- "ownerNameHint": copy the registration/title line verbatim (all names + any 'JTWROS'/'Joint'/'TOD' wording). Still also fill the coarse "owner" enum.${withHoldings ? HOLDINGS_RULES : ""}
 
 Return ONLY valid JSON. No explanation, no markdown.`;
+}
+
+export const ACCOUNT_STATEMENT_PROMPT = buildAccountStatementPrompt(false);

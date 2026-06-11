@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_STATEMENT_PROMPT,
   ACCOUNT_STATEMENT_VERSION,
+  buildAccountStatementPrompt,
+  ACCOUNT_STATEMENT_HOLDINGS_VERSION,
 } from "../prompts/account-statement";
 import { extractedPayloadSchema } from "../extraction-schema";
 
@@ -26,7 +28,7 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-06-05.1");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-06-10.1");
   });
 
   it("payload with accountNumberLast4 + custodian validates", () => {
@@ -44,5 +46,26 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
       ],
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("buildAccountStatementPrompt", () => {
+  it("base variant has no holdings array", () => {
+    const p = buildAccountStatementPrompt(false);
+    expect(p).toBe(ACCOUNT_STATEMENT_PROMPT);
+    expect(p).not.toContain('"holdings"');
+  });
+
+  it("holdings variant documents the per-position fields and rules", () => {
+    const p = buildAccountStatementPrompt(true);
+    expect(p).toContain('"holdings"');
+    expect(p).toContain("ticker");
+    expect(p).toContain("costBasis");
+    expect(p).toMatch(/CUSIP/i);
+    expect(p).toMatch(/cash/i);
+  });
+
+  it("holdings version differs from the base version", () => {
+    expect(ACCOUNT_STATEMENT_HOLDINGS_VERSION).not.toBe(ACCOUNT_STATEMENT_VERSION);
   });
 });
