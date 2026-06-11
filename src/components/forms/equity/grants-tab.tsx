@@ -487,7 +487,7 @@ function GrantEditor({
           type="button"
           disabled={saving || validationError !== null}
           onClick={() => onSave(state)}
-          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save Grant"}
         </button>

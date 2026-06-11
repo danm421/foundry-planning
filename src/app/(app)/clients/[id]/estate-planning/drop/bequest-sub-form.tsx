@@ -143,7 +143,7 @@ export function BequestSubForm(props: BequestSubFormProps) {
         </button>
         <button
           type="submit"
-          className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
+          className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
         >
           Save
         </button>

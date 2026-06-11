@@ -545,7 +545,7 @@ function TabStrip({ tabs, currentTab, committingTab, onSelect, committed, count 
                 ? "bg-accent text-accent-on"
                 : isCommitted
                   ? "bg-good/15 text-good"
-                  : "bg-card-2 text-ink-3 hover:bg-card hover:text-ink-2"
+                  : "bg-card-2 text-ink-3 hover:bg-card-hover hover:text-ink-2"
             }`}
           >
             <span>{TAB_LABEL[t]}</span>

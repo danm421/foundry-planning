@@ -144,7 +144,7 @@ function PanelHeader({
       <button
         type="button"
         onClick={onOpenEditor}
-        className="mt-3 px-3 h-7 rounded-full bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        className="mt-3 px-3 h-7 rounded-full bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
       >
         Group
       </button>

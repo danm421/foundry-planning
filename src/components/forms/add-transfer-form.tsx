@@ -480,7 +480,7 @@ export default function AddTransferForm({
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
           >
             {submitting ? "Saving..." : "Save"}
           </button>

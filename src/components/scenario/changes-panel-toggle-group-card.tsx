@@ -146,7 +146,7 @@ export function ToggleGroupCard({
               type="button"
               onClick={() => void deleteGroup("ungrouped")}
               disabled={deleting}
-              className="h-7 px-3 rounded bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-deep disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              className="h-7 px-3 rounded bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-ink disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               {changes.length > 0 ? "Keep changes (ungroup)" : "Delete technique"}
             </button>

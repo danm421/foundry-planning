@@ -495,7 +495,7 @@ export default function QuickCreateForm() {
               <button
                 type="submit"
                 disabled={creating}
-                className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
+                className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
               >
                 {creating ? "Creating…" : "Continue"}
                 <ArrowRightIcon width={14} height={14} aria-hidden="true" />
@@ -844,7 +844,7 @@ export default function QuickCreateForm() {
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
             >
               {submitLabel}
               <ArrowRightIcon width={14} height={14} aria-hidden="true" />

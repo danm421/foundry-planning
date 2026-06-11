@@ -610,7 +610,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                 type="button"
                 disabled={isSaving}
                 onClick={handleSaveInPlace}
-                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-accent-on transition-colors hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSaving
                   ? "Saving…"

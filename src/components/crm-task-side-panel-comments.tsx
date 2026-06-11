@@ -149,7 +149,7 @@ export function CrmTaskSidePanelComments({
             type="button"
             onClick={post}
             disabled={posting || draft.trim().length === 0}
-            className="inline-flex h-8 items-center rounded-[var(--radius-sm)] bg-accent px-3 text-[12px] font-semibold text-accent-on hover:bg-accent-deep disabled:opacity-50"
+            className="inline-flex h-8 items-center rounded-[var(--radius-sm)] bg-accent px-3 text-[12px] font-semibold text-accent-on hover:bg-accent-ink disabled:opacity-50"
           >
             {posting ? "Posting…" : "Post"}
           </button>

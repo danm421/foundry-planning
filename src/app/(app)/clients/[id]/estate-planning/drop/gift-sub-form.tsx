@@ -386,7 +386,7 @@ export function GiftSubForm(props: GiftSubFormProps) {
         </button>
         <button
           type="submit"
-          className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
+          className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
         >
           Save
         </button>

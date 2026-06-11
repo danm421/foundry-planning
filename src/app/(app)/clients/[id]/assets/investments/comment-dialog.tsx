@@ -68,7 +68,7 @@ export default function CommentDialog({ open, onClose, clientId, reportKey, init
           <button
             onClick={handleSave}
             disabled={saving}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-60"
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save"}
           </button>

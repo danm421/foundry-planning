@@ -335,7 +335,7 @@ function SectionShell({
         </div>
         <button
           onClick={onAdd}
-          className="inline-flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
+          className="inline-flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
         >
           {addLabel}
         </button>

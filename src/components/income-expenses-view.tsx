@@ -885,7 +885,7 @@ function IncomeDialog({
               type="submit"
               form="income-form-fields"
               disabled={loading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Income"}
             </button>
@@ -1314,7 +1314,7 @@ function ExpenseDialog({
               type="submit"
               form="expense-form-fields"
               disabled={loading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Expense"}
             </button>
@@ -1552,7 +1552,7 @@ export default function IncomeExpensesView({
                 {nonSsIncomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
                 <button
                   onClick={() => setIncomeDialog({ open: true, defaultType: "salary" })}
-                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
+                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
                 >
                   + Add
                 </button>
@@ -1762,7 +1762,7 @@ export default function IncomeExpensesView({
                 {expenseList.length > 0 && <EditToggle on={expenseEdit} onToggle={() => setExpenseEdit((v) => !v)} />}
                 <button
                   onClick={() => setExpenseDialog({ open: true, defaultType: "living" })}
-                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
+                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
                 >
                   + Add
                 </button>

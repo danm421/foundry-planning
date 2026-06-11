@@ -189,7 +189,7 @@ export function TasksPage({
         <button
           type="button"
           onClick={() => setNewTaskOpen(true)}
-          className="inline-flex h-9 items-center rounded-[var(--radius-sm)] bg-accent px-3 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep"
+          className="inline-flex h-9 items-center rounded-[var(--radius-sm)] bg-accent px-3 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"
         >
           + New task
         </button>

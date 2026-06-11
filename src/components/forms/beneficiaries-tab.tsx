@@ -329,7 +329,7 @@ function AccountBeneficiaryEditor({
         type="button"
         disabled={saving}
         onClick={save}
-        className="mt-3 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+        className="mt-3 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
       >
         {saving ? "Saving…" : "Save beneficiaries"}
       </button>
