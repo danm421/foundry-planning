@@ -3,10 +3,12 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { Account, EntitySummary } from "@/engine/types";
 import { SolverSideContext } from "../solver-section";
-import { EstateRevocableTrustList } from "../solver-tab-estate-planning";
-import { EstateGiftsList } from "../solver-tab-estate-planning";
-import { EstateTrustsList } from "../solver-tab-estate-planning";
-import { EstateCharitiesList } from "../solver-tab-estate-planning";
+import {
+  EstateRevocableTrustList,
+  EstateGiftsList,
+  EstateTrustsList,
+  EstateCharitiesList,
+} from "../solver-tab-estate-planning";
 import type { SolverTrustDraft } from "../solver-trust-form";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
