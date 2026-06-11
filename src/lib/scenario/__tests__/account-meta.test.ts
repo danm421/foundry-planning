@@ -5,6 +5,7 @@ const baseRow = (over: Partial<AccountMeta> = {}): AccountMeta => ({
   id: "a1",
   growthSource: "default",
   modelPortfolioId: null,
+  tickerPortfolioId: null,
   turnoverPct: null,
   overridePctOi: null,
   overridePctLtCg: null,

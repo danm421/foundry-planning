@@ -11,6 +11,7 @@ import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AccountDeleteDialog from "./account-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
+import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
 import type { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
@@ -46,6 +47,7 @@ export interface AccountRow {
   ownerEntityId?: string | null;
   growthSource?: string;
   modelPortfolioId?: string | null;
+  tickerPortfolioId?: string | null;
   turnoverPct?: string | null;
   overridePctOi?: string | null;
   overridePctLtCg?: string | null;
@@ -125,6 +127,7 @@ interface BalanceSheetViewProps {
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
+  fundPortfolios?: FundPortfolioOption[];
   ownerNames: OwnerNames;
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
@@ -237,6 +240,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     ownerEntityId: a.ownerEntityId ?? null,
     growthSource: a.growthSource,
     modelPortfolioId: a.modelPortfolioId ?? null,
+    tickerPortfolioId: a.tickerPortfolioId ?? null,
     turnoverPct: a.turnoverPct ?? undefined,
     overridePctOi: a.overridePctOi ?? null,
     overridePctLtCg: a.overridePctLtCg ?? null,
@@ -407,6 +411,7 @@ export default function BalanceSheetView({
   familyMembers,
   categoryDefaults,
   modelPortfolios,
+  fundPortfolios,
   ownerNames,
   assetClasses,
   portfolioAllocationsMap,
@@ -1119,6 +1124,7 @@ export default function BalanceSheetView({
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
+        fundPortfolios={fundPortfolios}
         ownerNames={ownerNames}
         assetClasses={assetClasses}
         portfolioAllocationsMap={portfolioAllocationsMap}
@@ -1146,6 +1152,7 @@ export default function BalanceSheetView({
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
+        fundPortfolios={fundPortfolios}
         ownerNames={ownerNames}
         assetClasses={assetClasses}
         categoryDefaultSources={categoryDefaultSources}
@@ -1205,6 +1212,7 @@ export default function BalanceSheetView({
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
+        fundPortfolios={fundPortfolios}
         ownerNames={ownerNames}
         assetClasses={assetClasses}
         categoryDefaultSources={categoryDefaultSources}

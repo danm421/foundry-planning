@@ -410,6 +410,7 @@ export default function ReviewWizard({
             candidates={accountCandidates}
             existingAccountsById={existingAccountsById}
             modelPortfolios={growthContext.modelPortfolios}
+            fundPortfolios={growthContext.fundPortfolios}
             resolvedInflationRate={growthContext.resolvedInflationRate}
             categoryDefaults={growthContext.categoryDefaults}
             familyMembers={accountFamilyMembers}

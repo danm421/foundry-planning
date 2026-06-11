@@ -26,6 +26,7 @@ export interface AccountMeta {
   id: string;
   growthSource: string | null;
   modelPortfolioId: string | null;
+  tickerPortfolioId: string | null;
   turnoverPct: string | null;
   overridePctOi: string | null;
   overridePctLtCg: string | null;
@@ -39,6 +40,7 @@ export interface AccountMeta {
 const META_KEYS: ReadonlyArray<Exclude<keyof AccountMeta, "id">> = [
   "growthSource",
   "modelPortfolioId",
+  "tickerPortfolioId",
   "turnoverPct",
   "overridePctOi",
   "overridePctLtCg",
@@ -69,6 +71,7 @@ function emptyMeta(): Omit<AccountMeta, "id"> {
   return {
     growthSource: null,
     modelPortfolioId: null,
+    tickerPortfolioId: null,
     turnoverPct: null,
     overridePctOi: null,
     overridePctLtCg: null,

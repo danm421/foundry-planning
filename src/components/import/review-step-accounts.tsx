@@ -67,6 +67,7 @@ const ACCOUNT_FIELD_MAP: FieldMap<ExtractedAccount> = {
   growthRate: "replace-if-non-null",
   growthSource: "replace",
   modelPortfolioId: "replace",
+  tickerPortfolioId: "replace",
   rmdEnabled: "replace-if-non-null",
 };
 
@@ -80,6 +81,7 @@ const ACCOUNT_FIELD_LABELS: Partial<Record<keyof ExtractedAccount, string>> = {
   growthRate: "Growth rate",
   growthSource: "Growth source",
   modelPortfolioId: "Model portfolio",
+  tickerPortfolioId: "Fund portfolio",
   rmdEnabled: "RMD",
 };
 
@@ -103,6 +105,7 @@ interface ReviewStepAccountsProps {
    */
   existingAccountsById?: Record<string, Partial<ExtractedAccount> & { name?: string }>;
   modelPortfolios?: { id: string; name: string; blendedReturn: number }[];
+  fundPortfolios?: { id: string; name: string; blendedReturnPct: number | null }[];
   resolvedInflationRate?: number;
   categoryDefaults?: Record<string, { portfolioName?: string | null; blendedReturnPct: number | null }>;
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string; lastName?: string | null }[];
@@ -125,6 +128,7 @@ export default function ReviewStepAccounts({
   candidates = [],
   existingAccountsById,
   modelPortfolios = [],
+  fundPortfolios = [],
   resolvedInflationRate = 0.025,
   categoryDefaults = {},
   familyMembers = [],
@@ -341,21 +345,24 @@ export default function ReviewStepAccounts({
                     category={account.category ?? "taxable"}
                     growthSource={(account.growthSource as GrowthSource) ?? (account.growthRate != null ? "custom" : "default")}
                     modelPortfolioId={account.modelPortfolioId ?? ""}
+                    tickerPortfolioId={account.tickerPortfolioId ?? ""}
                     growthRatePct={account.growthRate != null ? (account.growthRate * 100).toFixed(2) : ""}
                     modelPortfolios={modelPortfolios}
+                    fundPortfolios={fundPortfolios}
                     defaultPctForCategory={categoryDefaults[account.category ?? "taxable"]?.blendedReturnPct ?? null}
                     catDefaultPortfolioName={categoryDefaults[account.category ?? "taxable"]?.portfolioName ?? null}
                     resolvedInflationRate={resolvedInflationRate}
                     assetMixBlendedPct={null}
                     customPlaceholder="Use default"
                     onSourceChange={(raw) => {
-                      const { growthSource, modelPortfolioId } = parseGrowthSourceSelection(raw);
+                      const { growthSource, modelPortfolioId, tickerPortfolioId } = parseGrowthSourceSelection(raw);
                       const updated = accounts.map((a, idx) =>
                         idx === i
                           ? {
                               ...a,
                               growthSource,
                               modelPortfolioId,
+                              tickerPortfolioId,
                               // Clearing to non-custom drops the explicit % (commit treats null = use default).
                               growthRate: growthSource === "custom" ? a.growthRate : null,
                             }
