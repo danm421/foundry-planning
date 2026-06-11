@@ -95,7 +95,7 @@ export async function requireActiveSubscription(): Promise<void> {
  */
 const BETA_OPERATOR_USER_IDS = [
   "user_3CNEarpTz0k9nI7gWESXLGMTI7k", // dev   (danmueller20@gmail.com)
-  "user_3EzSB2D4aEjITHDoA5djRTKTpFz", // prod  (production-v2)
+  "user_3F0LIJ4MNbs2CTGUTQHkUp7NCSN", // prod  (dan@foundryplanning.com)
 ] as const;
 
 export async function requireBetaOperator(): Promise<void> {
