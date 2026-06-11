@@ -34,6 +34,13 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => ({
 const mockRecordAudit = vi.fn();
 vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => mockRecordAudit(...a) }));
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+
 import { POST } from "../route";
 import { UnauthorizedError } from "@/lib/db-helpers";
 

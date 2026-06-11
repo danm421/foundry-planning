@@ -14,7 +14,7 @@ import {
   checkProjectionRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import {
   solveLifeInsuranceNeed,
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await findClientInFirm(clientId, firmId);
+    const inFirm = await verifyClientAccess(clientId, firmId);
     if (!inFirm) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }

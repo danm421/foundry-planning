@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   wills,
   willBequests,
   willBequestRecipients,
@@ -18,15 +17,12 @@ import {
   verifyCrossRefs,
   computeSoftWarnings,
 } from "../_helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function verifyClient(clientId: string, firmId: string) {
-  const [row] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!row;
+  return verifyClientAccess(clientId, firmId);
 }
 
 async function verifyWillBelongsToClient(willId: string, clientId: string) {

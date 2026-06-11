@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { db } from "@/db";
-import { firms, clients } from "@/db/schema";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { firms } from "@/db/schema";
+import { UnauthorizedError } from "@/lib/db-helpers";
+import { requireClientAccess } from "@/lib/clients/authz";
 import {
   checkExportPdfRateLimit,
   rateLimitErrorResponse,
@@ -44,7 +45,16 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { id: clientId } = await params;
+    const access = await requireClientAccess(clientId).catch((e) => {
+      if (e instanceof UnauthorizedError) throw e;
+      return null;
+    });
+    if (!access) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const { client: _clientRow, firmId } = access;
+    const crmHouseholdId = _clientRow.crmHouseholdId;
 
     const rl = await checkExportPdfRateLimit(firmId);
     if (!rl.allowed) {
@@ -53,8 +63,6 @@ export async function POST(
         "Too many PDF exports. Please wait a moment and try again.",
       );
     }
-
-    const { id: clientId } = await params;
 
     const json = await request.json().catch(() => null);
     const parsed = BodySchema.safeParse(json);
@@ -157,12 +165,7 @@ export async function POST(
       buffer,
     });
     try {
-      const [c] = await db
-        .select({ householdId: clients.crmHouseholdId })
-        .from(clients)
-        .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
-        .limit(1);
-      const householdId = c?.householdId;
+      const householdId = crmHouseholdId;
       if (householdId) {
         const { userId } = await auth();
         const u = await currentUser().catch(() => null);

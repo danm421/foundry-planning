@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { clients, scenarios, assetTransactions, accounts } from "@/db/schema";
+import { scenarios, assetTransactions, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/lib/db-scoping";
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import { toAssetTransactionSnapshot, ASSET_TRANSACTION_FIELD_LABELS } from "@/lib/audit/snapshots/asset-transaction";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -230,12 +231,7 @@ export const dynamic = "force-dynamic";
 const toStr = (v: unknown) => (v != null ? String(v) : null);
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-
-  if (!client) return null;
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
 
   const [scenario] = await db
     .select()
@@ -459,11 +455,7 @@ export async function PUT(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -652,11 +644,7 @@ export async function DELETE(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

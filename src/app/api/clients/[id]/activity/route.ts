@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   listClientActivity,
   type ActionKind,
@@ -17,6 +18,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const [{ id: clientId }, firmId] = await Promise.all([params, requireOrgId()]);
+
+  if (!(await verifyClientAccess(clientId, firmId))) {
+    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  }
 
   const url = new URL(req.url);
   const sp = url.searchParams;

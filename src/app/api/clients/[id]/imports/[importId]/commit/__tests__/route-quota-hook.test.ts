@@ -34,6 +34,12 @@ vi.mock("@/lib/imports/authz", async () => {
   };
 });
 
+// Phase-1b advisor gate runs before requireImportAccess; this suite exercises
+// the quota hook, not the access path, so let the gate pass.
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue(true),
+}));
+
 const mockCommitTabs = vi.fn();
 vi.mock("@/lib/imports/commit/orchestrator", () => ({
   commitTabs: (...a: unknown[]) => mockCommitTabs(...a),

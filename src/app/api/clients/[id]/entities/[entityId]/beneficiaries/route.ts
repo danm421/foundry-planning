@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   entities,
   beneficiaryDesignations,
   familyMembers,
@@ -11,6 +10,7 @@ import {
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { beneficiarySetSchema } from "@/lib/schemas/beneficiaries";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +19,8 @@ async function verifyClientAndTrust(
   entityId: string,
   firmId: string,
 ) {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return { ok: false as const, reason: "client" as const };
+  if (!(await verifyClientAccess(clientId, firmId)))
+    return { ok: false as const, reason: "client" as const };
   const [entity] = await db
     .select({ id: entities.id, entityType: entities.entityType })
     .from(entities)

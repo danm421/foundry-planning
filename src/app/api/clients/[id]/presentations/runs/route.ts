@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { and, eq } from "drizzle-orm";
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { UnauthorizedError } from "@/lib/db-helpers";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
+import { requireClientAccess } from "@/lib/clients/authz";
 import {
   BodySchema,
   renderPresentationPdf,
@@ -28,8 +26,19 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
+    const access = await requireClientAccess(id).catch((e) => {
+      if (e instanceof UnauthorizedError) throw e;
+      return null;
+    });
+    if (!access) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const { client, firmId } = access;
+    const householdId = client.crmHouseholdId;
+    if (!householdId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     let json: unknown;
     try {
@@ -52,17 +61,6 @@ export async function POST(
         "Too many PDF exports. Please wait a moment and try again.",
       );
     }
-
-    // Resolve client + household (also the firm-scope gate → 404).
-    const [client] = await db
-      .select({ crmHouseholdId: clients.crmHouseholdId })
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
-      .limit(1);
-    if (!client?.crmHouseholdId) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    const householdId = client.crmHouseholdId;
 
     const { userId } = await auth();
     let email: string | null = null;

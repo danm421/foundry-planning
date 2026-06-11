@@ -7,6 +7,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { mergeQuickStartState, type QuickStartState } from "@/lib/quick-start/state";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 const patchSchema = z
   .object({
@@ -26,6 +27,11 @@ export async function PATCH(
     const firmId = await requireOrgId();
     await requireActiveSubscription();
     const { id } = await params;
+
+    if (!(await verifyClientAccess(id, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     const body = await request.json();
     const parsed = patchSchema.safeParse(body);
     if (!parsed.success) {

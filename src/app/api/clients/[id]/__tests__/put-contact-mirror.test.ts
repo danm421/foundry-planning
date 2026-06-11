@@ -8,6 +8,13 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgId: async () => "test-firm-put-mirror",
 }));
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+
 import { PUT } from "../route";
 
 const FIRM = "test-firm-put-mirror";

@@ -30,6 +30,23 @@ vi.mock("@/engine/what-if/life-insurance-need", () => ({
   runLifeInsuranceWhatIf: vi.fn(() => [{ year: 2026 }, { year: 2027 }]),
 }));
 
+// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
+// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
+// access turns purely on the firm-scoped clients query the test already drives).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+// Phase 1b: verifyClientAccess now owns the client-in-firm gate (replaces
+// findClientInFirm). Delegate to the already-mocked findClientInFirm so tests
+// that set findClientInFirm → null still exercise the 404 path.
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockImplementation(async (clientId: string, firmId: string) => {
+    const { findClientInFirm } = await import("@/lib/db-scoping");
+    const client = await findClientInFirm(clientId, firmId);
+    return client != null;
+  }),
+}));
+
 import { POST } from "../route";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";

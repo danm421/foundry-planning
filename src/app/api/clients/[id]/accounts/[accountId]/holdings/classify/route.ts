@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { accounts, clients } from "@/db/schema";
+import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { classifyTickerSchema } from "@/lib/schemas/holdings";
 import { getSecurityByTicker, upsertClassifiedSecurity } from "@/lib/investments/classification/persist";
 import { classifySecurity } from "@/lib/investments/classification/classify";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
   const [acct] = await db
     .select({ id: accounts.id })
     .from(accounts)
-    .innerJoin(clients, eq(clients.id, accounts.clientId))
-    .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId), eq(clients.firmId, firmId)));
+    .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
   return acct ?? null;
 }
 

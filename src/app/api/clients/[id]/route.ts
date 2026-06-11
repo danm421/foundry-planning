@@ -13,11 +13,11 @@ import {
   crmHouseholdContacts,
 } from "@/db/schema";
 import { eq, and, or, inArray } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/client";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
+import { requireClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -27,17 +27,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-
-    if (!client) {
+    const access = await requireClientAccess(id).catch(() => null);
+    if (!access) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    const { client } = access;
 
     return NextResponse.json(client);
   } catch (err) {
@@ -58,18 +53,13 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    const body = await request.json();
-
-    const [existing] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-
-    if (!existing) {
+    const access = await requireClientAccess(id).catch(() => null);
+    if (!access) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    const { client: existing, firmId } = access;
+    const body = await request.json();
 
     // Load the CRM contacts so we know the current identity state for
     // horizon recompute, spouse-removal pre-checks, and family_member sync.
@@ -274,17 +264,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    const [existing] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-
-    if (!existing) {
+    const access = await requireClientAccess(id).catch(() => null);
+    if (!access) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    const { client: existing, firmId } = access;
 
     const snapshot = toClientSnapshot(existing);
 

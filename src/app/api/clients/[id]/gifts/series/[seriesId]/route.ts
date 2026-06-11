@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, giftSeries } from "@/db/schema";
+import { entities, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesUpdateSchema } from "@/lib/schemas/gift-series";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string, firmId: string): Promise<boolean> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!client;
-}
 
 // PATCH /api/clients/[id]/gifts/series/[seriesId] — partial update
 export async function PATCH(
@@ -25,7 +18,7 @@ export async function PATCH(
   try {
     const firmId = await requireOrgId();
     const { id, seriesId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -124,7 +117,7 @@ export async function DELETE(
   try {
     const firmId = await requireOrgId();
     const { id, seriesId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClientAccess(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse } from "@/lib/authz";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { listAccountGroups } from "@/lib/account-groups/queries";
 import {
@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    if (!(await findClientInFirm(clientId, firmId))) {
+    if (!(await verifyClientAccess(clientId, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    if (!(await findClientInFirm(clientId, firmId))) {
+    if (!(await verifyClientAccess(clientId, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 

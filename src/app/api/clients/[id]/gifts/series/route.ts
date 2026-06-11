@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, entities, giftSeries } from "@/db/schema";
+import { scenarios, entities, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesSchema } from "@/lib/schemas/gift-series";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,7 @@ async function getBaseCaseScenarioId(
   clientId: string,
   firmId: string,
 ): Promise<string | null> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-
-  if (!client) return null;
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
 
   // LIMIT 2 to surface the "multiple base scenarios" data-integrity bug loudly
   // rather than silently picking an arbitrary one.
@@ -52,15 +48,14 @@ async function resolveScenarioId(
   if (requested == null || requested === "base") {
     return getBaseCaseScenarioId(clientId, firmId);
   }
+  if (!(await verifyClientAccess(clientId, firmId))) return undefined;
   const [scenario] = await db
     .select({ id: scenarios.id })
     .from(scenarios)
-    .innerJoin(clients, eq(scenarios.clientId, clients.id))
     .where(
       and(
         eq(scenarios.id, requested),
         eq(scenarios.clientId, clientId),
-        eq(clients.firmId, firmId),
       ),
     );
   return scenario?.id;

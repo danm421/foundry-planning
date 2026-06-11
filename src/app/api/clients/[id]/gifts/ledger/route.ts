@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { computeExemptionSummary } from "@/lib/gifts/compute-exemption-summary";
@@ -18,6 +19,10 @@ export async function GET(
 ) {
   const { id } = await params;
   const firmId = await requireOrgId();
+
+  if (!(await verifyClientAccess(id, firmId))) {
+    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  }
 
   const url = new URL(req.url);
   const scenarioParam = url.searchParams.get("scenario");

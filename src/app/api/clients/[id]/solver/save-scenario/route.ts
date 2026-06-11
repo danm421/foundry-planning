@@ -14,7 +14,7 @@ import type { SolverMutation, SolverSaveResponse } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await findClientInFirm(clientId, firmId);
+    const inFirm = await verifyClientAccess(clientId, firmId);
     if (!inFirm) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }

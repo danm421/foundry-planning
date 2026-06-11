@@ -10,7 +10,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm, assertModelPortfoliosInFirm } from "@/lib/db-scoping";
+import { assertModelPortfoliosInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import { saveLifeInsuranceSettings } from "@/lib/life-insurance/settings";
@@ -24,7 +25,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await findClientInFirm(clientId, firmId);
+    const inFirm = await verifyClientAccess(clientId, firmId);
     if (!inFirm) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }

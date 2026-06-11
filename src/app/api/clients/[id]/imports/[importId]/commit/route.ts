@@ -15,6 +15,7 @@ import {
     NotFoundError,
     requireImportAccess,
 } from "@/lib/imports/authz";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
 import {
     COMMIT_TABS,
@@ -58,6 +59,10 @@ export async function POST(request: NextRequest, { params }: Params) {
             throw new UnauthorizedError();
         }
         const { id: clientId, importId } = await params;
+
+        if (!(await verifyClientAccess(clientId, firmId))) {
+            return NextResponse.json({ error: "Not found" }, { status: 404 });
+        }
 
         const rl = await checkImportRateLimit(firmId, "commit");
         if (!rl.allowed) {

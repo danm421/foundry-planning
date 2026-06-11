@@ -38,6 +38,14 @@ try {
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
 
+// Phase 1b: routes now gate via verifyClientAccess → which calls auth() from
+// @clerk/nextjs/server. Mock it so the staff-scope check is a no-op (undefined
+// orgRole ⇒ non-staff ⇒ access turns purely on the firm-scoped clients query,
+// driven by the requireOrgId mock + the seeded rows).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+}));
+
 vi.mock("@/lib/db-helpers", async () => {
   const actual = await vi.importActual<typeof import("@/lib/db-helpers")>(
     "@/lib/db-helpers",

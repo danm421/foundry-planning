@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  clients,
   externalBeneficiaries,
   familyMembers,
   noteReceivableOwners,
   notesReceivable,
 } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { assertEntitiesInClient } from "@/lib/db-scoping";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import {
@@ -23,11 +23,7 @@ import {
 export const dynamic = "force-dynamic";
 
 async function assertClientInFirm(clientId: string, firmId: string) {
-  const [row] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  return !!row;
+  return verifyClientAccess(clientId, firmId);
 }
 
 async function validateOwnersBelongToClient(

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   scenarios,
   accounts,
   accountOwners,
@@ -13,20 +12,13 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { stockOptionAccountCreateSchema } from "@/lib/schemas/stock-options";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
 async function getBaseCaseScenarioId(
   clientId: string,
-  firmId: string,
 ): Promise<string | null> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-
-  if (!client) return null;
-
   const [scenario] = await db
     .select()
     .from(scenarios)
@@ -46,7 +38,11 @@ export async function GET(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    if (!(await verifyClientAccess(id, firmId))) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -87,7 +83,11 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    if (!(await verifyClientAccess(id, firmId))) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }

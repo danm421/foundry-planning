@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
-  clients,
   accounts,
   scenarios,
   accountFlowOverrides,
@@ -11,6 +10,7 @@ import { and, eq, isNull, type SQL } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { flowOverrideBulkSchema } from "@/lib/schemas/flow-overrides";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +21,9 @@ export const dynamic = "force-dynamic";
 // would silently ignore.
 async function authorize(clientId: string, accountId: string) {
   const firmId = await requireOrgId();
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return { error: "Client not found", status: 404 as const };
+  if (!(await verifyClientAccess(clientId, firmId))) {
+    return { error: "Client not found", status: 404 as const };
+  }
   const [account] = await db
     .select()
     .from(accounts)

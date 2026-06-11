@@ -11,6 +11,7 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
 import { checkExtractRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -143,6 +144,10 @@ export async function POST(
   try {
     const firmId = await requireOrgId();
     const { id } = await params;
+
+    if (!(await verifyClientAccess(id, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const parsed = Body.safeParse(await request.json());
     if (!parsed.success) {

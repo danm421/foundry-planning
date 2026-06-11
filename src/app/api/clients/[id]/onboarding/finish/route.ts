@@ -8,6 +8,7 @@ import { recordAudit } from "@/lib/audit";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import type { OnboardingState } from "@/lib/onboarding/types";
+import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ export async function POST(
     const firmId = await requireOrgId();
     await requireActiveSubscription();
     const { id } = await params;
+
+    if (!(await verifyClientAccess(id, firmId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const [row] = await db
       .select({ id: clients.id, state: clients.onboardingState })

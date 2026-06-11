@@ -17,7 +17,7 @@ import { db } from "@/db";
 import { scenarioToggleGroups, scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { authErrorResponse } from "@/lib/authz";
-import { findClientInFirm } from "@/lib/db-scoping";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
   TARGET_KIND_TO_FIELD,
@@ -87,7 +87,7 @@ async function assertRouteScope(
   scenarioId: string,
   firmId: string,
 ): Promise<NextResponse | null> {
-  const inFirm = await findClientInFirm(clientId, firmId);
+  const inFirm = await verifyClientAccess(clientId, firmId);
   if (!inFirm) {
     return NextResponse.json({ error: "Client not found" }, { status: 404 });
   }

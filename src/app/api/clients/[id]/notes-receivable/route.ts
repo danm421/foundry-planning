@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  clients,
   externalBeneficiaries,
   familyMembers,
   noteExtraPayments,
@@ -11,6 +10,7 @@ import {
   scenarios,
 } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { assertEntitiesInClient } from "@/lib/db-scoping";
 import { recordCreate } from "@/lib/audit";
 import { toNoteReceivableSnapshot } from "@/lib/audit/snapshots/note-receivable";
@@ -25,11 +25,7 @@ async function getBaseCaseScenarioId(
   clientId: string,
   firmId: string,
 ): Promise<string | null> {
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return null;
+  if (!(await verifyClientAccess(clientId, firmId))) return null;
   const [scenario] = await db
     .select()
     .from(scenarios)
