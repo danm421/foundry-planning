@@ -7,6 +7,7 @@ import {
   assertAccountsInClient,
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
+  assertTickerPortfoliosInFirm,
 } from "@/lib/db-scoping";
 import { recordCreate } from "@/lib/audit";
 import { toAccountSnapshot } from "@/lib/audit/snapshots/account";
@@ -137,6 +138,7 @@ export async function POST(
       ownerEntityId,
       growthSource,
       modelPortfolioId,
+      tickerPortfolioId,
       turnoverPct,
       overridePctOi,
       overridePctLtCg,
@@ -163,6 +165,10 @@ export async function POST(
     const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+    const tpCheck = await assertTickerPortfoliosInFirm(firmId, [tickerPortfolioId]);
+    if (!tpCheck.ok) {
+      return NextResponse.json({ error: tpCheck.reason }, { status: 400 });
     }
     // parentAccountId may be set on any category. Verify the referenced row
     // is in this client AND is a business account — the DB FK only checks
@@ -265,6 +271,7 @@ export async function POST(
           priorYearEndValue: priorYearEndValue ?? null,
           growthSource: growthSource ?? "default",
           modelPortfolioId: modelPortfolioId ?? null,
+          tickerPortfolioId: tickerPortfolioId ?? null,
           turnoverPct: turnoverPct ?? "0",
           overridePctOi: overridePctOi ?? null,
           overridePctLtCg: overridePctLtCg ?? null,

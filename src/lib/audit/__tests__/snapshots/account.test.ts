@@ -79,6 +79,7 @@ describe("toAccountSnapshot", () => {
       isDefaultChecking: false,
       growthSource: "default",
       modelPortfolio: null,
+      tickerPortfolio: null,
       turnoverPct: 0,
       annualPropertyTax: 0,
       propertyTaxGrowthRate: 0.03,

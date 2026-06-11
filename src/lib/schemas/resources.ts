@@ -85,6 +85,7 @@ export const accountCreateSchema = z
     growthSource: z.string().max(40).optional(),
     deriveFromHoldings: z.boolean().optional(),
     modelPortfolioId: uuidLike.optional().nullable(),
+    tickerPortfolioId: uuidLike.optional().nullable(),
     turnoverPct: money.optional(),
     overridePctOi: z.number().min(0).max(1).optional().nullable(),
     overridePctLtCg: z.number().min(0).max(1).optional().nullable(),
