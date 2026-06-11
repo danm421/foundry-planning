@@ -10,6 +10,8 @@ import {
   listTemplatesForUser,
   createTemplate,
 } from "@/lib/presentations/templates-repo";
+import { listDismissedSlugs } from "@/lib/presentations/builtin-templates-repo";
+import { partitionBuiltInRows } from "@/lib/presentations/builtin-templates";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +20,12 @@ export async function GET(_request: Request) {
     const firmId = await requireOrgId();
     const { userId } = await auth();
     if (!userId) throw new UnauthorizedError();
-    const result = await listTemplatesForUser(firmId, userId);
-    return NextResponse.json(result);
+    const [{ shared, mine }, dismissed] = await Promise.all([
+      listTemplatesForUser(firmId, userId),
+      listDismissedSlugs(firmId, userId),
+    ]);
+    const { builtIn, builtInHidden } = partitionBuiltInRows(dismissed);
+    return NextResponse.json({ shared, mine, builtIn, builtInHidden });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
