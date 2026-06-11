@@ -119,6 +119,31 @@ describe("proxy access enforcement", () => {
     expect(recordAudit).not.toHaveBeenCalled();
   });
 
+  it("LOG mode: STILL hard-blocks a missing-metadata page request (broken account)", async () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "log";
+    const res = await captured.handler!(
+      authWith({}) as never, // empty org metadata → missing
+      makeReq("/clients/abc", "GET"),
+    );
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/settings/billing");
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ decision: "lock_out", status: "missing" }),
+      }),
+    );
+  });
+
+  it("LOG mode: STILL 403s a missing-metadata mutating API call", async () => {
+    process.env.BILLING_ENFORCEMENT_MODE = "log";
+    const res = await captured.handler!(
+      authWith({}) as never,
+      makeReq("/api/clients/abc/accounts", "POST"),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "subscription_inactive" });
+  });
+
   it("allows an active firm through with no audit", async () => {
     process.env.BILLING_ENFORCEMENT_MODE = "enforce";
     const res = await captured.handler!(

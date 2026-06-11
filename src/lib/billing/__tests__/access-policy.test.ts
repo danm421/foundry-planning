@@ -88,16 +88,17 @@ describe("decideAccess truth table", () => {
     });
   }
 
-  // missing metadata: don't lock paying customers out on a claims hiccup —
-  // allow reads, block mutations (conservative middle ground).
-  it("missing + GET → allow", () => {
-    expect(decideAccess(states.missing, "GET", PAGE_PATH)).toBe<AccessDecision>("allow");
-  });
-  it("missing + POST (mutating) → block_mutation", () => {
-    expect(decideAccess(states.missing, "POST", MUTATE_PATH)).toBe<AccessDecision>(
-      "block_mutation",
-    );
-  });
+  // missing metadata: a signed-in user with an active org but ZERO readable
+  // subscription metadata is an unprovisioned / broken account, not a billing
+  // judgment call — lock it out entirely (reads too). With auto-org-creation
+  // off, no legitimately-provisioned org reaches this state.
+  for (const method of METHODS) {
+    it(`missing + ${method} → lock_out`, () => {
+      expect(decideAccess(states.missing, method, MUTATE_PATH)).toBe<AccessDecision>(
+        "lock_out",
+      );
+    });
+  }
 
   // Method casing is normalized.
   it("lowercase 'post' is treated as a mutation", () => {

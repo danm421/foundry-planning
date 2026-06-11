@@ -107,7 +107,14 @@ export default clerkMiddleware(async (auth, request) => {
         metadata: { decision, mode, method, path, status: state.kind },
       });
 
-      if (mode === "enforce") {
+      // A `missing` state (signed-in, has an active org, but zero readable
+      // subscription metadata) is an unprovisioned / broken account, not a
+      // billing-rollout judgment call — block it regardless of mode. With
+      // Clerk auto-org-creation disabled no real org reaches this state, so
+      // this can never lock out a legitimately-provisioned firm. Other states
+      // only block once BILLING_ENFORCEMENT_MODE is flipped to "enforce".
+      const shouldBlock = mode === "enforce" || state.kind === "missing";
+      if (shouldBlock) {
         if (path.startsWith("/api/")) {
           return NextResponse.json(
             { error: "subscription_inactive" },

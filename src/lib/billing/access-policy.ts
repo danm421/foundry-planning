@@ -37,14 +37,18 @@ function isReadPost(pathname: string): boolean {
  * no Date.now beyond the past_due cutoff, no env. Covered by an exhaustive
  * truth-table test (= SOC-2 CC6.1 operating-effectiveness evidence).
  *
- *  - `lock_out`        canceled_locked / unpaid / paused — block reads too.
+ *  - `lock_out`        canceled_locked / unpaid / paused / missing — block
+ *                      reads too.
  *  - `block_mutation`  canceled_grace and late past_due — GET (+ read-POST
  *                      allowlist) allowed, mutating methods blocked.
  *  - `allow`           founder / trialing / active / active_canceling, and
  *                      past_due within its cutoff.
  *
- * `missing` (claims hiccup) gets the conservative middle: reads allowed,
- * mutations blocked — never lock a paying customer out on a metadata blip.
+ * `missing` (no readable subscription metadata) is an unprovisioned / broken
+ * account, not a billing judgment — lock it out entirely. With Clerk
+ * auto-org-creation disabled, every real org is provisioned with metadata, so
+ * no legitimate user reaches this state; the middleware enforces it
+ * unconditionally (see src/proxy.ts), independent of the rollout flag.
  */
 export function decideAccess(
   state: SubscriptionState,
@@ -74,7 +78,7 @@ export function decideAccess(
       return mutationDecision(method, pathname);
 
     case "missing":
-      return mutationDecision(method, pathname);
+      return "lock_out";
   }
 }
 
