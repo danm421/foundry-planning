@@ -40,4 +40,18 @@ export interface CommitContext {
   scenarioId: string;
   orgId: string;
   userId: string;
+  /** Pre-resolved ticker classifications/prices (Phase A). */
+  resolvedHoldings?: ResolvedHoldingsMap;
+  /** Sink: account ids that received holdings, for post-commit asset-mix sync. */
+  holdingsAccountIds?: string[];
 }
+
+/** A ticker resolved to a security + (optional) live price during commit. */
+export interface ResolvedTicker {
+  securityId: string;
+  price: number | null;
+  asOf: string | null;
+}
+
+/** Upper-cased ticker -> resolution. Absent ticker = classification failed -> manual. */
+export type ResolvedHoldingsMap = Map<string, ResolvedTicker>;
