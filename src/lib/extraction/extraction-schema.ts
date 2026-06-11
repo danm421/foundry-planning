@@ -26,9 +26,17 @@ const maxLenPerList = {
   lifePolicies: 50,
   wills: 4,
   bequestsPerWill: 30,
+  holdingsPerAccount: 300,
 } as const;
 
 const row = z.looseObject({});
+
+// Accounts may carry a nested holdings array; cap it like the other lists so a
+// hallucinated/compromised response can't smuggle an oversize array through.
+// looseObject keeps every other account key flowing to the UI untouched.
+const accountRow = z.looseObject({
+  holdings: z.array(row).max(maxLenPerList.holdingsPerAccount).optional(),
+});
 
 const familyMember = z.looseObject({});
 
@@ -43,7 +51,7 @@ const familyPayloadSchema = z
 
 export const extractedPayloadSchema = z
   .object({
-    accounts: z.array(row).max(maxLenPerList.accounts).optional(),
+    accounts: z.array(accountRow).max(maxLenPerList.accounts).optional(),
     incomes: z.array(row).max(maxLenPerList.incomes).optional(),
     expenses: z.array(row).max(maxLenPerList.expenses).optional(),
     liabilities: z.array(row).max(maxLenPerList.liabilities).optional(),
