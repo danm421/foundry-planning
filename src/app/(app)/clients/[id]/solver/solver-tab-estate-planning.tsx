@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Account, ClientData } from "@/engine/types";
+import type { Account, ClientData, EntitySummary } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { addGift, removeGift, updateGift } from "@/lib/estate/estate-flow-gifts";
@@ -171,6 +171,52 @@ export function EstateGiftsList({
               type="button"
               className="text-[12px] text-crit hover:underline"
               onClick={() => onRemove(g.id)}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+/** Trusts section. Base side: read-only existing trust entities. Working side:
+ *  existing (read-only) + scenario-added trusts (Remove). The Add-trust form
+ *  renders once at the bottom of the tab, gated by `addingTrust`. */
+export function EstateTrustsList({
+  currentTrusts,
+  addedTrusts,
+  onRemove,
+}: {
+  currentTrusts: EntitySummary[];
+  addedTrusts: SolverTrustDraft[];
+  onRemove: (draft: SolverTrustDraft) => void;
+}) {
+  const side = useSolverSide();
+  const showAdded = side === "working";
+
+  if (currentTrusts.length === 0 && (!showAdded || addedTrusts.length === 0)) {
+    return <div className="col-span-2 text-[12px] text-ink-4">No trusts</div>;
+  }
+
+  return (
+    <div className="col-span-2 space-y-1">
+      {currentTrusts.map((t) => (
+        <div key={t.id} className="text-[13px] text-ink-2">
+          <span>{t.name ?? "Trust"}</span>
+          {t.trustSubType ? <span> · {t.trustSubType.toUpperCase()}</span> : null}
+        </div>
+      ))}
+      {showAdded &&
+        addedTrusts.map((t) => (
+          <div key={t.entity.id} className="flex items-center justify-between text-[13px] text-ink">
+            <span>
+              {t.entity.name} · {t.entity.trustSubType?.toUpperCase()}
+            </span>
+            <button
+              type="button"
+              className="text-[12px] text-crit hover:underline"
+              onClick={() => onRemove(t)}
             >
               Remove
             </button>
