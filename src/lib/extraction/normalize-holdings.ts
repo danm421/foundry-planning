@@ -22,10 +22,7 @@ export function normalizeExtractedHolding(h: ExtractedHolding): ExtractedHolding
 
 /** Best-effort market value of one holding (statement-era; no live pricing). */
 export function holdingMarketValue(h: ExtractedHolding): number {
-  const n = normalizeExtractedHolding(h);
-  if (n.marketValue != null) return n.marketValue;
-  if (n.shares != null && n.price != null) return n.shares * n.price;
-  return 0;
+  return normalizeExtractedHolding(h).marketValue ?? 0;
 }
 
 /**

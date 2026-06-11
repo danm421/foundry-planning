@@ -109,37 +109,30 @@ export async function writeAccountHoldings(
     const h = normalizeExtractedHolding(raw);
     const ticker = h.ticker?.trim().toUpperCase();
     const r = ticker ? resolved.get(ticker) : undefined;
-    const shares = h.shares ?? 0;
-    const costBasis = h.costBasis ?? 0;
-    if (r) {
-      // Classified ticker: live price (fallback to statement price), linked security.
-      const price = r.price ?? h.price ?? 0;
-      return {
-        accountId,
-        securityId: r.securityId,
-        displayTicker: h.ticker ?? null,
-        displayName: h.name ?? null,
-        shares: String(shares),
-        price: String(price),
-        priceAsOf: r.price != null ? r.asOf : null,
-        costBasis: String(costBasis),
-        sortOrder: sortOrder++,
-        notes: null,
-      };
-    }
-    // Manual (bond / untickered fund / cash / unresolved ticker).
-    return {
+    const base = {
       accountId,
-      securityId: null,
       displayTicker: h.ticker ?? null,
       displayName: h.name ?? null,
-      shares: String(shares),
-      price: String(h.price ?? 0),
-      priceAsOf: null,
-      costBasis: String(costBasis),
+      shares: String(h.shares ?? 0),
+      costBasis: String(h.costBasis ?? 0),
       sortOrder: sortOrder++,
       notes: null,
     };
+    return r
+      ? {
+          // Classified ticker: live price (fallback to statement price), linked security.
+          ...base,
+          securityId: r.securityId,
+          price: String(r.price ?? h.price ?? 0),
+          priceAsOf: r.price != null ? r.asOf : null,
+        }
+      : {
+          // Manual (bond / untickered fund / cash / unresolved ticker).
+          ...base,
+          securityId: null,
+          price: String(h.price ?? 0),
+          priceAsOf: null,
+        };
   });
   await tx.insert(accountHoldings).values(rows);
   sink?.push(accountId);

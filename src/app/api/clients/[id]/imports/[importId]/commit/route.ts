@@ -161,9 +161,9 @@ export async function POST(request: NextRequest, { params }: Params) {
             },
         });
 
-        for (const accountId of holdingsAccountIds) {
-            await syncAccountFromHoldings(accountId);
-        }
+        await Promise.all(
+            holdingsAccountIds.map((accountId) => syncAccountFromHoldings(accountId)),
+        );
 
         if (firstTimeAllCommitted && imp.mode === "onboarding") {
             // Atomic credit claim happens INSIDE commitTabs's tx via the
