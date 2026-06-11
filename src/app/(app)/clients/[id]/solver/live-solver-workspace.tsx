@@ -1084,7 +1084,7 @@ export function LiveSolverWorkspace({
 
         {activeTab === "estate_planning" && (
           <SolverTabEstatePlanning
-            accounts={baseClientData.accounts}
+            baseClientData={baseClientData}
             clientData={workingTree}
             onChange={pushMutation}
           />
