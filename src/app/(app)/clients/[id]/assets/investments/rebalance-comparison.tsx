@@ -538,11 +538,15 @@ function TradesAndTaxPanel({
 
 export function RebalanceComparison({ result, onOverrideRate }: RebalanceComparisonProps) {
   return (
-    <div className="space-y-6">
-      <CoverageBanner result={result} />
-      <AssetMixPanel result={result} />
-      <KpiPanel result={result} />
-      <TradesAndTaxPanel result={result} onOverrideRate={onOverrideRate} />
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AssetMixPanel result={result} />
+        <KpiPanel result={result} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <TradesAndTaxPanel result={result} onOverrideRate={onOverrideRate} />
+        <CoverageBanner result={result} />
+      </div>
     </div>
   );
 }

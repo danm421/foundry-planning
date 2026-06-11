@@ -110,23 +110,25 @@ export function RebalanceClient({
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <p className="text-sm text-ink-3">
         Model moving the selected holdings into a fund portfolio.
       </p>
 
-      <RebalanceSource
-        accounts={accountsWithHoldings}
-        selectedIds={selectedIds}
-        onChange={setSelectedIds}
-      />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <RebalanceSource
+          accounts={accountsWithHoldings}
+          selectedIds={selectedIds}
+          onChange={setSelectedIds}
+        />
 
-      <RebalanceTarget
-        fundPortfolios={fundPortfolios}
-        value={target}
-        onChange={setTarget}
-        unresolvedTickers={unresolvedTickers}
-      />
+        <RebalanceTarget
+          fundPortfolios={fundPortfolios}
+          value={target}
+          onChange={setTarget}
+          unresolvedTickers={unresolvedTickers}
+        />
+      </div>
 
       <button
         type="button"
