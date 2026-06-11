@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { TrashIcon } from "@/components/icons";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -71,6 +71,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 // ── FundHoldingsEditor ────────────────────────────────────────────────────────
 
 interface HoldingRow {
+  _key: number; // stable per-row identity for React reconciliation
   displayTicker: string;
   weight: string; // stored as display % (e.g. "60.00")
 }
@@ -84,46 +85,51 @@ function FundHoldingsEditor({
   initialHoldings: TickerHolding[];
   onSaved: () => void;
 }) {
-  const [rows, setRows] = useState<HoldingRow[]>(() =>
-    initialHoldings.map((h) => ({
-      displayTicker: h.displayTicker,
-      weight: (Number(h.weight) * 100).toFixed(2),
-    }))
+  const nextKey = useRef(0);
+  const makeRows = useCallback(
+    (holdings: TickerHolding[]): HoldingRow[] =>
+      holdings.map((h) => ({
+        _key: nextKey.current++,
+        displayTicker: h.displayTicker,
+        weight: (Number(h.weight) * 100).toFixed(2),
+      })),
+    []
   );
+
+  const [rows, setRows] = useState<HoldingRow[]>(() => makeRows(initialHoldings));
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Reset when portfolio changes
+  // Reset when the selected portfolio changes. Depend only on portfolioId —
+  // initialHoldings is a new array reference on every parent render (portfolios
+  // state is replaced wholesale), so including it would reset mid-edit on any
+  // unrelated re-render.
   useEffect(() => {
-    setRows(
-      initialHoldings.map((h) => ({
-        displayTicker: h.displayTicker,
-        weight: (Number(h.weight) * 100).toFixed(2),
-      }))
-    );
+    setRows(makeRows(initialHoldings));
     setSaveError(null);
-  }, [portfolioId, initialHoldings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: see comment above
+  }, [portfolioId]);
 
   const currentTotal = rows.reduce((s, r) => s + Number(r.weight), 0);
   const isValid = Math.abs(currentTotal - 100) < 0.1;
 
   function addRow() {
-    setRows((prev) => [...prev, { displayTicker: "", weight: "0" }]);
+    setRows((prev) => [...prev, { _key: nextKey.current++, displayTicker: "", weight: "0" }]);
   }
 
-  function removeRow(idx: number) {
-    setRows((prev) => prev.filter((_, i) => i !== idx));
+  function removeRow(key: number) {
+    setRows((prev) => prev.filter((r) => r._key !== key));
   }
 
-  function updateTicker(idx: number, value: string) {
+  function updateTicker(key: number, value: string) {
     setRows((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, displayTicker: value } : r))
+      prev.map((r) => (r._key === key ? { ...r, displayTicker: value } : r))
     );
   }
 
-  function updateWeight(idx: number, value: string) {
+  function updateWeight(key: number, value: string) {
     setRows((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, weight: value } : r))
+      prev.map((r) => (r._key === key ? { ...r, weight: value } : r))
     );
   }
 
@@ -173,14 +179,15 @@ function FundHoldingsEditor({
             </tr>
           </thead>
           <tbody className="divide-y divide-hair">
-            {rows.map((r, idx) => (
-              <tr key={idx} className="hover:bg-card-hover">
+            {rows.map((r) => (
+              <tr key={r._key} className="hover:bg-card-hover">
                 <td className="px-3 py-2">
                   <input
                     type="text"
                     value={r.displayTicker}
-                    onChange={(e) => updateTicker(idx, e.target.value)}
+                    onChange={(e) => updateTicker(r._key, e.target.value)}
                     placeholder="e.g. SPY"
+                    aria-label="Ticker symbol"
                     className="w-36 rounded border border-hair bg-transparent px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
                   />
                 </td>
@@ -190,14 +197,15 @@ function FundHoldingsEditor({
                       type="number"
                       step="0.01"
                       value={r.weight}
-                      onChange={(e) => updateWeight(idx, e.target.value)}
+                      onChange={(e) => updateWeight(r._key, e.target.value)}
+                      aria-label="Weight percentage"
                       className="w-24 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm tabular-nums text-ink focus:border-accent focus:outline-none"
                     />
                   </div>
                 </td>
                 <td className="px-3 py-2">
                   <button
-                    onClick={() => removeRow(idx)}
+                    onClick={() => removeRow(r._key)}
                     className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
                     title="Remove holding"
                     aria-label="Remove holding"
@@ -270,19 +278,24 @@ export default function FundPortfoliosTab() {
   }, []);
 
   // ── Fetch stats for selected portfolio ─────────────────────────────────────
-  const fetchStats = useCallback(async (portfolioId: string) => {
+  // Returns an ignore-setter so callers can cancel the in-flight request if the
+  // selection changes before the response arrives (stale-response guard).
+  const fetchStats = useCallback(async (portfolioId: string, signal?: AbortSignal) => {
     setStatsLoading(true);
     setStats(null);
     try {
       const res = await fetch(
-        `/api/cma/ticker-portfolios/${portfolioId}/stats`
+        `/api/cma/ticker-portfolios/${portfolioId}/stats`,
+        { signal }
       );
       if (res.ok) {
         const data: PortfolioStats = await res.json();
         setStats(data);
       }
-    } catch {
-      // Fail-soft — stats panel just stays empty
+    } catch (err) {
+      // Abort errors are expected when the selection changes mid-flight.
+      if (err instanceof Error && err.name === "AbortError") return;
+      // Other failures: fail-soft — stats panel just stays empty.
     } finally {
       setStatsLoading(false);
     }
@@ -307,7 +320,11 @@ export default function FundPortfoliosTab() {
     const p = portfolios.find((x) => x.id === selectedId);
     setEditName(p?.name ?? "");
     if (p && p.holdings.length > 0) {
-      void fetchStats(selectedId);
+      // Abort any in-flight request from the previous selection so stale
+      // responses don't overwrite stats for the newly-selected portfolio.
+      const controller = new AbortController();
+      void fetchStats(selectedId, controller.signal);
+      return () => controller.abort();
     } else {
       setStats(null);
     }
@@ -434,6 +451,7 @@ export default function FundPortfoliosTab() {
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={() => renamePortfolio(selected.id, editName)}
+              aria-label="Portfolio name"
               className="flex-1 rounded border border-hair bg-transparent px-2 py-1 text-sm font-medium text-ink focus:border-accent focus:outline-none"
             />
             <div className="flex items-center gap-2 flex-shrink-0">
