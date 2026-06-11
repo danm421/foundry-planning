@@ -8,6 +8,8 @@ import { operationsBlocked } from "@/lib/operations-route-guard";
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/beta",
+  "/beta/signup(.*)",
   "/",
   "/checkout/(.*)",
   "/api/checkout/(.*)",
@@ -28,6 +30,7 @@ const isPublicRoute = createRouteMatcher([
 // org-less users are allowed to reach without being bounced further.
 const isOrgPickerRoute = createRouteMatcher([
   "/select-organization(.*)",
+  "/beta/redeem(.*)",
 ]);
 
 // Billing access enforcement (AD-1) must never block the very surface a

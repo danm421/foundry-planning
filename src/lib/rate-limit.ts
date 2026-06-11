@@ -227,6 +227,26 @@ export async function checkCheckoutStatusRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Beta redemption (public, IP-keyed). Codes are high-entropy + single-use, so
+// brute force is already infeasible; these budgets are defense-in-depth and
+// generous enough that a real tester never trips them. Fail-closed like the
+// rest — a transient Upstash outage blocks the rare beta redeem, which is an
+// acceptable retry, not a paying-customer outage.
+const getBetaValidateLimiter = buildLimiter(20, "1 m", "rl:beta:validate");
+const getBetaRedeemLimiter = buildLimiter(10, "1 m", "rl:beta:redeem");
+
+export async function checkBetaValidateRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getBetaValidateLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+export async function checkBetaRedeemRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getBetaRedeemLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 /**
  * Build the standard error response for a denied rate-limit check.
  * Maps `exceeded` → 429, anything else → 503, and emits Retry-After

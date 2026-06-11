@@ -160,3 +160,27 @@ export async function applyFounderState(opts: FounderInitOptions): Promise<void>
     metadata: { drift: state.drift, ownerUserId, entitlements },
   });
 }
+
+/**
+ * Create a brand-new Clerk org owned by `ownerUserId` and immediately bring it
+ * into the founder configuration. Wraps the tested `applyFounderState` so the
+ * "what makes an org a founder" logic stays single-sourced. Used by the beta
+ * redemption flow, which auto-creates the firm (unlike the manual script, which
+ * comps an org that already exists).
+ */
+export async function createFounderOrgForUser(opts: {
+  ownerUserId: string;
+  displayName: string;
+  entitlements: string[];
+}): Promise<{ firmId: string }> {
+  const { ownerUserId, displayName, entitlements } = opts;
+  const cc = await clerkClient();
+  // `createdBy` makes the user a member (admin) of the new org; applyFounderState
+  // then promotes them to org:owner.
+  const org = await cc.organizations.createOrganization({
+    name: displayName,
+    createdBy: ownerUserId,
+  });
+  await applyFounderState({ firmId: org.id, displayName, ownerUserId, entitlements });
+  return { firmId: org.id };
+}
