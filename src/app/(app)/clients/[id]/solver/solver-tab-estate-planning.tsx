@@ -14,7 +14,7 @@ import {
 import { buildRevertFundingMutation } from "@/lib/solver/trust-levers";
 import { SolverTrustForm, type SolverTrustDraft } from "./solver-trust-form";
 import { useSolverSide } from "./solver-section";
-import type { CurrentRevocableTrust } from "@/lib/solver/estate-current";
+import type { CurrentRevocableTrust, CurrentCharity } from "@/lib/solver/estate-current";
 
 interface Props {
   accounts: Account[];
@@ -222,6 +222,78 @@ export function EstateTrustsList({
             </button>
           </div>
         ))}
+    </div>
+  );
+}
+
+/** Charities section. Base side: read-only existing charities. Working side:
+ *  existing + scenario-added charities, plus the inline "add charity" form. */
+export function EstateCharitiesList({
+  currentCharities: current,
+  addedCharities,
+  charityName,
+  charityType,
+  onChangeName,
+  onChangeType,
+  onAdd,
+}: {
+  currentCharities: CurrentCharity[];
+  addedCharities: CurrentCharity[];
+  charityName: string;
+  charityType: "public" | "private";
+  onChangeName: (v: string) => void;
+  onChangeType: (v: "public" | "private") => void;
+  onAdd: () => void;
+}) {
+  const side = useSolverSide();
+  const working = side === "working";
+  const rows = working ? [...current, ...addedCharities] : current;
+
+  return (
+    <div className="col-span-2 space-y-2">
+      {rows.length === 0 ? (
+        <div className="text-[12px] text-ink-4">No charities</div>
+      ) : (
+        <ul className="space-y-1">
+          {rows.map((c) => (
+            <li key={c.id} className="text-[13px] text-ink-2">
+              {c.name}
+              <span className="ml-1 text-[11px] text-ink-3">({c.charityType})</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {working ? (
+        <div className="flex items-end gap-2 pt-1">
+          <label className="flex-1 text-[12px] text-ink-2">
+            New charity
+            <input
+              type="text"
+              value={charityName}
+              onChange={(e) => onChangeName(e.target.value)}
+              placeholder="Charity name"
+              className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            />
+          </label>
+          <select
+            aria-label="Charity type"
+            value={charityType}
+            onChange={(e) => onChangeType(e.target.value as "public" | "private")}
+            className="h-9 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          >
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="h-9 rounded-md bg-accent px-3 text-[13px] text-white hover:bg-accent/90"
+          >
+            Add
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

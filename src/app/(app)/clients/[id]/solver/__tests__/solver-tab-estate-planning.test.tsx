@@ -6,6 +6,7 @@ import { SolverSideContext } from "../solver-section";
 import { EstateRevocableTrustList } from "../solver-tab-estate-planning";
 import { EstateGiftsList } from "../solver-tab-estate-planning";
 import { EstateTrustsList } from "../solver-tab-estate-planning";
+import { EstateCharitiesList } from "../solver-tab-estate-planning";
 import type { SolverTrustDraft } from "../solver-trust-form";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
@@ -124,5 +125,38 @@ describe("EstateTrustsList", () => {
   it("shows an empty state when there are no trusts", () => {
     renderTrusts("base", { currentTrusts: [], addedTrusts: [] });
     expect(screen.getByText("No trusts")).toBeTruthy();
+  });
+});
+
+function renderCharities(side: "base" | "working", over = {}) {
+  render(
+    <SolverSideContext.Provider value={side}>
+      <EstateCharitiesList
+        currentCharities={[{ id: "c1", name: "Red Cross", charityType: "public" }]}
+        addedCharities={[{ id: "c2", name: "New Foundation", charityType: "private" }]}
+        charityName=""
+        charityType="public"
+        onChangeName={vi.fn()}
+        onChangeType={vi.fn()}
+        onAdd={vi.fn()}
+        {...over}
+      />
+    </SolverSideContext.Provider>,
+  );
+}
+
+describe("EstateCharitiesList", () => {
+  it("base side lists current charities read-only with no add form", () => {
+    renderCharities("base");
+    expect(screen.getByText("Red Cross")).toBeTruthy();
+    expect(screen.queryByText("New Foundation")).toBeNull();
+    expect(screen.queryByPlaceholderText("Charity name")).toBeNull();
+  });
+
+  it("working side lists current + added charities and shows the add form", () => {
+    renderCharities("working");
+    expect(screen.getByText("Red Cross")).toBeTruthy();
+    expect(screen.getByText("New Foundation")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Charity name")).toBeTruthy();
   });
 });
