@@ -42,7 +42,7 @@ export function ClientRowActions({
       </Link>
       {planningClientId ? (
         <Link
-          href={`/clients/${planningClientId}/overview`}
+          href={`/clients/${planningClientId}/details`}
           className={pill}
           onClick={recordOpen}
         >

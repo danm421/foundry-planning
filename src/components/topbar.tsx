@@ -28,7 +28,8 @@ const TABS: ReadonlyArray<{
   href: string;
   subTabs?: ReadonlyArray<SubTab>;
 }> = [
-  { label: "Overview", href: "overview" },
+  // Overview is hidden for now (default planning lands on Details). The route
+  // still lives at /clients/[id]/overview — re-add this tab to bring it back.
   { label: "Details", href: "details" },
   {
     label: "Assets",
