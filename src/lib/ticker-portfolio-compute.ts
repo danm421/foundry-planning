@@ -182,27 +182,20 @@ export async function computeAndCacheTickerPortfolioStats(args: {
     sortino: hasWindow ? num(panel.stats.sortino) : null,
     maxDrawdown: hasWindow ? num(panel.stats.maxDrawdown) : null,
   };
+  const statsRow = {
+    windowStart: panel.windowStart ? `${panel.windowStart.slice(0, 7)}-01` : null,
+    windowEnd: panel.windowEnd ? `${panel.windowEnd.slice(0, 7)}-01` : null,
+    nMonths: panel.nMonths,
+    ...metrics,
+    limitingTicker: panel.limitingTicker,
+    computedAt: new Date(),
+  };
   await db
     .insert(tickerPortfolioStats)
-    .values({
-      tickerPortfolioId: portfolioId,
-      windowStart: panel.windowStart ? `${panel.windowStart.slice(0, 7)}-01` : null,
-      windowEnd: panel.windowEnd ? `${panel.windowEnd.slice(0, 7)}-01` : null,
-      nMonths: panel.nMonths,
-      ...metrics,
-      limitingTicker: panel.limitingTicker,
-      computedAt: new Date(),
-    })
+    .values({ tickerPortfolioId: portfolioId, ...statsRow })
     .onConflictDoUpdate({
       target: tickerPortfolioStats.tickerPortfolioId,
-      set: {
-        windowStart: panel.windowStart ? `${panel.windowStart.slice(0, 7)}-01` : null,
-        windowEnd: panel.windowEnd ? `${panel.windowEnd.slice(0, 7)}-01` : null,
-        nMonths: panel.nMonths,
-        ...metrics,
-        limitingTicker: panel.limitingTicker,
-        computedAt: new Date(),
-      },
+      set: statsRow,
     });
 
   return { panel, lookThrough };
