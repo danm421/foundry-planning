@@ -128,11 +128,11 @@ describe("handleSubscriptionUpsert", () => {
     );
   });
 
-  it("grants the ai_import entitlement from a price-tagged add-on once the free quota is spent", async () => {
-    // Free quota exhausted (aiImportsUsed = 3) → ai_import can only come from
-    // the paid add-on line. kind/addon_key live on price.metadata; the item
-    // metadata is empty (reading it would mislabel the add-on as a seat and
-    // silently drop the entitlement).
+  it("grants the seat-bundled ai_import entitlement and mirrors add-on taxonomy to the DB", async () => {
+    // Any active seat grants ai_import (bundled into the plan). A generic
+    // add-on line still maps to the DB mirror via price.metadata so reconcile
+    // can read it. kind/addon_key live on price.metadata; the item metadata is
+    // intentionally empty.
     mockSubsRetrieve.mockResolvedValue({
       id: "sub_ai",
       customer: "cus_ai",
@@ -158,12 +158,12 @@ describe("handleSubscriptionUpsert", () => {
             current_period_end: 1702592000,
           },
           {
-            id: "si_ai",
+            id: "si_addon",
             price: {
-              id: "price_ai_import",
+              id: "price_white_label",
               unit_amount: 19900,
               currency: "usd",
-              metadata: { kind: "addon", addon_key: "ai_import" },
+              metadata: { kind: "addon", addon_key: "white_label" },
             },
             quantity: 1,
             metadata: {},
@@ -171,9 +171,7 @@ describe("handleSubscriptionUpsert", () => {
         ],
       },
     });
-    mockSelectFirms.mockResolvedValue([
-      { firmId: "org_ai", isFounder: false, aiImportsUsed: 3 },
-    ]);
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_ai", isFounder: false }]);
     mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-ai" }]);
     mockItemsUpsert.mockResolvedValue([]);
 
@@ -186,10 +184,11 @@ describe("handleSubscriptionUpsert", () => {
     expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
       "org_ai",
       expect.objectContaining({
-        publicMetadata: expect.objectContaining({ entitlements: ["ai_import"] }),
+        publicMetadata: expect.objectContaining({
+          entitlements: ["ai_import", "white_label"],
+        }),
       }),
     );
-    // The DB mirror rows must carry the add-on taxonomy too (reconcile reads them).
     const itemRows = mockItemsUpsert.mock.calls[0][0] as Array<{
       stripePriceId: string;
       kind: string;
@@ -198,9 +197,9 @@ describe("handleSubscriptionUpsert", () => {
     expect(itemRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          stripePriceId: "price_ai_import",
+          stripePriceId: "price_white_label",
           kind: "addon",
-          addonKey: "ai_import",
+          addonKey: "white_label",
         }),
       ]),
     );
@@ -288,7 +287,7 @@ describe("handleSubscriptionUpsert", () => {
       metadata: { firm_id: "org_1" },
       items: { data: [] },
     });
-    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, aiImportsUsed: 0 }]);
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false }]);
     // An existing active row for the firm with a DIFFERENT stripe sub id.
     mockSelectActiveSub.mockResolvedValue([
       { stripeSubscriptionId: "sub_old", status: "active" },
@@ -317,7 +316,7 @@ describe("handleSubscriptionUpsert", () => {
       metadata: { firm_id: "org_1" },
       items: { data: [] },
     });
-    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, aiImportsUsed: 0 }]);
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false }]);
     // The firm's previous subscription is CANCELED — not a live conflict, so the
     // partial unique index would not throw and the new sub must upsert.
     mockSelectActiveSub.mockResolvedValue([

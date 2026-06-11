@@ -12,40 +12,40 @@ export type StripeItemView = {
 
 export type EntitlementsInput = {
   items: StripeItemView[];
-  /**
-   * Count of onboarding-mode imports already credited to this firm.
-   * < AI_IMPORT_FREE_QUOTA grants the `ai_import` entitlement even without
-   * a Stripe addon line — the switching-incentive branch from the pricing
-   * spec.
-   */
-  aiImportsUsed: number;
 };
 
-export const AI_IMPORT_FREE_QUOTA = 3;
+/**
+ * Entitlements bundled into the base plan — granted to any firm holding an
+ * active seat. AI document import (`ai_import`) ships with every plan; there is
+ * no separate add-on or usage quota for it.
+ */
+export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import"] as const;
 
 /**
  * Derive the Clerk-public-metadata `entitlements` array from a subscription's
- * line items + the firm's free-quota counter. Pure function — no IO, no
- * Date.now, no env reads.
+ * line items. Pure function — no IO, no Date.now, no env reads.
  *
- * Excludes seat items (no entitlement attached), removed items, and addon
- * items missing an addon_key (which is itself a CHECK violation, but we
- * defend rather than throw so a corrupt payload can't break the webhook).
+ * Two sources:
+ *  - Any active (non-removed) `seat` item grants every entitlement in
+ *    SEAT_INCLUDED_ENTITLEMENTS — holding a plan includes `ai_import`.
+ *  - Any active `addon` item with an `addonKey` grants that key. This generic
+ *    add-on support is retained for future add-ons; none ship today.
  *
- * Free-quota OR-in: the `ai_import` entitlement is also granted when
- * `aiImportsUsed < AI_IMPORT_FREE_QUOTA`, even without an active addon line.
+ * Excludes removed items and addon items missing an addonKey (itself a CHECK
+ * violation, but we defend rather than throw so a corrupt payload can't break
+ * the webhook).
  *
- * Output is sorted + deduped so two equivalent inputs always produce the
- * same entitlements string when serialized into Clerk metadata — stable
- * diffs in the reconciliation cron.
+ * Output is sorted + deduped so two equivalent inputs always produce the same
+ * entitlements string when serialized into Clerk metadata — stable diffs in
+ * the reconciliation cron.
  */
 export function deriveEntitlements(input: EntitlementsInput): string[] {
-  const fromAddons = input.items
-    .filter((i) => i.kind === "addon" && !i.removed && !!i.addonKey)
-    .map((i) => i.addonKey as string);
-  const set = new Set(fromAddons);
-  if (input.aiImportsUsed < AI_IMPORT_FREE_QUOTA) {
-    set.add("ai_import");
+  const set = new Set<string>();
+  if (input.items.some((i) => i.kind === "seat" && !i.removed)) {
+    for (const e of SEAT_INCLUDED_ENTITLEMENTS) set.add(e);
+  }
+  for (const i of input.items) {
+    if (i.kind === "addon" && !i.removed && i.addonKey) set.add(i.addonKey);
   }
   return Array.from(set).sort();
 }

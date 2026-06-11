@@ -1,92 +1,56 @@
 import { describe, it, expect } from "vitest";
 import { deriveEntitlements, type StripeItemView } from "../entitlements";
 
-const mkItem = (over: Partial<StripeItemView>): StripeItemView => ({
+const seat: StripeItemView = { kind: "seat", addonKey: null, removed: false };
+const mkAddon = (over: Partial<StripeItemView>): StripeItemView => ({
   kind: "addon",
-  addonKey: "ai_import",
+  addonKey: "white_label",
   removed: false,
   ...over,
 });
 
-const seat: StripeItemView = { kind: "seat", addonKey: null, removed: false };
-
 describe("deriveEntitlements", () => {
-  it("returns [] for zero items and quota exhausted", () => {
-    expect(deriveEntitlements({ items: [], aiImportsUsed: 3 })).toEqual([]);
+  it("returns [] when there are no items", () => {
+    expect(deriveEntitlements({ items: [] })).toEqual([]);
   });
 
-  it("returns [] when only seat items are present and quota exhausted", () => {
-    expect(deriveEntitlements({ items: [seat], aiImportsUsed: 3 })).toEqual([]);
+  it("grants ai_import for any active seat (AI is bundled into the plan)", () => {
+    expect(deriveEntitlements({ items: [seat] })).toEqual(["ai_import"]);
   });
 
-  it("returns one entitlement for one active addon", () => {
+  it("returns [] when the only seat item is removed", () => {
+    expect(deriveEntitlements({ items: [{ ...seat, removed: true }] })).toEqual([]);
+  });
+
+  it("unions the seat-included ai_import with a generic addon, sorted", () => {
     expect(
-      deriveEntitlements({
-        items: [mkItem({ addonKey: "ai_import" })],
-        aiImportsUsed: 3,
-      }),
-    ).toEqual(["ai_import"]);
+      deriveEntitlements({ items: [seat, mkAddon({ addonKey: "white_label" })] }),
+    ).toEqual(["ai_import", "white_label"]);
   });
 
-  it("dedupes when both Stripe addon active AND free quota remaining", () => {
+  it("grants a generic addon entitlement even without a seat", () => {
     expect(
-      deriveEntitlements({
-        items: [mkItem({ addonKey: "ai_import" })],
-        aiImportsUsed: 0,
-      }),
-    ).toEqual(["ai_import"]);
+      deriveEntitlements({ items: [mkAddon({ addonKey: "white_label" })] }),
+    ).toEqual(["white_label"]);
   });
 
   it("excludes removed addons", () => {
     expect(
-      deriveEntitlements({
-        items: [mkItem({ addonKey: "ai_import", removed: true })],
-        aiImportsUsed: 3,
-      }),
-    ).toEqual([]);
+      deriveEntitlements({ items: [seat, mkAddon({ removed: true })] }),
+    ).toEqual(["ai_import"]);
   });
 
-  it("excludes addon items with null addonKey (defensive)", () => {
+  it("excludes addon items with a null addonKey (defensive)", () => {
     expect(
       deriveEntitlements({
         items: [{ kind: "addon", addonKey: null, removed: false }],
-        aiImportsUsed: 3,
       }),
     ).toEqual([]);
   });
 
-  it("returns sorted list with multiple distinct addons", () => {
+  it("dedupes when an addon key duplicates a seat-included entitlement", () => {
     expect(
-      deriveEntitlements({
-        items: [
-          mkItem({ addonKey: "white_label" }),
-          mkItem({ addonKey: "ai_import" }),
-        ],
-        aiImportsUsed: 3,
-      }),
-    ).toEqual(["ai_import", "white_label"]);
-  });
-
-  it("free-quota: ai_imports_used < 3 grants ai_import even with no addon line", () => {
-    expect(deriveEntitlements({ items: [seat], aiImportsUsed: 0 })).toEqual([
-      "ai_import",
-    ]);
-    expect(deriveEntitlements({ items: [seat], aiImportsUsed: 2 })).toEqual([
-      "ai_import",
-    ]);
-  });
-
-  it("free-quota: ai_imports_used >= 3 does NOT grant ai_import", () => {
-    expect(deriveEntitlements({ items: [seat], aiImportsUsed: 3 })).toEqual([]);
-    expect(deriveEntitlements({ items: [seat], aiImportsUsed: 99 })).toEqual([]);
-  });
-
-  it("free-quota union with white_label addon stays sorted", () => {
-    expect(
-      deriveEntitlements({
-        items: [seat, mkItem({ addonKey: "white_label" })],
-        aiImportsUsed: 0,
-      }),
-    ).toEqual(["ai_import", "white_label"]);
+      deriveEntitlements({ items: [seat, mkAddon({ addonKey: "ai_import" })] }),
+    ).toEqual(["ai_import"]);
   });
 });

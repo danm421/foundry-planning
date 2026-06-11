@@ -48,7 +48,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     return;
   }
   const firmRow = await db
-    .select({ aiImportsUsed: firms.aiImportsUsed })
+    .select({ firmId: firms.firmId })
     .from(firms)
     .where(eq(firms.firmId, firmId))
     .then((r) => r[0]);
@@ -56,7 +56,6 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     console.warn(`[webhook] ${event.type} ${sub.id}: firm ${firmId} not in DB yet`);
     return;
   }
-  const aiImportsUsed = firmRow.aiImportsUsed ?? 0;
 
   // In-firm double-subscription guard. The subscriptions_firm_active_unique
   // partial index forbids two live rows per firm; if a second active sub with a
@@ -113,7 +112,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     ...readSubscriptionItemMeta(it),
     removed: false,
   }));
-  const entitlements = deriveEntitlements({ items: itemsView, aiImportsUsed });
+  const entitlements = deriveEntitlements({ items: itemsView });
 
   const subRows = await db
     .insert(subscriptions)

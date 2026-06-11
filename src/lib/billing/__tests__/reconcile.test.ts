@@ -5,18 +5,11 @@ const ok: ReconcileInput = {
   firmId: "org_1",
   stripe: {
     status: "active",
-    items: [
-      { kind: "seat", addonKey: null, quantity: 3, removed: false },
-      { kind: "addon", addonKey: "ai_import", quantity: 1, removed: false },
-    ],
+    items: [{ kind: "seat", addonKey: null, quantity: 3, removed: false }],
   },
   db: {
     status: "active",
-    items: [
-      { kind: "seat", addonKey: null, quantity: 3, removed: false },
-      { kind: "addon", addonKey: "ai_import", quantity: 1, removed: false },
-    ],
-    aiImportsUsed: 3,
+    items: [{ kind: "seat", addonKey: null, quantity: 3, removed: false }],
   },
   clerk: {
     subscriptionStatus: "active",
@@ -25,7 +18,7 @@ const ok: ReconcileInput = {
 };
 
 describe("diffReconciliation", () => {
-  it("returns no drift when all three sources agree", () => {
+  it("returns no drift when all three sources agree (seat → ai_import)", () => {
     expect(diffReconciliation(ok)).toEqual([]);
   });
 
@@ -52,59 +45,9 @@ describe("diffReconciliation", () => {
     expect(drift[0].field).toBe("status");
   });
 
-  it("flags entitlements drift between derived and Clerk", () => {
+  it("flags entitlements drift when Clerk lacks the seat-included ai_import", () => {
     const input = { ...ok, clerk: { ...ok.clerk, entitlements: [] } };
-    const drift = diffReconciliation(input);
-    expect(drift).toHaveLength(1);
-    expect(drift[0].field).toBe("entitlements");
-  });
-
-  it("flags seat-quantity drift between Stripe and DB", () => {
-    const input = {
-      ...ok,
-      db: {
-        ...ok.db,
-        items: [
-          { kind: "seat" as const, addonKey: null, quantity: 5, removed: false },
-          { kind: "addon" as const, addonKey: "ai_import", quantity: 1, removed: false },
-        ],
-      },
-    };
-    const drift = diffReconciliation(input);
-    expect(drift.some((d) => d.field === "items")).toBe(true);
-  });
-
-  it("treats removed items as not present in the entitlement comparison", () => {
-    const removedAddon = {
-      kind: "addon" as const,
-      addonKey: "ai_import",
-      quantity: 1,
-      removed: true,
-    };
-    const seat = {
-      kind: "seat" as const,
-      addonKey: null,
-      quantity: 3,
-      removed: false,
-    };
-    const input = {
-      ...ok,
-      stripe: { ...ok.stripe, items: [seat, removedAddon] },
-      db: { ...ok.db, items: [seat, removedAddon] },
-      clerk: { ...ok.clerk, entitlements: [] },
-    };
-    expect(diffReconciliation(input)).toEqual([]);
-  });
-
-  it("flags drift when Clerk lacks ai_import but free quota remains", () => {
-    expect(
-      diffReconciliation({
-        firmId: "org_1",
-        stripe: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }] },
-        db: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }], aiImportsUsed: 0 },
-        clerk: { subscriptionStatus: "active", entitlements: [] },
-      }),
-    ).toEqual([
+    expect(diffReconciliation(input)).toEqual([
       {
         firmId: "org_1",
         field: "entitlements",
@@ -114,14 +57,57 @@ describe("diffReconciliation", () => {
     ]);
   });
 
-  it("no entitlement drift when free quota grants ai_import and Clerk reflects it", () => {
+  it("flags seat-quantity drift between Stripe and DB", () => {
+    const input = {
+      ...ok,
+      db: {
+        ...ok.db,
+        items: [{ kind: "seat" as const, addonKey: null, quantity: 5, removed: false }],
+      },
+    };
+    const drift = diffReconciliation(input);
+    expect(drift.some((d) => d.field === "items")).toBe(true);
+  });
+
+  it("a removed addon does not add entitlements beyond the seat's ai_import", () => {
+    const seat = { kind: "seat" as const, addonKey: null, quantity: 3, removed: false };
+    const removedAddon = {
+      kind: "addon" as const,
+      addonKey: "white_label",
+      quantity: 1,
+      removed: true,
+    };
+    const input: ReconcileInput = {
+      ...ok,
+      stripe: { ...ok.stripe, items: [seat, removedAddon] },
+      db: { ...ok.db, items: [seat, removedAddon] },
+      clerk: { ...ok.clerk, entitlements: ["ai_import"] },
+    };
+    expect(diffReconciliation(input)).toEqual([]);
+  });
+
+  it("derives an active generic addon into the entitlements set", () => {
+    const seat = { kind: "seat" as const, addonKey: null, quantity: 1, removed: false };
+    const addon = {
+      kind: "addon" as const,
+      addonKey: "white_label",
+      quantity: 1,
+      removed: false,
+    };
     expect(
       diffReconciliation({
         firmId: "org_1",
-        stripe: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }] },
-        db: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }], aiImportsUsed: 1 },
+        stripe: { status: "active", items: [seat, addon] },
+        db: { status: "active", items: [seat, addon] },
         clerk: { subscriptionStatus: "active", entitlements: ["ai_import"] },
       }),
-    ).toEqual([]);
+    ).toEqual([
+      {
+        firmId: "org_1",
+        field: "entitlements",
+        stripeValue: ["ai_import", "white_label"],
+        clerkValue: ["ai_import"],
+      },
+    ]);
   });
 });
