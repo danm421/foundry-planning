@@ -273,7 +273,10 @@ export type AuditAction =
   | "vault.folder.delete"
   | "vault.document.update"
   | "vault.document.move"
-  | "vault.document.version_added";
+  | "vault.document.version_added"
+  // Support & feedback
+  | "support.message_sent"
+  | "feedback.submitted";
 
 type Args = {
   action: AuditAction;
