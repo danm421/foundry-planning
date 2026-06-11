@@ -3,6 +3,7 @@
 import type { ExtractedLiability } from "@/lib/extraction/types";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
 // to flag fields the AI didn't extract.
@@ -119,6 +120,7 @@ export default function ReviewStepLiabilities({
                     placeholder={String(defaultEndYear)}
                   />
                 </div>
+                <SourceBadge row={liability} className="pb-1" />
                 <button
                   onClick={() => removeRow(i)}
                   className="pb-1 text-white hover:text-white"

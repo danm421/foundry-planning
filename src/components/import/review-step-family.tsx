@@ -11,6 +11,7 @@ import type {
 import type { MatchAnnotation } from "@/lib/imports/types";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
+import SourceBadge from "./source-badge";
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: "single", label: "Single" },
@@ -293,6 +294,7 @@ export default function ReviewStepFamily({
                           <option key={o.value} value={o.value}>{o.label}</option>
                         ))}
                       </select>
+                      <SourceBadge row={d} className="pb-1" />
                       <button
                         onClick={() => removeDependent(i)}
                         className="pb-1 text-white hover:text-white"
