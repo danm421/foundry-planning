@@ -83,6 +83,7 @@ import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constant
 import { type HoldingInput } from "@/lib/investments/holdings-rollup";
 import { computeHoldingsTotals } from "./holdings-totals";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
+import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import {
   resolveAccountFromRaw,
   resolveIncomeFromRaw,
@@ -480,6 +481,7 @@ export const loadClientDataWithContext = cache(
     for (const ac of assetClassRows) {
       if (ac.slug) slugToAssetClassId.set(ac.slug, ac.id);
     }
+    const tickerPortfolioAllocations = await loadTickerPortfolioAllocations(firmId, slugToAssetClassId);
 
     const overridesByHolding = new Map<string, { assetClassId: string; weight: number }[]>();
     for (const o of holdingOverrideRows) {
@@ -544,6 +546,7 @@ export const loadClientDataWithContext = cache(
           assetClassId: o.sourceAssetClassId!,
           geometricReturn: o.geometricReturn,
         })),
+      tickerPortfolioAllocations,
     });
 
     // ── Beneficiary designations ────────────────────────────────────────────
@@ -712,6 +715,10 @@ export const loadClientDataWithContext = cache(
           : undefined;
       } else if (effectiveSource === "asset_mix") {
         baseAlloc = resolver.accountAllocMap(account.id);
+      } else if (effectiveSource === "ticker_portfolio") {
+        baseAlloc = account.tickerPortfolioId
+          ? resolver.tickerPortfolioAllocMap(account.tickerPortfolioId)
+          : undefined;
       }
       accountBaseAllocByAccountId.set(account.id, baseAlloc);
     }
