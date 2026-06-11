@@ -152,4 +152,34 @@ describe("extractDocument", () => {
             "mini",
         );
     });
+
+    it("extracts stocks, a bond, and cash into nested holdings", async () => {
+        mockedCallAI.mockResolvedValueOnce(
+            JSON.stringify({
+                accounts: [
+                    {
+                        name: "Schwab Brokerage - Joint",
+                        category: "taxable",
+                        subType: "brokerage",
+                        value: 100000,
+                        holdings: [
+                            { ticker: "VTI", shares: 100, price: 200, marketValue: 20000, costBasis: 15000 },
+                            { name: "US TREASURY 4.0% 2030 CUSIP 912828ZZ9", shares: 50000, price: 0.98, marketValue: 49000, costBasis: 50000 },
+                            { name: "Cash", shares: 31000, price: 1 },
+                        ],
+                    },
+                ],
+                liabilities: [],
+            }),
+        );
+        const result = await extractDocument(
+            Buffer.from("x"), "schwab.pdf", "account_statement", "mini", undefined, true,
+        );
+        const h = result.extracted.accounts[0].holdings!;
+        expect(h).toHaveLength(3);
+        expect(h[0].ticker).toBe("VTI");
+        expect(h[1].ticker).toBeUndefined();
+        expect(h[1].name).toContain("912828ZZ9");
+        expect(h[2].name).toBe("Cash");
+    });
 });
