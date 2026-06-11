@@ -38,6 +38,7 @@ export interface AccountLite {
   category: AccountCategory;
   growthSource: GrowthSource;
   modelPortfolioId: string | null;
+  tickerPortfolioId: string | null;
 }
 
 export interface PlanSettingsLite {
@@ -78,6 +79,7 @@ export function resolveAccountAllocation(
   modelPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]>,
   plan: PlanSettingsLite,
   cashAssetClassId: string | null,
+  tickerPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]> = {},
 ): AccountAllocationResult {
   // Cash accounts always resolve to 100% of the Cash asset class for the
   // investments report, regardless of their configured growth_source. The
@@ -100,9 +102,19 @@ export function resolveAccountAllocation(
     return { unallocated: true };
   }
 
+  if (account.growthSource === "ticker_portfolio") {
+    if (!account.tickerPortfolioId) return { unallocated: true };
+    const rows = tickerPortfolioAllocationsByPortfolioId[account.tickerPortfolioId];
+    if (rows && rows.length > 0) return { classified: rows };
+    return { unallocated: true };
+  }
+
   if (account.growthSource === "default") {
     const entry = planEntryForCategory(account.category, plan);
     if (!entry) return { unallocated: true };
+    // Plan-settings category defaults are model-portfolio-only; fund (ticker)
+    // portfolios are an account-level growth source only (out of scope per spec),
+    // so no ticker_portfolio handling is needed here.
     if (entry.source === "model_portfolio" && entry.portfolioId) {
       const rows = modelPortfolioAllocationsByPortfolioId[entry.portfolioId];
       if (rows && rows.length > 0) return { classified: rows };

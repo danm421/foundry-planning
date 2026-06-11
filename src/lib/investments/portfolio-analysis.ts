@@ -46,7 +46,7 @@ export function aggregateWeights(members: AggregateInput[]): AggregateResult {
 
 export interface AnalysisAccount {
   id: string; name: string; category: string; value: number;
-  growthSource: string; modelPortfolioId: string | null;
+  growthSource: string; modelPortfolioId: string | null; tickerPortfolioId: string | null;
 }
 export interface AssetClassMeta { id: string; name: string; sortOrder: number; assetType: AssetTypeId; }
 export interface CustomGroupInput { id: string; name: string; color: string | null; accountIds: string[]; }

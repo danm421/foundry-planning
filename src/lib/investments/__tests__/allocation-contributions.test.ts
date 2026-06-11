@@ -25,6 +25,7 @@ function mkAccount(
     category,
     growthSource: "custom",
     modelPortfolioId: null,
+    tickerPortfolioId: null,
     value,
     ownerEntityId,
     ownerEntityInPortfolio,

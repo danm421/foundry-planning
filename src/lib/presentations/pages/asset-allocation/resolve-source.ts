@@ -58,7 +58,8 @@ export function groupToNormalized(
     .filter((a) => idSet.has(a.id))
     .map((a) => ({
       id: a.id, name: a.name, category: a.category, growthSource: a.growthSource,
-      modelPortfolioId: a.modelPortfolioId, value: a.value, ownerEntityId: a.ownerEntityId,
+      modelPortfolioId: a.modelPortfolioId, tickerPortfolioId: a.tickerPortfolioId,
+      value: a.value, ownerEntityId: a.ownerEntityId,
       ownerEntityInPortfolio: includeOutOfEstate || a.entityInPortfolio,
     }));
   const resolver = buildInvestmentsResolver(bundle);

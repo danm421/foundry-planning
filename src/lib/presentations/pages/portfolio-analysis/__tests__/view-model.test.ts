@@ -6,7 +6,7 @@ function bundle(): InvestmentsBundle {
   return {
     clientId: "c1", firmId: "f1",
     accounts: [
-      { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, value: 100, ownerEntityId: null, entityInPortfolio: false },
+      { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, tickerPortfolioId: null, value: 100, ownerEntityId: null, entityInPortfolio: false },
     ],
     assetClassLites: [
       { id: "eq", name: "US Equity", sortOrder: 0, assetType: "equities" },
@@ -20,6 +20,7 @@ function bundle(): InvestmentsBundle {
     correlationRows: [{ assetClassIdA: "bd", assetClassIdB: "eq", correlation: 0.1 }],
     accountMixByAccountId: { a1: [{ assetClassId: "eq", weight: 1 }] },
     modelPortfolioAllocationsByPortfolioId: {},
+    tickerPortfolioAllocationsByPortfolioId: {},
     planLite: { growthSourceTaxable: "asset_mix", growthSourceCash: "asset_mix", growthSourceRetirement: "asset_mix", modelPortfolioIdTaxable: null, modelPortfolioIdCash: null, modelPortfolioIdRetirement: null },
     portfolioLites: [], selectedBenchmarkPortfolioId: null, customGroups: [],
     resolvedGroups: {}, groupOptions: [],
