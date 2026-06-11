@@ -15,6 +15,7 @@ import {
     NotFoundError,
     requireImportAccess,
 } from "@/lib/imports/authz";
+import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
 import {
     COMMIT_TABS,
@@ -23,6 +24,7 @@ import {
 import { WillCommitValidationError } from "@/lib/imports/commit/will-types";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { checkImportRateLimit } from "@/lib/rate-limit";
+import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import { linkImportFilesToVault } from "@/lib/crm/vault-plans";
 
 export const dynamic = "force-dynamic";
@@ -140,6 +142,11 @@ export async function POST(request: NextRequest, { params }: Params) {
             );
         }
 
+        const resolvedHoldings = tabs.includes("accounts")
+            ? await resolveHoldingsForCommit(payload)
+            : new Map();
+        const holdingsAccountIds: string[] = [];
+
         const { results, allTabsCommitted, firstTimeAllCommitted } = await commitTabs({
             importId,
             payload,
@@ -149,8 +156,14 @@ export async function POST(request: NextRequest, { params }: Params) {
                 scenarioId,
                 orgId: firmId,
                 userId,
+                resolvedHoldings,
+                holdingsAccountIds,
             },
         });
+
+        for (const accountId of holdingsAccountIds) {
+            await syncAccountFromHoldings(accountId);
+        }
 
         if (firstTimeAllCommitted && imp.mode === "onboarding") {
             // Atomic credit claim happens INSIDE commitTabs's tx via the
