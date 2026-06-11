@@ -39,7 +39,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -61,7 +61,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -83,7 +83,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -107,7 +107,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -130,7 +130,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );

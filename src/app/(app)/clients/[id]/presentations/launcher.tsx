@@ -47,7 +47,12 @@ interface Props {
   householdId: string;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
-  initialTemplates: { shared: LoadedTemplate[]; mine: LoadedTemplate[] };
+  initialTemplates: {
+    shared: LoadedTemplate[];
+    mine: LoadedTemplate[];
+    builtIn: LoadedTemplate[];
+    builtInHidden: LoadedTemplate[];
+  };
   investmentCatalog: InvestmentOptionCatalog;
   entities?: EntityPickerOption[];
 }
@@ -230,8 +235,28 @@ export function PresentationsLauncher(props: Props) {
     await refreshTemplates();
   }
 
+  async function handleDismissBuiltin(slug: string) {
+    await fetch(`/api/presentation-templates/builtins/${slug}/dismiss`, {
+      method: "POST",
+    });
+    if (state.loadedTemplate?.slug === slug) dispatch({ type: "clear" });
+    await refreshTemplates();
+  }
+
+  async function handleRestoreBuiltin(slug: string) {
+    await fetch(`/api/presentation-templates/builtins/${slug}/dismiss`, {
+      method: "DELETE",
+    });
+    await refreshTemplates();
+  }
+
   function handleLoadTemplate(id: string) {
-    const all = [...templates.shared, ...templates.mine];
+    const all = [
+      ...templates.shared,
+      ...templates.mine,
+      ...templates.builtIn,
+      ...templates.builtInHidden,
+    ];
     const t = all.find((x) => x.id === id);
     if (t) dispatch({ type: "loadTemplate", template: t });
   }
@@ -525,12 +550,16 @@ export function PresentationsLauncher(props: Props) {
           <TemplatesPanel
             shared={templates.shared}
             mine={templates.mine}
+            builtIn={templates.builtIn}
+            builtInHidden={templates.builtInHidden}
             loadedTemplateId={state.loadedTemplate?.id ?? null}
             currentUserId={props.currentUserId}
             onLoad={handleLoadTemplate}
             onRename={handleRename}
             onChangeVisibility={handleChangeVisibility}
             onDelete={handleDelete}
+            onDismissBuiltin={handleDismissBuiltin}
+            onRestoreBuiltin={handleRestoreBuiltin}
             onSaveAsNew={() => setShowSaveModal(true)}
           />
           <RecentRunsPanel
