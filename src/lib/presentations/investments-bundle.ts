@@ -17,6 +17,7 @@ export interface BundleAccount {
   category: AccountLite["category"];
   growthSource: GrowthSource;
   modelPortfolioId: string | null;
+  tickerPortfolioId: string | null;
   value: number;
   ownerEntityId: string | null;
   /** entity.includeInPortfolio for the owning entity (false for household-owned). */
@@ -45,6 +46,7 @@ export interface InvestmentsBundle {
   correlationRows: { assetClassIdA: string; assetClassIdB: string; correlation: number }[];
   accountMixByAccountId: Record<string, AssetClassWeight[]>;
   modelPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]>;
+  tickerPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]>;
   planLite: PlanSettingsLite;
   portfolioLites: ModelPortfolioLite[];
   selectedBenchmarkPortfolioId: string | null;
@@ -66,6 +68,7 @@ export function buildInvestmentsResolver(
       bundle.modelPortfolioAllocationsByPortfolioId,
       bundle.planLite,
       bundle.cashAssetClassId,
+      bundle.tickerPortfolioAllocationsByPortfolioId,
     );
 }
 
@@ -99,6 +102,7 @@ import {
 import { eq, and, inArray } from "drizzle-orm";
 import { resolveGroup, DEFAULT_GROUP_KEYS, type GroupKey } from "@/lib/account-groups/resolver";
 import { listAccountGroups } from "@/lib/account-groups/queries";
+import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
 
 /**
@@ -179,13 +183,25 @@ export async function loadInvestmentsBundle(
     });
   }
 
+  // Fold this firm's fund (ticker) portfolios into asset-class weight rows keyed
+  // by portfolio id, so ticker_portfolio accounts classify in the bundle resolver.
+  const slugToAssetClassId = new Map<string, string>();
+  for (const ac of classRows) if (ac.slug) slugToAssetClassId.set(ac.slug, ac.id);
+  const tickerAllocRows = await loadTickerPortfolioAllocations(firmId, slugToAssetClassId);
+  const tickerPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]> = {};
+  for (const r of tickerAllocRows)
+    (tickerPortfolioAllocationsByPortfolioId[r.tickerPortfolioId] ??= []).push({
+      assetClassId: r.assetClassId, weight: parseFloat(r.weight),
+    });
+
   const customGroupRows = await listAccountGroups(clientId);
 
   const accounts: BundleAccount[] = acctRows.map((a) => {
     const entityId = accountEntityOwner.get(a.id) ?? null;
     return {
       id: a.id, name: a.name, category: a.category, growthSource: toGrowthSource(a.growthSource),
-      modelPortfolioId: a.modelPortfolioId ?? null, value: Number(a.value),
+      modelPortfolioId: a.modelPortfolioId ?? null, tickerPortfolioId: a.tickerPortfolioId ?? null,
+      value: Number(a.value),
       ownerEntityId: entityId,
       entityInPortfolio: entityId !== null && (entityIncludeInPortfolio.get(entityId) ?? false),
     };
@@ -220,7 +236,8 @@ export async function loadInvestmentsBundle(
   const bundle: InvestmentsBundle = {
     clientId, firmId, accounts, assetClassLites, assetClassData, cashAssetClassId, riskFreeRate,
     correlationRows,
-    accountMixByAccountId, modelPortfolioAllocationsByPortfolioId, planLite,
+    accountMixByAccountId, modelPortfolioAllocationsByPortfolioId,
+    tickerPortfolioAllocationsByPortfolioId, planLite,
     portfolioLites: portfolioRows.map((p) => ({ id: p.id, name: p.name })),
     selectedBenchmarkPortfolioId: settings.selectedBenchmarkPortfolioId ?? null,
     customGroups,

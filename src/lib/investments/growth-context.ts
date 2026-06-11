@@ -8,6 +8,7 @@ import {
   clientCmaOverrides,
 } from "@/db/schema";
 import { resolveInflationRate } from "@/lib/inflation";
+import { loadFundPortfolioOptions, type FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 
 export interface GrowthContextPortfolio {
   id: string;
@@ -17,6 +18,7 @@ export interface GrowthContextPortfolio {
 
 export interface GrowthContext {
   modelPortfolios: GrowthContextPortfolio[];
+  fundPortfolios: FundPortfolioOption[];
   resolvedInflationRate: number; // decimal
   /** Keyed by account category (taxable/cash/retirement). */
   categoryDefaults: Record<string, { portfolioName: string | null; blendedReturnPct: number | null }>;
@@ -34,7 +36,7 @@ export async function loadImportGrowthContext(
   firmId: string,
   scenarioId: string | null,
 ): Promise<GrowthContext> {
-  const [portfolioRows, allocationRows, assetClassRows, settingsRows] = await Promise.all([
+  const [portfolioRows, allocationRows, assetClassRows, settingsRows, fundPortfolios] = await Promise.all([
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
@@ -44,6 +46,7 @@ export async function loadImportGrowthContext(
           .from(planSettings)
           .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId)))
       : Promise.resolve([]),
+    loadFundPortfolioOptions(firmId),
   ]);
 
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -94,5 +97,5 @@ export async function loadImportGrowthContext(
     retirement: buildDefault(settings?.modelPortfolioIdRetirement),
   };
 
-  return { modelPortfolios: portfolios, resolvedInflationRate, categoryDefaults };
+  return { modelPortfolios: portfolios, fundPortfolios, resolvedInflationRate, categoryDefaults };
 }

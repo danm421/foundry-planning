@@ -15,7 +15,7 @@ const rawBase = {
   id: "acct1", name: "Brokerage", category: "taxable" as const, subType: "individual",
   value: "0", basis: "0", growthSource: "asset_mix", growthRate: null, turnoverPct: "0",
   annualPropertyTax: "0", propertyTaxGrowthRate: "0", rmdEnabled: false, isDefaultChecking: false,
-  modelPortfolioId: null, overridePctOi: null, overridePctLtCg: null, overridePctQdiv: null,
+  modelPortfolioId: null, tickerPortfolioId: null, overridePctOi: null, overridePctLtCg: null, overridePctQdiv: null,
   overridePctTaxExempt: null, priorYearEndValue: null, insuredPerson: null,
   titlingType: "jtwros" as const,
 };

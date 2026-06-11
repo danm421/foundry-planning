@@ -23,6 +23,7 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
+import { loadFundPortfolioOptions } from "@/lib/investments/load-fund-portfolio-options";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 interface NetWorthContentProps {
@@ -80,12 +81,14 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     assetClassRows,
     { effectiveTree },
     notesReceivableRows,
+    fundPortfolioOptions,
   ] = await Promise.all([
     db
       .select({
         id: accounts.id,
         growthSource: accounts.growthSource,
         modelPortfolioId: accounts.modelPortfolioId,
+        tickerPortfolioId: accounts.tickerPortfolioId,
         turnoverPct: accounts.turnoverPct,
         overridePctOi: accounts.overridePctOi,
         overridePctLtCg: accounts.overridePctLtCg,
@@ -119,6 +122,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
     loadNotesReceivable(id, scenario.id),
+    loadFundPortfolioOptions(firmId),
   ]);
 
   // F11: the meta query above is scoped to the base-case scenario; overlay the
@@ -211,6 +215,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       ownerEntityId: controllingEntity(a) ?? null,
       growthSource: meta?.growthSource ?? "default",
       modelPortfolioId: meta?.modelPortfolioId ?? null,
+      tickerPortfolioId: meta?.tickerPortfolioId ?? null,
       turnoverPct: meta?.turnoverPct == null ? null : String(meta.turnoverPct),
       overridePctOi: meta?.overridePctOi == null ? null : String(meta.overridePctOi),
       overridePctLtCg: meta?.overridePctLtCg == null ? null : String(meta.overridePctLtCg),
@@ -383,6 +388,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       familyMembers={familyMemberRows}
       categoryDefaults={categoryDefaults}
       modelPortfolios={modelPortfolioOptions}
+      fundPortfolios={fundPortfolioOptions}
       ownerNames={{
         clientName: `${effectiveTree.client.firstName} ${effectiveTree.client.lastName}`,
         spouseName: effectiveTree.client.spouseName

@@ -309,6 +309,7 @@ export const yearRefEnum = pgEnum("year_ref", [
 export const growthSourceEnum = pgEnum("growth_source", [
   "default",
   "model_portfolio",
+  "ticker_portfolio",
   "custom",
   "asset_mix",
   "inflation",
@@ -1651,6 +1652,9 @@ export const accounts = pgTable("accounts", {
   // account (the advisor's chosen growthSource / mix / value apply instead).
   deriveFromHoldings: boolean("derive_from_holdings").notNull().default(true),
   modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
+    onDelete: "set null",
+  }),
+  tickerPortfolioId: uuid("ticker_portfolio_id").references(() => tickerPortfolios.id, {
     onDelete: "set null",
   }),
   turnoverPct: decimal("turnover_pct", { precision: 5, scale: 4 }).notNull().default("0"),

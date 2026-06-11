@@ -47,6 +47,10 @@ import {
   modelPortfolioAllocationRow,
   assetClassRow,
   inflationAssetClassRow,
+  tickerPortfolioRow,
+  tickerPortfolioHoldingRow,
+  securityAssetClassWeightRow,
+  tickerPortfolioAccountRow,
 } from "./fixtures/sample-rows";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +95,9 @@ type DbState = {
   reinvestmentGroups: unknown[];
   accountGroups: unknown[];
   accountGroupMembers: unknown[];
+  tickerPortfolios: unknown[];
+  tickerPortfolioHoldings: unknown[];
+  securityAssetClassWeights: unknown[];
 };
 
 const dbState: DbState = {
@@ -132,6 +139,9 @@ const dbState: DbState = {
   reinvestmentGroups: [],
   accountGroups: [],
   accountGroupMembers: [],
+  tickerPortfolios: [],
+  tickerPortfolioHoldings: [],
+  securityAssetClassWeights: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -188,6 +198,9 @@ vi.mock("@/db", async () => {
     if (t === schema.reinvestmentGroups || n === "reinvestment_groups") return dbState.reinvestmentGroups;
     if (t === schema.accountGroups || n === "account_groups") return dbState.accountGroups;
     if (t === schema.accountGroupMembers || n === "account_group_members") return dbState.accountGroupMembers;
+    if (t === schema.tickerPortfolios || n === "ticker_portfolios") return dbState.tickerPortfolios;
+    if (t === schema.tickerPortfolioHoldings || n === "ticker_portfolio_holdings") return dbState.tickerPortfolioHoldings;
+    if (t === schema.securityAssetClassWeights || n === "security_asset_class_weights") return dbState.securityAssetClassWeights;
     return [];
   };
 
@@ -342,5 +355,35 @@ describe("loadClientData", () => {
 
     expect(data.wills).toHaveLength(1);
     expect(data.wills![0].residuaryRecipients).toBeUndefined();
+  });
+
+  it("resolves growthRate from a ticker portfolio (look-through allocation)", async () => {
+    // Seed: assetClassRow already has slug "us-equity" and geometricReturn "0.0700".
+    // tickerPortfolioRow belongs to FIXTURE_FIRM_ID.
+    // tickerPortfolioHoldingRow: weight 1.0, securityId → FIXTURE_SECURITY_ID.
+    // securityAssetClassWeightRow: assetClassSlug "us-equity", weight 1.0.
+    // tickerPortfolioAccountRow: growthSource "ticker_portfolio", tickerPortfolioId set.
+    seedValidFixture();
+    // Override the us-equity asset class to 0.09 (≠ the 0.07 taxable category
+    // default) so this asserts the look-through path, not a coincidental fallback.
+    dbState.assetClasses = [
+      { ...assetClassRow, geometricReturn: "0.0900" },
+      inflationAssetClassRow,
+    ];
+    dbState.tickerPortfolios = [tickerPortfolioRow];
+    dbState.tickerPortfolioHoldings = [tickerPortfolioHoldingRow];
+    dbState.securityAssetClassWeights = [securityAssetClassWeightRow];
+    dbState.accounts = [
+      ...dbState.accounts,
+      tickerPortfolioAccountRow as unknown as (typeof dbState.accounts)[0],
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    const fundAcct = data.accounts.find((a) => a.id === tickerPortfolioAccountRow.id);
+    expect(fundAcct).toBeDefined();
+    // us-equity geometricReturn overridden to 0.09 (≠ the 0.07 taxable category
+    // default) so this asserts the look-through path, not a coincidental fallback.
+    expect(fundAcct!.growthRate).toBeCloseTo(0.09, 4);
   });
 });

@@ -67,6 +67,7 @@ describe("scenario-added account grows in projection", () => {
         rmdEnabled: false,
         isDefaultChecking: false,
         modelPortfolioId: null,
+        tickerPortfolioId: null,
         overridePctOi: null,
         overridePctLtCg: null,
         overridePctQdiv: null,

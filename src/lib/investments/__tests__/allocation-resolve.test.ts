@@ -30,9 +30,17 @@ function mkAccount(overrides: Partial<AccountLite>): AccountLite {
     category: "taxable",
     growthSource: "custom",
     modelPortfolioId: null,
+    tickerPortfolioId: null,
     ...overrides,
   };
 }
+
+const TICKER_ALLOCATIONS = [
+  { assetClassId: "ac-intl", weight: 0.55 },
+  { assetClassId: "ac-cash", weight: 0.45 },
+];
+
+const TICKER_PORTFOLIO_ALLOCATIONS = { tp1: TICKER_ALLOCATIONS };
 
 describe("resolveAccountAllocation", () => {
   it("uses explicit asset_mix rows when growthSource = 'asset_mix'", () => {
@@ -139,6 +147,44 @@ describe("resolveAccountAllocation", () => {
       MP_ALLOCATIONS,
       PLAN,
       "ac-cash",
+    );
+    expect(out).toEqual({ unallocated: true });
+  });
+
+  it("follows the fund portfolio for growthSource = 'ticker_portfolio'", () => {
+    const out = resolveAccountAllocation(
+      mkAccount({ growthSource: "ticker_portfolio", tickerPortfolioId: "tp1" }),
+      ACCOUNT_MIX,
+      MP_ALLOCATIONS,
+      PLAN,
+      null,
+      TICKER_PORTFOLIO_ALLOCATIONS,
+    );
+    // Asserts the seeded ticker rows specifically (distinct ac-intl/ac-cash ids),
+    // so a model-portfolio or asset_mix fall-through can't satisfy this.
+    expect(out).toEqual({ classified: TICKER_ALLOCATIONS });
+  });
+
+  it("returns unallocated for 'ticker_portfolio' when the map has no matching rows", () => {
+    const out = resolveAccountAllocation(
+      mkAccount({ growthSource: "ticker_portfolio", tickerPortfolioId: "tp-missing" }),
+      ACCOUNT_MIX,
+      MP_ALLOCATIONS,
+      PLAN,
+      null,
+      TICKER_PORTFOLIO_ALLOCATIONS,
+    );
+    expect(out).toEqual({ unallocated: true });
+  });
+
+  it("returns unallocated for 'ticker_portfolio' when tickerPortfolioId is null", () => {
+    const out = resolveAccountAllocation(
+      mkAccount({ growthSource: "ticker_portfolio", tickerPortfolioId: null }),
+      ACCOUNT_MIX,
+      MP_ALLOCATIONS,
+      PLAN,
+      null,
+      TICKER_PORTFOLIO_ALLOCATIONS,
     );
     expect(out).toEqual({ unallocated: true });
   });

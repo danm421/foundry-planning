@@ -27,6 +27,7 @@ export const ACCOUNT_FIELD_LABELS: FieldLabels = {
   isDefaultChecking: { label: "Default checking", format: "text" },
   growthSource: { label: "Growth source", format: "text" },
   modelPortfolio: { label: "Model portfolio", format: "reference" },
+  tickerPortfolio: { label: "Fund portfolio", format: "reference" },
   turnoverPct: { label: "Turnover %", format: "percent" },
   annualPropertyTax: { label: "Annual property tax", format: "currency" },
   propertyTaxGrowthRate: { label: "Property tax growth", format: "percent" },

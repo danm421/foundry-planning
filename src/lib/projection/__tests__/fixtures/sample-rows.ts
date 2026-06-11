@@ -36,6 +36,11 @@ export const FIXTURE_TRANSFER_ID = "00000000-0000-0000-0000-000000000300";
 export const FIXTURE_ACCOUNT_ID_3 = "00000000-0000-0000-0000-000000000022";
 export const FIXTURE_ACCOUNT_ASSET_ALLOC_ID = "00000000-0000-0000-0000-000000000092";
 export const FIXTURE_CORRELATION_ID = "00000000-0000-0000-0000-000000000400";
+export const FIXTURE_TICKER_PORTFOLIO_ID = "00000000-0000-0000-0000-000000000500";
+export const FIXTURE_TICKER_HOLDING_ID = "00000000-0000-0000-0000-000000000501";
+export const FIXTURE_SECURITY_ID = "00000000-0000-0000-0000-000000000502";
+export const FIXTURE_SECURITY_ACW_ID = "00000000-0000-0000-0000-000000000503";
+export const FIXTURE_TICKER_ACCOUNT_ID = "00000000-0000-0000-0000-000000000504";
 export const WRONG_FIRM_ID = "wrong-firm-999";
 
 // ── crm_households + crm_household_contacts ──────────────────────────────────
@@ -556,6 +561,66 @@ export const taxYearParameterRow = {
   hsaCatchup55: "1000.00",
   giftAnnualExclusion: "18000.00",
   createdAt: NOW,
+};
+
+// ── ticker_portfolios + holdings + security_asset_class_weights ───────────────
+// Used by the "ticker_portfolio growthSource" test in load-client-data.test.ts.
+
+export const tickerPortfolioRow = {
+  id: FIXTURE_TICKER_PORTFOLIO_ID,
+  firmId: FIXTURE_FIRM_ID,
+  name: "US Large Cap Fund",
+  description: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+export const tickerPortfolioHoldingRow = {
+  id: FIXTURE_TICKER_HOLDING_ID,
+  tickerPortfolioId: FIXTURE_TICKER_PORTFOLIO_ID,
+  securityId: FIXTURE_SECURITY_ID,
+  displayTicker: "VTI",
+  weight: "1.0000",
+  sortOrder: 0,
+};
+
+export const securityAssetClassWeightRow = {
+  id: FIXTURE_SECURITY_ACW_ID,
+  securityId: FIXTURE_SECURITY_ID,
+  assetClassSlug: "us-equity",
+  weight: "1.0000",
+};
+
+/** An account driven by a ticker portfolio (growthSource "ticker_portfolio"). */
+export const tickerPortfolioAccountRow = {
+  id: FIXTURE_TICKER_ACCOUNT_ID,
+  clientId: FIXTURE_CLIENT_ID,
+  scenarioId: FIXTURE_SCENARIO_ID,
+  name: "Fund Portfolio Account",
+  category: "taxable" as const,
+  subType: "brokerage" as const,
+  owner: "joint" as const,
+  titlingType: "jtwros" as const,
+  value: "100000.00",
+  basis: "80000.00",
+  growthRate: "0.0700",
+  rmdEnabled: false,
+  isDefaultChecking: false,
+  ownerEntityId: null,
+  ownerFamilyMemberId: null,
+  growthSource: "ticker_portfolio" as const,
+  modelPortfolioId: null,
+  tickerPortfolioId: FIXTURE_TICKER_PORTFOLIO_ID,
+  turnoverPct: "0.1000",
+  overridePctOi: null,
+  overridePctLtCg: null,
+  overridePctQdiv: null,
+  overridePctTaxExempt: null,
+  annualPropertyTax: "0.00",
+  propertyTaxGrowthRate: "0.0300",
+  source: "manual" as const,
+  createdAt: NOW,
+  updatedAt: NOW,
 };
 
 // ── Monte Carlo additional fixtures ──────────────────────────────────────────

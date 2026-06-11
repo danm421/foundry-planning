@@ -82,6 +82,7 @@ import {
   modelPortfolios,
   assetClasses,
   clients,
+  tickerPortfolios,
 } from "@/db/schema";
 import {
   assertAccountsInClient,
@@ -89,6 +90,7 @@ import {
   assertLiabilitiesInClient,
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
+  assertTickerPortfoliosInFirm,
   assertAssetClassesInFirm,
   findClientInFirm,
 } from "@/lib/db-scoping";
@@ -190,6 +192,17 @@ describe("assertModelPortfoliosInFirm", () => {
   it("rejects a portfolio owned by another firm (firmId filter guard)", async () => {
     setTable(modelPortfolios, [{ id: A, firm_id: "fB" }]);
     expect((await assertModelPortfoliosInFirm("fA", [A])).ok).toBe(false);
+  });
+});
+
+describe("assertTickerPortfoliosInFirm", () => {
+  it("accepts an in-firm fund portfolio id", async () => {
+    setTable(tickerPortfolios, [{ id: A, firm_id: "fA" }]);
+    expect((await assertTickerPortfoliosInFirm("fA", [A])).ok).toBe(true);
+  });
+  it("rejects a fund portfolio owned by another firm (firmId filter guard)", async () => {
+    setTable(tickerPortfolios, [{ id: A, firm_id: "fB" }]);
+    expect((await assertTickerPortfoliosInFirm("fA", [A])).ok).toBe(false);
   });
 });
 

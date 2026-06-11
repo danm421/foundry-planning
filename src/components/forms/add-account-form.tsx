@@ -38,6 +38,7 @@ import ContributionCapCheckbox, {
 } from "./contribution-cap-checkbox";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { GrowthRateField, parseGrowthSourceSelection, ASSET_MIX_CATEGORIES } from "./growth-rate-field";
+import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import { isRmdEligibleSubType } from "@/engine/rmd";
@@ -76,6 +77,7 @@ export interface AccountFormInitial {
   growthSource?: string;
   deriveFromHoldings?: boolean;
   modelPortfolioId?: string | null;
+  tickerPortfolioId?: string | null;
   turnoverPct?: string;
   overridePctOi?: string | null;
   overridePctLtCg?: string | null;
@@ -145,6 +147,7 @@ interface AddAccountFormProps {
   /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
   modelPortfolios?: ModelPortfolioOption[];
+  fundPortfolios?: FundPortfolioOption[];
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
@@ -266,6 +269,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   categoryDefaults,
   ownerNames,
   modelPortfolios,
+  fundPortfolios,
   assetClasses,
   portfolioAllocationsMap,
   categoryDefaultSources,
@@ -435,6 +439,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [modelPortfolioId, setModelPortfolioId] = useState<string>(
     initial?.modelPortfolioId ?? ""
   );
+  const [tickerPortfolioId, setTickerPortfolioId] = useState<string>(
+    initial?.tickerPortfolioId ?? ""
+  );
   const [customAllocations, setCustomAllocations] = useState<{ assetClassId: string; weight: number }[]>([]);
   const [allocationsLoaded, setAllocationsLoaded] = useState(false);
   const [holdingsTotals, setHoldingsTotals] = useState<{ value: number; basis: number } | null>(null);
@@ -566,6 +573,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     realEstateGrowthSource,
     realEstateGrowthRatePct,
     modelPortfolioId,
+    tickerPortfolioId,
     rmdEnabled,
     priorYearEndValue,
     annualPropertyTax,
@@ -595,7 +603,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   }), [
     name, category, subType, hsaCoverage, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
-    realEstateGrowthRatePct, modelPortfolioId, rmdEnabled, priorYearEndValue,
+    realEstateGrowthRatePct, modelPortfolioId, tickerPortfolioId, rmdEnabled, priorYearEndValue,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     turnoverPct, customAllocations, custodian, accountNumberLast4,
@@ -742,9 +750,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       setDeriveFromHoldings(false);
       void setAccountDeriveFromHoldings(clientId, effectiveAccountId, false);
     }
-    const { growthSource: gs, modelPortfolioId: mp } = parseGrowthSourceSelection(v);
+    const { growthSource: gs, modelPortfolioId: mp, tickerPortfolioId: tp } = parseGrowthSourceSelection(v);
     setGrowthSource(gs);
     setModelPortfolioId(mp ?? "");
+    setTickerPortfolioId(tp ?? "");
     if (gs === "model_portfolio" && mp) {
       const portfolioAllocs = portfolioAllocationsMap?.[mp] ?? [];
       if (portfolioAllocs.length > 0) setCustomAllocations(portfolioAllocs);
@@ -879,6 +888,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? realEstateGrowthSource
           : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
+      tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       deriveFromHoldings,
       turnoverPct: toPctOrNull(turnoverPct) ?? "0",
       overridePctOi: toPctOrNull(overridePctOi),
@@ -977,7 +987,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   }, [
     canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
     isInvestable, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
-    rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, deriveFromHoldings,
+    rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
@@ -1068,6 +1078,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? realEstateGrowthSource
           : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
+      tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
       overridePctOi: toPctOrNull("overridePctOi"),
       overridePctLtCg: toPctOrNull("overridePctLtCg"),
@@ -1740,8 +1751,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   category={category}
                   growthSource={growthSource}
                   modelPortfolioId={modelPortfolioId}
+                  tickerPortfolioId={tickerPortfolioId}
                   growthRatePct={growthRatePct}
                   modelPortfolios={modelPortfolios}
+                  fundPortfolios={fundPortfolios}
                   defaultPctForCategory={defaultPctForCategory}
                   catDefaultPortfolioName={catDefaultSource?.portfolioName ?? null}
                   resolvedInflationRate={resolvedInflationRate}
@@ -2097,9 +2110,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             inheritedPortfolioName={
               growthSource === "model_portfolio" && modelPortfolioId
                 ? modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.name
-                : growthSource === "default" && catDefaultSource?.portfolioName
-                  ? catDefaultSource.portfolioName
-                  : undefined
+                : growthSource === "ticker_portfolio" && tickerPortfolioId
+                  ? fundPortfolios?.find((fp) => fp.id === tickerPortfolioId)?.name
+                  : growthSource === "default" && catDefaultSource?.portfolioName
+                    ? catDefaultSource.portfolioName
+                    : undefined
             }
             allocations={customAllocations}
             onChange={setCustomAllocations}

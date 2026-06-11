@@ -56,11 +56,11 @@ describe("buildAnalysisRows", () => {
 
   const accounts = [
     { id: "a1", name: "Brokerage", category: "taxable" as const, value: 100,
-      growthSource: "asset_mix" as const, modelPortfolioId: null },
+      growthSource: "asset_mix" as const, modelPortfolioId: null, tickerPortfolioId: null },
     { id: "a2", name: "401k", category: "retirement" as const, value: 300,
-      growthSource: "asset_mix" as const, modelPortfolioId: null },
+      growthSource: "asset_mix" as const, modelPortfolioId: null, tickerPortfolioId: null },
     { id: "a3", name: "Checking", category: "taxable" as const, value: 50,
-      growthSource: "custom" as const, modelPortfolioId: null },
+      growthSource: "custom" as const, modelPortfolioId: null, tickerPortfolioId: null },
   ];
   const resolver = (acct: { id: string }): AccountAllocationResult => {
     if (acct.id === "a1") return { classified: [{ assetClassId: "eq", weight: 1 }] };

@@ -6,6 +6,7 @@ import {
   liabilities,
   modelPortfolios,
   assetClasses,
+  tickerPortfolios,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
@@ -119,6 +120,24 @@ export async function assertModelPortfoliosInFirm(
   const missing = filtered.find((v) => !found.has(v));
   return missing
     ? { ok: false, reason: `Model portfolio ${missing} not available to this firm` }
+    : { ok: true };
+}
+
+/** Verify every fund (ticker) portfolio id belongs to `firmId`. */
+export async function assertTickerPortfoliosInFirm(
+  firmId: string,
+  ids: (string | null | undefined)[]
+): Promise<FkCheck> {
+  const filtered = ids.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (filtered.length === 0) return { ok: true };
+  const rows = await db
+    .select({ id: tickerPortfolios.id })
+    .from(tickerPortfolios)
+    .where(and(eq(tickerPortfolios.firmId, firmId), inArray(tickerPortfolios.id, filtered)));
+  const found = new Set(rows.map((r) => r.id));
+  const missing = filtered.find((v) => !found.has(v));
+  return missing
+    ? { ok: false, reason: `Fund portfolio ${missing} not available to this firm` }
     : { ok: true };
 }
 

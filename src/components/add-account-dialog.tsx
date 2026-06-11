@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "./dialog-shell";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption, BusinessOption } from "./forms/add-account-form";
+import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import AddNoteReceivableForm, { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -28,6 +29,7 @@ interface AddAccountDialogProps {
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
+  fundPortfolios?: FundPortfolioOption[];
   ownerNames?: { clientName: string; spouseName: string | null };
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
@@ -64,6 +66,7 @@ export default function AddAccountDialog({
   familyMembers,
   categoryDefaults,
   modelPortfolios,
+  fundPortfolios,
   ownerNames,
   assetClasses,
   portfolioAllocationsMap,
@@ -171,6 +174,7 @@ export default function AddAccountDialog({
               familyMembers={familyMembers}
               categoryDefaults={categoryDefaults}
               modelPortfolios={modelPortfolios}
+              fundPortfolios={fundPortfolios}
               ownerNames={ownerNames}
               assetClasses={assetClasses}
               portfolioAllocationsMap={portfolioAllocationsMap}
