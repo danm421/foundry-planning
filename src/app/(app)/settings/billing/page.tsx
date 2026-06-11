@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { auth } from "@clerk/nextjs/server";
+import { SignOutButton } from "@clerk/nextjs";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
@@ -38,6 +39,37 @@ function FounderBillingPanel(): ReactElement {
       >
         No subscription to manage
       </button>
+    </div>
+  );
+}
+
+function InactiveAccountPanel(): ReactElement {
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-base font-medium text-ink">Account not active</h1>
+        <p className="text-sm text-ink-3">
+          We can&apos;t read an active subscription for this account, so access
+          is paused. Setup may not have finished. Sign out and back in to
+          refresh — if it persists, contact support.
+        </p>
+      </header>
+      <div className="flex items-center gap-3">
+        <SignOutButton redirectUrl="/sign-in">
+          <button
+            type="button"
+            className="w-fit rounded border border-hair bg-paper px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent"
+          >
+            Sign out
+          </button>
+        </SignOutButton>
+        <a
+          href="mailto:support@foundryplanning.com"
+          className="text-sm font-medium text-accent underline"
+        >
+          Contact support
+        </a>
+      </div>
     </div>
   );
 }
@@ -178,6 +210,13 @@ const INVOICE_PAGE_LIMIT = 24; // ~2 years of monthly invoices
 
 export async function NonFounderBillingPanel(): Promise<ReactElement> {
   const [{ orgId }, state] = await Promise.all([auth(), getSubscriptionState()]);
+
+  // No readable subscription metadata → unprovisioned / broken account. The
+  // middleware locks these out of the app; billing is the one surface they can
+  // still reach, so show a clear recovery path instead of a dead-end "Unknown".
+  if (state.kind === "missing") {
+    return <InactiveAccountPanel />;
+  }
 
   // firmId === Clerk org id. Skip the query entirely if there's no org.
   const rows: InvoiceRow[] = orgId

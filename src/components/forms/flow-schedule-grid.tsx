@@ -278,7 +278,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
   const thClass =
     "sticky top-0 z-10 border-b border-hair bg-card-2 py-2 text-right text-[13px] font-semibold text-ink";
   const distSetButtonClass =
-    "rounded border border-hair bg-card-2 px-1.5 py-0.5 text-[10px] font-semibold text-ink hover:bg-card";
+    "rounded border border-hair bg-card-2 px-1.5 py-0.5 text-[10px] font-semibold text-ink hover:bg-card-hover";
 
   return (
     <section className="space-y-2 rounded-md border border-hair bg-card-2 p-4">
@@ -338,7 +338,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
           <button
             type="button"
             onClick={applyQuickFill}
-            className="rounded-md border border-hair bg-card-2 px-3 py-1 text-xs font-medium text-ink-2 hover:bg-card hover:text-ink"
+            className="rounded-md border border-hair bg-card-2 px-3 py-1 text-xs font-medium text-ink-2 hover:bg-card-hover hover:text-ink"
           >
             Apply
           </button>

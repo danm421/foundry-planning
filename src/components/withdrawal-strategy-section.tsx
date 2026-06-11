@@ -319,7 +319,7 @@ function WithdrawalDialog({
             <button
               type="submit"
               disabled={loading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Entry"}
             </button>
@@ -382,7 +382,7 @@ export default function WithdrawalStrategySection({
         <button
           onClick={() => setDialog({ open: true })}
           disabled={accounts.length === 0}
-          className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-40"
+          className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink disabled:opacity-40"
         >
           + Add
         </button>

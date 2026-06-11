@@ -29,6 +29,7 @@ import ReviewStepWills, {
   type WizardWill,
 } from "@/components/import/review-step-wills";
 import type { MatchCandidate } from "@/components/import/match-link-picker";
+import { SourceFilesContext } from "@/components/import/source-badge";
 import {
   STEP_COMMIT_TABS,
   type ImportEligibleStep,
@@ -62,6 +63,8 @@ interface WizardImportReviewProps {
   perTabCommittedAt: Record<string, string> | null;
   /** Called after a successful commit so the drawer can refresh + close. */
   onCommitted: () => void;
+  /** fileId → original filename, for the per-row source-document badge. */
+  fileNames: Record<string, string>;
 }
 
 export default function WizardImportReview({
@@ -71,6 +74,7 @@ export default function WizardImportReview({
   payload,
   perTabCommittedAt,
   onCommitted,
+  fileNames,
 }: WizardImportReviewProps) {
   const [primary, setPrimary] = useState<ExtractedPrimaryFamilyMember | undefined>(
     payload.primary,
@@ -102,6 +106,7 @@ export default function WizardImportReview({
       executor: w.executor,
       executionDate: w.executionDate,
       bequests: w.bequests.map(seedWizardBequest),
+      __provenance: w.__provenance,
     })),
   );
   const [willMatches, setWillMatches] = useState<Array<MatchAnnotation | undefined>>(
@@ -223,6 +228,7 @@ export default function WizardImportReview({
       lifePolicies,
       wills: wizardWillsToCommitShape(wills).map((w, i) => ({
         ...(w as unknown as ExtractedWill),
+        __provenance: wills[i]?.__provenance,
         match: willMatches[i],
       })) as ImportPayload["wills"],
       entities,
@@ -288,6 +294,7 @@ export default function WizardImportReview({
   }, [step, wills, buildLatestPayload, clientId, importId, onCommitted]);
 
   return (
+    <SourceFilesContext.Provider value={fileNames}>
     <div className="space-y-4">
       {commitError ? (
         <div
@@ -382,7 +389,7 @@ export default function WizardImportReview({
           onClick={handleCommit}
           disabled={committing}
           aria-busy={committing}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
         >
           {committing
             ? "Applying…"
@@ -392,5 +399,6 @@ export default function WizardImportReview({
         </button>
       </div>
     </div>
+    </SourceFilesContext.Provider>
   );
 }

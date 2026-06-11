@@ -93,7 +93,7 @@ export function DeductionsItemizedList({
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
+          className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
         >
           + Add deduction
         </button>

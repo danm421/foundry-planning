@@ -186,7 +186,7 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
             <button
               type="button"
               onClick={() => navTo(next)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep"
+              className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"
             >
               Next
               <ArrowRightIcon width={14} height={14} aria-hidden="true" />

@@ -44,7 +44,7 @@ export function CrmHouseholdSearch() {
   const segBase =
     "inline-flex h-10 items-center rounded-[var(--radius-sm)] px-3 text-[13px] font-medium transition-colors";
   const segActive = "bg-accent text-accent-on";
-  const segIdle = "text-ink-2 hover:bg-card";
+  const segIdle = "text-ink-2 hover:bg-card-hover";
 
   return (
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">

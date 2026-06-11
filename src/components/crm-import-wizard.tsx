@@ -238,7 +238,7 @@ export function CrmImportWizard() {
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
             >
               {submitting ? "Parsing…" : "Preview import"}
               <ArrowRightIcon width={14} height={14} aria-hidden="true" />
@@ -270,7 +270,7 @@ export function CrmImportWizard() {
               type="button"
               onClick={onCommit}
               disabled={submitting || decisions.length === 0}
-              className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
             >
               {submitting ? "Importing…" : "Commit import"}
               <ArrowRightIcon width={14} height={14} aria-hidden="true" />
@@ -289,7 +289,7 @@ export function CrmImportWizard() {
           <div className="flex items-center gap-3">
             <Link
               href="/crm"
-              className="inline-flex h-10 items-center rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep"
+              className="inline-flex h-10 items-center rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"
             >
               Back to CRM
             </Link>

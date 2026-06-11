@@ -285,7 +285,7 @@ function RenameEditor({
         className="w-full bg-paper border border-hair rounded px-2 py-1 text-sm text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       />
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => onSave(value)} className="px-2 h-6 rounded bg-accent text-accent-on text-[11px] font-medium hover:bg-accent-deep">
+        <button type="button" onClick={() => onSave(value)} className="px-2 h-6 rounded bg-accent text-accent-on text-[11px] font-medium hover:bg-accent-ink">
           Save
         </button>
         <button type="button" onClick={onCancel} className="px-2 h-6 rounded text-[11px] text-ink-3 hover:text-ink">

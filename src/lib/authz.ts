@@ -88,6 +88,25 @@ export async function requireActiveSubscription(): Promise<void> {
 }
 
 /**
+ * Operator-only gate for the beta-code admin console. NOT role-based: every
+ * founder/beta org has org:owner + is_founder, so neither distinguishes the
+ * actual operator. Hardcoded userId allowlist instead — one id per Clerk
+ * instance (dev + prod have different ids for the same human).
+ */
+const BETA_OPERATOR_USER_IDS = [
+  "user_3CNEarpTz0k9nI7gWESXLGMTI7k", // dev   (danmueller20@gmail.com)
+  "user_3F0LIJ4MNbs2CTGUTQHkUp7NCSN", // prod  (dan@foundryplanning.com)
+] as const;
+
+export async function requireBetaOperator(): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  if (!(BETA_OPERATOR_USER_IDS as readonly string[]).includes(userId)) {
+    throw new ForbiddenError("Beta operator access required");
+  }
+}
+
+/**
  * Turn an auth-related thrown error into an HTTP response tuple that
  * route handlers can short-circuit with. Returns null when the error
  * isn't one of ours.

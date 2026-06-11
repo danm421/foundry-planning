@@ -256,7 +256,7 @@ export default function AssumptionsForm({ clientId, initial, householdAccounts }
         <button
           type="submit"
           disabled={loading}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
         >
           {loading ? "Saving…" : "Save Assumptions"}
         </button>

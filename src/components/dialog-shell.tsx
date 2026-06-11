@@ -240,7 +240,7 @@ function FooterButton({
   const base = "rounded-[var(--radius-sm)] px-4 h-9 text-[13px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
   const variantClass =
     variant === "primary"
-      ? "bg-accent text-accent-on hover:bg-accent-deep"
+      ? "bg-accent text-accent-on hover:bg-accent-ink"
       : variant === "destructive"
       ? "text-crit hover:bg-card-hover"
       : "text-ink-2 hover:text-ink hover:bg-card-hover border border-transparent hover:border-hair";

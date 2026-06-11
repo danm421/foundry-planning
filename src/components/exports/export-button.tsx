@@ -18,7 +18,7 @@ export function ExportButton({ reportId, optsOverride }: Props) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+        className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
       >
         Export
       </button>

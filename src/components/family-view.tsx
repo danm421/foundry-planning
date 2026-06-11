@@ -522,7 +522,7 @@ export default function FamilyView({
                 setEditingMember(undefined);
                 setMemberDialogOpen(true);
               }}
-              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
             >
               + Add
             </button>
@@ -613,7 +613,7 @@ export default function FamilyView({
                 setEditingEntity(undefined);
                 setEntityDialogOpen(true);
               }}
-              className="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+              className="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
             >
               + Add Trust
             </button>
@@ -993,7 +993,7 @@ function GiftsSection(props: {
         <button
           type="button"
           onClick={() => { setEditingGift(null); setEditingSeries(null); setAdding(true); }}
-          className="rounded bg-accent px-3 py-1 text-sm text-accent-on hover:bg-accent-deep"
+          className="rounded bg-accent px-3 py-1 text-sm text-accent-on hover:bg-accent-ink"
         >
           + Add gift
         </button>
@@ -1134,7 +1134,7 @@ function ExternalBeneficiariesSection({
               setEditingId(null);
               setAdding(true);
             }}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
           >
             + Add
           </button>
@@ -1326,7 +1326,7 @@ function ExternalBeneficiaryRowForm({
         <button
           onClick={submit}
           disabled={saving}
-          className="mr-2 rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+          className="mr-2 rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
         >
           {saving ? "…" : "Save"}
         </button>

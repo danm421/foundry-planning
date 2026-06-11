@@ -287,7 +287,7 @@ export default function ScheduleTab({
           type="button"
           onClick={handleSave}
           disabled={!dirty || saving}
-          className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
         >
           {saving ? "Saving\u2026" : "Save Schedule"}
         </button>

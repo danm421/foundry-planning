@@ -48,7 +48,7 @@ export default function ReparentConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="rounded-[var(--radius-sm)] bg-accent text-paper px-4 h-9 text-[13px] font-medium hover:bg-accent-deep disabled:opacity-50"
+            className="rounded-[var(--radius-sm)] bg-accent text-paper px-4 h-9 text-[13px] font-medium hover:bg-accent-ink disabled:opacity-50"
           >
             {loading ? "Reassigning…" : "Confirm reassign"}
           </button>

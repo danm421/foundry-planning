@@ -237,7 +237,7 @@ function FundHoldingsEditor({
         <button
           onClick={handleSave}
           disabled={!isValid || saving}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save Holdings"}
         </button>

@@ -32,6 +32,7 @@ import ReviewStepWills, {
   type WizardWill,
 } from "./review-step-wills";
 import type { MatchCandidate } from "./match-link-picker";
+import { SourceFilesContext } from "./source-badge";
 
 type WizardTabId =
   | "family"
@@ -52,6 +53,8 @@ interface ReviewWizardProps {
   defaultStartYear: number;
   defaultEndYear: number;
   growthContext: GrowthContext;
+  /** fileId → original filename, for the per-row source-document badge. */
+  fileNames: Record<string, string>;
 }
 
 interface CanonicalRows {
@@ -104,6 +107,7 @@ export default function ReviewWizard({
   defaultStartYear,
   defaultEndYear,
   growthContext,
+  fileNames,
 }: ReviewWizardProps) {
   const router = useRouter();
 
@@ -142,6 +146,7 @@ export default function ReviewWizard({
       executor: w.executor,
       executionDate: w.executionDate,
       bequests: w.bequests.map(seedWizardBequest),
+      __provenance: w.__provenance,
     })),
   );
   const [willMatches, setWillMatches] = useState<Array<MatchAnnotation | undefined>>(
@@ -273,6 +278,7 @@ export default function ReviewWizard({
       lifePolicies,
       wills: wizardWillsToCommitShape(wills).map((w, i) => ({
         ...(w as unknown as ExtractedWill),
+        __provenance: wills[i]?.__provenance,
         match: willMatches[i],
       })) as ImportPayload["wills"],
       entities,
@@ -374,6 +380,7 @@ export default function ReviewWizard({
   }, [canonical.accounts]);
 
   return (
+    <SourceFilesContext.Provider value={fileNames}>
     <div className="space-y-4">
       <TabStrip
         tabs={tabs}
@@ -498,6 +505,7 @@ export default function ReviewWizard({
         </div>
       )}
     </div>
+    </SourceFilesContext.Provider>
   );
 }
 
@@ -537,7 +545,7 @@ function TabStrip({ tabs, currentTab, committingTab, onSelect, committed, count 
                 ? "bg-accent text-accent-on"
                 : isCommitted
                   ? "bg-good/15 text-good"
-                  : "bg-card-2 text-ink-3 hover:bg-card hover:text-ink-2"
+                  : "bg-card-2 text-ink-3 hover:bg-card-hover hover:text-ink-2"
             }`}
           >
             <span>{TAB_LABEL[t]}</span>

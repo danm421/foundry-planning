@@ -59,7 +59,7 @@ export default function HeaderControls(props: Props) {
           type="button"
           disabled={props.exporting}
           onClick={props.onExportPdf}
-          className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-accent-on transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-accent-on transition hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
         >
           {props.exporting ? "Exporting…" : "Export PDF"}
         </button>

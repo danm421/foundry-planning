@@ -86,7 +86,7 @@ export function SnapshotButton({
         onClick={snap}
         disabled={disabled}
         data-testid="snapshot-button"
-        className="w-full h-10 rounded bg-accent text-accent-on text-[13px] font-medium hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full h-10 rounded bg-accent text-accent-on text-[13px] font-medium hover:bg-accent-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? "Freezing…" : "Snapshot for presentation"}
       </button>

@@ -111,7 +111,7 @@ export function ContactsTab({ household }: { household: Household }) {
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-deep"
+          className="rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-ink"
         >
           Add contact
         </button>

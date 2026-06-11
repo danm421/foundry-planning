@@ -576,7 +576,7 @@ function AssetClassesTab({
 
       <button
         onClick={onAdd}
-        className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep"
+        className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink"
       >
         + Add Asset Class
       </button>
@@ -984,7 +984,7 @@ function PortfolioAllocationEditor({
         <button
           onClick={handleSave}
           disabled={Math.abs(currentTotal - 100) > 0.1}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
         >
           Save Allocations
         </button>

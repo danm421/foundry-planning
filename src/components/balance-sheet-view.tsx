@@ -374,7 +374,7 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+        className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
       >
         + Add Asset <ChevronDown />
       </button>

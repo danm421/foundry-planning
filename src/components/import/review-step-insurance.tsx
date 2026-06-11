@@ -5,6 +5,7 @@ import type { MatchAnnotation } from "@/lib/imports/types";
 import { CurrencyInput } from "@/components/currency-input";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
+import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput's inputClassName baseline to flag empty fields.
 const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
@@ -172,7 +173,8 @@ export default function ReviewStepInsurance({
                     placeholder="Annual"
                   />
                 </div>
-                <div className="flex items-end justify-end">
+                <div className="flex items-end justify-end gap-2">
+                  <SourceBadge row={policy} className="pb-1" />
                   <button
                     onClick={() => removeRow(i)}
                     className="pb-1 text-white hover:text-white"

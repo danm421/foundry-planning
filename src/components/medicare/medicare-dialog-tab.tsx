@@ -136,7 +136,7 @@ export function MedicareDialogTab({ clientId, owner, existing, ownerDob, onSaved
         type="button"
         onClick={handleSave}
         disabled={saving}
-        className="self-end rounded-[var(--radius-sm)] bg-accent text-accent-on px-4 h-9 text-[13px] font-medium hover:bg-accent-deep disabled:opacity-50 disabled:cursor-not-allowed"
+        className="self-end rounded-[var(--radius-sm)] bg-accent text-accent-on px-4 h-9 text-[13px] font-medium hover:bg-accent-ink disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {saving ? "Saving…" : "Save"}
       </button>
