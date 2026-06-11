@@ -3663,6 +3663,26 @@ export const subscriptions = pgTable(
   ],
 );
 
+// One-time beta-founder access codes. codeHash is the sha256 hex of the
+// normalized plaintext code — plaintext is never persisted.
+export const betaCodes = pgTable("beta_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // sha256 hex of the normalized code body — never store plaintext.
+  codeHash: text("code_hash").notNull().unique(),
+  // Operator-facing label, e.g. "Jane @ Acme". Optional.
+  label: text("label"),
+  // Entitlements granted to the founder org on redemption.
+  entitlements: jsonb("entitlements").$type<string[]>().notNull().default([]),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  // redeemedAt is set atomically at claim time; the org id is filled in after
+  // the founder org is created (two-phase so a mid-flow failure can compensate).
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  redeemedByUserId: text("redeemed_by_user_id"),
+  redeemedOrgId: text("redeemed_org_id"),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Stripe subscription items — one per seat line + one per add-on.
 // `kind` distinguishes seats (quantity tracks org membership) from
 // add-ons (quantity is always 1, presence = entitlement).
