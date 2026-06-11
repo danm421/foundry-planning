@@ -153,6 +153,11 @@ export type AuditAction =
   | "cma.refresh-projected-values"
   | "cma.set.values.update"
   | "cma.set.activate"
+  | "cma.ticker_portfolio.create"
+  | "cma.ticker_portfolio.update"
+  | "cma.ticker_portfolio.delete"
+  | "cma.ticker_portfolio.holdings.update"
+  | "cma.settings.update"
   // Open items (client-scoped to-do / data-gathering tracker)
   | "open_item.create"
   | "open_item.update"
