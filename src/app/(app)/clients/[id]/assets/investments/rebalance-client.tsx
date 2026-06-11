@@ -100,12 +100,11 @@ export function RebalanceClient({
   // ── Compute button enablement ──────────────────────────────────────────────
 
   const newTargetTotal =
-    target?.kind === "new" ? target.holdings.reduce((s, h) => s + h.weight, 0) : 1;
-  const canCompute =
-    selectedIds.length > 0 &&
-    target !== null &&
-    (target.kind !== "new" ||
-      (target.holdings.length > 0 && Math.abs(newTargetTotal - 1) < 0.001));
+    target?.kind === "new" ? target.holdings.reduce((s, h) => s + h.weight, 0) : 0;
+  const weightsValid =
+    target?.kind !== "new" ||
+    (target.holdings.length > 0 && Math.abs(newTargetTotal - 1) < 0.001);
+  const canCompute = selectedIds.length > 0 && target !== null && weightsValid;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -139,11 +138,9 @@ export function RebalanceClient({
         {loading ? "Computing…" : "Compute"}
       </button>
 
-      {target?.kind === "new" &&
-        target.holdings.length > 0 &&
-        Math.abs(newTargetTotal - 1) >= 0.001 && (
-          <p className="text-xs text-warn">Target weights must total 100% to compute.</p>
-        )}
+      {!weightsValid && target?.kind === "new" && target.holdings.length > 0 && (
+        <p className="text-xs text-warn">Target weights must total 100% to compute.</p>
+      )}
 
       {error && <p className="text-sm text-crit">{error}</p>}
 

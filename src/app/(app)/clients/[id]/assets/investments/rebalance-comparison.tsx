@@ -16,6 +16,8 @@ export interface RebalanceComparisonProps {
 
 // ── Delta coloring helper ──────────────────────────────────────────────────────
 
+const signPrefix = (n: number) => (n > 0 ? "+" : "");
+
 function deltaColor(delta: number | null | undefined, higherIsBetter: boolean): string {
   if (delta === null || delta === undefined || delta === 0) return "text-ink-3";
   if (higherIsBetter) return delta > 0 ? "text-good" : "text-crit";
@@ -109,20 +111,20 @@ function HeadlineTiles({ result }: { result: RebalanceComputeResult }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <HeadlineTile label="Δ Expected return">
         <span className={deltaColor(dReturn, true)}>
-          {dReturn > 0 ? "+" : ""}
+          {signPrefix(dReturn)}
           <MoneyText value={dReturn} format="pct" />
         </span>
       </HeadlineTile>
       <HeadlineTile label="Δ Volatility">
         <span className={deltaColor(dVol, false)}>
-          {dVol > 0 ? "+" : ""}
+          {signPrefix(dVol)}
           <MoneyText value={dVol} format="pct" />
         </span>
       </HeadlineTile>
       <HeadlineTile label="Δ Sharpe (CMA)">
         {dSharpe != null ? (
           <span className={deltaColor(dSharpe, true)}>
-            {dSharpe > 0 ? "+" : ""}
+            {signPrefix(dSharpe)}
             {dSharpe.toFixed(2)}
           </span>
         ) : (

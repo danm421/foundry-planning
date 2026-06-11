@@ -4,21 +4,9 @@ import { Chart as ChartJS, LinearScale, PointElement, Tooltip, Legend } from "ch
 import { Scatter } from "react-chartjs-2";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import type { RiskReturnStats } from "@/lib/investments/portfolio-stats";
+import { pct, axisBounds } from "./scatter-axis";
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
-
-const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-function axisBounds(values: number[]): { min: number; max: number } {
-  if (values.length === 0) return { min: 0, max: 0.1 };
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
-  return {
-    min: Math.max(0, round2(Math.floor(lo * 100) / 100 - 0.04)),
-    max: round2(Math.ceil(hi * 100) / 100 + 0.02),
-  };
-}
 
 export function RebalanceRiskReturnScatter({
   current,

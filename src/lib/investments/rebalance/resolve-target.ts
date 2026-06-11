@@ -47,7 +47,7 @@ export async function resolveTargetAllocations(
     .filter((h) => h.ticker.length > 0);
 
   const total = normalized.reduce((s, h) => s + h.weight, 0);
-  const scaled = total > 0 ? normalized.map((h) => ({ ...h, weight: h.weight / total })) : normalized;
+  const scaled = normalized.map((h) => ({ ...h, weight: total > 0 ? h.weight / total : 0 }));
 
   const targetHoldings: ResolveTargetResult["targetHoldings"] = [];
   const slugWeightAccum = new Map<string, number>();
