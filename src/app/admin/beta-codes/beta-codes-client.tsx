@@ -145,6 +145,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
+  const rows = table.getRowModel().rows;
 
   return (
     <div className="flex flex-col gap-8">
@@ -270,7 +271,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.id} className="border-t border-neutral-800 hover:bg-neutral-900/50">
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3">
@@ -279,7 +280,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
                   ))}
                 </tr>
               ))}
-              {table.getRowModel().rows.length === 0 && (
+              {rows.length === 0 && (
                 <tr>
                   <td
                     className="px-4 py-10 text-center text-sm text-neutral-500"
