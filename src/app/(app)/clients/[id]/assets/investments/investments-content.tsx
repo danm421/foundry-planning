@@ -13,6 +13,7 @@ import {
   modelPortfolioAllocations,
   reportComments,
   entities as entitiesTable,
+  tickerPortfolios as tickerPortfoliosTable,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import {
@@ -182,6 +183,23 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     .filter((a) => toGrowthSource(a.growthSource) === "asset_mix")
     .map((a) => a.id);
   const enrichedByAccount = await loadEnrichedHoldings(assetMixAccountIds);
+
+  // accounts that actually hold individual securities, with a market-value total
+  const accountsWithHoldings = acctRows
+    .filter((a) => enrichedByAccount.has(a.id))
+    .map((a) => {
+      const rows = enrichedByAccount.get(a.id)!;
+      const value = rows.reduce((s, h) => s + Number(h.shares) * Number(h.price), 0);
+      return { id: a.id, name: a.name, category: a.category, value };
+    });
+
+  const fundPortfolios = (
+    await db
+      .select({ id: tickerPortfoliosTable.id, name: tickerPortfoliosTable.name })
+      .from(tickerPortfoliosTable)
+      .where(eq(tickerPortfoliosTable.firmId, firmId))
+  ).map((p) => ({ id: p.id, name: p.name }));
+
   const holdingsByAccountClass: Record<string, Record<string, HoldingClassContribution[]>> = {};
   for (const [accountId, enriched] of enrichedByAccount) {
     const positions = enriched.map((e) => ({
@@ -315,6 +333,8 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       strippedMemberCount={resolvedGroup.strippedMemberCount}
       analysisRows={analysisRows}
       holdingsByAccountClass={holdingsByAccountClass}
+      accountsWithHoldings={accountsWithHoldings}
+      fundPortfolios={fundPortfolios}
     />
   );
 }

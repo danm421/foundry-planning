@@ -38,6 +38,8 @@ interface Props {
   strippedMemberCount?: number;
   analysisRows: AnalysisRow[];
   holdingsByAccountClass: Record<string, Record<string, HoldingClassContribution[]>>;
+  accountsWithHoldings: { id: string; name: string; category: string; value: number }[];
+  fundPortfolios: { id: string; name: string }[];
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
