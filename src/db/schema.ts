@@ -3914,6 +3914,39 @@ export const presentationTemplates = pgTable(
 export type PresentationTemplateRow = InferSelectModel<typeof presentationTemplates>;
 export type NewPresentationTemplateRow = InferInsertModel<typeof presentationTemplates>;
 
+// Per-user dismissals of code-defined built-in presentation templates.
+// Built-ins aren't rows; hiding one records a dismissal that filters it out of
+// that user's launcher list. Per-user scope: hiding never affects colleagues.
+export const builtinTemplateDismissals = pgTable(
+  "builtin_template_dismissals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    builtinSlug: text("builtin_slug").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("builtin_template_dismissals_unique_idx").on(
+      t.firmId,
+      t.userId,
+      t.builtinSlug,
+    ),
+    index("builtin_template_dismissals_firm_user_idx").on(t.firmId, t.userId),
+  ],
+);
+
+export type BuiltinTemplateDismissalRow = InferSelectModel<
+  typeof builtinTemplateDismissals
+>;
+export type NewBuiltinTemplateDismissalRow = InferInsertModel<
+  typeof builtinTemplateDismissals
+>;
+
 // Scenario compute cache: content-addressed store for expensive compute results
 // (Monte Carlo, Life Insurance solve). One row per (scenarioId, kind), keyed by
 // a SHA-256 hash of the normalized inputs. `payload` is intentionally untyped
