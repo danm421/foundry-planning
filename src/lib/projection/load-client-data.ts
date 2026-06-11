@@ -759,6 +759,7 @@ export const loadClientDataWithContext = cache(
           rmdEnabled: a.rmdEnabled,
           isDefaultChecking: a.isDefaultChecking,
           modelPortfolioId: a.modelPortfolioId,
+          tickerPortfolioId: a.tickerPortfolioId,
           overridePctOi: a.overridePctOi,
           overridePctLtCg: a.overridePctLtCg,
           overridePctQdiv: a.overridePctQdiv,

@@ -80,6 +80,7 @@ type RawAccount = {
   rmdEnabled: boolean;
   isDefaultChecking: boolean;
   modelPortfolioId: string | null;
+  tickerPortfolioId: string | null;
   overridePctOi: string | null;
   overridePctLtCg: string | null;
   overridePctQdiv: string | null;
@@ -121,6 +122,20 @@ export function resolveAccountFromRaw(
     growthRate = resolvedInflationRate;
   } else if (effectiveSource === "model_portfolio" && raw.modelPortfolioId) {
     const p = resolver.resolvePortfolio(raw.modelPortfolioId);
+    growthRate = p.geoReturn;
+    realization = {
+      pctOrdinaryIncome:
+        raw.overridePctOi != null ? parseFloat(raw.overridePctOi) : p.pctOi,
+      pctLtCapitalGains:
+        raw.overridePctLtCg != null ? parseFloat(raw.overridePctLtCg) : p.pctLtcg,
+      pctQualifiedDividends:
+        raw.overridePctQdiv != null ? parseFloat(raw.overridePctQdiv) : p.pctQdiv,
+      pctTaxExempt:
+        raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : p.pctTaxEx,
+      turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
+    };
+  } else if (effectiveSource === "ticker_portfolio" && raw.tickerPortfolioId) {
+    const p = resolver.resolveTickerPortfolio(raw.tickerPortfolioId);
     growthRate = p.geoReturn;
     realization = {
       pctOrdinaryIncome:
