@@ -27,6 +27,8 @@ import {
 } from "@/lib/investments/allocation";
 import { resolveBenchmark, type AssetClassWeight } from "@/lib/investments/benchmarks";
 import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
+import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
+import { breakdownHoldingsByClass, type HoldingClassContribution } from "@/lib/investments/holdings-rollup";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
 import { resolveGroup, type GroupKey } from "@/lib/account-groups/resolver";
 import { fetchAccountGroupForResolver, listAccountGroups } from "@/lib/account-groups/queries";
@@ -173,6 +175,32 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       weight: parseFloat(r.weight),
     });
 
+  // Holdings-driven accounts (growth_source === "asset_mix" with real holdings) can
+  // be expanded in the class drill to show the underlying positions. Build a
+  // per-account, per-class breakdown using the same blend logic as the rollup.
+  const assetMixAccountIds = acctRows
+    .filter((a) => toGrowthSource(a.growthSource) === "asset_mix")
+    .map((a) => a.id);
+  const enrichedByAccount = await loadEnrichedHoldings(assetMixAccountIds);
+  const holdingsByAccountClass: Record<string, Record<string, HoldingClassContribution[]>> = {};
+  for (const [accountId, enriched] of enrichedByAccount) {
+    const positions = enriched.map((e) => ({
+      id: e.id,
+      ticker: e.displayTicker ?? "",
+      name: e.displayName ?? "",
+      securityId: e.securityId,
+      shares: Number(e.shares),
+      price: Number(e.price),
+      securityWeights: e.securityWeights,
+      overrides: e.overrides,
+    }));
+    const byClass = breakdownHoldingsByClass(positions, slugToAssetClassId);
+    if (byClass.size === 0) continue;
+    const classMap: Record<string, HoldingClassContribution[]> = {};
+    for (const [classId, list] of byClass) classMap[classId] = list;
+    holdingsByAccountClass[accountId] = classMap;
+  }
+
   const planLite: PlanSettingsLite = {
     growthSourceTaxable: toGrowthSource(settings.growthSourceTaxable),
     growthSourceCash: toGrowthSource(settings.growthSourceCash),
@@ -288,6 +316,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       customGroups={customGroupsForBar}
       strippedMemberCount={resolvedGroup.strippedMemberCount}
       analysisRows={analysisRows}
+      holdingsByAccountClass={holdingsByAccountClass}
     />
   );
 }
