@@ -46,7 +46,10 @@ export async function POST(
 ) {
   try {
     const { id: clientId } = await params;
-    const access = await requireClientAccess(clientId).catch(() => null);
+    const access = await requireClientAccess(clientId).catch((e) => {
+      if (e instanceof UnauthorizedError) throw e;
+      return null;
+    });
     if (!access) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
