@@ -76,7 +76,7 @@ const authed = () =>
 
 describe("reconcile-billing auto-heal", () => {
   it("writes Stripe's status back to Clerk and audits the heal on status drift", async () => {
-    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, archivedAt: null, aiImportsUsed: 0 }]);
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, archivedAt: null }]);
     mockSelectSubs.mockResolvedValue([
       { id: "sub-uuid", firmId: "org_1", stripeSubscriptionId: "sub_1", status: "active" },
     ]);
@@ -108,7 +108,7 @@ describe("reconcile-billing auto-heal", () => {
   });
 
   it("does not heal (or audit) when there is no drift", async () => {
-    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, archivedAt: null, aiImportsUsed: 3 }]);
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false, archivedAt: null }]);
     mockSelectSubs.mockResolvedValue([
       { id: "sub-uuid", firmId: "org_1", stripeSubscriptionId: "sub_1", status: "active" },
     ]);
@@ -119,8 +119,8 @@ describe("reconcile-billing auto-heal", () => {
       items: { data: [{ id: "si_seat", quantity: 1, metadata: { kind: "seat" } }] },
     });
     mockGetOrg.mockResolvedValue({
-      // aiImportsUsed: 3 → free quota exhausted → derived entitlements = []
-      publicMetadata: { subscription_status: "active", entitlements: [] },
+      // seat item → derived entitlements = ["ai_import"] (bundled into the plan)
+      publicMetadata: { subscription_status: "active", entitlements: ["ai_import"] },
     });
 
     const res = await GET(authed());

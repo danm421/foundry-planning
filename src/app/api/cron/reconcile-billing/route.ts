@@ -103,7 +103,6 @@ export async function GET(req: NextRequest): Promise<Response> {
         db: {
           status: liveSub.status,
           items: dbItems,
-          aiImportsUsed: firm.aiImportsUsed,
         },
         clerk: {
           subscriptionStatus:

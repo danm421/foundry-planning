@@ -1,5 +1,5 @@
 /**
- * Typed catalog of the four Stripe price IDs locked in the pricing spec.
+ * Typed catalog of the three Stripe price IDs locked in the pricing spec.
  * Loaded from env on first call; cached for the process. Throws fast if any
  * env var is missing — the missing one is named in the error so deploys fail
  * loudly instead of silently misrouting Checkout sessions.
@@ -12,10 +12,9 @@ export type PriceCatalog = {
   seatMonthly: string;
   seatAnnual: string;
   seatFoundingAnnual: string;
-  aiImportMonthly: string;
 };
 
-export type PriceKind = "seat" | "addon:ai_import";
+export type PriceKind = "seat";
 
 let cached: PriceCatalog | null = null;
 
@@ -23,7 +22,6 @@ const ENV_TO_KEY = {
   STRIPE_PRICE_ID_SEAT_MONTHLY: "seatMonthly",
   STRIPE_PRICE_ID_SEAT_ANNUAL: "seatAnnual",
   STRIPE_PRICE_ID_SEAT_FOUNDING_ANNUAL: "seatFoundingAnnual",
-  STRIPE_PRICE_ID_AI_IMPORT_MONTHLY: "aiImportMonthly",
 } as const satisfies Record<string, keyof PriceCatalog>;
 
 export function getPriceCatalog(): PriceCatalog {
@@ -53,7 +51,6 @@ export function priceKindFor(priceId: string): PriceKind | null {
   if (priceId === c.seatMonthly) return "seat";
   if (priceId === c.seatAnnual) return "seat";
   if (priceId === c.seatFoundingAnnual) return "seat";
-  if (priceId === c.aiImportMonthly) return "addon:ai_import";
   return null;
 }
 

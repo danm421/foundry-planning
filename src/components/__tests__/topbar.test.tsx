@@ -39,12 +39,17 @@ describe("Topbar", () => {
     expect(container.querySelector("nav[role='tablist']")).toBeNull();
   });
 
-  it("renders all 6 tabs in order on a client route", () => {
-    vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
-    const { container } = render(<Topbar />);
+  it("renders the top-level tabs in order on a client route", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
+    const { container } = render(
+      <BackNavProvider>
+        <Topbar />
+      </BackNavProvider>,
+    );
     const text = container.textContent ?? "";
+    // Overview is intentionally hidden for now (see topbar TABS); planning
+    // lands on Details instead.
     const expected = [
-      "Overview",
       "Details",
       "Assets",
       "Cash Flow",
@@ -57,6 +62,8 @@ describe("Topbar", () => {
       expect(idx).toBeGreaterThan(last);
       last = idx;
     }
+    // Overview must not appear as a tab anywhere in the header.
+    expect(text).not.toContain("Overview");
   });
 
   it("marks the active tab based on pathname", () => {

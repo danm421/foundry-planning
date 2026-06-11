@@ -5,10 +5,6 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import {
-    claimAiImportCredit,
-    syncAiImportEntitlement,
-} from "@/lib/billing/ai-import-quota";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
     ForbiddenError,
@@ -152,7 +148,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             : new Map();
         const holdingsAccountIds: string[] = [];
 
-        const { results, allTabsCommitted, firstTimeAllCommitted } = await commitTabs({
+        const { results, allTabsCommitted } = await commitTabs({
             importId,
             payload,
             tabs,
@@ -169,34 +165,6 @@ export async function POST(request: NextRequest, { params }: Params) {
         await Promise.all(
             holdingsAccountIds.map((accountId) => syncAccountFromHoldings(accountId)),
         );
-
-        if (firstTimeAllCommitted && imp.mode === "onboarding") {
-            // Atomic credit claim happens INSIDE commitTabs's tx via the
-            // helper imported below — but commitTabs already returned, so we
-            // run the claim in a fresh tx. Idempotent: re-running won't
-            // double-credit because of the WHERE ai_import_counted=false.
-            try {
-                await db.transaction(async (tx) => {
-                    // Cast: claimAiImportCredit's AnyTx is typed against the
-                    // node-postgres HKT for portability, but the project's
-                    // db uses neon-serverless. The runtime API surface
-                    // (tx.execute(sql)) is identical.
-                    await claimAiImportCredit(
-                        tx as unknown as Parameters<typeof claimAiImportCredit>[0],
-                        importId,
-                    );
-                });
-                await syncAiImportEntitlement(firmId);
-            } catch (err) {
-                // Quota update is best-effort post-commit — failure here does
-                // not undo the import. Reconcile cron + the next
-                // subscription.updated webhook will heal Clerk metadata drift.
-                console.error(
-                    "ai-import quota credit/sync failed:",
-                    err instanceof Error ? err.message : err,
-                );
-            }
-        }
 
         await Promise.all(
             tabs.map((tab) =>

@@ -309,6 +309,7 @@ export const yearRefEnum = pgEnum("year_ref", [
 export const growthSourceEnum = pgEnum("growth_source", [
   "default",
   "model_portfolio",
+  "ticker_portfolio",
   "custom",
   "asset_mix",
   "inflation",
@@ -1651,6 +1652,9 @@ export const accounts = pgTable("accounts", {
   // account (the advisor's chosen growthSource / mix / value apply instead).
   deriveFromHoldings: boolean("derive_from_holdings").notNull().default(true),
   modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
+    onDelete: "set null",
+  }),
+  tickerPortfolioId: uuid("ticker_portfolio_id").references(() => tickerPortfolios.id, {
     onDelete: "set null",
   }),
   turnoverPct: decimal("turnover_pct", { precision: 5, scale: 4 }).notNull().default("0"),
@@ -3485,6 +3489,8 @@ export const clientImports = pgTable("client_imports", {
   createdByUserId: text("created_by_user_id").notNull(),
   committedByUserId: text("committed_by_user_id"),
   committedAt: timestamp("committed_at"),
+  // DEPRECATED (2026-06): AI import is bundled into every seat — there is no
+  // free-quota credit to claim. Column retained to avoid a migration; unused.
   aiImportCounted: boolean("ai_import_counted").notNull().default(false),
   extractHoldings: boolean("extract_holdings").notNull().default(false),
   discardedAt: timestamp("discarded_at"),
@@ -3597,6 +3603,8 @@ export const firms = pgTable("firms", {
   dataRetentionUntil: timestamp("data_retention_until", { withTimezone: true }),
   purgedAt: timestamp("purged_at", { withTimezone: true }),
   dpaVersion: text("dpa_version"),
+  // DEPRECATED (2026-06): AI import is bundled into every seat — no usage
+  // quota. Column retained to avoid a migration; unused.
   aiImportsUsed: integer("ai_imports_used").notNull().default(0),
   logoUrl: text("logo_url"),
   faviconUrl: text("favicon_url"),

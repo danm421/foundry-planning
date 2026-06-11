@@ -74,6 +74,7 @@ export async function commitAccounts(
           growthRate: row.growthRate != null ? String(row.growthRate) : null,
           growthSource: row.growthSource ?? "default",
           modelPortfolioId: row.modelPortfolioId ?? null,
+          tickerPortfolioId: row.tickerPortfolioId ?? null,
           // RMDs default ON for pre-tax retirement sub-types when the
           // extraction didn't capture an explicit flag — matches the
           // add-account form and quick-start wizard. Roth/non-retirement off.
@@ -126,6 +127,7 @@ export async function commitAccounts(
     if (row.growthRate != null) updates.growthRate = String(row.growthRate);
     if (row.growthSource !== undefined) updates.growthSource = row.growthSource;
     if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
+    if (row.tickerPortfolioId !== undefined) updates.tickerPortfolioId = row.tickerPortfolioId;
     if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
     if (row.holdings?.length) updates.deriveFromHoldings = true;
     await tx

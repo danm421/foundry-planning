@@ -31,6 +31,7 @@ import {
   type AssetClassLite,
 } from "@/lib/investments/allocation";
 import { resolveBenchmark, type AssetClassWeight } from "@/lib/investments/benchmarks";
+import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
 import type { ReportArtifact, FetchDataResult } from "../types";
 import { serializeCsv } from "../csv";
@@ -198,6 +199,18 @@ async function fetchInvestmentsData(
     });
   }
 
+  // Fold this firm's fund (ticker) portfolios into asset-class weight rows keyed
+  // by portfolio id, so ticker_portfolio accounts classify in the export too.
+  const slugToAssetClassId = new Map<string, string>();
+  for (const ac of classRows) if (ac.slug) slugToAssetClassId.set(ac.slug, ac.id);
+  const tickerAllocRows = await loadTickerPortfolioAllocations(firmId, slugToAssetClassId);
+  const tickerPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]> = {};
+  for (const r of tickerAllocRows)
+    (tickerPortfolioAllocationsByPortfolioId[r.tickerPortfolioId] ??= []).push({
+      assetClassId: r.assetClassId,
+      weight: parseFloat(r.weight),
+    });
+
   const cashAssetClassId = classRows.find((c) => c.slug === "cash")?.id ?? null;
 
   const planLite: PlanSettingsLite = {
@@ -225,6 +238,7 @@ async function fetchInvestmentsData(
       category: a.category,
       growthSource: toGrowthSource(a.growthSource),
       modelPortfolioId: a.modelPortfolioId ?? null,
+      tickerPortfolioId: a.tickerPortfolioId ?? null,
       value: Number(a.value),
       ownerEntityId: entityId,
       // Force entity-owned accounts past the in-portfolio gate when the caller
@@ -242,6 +256,7 @@ async function fetchInvestmentsData(
         modelPortfolioAllocationsByPortfolioId,
         planLite,
         cashAssetClassId,
+        tickerPortfolioAllocationsByPortfolioId,
       ),
     assetClassLites,
   );
@@ -279,6 +294,7 @@ async function fetchInvestmentsData(
       category: a.category,
       growthSource: toGrowthSource(a.growthSource),
       modelPortfolioId: a.modelPortfolioId ?? null,
+      tickerPortfolioId: a.tickerPortfolioId ?? null,
     };
     const result = resolveAccountAllocation(
       acctLite,
@@ -286,6 +302,7 @@ async function fetchInvestmentsData(
       modelPortfolioAllocationsByPortfolioId,
       planLite,
       cashAssetClassId,
+      tickerPortfolioAllocationsByPortfolioId,
     );
     const allocation =
       "unallocated" in result

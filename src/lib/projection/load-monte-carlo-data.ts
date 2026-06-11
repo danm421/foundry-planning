@@ -16,6 +16,7 @@ import {
   accountAssetAllocations,
   assetClassCorrelations,
 } from "@/db/schema";
+import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { IndexInput } from "@/engine/monteCarlo/returns";
@@ -149,6 +150,16 @@ export const loadMonteCarloData = cache(
     ]);
     const slugToAssetClassId = new Map<string, string>();
     for (const ac of assetClassRows) if (ac.slug) slugToAssetClassId.set(ac.slug, ac.id);
+
+    // ── Ticker-portfolio look-through mixes ─────────────────────────────────
+    const tickerPortfolioAllocations = await loadTickerPortfolioAllocations(firmId, slugToAssetClassId);
+    const tickerMixByPortfolioId = new Map<string, AccountAssetMix[]>();
+    for (const a of tickerPortfolioAllocations) {
+      const list = tickerMixByPortfolioId.get(a.tickerPortfolioId) ?? [];
+      list.push({ assetClassId: a.assetClassId, weight: parseFloat(a.weight) });
+      tickerMixByPortfolioId.set(a.tickerPortfolioId, list);
+    }
+
     const overridesByHolding = new Map<string, { assetClassId: string; weight: number }[]>();
     for (const o of holdingOverrideRows) {
       const list = overridesByHolding.get(o.holdingId) ?? [];
@@ -249,6 +260,8 @@ export const loadMonteCarloData = cache(
       } else if (effectiveSource === "model_portfolio" && effectivePortfolioId) {
         const allocs = allocsByPortfolio.get(effectivePortfolioId) ?? [];
         mix = allocs.map((a) => ({ assetClassId: a.assetClassId, weight: parseFloat(a.weight) }));
+      } else if (effectiveSource === "ticker_portfolio" && acct.tickerPortfolioId) {
+        mix = tickerMixByPortfolioId.get(acct.tickerPortfolioId) ?? [];
       }
       if (mix.length > 0) accountMixes.push({ accountId: acct.id, mix });
     }

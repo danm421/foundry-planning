@@ -62,7 +62,7 @@ export default function ClientSearch(): ReactElement {
       e.preventDefault();
       const picked = results[highlighted];
       if (picked) {
-        router.push(`/clients/${picked.id}/overview`);
+        router.push(`/clients/${picked.id}/details`);
         setQuery("");
         setOpen(false);
       }
@@ -105,7 +105,7 @@ export default function ClientSearch(): ReactElement {
                 aria-selected={i === highlighted}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  router.push(`/clients/${r.id}/overview`);
+                  router.push(`/clients/${r.id}/details`);
                   setQuery("");
                   setOpen(false);
                 }}

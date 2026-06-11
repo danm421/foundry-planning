@@ -12,8 +12,8 @@ function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
   return {
     clientId: "c1", firmId: "f1",
     accounts: [
-      { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, value: 75, ownerEntityId: null, entityInPortfolio: false },
-      { id: "a2", name: "IRA", category: "retirement", growthSource: "asset_mix", modelPortfolioId: null, value: 25, ownerEntityId: null, entityInPortfolio: false },
+      { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, tickerPortfolioId: null, value: 75, ownerEntityId: null, entityInPortfolio: false },
+      { id: "a2", name: "IRA", category: "retirement", growthSource: "asset_mix", modelPortfolioId: null, tickerPortfolioId: null, value: 25, ownerEntityId: null, entityInPortfolio: false },
     ],
     assetClassLites: [
       { id: "eq", name: "US Equity", sortOrder: 0, assetType: "equities" },
@@ -22,6 +22,7 @@ function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
     assetClassData: [], cashAssetClassId: null, riskFreeRate: 0.03, correlationRows: [],
     accountMixByAccountId: { a1: [{ assetClassId: "eq", weight: 1 }], a2: [{ assetClassId: "bd", weight: 1 }] },
     modelPortfolioAllocationsByPortfolioId: { mp1: [{ assetClassId: "eq", weight: 0.6 }, { assetClassId: "bd", weight: 0.4 }] },
+    tickerPortfolioAllocationsByPortfolioId: {},
     planLite: { growthSourceTaxable: "asset_mix", growthSourceCash: "asset_mix", growthSourceRetirement: "asset_mix", modelPortfolioIdTaxable: null, modelPortfolioIdCash: null, modelPortfolioIdRetirement: null },
     portfolioLites: [{ id: "mp1", name: "60/40" }],
     selectedBenchmarkPortfolioId: null,
@@ -85,8 +86,8 @@ describe("buildAssetAllocationData", () => {
   const excludedBundle = () =>
     bundle({
       accounts: [
-        { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, value: 75, ownerEntityId: null, entityInPortfolio: false },
-        { id: "a3", name: "Old 401(k)", category: "retirement", growthSource: "custom", modelPortfolioId: null, value: 50, ownerEntityId: null, entityInPortfolio: false },
+        { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, tickerPortfolioId: null, value: 75, ownerEntityId: null, entityInPortfolio: false },
+        { id: "a3", name: "Old 401(k)", category: "retirement", growthSource: "custom", modelPortfolioId: null, tickerPortfolioId: null, value: 50, ownerEntityId: null, entityInPortfolio: false },
       ],
       resolvedGroups: {
         "all-liquid": { groupKey: "all-liquid", groupName: "All Liquid Assets", groupColor: null, isDefault: true, accountIds: ["a1", "a3"] },

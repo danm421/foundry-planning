@@ -17,6 +17,8 @@ import { getTableName } from "drizzle-orm";
 import {
   FIXTURE_FIRM_ID,
   FIXTURE_CLIENT_ID,
+  FIXTURE_TICKER_ACCOUNT_ID,
+  FIXTURE_ASSET_CLASS_ID,
   clientRow,
   scenarioRow,
   planSettingsRow,
@@ -26,6 +28,10 @@ import {
   mcAccountRow,
   accountAssetAllocationRow,
   assetClassCorrelationRow,
+  tickerPortfolioRow,
+  tickerPortfolioHoldingRow,
+  securityAssetClassWeightRow,
+  tickerPortfolioAccountRow,
 } from "./fixtures/sample-rows";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +50,9 @@ type DbState = {
   accountAssetAllocations: typeof accountAssetAllocationRow[];
   // innerJoin shape: { asset_class_correlations: {...}, asset_classes: {...} }
   assetClassCorrelations: typeof assetClassCorrelationRow[];
+  tickerPortfolios: unknown[];
+  tickerPortfolioHoldings: unknown[];
+  securityAssetClassWeights: unknown[];
 };
 
 const dbState: DbState = {
@@ -56,6 +65,9 @@ const dbState: DbState = {
   assetClasses: [],
   accountAssetAllocations: [],
   assetClassCorrelations: [],
+  tickerPortfolios: [],
+  tickerPortfolioHoldings: [],
+  securityAssetClassWeights: [],
 };
 
 // Track seed persists: the mock writes updated monteCarloSeed values here.
@@ -86,6 +98,9 @@ vi.mock("@/db", async () => {
     if (t === schema.assetClasses || n === "asset_classes") return dbState.assetClasses;
     if (t === schema.accountAssetAllocations || n === "account_asset_allocations") return dbState.accountAssetAllocations;
     if (t === schema.assetClassCorrelations || n === "asset_class_correlations") return dbState.assetClassCorrelations;
+    if (t === schema.tickerPortfolios || n === "ticker_portfolios") return dbState.tickerPortfolios;
+    if (t === schema.tickerPortfolioHoldings || n === "ticker_portfolio_holdings") return dbState.tickerPortfolioHoldings;
+    if (t === schema.securityAssetClassWeights || n === "security_asset_class_weights") return dbState.securityAssetClassWeights;
     return [];
   };
 
@@ -234,5 +249,35 @@ describe("loadMonteCarloData", () => {
       effectiveTree as never,
     );
     expect(payload.startingLiquidBalance).toBe(400000);
+  });
+
+  it("ticker_portfolio account contributes look-through mix to accountMixes", async () => {
+    // Seed the base fixtures plus a ticker portfolio account. The account has
+    // growthSource: "ticker_portfolio" and tickerPortfolioId pointing at
+    // tickerPortfolioRow. The holding resolves through securityAssetClassWeightRow
+    // (slug "us-equity") to FIXTURE_ASSET_CLASS_ID.
+    //
+    // Non-vacuity: a ticker_portfolio account with NO branch in the mix builder
+    // would produce an empty mix and be ABSENT from accountMixes entirely. So
+    // finding the entry AND checking its assetClassId is a meaningful assertion —
+    // it proves the look-through path ran, not some fallback.
+    seedValidFixture({ monteCarloSeed: 12345678 });
+    dbState.tickerPortfolios = [tickerPortfolioRow];
+    dbState.tickerPortfolioHoldings = [tickerPortfolioHoldingRow];
+    dbState.securityAssetClassWeights = [securityAssetClassWeightRow];
+    dbState.accounts = [
+      ...dbState.accounts,
+      tickerPortfolioAccountRow as Record<string, unknown>,
+    ];
+
+    const payload = await loadMonteCarloData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    const entry = payload.accountMixes.find((m) => m.accountId === FIXTURE_TICKER_ACCOUNT_ID);
+    expect(entry).toBeDefined();
+    expect(entry!.mix.length).toBeGreaterThan(0);
+    // The look-through should resolve to FIXTURE_ASSET_CLASS_ID (us-equity).
+    expect(entry!.mix[0].assetClassId).toBe(FIXTURE_ASSET_CLASS_ID);
+    // Weight should be 1.0 (holding weight 1 × security weight 1).
+    expect(entry!.mix[0].weight).toBeCloseTo(1.0, 4);
   });
 });

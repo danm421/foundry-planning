@@ -8,7 +8,11 @@ import {
 } from "../resolve-entity";
 import { createGrowthSourceResolver } from "../resolve-growth-source";
 
-function makeCtx(overrides: Partial<{ inflationRate: number }> = {}): ResolutionContext {
+function makeCtx(overrides: Partial<{
+  inflationRate: number;
+  assetClasses: { id: string; geometricReturn: string; pctOrdinaryIncome: string; pctLtCapitalGains: string; pctQualifiedDividends: string; pctTaxExempt: string }[];
+  tickerPortfolioAllocations: { tickerPortfolioId: string; assetClassId: string; weight: string }[];
+}> = {}): ResolutionContext {
   const resolver = createGrowthSourceResolver({
     planSettings: {
       growthSourceTaxable: "default",
@@ -28,11 +32,12 @@ function makeCtx(overrides: Partial<{ inflationRate: number }> = {}): Resolution
       defaultGrowthLifeInsurance: "0.03",
       inflationAssetClassId: null,
     },
-    assetClasses: [],
+    assetClasses: overrides.assetClasses ?? [],
     modelPortfolios: [],
     modelPortfolioAllocations: [],
     accountAssetAllocations: [],
     clientCmaOverrides: [],
+    tickerPortfolioAllocations: overrides.tickerPortfolioAllocations ?? [],
   });
   return {
     resolver,
@@ -50,6 +55,7 @@ const baseRawAccount = {
   rmdEnabled: false,
   isDefaultChecking: false,
   modelPortfolioId: null,
+  tickerPortfolioId: null,
   overridePctOi: null,
   overridePctLtCg: null,
   overridePctQdiv: null,
@@ -291,6 +297,19 @@ describe("resolveAccountFromRaw", () => {
     expect(acct.distributionPolicyPercent).toBeNull();
     expect(acct.businessTaxTreatment).toBeNull();
     expect(acct.parentAccountId).toBeNull();
+  });
+
+  it("resolves a ticker_portfolio account to blended rate + look-through realization", () => {
+    const ctx = makeCtx({
+      assetClasses: [{ id: "ac-stock", geometricReturn: "0.08", pctOrdinaryIncome: "0.1", pctLtCapitalGains: "0.7", pctQualifiedDividends: "0.2", pctTaxExempt: "0" }],
+      tickerPortfolioAllocations: [{ tickerPortfolioId: "tp1", assetClassId: "ac-stock", weight: "1" }],
+    });
+    const acct = resolveAccountFromRaw(
+      { ...baseRawAccount, id: "a1", name: "Sleeve", category: "taxable", subType: "individual", value: "100000", basis: "100000", growthSource: "ticker_portfolio", tickerPortfolioId: "tp1", growthRate: null },
+      ctx,
+    );
+    expect(acct.growthRate).toBeCloseTo(0.08, 6);
+    expect(acct.realization?.pctLtCapitalGains).toBeCloseTo(0.7, 6);
   });
 });
 

@@ -321,7 +321,7 @@ export default function QuickCreateForm() {
         return;
       }
       if (path === "empty") {
-        router.push(`/clients/${created.id}/overview`);
+        router.push(`/clients/${created.id}/details`);
         return;
       }
       // Quick Start: best-effort residence + children writes, then enter the

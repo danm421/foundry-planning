@@ -112,6 +112,7 @@ export interface ExtractedAccount {
   custodian?: string;
   growthSource?: GrowthSource;
   modelPortfolioId?: string | null;
+  tickerPortfolioId?: string | null;
   ownerNameHint?: string;
   owners?: AccountOwner[];
   /** Individual positions, present only when holdings extraction was enabled. */

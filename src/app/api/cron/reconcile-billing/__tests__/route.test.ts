@@ -181,7 +181,7 @@ describe("GET /api/cron/reconcile-billing", () => {
     // false item + entitlement drift, paging ops on every add-on firm.
     mockReconcileInsert.mockResolvedValue([{ id: "run_ok2" }]);
     mockSelectFirms.mockResolvedValue([
-      { firmId: "org_ai", isFounder: false, archivedAt: null, aiImportsUsed: 3 },
+      { firmId: "org_ai", isFounder: false, archivedAt: null },
     ]);
     mockSelectSubs.mockResolvedValue([
       {
@@ -193,7 +193,7 @@ describe("GET /api/cron/reconcile-billing", () => {
     ]);
     mockSelectItems.mockResolvedValue([
       { kind: "seat", addonKey: null, quantity: 1, removedAt: null },
-      { kind: "addon", addonKey: "ai_import", quantity: 1, removedAt: null },
+      { kind: "addon", addonKey: "white_label", quantity: 1, removedAt: null },
     ]);
     mockSubsRetrieve.mockResolvedValue({
       id: "sub_ai",
@@ -207,21 +207,26 @@ describe("GET /api/cron/reconcile-billing", () => {
             price: { id: "price_seat", metadata: { kind: "seat" } },
           },
           {
-            id: "si_ai",
+            id: "si_addon",
             quantity: 1,
             metadata: {},
             price: {
-              id: "price_ai_import",
-              metadata: { kind: "addon", addon_key: "ai_import" },
+              id: "price_white_label",
+              metadata: { kind: "addon", addon_key: "white_label" },
             },
           },
         ],
       },
     });
+    // Seat implies ai_import; the active white_label add-on grants its own
+    // entitlement. Both must be present in Clerk for no drift — and because
+    // white_label is NOT seat-implied, this also proves the cron classifies
+    // the add-on via price.metadata (misreading it as a seat would drop
+    // white_label from the derived set and surface entitlement drift).
     mockGetOrg.mockResolvedValue({
       publicMetadata: {
         subscription_status: "active",
-        entitlements: ["ai_import"],
+        entitlements: ["ai_import", "white_label"],
       },
     });
 

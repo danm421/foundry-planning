@@ -32,6 +32,7 @@ export async function listInvestmentOptionCatalog(
     accounts: bundle.accounts.map((a) => ({
       id: a.id, name: a.name, category: a.category, value: a.value,
       growthSource: a.growthSource, modelPortfolioId: a.modelPortfolioId,
+      tickerPortfolioId: a.tickerPortfolioId,
     })),
     // AnalysisAccount carries all fields the resolver reads at runtime; this cast
     // aligns its declared parameter type with BuildAnalysisInput's looser { id }

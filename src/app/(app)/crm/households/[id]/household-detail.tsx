@@ -54,7 +54,7 @@ export function HouseholdDetail({
   );
 
   const planningHref = household.planningClient
-    ? `/clients/${household.planningClient.id}/overview`
+    ? `/clients/${household.planningClient.id}/details`
     : `/clients/new?crmHouseholdId=${household.id}`;
 
   return (

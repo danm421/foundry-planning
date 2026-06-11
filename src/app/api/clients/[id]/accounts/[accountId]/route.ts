@@ -6,6 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import {
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
+  assertTickerPortfoliosInFirm,
 } from "@/lib/db-scoping";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordUpdate, recordDelete } from "@/lib/audit";
@@ -57,6 +58,10 @@ export async function PUT(
     }
     if ("modelPortfolioId" in safeUpdate) {
       const c = await assertModelPortfoliosInFirm(firmId, [safeUpdate.modelPortfolioId]);
+      if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
+    if ("tickerPortfolioId" in safeUpdate) {
+      const c = await assertTickerPortfoliosInFirm(firmId, [safeUpdate.tickerPortfolioId]);
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
 

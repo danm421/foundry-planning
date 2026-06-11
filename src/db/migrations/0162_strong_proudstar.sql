@@ -1,0 +1,3 @@
+ALTER TYPE "public"."growth_source" ADD VALUE 'ticker_portfolio' BEFORE 'custom';--> statement-breakpoint
+ALTER TABLE "accounts" ADD COLUMN "ticker_portfolio_id" uuid;--> statement-breakpoint
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_ticker_portfolio_id_ticker_portfolios_id_fk" FOREIGN KEY ("ticker_portfolio_id") REFERENCES "public"."ticker_portfolios"("id") ON DELETE set null ON UPDATE no action;

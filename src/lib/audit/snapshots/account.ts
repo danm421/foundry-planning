@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   accounts,
   modelPortfolios,
+  tickerPortfolios,
 } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import type {
@@ -19,6 +20,7 @@ type AccountRow = typeof accounts.$inferSelect;
 
 export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot> {
   const modelPortfolio = await resolveModelPortfolio(row.modelPortfolioId);
+  const tickerPortfolio = await resolveTickerPortfolio(row.tickerPortfolioId);
 
   return {
     name: row.name,
@@ -33,6 +35,7 @@ export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot
     isDefaultChecking: row.isDefaultChecking,
     growthSource: row.growthSource,
     modelPortfolio,
+    tickerPortfolio,
     turnoverPct: Number(row.turnoverPct),
     annualPropertyTax: Number(row.annualPropertyTax),
     propertyTaxGrowthRate: Number(row.propertyTaxGrowthRate),
@@ -51,5 +54,16 @@ async function resolveModelPortfolio(
     .select({ id: modelPortfolios.id, name: modelPortfolios.name })
     .from(modelPortfolios)
     .where(inArray(modelPortfolios.id, [id]));
+  return { id, display: rows[0]?.name ?? "(deleted)" };
+}
+
+async function resolveTickerPortfolio(
+  id: string | null,
+): Promise<ReferenceValue | null> {
+  if (!id) return null;
+  const rows = await db
+    .select({ id: tickerPortfolios.id, name: tickerPortfolios.name })
+    .from(tickerPortfolios)
+    .where(inArray(tickerPortfolios.id, [id]));
   return { id, display: rows[0]?.name ?? "(deleted)" };
 }

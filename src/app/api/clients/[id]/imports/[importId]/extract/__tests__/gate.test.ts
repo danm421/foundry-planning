@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(),
-}));
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/db-helpers", async () => {
   const actual = await vi.importActual<typeof import("@/lib/db-helpers")>(
     "@/lib/db-helpers",
@@ -16,28 +14,21 @@ vi.mock("@/lib/imports/authz", async () => {
   );
   return { ...actual, requireImportAccess: vi.fn() };
 });
-// Phase-1b advisor gate runs before the quota check; this suite exercises the
-// entitlement/quota gate, not the access path, so let the client gate pass.
 vi.mock("@/lib/clients/authz", () => ({
   verifyClientAccess: vi.fn().mockResolvedValue(true),
 }));
-vi.mock("@/lib/rate-limit", () => ({
-  checkImportRateLimit: vi.fn(),
-}));
+vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/extraction/extract", () => ({ extractDocument: vi.fn() }));
 vi.mock("@/lib/imports/blob", () => ({ downloadImportFile: vi.fn() }));
 
-const firmsRow = vi.fn();
+// After the gate, the route queries import files; return [] so an entitled
+// firm short-circuits to a 400 ("No files") — proving it passed the guard
+// without reaching extractDocument.
 vi.mock("@/db", () => ({
   db: {
-    // chainable select().from().where().limit() / .then for the firms lookup
     select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(() => Promise.resolve(firmsRow())),
-        })),
-      })),
+      from: vi.fn(() => ({ where: vi.fn(() => Promise.resolve([])) })),
     })),
     insert: vi.fn(),
     update: vi.fn(),
@@ -69,31 +60,28 @@ beforeEach(() => {
   vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
 });
 
-describe("extract route entitlement/quota gate", () => {
-  it("402s when quota is exhausted and the ai_import entitlement is absent", async () => {
+describe("extract route entitlement guard", () => {
+  it("403s with ai_import_not_entitled when the entitlement is absent", async () => {
     vi.mocked(auth).mockResolvedValue({
       userId: "user_1",
       sessionClaims: { org_public_metadata: { entitlements: [] } },
     } as never);
-    firmsRow.mockReturnValue([{ aiImportsUsed: 3 }]); // == AI_IMPORT_FREE_QUOTA
 
     const res = await POST(makeReq(), params);
-    expect(res.status).toBe(402);
-    expect(await res.json()).toEqual({ error: "ai_import_quota_exhausted" });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "ai_import_not_entitled" });
     expect(extractDocument).not.toHaveBeenCalled();
   });
 
-  it("does not 402 when the firm holds the ai_import entitlement", async () => {
+  it("passes the guard when the firm holds the ai_import entitlement", async () => {
     vi.mocked(auth).mockResolvedValue({
       userId: "user_1",
       sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
     } as never);
-    firmsRow.mockReturnValue([{ aiImportsUsed: 99 }]);
 
-    // No files in the import → route returns 400, proving we passed the gate
-    // without reaching extractDocument. (Files lookup isn't mocked to return
-    // rows; the gate is what we assert here.)
+    // No files → 400 after the gate, proving we passed it without extracting.
     const res = await POST(makeReq(), params);
-    expect(res.status).not.toBe(402);
+    expect(res.status).toBe(400);
+    expect(extractDocument).not.toHaveBeenCalled();
   });
 });

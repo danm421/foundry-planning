@@ -118,4 +118,24 @@ describe("createGrowthSourceResolver", () => {
     });
     expect(r.resolveInflation()).toBeCloseTo(0.035, 6);
   });
+
+  it("resolveTickerPortfolio blends weights x CMA return; remainder grows at inflation", () => {
+    const r = createGrowthSourceResolver({
+      planSettings,
+      assetClasses,
+      modelPortfolios: [],
+      modelPortfolioAllocations: [],
+      accountAssetAllocations: [],
+      clientCmaOverrides: [],
+      tickerPortfolioAllocations: [
+        { tickerPortfolioId: "tp1", assetClassId: "us-eq", weight: "0.5" },
+      ],
+    });
+    // 0.5*0.07 (us-eq) + 0.5*0.025 (inflation remainder) = 0.0475
+    expect(r.resolveTickerPortfolio("tp1").geoReturn).toBeCloseTo(0.0475, 6);
+    // allocMap should reflect the explicit weight only
+    const allocMap = r.tickerPortfolioAllocMap("tp1");
+    expect(allocMap).toBeDefined();
+    expect(allocMap!.get("us-eq")).toBeCloseTo(0.5, 6);
+  });
 });

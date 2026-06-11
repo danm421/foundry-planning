@@ -47,7 +47,7 @@ export default function DraftsList({
 }: DraftsListProps) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-4">
         <h1 className="text-xl font-semibold text-ink">Imports</h1>
         <Link
           href={`/clients/${clientId}/details/import/new`}

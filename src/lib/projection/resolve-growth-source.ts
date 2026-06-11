@@ -69,6 +69,7 @@ export function createGrowthSourceResolver(ctx: {
   modelPortfolioAllocations: readonly ModelPortfolioAllocationRow[];
   accountAssetAllocations: readonly AccountAssetAllocationRow[];
   clientCmaOverrides: readonly ClientCmaOverrideRow[];
+  tickerPortfolioAllocations?: readonly { tickerPortfolioId: string; assetClassId: string; weight: string }[];
 }) {
   const acMap = new Map(ctx.assetClasses.map((ac) => [ac.id, ac]));
   const overrideMap = new Map(
@@ -87,6 +88,14 @@ export function createGrowthSourceResolver(ctx: {
     const list = allocsByAccount.get(a.accountId) ?? [];
     list.push(a);
     allocsByAccount.set(a.accountId, list);
+  }
+
+  const allocsByTickerPortfolio = new Map<string, AccountAssetAllocationRow[]>();
+  for (const a of ctx.tickerPortfolioAllocations ?? []) {
+    const list = allocsByTickerPortfolio.get(a.tickerPortfolioId) ?? [];
+    // Reuse AccountAssetAllocationRow shape; accountId is unused by foldWeighted/foldAllocs.
+    list.push({ accountId: a.tickerPortfolioId, assetClassId: a.assetClassId, weight: a.weight });
+    allocsByTickerPortfolio.set(a.tickerPortfolioId, list);
   }
 
   function acReturn(id: string): number {
@@ -283,6 +292,16 @@ export function createGrowthSourceResolver(ctx: {
     return foldAllocs(allocsByAccount.get(accountId));
   }
 
+  function resolveTickerPortfolio(tickerPortfolioId: string): ResolvedGrowth {
+    return foldWeighted(allocsByTickerPortfolio.get(tickerPortfolioId) ?? []);
+  }
+
+  /** Asset-class → fractional-weight map for a ticker portfolio.
+   *  Returns undefined when the ticker portfolio has no allocation rows. */
+  function tickerPortfolioAllocMap(tickerPortfolioId: string): Map<string, number> | undefined {
+    return foldAllocs(allocsByTickerPortfolio.get(tickerPortfolioId));
+  }
+
   return {
     resolveAccount,
     resolvePortfolio,
@@ -293,5 +312,7 @@ export function createGrowthSourceResolver(ctx: {
     categoryDefaultPortfolioId,
     portfolioAllocMap,
     accountAllocMap,
+    resolveTickerPortfolio,
+    tickerPortfolioAllocMap,
   };
 }
