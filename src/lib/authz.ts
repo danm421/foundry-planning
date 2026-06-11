@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { UnauthorizedError } from "./db-helpers";
 import { roleHasCapability, type Capability } from "./capabilities";
+import { currentUserIsBillingContact } from "@/lib/billing/billing-contact";
 
 /**
  * Forbidden — the caller is authenticated but lacks the required role
@@ -14,15 +15,16 @@ export class ForbiddenError extends Error {
 }
 
 /**
- * Owner-only. Used for billing routes and any future owner-promotion
- * paths. UnauthorizedError on no session, ForbiddenError on
- * authenticated-but-not-owner.
+ * Billing-contact-only. Used for the Stripe customer portal + billing settings.
+ * The contact is a per-firm pointer (publicMetadata.billing_contact_userId),
+ * resolved with a lockout-safe fallback — see billing-contact.ts. Replaces the
+ * retired requireOrgOwner() (org:owner is no longer a role).
  */
-export async function requireOrgOwner(): Promise<void> {
-  const { userId, orgRole } = await auth();
+export async function requireBillingContact(): Promise<void> {
+  const { userId } = await auth();
   if (!userId) throw new UnauthorizedError();
-  if (orgRole !== "org:owner") {
-    throw new ForbiddenError("Organization owner role required");
+  if (!(await currentUserIsBillingContact())) {
+    throw new ForbiddenError("Billing contact access required");
   }
 }
 
@@ -42,7 +44,7 @@ export async function requireOrgAdminOrOwner(): Promise<void> {
 /**
  * Generalized role gate. Prefer this over hard-coded role-string checks: it
  * routes through the capability table in `capabilities.ts` so the role→surface
- * mapping has one home. `requireOrgOwner`/`requireOrgAdminOrOwner` remain as
+ * mapping has one home. `requireBillingContact`/`requireOrgAdminOrOwner` remain as
  * thin convenience wrappers for existing call sites.
  */
 export async function requireCapability(cap: Capability): Promise<void> {

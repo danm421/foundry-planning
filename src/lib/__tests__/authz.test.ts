@@ -5,8 +5,13 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: () => mockAuth(),
 }));
 
+const mockIsBillingContact = vi.fn();
+vi.mock("@/lib/billing/billing-contact", () => ({
+  currentUserIsBillingContact: () => mockIsBillingContact(),
+}));
+
 import {
-  requireOrgOwner,
+  requireBillingContact,
   requireOrgAdminOrOwner,
   requireActiveSubscription,
   ForbiddenError,
@@ -15,27 +20,23 @@ import { UnauthorizedError } from "@/lib/db-helpers";
 
 beforeEach(() => {
   mockAuth.mockReset();
+  mockIsBillingContact.mockReset();
 });
 
-describe("requireOrgOwner", () => {
-  it("throws UnauthorizedError when no userId", async () => {
-    mockAuth.mockResolvedValue({ userId: null, orgRole: null });
-    await expect(requireOrgOwner()).rejects.toBeInstanceOf(UnauthorizedError);
+describe("requireBillingContact", () => {
+  it("throws UnauthorizedError without a session", async () => {
+    mockAuth.mockResolvedValue({ userId: null });
+    await expect(requireBillingContact()).rejects.toBeInstanceOf(UnauthorizedError);
   });
-
-  it("throws ForbiddenError for org:admin", async () => {
-    mockAuth.mockResolvedValue({ userId: "u1", orgRole: "org:admin" });
-    await expect(requireOrgOwner()).rejects.toBeInstanceOf(ForbiddenError);
+  it("throws ForbiddenError when the user is not the billing contact", async () => {
+    mockAuth.mockResolvedValue({ userId: "u1" });
+    mockIsBillingContact.mockResolvedValue(false);
+    await expect(requireBillingContact()).rejects.toBeInstanceOf(ForbiddenError);
   });
-
-  it("throws ForbiddenError for org:member", async () => {
-    mockAuth.mockResolvedValue({ userId: "u1", orgRole: "org:member" });
-    await expect(requireOrgOwner()).rejects.toBeInstanceOf(ForbiddenError);
-  });
-
-  it("passes for org:owner", async () => {
-    mockAuth.mockResolvedValue({ userId: "u1", orgRole: "org:owner" });
-    await expect(requireOrgOwner()).resolves.toBeUndefined();
+  it("passes when the user is the billing contact", async () => {
+    mockAuth.mockResolvedValue({ userId: "u1" });
+    mockIsBillingContact.mockResolvedValue(true);
+    await expect(requireBillingContact()).resolves.toBeUndefined();
   });
 });
 
