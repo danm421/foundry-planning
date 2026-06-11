@@ -13,11 +13,18 @@ import {
 } from "@/lib/solver/estate-levers";
 import { buildRevertFundingMutation } from "@/lib/solver/trust-levers";
 import { SolverTrustForm, type SolverTrustDraft } from "./solver-trust-form";
-import { useSolverSide } from "./solver-section";
+import { SolverSection, useSolverSide } from "./solver-section";
+import {
+  currentRevocableTrusts,
+  currentTrustEntities,
+  currentCharities,
+  summarizeCurrentGift,
+} from "@/lib/solver/estate-current";
 import type { CurrentRevocableTrust, CurrentCharity } from "@/lib/solver/estate-current";
 
 interface Props {
-  accounts: Account[];
+  /** Read-only base facts — drives the left "Current" column. */
+  baseClientData: ClientData;
   /**
    * The working/proposed tree. Its `externalBeneficiaries` include
    * scenario-added charities, and its accounts feed in-kind asset gifts.
@@ -298,7 +305,8 @@ export function EstateCharitiesList({
   );
 }
 
-export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Props) {
+export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }: Props) {
+  const accounts = baseClientData.accounts;
   const eligible = useMemo(
     () => accounts.filter(isRevocableTagEligible),
     [accounts],
@@ -350,6 +358,33 @@ export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Prop
       ),
     [clientData.taxYearRows, ps.planStartYear, ps.planEndYear, taxInflationRate],
   );
+
+  // ── Current (base) estate lists for the left column ─────────────────────────
+  const currentRev = useMemo(
+    () => currentRevocableTrusts(baseClientData.accounts),
+    [baseClientData.accounts],
+  );
+  const currentTrusts = useMemo(
+    () => currentTrustEntities(baseClientData.entities),
+    [baseClientData.entities],
+  );
+  const currentGiftRows = useMemo(
+    () =>
+      (baseClientData.gifts ?? []).map((g) => ({
+        id: g.id,
+        label: summarizeCurrentGift(g, baseClientData),
+      })),
+    [baseClientData],
+  );
+  const baseCharities = useMemo(
+    () => currentCharities(baseClientData.externalBeneficiaries),
+    [baseClientData.externalBeneficiaries],
+  );
+  // Scenario-added charities = working charities not present in base facts.
+  const addedCharities = useMemo(() => {
+    const baseIds = new Set(baseCharities.map((c) => c.id));
+    return currentCharities(clientData.externalBeneficiaries).filter((c) => !baseIds.has(c.id));
+  }, [clientData.externalBeneficiaries, baseCharities]);
 
   function upsertGift(draft: EstateFlowGift) {
     setGifts((gs) =>
@@ -418,201 +453,77 @@ export function SolverTabEstatePlanning({ accounts, clientData, onChange }: Prop
     if (enabled) apply(taggedIds, name);
   }
 
+  const addButton = (label: string, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-md border border-dashed border-hair-2 px-2.5 py-1 text-[11px] font-medium text-ink-3 normal-case tracking-normal hover:border-accent/60 hover:text-ink"
+    >
+      + {label}
+    </button>
+  );
+
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-5 py-5">
-      <h2 className="text-[15px] font-medium text-ink">Estate Planning</h2>
+    <div>
+      <SolverSection title="Revocable Living Trust">
+        <EstateRevocableTrustList
+          current={currentRev}
+          enabled={enabled}
+          trustName={trustName}
+          eligible={eligible}
+          taggedIds={taggedIds}
+          onToggleEnabled={toggleEnabled}
+          onChangeName={changeName}
+          onToggleAccount={toggleAccount}
+          onSelectAll={selectAll}
+        />
+      </SolverSection>
 
-      <section className="rounded-lg border border-hair bg-card p-3">
-        <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-ink">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => toggleEnabled(e.target.checked)}
-            className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-hair-2 bg-card-2 transition-colors hover:border-accent/60 checked:border-accent checked:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      <SolverSection
+        title="Planned Gifts"
+        action={addButton("Add gift", () => {
+          setEditing(null);
+          setAdding(true);
+        })}
+      >
+        <EstateGiftsList
+          currentGifts={currentGiftRows}
+          draftGifts={gifts}
+          onEdit={setEditing}
+          onRemove={deleteGift}
+        />
+      </SolverSection>
+
+      <SolverSection
+        title="Trusts"
+        action={!addingTrust ? addButton("Add trust", () => setAddingTrust(true)) : undefined}
+      >
+        <EstateTrustsList currentTrusts={currentTrusts} addedTrusts={trusts} onRemove={removeTrust} />
+      </SolverSection>
+
+      <SolverSection title="Charities">
+        <EstateCharitiesList
+          currentCharities={baseCharities}
+          addedCharities={addedCharities}
+          charityName={charityName}
+          charityType={charityType}
+          onChangeName={setCharityName}
+          onChangeType={setCharityType}
+          onAdd={addCharity}
+        />
+      </SolverSection>
+
+      {addingTrust && (
+        <div className="border-t border-hair px-5 py-4">
+          <SolverTrustForm
+            clientData={clientData}
+            isMarried={isMarried}
+            onCreateCharity={createCharity}
+            onApply={addTrust}
+            onClose={() => setAddingTrust(false)}
           />
-          Create a revocable living trust
-        </label>
-
-        {enabled ? (
-          <div className="mt-3 space-y-3">
-            <label className="block text-[11px] text-ink-3" htmlFor="trust-name-input">
-              Trust name
-              <input
-                id="trust-name-input"
-                type="text"
-                value={trustName}
-                onChange={(e) => changeName(e.target.value)}
-                className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-              />
-            </label>
-
-            <div className="flex items-center justify-between">
-              <span className="text-[12px] text-ink-3">
-                Move probate assets into the trust
-              </span>
-              <button
-                type="button"
-                onClick={selectAll}
-                className="text-[12px] text-accent hover:underline"
-              >
-                Select all
-              </button>
-            </div>
-
-            {eligible.length === 0 ? (
-              <p className="text-[11px] text-ink-3">
-                No probate-eligible accounts to move.
-              </p>
-            ) : (
-              <div className="divide-y divide-hair rounded-md border border-hair bg-card-2">
-                {eligible.map((a) => (
-                  <label
-                    key={a.id}
-                    className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:bg-card-hover"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={taggedIds.has(a.id)}
-                      onChange={() => toggleAccount(a.id)}
-                      className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-hair-2 bg-card-2 transition-colors hover:border-accent/60 checked:border-accent checked:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                    />
-                    {a.name}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="rounded-lg border border-hair bg-card p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] font-medium text-ink">Planned gifts</span>
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(null);
-              setAdding(true);
-            }}
-            className="text-[12px] text-accent hover:underline"
-          >
-            Add gift
-          </button>
         </div>
-
-        {gifts.length === 0 ? (
-          <p className="mt-2 text-[12px] text-ink-3">
-            No planned gifts in this scenario.
-          </p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {gifts.map((g) => (
-              <li
-                key={g.id}
-                className="flex items-center justify-between text-[13px] text-ink"
-              >
-                <button
-                  type="button"
-                  className="text-left hover:underline"
-                  onClick={() => setEditing(g)}
-                >
-                  {giftSummary(g)}
-                </button>
-                <button
-                  type="button"
-                  className="text-[12px] text-crit hover:underline"
-                  onClick={() => deleteGift(g.id)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Inline "add charity" — makes a new charity available as a gift recipient. */}
-        <div className="mt-3 flex items-end gap-2">
-          <label className="flex-1 text-[12px] text-ink-2">
-            New charity
-            <input
-              type="text"
-              value={charityName}
-              onChange={(e) => setCharityName(e.target.value)}
-              placeholder="Charity name"
-              className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-            />
-          </label>
-          <select
-            aria-label="Charity type"
-            value={charityType}
-            onChange={(e) => setCharityType(e.target.value as "public" | "private")}
-            className="h-9 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-          >
-            <option value="public">Public</option>
-            <option value="private">Private</option>
-          </select>
-          <button
-            type="button"
-            onClick={addCharity}
-            className="h-9 rounded-md bg-accent px-3 text-[13px] text-white hover:bg-accent/90"
-          >
-            Add
-          </button>
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-hair bg-card p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] font-medium text-ink">Trusts</span>
-          {!addingTrust && (
-            <button
-              type="button"
-              onClick={() => setAddingTrust(true)}
-              className="text-[12px] text-accent hover:underline"
-            >
-              Add trust
-            </button>
-          )}
-        </div>
-
-        {trusts.length === 0 ? (
-          <p className="mt-2 text-[12px] text-ink-3">
-            No trusts created in this scenario.
-          </p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {trusts.map((t) => (
-              <li
-                key={t.entity.id}
-                className="flex items-center justify-between text-[13px] text-ink"
-              >
-                <span>
-                  {t.entity.name} · {t.entity.trustSubType?.toUpperCase()}
-                </span>
-                <button
-                  type="button"
-                  className="text-[12px] text-crit hover:underline"
-                  onClick={() => removeTrust(t)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {addingTrust && (
-          <div className="mt-3">
-            <SolverTrustForm
-              clientData={clientData}
-              isMarried={isMarried}
-              onCreateCharity={createCharity}
-              onApply={addTrust}
-              onClose={() => setAddingTrust(false)}
-            />
-          </div>
-        )}
-      </section>
+      )}
 
       {(adding || editing) && (
         <EstateFlowAddGiftDialog
