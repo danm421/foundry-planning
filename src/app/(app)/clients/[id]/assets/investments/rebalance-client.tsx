@@ -10,7 +10,6 @@ export interface RebalanceClientProps {
   clientId: string;
   accountsWithHoldings: { id: string; name: string; category: string; value: number }[];
   fundPortfolios: { id: string; name: string }[];
-  assetClasses: { id: string; name: string }[];
 }
 
 export function RebalanceClient({
@@ -127,7 +126,6 @@ export function RebalanceClient({
       </button>
 
       {error && <p className="text-sm text-crit">{error}</p>}
-      {loading && !error && <p className="text-sm text-ink-3">Computing…</p>}
 
       {result && (
         <RebalanceComparison result={result} onOverrideRate={(r) => void runCompute(r)} />

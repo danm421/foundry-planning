@@ -165,7 +165,6 @@ export default function InvestmentsClient({
           clientId={clientId}
           accountsWithHoldings={accountsWithHoldings}
           fundPortfolios={fundPortfolios}
-          assetClasses={assetClasses}
         />
       )}
 

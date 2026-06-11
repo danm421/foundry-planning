@@ -195,20 +195,22 @@ export async function loadRebalanceInputs(
 
   const slugToId = firmSlugToAssetClassId(acRows, firmId);
 
-  const acctRows = await db
-    .select({ id: accountsTable.id, category: accountsTable.category })
-    .from(accountsTable)
-    .where(
-      and(
-        eq(accountsTable.clientId, clientId),
-        inArray(accountsTable.id, body.accountIds),
+  // Account rows and enriched holdings are independent reads — fetch them together.
+  const [acctRows, byAccount] = await Promise.all([
+    db
+      .select({ id: accountsTable.id, category: accountsTable.category })
+      .from(accountsTable)
+      .where(
+        and(
+          eq(accountsTable.clientId, clientId),
+          inArray(accountsTable.id, body.accountIds),
+        ),
       ),
-    );
+    loadEnrichedHoldings(body.accountIds),
+  ]);
   const taxableById = new Map(
     acctRows.map((a) => [a.id, a.category === TAXABLE_CATEGORY]),
   );
-
-  const byAccount = await loadEnrichedHoldings(body.accountIds);
 
   const currentHoldings: CurrentHolding[] = [];
   for (const [accountId, rows] of byAccount) {
