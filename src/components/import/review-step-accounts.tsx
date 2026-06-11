@@ -408,7 +408,7 @@ export default function ReviewStepAccounts({
                   <SourceBadge row={account} className="ml-auto pb-1" />
                   <button
                     onClick={() => removeRow(i)}
-                    className="ml-auto pb-1 text-white hover:text-white"
+                    className="pb-1 text-white hover:text-white"
                     title="Remove"
                   >
                     <TrashIcon />
