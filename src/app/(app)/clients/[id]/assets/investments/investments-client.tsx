@@ -20,6 +20,7 @@ import "@/lib/report-artifacts/index";
 import AccountGroupPillBar from "@/components/account-groups/account-group-pill-bar";
 import PortfolioAnalysisClient from "./portfolio-analysis-client";
 import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
+import { RebalanceClient } from "./rebalance-client";
 
 interface Props {
   clientId: string;
@@ -65,8 +66,10 @@ export default function InvestmentsClient({
   strippedMemberCount,
   analysisRows,
   holdingsByAccountClass,
+  accountsWithHoldings,
+  fundPortfolios,
 }: Props) {
-  const [pageView, setPageView] = useState<"allocation" | "analysis">("allocation");
+  const [pageView, setPageView] = useState<"allocation" | "analysis" | "rebalance">("allocation");
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
   const [view, setView] = useState<AllocationView>("detailed");
@@ -144,10 +147,26 @@ export default function InvestmentsClient({
         >
           Portfolio Analysis
         </button>
+        <button
+          type="button"
+          onClick={() => setPageView("rebalance")}
+          className={pageView === "rebalance" ? "rounded bg-card-2 px-3 py-1 text-ink" : "px-3 py-1 text-ink-3"}
+        >
+          Rebalance
+        </button>
       </div>
 
       {pageView === "analysis" && (
         <PortfolioAnalysisClient analysisRows={analysisRows} />
+      )}
+
+      {pageView === "rebalance" && (
+        <RebalanceClient
+          clientId={clientId}
+          accountsWithHoldings={accountsWithHoldings}
+          fundPortfolios={fundPortfolios}
+          assetClasses={assetClasses}
+        />
       )}
 
       {pageView === "allocation" && (
