@@ -47,10 +47,14 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 
 const mockListMembers = vi.fn();
+const mockGetOrganization = vi.fn();
+const mockUpdateOrganizationMetadata = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
       getOrganizationMembershipList: (...a: unknown[]) => mockListMembers(...a),
+      getOrganization: (...a: unknown[]) => mockGetOrganization(...a),
+      updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrganizationMetadata(...a),
     },
   }),
 }));
@@ -75,6 +79,8 @@ beforeEach(() => {
   mockSubsRetrieve.mockReset();
   mockSubsUpdate.mockReset();
   mockListMembers.mockReset();
+  mockGetOrganization.mockReset();
+  mockUpdateOrganizationMetadata.mockReset();
   mockRecordAudit.mockReset();
   mockCaptureException.mockReset();
   // Default: fresh svix delivery (insert returns a row).
@@ -265,6 +271,77 @@ describe("organizationMembership.updated", () => {
       "svix_norole",
     );
     expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("organizationMembership.created — billing contact pin", () => {
+  beforeEach(() => {
+    // Default: founder-free paid org so seat sync doesn't interfere.
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_paid", isFounder: false }]);
+    mockSelectSubs.mockResolvedValue([]);
+    // Clerk membership list still needed even if seat sync is a no-op (no active sub).
+    mockListMembers.mockResolvedValue({ data: [], total_count: 0 });
+  });
+
+  it("pins the first admin as billing contact when none is set yet", async () => {
+    mockGetOrganization.mockResolvedValue({ publicMetadata: {} });
+
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_buyer" },
+          role: "org:admin",
+        },
+      } as never,
+      "svix_pin_admin",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockGetOrganization).toHaveBeenCalledWith({ organizationId: "org_paid" });
+    expect(mockUpdateOrganizationMetadata).toHaveBeenCalledWith(
+      "org_paid",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ billing_contact_userId: "user_buyer" }),
+      }),
+    );
+  });
+
+  it("does NOT overwrite an already-pinned billing contact", async () => {
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { billing_contact_userId: "user_existing" },
+    });
+
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_buyer2" },
+          role: "org:admin",
+        },
+      } as never,
+      "svix_pin_no_overwrite",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
+  });
+
+  it("does NOT pin a non-admin member", async () => {
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_member" },
+          role: "org:member",
+        },
+      } as never,
+      "svix_pin_non_admin",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockGetOrganization).not.toHaveBeenCalled();
+    expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
   });
 });
 

@@ -118,6 +118,19 @@ export async function dispatchClerkMembership(
       return NextResponse.json({ ok: true, skipped_duplicate: t }, { status: 200 });
     }
     await syncSeatQuantity(firmId);
+    // Pin the first admin as the firm's billing contact if none is set yet.
+    // Handles the checkout flow, where the buyer's userId only exists after
+    // they accept the org:admin invite. Idempotent — only writes when unset.
+    if (t === "organizationMembership.created" && d.role === "org:admin") {
+      const cc = await clerkClient();
+      const org = await cc.organizations.getOrganization({ organizationId: firmId });
+      const meta = (org.publicMetadata ?? {}) as Record<string, unknown>;
+      if (typeof meta.billing_contact_userId !== "string") {
+        await cc.organizations.updateOrganizationMetadata(firmId, {
+          publicMetadata: { ...meta, billing_contact_userId: userId },
+        });
+      }
+    }
     await recordAudit({
       action: t === "organizationMembership.created" ? "member.invited" : "member.removed",
       resourceType: "membership",
