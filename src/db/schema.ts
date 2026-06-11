@@ -3425,6 +3425,7 @@ export const clientImports = pgTable("client_imports", {
   committedByUserId: text("committed_by_user_id"),
   committedAt: timestamp("committed_at"),
   aiImportCounted: boolean("ai_import_counted").notNull().default(false),
+  extractHoldings: boolean("extract_holdings").notNull().default(false),
   discardedAt: timestamp("discarded_at"),
   notes: text("notes"),
   payloadJson: jsonb("payload_json").notNull().default(sql`'{}'::jsonb`),
