@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the Clerk SDK before importing the module under test.
 const mockGetOrg = vi.fn();
@@ -7,6 +7,7 @@ const mockUpdateOrgMetadata = vi.fn();
 const mockUpdateMembership = vi.fn();
 const mockGetMembershipList = vi.fn();
 const mockGetUserList = vi.fn();
+const mockCreateOrg = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
@@ -16,6 +17,7 @@ vi.mock("@clerk/nextjs/server", () => ({
       updateOrganizationMetadata: mockUpdateOrgMetadata,
       updateOrganizationMembership: mockUpdateMembership,
       getOrganizationMembershipList: mockGetMembershipList,
+      createOrganization: mockCreateOrg,
     },
     users: {
       getUserList: mockGetUserList,
@@ -32,7 +34,7 @@ import { db } from "@/db";
 import { firms } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { getFounderState, applyFounderState } from "../founder-init";
+import { getFounderState, applyFounderState, createFounderOrgForUser } from "../founder-init";
 
 const TEST_FIRM_ID = "org_test_founder_init_xyz";
 const TEST_USER_ID = "user_test_founder_xyz";
@@ -287,5 +289,37 @@ describe("applyFounderState", () => {
         entitlements: ["ai_import"],
       }),
     ).rejects.toThrow(/not a member/i);
+  });
+});
+
+describe("createFounderOrgForUser", () => {
+  const NEW_ORG = "org_beta_new";
+
+  afterEach(async () => {
+    await db.delete(firms).where(eq(firms.firmId, NEW_ORG));
+  });
+
+  it("creates the Clerk org with createdBy, then applies founder state", async () => {
+    mockCreateOrg.mockResolvedValue({ id: NEW_ORG, name: "Acme", publicMetadata: {} });
+    mockGetOrg.mockResolvedValue({ id: NEW_ORG, name: "Acme", publicMetadata: {} });
+    mockGetMembershipList.mockResolvedValue({
+      data: [{ publicUserData: { userId: TEST_USER_ID }, role: "org:admin", id: "mem_1" }],
+    });
+    mockUpdateOrg.mockResolvedValue({});
+    mockUpdateOrgMetadata.mockResolvedValue({});
+    mockUpdateMembership.mockResolvedValue({});
+
+    const result = await createFounderOrgForUser({
+      ownerUserId: TEST_USER_ID,
+      displayName: "Acme",
+      entitlements: ["ai_import"],
+    });
+
+    expect(result).toEqual({ firmId: NEW_ORG });
+    expect(mockCreateOrg).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Acme", createdBy: TEST_USER_ID }),
+    );
+    const [row] = await db.select().from(firms).where(eq(firms.firmId, NEW_ORG));
+    expect(row?.isFounder).toBe(true);
   });
 });

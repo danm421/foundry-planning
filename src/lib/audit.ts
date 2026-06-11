@@ -227,6 +227,7 @@ export type AuditAction =
   | "firm.archived"
   | "firm.purged"
   | "firm.founder_initialized"
+  | "beta_code.redeemed"
   | "firm.branding_logo_changed"
   | "firm.branding_favicon_changed"
   | "firm.branding_color_changed"
