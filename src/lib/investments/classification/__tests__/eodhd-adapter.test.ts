@@ -1,6 +1,7 @@
 // src/lib/investments/classification/__tests__/eodhd-adapter.test.ts
 import { describe, it, expect } from "vitest";
 import { mapEodhdToInput } from "../eodhd-adapter";
+import { deriveAssetClassBlend } from "../derive";
 
 const ETF_FIXTURE = {
   General: { Name: "Vanguard Total Stock Market ETF", Type: "ETF", Code: "VTI" },
@@ -36,6 +37,20 @@ describe("mapEodhdToInput", () => {
     expect(input.categoryBenchmark).toBe("CRSP US Total Market");
     // 1 of 1 non-US equity is emerging (0.5 + 0.5) → ~100%.
     expect(input.emergingPctOfNonUS).toBeGreaterThan(0);
+  });
+
+  it("routes a money-market fund to 100% cash despite an empty allocation", () => {
+    // EODHD types money-market funds as a fund but returns no Asset_Allocation,
+    // so without the cash-fund guard they fall into the inflation residual.
+    const input = mapEodhdToInput("SPAXX", {
+      General: { Name: "Fidelity Government Money Market Fund", Type: "FUND", Code: "SPAXX" },
+      MutualFund_Data: {},
+    });
+    expect(input.securityType).toBe("mutual_fund");
+    expect(input.assetAllocation).toEqual({
+      stockUS: 0, stockNonUS: 0, bond: 0, cash: 100, other: 0,
+    });
+    expect(deriveAssetClassBlend(input)).toEqual([{ slug: "cash", weight: 1 }]);
   });
 
   it("classifies a common-stock payload as a stock input", () => {

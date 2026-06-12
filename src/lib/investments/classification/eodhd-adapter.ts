@@ -1,5 +1,6 @@
 // src/lib/investments/classification/eodhd-adapter.ts
 import type { ClassifierInput, SecurityType } from "./types";
+import { isCashFund } from "./rules";
 
 // EODHD region buckets we treat as emerging.
 const EM_REGIONS = [
@@ -24,6 +25,18 @@ function mapSecurityType(rawType: string | undefined): SecurityType {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function mapEodhdToInput(ticker: string, raw: any): ClassifierInput {
   const securityType = mapSecurityType(raw?.General?.Type);
+
+  // Money-market / cash funds are cash-equivalents for planning. EODHD types
+  // them as a fund (occasionally "other") and rarely returns an allocation, so
+  // route the whole position to the Cash class via a synthetic 100% cash sleeve
+  // rather than letting the empty allocation fall into the inflation residual.
+  if (isCashFund(ticker, raw?.General?.Name, raw?.General?.Type)) {
+    return {
+      securityType: securityType === "etf" ? "etf" : "mutual_fund",
+      ticker,
+      assetAllocation: { stockUS: 0, stockNonUS: 0, bond: 0, cash: 100, other: 0 },
+    };
+  }
 
   if (securityType === "etf" || securityType === "mutual_fund") {
     const data = raw.ETF_Data ?? raw.MutualFund_Data ?? {};

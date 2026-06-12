@@ -12,6 +12,30 @@ export function classifyBondBenchmark(benchmark: string | undefined): AssetClass
   return "ten_year_treasury";
 }
 
+/** Money-market / sweep funds. EODHD types these as a fund but rarely returns
+ *  an asset-allocation breakdown, so without this guard they fall through to the
+ *  inflation residual. They are cash-equivalents for planning → Cash class.
+ *  Anchored on the fund name (2a-7 naming is regulated, so "money market" /
+ *  "money fund" / "cash reserves" reliably appears), with EODHD type and a
+ *  known-ticker fallback for terse payloads. */
+const CASH_FUND_TICKERS = new Set([
+  "SPAXX", "FDRXX", "SPRXX", "FZFXX", "FDLXX", "FZCXX", "FGXXX",
+  "VMFXX", "VMRXX", "VUSXX", "VCTXX",
+  "SWVXX", "SNVXX", "SNSXX", "SNAXX", "SWGXX",
+]);
+
+export function isCashFund(
+  ticker: string | undefined,
+  name: string | undefined,
+  type: string | undefined,
+): boolean {
+  const n = (name ?? "").toLowerCase();
+  const ty = (type ?? "").toLowerCase();
+  if (/money[\s-]?market|money fund\b|cash reserves|cash management/.test(n)) return true;
+  if (/money[\s-]?market/.test(ty)) return true;
+  return CASH_FUND_TICKERS.has((ticker ?? "").toUpperCase());
+}
+
 /** Detect gold / broad-commodity funds from ticker + name. Returns null if
  *  neither applies (caller treats remaining "Other" as residual → inflation). */
 export function classifyCommodityLike(

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyBondBenchmark, classifyCommodityLike } from "../rules";
+import { classifyBondBenchmark, classifyCommodityLike, isCashFund } from "../rules";
 
 describe("bond benchmark keyword rules", () => {
   it("matches TIPS / inflation-protected", () => {
@@ -32,5 +32,28 @@ describe("commodity-like keyword rules", () => {
   });
   it("returns null when neither", () => {
     expect(classifyCommodityLike("VTI", "Vanguard Total Stock Market")).toBeNull();
+  });
+});
+
+describe("cash-fund detection", () => {
+  it("detects money-market funds by name", () => {
+    expect(isCashFund("SPAXX", "Fidelity Government Money Market Fund", "FUND")).toBe(true);
+    expect(isCashFund("VMFXX", "Vanguard Federal Money Market Fund", "FUND")).toBe(true);
+    expect(isCashFund("VMRXX", "Vanguard Cash Reserves Federal Money Market Fund", "FUND")).toBe(true);
+  });
+  it("detects money / cash funds that omit the word 'market'", () => {
+    expect(isCashFund("SWVXX", "Schwab Value Advantage Money Fund", "FUND")).toBe(true);
+    expect(isCashFund("FDRXX", "Fidelity Government Cash Reserves", "FUND")).toBe(true);
+  });
+  it("detects by EODHD type when the name is terse", () => {
+    expect(isCashFund("XXXXX", "Acme Sweep", "Money Market Fund")).toBe(true);
+  });
+  it("detects known sweep tickers even with no helpful name", () => {
+    expect(isCashFund("FZFXX", "", "FUND")).toBe(true);
+  });
+  it("does not flag ordinary funds", () => {
+    expect(isCashFund("VTI", "Vanguard Total Stock Market ETF", "ETF")).toBe(false);
+    expect(isCashFund("BND", "Vanguard Total Bond Market ETF", "ETF")).toBe(false);
+    expect(isCashFund(undefined, undefined, undefined)).toBe(false);
   });
 });
