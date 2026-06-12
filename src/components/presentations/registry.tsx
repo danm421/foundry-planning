@@ -122,6 +122,16 @@ import {
 import { summarizeTaxSummaryOptions } from "@/lib/presentations/pages/tax-summary/summarize-options";
 import { estimateTaxSummaryPageCount } from "@/lib/presentations/pages/tax-summary/estimate-page-count";
 import { TaxSummaryPagePdf } from "./pages/tax-summary/page-pdf";
+import { buildMedicareSummaryData } from "@/lib/presentations/pages/medicare-summary/view-model";
+import type { MedicareSummaryPageData } from "@/lib/presentations/pages/medicare-summary/view-model";
+import {
+  medicareSummaryOptionsSchema,
+  MEDICARE_SUMMARY_OPTIONS_DEFAULT,
+  type MedicareSummaryOptions,
+} from "@/lib/presentations/pages/medicare-summary/options-schema";
+import { summarizeMedicareSummaryOptions } from "@/lib/presentations/pages/medicare-summary/summarize-options";
+import { estimateMedicareSummaryPageCount } from "@/lib/presentations/pages/medicare-summary/estimate-page-count";
+import { MedicareSummaryPagePdf } from "./pages/medicare-summary/page-pdf";
 import { buildRetirementSummaryData, type RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import { type RetirementSummaryOptions, retirementSummaryOptionsSchema, RETIREMENT_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/retirement-summary/options-schema";
 import { summarizeRetirementSummaryOptions } from "@/lib/presentations/pages/retirement-summary/summarize-options";
@@ -871,6 +881,20 @@ export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOpti
   renderPdf: (input) => <TaxSummaryPagePdf {...input} />,
 };
 
+export const medicareSummaryPage: PresentationPage<MedicareSummaryPageData, MedicareSummaryOptions> = {
+  id: "medicareSummary",
+  title: "Medicare & IRMAA Summary",
+  description: "One-page Medicare overview: lifetime premiums, the IRMAA income surcharge, tier exposure over time, and survivor/RMD risks.",
+  category: "Income Tax",
+  defaultOptions: MEDICARE_SUMMARY_OPTIONS_DEFAULT,
+  optionsSchema: medicareSummaryOptionsSchema,
+  summarizeOptions: summarizeMedicareSummaryOptions,
+  estimatePageCount: () => estimateMedicareSummaryPageCount(),
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildMedicareSummaryData(ctx, options),
+  renderPdf: (input) => <MedicareSummaryPagePdf {...input} />,
+};
+
 export const retirementSummaryPage: PresentationPage<RetirementSummaryPageData, RetirementSummaryOptions> = {
   id: "retirementSummary",
   title: "Retirement Summary",
@@ -919,6 +943,7 @@ export const PRESENTATION_PAGES = {
   cashFlowAssets: cashFlowAssetsPage,
   entityCashFlow: entityCashFlowPage,
   taxSummary: taxSummaryPage,
+  medicareSummary: medicareSummaryPage,
   retirementSummary: retirementSummaryPage,
   incomeTaxIncome: incomeTaxIncomePage,
   incomeTaxFederal: incomeTaxFederalPage,
