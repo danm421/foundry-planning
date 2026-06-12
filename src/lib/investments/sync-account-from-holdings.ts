@@ -78,6 +78,7 @@ export async function syncAccountFromHoldings(accountId: string): Promise<void> 
     shares: parseFloat(h.shares),
     price: parseFloat(h.price),
     costBasis: parseFloat(h.costBasis),
+    marketValue: h.marketValue != null ? parseFloat(h.marketValue) : null,
     securityWeights: h.securityId ? weightsBySecurity.get(h.securityId) ?? [] : [],
     overrides: overridesByHolding.get(h.id) ?? [],
   }));

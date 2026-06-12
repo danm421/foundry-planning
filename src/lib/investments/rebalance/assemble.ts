@@ -70,6 +70,7 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
       shares: h.shares,
       price: h.price,
       costBasis: h.costBasis,
+      marketValue: h.marketValue,
       securityWeights: h.securityWeights,
       overrides: h.overrides,
     })),

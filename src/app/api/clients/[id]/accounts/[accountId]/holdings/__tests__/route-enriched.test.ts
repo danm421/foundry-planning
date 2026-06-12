@@ -5,6 +5,7 @@ const baseRow: RawHoldingRow = {
   id: "h1", accountId: "a1", securityId: "s1",
   displayTicker: "VTI", displayName: "Vanguard Total",
   shares: "10", price: "100", priceAsOf: "2026-05-28", costBasis: "800",
+  marketValue: null,
   sortOrder: 0, notes: null,
   createdAt: new Date("2026-05-28T00:00:00Z"), updatedAt: new Date("2026-05-28T00:00:00Z"),
 };

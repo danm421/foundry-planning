@@ -29,7 +29,7 @@ import {
 import { resolveBenchmark, type AssetClassWeight } from "@/lib/investments/benchmarks";
 import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
-import { breakdownHoldingsByClass, type HoldingClassContribution } from "@/lib/investments/holdings-rollup";
+import { breakdownHoldingsByClass, holdingMarketValue, type HoldingClassContribution } from "@/lib/investments/holdings-rollup";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
 import { resolveGroup, type GroupKey } from "@/lib/account-groups/resolver";
 import { fetchAccountGroupForResolver, listAccountGroups } from "@/lib/account-groups/queries";
@@ -189,7 +189,16 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     .filter((a) => enrichedByAccount.has(a.id))
     .map((a) => {
       const rows = enrichedByAccount.get(a.id)!;
-      const value = rows.reduce((s, h) => s + Number(h.shares) * Number(h.price), 0);
+      const value = rows.reduce(
+        (s, h) =>
+          s +
+          holdingMarketValue({
+            marketValue: h.marketValue != null ? parseFloat(h.marketValue) : null,
+            shares: Number(h.shares),
+            price: Number(h.price),
+          }),
+        0,
+      );
       return { id: a.id, name: a.name, category: a.category, value };
     });
 
@@ -209,6 +218,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       securityId: e.securityId,
       shares: Number(e.shares),
       price: Number(e.price),
+      marketValue: e.marketValue != null ? parseFloat(e.marketValue) : null,
       securityWeights: e.securityWeights,
       overrides: e.overrides,
     }));

@@ -12,6 +12,7 @@ function row(over: Partial<HoldingRow>): HoldingRow {
     id: "h1", accountId: "a1", securityId: "s1",
     displayTicker: "VTI", displayName: "Vanguard Total",
     shares: "0", price: "0", priceAsOf: null, costBasis: "0",
+    marketValue: null,
     sortOrder: 0, notes: null,
     securityWeights: [], overrides: [], needsReview: false,
     ...over,
@@ -25,6 +26,11 @@ describe("toHoldingInputs", () => {
     ]);
     expect(inputs[0]).toMatchObject({ shares: 10, price: 100, costBasis: 800 });
     expect(inputs[0].securityWeights).toEqual([{ slug: "us_large_cap", weight: 1 }]);
+  });
+
+  it("parses a decimal-string marketValue to a number", () => {
+    const inputs = toHoldingInputs([row({ marketValue: "12500.00" })]);
+    expect(inputs[0].marketValue).toBe(12500);
   });
 });
 

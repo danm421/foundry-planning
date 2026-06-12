@@ -24,6 +24,7 @@ export function toHoldingInputs(rows: readonly HoldingRow[]): HoldingInput[] {
     shares: parseFloat(r.shares),
     price: parseFloat(r.price),
     costBasis: parseFloat(r.costBasis),
+    marketValue: r.marketValue != null ? parseFloat(r.marketValue) : null,
     securityWeights: r.securityWeights,
     overrides: r.overrides,
   }));

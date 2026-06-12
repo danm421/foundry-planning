@@ -5,6 +5,7 @@ const SLUGS = new Map([["us_large", "ac-large"], ["us_bond", "ac-bond"]]);
 
 const holding = (over = {}) => ({
   id: "h1", securityId: "s1", shares: 10, price: 100, costBasis: 500,
+  marketValue: null,
   securityWeights: [{ slug: "us_large", weight: 1 }], overrides: [],
   ...over,
 });

@@ -10,6 +10,7 @@ export const holdingCreateSchema = z
     price: z.number().min(0),
     priceAsOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
     costBasis: z.number().min(0),
+    marketValue: z.number().min(0).nullish(),
     sortOrder: z.number().int().min(0).optional(),
     notes: z.string().trim().max(1000).nullish(),
   })

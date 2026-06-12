@@ -10,6 +10,7 @@ import {
   type HoldingRow,
 } from "@/lib/investments/holdings-client";
 import { summarizeHoldings, rowChip } from "@/lib/investments/holdings-display";
+import { holdingMarketValue } from "@/lib/investments/holdings-rollup";
 
 interface Props {
   clientId: string;
@@ -154,7 +155,8 @@ export function HoldingsTab({
   }
 
   async function handleFieldBlur(
-    holdingId: string, patch: { shares?: number; price?: number; costBasis?: number; displayName?: string },
+    holdingId: string,
+    patch: { shares?: number; price?: number; costBasis?: number; displayName?: string; marketValue?: number | null },
   ) {
     if (!accountId) return;
     try {
@@ -167,6 +169,8 @@ export function HoldingsTab({
               price: patch.price != null ? String(patch.price) : r.price,
               costBasis: patch.costBasis != null ? String(patch.costBasis) : r.costBasis,
               displayName: patch.displayName ?? r.displayName,
+              // null is intentional here: clears a stored override so value falls back to shares×price.
+              marketValue: "marketValue" in patch ? (patch.marketValue != null ? String(patch.marketValue) : null) : r.marketValue,
             }
           : r,
       ));
@@ -279,7 +283,11 @@ export function HoldingsTab({
             <tbody className="divide-y divide-gray-800">
               {rows.map((r) => {
                 const chip = rowChip(r, assetClasses);
-                const mv = parseFloat(r.shares) * parseFloat(r.price);
+                const mv = holdingMarketValue({
+                  marketValue: r.marketValue != null ? parseFloat(r.marketValue) : null,
+                  shares: parseFloat(r.shares),
+                  price: parseFloat(r.price),
+                });
                 return (
                   <Fragment key={r.id}>
                     <tr className="text-gray-200">
@@ -296,7 +304,10 @@ export function HoldingsTab({
                         <CellInput defaultValue={r.price} format={fmtPrice}
                           onCommit={(v) => handleFieldBlur(r.id, { price: v === "" ? 0 : parseFloat(v) })} />
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{money(mv)}</td>
+                      <td className="min-w-[7rem] px-2 py-2 text-right">
+                        <CellInput defaultValue={r.marketValue ?? (Number.isFinite(mv) ? String(mv) : "0")} format={fmtMoney}
+                          onCommit={(v) => handleFieldBlur(r.id, { marketValue: v === "" ? null : parseFloat(v) })} />
+                      </td>
                       <td className="min-w-[7rem] px-2 py-2 text-right">
                         <CellInput defaultValue={r.costBasis} format={fmtMoney}
                           onCommit={(v) => handleFieldBlur(r.id, { costBasis: v === "" ? 0 : parseFloat(v) })} />

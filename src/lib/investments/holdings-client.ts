@@ -13,6 +13,7 @@ export interface HoldingRow {
   price: string;
   priceAsOf: string | null;
   costBasis: string;
+  marketValue: string | null;
   sortOrder: number;
   notes: string | null;
   securityWeights: { slug: string; weight: number }[];
@@ -28,6 +29,7 @@ export interface HoldingCreateInput {
   price: number;
   priceAsOf?: string | null;
   costBasis: number;
+  marketValue?: number | null;
   sortOrder?: number;
   notes?: string | null;
 }

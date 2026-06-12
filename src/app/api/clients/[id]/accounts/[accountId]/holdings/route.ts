@@ -84,6 +84,7 @@ export async function POST(
         price: String(b.price),
         priceAsOf: b.priceAsOf ?? null,
         costBasis: String(b.costBasis),
+        marketValue: b.marketValue != null ? String(b.marketValue) : null,
         sortOrder: b.sortOrder ?? 0,
         notes: b.notes ?? null,
       })

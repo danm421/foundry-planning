@@ -1548,6 +1548,11 @@ export const accountHoldings = pgTable(
     price: decimal("price", { precision: 15, scale: 4 }).notNull().default("0"),
     priceAsOf: date("price_as_of"),
     costBasis: decimal("cost_basis", { precision: 15, scale: 2 }).notNull().default("0"),
+    // Authoritative market value when set (statement-derived for untickered/manual
+    // holdings — bonds quote price per $100 par, so shares×price is NOT the value).
+    // NULL for tickered holdings, which derive shares×price from the live-refreshed price.
+    // (precision 18 — headroom for large bond notional values.)
+    marketValue: decimal("market_value", { precision: 18, scale: 2 }),
     sortOrder: integer("sort_order").notNull().default(0),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
