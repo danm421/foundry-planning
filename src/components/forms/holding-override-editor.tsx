@@ -13,18 +13,34 @@ interface Props {
   onClose: () => void;
 }
 
+/** Fraction (0–1) → percent text, trailing zeros dropped (0.11 → "11", 0.115 → "11.5"). */
+function formatPercent(frac: number): string {
+  return String(parseFloat((frac * 100).toFixed(4)));
+}
+
+/** Percent text → fraction (0–1). Blank or unparseable → 0. */
+function parsePercent(raw: string | undefined): number {
+  if (!raw) return 0;
+  const v = parseFloat(raw) / 100;
+  return isNaN(v) ? 0 : v;
+}
+
 export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }: Props) {
+  // Raw percent text the user typed, keyed by assetClassId. Stored verbatim while
+  // typing so multi-digit entry (e.g. "100") isn't reformatted away on each keystroke.
   const initial = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const o of holding.overrides) m.set(o.assetClassId, o.weight);
+    const m = new Map<string, string>();
+    for (const o of holding.overrides) m.set(o.assetClassId, formatPercent(o.weight));
     return m;
   }, [holding.overrides]);
 
-  const [weights, setWeights] = useState<Map<string, number>>(initial);
+  const [texts, setTexts] = useState<Map<string, string>>(initial);
   const [saving, setSaving] = useState(false);
   const [hideZero, setHideZero] = useState(true);
 
-  const total = [...weights.values()].reduce((s, w) => s + w, 0);
+  const weightOf = (assetClassId: string) => parsePercent(texts.get(assetClassId));
+
+  const total = assetClasses.reduce((s, ac) => s + weightOf(ac.id), 0);
   const over = total > 1.0001;
 
   // Derived-blend hint (slug → firm class name) shown when no override is set yet.
@@ -39,13 +55,19 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
     : "";
 
   function setWeight(assetClassId: string, raw: string) {
-    const cleaned = raw.replace(/[^\d.]/g, "");
-    const v = cleaned === "" ? 0 : parseFloat(cleaned) / 100;
-    if (isNaN(v) || v < 0 || v > 1) return;
-    setWeights((prev) => {
+    // Keep digits and a single decimal point; allow partial input like "" or "10.".
+    let cleaned = raw.replace(/[^\d.]/g, "");
+    const firstDot = cleaned.indexOf(".");
+    if (firstDot !== -1) {
+      cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+    }
+    // Reject anything over 100% (a complete value); partial entries still pass through.
+    const v = parseFloat(cleaned);
+    if (!isNaN(v) && v > 100) return;
+    setTexts((prev) => {
       const next = new Map(prev);
-      if (v === 0) next.delete(assetClassId);
-      else next.set(assetClassId, v);
+      if (cleaned === "") next.delete(assetClassId);
+      else next.set(assetClassId, cleaned);
       return next;
     });
   }
@@ -61,7 +83,7 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
   }
 
   const visible = hideZero
-    ? assetClasses.filter((ac) => (weights.get(ac.id) ?? 0) > 0)
+    ? assetClasses.filter((ac) => weightOf(ac.id) > 0)
     : assetClasses;
 
   return (
@@ -89,25 +111,22 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
       )}
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-        {visible.map((ac) => {
-          const w = weights.get(ac.id) ?? 0;
-          return (
-            <div key={ac.id} className="flex items-center justify-between gap-2">
-              <span className="flex-1 truncate text-sm text-gray-200">{ac.name}</span>
-              <div className="flex w-20 shrink-0 items-center gap-1">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={w > 0 ? (w * 100).toFixed(1) : ""}
-                  placeholder="0"
-                  onChange={(e) => setWeight(ac.id, e.target.value)}
-                  className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-                <span className="text-sm text-gray-400">%</span>
-              </div>
+        {visible.map((ac) => (
+          <div key={ac.id} className="flex items-center justify-between gap-2">
+            <span className="flex-1 truncate text-sm text-gray-200">{ac.name}</span>
+            <div className="flex w-20 shrink-0 items-center gap-1">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={texts.get(ac.id) ?? ""}
+                placeholder="0"
+                onChange={(e) => setWeight(ac.id, e.target.value)}
+                className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <span className="text-sm text-gray-400">%</span>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
       <div className="flex items-center justify-between border-t border-gray-700 pt-2 text-sm">
@@ -134,7 +153,13 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
           </button>
           <button
             type="button"
-            onClick={() => persist([...weights.entries()].map(([assetClassId, weight]) => ({ assetClassId, weight })))}
+            onClick={() =>
+              persist(
+                assetClasses
+                  .map((ac) => ({ assetClassId: ac.id, weight: weightOf(ac.id) }))
+                  .filter((e) => e.weight > 0),
+              )
+            }
             disabled={saving || over}
             className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-black hover:opacity-90 disabled:opacity-50"
           >
