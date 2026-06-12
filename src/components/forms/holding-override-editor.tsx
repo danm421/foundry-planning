@@ -4,35 +4,38 @@
 import { useMemo, useState } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import type { HoldingRow } from "@/lib/investments/holdings-client";
+import {
+  pulledBlend,
+  blendFromEntries,
+  blendsEqual,
+  formatPercent,
+  parsePercent,
+} from "@/lib/investments/holding-blend";
 
 interface Props {
   holding: HoldingRow;
   assetClasses: AssetClassOption[];
-  /** Persist the override (empty array clears → derived blend). Resolves when saved. */
+  /** Persist the blend ([] clears the override → keep tracking the pulled blend). */
   onSave: (overrides: { assetClassId: string; weight: number }[]) => Promise<void>;
   onClose: () => void;
 }
 
-/** Fraction (0–1) → percent text, trailing zeros dropped (0.11 → "11", 0.115 → "11.5"). */
-function formatPercent(frac: number): string {
-  return String(parseFloat((frac * 100).toFixed(4)));
-}
-
-/** Percent text → fraction (0–1). Blank or unparseable → 0. */
-function parsePercent(raw: string | undefined): number {
-  if (!raw) return 0;
-  const v = parseFloat(raw) / 100;
-  return isNaN(v) ? 0 : v;
-}
-
 export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }: Props) {
-  // Raw percent text the user typed, keyed by assetClassId. Stored verbatim while
-  // typing so multi-digit entry (e.g. "100") isn't reformatted away on each keystroke.
+  // The security's pulled blend (assetClassId → fraction). Empty for a fully
+  // manual holding with no security to classify.
+  const pulled = useMemo(
+    () => pulledBlend(holding.securityWeights, assetClasses),
+    [holding.securityWeights, assetClasses],
+  );
+
+  // Seed the editable fields from the saved override if one exists, else from
+  // the pulled blend so the panel opens showing what the security resolved to.
   const initial = useMemo(() => {
     const m = new Map<string, string>();
-    for (const o of holding.overrides) m.set(o.assetClassId, formatPercent(o.weight));
+    const source = holding.overrides.length > 0 ? blendFromEntries(holding.overrides) : pulled;
+    for (const [id, w] of source) m.set(id, formatPercent(w));
     return m;
-  }, [holding.overrides]);
+  }, [holding.overrides, pulled]);
 
   const [texts, setTexts] = useState<Map<string, string>>(initial);
   const [saving, setSaving] = useState(false);
@@ -43,16 +46,23 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
   const total = assetClasses.reduce((s, ac) => s + weightOf(ac.id), 0);
   const over = total > 1.0001;
 
-  // Derived-blend hint (slug → firm class name) shown when no override is set yet.
-  const derivedHint = holding.overrides.length === 0
-    ? holding.securityWeights
-        .map((w) => {
-          const ac = assetClasses.find((c) => c.slug === w.slug);
-          return ac ? `${ac.name} ${(w.weight * 100).toFixed(0)}%` : null;
-        })
-        .filter(Boolean)
-        .join(" · ")
-    : "";
+  const current = blendFromEntries(
+    assetClasses.map((ac) => ({ assetClassId: ac.id, weight: weightOf(ac.id) })),
+  );
+  const hasPulled = pulled.size > 0;
+  // "Customized" = fields differ from the pulled blend. When they match, Save
+  // clears the override so the holding keeps tracking future re-classification.
+  const customized = !blendsEqual(current, pulled);
+  const status = customized ? "Customized" : hasPulled ? "Tracking pulled blend" : "Unclassified";
+
+  // Pulled blend rendered as a read-only reference (firm class name → %).
+  const pulledText = [...pulled.entries()]
+    .map(([id, w]) => {
+      const ac = assetClasses.find((c) => c.id === id);
+      return ac ? `${ac.name} ${(w * 100).toFixed(0)}%` : null;
+    })
+    .filter(Boolean)
+    .join(" · ");
 
   function setWeight(assetClassId: string, raw: string) {
     // Keep digits and a single decimal point; allow partial input like "" or "10.".
@@ -72,6 +82,12 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
     });
   }
 
+  function resetToPulled() {
+    const m = new Map<string, string>();
+    for (const [id, w] of pulled) m.set(id, formatPercent(w));
+    setTexts(m);
+  }
+
   async function persist(payload: { assetClassId: string; weight: number }[]) {
     setSaving(true);
     try {
@@ -82,6 +98,20 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
     }
   }
 
+  function handleSave() {
+    // Still matches the pulled blend → clear the override (stay derived); a real
+    // customization persists the blend (chip flips to Manual).
+    if (!customized) {
+      persist([]);
+      return;
+    }
+    persist(
+      assetClasses
+        .map((ac) => ({ assetClassId: ac.id, weight: weightOf(ac.id) }))
+        .filter((e) => e.weight > 0),
+    );
+  }
+
   const visible = hideZero
     ? assetClasses.filter((ac) => weightOf(ac.id) > 0)
     : assetClasses;
@@ -90,7 +120,7 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
     <div className="space-y-3 rounded-md border border-gray-700 bg-gray-900/60 p-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-gray-200">
-          Asset-class override — {holding.displayTicker ?? holding.displayName ?? "holding"}
+          Asset classes — {holding.displayTicker ?? holding.displayName ?? "holding"}
         </span>
         <label className="flex items-center gap-2 text-xs text-gray-400">
           <input
@@ -103,12 +133,21 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
         </label>
       </div>
 
-      {derivedHint && (
-        <p className="text-xs text-gray-400">
-          Currently derived: <span className="text-gray-300">{derivedHint}</span>. Setting an
-          override replaces the derived blend for this holding permanently.
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
+        <p className="text-gray-400">
+          {hasPulled ? (
+            <>
+              Pulled from holding: <span className="text-gray-300">{pulledText}</span>. Adjust any
+              row to customize.
+            </>
+          ) : (
+            <>No pulled classification — set the asset classes manually below.</>
+          )}
         </p>
-      )}
+        <span className={customized ? "shrink-0 text-amber-300" : "shrink-0 text-gray-500"}>
+          {status}
+        </span>
+      </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
         {visible.map((ac) => (
@@ -137,11 +176,11 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => persist([])}
-            disabled={saving}
+            onClick={resetToPulled}
+            disabled={saving || !hasPulled || !customized}
             className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:bg-gray-800 disabled:opacity-50"
           >
-            Clear (use derived)
+            Reset to pulled
           </button>
           <button
             type="button"
@@ -153,17 +192,11 @@ export function HoldingOverrideEditor({ holding, assetClasses, onSave, onClose }
           </button>
           <button
             type="button"
-            onClick={() =>
-              persist(
-                assetClasses
-                  .map((ac) => ({ assetClassId: ac.id, weight: weightOf(ac.id) }))
-                  .filter((e) => e.weight > 0),
-              )
-            }
+            onClick={handleSave}
             disabled={saving || over}
             className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-black hover:opacity-90 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save override"}
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
