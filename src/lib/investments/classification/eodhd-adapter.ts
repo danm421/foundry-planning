@@ -1,11 +1,18 @@
 // src/lib/investments/classification/eodhd-adapter.ts
 import type { ClassifierInput, SecurityType } from "./types";
-import { isCashFund } from "./rules";
+import { isCashFund, classifyCategory } from "./rules";
 
 // EODHD region buckets we treat as emerging.
 const EM_REGIONS = [
   "latin america", "emerging europe", "asia emerging", "africa/middle east", "africa", "middle east",
 ];
+
+// Cash-sentinel guard: EODHD dumps any fund it can't decompose into a ~100% Cash
+// "no data" bucket. A non-money-market fund (categories + names are handled
+// first) whose allocation matches this shape is unknown → inflation residual,
+// NEVER the locked Cash class.
+const CASH_SENTINEL_PCT = 95;
+const SENTINEL_NON_CASH_MAX = 5;
 
 function num(v: unknown): number {
   const n = typeof v === "string" ? parseFloat(v) : typeof v === "number" ? v : NaN;
@@ -26,24 +33,41 @@ function mapSecurityType(rawType: string | undefined): SecurityType {
 export function mapEodhdToInput(ticker: string, raw: any): ClassifierInput {
   const securityType = mapSecurityType(raw?.General?.Type);
 
-  // Money-market / cash funds are cash-equivalents for planning. EODHD types
-  // them as a fund (occasionally "other") and rarely returns an allocation, so
-  // route the whole position to the Cash class via a synthetic 100% cash sleeve
-  // rather than letting the empty allocation fall into the inflation residual.
-  if (isCashFund(ticker, raw?.General?.Name, raw?.General?.Type)) {
-    return {
-      securityType: securityType === "etf" ? "etf" : "mutual_fund",
-      ticker,
-      assetAllocation: { stockUS: 0, stockNonUS: 0, bond: 0, cash: 100, other: 0 },
-    };
+  // Fund-like (etf / mutual_fund, and EODHD's occasional "other" typing for
+  // funds): category-first. A definitive Morningstar category, or a money-market
+  // name, overrides the unreliable Asset_Allocation.
+  if (securityType === "etf" || securityType === "mutual_fund" || securityType === "other") {
+    const fundType: SecurityType = securityType === "etf" ? "etf" : "mutual_fund";
+
+    const catSlug = classifyCategory(raw?.General?.Category);
+    if (catSlug) return { securityType: fundType, ticker, definitiveSlug: catSlug };
+
+    if (isCashFund(ticker, raw?.General?.Name, raw?.General?.Type)) {
+      return { securityType: fundType, ticker, definitiveSlug: "cash" };
+    }
   }
 
   if (securityType === "etf" || securityType === "mutual_fund") {
     const data = raw.ETF_Data ?? raw.MutualFund_Data ?? {};
     const alloc = data.Asset_Allocation ?? {};
     const pick = (k: string) => num(alloc[k]?.["Net_Assets_%"]);
-    const caps = data.Market_Capitalisation ?? {};
+    const assetAllocation = {
+      stockUS: pick("Stock US"),
+      stockNonUS: pick("Stock non-US"),
+      bond: pick("Bond"),
+      cash: pick("Cash"),
+      other: pick("Other"),
+    };
 
+    // Sentinel guard — see CASH_SENTINEL_PCT above.
+    // nonCash can be negative for leveraged/inverse funds; guard still fires correctly
+    // (routing to inflation residual is safe — category-first already handles known cases).
+    const nonCash = assetAllocation.stockUS + assetAllocation.stockNonUS + assetAllocation.bond + assetAllocation.other;
+    if (assetAllocation.cash >= CASH_SENTINEL_PCT && nonCash <= SENTINEL_NON_CASH_MAX) {
+      return { securityType, ticker, definitiveSlug: "inflation" };
+    }
+
+    const caps = data.Market_Capitalisation ?? {};
     const regions = data.World_Regions ?? {};
     let emEquity = 0, totalEquity = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,13 +83,7 @@ export function mapEodhdToInput(ticker: string, raw: any): ClassifierInput {
     return {
       securityType,
       ticker,
-      assetAllocation: {
-        stockUS: pick("Stock US"),
-        stockNonUS: pick("Stock non-US"),
-        bond: pick("Bond"),
-        cash: pick("Cash"),
-        other: pick("Other"),
-      },
+      assetAllocation,
       marketCapTiers: {
         mega: num(caps.Mega), big: num(caps.Big), medium: num(caps.Medium),
         small: num(caps.Small), micro: num(caps.Micro),
