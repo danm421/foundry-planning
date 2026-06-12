@@ -10,6 +10,8 @@ import {
 } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { listTemplatesForUser } from "@/lib/presentations/templates-repo";
+import { listDismissedSlugs } from "@/lib/presentations/builtin-templates-repo";
+import { partitionBuiltInRows } from "@/lib/presentations/builtin-templates";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { loadEntityPickerOptions } from "@/lib/presentations/entity-picker-options";
 import { PresentationsLauncher } from "./launcher";
@@ -37,7 +39,7 @@ export default async function PresentationsPage({
     .limit(1);
   if (!clientRow) notFound();
 
-  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions] = await Promise.all([
+  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions, dismissedSlugs] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -67,9 +69,11 @@ export default async function PresentationsPage({
       )
       .limit(1),
     loadEntityPickerOptions(clientId, firmId),
+    listDismissedSlugs(firmId, userId),
   ]);
 
   const clientLastName = primaryContactRows[0]?.lastName ?? "";
+  const { builtIn, builtInHidden } = partitionBuiltInRows(dismissedSlugs);
 
   return (
     <ScenarioDrawerShell clientId={clientId} scenarioId={sp.scenario}>
@@ -80,7 +84,7 @@ export default async function PresentationsPage({
         householdId={clientRow.crmHouseholdId}
         scenarios={scenarioRows}
         snapshots={snapshotRows}
-        initialTemplates={templates}
+        initialTemplates={{ ...templates, builtIn, builtInHidden }}
         investmentCatalog={investmentCatalog}
         entities={entityPickerOptions}
       />

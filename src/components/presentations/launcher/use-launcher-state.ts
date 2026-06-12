@@ -12,6 +12,10 @@ export interface LoadedTemplate {
   name: string;
   visibility: "shared" | "private";
   createdByUserId: string;
+  /** True for code-defined built-in starters (not a real DB row). */
+  builtIn?: boolean;
+  /** Stable slug, present only on built-ins; used to dismiss/restore. */
+  slug?: string;
   pages: Array<{ pageId: PresentationPageId; options: unknown }>;
 }
 

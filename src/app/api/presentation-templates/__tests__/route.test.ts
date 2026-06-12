@@ -47,4 +47,15 @@ describe("GET /api/presentation-templates", () => {
     expect(body.shared.map((t: { name: string }) => t.name)).toEqual(["S"]);
     expect(body.mine.map((t: { name: string }) => t.name)).toEqual(["P"]);
   });
+
+  it("includes built-in starter templates", async () => {
+    const { GET } = await import("../route");
+    const res = await GET(new Request("http://x/api/presentation-templates"));
+    const body = await res.json();
+    expect(body.builtIn.map((t: { slug: string }) => t.slug)).toEqual([
+      "foundation-plan",
+      "cash-flow-details",
+    ]);
+    expect(body.builtInHidden).toEqual([]);
+  });
 });

@@ -18,9 +18,10 @@ beforeEach(() => {
       });
     }
     if (url === "/api/presentation-templates") {
-      return new Response(JSON.stringify({ shared: [], mine: [] }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ shared: [], mine: [], builtIn: [], builtInHidden: [] }),
+        { status: 200 },
+      );
     }
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }) as never;
@@ -39,7 +40,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -61,7 +62,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -83,7 +84,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -107,7 +108,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
@@ -130,7 +131,7 @@ describe("PresentationsLauncher", () => {
         householdId="hh-test"
         scenarios={[]}
         snapshots={[]}
-        initialTemplates={{ shared: [], mine: [] }}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
         investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
       />,
     );
