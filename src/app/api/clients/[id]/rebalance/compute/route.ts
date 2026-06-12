@@ -4,6 +4,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadRebalanceInputs } from "@/lib/investments/rebalance/load-inputs";
 import { assembleRebalanceResult } from "@/lib/investments/rebalance/assemble";
+import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-target";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (err instanceof UnclassifiableTickerError) {
+      return NextResponse.json(
+        { error: err.message, unresolvedTickers: err.tickers },
+        { status: 422 },
+      );
     }
     console.error("POST /api/clients/[id]/rebalance/compute error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

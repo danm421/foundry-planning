@@ -6,6 +6,8 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 import type { RebalanceComputeResult } from "@/lib/investments/rebalance/types";
 import type { PortfolioStats } from "@/lib/portfolio-stats";
 import type { RiskReturnStats } from "@/lib/investments/portfolio-stats";
+import { RebalanceMixBars } from "./rebalance-mix-bars";
+import { RebalanceRiskReturnScatter } from "./rebalance-risk-return-scatter";
 
 export interface RebalanceComparisonProps {
   result: RebalanceComputeResult;
@@ -13,6 +15,8 @@ export interface RebalanceComparisonProps {
 }
 
 // ── Delta coloring helper ──────────────────────────────────────────────────────
+
+const signPrefix = (n: number) => (n > 0 ? "+" : "");
 
 function deltaColor(delta: number | null | undefined, higherIsBetter: boolean): string {
   if (delta === null || delta === undefined || delta === 0) return "text-ink-3";
@@ -85,53 +89,52 @@ function CoverageBanner({ result }: { result: RebalanceComputeResult }) {
   );
 }
 
-// ── 2. Asset mix ───────────────────────────────────────────────────────────────
+// ── 2. Headline tiles ─────────────────────────────────────────────────────────
 
-function AssetMixPanel({ result }: { result: RebalanceComputeResult }) {
+function HeadlineTile({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <Card>
-      <SectionHeading>Asset mix — current vs. proposed</SectionHeading>
-      <table className="w-full text-[13px]">
-        <thead>
-          <tr className="border-b border-hair-2">
-            <th className="pb-2 text-left font-medium text-ink-2">Asset class</th>
-            <th className="pb-2 text-right font-medium text-ink-2">Current</th>
-            <th className="pb-2 text-right font-medium text-ink-2">Target</th>
-            <th className="pb-2 text-right font-medium text-ink-2">Δ</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-hair">
-          {result.assetMixDelta.map((row) => (
-            <tr key={row.assetClassId}>
-              <td className="py-1.5 text-ink">{row.name}</td>
-              <td className="py-1.5 text-right tabular-nums">
-                <MoneyText value={row.currentPct} format="pct" />
-              </td>
-              <td className="py-1.5 text-right tabular-nums">
-                <MoneyText value={row.targetPct} format="pct" />
-              </td>
-              <td className="py-1.5 text-right tabular-nums">
-                {row.diffPct === 0 ? (
-                  <span className="text-ink-4">—</span>
-                ) : (
-                  <span className="text-ink">
-                    {row.diffPct > 0 ? "+" : ""}
-                    <MoneyText value={row.diffPct} format="pct" />
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-          {result.assetMixDelta.length === 0 && (
-            <tr>
-              <td colSpan={4} className="py-3 text-center text-ink-4">
-                No asset class data available.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </Card>
+    <div className="rounded-lg border border-hair-2 bg-card p-4">
+      <p className="text-xs text-ink-3">{label}</p>
+      <p className="mt-0.5 text-lg font-semibold tabular-nums text-ink">{children}</p>
+    </div>
+  );
+}
+
+function HeadlineTiles({ result }: { result: RebalanceComputeResult }) {
+  const cur = result.current.cma;
+  const prop = result.proposed.cma;
+  const dReturn = prop.geometricReturn - cur.geometricReturn;
+  const dVol = prop.stdDev - cur.stdDev;
+  const dSharpe = prop.sharpe != null && cur.sharpe != null ? prop.sharpe - cur.sharpe : null;
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <HeadlineTile label="Δ Expected return">
+        <span className={deltaColor(dReturn, true)}>
+          {signPrefix(dReturn)}
+          <MoneyText value={dReturn} format="pct" />
+        </span>
+      </HeadlineTile>
+      <HeadlineTile label="Δ Volatility">
+        <span className={deltaColor(dVol, false)}>
+          {signPrefix(dVol)}
+          <MoneyText value={dVol} format="pct" />
+        </span>
+      </HeadlineTile>
+      <HeadlineTile label="Δ Sharpe (CMA)">
+        {dSharpe != null ? (
+          <span className={deltaColor(dSharpe, true)}>
+            {signPrefix(dSharpe)}
+            {dSharpe.toFixed(2)}
+          </span>
+        ) : (
+          <span className="text-ink-3">—</span>
+        )}
+      </HeadlineTile>
+      <HeadlineTile label="Estimated tax">
+        <MoneyText value={result.tax.estimatedTax} format="currency" />
+      </HeadlineTile>
+    </div>
   );
 }
 
@@ -538,11 +541,23 @@ function TradesAndTaxPanel({
 
 export function RebalanceComparison({ result, onOverrideRate }: RebalanceComparisonProps) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <HeadlineTiles result={result} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RebalanceMixBars result={result} />
+        <RebalanceRiskReturnScatter current={result.current.cma} proposed={result.proposed.cma} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <KpiPanel result={result} />
+        {/* Key on the tax rate so the panel's local override input resets to
+            reflect a fresh result instead of showing a stale typed value. */}
+        <TradesAndTaxPanel
+          key={`${result.tax.rateSource}:${result.tax.effectiveRate}`}
+          result={result}
+          onOverrideRate={onOverrideRate}
+        />
+      </div>
       <CoverageBanner result={result} />
-      <AssetMixPanel result={result} />
-      <KpiPanel result={result} />
-      <TradesAndTaxPanel result={result} onOverrideRate={onOverrideRate} />
     </div>
   );
 }
