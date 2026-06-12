@@ -81,7 +81,7 @@ describe("cholesky — fundamental properties", () => {
     expect(() => cholesky([
       [1, 2],
       [2, 1],
-    ])).toThrow();
+    ])).toThrow(/not positive-definite/);
   });
 
   it("throws for a non-square matrix", () => {
@@ -107,9 +107,5 @@ describe("cholesky — zero-variance (deterministic) dimension", () => {
     const back = multiplyLowerTriangular(L);
     expect(back[0][0]).toBeCloseTo(0.04, 12);
     expect(back[1][1]).toBe(0);
-  });
-
-  it("still throws for a genuinely indefinite (negative-pivot) matrix", () => {
-    expect(() => cholesky([[1, 2], [2, 1]])).toThrow(/not positive-definite/);
   });
 });
