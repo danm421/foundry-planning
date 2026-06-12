@@ -48,6 +48,53 @@ describe("useTabAutoSave", () => {
     expect(result.current.saveError).toBeNull();
   });
 
+  it("forces a save on a clean form when force is set (and applies the change)", async () => {
+    const saveAsync = vi.fn<() => Promise<SaveResult>>().mockResolvedValue({ ok: true });
+    const apply = vi.fn<(id: string) => void>();
+    const { result } = renderHook(() =>
+      useTabAutoSave({ isDirty: false, canSave: true, saveAsync }),
+    );
+
+    await act(async () => {
+      await result.current.interceptTabChange("holdings", apply, { force: true });
+    });
+
+    expect(saveAsync).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith("holdings");
+  });
+
+  it("does not force a save when the form is clean and force is unset", async () => {
+    const saveAsync = vi.fn<() => Promise<SaveResult>>().mockResolvedValue({ ok: true });
+    const apply = vi.fn<(id: string) => void>();
+    const { result } = renderHook(() =>
+      useTabAutoSave({ isDirty: false, canSave: true, saveAsync }),
+    );
+
+    await act(async () => {
+      await result.current.interceptTabChange("holdings", apply);
+    });
+
+    expect(saveAsync).not.toHaveBeenCalled();
+    expect(apply).toHaveBeenCalledWith("holdings");
+  });
+
+  it("blocks a forced save and calls onBlocked when invalid", async () => {
+    const saveAsync = vi.fn<() => Promise<SaveResult>>();
+    const apply = vi.fn<(id: string) => void>();
+    const onBlocked = vi.fn();
+    const { result } = renderHook(() =>
+      useTabAutoSave({ isDirty: false, canSave: false, saveAsync, onBlocked }),
+    );
+
+    await act(async () => {
+      await result.current.interceptTabChange("holdings", apply, { force: true });
+    });
+
+    expect(saveAsync).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(onBlocked).toHaveBeenCalledOnce();
+  });
+
   it("blocks tab change and calls onBlocked when invalid + dirty", async () => {
     const saveAsync = vi.fn<() => Promise<SaveResult>>();
     const apply = vi.fn<(id: string) => void>();

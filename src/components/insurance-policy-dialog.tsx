@@ -352,7 +352,10 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     isDirty,
     canSave,
     saveAsync: async () => {
-      if (policyIsDirty) {
+      // Always POST in create mode (even when "clean") so a forced tab-switch —
+      // e.g. opening Beneficiaries on an untouched new policy — mints the policy
+      // before the dependent tab needs its id.
+      if (policyIsDirty || effectiveMode === "create") {
         const result = await performSave();
         if (!result.ok) return result;
         applySaveSuccess(result.recordId);
@@ -540,7 +543,15 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
         { id: "schedule", label: "Schedule" },
       ]}
       activeTab={tab}
-      onTabChange={(id) => autoSave.interceptTabChange(id, (next) => setTab(next as TabKey))}
+      onTabChange={(id) =>
+        autoSave.interceptTabChange(
+          id,
+          (next) => setTab(next as TabKey),
+          // Beneficiaries is keyed on the policy id — force-create the policy
+          // when opening it on a not-yet-saved record.
+          { force: id === "beneficiaries" && !effectivePolicyId },
+        )
+      }
       tabBarRight={
         <TabAutoSaveIndicator
           saving={autoSave.saving}

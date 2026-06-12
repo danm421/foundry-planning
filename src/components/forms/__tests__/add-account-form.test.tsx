@@ -49,6 +49,9 @@ beforeEach(() => {
     if (String(url).includes("allocations")) {
       return { ok: true, json: async () => [] };
     }
+    if (String(url).includes("holdings")) {
+      return { ok: true, json: async () => [] };
+    }
     return { ok: true, json: async () => ({ id: "acct-1" }) };
   });
 });
@@ -214,6 +217,61 @@ describe("AddAccountForm — edit hydration roundtrip", () => {
     expect(body.owners).toHaveLength(2);
     expect(body.owners).toContainEqual({ kind: "family_member", familyMemberId: "fm-client", percent: 0.5 });
     expect(body.owners).toContainEqual({ kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 });
+  });
+});
+
+// ── Test 4b: Opening Holdings on a brand-new account mints it (force-create) ──
+
+describe("AddAccountForm — Holdings tab on a new account", () => {
+  const ASSET_CLASSES = [
+    { id: "ac-1", name: "US Large Cap", slug: "us_large_cap", geometricReturn: 0.07 },
+  ];
+
+  it("creates the account when the Holdings tab is opened before any save", async () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        assetClasses={ASSET_CLASSES}
+        categoryDefaults={{
+          taxable: "0.07",
+          cash: "0.02",
+          retirement: "0.07",
+          annuity: "0.04",
+          real_estate: "0.04",
+          business: "0.05",
+          life_insurance: "0.03",
+          notes_receivable: "0",
+        }}
+      />,
+    );
+
+    // Before opening Holdings, no account POST has fired.
+    expect(
+      fetchMock.mock.calls.some(
+        (args) =>
+          String(args[0]) === "/api/clients/client-123/accounts" &&
+          args[1]?.method === "POST",
+      ),
+    ).toBe(false);
+
+    // Opening Holdings force-saves so the nested holdings route has an id.
+    fireEvent.click(screen.getByRole("button", { name: "Holdings" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+
+    // Once minted, the Holdings tab is usable — no "save the account first" gate.
+    await waitFor(() =>
+      expect(screen.queryByText(/Save the account first to add holdings/i)).toBeNull(),
+    );
   });
 });
 
