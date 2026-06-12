@@ -276,14 +276,23 @@ export function HoldingsTab({
                           onCommit={(v) => handleFieldBlur(r.id, { costBasis: v === "" ? 0 : parseFloat(v) })} />
                       </td>
                       <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingOverride(editingOverride === r.id ? null : r.id)}
-                          className={chipClass(chip.kind)}
-                          title="Edit asset-class blend"
-                        >
-                          {chip.label}
-                        </button>
+                        {chip.kind === "locked" ? (
+                          <span
+                            className={chipClass(chip.kind)}
+                            title="Cash is a system class and cannot be reassigned"
+                          >
+                            {chip.label}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setEditingOverride(editingOverride === r.id ? null : r.id)}
+                            className={chipClass(chip.kind)}
+                            title="Edit asset-class blend"
+                          >
+                            {chip.label}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <button type="button" onClick={() => handleDelete(r.id)}
@@ -334,11 +343,13 @@ export function HoldingsTab({
   );
 }
 
-function chipClass(kind: "derived" | "manual" | "needs_review") {
-  const base = "rounded-full px-2 py-0.5 text-xs hover:opacity-80";
-  if (kind === "manual") return `${base} bg-accent/20 text-accent-ink`;
-  if (kind === "needs_review") return `${base} bg-amber-500/20 text-amber-300`;
-  return `${base} bg-gray-700 text-gray-200`;
+function chipClass(kind: "derived" | "manual" | "needs_review" | "locked") {
+  const base = "rounded-full px-2 py-0.5 text-xs";
+  if (kind === "locked") return `${base} bg-gray-800 text-gray-500 cursor-default`;
+  const interactive = `${base} hover:opacity-80`;
+  if (kind === "manual") return `${interactive} bg-accent/20 text-accent-ink`;
+  if (kind === "needs_review") return `${interactive} bg-amber-500/20 text-amber-300`;
+  return `${interactive} bg-gray-700 text-gray-200`;
 }
 
 function AddField({
