@@ -57,6 +57,7 @@ export const PROJECTED_MAPPING: Record<AssetClassSlug, MappingRule> = {
   gold: { method: "carry" },
   commodities: { method: "direct", horizonKey: "commodities" },
   inflation: { method: "direct", horizonKey: "inflation" },
+  cash: { method: "carry" },
 };
 
 const round4 = (x: number): number => Number(x.toFixed(4));

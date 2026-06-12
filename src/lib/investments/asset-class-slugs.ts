@@ -1,4 +1,4 @@
-/** Stable, human-meaningless identifiers for the 15 canonical asset classes.
+/** Stable, human-meaningless identifiers for the 16 canonical asset classes.
  *  The classification layer emits these; a firm's asset_classes.slug column
  *  carries the same values, letting us resolve slug → firm assetClassId. */
 export const ASSET_CLASS_SLUGS = [
@@ -17,6 +17,7 @@ export const ASSET_CLASS_SLUGS = [
   "gold",
   "commodities",
   "inflation",
+  "cash",
 ] as const;
 
 export type AssetClassSlug = typeof ASSET_CLASS_SLUGS[number];
@@ -42,4 +43,11 @@ export const ASSET_CLASS_NAME_TO_SLUG: Record<string, AssetClassSlug> = {
   "Gold": "gold",
   "Commodities": "commodities",
   "Inflation": "inflation",
+  "Cash": "cash",
 };
+
+/** System asset classes whose identity + numbers are fixed and cannot be
+ *  edited, deleted, or overridden. Currently just Cash (deterministic 0%). */
+export function isLockedSystemAssetClass(slug: string | null | undefined): boolean {
+  return slug === "cash";
+}
