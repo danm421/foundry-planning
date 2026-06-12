@@ -56,6 +56,7 @@ export async function PUT(
     if (b.price !== undefined) patch.price = String(b.price);
     if (b.priceAsOf !== undefined) patch.priceAsOf = b.priceAsOf ?? null;
     if (b.costBasis !== undefined) patch.costBasis = String(b.costBasis);
+    if (b.marketValue !== undefined) patch.marketValue = b.marketValue != null ? String(b.marketValue) : null;
     if (b.sortOrder !== undefined) patch.sortOrder = b.sortOrder;
     if (b.notes !== undefined) patch.notes = b.notes ?? null;
 

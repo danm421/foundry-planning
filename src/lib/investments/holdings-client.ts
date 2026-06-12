@@ -29,6 +29,7 @@ export interface HoldingCreateInput {
   price: number;
   priceAsOf?: string | null;
   costBasis: number;
+  marketValue?: number | null;
   sortOrder?: number;
   notes?: string | null;
 }
