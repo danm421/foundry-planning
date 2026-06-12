@@ -263,15 +263,15 @@ describe("migrateFirmToStandard", () => {
       remappings: { [legacy.id]: { kind: "keep" } },
     });
 
-    // All 15 standard classes (14 + Inflation) added.
-    expect(result.addedAssetClasses).toBe(15);
+    // All 16 standard classes (14 market + Inflation + Cash) added.
+    expect(result.addedAssetClasses).toBe(16);
 
     const all = await db
       .select()
       .from(assetClasses)
       .where(eq(assetClasses.firmId, firmId));
-    // 15 standard + 1 legacy kept = 16
-    expect(all).toHaveLength(16);
+    // 16 standard + 1 legacy kept = 17
+    expect(all).toHaveLength(17);
     expect(all.find((c) => c.name === "US Large Cap")).toBeDefined();
     expect(all.find((c) => c.name === "Inflation")).toBeDefined();
     expect(all.find((c) => c.name === "US Aggregate Bond")).toBeDefined();

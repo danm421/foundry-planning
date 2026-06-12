@@ -38,17 +38,17 @@ afterEach(async () => {
 });
 
 describe("seedCmaForFirm", () => {
-  it("seeds 15 asset classes, 4 portfolios, 36 allocations, 91 correlations on empty firm", async () => {
+  it("seeds 16 asset classes, 4 portfolios, 36 allocations, 91 correlations on empty firm", async () => {
     const firmId = makeFirmId();
 
     const result = await seedCmaForFirm(firmId);
 
     // Totals (rows now present) and inserts (rows added by this call) both
     // equal the defaults on an empty firm.
-    expect(result.assetClasses).toBe(15);
+    expect(result.assetClasses).toBe(16);
     expect(result.portfolios).toBe(4);
     expect(result.correlations).toBe(91);
-    expect(result.inserted.assetClasses).toBe(15);
+    expect(result.inserted.assetClasses).toBe(16);
     expect(result.inserted.portfolios).toBe(4);
     expect(result.inserted.allocations).toBe(36);
     expect(result.inserted.correlations).toBe(91);
@@ -57,7 +57,7 @@ describe("seedCmaForFirm", () => {
       .select()
       .from(assetClasses)
       .where(eq(assetClasses.firmId, firmId));
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(16);
   });
 
   it("is idempotent — second call does not duplicate rows", async () => {
@@ -70,7 +70,7 @@ describe("seedCmaForFirm", () => {
       .select()
       .from(assetClasses)
       .where(eq(assetClasses.firmId, firmId));
-    expect(classes).toHaveLength(15);
+    expect(classes).toHaveLength(16);
 
     const portfolios = await db
       .select()
@@ -110,7 +110,7 @@ describe("seedCmaForFirm", () => {
       .select()
       .from(assetClasses)
       .where(eq(assetClasses.firmId, firmId));
-    expect(classes).toHaveLength(15);
+    expect(classes).toHaveLength(16);
   });
 
   it("reports zero inserts when firm is already fully seeded", async () => {
@@ -124,7 +124,7 @@ describe("seedCmaForFirm", () => {
     expect(second.inserted.allocations).toBe(0);
     expect(second.inserted.correlations).toBe(0);
     // Totals are still the full defaults.
-    expect(second.assetClasses).toBe(15);
+    expect(second.assetClasses).toBe(16);
     expect(second.portfolios).toBe(4);
     expect(second.correlations).toBe(91);
   });
