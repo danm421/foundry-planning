@@ -74,11 +74,13 @@ describe("cholesky — fundamental properties", () => {
     expect(L).toEqual(I);
   });
 
-  it("throws for a non-positive-definite matrix", () => {
-    // Zero on diagonal → singular, not PD.
+  it("throws for an indefinite (negative-pivot) matrix", () => {
+    // Genuinely indefinite (a negative pivot) → an upstream bug, still fatal.
+    // A merely singular PSD matrix (zero pivot) is tolerated as a
+    // deterministic dimension — see the zero-variance describe block below.
     expect(() => cholesky([
-      [1, 1],
-      [1, 1],
+      [1, 2],
+      [2, 1],
     ])).toThrow();
   });
 
@@ -87,5 +89,27 @@ describe("cholesky — fundamental properties", () => {
       [1, 0, 0],
       [0, 1, 0],
     ])).toThrow();
+  });
+});
+
+describe("cholesky — zero-variance (deterministic) dimension", () => {
+  it("decomposes a PSD matrix with a zero row/col without throwing", () => {
+    // Index 1 is a deterministic asset: variance 0, covariance 0 with index 0.
+    const cov = [
+      [0.04, 0],
+      [0,    0],
+    ];
+    const L = cholesky(cov);
+    expect(L[0][0]).toBeCloseTo(0.2, 12);
+    expect(L[1][0]).toBe(0);
+    expect(L[1][1]).toBe(0);
+    // Round-trips: L · Lᵀ === cov.
+    const back = multiplyLowerTriangular(L);
+    expect(back[0][0]).toBeCloseTo(0.04, 12);
+    expect(back[1][1]).toBe(0);
+  });
+
+  it("still throws for a genuinely indefinite (negative-pivot) matrix", () => {
+    expect(() => cholesky([[1, 2], [2, 1]])).toThrow(/not positive-definite/);
   });
 });
