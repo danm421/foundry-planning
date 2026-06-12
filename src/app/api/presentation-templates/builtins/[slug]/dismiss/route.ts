@@ -12,10 +12,12 @@ import {
 export const dynamic = "force-dynamic";
 
 async function resolve(params: Promise<{ slug: string }>) {
-  const firmId = await requireOrgId();
-  const { userId } = await auth();
+  const [firmId, { userId }, { slug }] = await Promise.all([
+    requireOrgId(),
+    auth(),
+    params,
+  ]);
   if (!userId) throw new UnauthorizedError();
-  const { slug } = await params;
   return { firmId, userId, slug };
 }
 
