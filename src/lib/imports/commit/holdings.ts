@@ -106,6 +106,7 @@ export async function writeAccountHoldings(
   }
   let sortOrder = 0;
   const rows = holdings.map((raw) => {
+    const statementMv = raw.marketValue ?? null; // statement value, pre-normalization
     const h = normalizeExtractedHolding(raw);
     const ticker = h.ticker?.trim().toUpperCase();
     const r = ticker ? resolved.get(ticker) : undefined;
@@ -125,6 +126,7 @@ export async function writeAccountHoldings(
           securityId: r.securityId,
           price: String(r.price ?? h.price ?? 0),
           priceAsOf: r.price != null ? r.asOf : null,
+          marketValue: null, // tickered: live price drives shares×price
         }
       : {
           // Manual (bond / untickered fund / cash / unresolved ticker).
@@ -132,6 +134,8 @@ export async function writeAccountHoldings(
           securityId: null,
           price: String(h.price ?? 0),
           priceAsOf: null,
+          // Untickered: statement value is authoritative (bonds: price is per $100 par).
+          marketValue: statementMv != null ? String(statementMv) : null,
         };
   });
   await tx.insert(accountHoldings).values(rows);

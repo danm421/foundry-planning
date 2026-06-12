@@ -666,6 +666,88 @@ describe("commitAccounts", () => {
     await commitAccounts(tx, payload, { ...ctx, holdingsAccountIds: [] });
     expect(callsForTable(calls, "account_holdings")).toHaveLength(0);
   });
+
+  it("persists statement marketValue for an untickered bond holding", async () => {
+    const { tx, calls, setSelectResult, setInsertId } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    setInsertId("accounts", "acct-new");
+    const resolved = new Map(); // no tickers resolved
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Bond Account",
+          category: "taxable",
+          owner: "client",
+          match: { kind: "new" },
+          holdings: [
+            // Bond: price is per $100 of par; statement marketValue is authoritative
+            { name: "US Treasury 4.5% 2034 CUSIP 912828YY0", shares: 25000, price: 109.81, marketValue: 27452.5, costBasis: 25000 },
+          ],
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, { ...ctx, resolvedHoldings: resolved, holdingsAccountIds: [] });
+    const hInserts = callsForTable(calls, "account_holdings").filter((c) => c.op === "insert");
+    expect(hInserts).toHaveLength(1);
+    const rows = (hInserts[0] as { values: Record<string, unknown>[] }).values;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].marketValue).toBe("27452.5");
+  });
+
+  it("stores null marketValue for a tickered (resolved) holding", async () => {
+    const { tx, calls, setSelectResult, setInsertId } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    setInsertId("accounts", "acct-new");
+    const resolved = new Map([["VTI", { securityId: "sec-vti", price: 210, asOf: "2026-06-12" }]]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Brokerage",
+          category: "taxable",
+          owner: "client",
+          match: { kind: "new" },
+          holdings: [
+            { ticker: "VTI", shares: 10, price: 200, marketValue: 2000, costBasis: 1500 },
+          ],
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, { ...ctx, resolvedHoldings: resolved, holdingsAccountIds: [] });
+    const hInserts = callsForTable(calls, "account_holdings").filter((c) => c.op === "insert");
+    expect(hInserts).toHaveLength(1);
+    const rows = (hInserts[0] as { values: Record<string, unknown>[] }).values;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].marketValue).toBeNull();
+  });
+
+  it("stores null marketValue for an untickered holding with no marketValue", async () => {
+    const { tx, calls, setSelectResult, setInsertId } = makeFakeTx();
+    setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);
+    setInsertId("accounts", "acct-new");
+    const resolved = new Map();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Cash Account",
+          category: "cash",
+          owner: "client",
+          match: { kind: "new" },
+          holdings: [
+            { name: "Cash", shares: 5000 },
+          ],
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, { ...ctx, resolvedHoldings: resolved, holdingsAccountIds: [] });
+    const hInserts = callsForTable(calls, "account_holdings").filter((c) => c.op === "insert");
+    expect(hInserts).toHaveLength(1);
+    const rows = (hInserts[0] as { values: Record<string, unknown>[] }).values;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].marketValue).toBeNull();
+  });
 });
 
 describe("commitIncomes", () => {
