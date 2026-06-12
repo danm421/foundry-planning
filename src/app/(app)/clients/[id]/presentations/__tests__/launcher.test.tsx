@@ -18,9 +18,10 @@ beforeEach(() => {
       });
     }
     if (url === "/api/presentation-templates") {
-      return new Response(JSON.stringify({ shared: [], mine: [] }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ shared: [], mine: [], builtIn: [], builtInHidden: [] }),
+        { status: 200 },
+      );
     }
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }) as never;
