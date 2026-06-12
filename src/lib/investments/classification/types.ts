@@ -14,6 +14,11 @@ export function isSecurityType(v: unknown): v is SecurityType {
 export interface ClassifierInput {
   securityType: SecurityType;
   ticker?: string;
+  /** When set, the security is classified directly to this single slug and the
+   *  allocation/stock derivation is skipped entirely. Used by category-first
+   *  adapters (a definitive Morningstar category) and the cash-sentinel guard.
+   *  `inflation` is the editable unknown residual; `cash` is the locked class. */
+  definitiveSlug?: AssetClassSlug;
   // ── Fund fields ────────────────────────────────────────────────
   /** Net-assets %, by top-level asset bucket. */
   assetAllocation?: {

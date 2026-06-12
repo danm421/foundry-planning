@@ -138,3 +138,19 @@ describe("deriveAssetClassBlend", () => {
     expect(sum(out)).toBe(1);
   });
 });
+
+describe("definitiveSlug short-circuit", () => {
+  const base = { securityType: "etf", ticker: "X" } as const;
+  it("returns 100% of a definitive non-cash slug, ignoring everything else", () => {
+    const input: ClassifierInput = { ...base, definitiveSlug: "commodities" };
+    expect(deriveAssetClassBlend(input)).toEqual([{ slug: "commodities", weight: 1 }]);
+  });
+  it("routes a definitive inflation slug to 100% inflation (not cash)", () => {
+    const input: ClassifierInput = { ...base, definitiveSlug: "inflation" };
+    expect(deriveAssetClassBlend(input)).toEqual([{ slug: "inflation", weight: 1 }]);
+  });
+  it("routes a definitive cash slug to 100% cash", () => {
+    const input: ClassifierInput = { ...base, definitiveSlug: "cash" };
+    expect(deriveAssetClassBlend(input)).toEqual([{ slug: "cash", weight: 1 }]);
+  });
+});

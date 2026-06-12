@@ -97,6 +97,7 @@ function deriveFund(input: ClassifierInput): AssetClassWeightBySlug[] {
 }
 
 export function deriveAssetClassBlend(input: ClassifierInput): AssetClassWeightBySlug[] {
+  if (input.definitiveSlug) return finalize(new Map([[input.definitiveSlug, 1]]));
   switch (input.securityType) {
     case "stock":
       return deriveStock(input);
