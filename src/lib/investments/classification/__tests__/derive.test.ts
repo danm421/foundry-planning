@@ -46,10 +46,10 @@ describe("deriveAssetClassBlend", () => {
     const out = deriveAssetClassBlend(input);
     const m = asMap(out);
     expect(sum(out)).toBe(1);
-    // 1% cash → inflation residual; 3% of equity → reit; rest split across caps.
+    // 1% cash → cash class; 3% of equity → reit; rest split across caps.
     expect(m.reit).toBeGreaterThan(0);
     expect(m.us_large_cap).toBeGreaterThan(m.us_mid_cap);
-    expect(m.inflation).toBeCloseTo(0.01, 2);
+    expect(m.cash).toBeCloseTo(0.01, 2);
   });
 
   it("60/40 balanced fund with intl + agg bonds", () => {
@@ -76,6 +76,39 @@ describe("deriveAssetClassBlend", () => {
       assetAllocation: { stockUS: 0, stockNonUS: 0, bond: 0, cash: 0, other: 100 },
     };
     expect(asMap(deriveAssetClassBlend(input))).toEqual({ gold: 1 });
+  });
+
+  describe("cash routing", () => {
+    it("routes a fund's cash sleeve to cash, leaving unmatched residual in inflation", () => {
+      const out = deriveAssetClassBlend({
+        securityType: "mutual_fund",
+        ticker: "FOO",
+        assetAllocation: { stockUS: 60, stockNonUS: 0, bond: 30, cash: 10, other: 0 },
+      } as ClassifierInput);
+      const m = asMap(out);
+      expect(m.cash).toBeCloseTo(0.1, 4);
+      expect(m.inflation ?? 0).toBe(0); // residual is fully accounted → no inflation
+      expect(sum(out)).toBe(1);
+    });
+
+    it("classifies a ~100% cash money-market fund as cash", () => {
+      const out = deriveAssetClassBlend({
+        securityType: "mutual_fund",
+        ticker: "SPAXX",
+        assetAllocation: { stockUS: 0, stockNonUS: 0, bond: 0, cash: 100, other: 0 },
+      } as ClassifierInput);
+      expect(asMap(out)).toEqual({ cash: 1 });
+    });
+
+    it("classifies a cash-typed security as 100% cash", () => {
+      const out = deriveAssetClassBlend({ securityType: "cash", ticker: "USD" } as ClassifierInput);
+      expect(asMap(out)).toEqual({ cash: 1 });
+    });
+
+    it("still sinks genuinely-unclassifiable residual into inflation", () => {
+      const out = deriveAssetClassBlend({ securityType: "other", ticker: "???" } as ClassifierInput);
+      expect(asMap(out)).toEqual({ inflation: 1 });
+    });
   });
 
   it("always sums to 1 and never emits negative weights", () => {
