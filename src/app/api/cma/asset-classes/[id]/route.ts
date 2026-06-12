@@ -8,6 +8,7 @@ import { parseBody } from "@/lib/schemas/common";
 import { assetClassPutSchema } from "@/lib/schemas/asset-classes";
 import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
+import { isLockedSystemAssetClass } from "@/lib/investments/asset-class-slugs";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,18 @@ export async function PUT(
     await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
     const { id } = await params;
+
+    const [existingRow] = await db
+      .select({ slug: assetClasses.slug })
+      .from(assetClasses)
+      .where(and(eq(assetClasses.id, id), eq(assetClasses.firmId, firmId)));
+    if (!existingRow) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (isLockedSystemAssetClass(existingRow.slug)) {
+      return NextResponse.json(
+        { error: "Cash is a system asset class and cannot be modified." },
+        { status: 403 },
+      );
+    }
 
     const parsed = await parseBody(assetClassPutSchema, request);
     if (!parsed.ok) return parsed.response;
@@ -93,6 +106,18 @@ export async function DELETE(
     await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
     const { id } = await params;
+
+    const [existingRow] = await db
+      .select({ slug: assetClasses.slug })
+      .from(assetClasses)
+      .where(and(eq(assetClasses.id, id), eq(assetClasses.firmId, firmId)));
+    if (!existingRow) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (isLockedSystemAssetClass(existingRow.slug)) {
+      return NextResponse.json(
+        { error: "Cash is a system asset class and cannot be modified." },
+        { status: 403 },
+      );
+    }
 
     await db
       .delete(assetClasses)

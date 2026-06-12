@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { cmaSets, cmaSetValues } from "@/db/schema";
+import { cmaSets, cmaSetValues, assetClasses } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { CMA_SET_KEYS, type CmaSetKey, mirrorActiveSetToAssetClasses } from "@/lib/cma-sets";
 import { cmaSetValuesUpdateSchema } from "@/lib/schemas/cma-sets";
+import { isLockedSystemAssetClass } from "@/lib/investments/asset-class-slugs";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ key:
     const parsed = cmaSetValuesUpdateSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const firmAssetClasses = await db
+      .select({ id: assetClasses.id, slug: assetClasses.slug })
+      .from(assetClasses)
+      .where(eq(assetClasses.firmId, firmId));
+    const lockedIds = new Set(
+      firmAssetClasses.filter((r) => isLockedSystemAssetClass(r.slug)).map((r) => r.id),
+    );
+    if (parsed.data.values.some((v) => lockedIds.has(v.assetClassId))) {
+      return NextResponse.json(
+        { error: "Cash is a system asset class and cannot be modified." },
+        { status: 403 },
+      );
     }
 
     await db.transaction(async (tx) => {

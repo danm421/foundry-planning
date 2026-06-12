@@ -68,3 +68,35 @@ describe("rowChip", () => {
       .toEqual({ kind: "needs_review", label: "Needs review" });
   });
 });
+
+const ASSET_CLASSES_WITH_CASH = [
+  ...ASSET_CLASSES,
+  { id: "ac-cash", name: "Cash", slug: "cash" },
+];
+
+describe("rowChip cash lock", () => {
+  it("marks a 100% cash holding as locked", () => {
+    const chip = rowChip(
+      row({ securityWeights: [{ slug: "cash", weight: 1 }] }),
+      ASSET_CLASSES_WITH_CASH,
+    );
+    expect(chip).toEqual({ kind: "locked", label: "Cash" });
+  });
+  it("a normal single-class holding stays derived (clickable)", () => {
+    const chip = rowChip(
+      row({ securityWeights: [{ slug: "us_large_cap", weight: 1 }] }),
+      ASSET_CLASSES_WITH_CASH,
+    );
+    expect(chip.kind).toBe("derived");
+  });
+  it("a cash holding with a manual override stays manual (override wins)", () => {
+    const chip = rowChip(
+      row({
+        securityWeights: [{ slug: "cash", weight: 1 }],
+        overrides: [{ assetClassId: "ac-cash", weight: 1 }],
+      }),
+      ASSET_CLASSES_WITH_CASH,
+    );
+    expect(chip.kind).toBe("manual");
+  });
+});

@@ -89,6 +89,10 @@ function deriveFund(input: ClassifierInput): AssetClassWeightBySlug[] {
     if (commodity) add(map, commodity, other);
   }
 
+  // Cash sleeve → cash asset class (reduces inflation residual in finalize).
+  const cash = f(a.cash);
+  if (cash > 0) add(map, "cash", cash);
+
   return finalize(map);
 }
 
@@ -101,7 +105,9 @@ export function deriveAssetClassBlend(input: ClassifierInput): AssetClassWeightB
     case "etf":
     case "mutual_fund":
       return deriveFund(input);
+    case "cash":
+      return finalize(new Map([["cash", 1]]));
     default:
-      return finalize(new Map()); // cash/other with no data → inflation
+      return finalize(new Map()); // other with no data → inflation
   }
 }

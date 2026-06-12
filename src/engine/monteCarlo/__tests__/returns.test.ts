@@ -98,6 +98,34 @@ describe("createReturnEngine — determinism", () => {
   });
 });
 
+describe("createReturnEngine — deterministic zero-variance asset (cash)", () => {
+  it("a 0-mean / 0-stdDev index returns exactly 0 every year; peers still vary", () => {
+    // Cash is modeled as a degenerate index: arithMean 0, stdDev 0. Its log-space
+    // σ is 0, so the covariance matrix has a zero pivot. Cholesky must tolerate
+    // that (Task 1) rather than throwing "not positive-definite". The result is
+    // exp(0) - 1 = 0 every year, with no randomness, while non-degenerate peers vary.
+    const engine = createReturnEngine({
+      indices: [
+        { id: "stock", arithMean: 0.08, stdDev: 0.15 },
+        { id: "cash", arithMean: 0, stdDev: 0 },
+      ],
+      correlation: [
+        [1, 0],
+        [0, 1],
+      ],
+      seed: 12345,
+    });
+    const stream = engine.startTrial(0);
+    const stockReturns = new Set<number>();
+    for (let year = 0; year < 25; year++) {
+      const r = stream.nextYear();
+      expect(r[1]).toBe(0); // cash: exactly 0%, no randomness
+      stockReturns.add(r[0]);
+    }
+    expect(stockReturns.size).toBeGreaterThan(1); // stock varies year to year
+  });
+});
+
 describe("createReturnEngine — statistical recovery (N=10k trials × 1 year)", () => {
   // Drawing one year per trial gives N=10k i.i.d. vectors; we check that the
   // empirical marginal statistics match the input parameters within tolerance.

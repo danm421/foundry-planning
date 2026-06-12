@@ -2,8 +2,18 @@ import { describe, it, expect } from "vitest";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS } from "../cma-seed";
 
 describe("CMA seed data", () => {
-  it("provides 15 default asset classes", () => {
-    expect(DEFAULT_ASSET_CLASSES).toHaveLength(15);
+  it("provides 16 default asset classes", () => {
+    expect(DEFAULT_ASSET_CLASSES).toHaveLength(16);
+  });
+
+  it("includes a fixed 0% Cash class", () => {
+    const cash = DEFAULT_ASSET_CLASSES.find((a) => a.slug === "cash");
+    expect(cash).toBeDefined();
+    expect(cash!.name).toBe("Cash");
+    expect(cash!.geometricReturn).toBe(0);
+    expect(cash!.arithmeticMean).toBe(0);
+    expect(cash!.volatility).toBe(0);
+    expect(cash!.assetType).toBe("cash");
   });
 
   it("each asset class realization percentages sum to 1", () => {

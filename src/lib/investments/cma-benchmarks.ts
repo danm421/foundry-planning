@@ -11,8 +11,9 @@ import type { AssetClassSlug } from "./asset-class-slugs";
  * series (reinvested dividends/splits). Keep all three in sync when the
  * recompute proxies change.
  *
- * `inflation` is intentionally absent — it carries a forward CPI assumption, not
- * a market proxy, so it gets no benchmark tooltip.
+ * `inflation` and `cash` are intentionally absent — `inflation` carries a forward
+ * CPI assumption and `cash` is a deterministic 0% bucket, neither a market proxy,
+ * so they get no benchmark tooltip.
  */
 export interface CmaBenchmark {
   /** The market index the proxy series tracks. */

@@ -256,6 +256,18 @@
       "pctQualifiedDividends": 0,
       "pctTaxExempt": 0,
       "assetType": "other"
+    },
+    {
+      "name": "Cash",
+      "slug": "cash",
+      "geometricReturn": 0,
+      "arithmeticMean": 0,
+      "volatility": 0,
+      "pctOrdinaryIncome": 1,
+      "pctLtCapitalGains": 0,
+      "pctQualifiedDividends": 0,
+      "pctTaxExempt": 0,
+      "assetType": "cash"
     }
   ],
   "correlations": [

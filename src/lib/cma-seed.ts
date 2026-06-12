@@ -36,9 +36,9 @@ export const DEFAULT_ASSET_CLASSES: SeedAssetClass[] =
   cmaDefaults.assetClasses as SeedAssetClass[];
 
 // Fail fast if the generated file drifts from engine expectations.
-if (DEFAULT_ASSET_CLASSES.length !== 15) {
+if (DEFAULT_ASSET_CLASSES.length !== 16) {
   throw new Error(
-    `cma-seed: expected 15 asset classes, got ${DEFAULT_ASSET_CLASSES.length}`,
+    `cma-seed: expected 16 asset classes, got ${DEFAULT_ASSET_CLASSES.length}`,
   );
 }
 

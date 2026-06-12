@@ -1,5 +1,6 @@
 import { rollupHoldings, type HoldingInput } from "./holdings-rollup";
 import type { HoldingRow } from "./holdings-client";
+import { isLockedSystemAssetClass } from "./asset-class-slugs";
 
 /** Minimal asset-class shape the display layer needs (matches AssetClassOption,
  *  but slug is the only extra field required here besides id+name). */
@@ -55,7 +56,8 @@ export function summarizeHoldings(
 export type RowChip =
   | { kind: "derived"; label: string }
   | { kind: "manual"; label: string }
-  | { kind: "needs_review"; label: string };
+  | { kind: "needs_review"; label: string }
+  | { kind: "locked"; label: string };
 
 /** The per-row asset-class chip: Manual (override) > Needs review (nothing) >
  *  single class name > Blend (n). */
@@ -64,7 +66,9 @@ export function rowChip(row: HoldingRow, assetClasses: readonly AssetClassLite[]
   if (row.needsReview || row.securityWeights.length === 0)
     return { kind: "needs_review", label: "Needs review" };
   if (row.securityWeights.length === 1) {
-    const name = assetClasses.find((ac) => ac.slug === row.securityWeights[0].slug)?.name;
+    const only = row.securityWeights[0];
+    const name = assetClasses.find((ac) => ac.slug === only.slug)?.name;
+    if (isLockedSystemAssetClass(only.slug)) return { kind: "locked", label: name ?? "Cash" };
     return { kind: "derived", label: name ?? "Needs review" };
   }
   return { kind: "derived", label: `Blend (${row.securityWeights.length})` };

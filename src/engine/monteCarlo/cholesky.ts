@@ -6,8 +6,11 @@
  * log-space returns, L lets us turn an i.i.d. N(0, I) vector Z into a
  * correlated draw L·Z with the desired covariance structure.
  *
- * Standard Cholesky–Banachiewicz algorithm. Throws for non-square or
- * non-positive-definite input (caller must repair the matrix upstream).
+ * Standard Cholesky–Banachiewicz algorithm. PSD-tolerant: a (near-)zero
+ * pivot is treated as a deterministic, zero-variance dimension (L[i][i] = 0,
+ * its column stays 0) rather than an error. A genuinely negative pivot means
+ * the matrix is indefinite (a real upstream bug) and still throws. Throws for
+ * non-square input.
  */
 export function cholesky(matrix: number[][]): number[][] {
   const n = matrix.length;
@@ -25,14 +28,19 @@ export function cholesky(matrix: number[][]): number[][] {
       }
       if (i === j) {
         const diag = matrix[i][i] - sum;
-        if (diag <= 0) {
+        // A clearly-negative pivot means the matrix is indefinite (a real bug
+        // upstream) — still fatal. A (near-)zero pivot is a deterministic
+        // dimension (a zero-variance asset): L[i][i] = 0 and its column stays 0.
+        if (diag < -1e-12) {
           throw new Error(
             `cholesky: matrix is not positive-definite at pivot ${i} (diag = ${diag})`,
           );
         }
-        L[i][j] = Math.sqrt(diag);
+        L[i][j] = diag > 0 ? Math.sqrt(diag) : 0;
       } else {
-        L[i][j] = (matrix[i][j] - sum) / L[j][j];
+        // When the pivot column is degenerate (L[j][j] === 0), the matching
+        // covariance entry is necessarily 0 for a consistent PSD matrix → 0.
+        L[i][j] = L[j][j] === 0 ? 0 : (matrix[i][j] - sum) / L[j][j];
       }
     }
   }

@@ -9,8 +9,8 @@ import {
 import type { SeedAssetClass } from "../cma-seed";
 
 describe("cma-projected.generated.json", () => {
-  it("has exactly 15 classes (cma-sets.ts consumer relies on this)", () => {
-    expect(generated.assetClasses).toHaveLength(15);
+  it("has exactly 16 classes (cma-sets.ts consumer relies on this)", () => {
+    expect(generated.assetClasses).toHaveLength(16);
   });
 
   it("matches the transform output (re-run recompute:cma-projected if this fails)", () => {

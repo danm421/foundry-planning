@@ -18,9 +18,9 @@ function build(): ProjectedAssetClass[] {
 const bySlug = new Map(build().map((c) => [c.slug, c]));
 
 describe("buildProjectedAssetClasses", () => {
-  it("returns all 15 classes in the same order as historical", () => {
+  it("returns all 16 classes in the same order as historical", () => {
     const out = build();
-    expect(out).toHaveLength(15);
+    expect(out).toHaveLength(16);
     expect(out.map((c) => c.slug)).toEqual(HISTORICAL.map((c) => c.slug));
   });
 

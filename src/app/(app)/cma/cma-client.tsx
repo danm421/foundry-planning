@@ -6,6 +6,7 @@ import {
   ASSET_TYPE_LABELS,
   type AssetTypeId,
 } from "@/lib/investments/asset-types";
+import { isLockedSystemAssetClass } from "@/lib/investments/asset-class-slugs";
 import { TrashIcon } from "@/components/icons";
 import { HelpTip } from "@/components/help-tip";
 import { benchmarkTooltip } from "@/lib/investments/cma-benchmarks";
@@ -85,11 +86,13 @@ function PercentInput({
   onChange,
   onBlur,
   className,
+  disabled,
 }: {
   decimalValue: string;
   onChange: (decimal: string) => void;
   onBlur?: () => void;
   className?: string;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(() => pct(decimalValue));
   const lastCommittedRef = useRef(decimalValue);
@@ -115,6 +118,7 @@ function PercentInput({
       }}
       onBlur={onBlur}
       className={className}
+      disabled={disabled}
     />
   );
 }
@@ -618,6 +622,8 @@ function AssetClassRow({
     "pctTaxExempt",
   ];
 
+  const locked = isLockedSystemAssetClass(ac.slug);
+
   return (
     <tr className="hover:bg-card-hover">
       <td className="px-3 py-2">
@@ -627,7 +633,9 @@ function AssetClassRow({
             value={ac.name}
             onChange={(e) => onUpdate(ac.id, "name", e.target.value)}
             onBlur={() => onSave(ac)}
-            className="w-full rounded border border-hair bg-transparent px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+            disabled={locked}
+            title={locked ? "System class — fixed at 0%" : undefined}
+            className="w-full rounded border border-hair bg-transparent px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           />
           {benchmarkTooltip(ac.slug) && <HelpTip text={benchmarkTooltip(ac.slug)!} />}
         </div>
@@ -635,13 +643,14 @@ function AssetClassRow({
       <td className="px-3 py-2">
         <select
           value={ac.assetType}
+          disabled={locked}
           onChange={(e) => {
             onUpdate(ac.id, "assetType", e.target.value);
             // Use the freshly-chosen value — the state update above is async
             // and the immediate onSave would read the stale row.
             onSave({ ...ac, assetType: e.target.value as AssetTypeId });
           }}
-          className="rounded border border-hair bg-card px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+          className="rounded border border-hair bg-card px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
           {ASSET_TYPE_IDS.map((id) => (
             <option key={id} value={id}>{ASSET_TYPE_LABELS[id]}</option>
@@ -655,9 +664,10 @@ function AssetClassRow({
               decimalValue={sv[field]}
               onChange={(next) => onUpdateSetValue(ac.id, field, next)}
               onBlur={() => onSaveSetValue(ac.id, sv)}
-              className="w-16 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm text-ink focus:border-accent focus:outline-none"
+              disabled={locked}
+              className="w-16 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm text-ink focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
-            {field === "arithmeticMean" && (
+            {field === "arithmeticMean" && !locked && (
               <button
                 type="button"
                 onClick={() => {
@@ -688,20 +698,25 @@ function AssetClassRow({
               decimalValue={ac[field] as string}
               onChange={(next) => onUpdate(ac.id, field, next)}
               onBlur={() => onSave(ac)}
-              className="w-16 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm text-ink focus:border-accent focus:outline-none"
+              disabled={locked}
+              className="w-16 rounded border border-hair bg-transparent px-2 py-1 text-right text-sm text-ink focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
         </td>
       ))}
       <td className="px-3 py-2">
-        <button
-          onClick={() => onDelete(ac.id)}
-          className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
-          title="Delete asset class"
-          aria-label="Delete asset class"
-        >
-          <TrashIcon className="h-4 w-4" />
-        </button>
+        {locked ? (
+          <span className="text-xs text-ink-3" title="System class — fixed at 0%">Locked</span>
+        ) : (
+          <button
+            onClick={() => onDelete(ac.id)}
+            className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
+            title="Delete asset class"
+            aria-label="Delete asset class"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        )}
       </td>
     </tr>
   );
