@@ -175,7 +175,14 @@ export default function BusinessDialog({
       tabs={TABS}
       activeTab={tab}
       onTabChange={(next) =>
-        void autoSave.interceptTabChange(next, (n) => setTab(n as BusinessTab))
+        void autoSave.interceptTabChange(
+          next,
+          (n) => setTab(n as BusinessTab),
+          // Flows / Assets / Notes are keyed on the business id — force-create
+          // the business when opening one on a not-yet-saved record so the tab
+          // is usable without a save + reopen.
+          { force: !currentBusiness && next !== "details" },
+        )
       }
       tabBarRight={
         <TabAutoSaveIndicator

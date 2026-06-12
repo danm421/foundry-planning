@@ -48,6 +48,16 @@ type TrustTab =
   | "notes"
   | "notes-sales";
 
+// Tabs backed by a nested resource keyed on the entity id. Opening one on a
+// not-yet-saved trust force-creates it first. ("notes" is a plain field on the
+// trust itself, so it doesn't need the record to exist.)
+const RECORD_DEPENDENT_TRUST_TABS = new Set<string>([
+  "flows",
+  "assets",
+  "transfers",
+  "notes-sales",
+]);
+
 /**
  * Mirrors `showNotesAndSales` in add-trust-form.tsx — kept duplicated rather
  * than imported to avoid pulling the giant trust form into the dialog shell.
@@ -112,6 +122,14 @@ export default function EntityDialog({
   });
   const [trustTab, setTrustTab] = useState<TrustTab>("details");
 
+  // Promote create → edit in place: starts as the `editing` prop and is updated
+  // from the form's first auto-save (the dialog is keyed on the entity id, so
+  // `editing` is stable for the whole session). The child-data tabs (Flows /
+  // Assets / Transfers / Notes & sales) gate on this, so they become usable the
+  // moment the trust is minted — no save + reopen. The form seeds its fields
+  // only at mount, so swapping this in later doesn't clobber in-progress edits.
+  const [currentEntity, setCurrentEntity] = useState<Entity | undefined>(editing);
+
   const [initialFlowOverrides, setInitialFlowOverrides] = useState<Array<{
     year: number;
     incomeAmount: number | null;
@@ -148,22 +166,22 @@ export default function EntityDialog({
   const scenarioId = searchParams.get("scenario");
 
   useEffect(() => {
-    if (!editing?.id) return;
+    if (!currentEntity?.id) return;
     // Omitting scenarioId (base mode) loads scenario_id IS NULL overrides.
     const url = scenarioId
-      ? `/api/clients/${clientId}/entities/${editing.id}/flow-overrides?scenarioId=${scenarioId}`
-      : `/api/clients/${clientId}/entities/${editing.id}/flow-overrides`;
+      ? `/api/clients/${clientId}/entities/${currentEntity.id}/flow-overrides?scenarioId=${scenarioId}`
+      : `/api/clients/${clientId}/entities/${currentEntity.id}/flow-overrides`;
     fetch(url)
       .then((r) => r.json())
       .then((j: { overrides?: Array<{ year: number; incomeAmount: number | null; expenseAmount: number | null; distributionPercent: number | null }> }) =>
         setInitialFlowOverrides(j.overrides ?? []),
       )
       .catch(() => setInitialFlowOverrides([]));
-  }, [clientId, editing?.id, scenarioId]);
+  }, [clientId, currentEntity?.id, scenarioId]);
 
   if (!open) return null;
 
-  const isEdit = Boolean(editing);
+  const isEdit = Boolean(currentEntity);
   const title = isEdit ? "Edit Trust" : "Add Trust";
 
   const trustShowsNotesAndSales = showNotesAndSalesTab({
@@ -184,7 +202,11 @@ export default function EntityDialog({
   ];
 
   const onTabChange = (tab: string) => {
-    void autoSave.interceptTabChange(tab, (next) => setTrustTab(next as TrustTab));
+    // Flows / Assets / Transfers / Notes & sales are keyed on the entity id —
+    // force-create the trust when opening one on a not-yet-saved record so the
+    // tab is usable without a save + reopen.
+    const force = !currentEntity && RECORD_DEPENDENT_TRUST_TABS.has(tab);
+    void autoSave.interceptTabChange(tab, (next) => setTrustTab(next as TrustTab), { force });
   };
 
   // Tabs that don't own a primary form action (Assets / Transfers manage their own data inline).
@@ -198,11 +220,11 @@ export default function EntityDialog({
     (onFlowsTab && !scheduleSaveBinding);
 
   // Find the entity-owned income + expense for THIS entity to feed the FlowsTab.
-  const entityIncome: FlowsTabIncome | null = editing
-    ? toFlowsTabIncome((incomes ?? []).find((i) => i.ownerEntityId === editing.id))
+  const entityIncome: FlowsTabIncome | null = currentEntity
+    ? toFlowsTabIncome((incomes ?? []).find((i) => i.ownerEntityId === currentEntity.id))
     : null;
-  const entityExpense: FlowsTabExpense | null = editing
-    ? toFlowsTabIncome((expenses ?? []).find((e) => e.ownerEntityId === editing.id))
+  const entityExpense: FlowsTabExpense | null = currentEntity
+    ? toFlowsTabIncome((expenses ?? []).find((e) => e.ownerEntityId === currentEntity.id))
     : null;
 
   return (
@@ -253,7 +275,7 @@ export default function EntityDialog({
       <AddTrustForm
         ref={trustFormRef}
         clientId={clientId}
-        editing={editing}
+        editing={currentEntity}
         household={household}
         members={members}
         externals={externals}
@@ -276,7 +298,12 @@ export default function EntityDialog({
         onSubmitStateChange={setSubmitState}
         onScheduleSaveBindingChange={setScheduleSaveBinding}
         onAutoSaveStateChange={setTrustAutoSaveState}
-        onAutoSaved={(e, mode) => onAutoSaved?.(e, mode)}
+        onAutoSaved={(e, mode) => {
+          // Promote the dialog to edit mode in place so child-data tabs unlock
+          // without a save + reopen.
+          setCurrentEntity(e);
+          onAutoSaved?.(e, mode);
+        }}
         onLiveStateChange={setLiveTrustState}
       />
     </DialogShell>

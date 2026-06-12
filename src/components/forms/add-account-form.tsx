@@ -233,6 +233,11 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa"]);
 
+// Tabs backed by a nested resource keyed on the account id (holdings, grants,
+// beneficiaries). Opening one on a not-yet-saved account force-creates the
+// account first so the tab is immediately usable — no save + reopen.
+const RECORD_DEPENDENT_TABS = new Set(["holdings", "grants", "beneficiaries"]);
+
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   taxable: "Taxable Account",
   cash: "Cash Account",
@@ -658,6 +663,25 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       setAllocationsLoaded(true);
     }
   }, [mode, initial?.id, clientId, allocationsLoaded, modelPortfolioId, portfolioAllocationsMap, catDefaultSource?.portfolioId]);
+
+  // Re-read the account's allocations from the server. Holdings mutations
+  // re-derive the asset mix server-side (syncAccountFromHoldings), so after one
+  // we pull the fresh rollup into customAllocations — that's what keeps the
+  // Asset Mix tab current without a save + reopen. Base mode only (allocations
+  // aren't in scenario scope) and only once the account exists.
+  const refreshAllocationsFromServer = useCallback(async () => {
+    const acctId = effectiveAccountId;
+    if (!acctId || writer.scenarioActive) return;
+    try {
+      const res = await fetch(`/api/clients/${clientId}/accounts/${acctId}/allocations`);
+      if (!res.ok) return;
+      const rows = (await res.json()) as { assetClassId: string; weight: string }[];
+      setCustomAllocations(rows.map((r) => ({ assetClassId: r.assetClassId, weight: parseFloat(r.weight) })));
+    } catch {
+      // Leave the current allocations in place on a transient read failure.
+    }
+  }, [clientId, effectiveAccountId, writer.scenarioActive]);
+
   const hasExplicitGrowth = initial?.growthRate != null && initial.growthRate !== "";
   const useDefaultGrowth = growthSource === "default";
   const defaultPctForCategory = catDefaultSource?.blendedReturn != null
@@ -929,7 +953,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           const json = (await res.json().catch(() => ({}))) as { error?: string };
           return { ok: false, error: json.error ?? "Failed to update account" };
         }
-        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
+        // Don't write allocations when holdings drive the account — the holdings
+        // sync owns account_asset_allocations, and PUTting the form's copy would
+        // clobber the just-derived rollup with a stale snapshot.
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive && !drivenByHoldings) {
           await fetch(`/api/clients/${clientId}/accounts/${targetId}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -964,7 +991,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? { id: newAccountId }
           : (await res.json()) as { id: string };
 
-        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive && !drivenByHoldings) {
           await fetch(`/api/clients/${clientId}/accounts/${saved.id}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -990,7 +1017,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
-    effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations,
+    effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
     saveEquityAccount,
   ]);
@@ -1119,8 +1146,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           throw new Error(json.error ?? "Failed to update account");
         }
         // Save asset mix allocations for existing account. Allocations are a
-        // nested resource and not in v1 scenario scope — base mode only.
-        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
+        // nested resource and not in v1 scenario scope — base mode only. Skipped
+        // when holdings drive the account (the holdings sync owns the mix).
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive && !drivenByHoldings) {
           await fetch(`/api/clients/${clientId}/accounts/${targetId}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -1159,8 +1187,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           : await res.json();
 
         // Save asset mix allocations for new account. Allocations are nested
-        // and not in v1 scenario scope — base mode only.
-        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
+        // and not in v1 scenario scope — base mode only. Skipped when holdings
+        // drive the account (the holdings sync owns the mix).
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive && !drivenByHoldings) {
           await fetch(`/api/clients/${clientId}/accounts/${account.id}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -1247,8 +1276,18 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     saveAsync: saveAsyncImpl,
   });
 
-  const handleTabClick = (next: typeof activeTab) =>
-    void accountAutoSave.interceptTabChange(next, (id) => setActiveTab(id as typeof activeTab));
+  const handleTabClick = (next: typeof activeTab) => {
+    // Holdings, Grants, and Beneficiaries are nested resources keyed by account
+    // id, so the account must exist before those tabs are usable. When it
+    // doesn't yet, force the tab-switch save to mint it (acts like clicking
+    // Save) instead of showing a "save the account first" gate.
+    const needsSavedAccount = RECORD_DEPENDENT_TABS.has(next) && !effectiveAccountId;
+    void accountAutoSave.interceptTabChange(
+      next,
+      (id) => setActiveTab(id as typeof activeTab),
+      { force: needsSavedAccount },
+    );
+  };
 
   return (
     <>
@@ -2118,6 +2157,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             }
             allocations={customAllocations}
             onChange={setCustomAllocations}
+            derivedFromHoldings={drivenByHoldings}
           />
         </div>
       )}
@@ -2126,12 +2166,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         <div className={activeTab === "holdings" ? "" : "hidden"}>
           <HoldingsTab
             clientId={clientId}
-            accountId={isEdit ? (initial?.id ?? null) : null}
+            accountId={effectiveAccountId}
             scenarioActive={writer.scenarioActive}
             assetClasses={assetClasses}
             deriveFromHoldings={deriveFromHoldings}
             onDeriveFromHoldingsChange={setDeriveFromHoldings}
             onTotalsChange={setHoldingsTotals}
+            onHoldingsChanged={refreshAllocationsFromServer}
           />
         </div>
       )}
@@ -2187,12 +2228,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         </div>
       )}
 
-      {/* Beneficiaries tab */}
+      {/* Beneficiaries tab — keyed on the effective (post-autosave) account id so
+          it's usable the moment switching to it force-creates the account. */}
       <div className={activeTab === "beneficiaries" ? "" : "hidden"}>
-        {mode === "create" || !initial?.id ? (
+        {!effectiveAccountId ? (
           <p className="text-sm text-gray-300">Save the account first, then designate beneficiaries.</p>
         ) : (
-          <BeneficiariesTab clientId={clientId} accountId={initial.id} active={activeTab === "beneficiaries"} />
+          <BeneficiariesTab clientId={clientId} accountId={effectiveAccountId} active={activeTab === "beneficiaries"} />
         )}
       </div>
 

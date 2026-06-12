@@ -18,9 +18,12 @@ interface AssetMixTabProps {
   assetClasses: AssetClassOption[];
   /** Name of the inherited portfolio (shown as info banner) */
   inheritedPortfolioName?: string;
-  /** Current allocations (always editable) */
+  /** Current allocations */
   allocations: Allocation[];
   onChange: (allocations: Allocation[]) => void;
+  /** When true, this account's mix is the rollup of its holdings — weights are
+   *  read-only here and change by editing the Holdings tab instead. */
+  derivedFromHoldings?: boolean;
 }
 
 export function AssetMixTab({
@@ -28,6 +31,7 @@ export function AssetMixTab({
   inheritedPortfolioName,
   allocations,
   onChange,
+  derivedFromHoldings = false,
 }: AssetMixTabProps) {
   const [hideZero, setHideZero] = useState(false);
 
@@ -83,10 +87,18 @@ export function AssetMixTab({
         </span>
       </div>
 
-      {/* Info banner when allocations are inherited from a portfolio */}
-      {inheritedPortfolioName && (
+      {/* Info banner when allocations are inherited from a portfolio. Suppressed
+          when holdings drive the mix — that banner takes precedence. */}
+      {inheritedPortfolioName && !derivedFromHoldings && (
         <div className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
           Pre-filled from <strong>{inheritedPortfolioName}</strong>. Edit to customize.
+        </div>
+      )}
+
+      {/* Holdings-derived banner — the mix is rolled up from the Holdings tab. */}
+      {derivedFromHoldings && (
+        <div className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
+          Derived from this account&apos;s holdings. Edit the <strong>Holdings</strong> tab to change the mix.
         </div>
       )}
 
@@ -121,6 +133,7 @@ export function AssetMixTab({
                 <WeightInput
                   weight={weight}
                   onChange={(v) => handleWeightChange(ac.id, v)}
+                  readOnly={derivedFromHoldings}
                 />
                 <span className="text-sm text-gray-400">%</span>
               </div>
@@ -169,9 +182,10 @@ export function AssetMixTab({
 interface WeightInputProps {
   weight: number;
   onChange: (raw: string) => void;
+  readOnly?: boolean;
 }
 
-function WeightInput({ weight, onChange }: WeightInputProps) {
+function WeightInput({ weight, onChange, readOnly = false }: WeightInputProps) {
   const formatted = weight > 0 ? (weight * 100).toFixed(1) : "";
   const [draft, setDraft] = useState<string | null>(null);
   const display = draft !== null ? draft : formatted;
@@ -182,7 +196,9 @@ function WeightInput({ weight, onChange }: WeightInputProps) {
       inputMode="decimal"
       value={display}
       placeholder="0"
+      readOnly={readOnly}
       onChange={(e) => {
+        if (readOnly) return;
         let cleaned = e.target.value.replace(/[^\d.]/g, "");
         const parts = cleaned.split(".");
         if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
@@ -190,7 +206,11 @@ function WeightInput({ weight, onChange }: WeightInputProps) {
         onChange(cleaned);
       }}
       onBlur={() => setDraft(null)}
-      className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+      className={`h-7 w-full rounded-md border px-2 text-right text-sm text-gray-100 focus:outline-none ${
+        readOnly
+          ? "cursor-default border-gray-700 bg-gray-800/40 text-gray-400"
+          : "border-gray-600 bg-gray-800 focus:border-accent focus:ring-1 focus:ring-accent"
+      }`}
     />
   );
 }

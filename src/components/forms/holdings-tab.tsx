@@ -24,6 +24,11 @@ interface Props {
   onDeriveFromHoldingsChange: (next: boolean) => void;
   /** Report derived totals up so the Details tab can show read-only value/basis. */
   onTotalsChange: (totals: { value: number; basis: number } | null) => void;
+  /** Fired after any holdings mutation (add/edit/delete/override). The server
+   *  re-derives the account's asset mix on each of these, so the parent uses
+   *  this to re-read allocations and keep the Asset Mix tab in sync without a
+   *  save + reopen. */
+  onHoldingsChanged?: () => void;
 }
 
 const money = (n: number) =>
@@ -48,7 +53,7 @@ const fmtMoney = (raw: string) => {
 
 export function HoldingsTab({
   clientId, accountId, scenarioActive, assetClasses,
-  deriveFromHoldings, onDeriveFromHoldingsChange, onTotalsChange,
+  deriveFromHoldings, onDeriveFromHoldingsChange, onTotalsChange, onHoldingsChanged,
 }: Props) {
   const [rows, setRows] = useState<HoldingRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -125,6 +130,7 @@ export function HoldingsTab({
       if (list.length === 1 && deriveFromHoldings) onDeriveFromHoldingsChange(true);
       setTicker(""); setShares(""); setPrice(""); setBasis(""); setPriceAsOf(null);
       lastQuotedTicker.current = "";
+      onHoldingsChanged?.();
     } catch {
       setError("Couldn't add the holding. Check the values and try again.");
     } finally {
@@ -164,6 +170,7 @@ export function HoldingsTab({
             }
           : r,
       ));
+      onHoldingsChanged?.();
     } catch {
       setError("Couldn't save that change.");
     }
@@ -174,6 +181,7 @@ export function HoldingsTab({
     try {
       await deleteHolding(clientId, accountId, holdingId);
       setRows((prev) => prev.filter((r) => r.id !== holdingId));
+      onHoldingsChanged?.();
     } catch {
       setError("Couldn't delete the holding.");
     }
@@ -186,6 +194,7 @@ export function HoldingsTab({
     await setHoldingOverride(clientId, accountId, holdingId, overrides);
     const list = await listHoldings(clientId, accountId);
     setRows(list);
+    onHoldingsChanged?.();
   }
 
   // ── Gate states ──────────────────────────────────────────────────────────

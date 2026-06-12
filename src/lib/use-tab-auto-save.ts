@@ -16,9 +16,20 @@ interface UseTabAutoSaveOpts {
   onBlocked?: () => void;
 }
 
+interface InterceptTabChangeOpts {
+  /** Force a save even when the form is clean. Used when the destination tab
+   *  needs the record to already exist server-side (e.g. the Holdings tab can't
+   *  add rows until the account is persisted), so switching tabs must mint it. */
+  force?: boolean;
+}
+
 interface UseTabAutoSave {
-  /** Replacement for `onTabChange`. Runs save if dirty + valid, then `applyTabChange(id)`. */
-  interceptTabChange: (nextId: string, applyTabChange: (id: string) => void) => Promise<void>;
+  /** Replacement for `onTabChange`. Runs save if dirty (or forced) + valid, then `applyTabChange(id)`. */
+  interceptTabChange: (
+    nextId: string,
+    applyTabChange: (id: string) => void,
+    opts?: InterceptTabChangeOpts,
+  ) => Promise<void>;
   /** True while saveAsync is in flight. Render the Saving indicator off this. */
   saving: boolean;
   /** Server-error message from the last failed auto-save, or null. */
@@ -38,9 +49,13 @@ export function useTabAutoSave(opts: UseTabAutoSaveOpts): UseTabAutoSave {
   const clearSaveError = useCallback(() => setSaveError(null), []);
 
   const interceptTabChange = useCallback(
-    async (nextId: string, applyTabChange: (id: string) => void) => {
+    async (
+      nextId: string,
+      applyTabChange: (id: string) => void,
+      opts?: InterceptTabChangeOpts,
+    ) => {
       if (savingRef.current) return;
-      if (!isDirty) {
+      if (!isDirty && !opts?.force) {
         applyTabChange(nextId);
         return;
       }
