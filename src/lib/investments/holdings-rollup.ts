@@ -29,12 +29,20 @@ export interface HoldingInput {
   shares: number;
   price: number;
   costBasis: number;
+  /** Authoritative market value when set; else derived shares×price. */
+  marketValue: number | null;
   securityWeights: { slug: string; weight: number }[];
   overrides: { assetClassId: string; weight: number }[];
 }
 
+/** Market value of one holding: the stored marketValue when present (bonds /
+ *  manual positions where shares×price is not the value), else shares×price. */
+export function holdingMarketValue(h: { marketValue: number | null; shares: number; price: number }): number {
+  return h.marketValue ?? h.shares * h.price;
+}
+
 export interface HoldingsRollup {
-  /** Σ(shares × price). Authoritative account value in holdings mode. */
+  /** Σ holdingMarketValue. Authoritative account value in holdings mode. */
   value: number;
   /** Σ costBasis. Authoritative account basis in holdings mode. */
   basis: number;
@@ -51,7 +59,7 @@ export function rollupHoldings(
   let value = 0;
   let basis = 0;
   for (const h of holdings) {
-    const mv = h.shares * h.price;
+    const mv = holdingMarketValue(h);
     if (Number.isFinite(mv) && mv > 0) value += mv;
     basis += h.costBasis;
   }
@@ -59,7 +67,7 @@ export function rollupHoldings(
   const byAssetClass = new Map<string, number>();
   if (value > 0) {
     for (const h of holdings) {
-      const mv = h.shares * h.price;
+      const mv = holdingMarketValue(h);
       if (!Number.isFinite(mv) || mv <= 0) continue;
       const holdingWeight = mv / value;
 
@@ -98,6 +106,8 @@ export interface HoldingForBreakdown {
   securityId: string | null;
   shares: number;
   price: number;
+  /** Authoritative market value when set; else derived shares×price. */
+  marketValue: number | null;
   securityWeights: { slug: string; weight: number }[];
   overrides: { assetClassId: string; weight: number }[];
 }
@@ -123,7 +133,7 @@ export function breakdownHoldingsByClass(
 ): Map<string, HoldingClassContribution[]> {
   const byClass = new Map<string, HoldingClassContribution[]>();
   for (const h of holdings) {
-    const mv = h.shares * h.price;
+    const mv = holdingMarketValue(h);
     if (!Number.isFinite(mv) || mv <= 0) continue;
 
     const blend: { assetClassId: string; weight: number }[] =
