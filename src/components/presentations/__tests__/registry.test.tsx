@@ -57,6 +57,7 @@ describe("registry — Cash Flow page", () => {
         "incomeTaxOtherTaxes",
         "incomeTaxState",
         "lifeInsuranceSummary",
+        "medicareSummary",
         "monteCarlo",
         "portfolioAnalysis",
         "retirementComparison",
