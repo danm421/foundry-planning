@@ -105,6 +105,21 @@ describe("medicare-summary aggregate", () => {
     expect(ladder[1]).toMatchObject({ tier: 1, years: 2, thresholdLabel: "≥ $206k" });
   });
 
+  it("excludes pre-enrollment years that still carry a medicare block (enrolled: false)", () => {
+    // The engine emits a medicare block for pre-65 years too — members with
+    // enrolled:false and zero premiums. Those years must NOT become bars or
+    // tier-ladder rows, or the horizon starts years early and Tier 0 inflates.
+    const years = [
+      year(2028, det({ enrolled: false, age: 63 })),
+      year(2029, det({ enrolled: false, age: 64 })),
+      year(2030, det({ irmaaTier: 0, age: 65 })),
+    ];
+    const bars = buildMedicareBars(years);
+    expect(bars.map((b) => b.year)).toEqual([2030]);
+    const ladder = buildTierLadder(years);
+    expect(ladder).toEqual([{ tier: 0, thresholdLabel: "Standard premium", years: 1 }]);
+  });
+
   it("findNearTermHeadroom returns the first finite positive headroom year", () => {
     const years = [
       year(2030, det({ headroomToNextTier: Infinity })),

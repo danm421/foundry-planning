@@ -61,9 +61,12 @@ function representativeTier(y: ProjectionYear): number {
 export function buildMedicareBars(years: ProjectionYear[]): MedicareYearBar[] {
   const bars: MedicareYearBar[] = [];
   for (const y of years) {
-    if (!y.medicare) continue;
-    const total = y.medicare.totalAnnualCost;
-    const irmaa = y.medicare.totalIrmaaSurcharge;
+    // The engine emits a `medicare` block for pre-enrollment years too (members
+    // with `enrolled: false` and zero premiums), so gate on actual enrollment —
+    // not the mere presence of the block — or the horizon starts decades early.
+    if (enrolledMembers(y).length === 0) continue;
+    const total = y.medicare!.totalAnnualCost;
+    const irmaa = y.medicare!.totalIrmaaSurcharge;
     bars.push({ year: y.year, base: Math.max(0, total - irmaa), irmaa, total, tier: representativeTier(y) });
   }
   return bars;
@@ -117,7 +120,9 @@ export function buildTierLadder(years: ProjectionYear[]): TierLadderRow[] {
   const counts = new Map<number, number>();
   let maxTier = 0;
   for (const y of years) {
-    if (!y.medicare) continue;
+    // Only count years with an actually-enrolled member (see buildMedicareBars);
+    // otherwise pre-enrollment years register as spurious Tier 0 exposure.
+    if (enrolledMembers(y).length === 0) continue;
     const t = representativeTier(y);
     counts.set(t, (counts.get(t) ?? 0) + 1);
     if (t > maxTier) maxTier = t;
