@@ -16,10 +16,9 @@ const TABS: {
   roles?: ReadonlyArray<string>;
   billingContact?: boolean;
 }[] = [
-  // org:owner kept transitionally; removed in the cleanup phase once migrated.
-  { label: "Team", href: "/settings/team", roles: ["org:owner", "org:admin", "org:member"] },
-  { label: "Firm", href: "/settings/firm", roles: ["org:owner", "org:admin"] },
-  { label: "Branding", href: "/settings/branding", roles: ["org:owner", "org:admin"] },
+  { label: "Team", href: "/settings/team", roles: ["org:admin", "org:member"] },
+  { label: "Firm", href: "/settings/firm", roles: ["org:admin"] },
+  { label: "Branding", href: "/settings/branding", roles: ["org:admin"] },
   { label: "Billing", href: "/settings/billing", billingContact: true },
 ];
 

@@ -56,9 +56,9 @@ describe("requireOrgAdminOrOwner", () => {
     await expect(requireOrgAdminOrOwner()).resolves.toBeUndefined();
   });
 
-  it("passes for org:owner", async () => {
+  it("throws ForbiddenError for org:owner (role retired)", async () => {
     mockAuth.mockResolvedValue({ userId: "u1", orgRole: "org:owner" });
-    await expect(requireOrgAdminOrOwner()).resolves.toBeUndefined();
+    await expect(requireOrgAdminOrOwner()).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 

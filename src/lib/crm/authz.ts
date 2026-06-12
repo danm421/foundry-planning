@@ -27,13 +27,13 @@ export async function requireCrmHouseholdAccess(householdId: string) {
 /**
  * Vault access gate. Layered on `requireCrmHouseholdAccess` (which proves the
  * household belongs to the caller's firm), then narrows to the household's
- * *current* assigned advisor OR a firm admin/owner. Because it keys off
+ * *current* assigned advisor OR a firm admin. Because it keys off
  * `household.advisorId`, reassigning a household moves vault access with it.
  */
 export async function requireVaultAccess(householdId: string) {
   const { household, orgId } = await requireCrmHouseholdAccess(householdId);
   const { userId, orgRole } = await auth();
-  const isAdmin = orgRole === "org:admin" || orgRole === "org:owner";
+  const isAdmin = orgRole === "org:admin";
   if (isAdmin) return { household, orgId };
   if (userId && household.advisorId === userId) return { household, orgId };
   // Staff (operations/planner): allowed iff the household's advisor is in their

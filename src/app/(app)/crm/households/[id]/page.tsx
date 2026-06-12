@@ -38,7 +38,7 @@ export default async function CrmHouseholdPage({
   const firmId = await requireOrgId();
   const { userId, orgRole } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const canManage = orgRole === "org:owner" || orgRole === "org:admin";
+  const canManage = orgRole === "org:admin";
 
   const filters = normalizeQuickFilters({
     quick: null,

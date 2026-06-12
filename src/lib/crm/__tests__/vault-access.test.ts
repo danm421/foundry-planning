@@ -51,9 +51,9 @@ describe("requireVaultAccess", () => {
     });
   });
 
-  it("allows a firm owner", async () => {
+  it("rejects a retired org:owner role", async () => {
     setAuth(OTHER, "org:owner");
-    await expect(requireVaultAccess(householdId)).resolves.toBeTruthy();
+    await expect(requireVaultAccess(householdId)).rejects.toThrow();
   });
 
   it("rejects another advisor in the same firm", async () => {

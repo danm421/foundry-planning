@@ -20,9 +20,8 @@ async function emailFor(m: Membership): Promise<string | null> {
 /**
  * The firm's billing contact, resolved through a lockout-safe chain:
  *   1. publicMetadata.billing_contact_userId, if still a member
- *   2. (transitional, pre-migration) the org:owner member
- *   3. earliest-joined org:admin
- *   4. earliest-joined member
+ *   2. earliest-joined org:admin
+ *   3. earliest-joined member
  * Returns null only for a member-less org. Authoritative — makes Clerk reads.
  */
 export async function resolveBillingContact(orgId: string): Promise<BillingContact | null> {
@@ -42,7 +41,6 @@ export async function resolveBillingContact(orgId: string): Promise<BillingConta
 
   const chosen =
     (pinned ? byUser(pinned) : undefined) ??
-    list.find((m) => m.role === "org:owner") ??
     earliest("org:admin") ??
     [...list].sort((a, b) => a.createdAt - b.createdAt)[0];
 

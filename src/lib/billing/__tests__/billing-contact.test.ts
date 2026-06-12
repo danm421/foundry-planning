@@ -37,14 +37,6 @@ describe("resolveBillingContact", () => {
     expect(await resolveBillingContact("org_1")).toEqual({ userId: "u_pin", email: "pin@x.com" });
   });
 
-  it("falls back to the org:owner member (transitional) when no pin", async () => {
-    mockGetOrganization.mockResolvedValue(org({}));
-    mockGetMembershipList.mockResolvedValue({
-      data: [member("u_admin", "org:admin", 2, "a@x.com"), member("u_owner", "org:owner", 1, "o@x.com")],
-    });
-    expect(await resolveBillingContact("org_1")).toEqual({ userId: "u_owner", email: "o@x.com" });
-  });
-
   it("falls back to the earliest-joined admin when no pin and no owner", async () => {
     mockGetOrganization.mockResolvedValue(org({}));
     mockGetMembershipList.mockResolvedValue({

@@ -14,7 +14,7 @@ export async function ClientsContent({
 }) {
   const params = await searchParams;
   const { userId, orgRole } = await auth();
-  const canManage = orgRole === "org:owner" || orgRole === "org:admin";
+  const canManage = orgRole === "org:admin";
 
   const deletedView = params.view === "deleted";
   // Default to the "Recently opened" view; ?view=all and ?view=deleted opt out.

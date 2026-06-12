@@ -29,15 +29,15 @@ export async function requireBillingContact(): Promise<void> {
 }
 
 /**
- * Admin OR Owner. Used for firm config, CMA mutations, and team invites.
- * Replaces the old requireOrgAdmin() — owner now passes too, so the
- * founder (org:owner) can still edit CMA.
+ * Admin-only. Used for firm config, CMA mutations, and team invites.
+ * The org:owner role has been retired — all former owners were migrated to
+ * org:admin and billing_contact_userId was pinned during the Phase-4 migration.
  */
 export async function requireOrgAdminOrOwner(): Promise<void> {
   const { userId, orgRole } = await auth();
   if (!userId) throw new UnauthorizedError();
-  if (orgRole !== "org:admin" && orgRole !== "org:owner") {
-    throw new ForbiddenError("Organization admin or owner role required");
+  if (orgRole !== "org:admin") {
+    throw new ForbiddenError("Organization admin role required");
   }
 }
 
@@ -91,9 +91,10 @@ export async function requireActiveSubscription(): Promise<void> {
 
 /**
  * Operator-only gate for the beta-code admin console. NOT role-based: every
- * founder/beta org has org:owner + is_founder, so neither distinguishes the
- * actual operator. Hardcoded userId allowlist instead — one id per Clerk
- * instance (dev + prod have different ids for the same human).
+ * founder/beta org has is_founder=true, but that's shared across all founder
+ * orgs, so it doesn't distinguish the actual operator. Hardcoded userId
+ * allowlist instead — one id per Clerk instance (dev + prod have different ids
+ * for the same human).
  */
 const BETA_OPERATOR_USER_IDS = [
   "user_3CNEarpTz0k9nI7gWESXLGMTI7k", // dev   (danmueller20@gmail.com)
