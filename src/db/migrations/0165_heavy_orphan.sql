@@ -1,0 +1,1 @@
+ALTER TABLE "account_holdings" ADD COLUMN "market_value" numeric(18, 2);
