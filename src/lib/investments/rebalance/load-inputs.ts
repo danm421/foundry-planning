@@ -229,7 +229,7 @@ export async function loadRebalanceInputs(
         ticker: h.displayTicker ?? h.securityId ?? h.id,
         shares,
         price,
-        marketValue: shares * price,
+        marketValue: h.marketValue != null ? parseFloat(h.marketValue) : shares * price,
         costBasis: Number(h.costBasis),
         isTaxable,
         securityWeights: h.securityWeights,
