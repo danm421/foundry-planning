@@ -21,7 +21,7 @@ const TOS_VERSION_DEFAULT = "v1";
  *   3. Stamp Stripe subscription metadata.firm_id = newOrgId so subsequent
  *      subscription/invoice webhooks have firm context.
  *   4. Re-fetch the now-stamped subscription for full state.
- *   5. Send Clerk org-owner invitation for the buyer email.
+ *   5. Send Clerk org-admin invitation for the buyer email.
  *   6. Insert firms + subscriptions + subscription_items + tos_acceptances rows.
  *   7. Set Clerk org public_metadata (subscription_status, entitlements: []).
  *   8. Audit billing.subscription_created.
