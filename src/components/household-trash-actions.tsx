@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
 import { useToast } from "@/components/toast";
@@ -26,22 +27,61 @@ export function HouseholdTrashActions({ householdId, householdName, deleted }: P
   const [busy, setBusy] = useState(false);
   const [confirmName, setConfirmName] = useState("");
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // The menu renders in a portal (fixed-positioned to the button) so the table
+  // card's `overflow-hidden` can't clip it when this is the last row.
+  const [menuPos, setMenuPos] = useState<
+    { right: number; top: number } | { right: number; bottom: number } | null
+  >(null);
 
   useEffect(() => {
     if (!menuOpen) return;
     function onPointerDown(e: MouseEvent) {
-      if (!wrapperRef.current?.contains(e.target as Node)) setMenuOpen(false);
+      const target = e.target as Node;
+      if (wrapperRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setMenuOpen(false);
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") setMenuOpen(false);
     }
+    // The portaled menu is pinned to the button's viewport position, so close it
+    // rather than let it drift when the page scrolls or resizes.
+    function onReflow() {
+      setMenuOpen(false);
+    }
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
     };
   }, [menuOpen]);
+
+  function toggleMenu() {
+    if (menuOpen) {
+      setMenuOpen(false);
+      return;
+    }
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect) {
+      const gap = 6;
+      // Estimated height only picks the open direction; the anchor (top/bottom) is exact.
+      const estHeight = (deleted ? 2 : 1) * 38 + 8;
+      const right = window.innerWidth - rect.right;
+      const openUp = rect.bottom + gap + estHeight > window.innerHeight;
+      setMenuPos(
+        openUp
+          ? { right, bottom: window.innerHeight - rect.top + gap }
+          : { right, top: rect.bottom + gap },
+      );
+    }
+    setMenuOpen(true);
+  }
 
   async function call(url: string, method: "POST" | "DELETE"): Promise<boolean> {
     const res = await fetch(url, { method });
@@ -100,53 +140,64 @@ export function HouseholdTrashActions({ householdId, householdName, deleted }: P
   return (
     <div ref={wrapperRef} className="relative inline-block">
       <button
+        ref={buttonRef}
         type="button"
         aria-label="Household actions"
-        onClick={() => setMenuOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={toggleMenu}
         className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-3 hover:bg-card-2 hover:text-ink"
       >
         ⋯
       </button>
 
-      {menuOpen && (
-        <div className="absolute right-0 top-full z-40 mt-1.5 min-w-[180px] overflow-hidden rounded-xl border border-hair bg-paper py-1 shadow-lg">
-          {deleted ? (
-            <>
-              <button
-                type="button"
-                className={menuItem}
-                onClick={() => {
-                  setMenuOpen(false);
-                  void restore();
-                }}
-              >
-                Restore
-              </button>
+      {menuOpen &&
+        menuPos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ position: "fixed", ...menuPos }}
+            className="z-50 min-w-[180px] overflow-hidden rounded-xl border border-hair bg-paper py-1 shadow-lg"
+          >
+            {deleted ? (
+              <>
+                <button
+                  type="button"
+                  className={menuItem}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void restore();
+                  }}
+                >
+                  Restore
+                </button>
+                <button
+                  type="button"
+                  className={`${menuItem} text-red-400`}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setDialog("permanent");
+                  }}
+                >
+                  Delete permanently
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
                 className={`${menuItem} text-red-400`}
                 onClick={() => {
                   setMenuOpen(false);
-                  setDialog("permanent");
+                  setDialog("soft");
                 }}
               >
-                Delete permanently
+                Delete
               </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className={`${menuItem} text-red-400`}
-              onClick={() => {
-                setMenuOpen(false);
-                setDialog("soft");
-              }}
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      )}
+            )}
+          </div>,
+          document.body,
+        )}
 
       {dialog === "soft" && (
         <DialogShell
