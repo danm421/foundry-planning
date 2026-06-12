@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import DialogShell, { surfaceHeightStyle } from "../dialog-shell";
 
 describe("DialogShell", () => {
@@ -216,5 +216,54 @@ describe("DialogShell", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(onTabChange).toHaveBeenCalledWith("more");
+  });
+});
+
+// Regression: the App Router keeps <body> mounted across client navigations, so
+// a leaked `overflow: hidden` rides onto the next page and locks its scroll
+// until a hard refresh. This reproduces the leak path — a delete dialog opened
+// from inside an edit dialog, with both closing in one batched update (exactly
+// what performAccountDelete does).
+describe("DialogShell body scroll lock", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.style.overflow = "";
+  });
+
+  // Two sibling shells in the same tree order as balance-sheet-view: the edit
+  // dialog renders before the delete dialog.
+  function Stack({ editOpen, deleteOpen }: { editOpen: boolean; deleteOpen: boolean }) {
+    return (
+      <>
+        <DialogShell open={editOpen} onOpenChange={() => {}} title="Edit Account">
+          edit body
+        </DialogShell>
+        <DialogShell open={deleteOpen} onOpenChange={() => {}} title="Delete Account">
+          delete body
+        </DialogShell>
+      </>
+    );
+  }
+
+  it("restores body overflow after a single (unstacked) dialog closes", () => {
+    const { rerender } = render(<Stack editOpen deleteOpen={false} />);
+    expect(document.body.style.overflow).toBe("hidden");
+    rerender(<Stack editOpen={false} deleteOpen={false} />);
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("restores body overflow when a stacked delete dialog and its parent edit dialog close in one update", () => {
+    const { rerender } = render(<Stack editOpen deleteOpen={false} />);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    // Delete dialog opens on top while the edit dialog is still open — the inner
+    // shell captures prev="hidden" (the outer shell's lock).
+    rerender(<Stack editOpen deleteOpen />);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    // Both close in one batched update. The leak: the inner shell's cleanup runs
+    // last and restores its stale prev="hidden", re-locking the body.
+    rerender(<Stack editOpen={false} deleteOpen={false} />);
+    expect(document.body.style.overflow).toBe("");
   });
 });

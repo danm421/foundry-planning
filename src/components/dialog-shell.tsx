@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import DialogTabs, { type DialogTab } from "./dialog-tabs";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 type Size = "sm" | "md" | "lg" | "xl";
 
@@ -98,15 +99,9 @@ export default function DialogShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
-  // Body scroll-lock
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  // Body scroll-lock (ref-counted so stacked dialogs don't leak the lock —
+  // see use-body-scroll-lock.ts).
+  useBodyScrollLock(open);
 
   // Focus management: remember the opener, focus the surface, trap Tab inside,
   // and restore focus to the opener on close (WCAG 2.1.2 No Keyboard Trap is

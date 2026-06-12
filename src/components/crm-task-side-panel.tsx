@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 import DialogTabs, { type DialogTab } from "./dialog-tabs";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 export type CrmTaskStatus = "open" | "in_progress" | "blocked" | "done";
 export type CrmTaskPriority = "low" | "med" | "high";
@@ -108,13 +109,9 @@ export function CrmTaskSidePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingTitle]);
 
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  // Ref-counted so it composes with any dialog scroll-lock that's also active
+  // (see use-body-scroll-lock.ts).
+  useBodyScrollLock(true);
 
   useEffect(() => {
     surfaceRef.current?.focus();
