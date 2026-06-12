@@ -29,6 +29,23 @@ interface Props {
 const money = (n: number) =>
   `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
+// Display formatters for the editable numeric cells: grouped/currency when the
+// cell is at rest, raw value while it's being edited (see CellInput).
+const fmtShares = (raw: string) => {
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 4 }) : raw;
+};
+const fmtPrice = (raw: string) => {
+  const n = parseFloat(raw);
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+    : raw;
+};
+const fmtMoney = (raw: string) => {
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? money(n) : raw;
+};
+
 export function HoldingsTab({
   clientId, accountId, scenarioActive, assetClasses,
   deriveFromHoldings, onDeriveFromHoldingsChange, onTotalsChange,
@@ -236,18 +253,18 @@ export function HoldingsTab({
       {loaded && rows.length === 0 ? (
         <p className="text-sm text-gray-400">No holdings yet. Add a ticker above.</p>
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-700">
+        <div className="overflow-x-auto rounded-md border border-gray-700">
           <table className="w-full text-sm">
             <thead className="bg-gray-800 text-xs uppercase text-gray-400">
               <tr>
-                <th className="px-3 py-2 text-left">Ticker</th>
-                <th className="px-3 py-2 text-left">Name</th>
-                <th className="px-3 py-2 text-right">Shares</th>
-                <th className="px-3 py-2 text-right">Price</th>
-                <th className="px-3 py-2 text-right">Market value</th>
-                <th className="px-3 py-2 text-right">Cost basis</th>
-                <th className="px-3 py-2 text-left">Asset class</th>
-                <th className="px-3 py-2" />
+                <th className="px-2 py-2 text-left">Ticker</th>
+                <th className="px-2 py-2 text-left">Name</th>
+                <th className="px-2 py-2 text-right">Shares</th>
+                <th className="px-2 py-2 text-right">Price</th>
+                <th className="px-2 py-2 text-right">Market value</th>
+                <th className="px-2 py-2 text-right">Cost basis</th>
+                <th className="px-2 py-2 text-left">Asset class</th>
+                <th className="px-2 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -257,25 +274,25 @@ export function HoldingsTab({
                 return (
                   <Fragment key={r.id}>
                     <tr className="text-gray-200">
-                      <td className="px-3 py-2 font-medium">{r.displayTicker ?? "—"}</td>
-                      <td className="px-3 py-2">
+                      <td className="whitespace-nowrap px-2 py-2 font-medium">{r.displayTicker ?? "—"}</td>
+                      <td className="min-w-[12rem] px-2 py-2">
                         <CellInput defaultValue={r.displayName ?? ""} align="left"
                           onCommit={(v) => handleFieldBlur(r.id, { displayName: v })} text />
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <CellInput defaultValue={r.shares}
+                      <td className="min-w-[6.5rem] px-2 py-2 text-right">
+                        <CellInput defaultValue={r.shares} format={fmtShares}
                           onCommit={(v) => handleFieldBlur(r.id, { shares: v === "" ? 0 : parseFloat(v) })} />
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <CellInput defaultValue={r.price}
+                      <td className="min-w-[5.5rem] px-2 py-2 text-right">
+                        <CellInput defaultValue={r.price} format={fmtPrice}
                           onCommit={(v) => handleFieldBlur(r.id, { price: v === "" ? 0 : parseFloat(v) })} />
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{money(mv)}</td>
-                      <td className="px-3 py-2 text-right">
-                        <CellInput defaultValue={r.costBasis}
+                      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{money(mv)}</td>
+                      <td className="min-w-[7rem] px-2 py-2 text-right">
+                        <CellInput defaultValue={r.costBasis} format={fmtMoney}
                           onCommit={(v) => handleFieldBlur(r.id, { costBasis: v === "" ? 0 : parseFloat(v) })} />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="whitespace-nowrap px-2 py-2">
                         {chip.kind === "locked" ? (
                           <span
                             className={chipClass(chip.kind)}
@@ -294,7 +311,7 @@ export function HoldingsTab({
                           </button>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-2 py-2 text-right">
                         <button type="button" onClick={() => handleDelete(r.id)}
                           className="text-gray-500 hover:text-red-400" aria-label="Delete holding">✕</button>
                       </td>
@@ -376,19 +393,29 @@ function AddField({
 }
 
 function CellInput({
-  defaultValue, onCommit, align = "right", text = false,
+  defaultValue, onCommit, align = "right", text = false, format,
 }: {
   defaultValue: string; onCommit: (v: string) => void; align?: "left" | "right"; text?: boolean;
+  /** Render this grouped/currency string when the cell is at rest; raw value while focused. */
+  format?: (v: string) => string;
 }) {
   const [v, setV] = useState(defaultValue);
+  const [focused, setFocused] = useState(false);
+
+  // Re-sync when the parent commits a normalized value (e.g. "8.3100" → "8.31").
+  useEffect(() => { setV(defaultValue); }, [defaultValue]);
+
+  const display = focused || !format ? v : format(v);
+
   return (
     <input
       type="text"
       inputMode={text ? "text" : "decimal"}
-      value={v}
+      value={display}
+      onFocus={() => setFocused(true)}
       onChange={(e) => setV(text ? e.target.value : e.target.value.replace(/[^\d.]/g, ""))}
-      onBlur={() => { if (v !== defaultValue) onCommit(v); }}
-      className={`h-7 w-full rounded-md border border-transparent bg-transparent px-1 text-${align} text-sm text-gray-100 hover:border-gray-600 focus:border-accent focus:bg-gray-800 focus:outline-none`}
+      onBlur={() => { setFocused(false); if (v !== defaultValue) onCommit(v); }}
+      className={`h-7 w-full rounded-md border border-transparent bg-transparent px-1 text-${align} text-sm text-gray-100 ${text ? "" : "tabular-nums"} hover:border-gray-600 focus:border-accent focus:bg-gray-800 focus:outline-none`}
     />
   );
 }
