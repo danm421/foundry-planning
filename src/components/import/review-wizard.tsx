@@ -382,6 +382,12 @@ export default function ReviewWizard({
   return (
     <SourceFilesContext.Provider value={fileNames}>
     <div className="space-y-4">
+      <ImportTotalsBar
+        accounts={accounts}
+        liabilities={liabilities}
+        lifePolicies={lifePolicies}
+      />
+
       <TabStrip
         tabs={tabs}
         currentTab={currentTab}
@@ -518,6 +524,60 @@ function formatTimestamp(
   const ts = perTabCommittedAt[commitTabs[0]];
   if (!ts) return "";
   return new Date(ts).toLocaleString();
+}
+
+const fmtUsd = (val: number): string =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(val);
+
+interface ImportTotalsBarProps {
+  accounts: Annotated<ExtractedAccount>[];
+  liabilities: Annotated<ExtractedLiability>[];
+  lifePolicies: Annotated<ExtractedLifePolicy>[];
+}
+
+/**
+ * At-a-glance dollar totals of the data being imported, shown above the tabs.
+ * Each stat appears only when its category has rows; "Net worth" surfaces only
+ * when there are both accounts and liabilities (otherwise it just restates one
+ * of them). Recomputes live as the user edits values in the tabs.
+ */
+function ImportTotalsBar({ accounts, liabilities, lifePolicies }: ImportTotalsBarProps) {
+  const stats = useMemo(() => {
+    const totalAccounts = accounts.reduce((s, a) => s + (a.value ?? 0), 0);
+    const totalLiabilities = liabilities.reduce((s, l) => s + (l.balance ?? 0), 0);
+    const totalDeathBenefit = lifePolicies.reduce((s, p) => s + (p.faceValue ?? 0), 0);
+
+    const out: { label: string; value: string }[] = [];
+    if (accounts.length > 0) out.push({ label: "Accounts", value: fmtUsd(totalAccounts) });
+    if (liabilities.length > 0)
+      out.push({ label: "Liabilities", value: fmtUsd(totalLiabilities) });
+    if (accounts.length > 0 && liabilities.length > 0)
+      out.push({ label: "Net worth", value: fmtUsd(totalAccounts - totalLiabilities) });
+    if (lifePolicies.length > 0)
+      out.push({ label: "Death benefit", value: fmtUsd(totalDeathBenefit) });
+    return out;
+  }, [accounts, liabilities, lifePolicies]);
+
+  if (stats.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-x-10 gap-y-3 rounded-lg border border-hair bg-card-2 px-5 py-4">
+      {stats.map((s) => (
+        <div key={s.label} className="flex flex-col gap-1">
+          <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
+            {s.label}
+          </span>
+          <span className="tabular text-2xl font-semibold leading-none text-ink">
+            {s.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 interface TabStripProps {
