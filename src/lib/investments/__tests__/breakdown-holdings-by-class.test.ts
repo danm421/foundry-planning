@@ -16,6 +16,7 @@ function pos(
     securityId: "s1",
     shares: 1,
     price: 100,
+    marketValue: null,
     securityWeights: [],
     overrides: [],
     ...p,

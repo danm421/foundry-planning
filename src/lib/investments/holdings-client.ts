@@ -13,6 +13,7 @@ export interface HoldingRow {
   price: string;
   priceAsOf: string | null;
   costBasis: string;
+  marketValue: string | null;
   sortOrder: number;
   notes: string | null;
   securityWeights: { slug: string; weight: number }[];

@@ -209,6 +209,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       securityId: e.securityId,
       shares: Number(e.shares),
       price: Number(e.price),
+      marketValue: e.marketValue != null ? parseFloat(e.marketValue) : null,
       securityWeights: e.securityWeights,
       overrides: e.overrides,
     }));
