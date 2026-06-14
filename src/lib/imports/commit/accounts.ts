@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { accountOwners, accounts, lifeInsurancePolicies } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
@@ -11,6 +11,7 @@ import {
 import { getExistingId, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
 import { writeAccountHoldings } from "./holdings";
+import { accountHoldingsGuardrail } from "./holdings-guardrail";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "variable"> = {
@@ -59,6 +60,10 @@ export async function commitAccounts(
       // category is required by the schema; default to "taxable" when the
       // extraction failed to classify so the row is still committable.
       const subType = row.subType ?? "other";
+      // Fresh row: unconditional write is safe — for a no-holdings/no-value row
+      // the guard returns the column defaults (deriveFromHoldings=true, note=null),
+      // and there is no existing `notes` to preserve.
+      const guard = accountHoldingsGuardrail(row);
       const [inserted] = await tx
         .insert(accounts)
         .values({
@@ -79,6 +84,8 @@ export async function commitAccounts(
           // extraction didn't capture an explicit flag — matches the
           // add-account form and quick-start wizard. Roth/non-retirement off.
           rmdEnabled: row.rmdEnabled ?? isRmdEligibleSubType(subType),
+          deriveFromHoldings: guard.deriveFromHoldings,
+          notes: guard.note,
           source: "extracted",
         })
         .returning({ id: accounts.id });
@@ -108,6 +115,7 @@ export async function commitAccounts(
         });
       }
       result.created += 1;
+      if (guard.note) result.warnings.push(`${row.name}: ${guard.note}`);
       continue;
     }
 
@@ -129,7 +137,15 @@ export async function commitAccounts(
     if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
     if (row.tickerPortfolioId !== undefined) updates.tickerPortfolioId = row.tickerPortfolioId;
     if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
-    if (row.holdings?.length) updates.deriveFromHoldings = true;
+    if (row.holdings?.length) {
+      const guard = accountHoldingsGuardrail(row);
+      updates.deriveFromHoldings = guard.deriveFromHoldings;
+      if (guard.note) {
+        // append to existing notes (don't clobber advisor notes)
+        updates.notes = sql`COALESCE(${accounts.notes} || E'\n', '') || ${guard.note}`;
+        result.warnings.push(`${row.name}: ${guard.note}`);
+      }
+    }
     await tx
       .update(accounts)
       .set(updates)
