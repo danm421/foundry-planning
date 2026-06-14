@@ -126,6 +126,13 @@ export async function extractWithMultiPass(args: {
         ranges.map(async ([start, end]) => {
             const rangeText = args.pages.slice(start - 1, end).join("\n");
             let rows = await runPromptForSection(section, rangeText, args.model);
+            // Forward-wiring: the fact-finder accounts prompt
+            // (ACCOUNT_STATEMENT_PROMPT = buildAccountStatementPrompt(false))
+            // does not request holdings, so account rows on this path arrive
+            // without a `holdings` array and completion no-ops. This keeps the
+            // multi-pass path consistent with single-pass for if/when a
+            // holdings-enabled fact-finder accounts prompt lands; until then it
+            // never calls the continuation model here.
             if (section === "accounts" && rows.length > 0) {
                 const completed = await completeExtractedAccounts(
                     rows as unknown as ExtractedAccount[],
