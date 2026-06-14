@@ -7,6 +7,12 @@ vi.mock("../azure-client", () => ({
             liabilities: [],
         })
     ),
+    // Holdings-completion (run after extraction) imports this; the fixtures all
+    // reconcile so it is never actually invoked, but the mock must expose it.
+    callAIExtractionWithMeta: vi.fn().mockResolvedValue({
+        content: JSON.stringify({ holdings: [] }),
+        finishReason: "stop",
+    }),
 }));
 
 vi.mock("../pdf-parser", () => ({

@@ -1,5 +1,5 @@
 export const ACCOUNT_STATEMENT_VERSION = "2026-06-10.1";
-export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-06-12.1-holdings";
+export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-06-12.2-holdings-continuation";
 
 const HOLDINGS_FIELD = `,
       "holdings": [
@@ -83,3 +83,57 @@ Return ONLY valid JSON. No explanation, no markdown.`;
 }
 
 export const ACCOUNT_STATEMENT_PROMPT = buildAccountStatementPrompt(false);
+
+/**
+ * Continuation prompt: asks the model to finish a holdings list that a prior
+ * pass left incomplete. We pass the positions already captured so the model
+ * returns ONLY the remainder, avoiding duplicates and re-truncation.
+ *
+ * `alreadyCaptured` is one identifier per already-captured position — the
+ * position's ticker when it has one, otherwise its name.
+ */
+export function buildHoldingsContinuationPrompt(
+  account: { name: string; accountNumberLast4?: string; value?: number },
+  alreadyCaptured: string[],
+): string {
+  const id = [
+    `name: ${account.name}`,
+    account.accountNumberLast4 ? `account # ending ${account.accountNumberLast4}` : "",
+    account.value != null && Number.isFinite(account.value)
+      ? `stated total value: ${account.value}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+  const capturedList = alreadyCaptured.length
+    ? alreadyCaptured.map((c) => `- ${c}`).join("\n")
+    : "(none yet)";
+
+  return `You are a financial document extraction assistant completing a holdings list that a previous pass left incomplete.
+
+The document contains an account identified by — ${id}.
+You already captured these positions for that account (DO NOT repeat any of them):
+${capturedList}
+
+Return EVERY remaining position for THAT account that is NOT in the list above — continue through the END of its holdings table, including all bonds and equities. Do not summarize, do not stop early, do not repeat captured positions.
+
+Return ONLY a JSON object of this exact shape (no markdown, no explanation):
+{
+  "holdings": [
+    {
+      "ticker": "Ticker/symbol exactly as written; omit for bonds and cash.",
+      "name": "Position description. For a BOND include the full description AND its CUSIP. For cash/sweep use 'Cash'.",
+      "shares": 0,
+      "price": 0,
+      "marketValue": 0,
+      "costBasis": 0
+    }
+  ]
+}
+
+Rules:
+- Dollar amounts as plain numbers (no $ signs, no commas).
+- For an untickered position (bond, untickered fund), ALWAYS set "marketValue" to the position's market-value column exactly as shown — for a bond, price is quoted per $100 of par, so shares × price is NOT the market value.
+- For cash / money-market sweep with no ticker: "name" = "Cash", "price" = 1, "shares" = the cash dollar amount.
+- If NO positions remain, return {"holdings": []}.`;
+}

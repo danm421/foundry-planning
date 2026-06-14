@@ -29,10 +29,11 @@ export interface CommitResult {
   created: number;
   updated: number;
   skipped: number;
+  warnings: string[];
 }
 
 export function emptyResult(): CommitResult {
-  return { created: 0, updated: 0, skipped: 0 };
+  return { created: 0, updated: 0, skipped: 0, warnings: [] };
 }
 
 export interface CommitContext {

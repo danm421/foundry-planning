@@ -33,18 +33,25 @@ function getClient(): AzureOpenAI {
   return cachedClient;
 }
 
+export interface AIExtractionResult {
+  content: string;
+  finishReason: string | null;
+}
+
 /**
- * Call Azure OpenAI for document extraction.
+ * Call Azure OpenAI for document extraction, returning both the response
+ * content and the model's `finish_reason` (so callers can detect a truncated
+ * `"length"` completion and continue).
  *
  * `model` accepts the legacy "mini" / "full" aliases (resolved via env)
  * or an explicit deployment name like "gpt-5.4" — useful when a caller
  * wants to pin the model without depending on the AZURE_*_MODEL env vars.
  */
-export async function callAIExtraction(
+export async function callAIExtractionWithMeta(
   systemPrompt: string,
   userPrompt: string,
   model: "mini" | "full" | (string & {}) = "mini"
-): Promise<string> {
+): Promise<AIExtractionResult> {
   const client = getClient();
   const modelName =
     model === "full"
@@ -75,10 +82,23 @@ export async function callAIExtraction(
     max_completion_tokens: 16000,
   });
 
-  const content = response.choices[0]?.message?.content;
+  const choice = response.choices[0];
+  const content = choice?.message?.content;
   if (!content) {
     throw new Error("Azure OpenAI returned empty content");
   }
+  // `choice` is known truthy here (its content was non-empty above).
+  return { content, finishReason: choice.finish_reason ?? null };
+}
 
-  return content;
+/**
+ * Convenience wrapper over {@link callAIExtractionWithMeta} that returns just
+ * the response content string.
+ */
+export async function callAIExtraction(
+  systemPrompt: string,
+  userPrompt: string,
+  model: "mini" | "full" | (string & {}) = "mini"
+): Promise<string> {
+  return (await callAIExtractionWithMeta(systemPrompt, userPrompt, model)).content;
 }

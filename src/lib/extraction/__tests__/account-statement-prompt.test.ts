@@ -4,6 +4,7 @@ import {
   ACCOUNT_STATEMENT_VERSION,
   buildAccountStatementPrompt,
   ACCOUNT_STATEMENT_HOLDINGS_VERSION,
+  buildHoldingsContinuationPrompt,
 } from "../prompts/account-statement";
 import { extractedPayloadSchema } from "../extraction-schema";
 
@@ -67,5 +68,26 @@ describe("buildAccountStatementPrompt", () => {
 
   it("holdings version differs from the base version", () => {
     expect(ACCOUNT_STATEMENT_HOLDINGS_VERSION).not.toBe(ACCOUNT_STATEMENT_VERSION);
+  });
+});
+
+describe("buildHoldingsContinuationPrompt", () => {
+  it("identifies the account and lists captured positions", () => {
+    const p = buildHoldingsContinuationPrompt(
+      { name: "M. SINGER LP", accountNumberLast4: "3601", value: 2727270 },
+      ["AGNC", "ALPHABET INC SHS CL C"],
+    );
+    expect(p).toContain("M. SINGER LP");
+    expect(p).toContain("3601");
+    expect(p).toContain("AGNC");
+    expect(p).toContain("ALPHABET INC SHS CL C");
+    expect(p).toContain('"holdings"');
+    expect(p).toMatch(/do not repeat|DO NOT repeat/i);
+  });
+
+  it("handles no captured positions", () => {
+    const p = buildHoldingsContinuationPrompt({ name: "Acct", value: 100 }, []);
+    expect(p).toContain("(none yet)");
+    expect(p).toContain('"holdings"');
   });
 });
