@@ -28,6 +28,7 @@ import {
 import { TAX_RETURN_PROMPT, TAX_RETURN_VERSION } from "./prompts/tax-return";
 import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier";
 import { redactSsns } from "./redact-ssn";
+import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 
 const PROMPTS: Record<DocumentType, string> = {
@@ -291,6 +292,14 @@ export async function extractDocument(
         wills: (Array.isArray(safe.wills) ? safe.wills : []) as unknown as ExtractionResult["extracted"]["wills"],
         family: (safe.family ?? undefined) as ExtractionResult["extracted"]["family"],
     };
+
+    // Complete any holdings table the model truncated. Only fires per-account
+    // when holdings materially undershoot the stated value (continuation passes).
+    if (extracted.accounts.length > 0) {
+        const completed = await completeExtractedAccounts(extracted.accounts, text);
+        extracted.accounts = completed.accounts;
+        warnings.push(...completed.warnings);
+    }
 
     if (
         extracted.accounts.length === 0 &&
