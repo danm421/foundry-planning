@@ -130,6 +130,9 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         shortTermCapitalGains: taxDetail.stCapitalGains,
         qbiIncome: taxDetail.qbi,
         taxExemptIncome: taxDetail.taxExempt,
+        // Narrow muni-only subset for the §86 SS combined-income test (mirrors the
+        // IRMAA-MAGI bucket); the broad taxExempt total still feeds income display.
+        taxExemptInterest: taxDetail.taxExemptInterest,
         socialSecurityGross,
         aboveLineDeductions: aboveLineWithSeca,
         itemizedDeductions,

@@ -963,7 +963,7 @@ describe("4d integration — state estate tax", () => {
   });
 
   // F5: NY narrows the gift addback to gifts made within 3 years of death
-  // (NY Tax Law §954(a)(3)). A $6.5M estate sits below the $7.16M NY exemption; a
+  // (NY Tax Law §954(a)(3)). A $6.5M estate sits below the $7.35M NY exemption; a
   // $1M gift only crosses into the taxable phase-out band if it falls inside the window.
   function mkNyGiftScenario(giftYear: number) {
     const accounts: Account[] = [
@@ -980,7 +980,7 @@ describe("4d integration — state estate tax", () => {
       accounts,
       familyMembers: [kidA],
       // taxInflation 0 isolates the F5 gift-addback window from F16's indexed-exemption
-      // projection: with no indexing the frozen $7.16M NY exemption is the correct one,
+      // projection: with no indexing the frozen $7.35M NY exemption is the correct one,
       // so this scenario tests windowing alone (a 2052 death with indexing would project
       // the NY exemption past the base and zero the tax — covered by F16's own tests).
       planSettings: { ...basePlanSettings, residenceState: "NY", inflationRate: 0, taxInflationRate: 0 },
@@ -1004,7 +1004,7 @@ describe("4d integration — state estate tax", () => {
     const result = applyFinalDeath(mkNyGiftScenario(2050)); // 2052 − 2050 = 2 ≤ 3
     expect(result.estateTax.stateEstateTaxDetail.giftAddback).toBeCloseTo(1_000_000, 0);
     expect(result.estateTax.stateEstateTaxDetail.baseForTax).toBeCloseTo(7_500_000, 0);
-    expect(result.estateTax.stateEstateTax).toBeCloseTo(672_068, 0);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(299_910.2, 0); // 2026 exemption $7.35M, cliff $7.7175M band
   });
 
   it("back-compat: residenceState=null + flatStateEstateRate=0.08 still applies fallback", () => {

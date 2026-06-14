@@ -264,6 +264,97 @@ describe("calculateTaxYear — Scenario 6: MFJ day trader with STCG (NIIT regres
   });
 });
 
+describe("calculateTaxYear — preferential base capped at taxable income (Bug #4/#5)", () => {
+  // Per the Qualified Dividends & Capital Gain Tax Worksheet, the amount taxed at
+  // preferential 0/15/20% rates is min(net cap gain + qual div, taxable income).
+  // When below-line deductions (or QBI) exceed ordinary income, the spilled-over
+  // deduction reduces the preferentially-taxed gain — it is NOT taxed.
+  it("taxes only min(gains, taxableIncome) when deductions spill into the gain", () => {
+    // MFJ 2026, ordinary 0, LTCG 150000, std deduction 32200.
+    //   taxableIncome = 150000 - 32200 = 117800
+    //   incomeTaxBase  = max(0, 117800 - 150000) = 0  (stacking floor)
+    //   preferential base = min(150000, 117800) = 117800
+    //   0% covers 99200, 15% covers 117800-99200=18600 → 18600×0.15 = 2790
+    // (Unclamped/buggy: 150000 gain → 15% on 150000-99200=50800 → 7620.)
+    const result = calculateTaxYear(makeInput({
+      longTermCapitalGains: 150_000,
+      flatStateRate: 0,
+    }));
+    expect(result.flow.capitalGainsTax).toBeCloseTo(2790, 0);
+  });
+
+  it("keeps the invariant incomeTaxBase + preferentialBase == taxableIncome (partial spill)", () => {
+    // MFJ 2026, ordinary 10000, LTCG 150000, std 32200.
+    //   taxableIncome = 160000 - 32200 = 127800; incomeTaxBase = max(0,127800-150000)=0
+    //   preferential base = min(150000, 127800) = 127800
+    //   0% covers 99200, 15% on 127800-99200=28600 → 4290
+    const result = calculateTaxYear(makeInput({
+      ordinaryIncome: 10_000,
+      longTermCapitalGains: 150_000,
+      flatStateRate: 0,
+    }));
+    expect(result.flow.capitalGainsTax).toBeCloseTo(4290, 0);
+  });
+});
+
+describe("calculateTaxYear — §199A QBI deduction flows through to AMTI (Bug #6)", () => {
+  // IRC §199A(f)(2): the QBI deduction IS allowed for AMT. Form 6251 line 1 begins
+  // from Form 1040 taxable income, which is already net of QBI. So AMTI must be
+  // built from post-QBI taxableIncome, not taxableIncomeBeforeQbi.
+  it("reduces tentative AMT by 26% of the QBI deduction when AMT binds below the 28% breakpoint", () => {
+    // MFJ 2026, earned 100000, QBI income 200000, ISO spread 60000.
+    //   AGI 300000, std 32200, taxableIncomeBeforeQbi = 267800
+    //   QBI deduction = 20% × 200000 = 40000 (under threshold)
+    //   taxableIncome = 227800; incomeTaxBase = 227800 (no gains)
+    //   regularTax = 2480+9120+24453+3804 = 39857
+    //   stdDeductionAddBack = 32200
+    //   Fixed AMTI = 227800 + 32200 + 60000 = 320000; taxableAmti = 320000-140200 = 179800 (<244500)
+    //     TMT = 179800 × 0.26 = 46748 → amtAdditional = 46748 - 39857 = 6891
+    //   Buggy AMTI = 267800 + 32200 + 60000 = 360000; taxableAmti = 219800
+    //     TMT = 219800 × 0.26 = 57148 → amtAdditional = 17291 (overstated by 26%×40000 = 10400)
+    const result = calculateTaxYear(makeInput({
+      earnedIncome: 100_000,
+      qbiIncome: 200_000,
+      isoSpread: 60_000,
+      flatStateRate: 0,
+    }));
+    expect(result.flow.qbiDeduction).toBe(40_000);
+    expect(result.flow.amtAdditional).toBeCloseTo(6891, 0);
+  });
+});
+
+describe("calculateTaxYear — SS §86 uses muni interest only, not the broad bucket (Bug #11)", () => {
+  // IRC §86(b)(2)(B) / Pub 915: only tax-exempt INTEREST (Form 1040 line 2a) enters
+  // the combined-income test. Non-interest non-taxable receipts (Roth-equivalent /
+  // return-of-capital / non-taxable business pass-through) must NOT inflate it.
+  it("excludes broad taxExemptIncome from combined income when taxExemptInterest is supplied", () => {
+    // MFJ 2026, SS 40000, ordinary 30000, taxExemptIncome 50000 (non-muni), taxExemptInterest 0.
+    //   otherIncomeForSs = 30000
+    //   Fixed combined = 30000 + 0.5×40000 + 0 = 50000 (> base2 44000)
+    //     taxable = 6000 + 0.85×(50000-44000) = 6000 + 5100 = 11100
+    //   Buggy combined = 30000 + 20000 + 50000 = 100000 → taxable capped at 0.85×40000 = 34000
+    const result = calculateTaxYear(makeInput({
+      socialSecurityGross: 40_000,
+      ordinaryIncome: 30_000,
+      taxExemptIncome: 50_000,
+      taxExemptInterest: 0,
+      flatStateRate: 0,
+    }));
+    expect(result.income.taxableSocialSecurity).toBeCloseTo(11100, 0);
+  });
+
+  it("falls back to taxExemptIncome when taxExemptInterest is omitted (back-compat)", () => {
+    // Same inputs but no taxExemptInterest field → old behaviour: 50000 treated as muni.
+    const result = calculateTaxYear(makeInput({
+      socialSecurityGross: 40_000,
+      ordinaryIncome: 30_000,
+      taxExemptIncome: 50_000,
+      flatStateRate: 0,
+    }));
+    expect(result.income.taxableSocialSecurity).toBeCloseTo(34000, 0);
+  });
+});
+
 describe("calcTaxableSocialSecurity — pia_at_fra-derived gross integration", () => {
   it("treats pia_at_fra-derived gross identically to manual gross", () => {
     // Use an SS gross that corresponds to Client PIA 2000/mo × 12 × 0.70 (claim-62/FRA-67)

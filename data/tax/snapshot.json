@@ -1067,21 +1067,21 @@
         },
         {
           "from": 100800,
-          "to": 211950,
+          "to": 211400,
           "rate": 0.22
         },
         {
-          "from": 211950,
-          "to": 405000,
+          "from": 211400,
+          "to": 403550,
           "rate": 0.24
         },
         {
-          "from": 405000,
-          "to": 510400,
+          "from": 403550,
+          "to": 512450,
           "rate": 0.32
         },
         {
-          "from": 510400,
+          "from": 512450,
           "to": 768700,
           "rate": 0.35
         },
@@ -1114,11 +1114,11 @@
         },
         {
           "from": 201775,
-          "to": 255350,
+          "to": 256225,
           "rate": 0.32
         },
         {
-          "from": 255350,
+          "from": 256225,
           "to": 640600,
           "rate": 0.35
         },
@@ -1178,21 +1178,21 @@
         },
         {
           "from": 50400,
-          "to": 105875,
+          "to": 105700,
           "rate": 0.22
         },
         {
-          "from": 105875,
+          "from": 105700,
           "to": 201775,
           "rate": 0.24
         },
         {
           "from": 201775,
-          "to": 255350,
+          "to": 256225,
           "rate": 0.32
         },
         {
-          "from": 255350,
+          "from": 256225,
           "to": 384350,
           "rate": 0.35
         },
@@ -1205,20 +1205,20 @@
     },
     "capGainsBrackets": {
       "married_joint": {
-        "zeroPctTop": 99200,
-        "fifteenPctTop": 615900
+        "zeroPctTop": 98900,
+        "fifteenPctTop": 613700
       },
       "single": {
-        "zeroPctTop": 49600,
-        "fifteenPctTop": 547500
+        "zeroPctTop": 49450,
+        "fifteenPctTop": 545500
       },
       "head_of_household": {
-        "zeroPctTop": 66450,
-        "fifteenPctTop": 581550
+        "zeroPctTop": 66200,
+        "fifteenPctTop": 579600
       },
       "married_separate": {
-        "zeroPctTop": 49600,
-        "fifteenPctTop": 307950
+        "zeroPctTop": 49450,
+        "fifteenPctTop": 306850
       }
     },
     "trustIncomeBrackets": [
@@ -1229,16 +1229,16 @@
       },
       {
         "from": 3300,
-        "to": 12000,
+        "to": 11700,
         "rate": 0.24
       },
       {
-        "from": 12000,
-        "to": 16250,
+        "from": 11700,
+        "to": 16000,
         "rate": 0.35
       },
       {
-        "from": 16250,
+        "from": 16000,
         "to": null,
         "rate": 0.37
       }
@@ -1246,16 +1246,16 @@
     "trustCapGainsBrackets": [
       {
         "from": 0,
-        "to": 3350,
+        "to": 3300,
         "rate": 0
       },
       {
-        "from": 3350,
-        "to": 16300,
+        "from": 3300,
+        "to": 16250,
         "rate": 0.15
       },
       {
-        "from": 16300,
+        "from": 16250,
         "to": null,
         "rate": 0.2
       }

@@ -109,13 +109,13 @@ describe("computeStateEstateTax — gift addback", () => {
 
 describe("computeStateEstateTax — indexed exemption projection to death year (F16)", () => {
   // NY exemption is statutorily indexed (NY Tax Law §952); the rule hard-codes the
-  // 2025 value of $7,160,000. A 2045 death is 20 years forward. At a 2.5% indexing
-  // rate the exemption projects to 7,160,000 × 1.025^20 = $11,732,494, rounded to the
-  // nearest $10k = $11,730,000. An $11,000,000 estate sits BELOW that projected
-  // exemption (→ $0 NY tax) but ABOVE the frozen 2025 cliff threshold of $7,518,000
-  // (= 7,160,000 × 1.05), which would otherwise fire the 105% cliff and tax the
+  // 2026 value of $7,350,000. A 2045 death is 19 years forward. At a 2.5% indexing
+  // rate the exemption projects to 7,350,000 × 1.025^19 = $11,750,079, rounded to the
+  // nearest $10k = $11,750,000. An $11,000,000 estate sits BELOW that projected
+  // exemption (→ $0 NY tax) but ABOVE the frozen 2026 cliff threshold of $7,717,500
+  // (= 7,350,000 × 1.05), which would otherwise fire the 105% cliff and tax the
   // whole estate. Asserting $0 proves the projection ran.
-  it("F16: NY 2045 death, 2.5% indexing → estate under projected $11.73M exemption owes $0", () => {
+  it("F16: NY 2045 death, 2.5% indexing → estate under projected $11.75M exemption owes $0", () => {
     const r = computeStateEstateTax({
       state: "NY",
       deathYear: 2045,
@@ -124,25 +124,25 @@ describe("computeStateEstateTax — indexed exemption projection to death year (
       adjustedTaxableGifts: 0,
       fallbackFlatRate: 0,
     });
-    expect(r.exemption).toBe(11_730_000);     // projected, not the frozen $7.16M
-    expect(r.exemptionYear).toBe(2045);        // reflects the death year, not 2025
+    expect(r.exemption).toBe(11_750_000);     // projected, not the frozen $7.35M
+    expect(r.exemptionYear).toBe(2045);        // reflects the death year, not 2026
     expect(r.baseForTax).toBe(11_000_000);
     expect(r.stateEstateTax).toBe(0);          // below projected exemption → no tax
   });
 
   it("F16: current-year NY death (no projection) is unchanged — frozen exemption still taxes $11M", () => {
     // deathYear == effectiveYear → 0 years forward → projection is a no-op. The same
-    // $11M estate that owed $0 above now exceeds the frozen $7.16M exemption's 105%
+    // $11M estate that owed $0 above now exceeds the frozen $7.35M exemption's 105%
     // cliff and is fully taxed, exactly as before F16.
     const r = computeStateEstateTax({
       state: "NY",
-      deathYear: 2025,
+      deathYear: 2026,
       inflationRate: 0.025,
       taxableEstate: 11_000_000,
       adjustedTaxableGifts: 0,
       fallbackFlatRate: 0,
     });
-    expect(r.exemption).toBe(7_160_000);
+    expect(r.exemption).toBe(7_350_000);
     expect(r.stateEstateTax).toBeGreaterThan(0);
   });
 });
@@ -162,15 +162,15 @@ describe("computeStateEstateTax — gift addback lookback window (F5)", () => {
   it("a gift 5 years before death is outside the 3-yr window → not added back", () => {
     const r = nyWithGift(2025); // 2030 − 2025 = 5 > 3
     expect(r.giftAddback).toBe(0);
-    expect(r.baseForTax).toBe(6_500_000); // stays below the $7.16M exemption
-    expect(r.stateEstateTax).toBe(0);     // not the $46,240 phantom tax the old code produced
+    expect(r.baseForTax).toBe(6_500_000); // stays below the $7.35M exemption
+    expect(r.stateEstateTax).toBe(0);     // not the phantom tax the old "tax the excess" code produced
   });
 
   it("a gift 2 years before death is inside the window → added back (crosses into the band)", () => {
     const r = nyWithGift(2028); // 2030 − 2028 = 2 ≤ 3
     expect(r.giftAddback).toBe(1_000_000);
     expect(r.baseForTax).toBe(7_500_000);
-    expect(r.stateEstateTax).toBeCloseTo(672_068, 0); // matches the $7.5M phase-out-band case
+    expect(r.stateEstateTax).toBeCloseTo(299_910.2, 0); // matches the $7.5M phase-out-band case
   });
 
   it("a gift exactly 3 years before death is within the window (boundary inclusive)", () => {

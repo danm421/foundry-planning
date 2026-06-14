@@ -112,6 +112,14 @@ export interface CalcInput {
   shortTermCapitalGains: number;
   qbiIncome: number;
   taxExemptIncome: number;
+  /** Municipal-bond / tax-exempt interest only — the narrow §86 "combined
+   *  income" / IRMAA-MAGI subset of taxExemptIncome (IRC §86(b)(2)(B); Pub 915
+   *  Worksheet 1 line 3 = Form 1040 line 2a). Excludes the broad non-taxable
+   *  bucket (Roth-equivalent / return-of-capital / non-taxable business
+   *  pass-through), which is NOT part of §86 combined income. Optional for
+   *  back-compat — callers that omit it fall back to taxExemptIncome (the old,
+   *  over-inclusive behaviour that over-taxes SS). */
+  taxExemptInterest?: number;
   // Other inputs:
   socialSecurityGross: number;     // pre-taxability gross SS
   aboveLineDeductions: number;     // v1: 0

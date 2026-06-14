@@ -34,7 +34,10 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   const taxableSocialSecurity = calcTaxableSocialSecurity({
     ssGross: input.socialSecurityGross,
     otherIncome: otherIncomeForSs,
-    taxExemptInterest: input.taxExemptIncome,
+    // §86 combined income counts tax-exempt INTEREST only (Form 1040 line 2a),
+    // not the broad non-taxable bucket. Fall back to taxExemptIncome for callers
+    // that haven't migrated to the narrow field.
+    taxExemptInterest: input.taxExemptInterest ?? input.taxExemptIncome,
     filingStatus: fs,
   });
   const nonTaxableSs = input.socialSecurityGross - taxableSocialSecurity;
@@ -80,26 +83,34 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   const brackets = p.incomeBrackets[fs];
   const regularTaxCalc = Math.round(calcFederalTax(incomeTaxBase, brackets));
 
-  // 9. Cap gains tax
+  // 9. Cap gains tax. Per the Qualified Dividends & Capital Gain Tax Worksheet
+  // (IRC §1(h)), the preferentially-taxed amount is the SMALLER of (net cap gain
+  // + qual div) and taxable income: below-line deductions/QBI that exceed
+  // ordinary income spill onto the gain and shrink the amount taxed at 0/15/20%.
+  // With incomeTaxBase floored at 0, this clamp keeps incomeTaxBase +
+  // preferentialBase == taxableIncome in all cases.
+  const preferentialBase = Math.min(capitalGains + dividends, taxableIncome);
   const capitalGainsTax = calcCapGainsTax(
-    capitalGains + dividends,
+    preferentialBase,
     incomeTaxBase,
     p.capGainsBrackets[fs]
   );
 
   // 10. AMT
-  // Simplified AMTI: taxable income before QBI + ISO bargain element (the one
-  // AMT preference item wired in v1). Other preference items are still omitted.
-  // QBI IS allowed for AMT, so starting before QBI is correct. The standard
-  // deduction is NOT allowed for AMT (IRC §56(b)(1)(E) / Form 6251 line 2a), so
-  // when it was the deduction taken it must be added back. (No SALT add-back for
-  // itemizers — SALT isn't tracked as a separate input.)
+  // Simplified AMTI: post-QBI taxable income + ISO bargain element (the one AMT
+  // preference item wired in v1). Other preference items are still omitted.
+  // The §199A QBI deduction IS allowed for AMT (IRC §199A(f)(2)), so we start
+  // from post-QBI taxableIncome — Form 6251 line 1 begins at Form 1040 taxable
+  // income, which is already net of QBI (there is no QBI add-back line). The
+  // standard deduction is NOT allowed for AMT (IRC §56(b)(1)(E) / Form 6251
+  // line 2a), so when it was the deduction taken it must be added back. (No SALT
+  // add-back for itemizers — SALT isn't tracked as a separate input.)
   // Form 6251 Part III: LTCG + qualified dividends inside AMTI are taxed at
   // 0/15/20% (the same preferential rates as regular), not 26/28%. Passing them
   // through — with the regular ordinary base as the stacking floor — so
   // calcAmtTentative can split the base.
   const stdDeductionAddBack = belowLineDeductions === stdDeduction ? stdDeduction : 0;
-  const amti = taxableIncomeBeforeQbi + stdDeductionAddBack + (input.isoSpread ?? 0);
+  const amti = taxableIncome + stdDeductionAddBack + (input.isoSpread ?? 0);
   const amtParams = filingAmtParams(fs, p);
   const tentativeAmt = calcAmtTentative(amti, amtParams, {
     year: input.year,

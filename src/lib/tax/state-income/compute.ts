@@ -218,7 +218,15 @@ export function computeStateIncomeTax(
   // Section D will subtract retirement; Section E cap gains / pre-tax contrib; etc.
   const stateFs = mapFilingStatus(input.filingStatus);
   const brackets = getBrackets(input.state, input.year, stateFs);
-  const stdDed = getStdDeduction(input.state, input.year, stateFs, input.primaryAge, input.spouseAge);
+  // Federal-taxable base states (CO/MT/ND/SC) start from federal TAXABLE income,
+  // which already nets the federal standard deduction — applying a state std
+  // deduction on top would remove it twice (CO §39-22-104, MT §15-30-2120, ND-1,
+  // SC1040 all begin at federal 1040 taxable income with no separate state std
+  // deduction). Gate the deduction to 0 for those states. (WA short-circuits
+  // above this line, so its LTCG-exclusion getStdDeduction call is unaffected.)
+  const stdDed = baseRule.base === "federal-taxable"
+    ? 0
+    : getStdDeduction(input.state, input.year, stateFs, input.primaryAge, input.spouseAge);
   const exemption = getExemption(input.state, input.year, stateFs);
   const stateAGI = startingIncome + addbacks.total - subtractions.total;
   const personalExemptionDeduction = exemption.type === "exemption" ? exemption.amount : 0;

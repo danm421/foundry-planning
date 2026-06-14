@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { computeTaxForYear } from "../year-tax";
 import { basePlanSettings } from "./fixtures";
+import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 import { emptyCharityCarryforward } from "../types";
 
 // NOTE: The plan originally proposed two `runProjection`-driven placeholder tests
@@ -138,5 +139,45 @@ describe("computeTaxForYear", () => {
       withoutSurtax.taxResult.flow.totalFederalTax + 1_524.6,
       2,
     );
+  });
+
+  it("BUG #11: SS §86 combined income uses muni interest only, not the broad taxExempt bucket", () => {
+    // Broad taxExempt = 50k (e.g. non-taxable business pass-through) but muni
+    // interest = 0. The §86 worksheet must see only the muni subset, so the 50k
+    // must NOT inflate combined income and over-tax Social Security.
+    const input = {
+      taxDetail: {
+        earnedIncome: 0,
+        ordinaryIncome: 30_000,
+        dividends: 0,
+        capitalGains: 0,
+        stCapitalGains: 0,
+        qbi: 0,
+        taxExempt: 50_000,        // broad non-taxable bucket
+        taxExemptInterest: 0,     // narrow muni-only subset
+        bySource: {},
+      },
+      socialSecurityGross: 40_000,
+      totalIncome: 80_000,
+      taxableIncome: 30_000,
+      filingStatus: "married_joint" as const,
+      year: 2026,
+      planSettings: basePlanSettings,
+      resolved: { params: TAX_YEAR_2026, inflationFactor: 1 },
+      useBracket: true,
+      aboveLineDeductions: 0,
+      itemizedDeductions: 0,
+      charityCarryforwardIn: emptyCharityCarryforward(),
+      charityGiftsThisYear: [],
+      secaResult: { seTax: 0, deductibleHalf: 0 },
+      transferEarlyWithdrawalPenalty: 0,
+      interestIncomeForTax: 0,
+      deductionBreakdownIn: null,
+    };
+    // combined = 30000 + 0.5×40000 + 0 = 50000 (> MFJ base2 44000)
+    //   taxable SS = 6000 + 0.85×(50000-44000) = 11100
+    // (Buggy: broad bucket → combined 100000 → taxable SS capped at 0.85×40000 = 34000.)
+    const out = computeTaxForYear(input);
+    expect(out.taxResult.income.taxableSocialSecurity).toBeCloseTo(11100, 0);
   });
 });
