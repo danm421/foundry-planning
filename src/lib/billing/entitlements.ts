@@ -16,10 +16,11 @@ export type EntitlementsInput = {
 
 /**
  * Entitlements bundled into the base plan — granted to any firm holding an
- * active seat. AI document import (`ai_import`) ships with every plan; there is
- * no separate add-on or usage quota for it.
+ * active seat. AI document import (`ai_import`) and the planning copilot
+ * (`ai_copilot`) both ship with every plan; neither is a separate add-on or
+ * has a usage quota.
  */
-export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import"] as const;
+export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import", "ai_copilot"] as const;
 
 /**
  * Derive the Clerk-public-metadata `entitlements` array from a subscription's

@@ -13,12 +13,12 @@ const ok: ReconcileInput = {
   },
   clerk: {
     subscriptionStatus: "active",
-    entitlements: ["ai_import"],
+    entitlements: ["ai_copilot", "ai_import"],
   },
 };
 
 describe("diffReconciliation", () => {
-  it("returns no drift when all three sources agree (seat → ai_import)", () => {
+  it("returns no drift when all three sources agree (seat → ai_copilot + ai_import)", () => {
     expect(diffReconciliation(ok)).toEqual([]);
   });
 
@@ -45,13 +45,13 @@ describe("diffReconciliation", () => {
     expect(drift[0].field).toBe("status");
   });
 
-  it("flags entitlements drift when Clerk lacks the seat-included ai_import", () => {
+  it("flags entitlements drift when Clerk lacks the seat-included entitlements", () => {
     const input = { ...ok, clerk: { ...ok.clerk, entitlements: [] } };
     expect(diffReconciliation(input)).toEqual([
       {
         firmId: "org_1",
         field: "entitlements",
-        stripeValue: ["ai_import"],
+        stripeValue: ["ai_copilot", "ai_import"],
         clerkValue: [],
       },
     ]);
@@ -69,7 +69,7 @@ describe("diffReconciliation", () => {
     expect(drift.some((d) => d.field === "items")).toBe(true);
   });
 
-  it("a removed addon does not add entitlements beyond the seat's ai_import", () => {
+  it("a removed addon does not add entitlements beyond the seat's included set", () => {
     const seat = { kind: "seat" as const, addonKey: null, quantity: 3, removed: false };
     const removedAddon = {
       kind: "addon" as const,
@@ -81,7 +81,7 @@ describe("diffReconciliation", () => {
       ...ok,
       stripe: { ...ok.stripe, items: [seat, removedAddon] },
       db: { ...ok.db, items: [seat, removedAddon] },
-      clerk: { ...ok.clerk, entitlements: ["ai_import"] },
+      clerk: { ...ok.clerk, entitlements: ["ai_copilot", "ai_import"] },
     };
     expect(diffReconciliation(input)).toEqual([]);
   });
@@ -99,14 +99,14 @@ describe("diffReconciliation", () => {
         firmId: "org_1",
         stripe: { status: "active", items: [seat, addon] },
         db: { status: "active", items: [seat, addon] },
-        clerk: { subscriptionStatus: "active", entitlements: ["ai_import"] },
+        clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_import"] },
       }),
     ).toEqual([
       {
         firmId: "org_1",
         field: "entitlements",
-        stripeValue: ["ai_import", "white_label"],
-        clerkValue: ["ai_import"],
+        stripeValue: ["ai_copilot", "ai_import", "white_label"],
+        clerkValue: ["ai_copilot", "ai_import"],
       },
     ]);
   });

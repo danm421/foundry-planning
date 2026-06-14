@@ -14,18 +14,18 @@ describe("deriveEntitlements", () => {
     expect(deriveEntitlements({ items: [] })).toEqual([]);
   });
 
-  it("grants ai_import for any active seat (AI is bundled into the plan)", () => {
-    expect(deriveEntitlements({ items: [seat] })).toEqual(["ai_import"]);
+  it("grants the bundled seat entitlements (ai_copilot + ai_import) for any active seat", () => {
+    expect(deriveEntitlements({ items: [seat] })).toEqual(["ai_copilot", "ai_import"]);
   });
 
   it("returns [] when the only seat item is removed", () => {
     expect(deriveEntitlements({ items: [{ ...seat, removed: true }] })).toEqual([]);
   });
 
-  it("unions the seat-included ai_import with a generic addon, sorted", () => {
+  it("unions the seat-included entitlements with a generic addon, sorted", () => {
     expect(
       deriveEntitlements({ items: [seat, mkAddon({ addonKey: "white_label" })] }),
-    ).toEqual(["ai_import", "white_label"]);
+    ).toEqual(["ai_copilot", "ai_import", "white_label"]);
   });
 
   it("grants a generic addon entitlement even without a seat", () => {
@@ -37,7 +37,7 @@ describe("deriveEntitlements", () => {
   it("excludes removed addons", () => {
     expect(
       deriveEntitlements({ items: [seat, mkAddon({ removed: true })] }),
-    ).toEqual(["ai_import"]);
+    ).toEqual(["ai_copilot", "ai_import"]);
   });
 
   it("excludes addon items with a null addonKey (defensive)", () => {
@@ -51,6 +51,6 @@ describe("deriveEntitlements", () => {
   it("dedupes when an addon key duplicates a seat-included entitlement", () => {
     expect(
       deriveEntitlements({ items: [seat, mkAddon({ addonKey: "ai_import" })] }),
-    ).toEqual(["ai_import"]);
+    ).toEqual(["ai_copilot", "ai_import"]);
   });
 });

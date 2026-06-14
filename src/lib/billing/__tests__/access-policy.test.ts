@@ -28,6 +28,7 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 // Representative paths. The read-POST allowlist entry is a search/report-data
 // POST that mutates nothing; the mutating POST is a normal create.
 const READ_POST_PATH = "/api/clients/abc/reports/data";
+const COPILOT_READ_POST_PATH = "/api/clients/abc/copilot/stream";
 const MUTATE_PATH = "/api/clients/abc/accounts";
 const PAGE_PATH = "/clients/abc";
 
@@ -66,6 +67,11 @@ describe("decideAccess truth table", () => {
     }
     it(`${key} + POST on read-allowlist path → allow`, () => {
       expect(decideAccess(states[key], "POST", READ_POST_PATH)).toBe<AccessDecision>("allow");
+    });
+    it(`${key} + POST on copilot stream (read turn) → allow`, () => {
+      expect(decideAccess(states[key], "POST", COPILOT_READ_POST_PATH)).toBe<AccessDecision>(
+        "allow",
+      );
     });
   }
 
