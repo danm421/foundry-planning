@@ -5,6 +5,8 @@ import {
     ENTITY_SECTIONS,
     type SectionEntityType,
 } from "./section-classifier";
+import { completeExtractedAccounts } from "./holdings-completion";
+import type { ExtractedAccount } from "./types";
 import { ACCOUNT_STATEMENT_PROMPT } from "./prompts/account-statement";
 import { PAY_STUB_PROMPT } from "./prompts/pay-stub";
 import { EXPENSE_WORKSHEET_PROMPT } from "./prompts/expense-worksheet";
@@ -119,10 +121,19 @@ export async function extractWithMultiPass(args: {
         .join(" ");
     console.log(`[multi-pass] classifier ranges: ${rangeSummary}`);
 
+    const passWarnings: string[] = [];
     const tasks = sectionEntries.flatMap(([section, ranges]) =>
         ranges.map(async ([start, end]) => {
-            const text = args.pages.slice(start - 1, end).join("\n");
-            const rows = await runPromptForSection(section, text, args.model);
+            const rangeText = args.pages.slice(start - 1, end).join("\n");
+            let rows = await runPromptForSection(section, rangeText, args.model);
+            if (section === "accounts" && rows.length > 0) {
+                const completed = await completeExtractedAccounts(
+                    rows as unknown as ExtractedAccount[],
+                    rangeText,
+                );
+                rows = completed.accounts as unknown as Record<string, unknown>[];
+                passWarnings.push(...completed.warnings);
+            }
             return rows.map<SectionRow>((row) => ({
                 ...row,
                 __provenance: { section, pageRange: [start, end] },
@@ -139,5 +150,5 @@ export async function extractWithMultiPass(args: {
         }
     }
 
-    return { sections: merged, warnings: [], fellBackToSinglePass: false };
+    return { sections: merged, warnings: passWarnings, fellBackToSinglePass: false };
 }
