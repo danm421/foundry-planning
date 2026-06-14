@@ -45,29 +45,37 @@ const CASES: Array<[StateCode, number, number]> = [
   // 7.1M@13% (923K) + 1M@13.6% + 1M@14.4% + 1M@15.2% + 1.9M@16%
   ["MN", 15_000_000,        1_659_000],
 
-  // NY phase-out band (exemption $7.16M → 105% cliff $7.518M), NY Tax Law §952(c)(2):
-  // whole estate taxed from $0, less a credit phasing linearly from $658,960 (= table tax
-  // at the exemption) to $0 at the cliff. Continuous up to the cliff value (707,648).
-  ["NY", 7_160_000,         0],         // at the exemption → fully credited
-  ["NY", 7_300_000,         276_734],   // 678,000 table − 401,266 phased credit
-  ["NY", 7_500_000,         672_068],   // 705,200 table − 33,132 phased credit
+  // NY 2026 (Bug #21): basic exclusion $7,350,000 (NY DTF 2026), 105% cliff $7,717,500,
+  // NY Tax Law §952(c)(2). Whole estate taxed from $0, less a credit phasing linearly
+  // from $684,800 (= table tax at the exemption) to $0 at the cliff.
+  ["NY", 7_300_000,         0],         // below the 2026 exemption → $0
+  ["NY", 7_350_000,         0],         // at the exemption → fully credited
+  ["NY", 7_500_000,         299_910.2], // 705,200 table − 405,289.8 phased credit
   ["NY", 8_000_000,         773_200],   // above the cliff → entire estate, no credit
 
   ["OR", 1_000_000,         0],
   ["OR", 2_000_000,         101_250],
   ["OR", 12_000_000,        1_422_500],
 
-  ["RI", 1_802_431,         0],
-  ["RI", 2_000_000,         1_580.55],
+  // RI 2026 (Bug #2): §2011 state-death-credit table on the whole estate (like MA),
+  // less the indexed RI credit $87,940 (ADV 2025-27), floor $0. RI Gen. Laws §44-22-1.1.
+  ["RI", 1_700_000,         0],         // table 82,320 − 87,940 credit → floor 0
+  ["RI", 2_000_000,         15_980],    // 103,920 table − 87,940
+  ["RI", 5_000_000,         310_380],   // 398,320 table − 87,940
 
   ["VT", 5_000_000,         0],
   ["VT", 7_500_000,         400_000],
   ["VT", 20_000_000,        2_400_000],
 
+  // WA 2026 (Bugs #3 + #20): ESB 6347 (signed 3/24/2026) reverts the top rate 35%→20%
+  // for deaths on/after 7/1/2026, keeping the $3M exclusion. Graduated on the WA taxable
+  // estate (amount over $3M): 10/14/15/16/18/19/19.5/20%. Engine models the going-forward
+  // ESB 6347 schedule for all projected (future) WA deaths. RCW 83.100.040(2)(a)(iii).
   ["WA", 3_000_000,         0],
-  ["WA", 4_000_000,         150_000],
-  // 150K + 170K + 190K + 220K + 250K + 300K + 1,050K (3M@35%)
-  ["WA", 12_000_000,        2_330_000],
+  ["WA", 4_000_000,         100_000],   // $1M WA taxable × 10% (the 10% bottom tier #3 restored)
+  ["WA", 6_000_000,         390_000],   // 100K + 140K + 150K (3M WA taxable)
+  // 100K + 140K + 150K + 160K + 360K + 190K + 390K (9M WA taxable)
+  ["WA", 12_000_000,        1_490_000],
 ];
 
 describe("Golden state estate tax cases — all 13 jurisdictions", () => {

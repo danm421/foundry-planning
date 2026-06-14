@@ -101,6 +101,28 @@ describe("computeStateIncomeTax — income base", () => {
   });
 });
 
+describe("computeStateIncomeTax — federal-taxable base states don't double-deduct the std deduction (Bug #1)", () => {
+  // CO/MT/ND/SC start their return from federal TAXABLE income, which is already
+  // net of the federal standard deduction. Subtracting a state std deduction on
+  // top removes it twice. These states must apply a $0 state std deduction.
+  it("CO 2026: no state std deduction on top of federal taxable income", () => {
+    const r = computeStateIncomeTax({
+      state: "CO", year: 2026, filingStatus: "single", primaryAge: 45,
+      federalIncome: {
+        agi: 100_000, taxableIncome: 85_000, ordinaryIncome: 0,
+        earnedIncome: 100_000, dividends: 0, capitalGains: 0, shortCapitalGains: 0,
+        taxableSocialSecurity: 0, taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.stdDeduction).toBe(0);
+    expect(r.stateTaxableIncome).toBe(85_000); // not 85000 - 16100
+    // CO 2026 flat 4.4% on the full federal taxable income.
+    expect(r.stateTax).toBeCloseTo(3740, 1); // not (85000 - 16100) × 0.044 = 3031.6
+  });
+});
+
 describe("computeStateIncomeTax — SS handling", () => {
   it("CA subtracts SS (CA = exempt) so it doesn't tax federally taxable SS", () => {
     const r = computeStateIncomeTax({

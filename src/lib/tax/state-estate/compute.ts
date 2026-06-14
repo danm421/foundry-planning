@@ -124,7 +124,7 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   }
   if (rule.fixedCredit != null) {
     notes.push(
-      `MA §2011 graduated table applied to the full estate; fixed credit of ` +
+      `Pre-2002 IRC §2011 graduated table applied to the full estate; fixed credit of ` +
       `$${rule.fixedCredit.toLocaleString()} subtracted (floor $0).`,
     );
   }

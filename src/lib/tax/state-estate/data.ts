@@ -1,4 +1,32 @@
-import type { StateCode, StateEstateTaxRule } from "./types";
+import type { Bracket, StateCode, StateEstateTaxRule } from "./types";
+
+/** Pre-2002 IRC §2011 maximum state-death-tax-credit table (statutorily frozen at
+ *  1/1/2001). Applied to the WHOLE taxable estate from $0; a state-specific
+ *  `fixedCredit` is then subtracted to reach net tax. Shared by the states that
+ *  peg their estate tax to this table (MA: MGL c.65C; RI: RI Gen. Laws §44-22-1.1)
+ *  so the two cannot drift. */
+const IRC_2011_BRACKETS: Bracket[] = [
+  { from: 40_000,     to: 90_000,     rate: 0.008 },
+  { from: 90_000,     to: 140_000,    rate: 0.016 },
+  { from: 140_000,    to: 240_000,    rate: 0.024 },
+  { from: 240_000,    to: 440_000,    rate: 0.032 },
+  { from: 440_000,    to: 640_000,    rate: 0.040 },
+  { from: 640_000,    to: 840_000,    rate: 0.048 },
+  { from: 840_000,    to: 1_040_000,  rate: 0.056 },
+  { from: 1_040_000,  to: 1_540_000,  rate: 0.064 },
+  { from: 1_540_000,  to: 2_040_000,  rate: 0.072 },
+  { from: 2_040_000,  to: 2_540_000,  rate: 0.080 },
+  { from: 2_540_000,  to: 3_040_000,  rate: 0.088 },
+  { from: 3_040_000,  to: 3_540_000,  rate: 0.096 },
+  { from: 3_540_000,  to: 4_040_000,  rate: 0.104 },
+  { from: 4_040_000,  to: 5_040_000,  rate: 0.112 },
+  { from: 5_040_000,  to: 6_040_000,  rate: 0.120 },
+  { from: 6_040_000,  to: 7_040_000,  rate: 0.128 },
+  { from: 7_040_000,  to: 8_040_000,  rate: 0.136 },
+  { from: 8_040_000,  to: 9_040_000,  rate: 0.144 },
+  { from: 9_040_000,  to: 10_040_000, rate: 0.152 },
+  { from: 10_040_000, to: null,       rate: 0.160 },
+];
 
 /** 2026 rules keyed by state. Add a separate entry per state per year when values change. */
 export const STATE_ESTATE_TAX: Record<StateCode, StateEstateTaxRule> = {
@@ -94,28 +122,7 @@ export const STATE_ESTATE_TAX: Record<StateCode, StateEstateTaxRule> = {
     // WHOLE taxable estate from $0, less a fixed $99,600 credit (= the table value
     // at $2M). Below ~$1.94M the credit zeroes the tax; at exactly $2M tax is $4,320.
     fixedCredit: 99_600,
-    brackets: [
-      { from: 40_000,     to: 90_000,     rate: 0.008 },
-      { from: 90_000,     to: 140_000,    rate: 0.016 },
-      { from: 140_000,    to: 240_000,    rate: 0.024 },
-      { from: 240_000,    to: 440_000,    rate: 0.032 },
-      { from: 440_000,    to: 640_000,    rate: 0.040 },
-      { from: 640_000,    to: 840_000,    rate: 0.048 },
-      { from: 840_000,    to: 1_040_000,  rate: 0.056 },
-      { from: 1_040_000,  to: 1_540_000,  rate: 0.064 },
-      { from: 1_540_000,  to: 2_040_000,  rate: 0.072 },
-      { from: 2_040_000,  to: 2_540_000,  rate: 0.080 },
-      { from: 2_540_000,  to: 3_040_000,  rate: 0.088 },
-      { from: 3_040_000,  to: 3_540_000,  rate: 0.096 },
-      { from: 3_540_000,  to: 4_040_000,  rate: 0.104 },
-      { from: 4_040_000,  to: 5_040_000,  rate: 0.112 },
-      { from: 5_040_000,  to: 6_040_000,  rate: 0.120 },
-      { from: 6_040_000,  to: 7_040_000,  rate: 0.128 },
-      { from: 7_040_000,  to: 8_040_000,  rate: 0.136 },
-      { from: 8_040_000,  to: 9_040_000,  rate: 0.144 },
-      { from: 9_040_000,  to: 10_040_000, rate: 0.152 },
-      { from: 10_040_000, to: null,       rate: 0.160 },
-    ],
+    brackets: IRC_2011_BRACKETS,
     giftAddback: null,
     outOfState: "limited-credit",
     citation: "MGL c.65C as amended Oct 2023 (pre-EGTRRA §2011 credit table on the full estate, less $99,600).",
@@ -138,8 +145,8 @@ export const STATE_ESTATE_TAX: Record<StateCode, StateEstateTaxRule> = {
   },
   NY: {
     state: "NY",
-    effectiveYear: 2025,
-    exemption: 7_160_000,
+    effectiveYear: 2026,
+    exemption: 7_350_000,
     indexed: true,
     cliffPct: 1.05,
     brackets: [
@@ -161,7 +168,7 @@ export const STATE_ESTATE_TAX: Record<StateCode, StateEstateTaxRule> = {
     ],
     giftAddback: { years: 3, basis: "federal-taxable" },
     outOfState: "deduct-from-gross",
-    citation: "NY Tax Law §952; 2025 indexed exclusion; 105% cliff under §952(c)(2).",
+    citation: "NY Tax Law §952; 2026 basic exclusion $7,350,000 (NY DTF); 105% cliff ($7,717,500) under §952(c)(2).",
   },
   OR: {
     state: "OR",
@@ -186,20 +193,25 @@ export const STATE_ESTATE_TAX: Record<StateCode, StateEstateTaxRule> = {
   },
   RI: {
     state: "RI",
-    effectiveYear: 2025,
-    exemption: 1_802_431,
-    indexed: true,
-    brackets: [
-      { from: 1_802_431, to: 2_302_431, rate: 0.008 },
-      { from: 2_302_431, to: 2_802_431, rate: 0.016 },
-      { from: 2_802_431, to: 3_802_431, rate: 0.024 },
-      { from: 3_802_431, to: 4_602_431, rate: 0.032 },
-      { from: 4_602_431, to: 5_802_431, rate: 0.040 },
-      { from: 5_802_431, to: null,       rate: 0.160 },
-    ],
+    effectiveYear: 2026,
+    // RI Gen. Laws §44-22-1.1: the tax equals the pre-2002 IRC §2011 maximum
+    // state-death-credit (the same table MA uses, applied to the WHOLE taxable
+    // estate from $0), less a flat RI credit that is CPI-indexed annually. For
+    // 2026 the credit is $87,940 (RI Div. of Taxation ADV 2025-27; published
+    // exemption-equivalent threshold $1,838,056). Structurally identical to MA
+    // (fixedCredit mechanism), NOT the old exemption-anchored 0.8%→16% schedule.
+    // The §2011 table is statutorily frozen at 1/1/2001, so indexed: false (only
+    // the credit indexes; store the published annual figure rather than indexing
+    // the table). Like MA, the published threshold is nominal — actual $0 tax
+    // ends ~$60k below it (the §2011 adjusted-taxable-estate offset baked into the
+    // credit calibration), so a $1,838,056 estate owes a small (~$4,320) tax.
+    exemption: 1_838_056,
+    indexed: false,
+    fixedCredit: 87_940,
+    brackets: IRC_2011_BRACKETS,
     giftAddback: null,
     outOfState: "proportional-credit",
-    citation: "RI Gen. Laws §44-22; 2025 indexed applicable credit threshold.",
+    citation: "RI Gen. Laws §44-22-1.1; pre-2002 IRC §2011 credit table on the full estate, less the 2026 RI credit of $87,940 (ADV 2025-27; threshold $1,838,056).",
   },
   VT: {
     state: "VT",
@@ -213,20 +225,32 @@ export const STATE_ESTATE_TAX: Record<StateCode, StateEstateTaxRule> = {
   },
   WA: {
     state: "WA",
-    effectiveYear: 2025,
+    effectiveYear: 2026,
+    // ESB 6347 (signed 3/24/2026, Chapter 209, 2026 Laws) reverts the WA estate-tax
+    // top rate from SB 5813's 35% back to 20% for decedents dying on/after 7/1/2026,
+    // keeping the $3,000,000 applicable exclusion (frozen — the CPI reference is
+    // defunct, so indexed: false). Graduated marginal rates apply to the WA taxable
+    // estate (amount over the $3M exclusion); brackets below are anchored to the
+    // absolute estate (each tier shifted up by the $3M exclusion):
+    //   WA-taxable 0–1M @10%, 1–2M @14%, 2–3M @15%, 3–4M @16%, 4–6M @18%,
+    //   6–7M @19%, 7–9M @19.5%, 9M+ @20%.   RCW 83.100.040(2)(a)(iii).
+    // The engine projects FUTURE deaths, so it models the going-forward ESB 6347
+    // schedule for all WA deaths. (Deaths in the 7/1/2025–6/30/2026 window were on
+    // SB 5813's 35% schedule; that one-year past window is not separately modeled.)
     exemption: 3_000_000,
-    indexed: true,
+    indexed: false,
     brackets: [
-      { from: 3_000_000, to: 4_000_000, rate: 0.15 },
-      { from: 4_000_000, to: 5_000_000, rate: 0.17 },
-      { from: 5_000_000, to: 6_000_000, rate: 0.19 },
-      { from: 6_000_000, to: 7_000_000, rate: 0.22 },
-      { from: 7_000_000, to: 8_000_000, rate: 0.25 },
-      { from: 8_000_000, to: 9_000_000, rate: 0.30 },
-      { from: 9_000_000, to: null,       rate: 0.35 },
+      { from: 3_000_000,  to: 4_000_000,  rate: 0.100 },
+      { from: 4_000_000,  to: 5_000_000,  rate: 0.140 },
+      { from: 5_000_000,  to: 6_000_000,  rate: 0.150 },
+      { from: 6_000_000,  to: 7_000_000,  rate: 0.160 },
+      { from: 7_000_000,  to: 9_000_000,  rate: 0.180 },
+      { from: 9_000_000,  to: 10_000_000, rate: 0.190 },
+      { from: 10_000_000, to: 12_000_000, rate: 0.195 },
+      { from: 12_000_000, to: null,       rate: 0.200 },
     ],
     giftAddback: null,
     outOfState: "no-credit",
-    citation: "RCW 83.100 as amended by SB 5813 (eff. Jul 1, 2025); 35% top rate.",
+    citation: "RCW 83.100.040 as amended by ESB 6347 (signed 3/24/2026; top rate reverts 35%→20% for deaths on/after 7/1/2026; $3M exclusion frozen).",
   },
 };
