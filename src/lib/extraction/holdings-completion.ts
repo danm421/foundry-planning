@@ -1,6 +1,6 @@
 import { callAIExtractionWithMeta, type AIExtractionResult } from "./azure-client";
 import { parseAIResponse } from "./parse-response";
-import { holdingsReconciliation } from "./normalize-holdings";
+import { holdingsReconciliation, materiallyUndershoots } from "./normalize-holdings";
 import { buildHoldingsContinuationPrompt } from "./prompts/account-statement";
 import type { ExtractedAccount, ExtractedHolding } from "./types";
 
@@ -37,8 +37,7 @@ function holdingKey(h: ExtractedHolding): string {
 
 /** Material undershoot = the reconciliation flags AND holdings total < stated. */
 function undershoots(holdings: ExtractedHolding[], value: number): boolean {
-  const recon = holdingsReconciliation(holdings, value);
-  return recon.flagged && recon.gap < 0;
+  return materiallyUndershoots(holdingsReconciliation(holdings, value));
 }
 
 function num(v: unknown): number | undefined {

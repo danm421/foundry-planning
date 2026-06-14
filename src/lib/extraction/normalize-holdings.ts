@@ -42,3 +42,13 @@ export function holdingsReconciliation(
   const flagged = total > 0 && absGap > 100 && absGap / total > 0.01;
   return { sum, total, gap, flagged };
 }
+
+/**
+ * The holdings materially *undershoot* the stated value: a flagged reconciliation
+ * gap in the negative (holdings sum < stated) direction. The single home for the
+ * "incomplete extraction" predicate shared by extraction-time completion and the
+ * commit-time guardrail. Takes a reconciliation result so callers reconcile once.
+ */
+export function materiallyUndershoots(recon: { flagged: boolean; gap: number }): boolean {
+  return recon.flagged && recon.gap < 0;
+}

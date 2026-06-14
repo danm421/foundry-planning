@@ -1,9 +1,9 @@
-import { holdingsReconciliation } from "@/lib/extraction/normalize-holdings";
+import {
+  holdingsReconciliation,
+  materiallyUndershoots,
+} from "@/lib/extraction/normalize-holdings";
 import type { ExtractedHolding } from "@/lib/extraction/types";
-
-// Pinned locale so the persisted note (and its tests) don't depend on the
-// runtime's default locale.
-const usd = new Intl.NumberFormat("en-US");
+import { exactCurrency } from "@/lib/presentations/format";
 
 export interface HoldingsGuardrailResult {
   /** false → preserve the stated value (don't derive from incomplete holdings). */
@@ -27,10 +27,10 @@ export function accountHoldingsGuardrail(row: {
     return { deriveFromHoldings: true, note: null };
   }
   const recon = holdingsReconciliation(holdings, row.value);
-  if (recon.flagged && recon.gap < 0) {
+  if (materiallyUndershoots(recon)) {
     const note =
-      `⚠ Holdings $${usd.format(Math.round(recon.sum))} below stated ` +
-      `$${usd.format(Math.round(recon.total))} on import — value preserved, ` +
+      `⚠ Holdings ${exactCurrency(recon.sum)} below stated ` +
+      `${exactCurrency(recon.total)} on import — value preserved, ` +
       `not derived from holdings.`;
     return { deriveFromHoldings: false, note };
   }
