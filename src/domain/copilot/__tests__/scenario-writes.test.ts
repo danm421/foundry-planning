@@ -127,6 +127,14 @@ describe("propose_changes", () => {
 });
 
 describe("revert_change", () => {
+  beforeEach(() => {
+    // db.select(scenarios) must confirm the scenario belongs to ctx.clientId
+    // before revertChange is called (the client-pin guard).
+    vi.mocked(db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn(() => ({ where: vi.fn(() => Promise.resolve([{ id: "scenario_1" }])) })),
+    } as never);
+  });
+
   it('description ends with "Requires human approval."', () => {
     expect(getTool("revert_change").description).toMatch(/Requires human approval\.$/);
   });
@@ -137,6 +145,19 @@ describe("revert_change", () => {
       scenarioId: "scenario_1", targetKind: "income", targetId: "inc1", opType: "edit",
     });
     expect(String(result)).toMatch(/not found|access denied/i);
+    expect(revertChange).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the scenario is not owned by ctx.clientId (cross-client)", async () => {
+    // Scenario exists in the firm but belongs to a DIFFERENT client → pin select
+    // returns no row, so we must bail before touching revertChange.
+    vi.mocked(db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn(() => ({ where: vi.fn(() => Promise.resolve([])) })),
+    } as never);
+    const result = await getTool("revert_change").invoke({
+      scenarioId: "scenario_other", targetKind: "income", targetId: "inc1", opType: "edit",
+    });
+    expect(String(result)).toMatch(/not found/i);
     expect(revertChange).not.toHaveBeenCalled();
   });
 

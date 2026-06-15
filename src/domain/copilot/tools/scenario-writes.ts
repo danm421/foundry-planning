@@ -62,51 +62,55 @@ export function buildScenarioWriteTools({
 }: CopilotToolContext): StructuredToolInterface[] {
   const createScenario = tool(
     async ({ name, copyFrom }) => {
-      const gate = await gateAccess(ctx.clientId);
-      if ("error" in gate) return gate.error;
-      const { firmId } = gate;
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+        const { firmId } = gate;
 
-      // Resolve the source. `copyFrom` is model-supplied — when it's a uuid we
-      // re-verify it points at a scenario owned by THIS client before cloning,
-      // so a copilot can't seed a new scenario from another client's data.
-      let source: CreateWithCloneSource;
-      if (copyFrom == null || copyFrom === "empty") {
-        source = { kind: "empty" };
-      } else if (copyFrom === "base") {
-        source = { kind: "base" };
-      } else {
-        const [sourceRow] = await db
-          .select({ id: scenarios.id })
-          .from(scenarios)
-          .where(and(eq(scenarios.id, copyFrom), eq(scenarios.clientId, ctx.clientId)));
-        if (!sourceRow) return `Source scenario ${copyFrom} not found for this client.`;
-        source = { kind: "scenario", sourceId: copyFrom };
+        // Resolve the source. `copyFrom` is model-supplied — when it's a uuid we
+        // re-verify it points at a scenario owned by THIS client before cloning,
+        // so a copilot can't seed a new scenario from another client's data.
+        let source: CreateWithCloneSource;
+        if (copyFrom == null || copyFrom === "empty") {
+          source = { kind: "empty" };
+        } else if (copyFrom === "base") {
+          source = { kind: "base" };
+        } else {
+          const [sourceRow] = await db
+            .select({ id: scenarios.id })
+            .from(scenarios)
+            .where(and(eq(scenarios.id, copyFrom), eq(scenarios.clientId, ctx.clientId)));
+          if (!sourceRow) return `Source scenario ${copyFrom} not found for this client.`;
+          source = { kind: "scenario", sourceId: copyFrom };
+        }
+
+        const { scenario } = await createScenarioWithClone({
+          clientId: ctx.clientId,
+          name,
+          source,
+        });
+
+        await recordAudit({
+          action: "scenario.create",
+          resourceType: "scenario",
+          resourceId: scenario.id,
+          clientId: ctx.clientId,
+          firmId,
+          metadata: { tool: "create_scenario", name, copyFrom: copyFrom ?? "empty" },
+        });
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "scenario",
+          resourceId: scenario.id,
+          clientId: ctx.clientId,
+          firmId,
+          metadata: { tool: "create_scenario", name, copyFrom: copyFrom ?? "empty" },
+        });
+
+        return `Created scenario "${scenario.name}" (id ${scenario.id}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
       }
-
-      const { scenario } = await createScenarioWithClone({
-        clientId: ctx.clientId,
-        name,
-        source,
-      });
-
-      await recordAudit({
-        action: "scenario.create",
-        resourceType: "scenario",
-        resourceId: scenario.id,
-        clientId: ctx.clientId,
-        firmId,
-        metadata: { tool: "create_scenario", name, copyFrom: copyFrom ?? "empty" },
-      });
-      await recordAudit({
-        action: "copilot.write_approved",
-        resourceType: "scenario",
-        resourceId: scenario.id,
-        clientId: ctx.clientId,
-        firmId,
-        metadata: { tool: "create_scenario", name, copyFrom: copyFrom ?? "empty" },
-      });
-
-      return `Created scenario "${scenario.name}" (id ${scenario.id}).`;
     },
     {
       name: "create_scenario",
@@ -136,7 +140,7 @@ export function buildScenarioWriteTools({
     }),
     z.object({
       opType: z.literal("edit"),
-      targetKind: z.string(),
+      targetKind: z.string().describe("entity kind, e.g. account | income | roth_conversion"),
       targetId: z.string().describe("id of the existing base row to edit"),
       desiredFields: z
         .record(z.string(), z.unknown())
@@ -144,76 +148,81 @@ export function buildScenarioWriteTools({
     }),
     z.object({
       opType: z.literal("remove"),
-      targetKind: z.string(),
+      targetKind: z.string().describe("entity kind, e.g. account | income | roth_conversion"),
       targetId: z.string().describe("id of the base row to remove in this scenario"),
     }),
   ]);
 
   const proposeChanges = tool(
     async ({ scenarioId, groupName, changes }) => {
-      const gate = await gateAccess(ctx.clientId);
-      if ("error" in gate) return gate.error;
-      const { firmId } = gate;
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+        const { firmId } = gate;
 
-      // Confirm the scenario belongs to this client before minting anything.
-      // (The changes-writer re-asserts firm scope on every call, but we want a
-      // clean rejection before we write a toggle-group row.)
-      const [scenarioRow] = await db
-        .select({ id: scenarios.id, clientId: scenarios.clientId })
-        .from(scenarios)
-        .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, ctx.clientId)));
-      if (!scenarioRow) return `Scenario ${scenarioId} not found for this client.`;
+        // Confirm the scenario belongs to this client before minting anything.
+        // (The changes-writer re-asserts firm scope on every call, but we want a
+        // clean rejection before we write a toggle-group row.)
+        const [scenarioRow] = await db
+          .select({ id: scenarios.id, clientId: scenarios.clientId })
+          .from(scenarios)
+          .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, ctx.clientId)));
+        if (!scenarioRow) return `Scenario ${scenarioId} not found for this client.`;
 
-      // Mint ONE toggle group so the whole proposal toggles as a unit (default-on
-      // so the advisor sees its effect immediately; they can switch it off).
-      const [group] = await db
-        .insert(scenarioToggleGroups)
-        .values({
-          scenarioId,
-          name: groupName,
-          defaultOn: true,
-          requiresGroupId: null,
-          orderIndex: 0,
-        })
-        .returning();
-      const toggleGroupId = group.id;
-
-      const applied: string[] = [];
-      for (const c of changes) {
-        const targetKind = c.targetKind as TargetKind;
-        if (c.opType === "add") {
-          const entity = { ...(c.entity as Record<string, unknown>), id: c.targetId } as {
-            id: string;
-            [k: string]: unknown;
-          };
-          await applyEntityAdd({ scenarioId, firmId, targetKind, entity, toggleGroupId });
-          applied.push(`add ${c.targetKind}`);
-        } else if (c.opType === "edit") {
-          await applyEntityEdit({
+        // Mint ONE toggle group so the whole proposal toggles as a unit (default-on
+        // so the advisor sees its effect immediately; they can switch it off).
+        const [group] = await db
+          .insert(scenarioToggleGroups)
+          .values({
             scenarioId,
-            firmId,
-            targetKind,
-            targetId: c.targetId,
-            desiredFields: c.desiredFields as Record<string, unknown>,
-            toggleGroupId,
-          });
-          applied.push(`edit ${c.targetKind}`);
-        } else {
-          await applyEntityRemove({ scenarioId, firmId, targetKind, targetId: c.targetId, toggleGroupId });
-          applied.push(`remove ${c.targetKind}`);
+            name: groupName,
+            defaultOn: true,
+            requiresGroupId: null,
+            orderIndex: 0,
+          })
+          .returning();
+        if (!group) return "Could not create the change group. Please try again.";
+        const toggleGroupId = group.id;
+
+        const applied: string[] = [];
+        for (const c of changes) {
+          const targetKind = c.targetKind as TargetKind;
+          if (c.opType === "add") {
+            const entity = { ...(c.entity as Record<string, unknown>), id: c.targetId } as {
+              id: string;
+              [k: string]: unknown;
+            };
+            await applyEntityAdd({ scenarioId, firmId, targetKind, entity, toggleGroupId });
+            applied.push(`add ${c.targetKind}`);
+          } else if (c.opType === "edit") {
+            await applyEntityEdit({
+              scenarioId,
+              firmId,
+              targetKind,
+              targetId: c.targetId,
+              desiredFields: c.desiredFields as Record<string, unknown>,
+              toggleGroupId,
+            });
+            applied.push(`edit ${c.targetKind}`);
+          } else {
+            await applyEntityRemove({ scenarioId, firmId, targetKind, targetId: c.targetId, toggleGroupId });
+            applied.push(`remove ${c.targetKind}`);
+          }
         }
+
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "scenario",
+          resourceId: scenarioId,
+          clientId: ctx.clientId,
+          firmId,
+          metadata: { tool: "propose_changes", groupName, count: changes.length, applied },
+        });
+
+        return `Applied ${changes.length} change${changes.length === 1 ? "" : "s"} to scenario ${scenarioId} under "${groupName}".`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
       }
-
-      await recordAudit({
-        action: "copilot.write_approved",
-        resourceType: "scenario",
-        resourceId: scenarioId,
-        clientId: ctx.clientId,
-        firmId,
-        metadata: { tool: "propose_changes", groupName, count: changes.length, applied },
-      });
-
-      return `Applied ${changes.length} change${changes.length === 1 ? "" : "s"} to scenario ${scenarioId} under "${groupName}".`;
     },
     {
       name: "propose_changes",
@@ -237,28 +246,42 @@ export function buildScenarioWriteTools({
 
   const revertChangeTool = tool(
     async ({ scenarioId, targetKind, targetId, opType }) => {
-      const gate = await gateAccess(ctx.clientId);
-      if ("error" in gate) return gate.error;
-      const { firmId } = gate;
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+        const { firmId } = gate;
 
-      await revertChange({
-        scenarioId,
-        firmId,
-        targetKind: targetKind as TargetKind,
-        targetId,
-        opType: opType as OpType,
-      });
+        // Pin the scenario to this client BEFORE handing it to revertChange.
+        // revertChange's internal assert checks firm scope only, so without this
+        // a client-pinned turn could delete a change row on another client's
+        // scenario in the same firm (and misattribute the audit to ctx.clientId).
+        const [row] = await db
+          .select({ id: scenarios.id })
+          .from(scenarios)
+          .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, ctx.clientId)));
+        if (!row) return `Scenario ${scenarioId} not found for this client.`;
 
-      await recordAudit({
-        action: "copilot.write_approved",
-        resourceType: "scenario",
-        resourceId: scenarioId,
-        clientId: ctx.clientId,
-        firmId,
-        metadata: { tool: "revert_change", targetKind, targetId, opType },
-      });
+        await revertChange({
+          scenarioId,
+          firmId,
+          targetKind: targetKind as TargetKind,
+          targetId,
+          opType: opType as OpType,
+        });
 
-      return `Reverted the ${opType} on ${targetKind} ${targetId} in scenario ${scenarioId}.`;
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "scenario",
+          resourceId: scenarioId,
+          clientId: ctx.clientId,
+          firmId,
+          metadata: { tool: "revert_change", targetKind, targetId, opType },
+        });
+
+        return `Reverted the ${opType} on ${targetKind} ${targetId} in scenario ${scenarioId}.`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
     },
     {
       name: "revert_change",
@@ -268,7 +291,9 @@ export function buildScenarioWriteTools({
         "(add | edit | remove). " +
         APPROVAL_SUFFIX,
       schema: z.object({
-        scenarioId: z.string(),
+        scenarioId: z
+          .string()
+          .describe("the scenario containing the change to revert (must belong to this client)"),
         targetKind: z.string().describe("entity kind of the change to revert"),
         targetId: z.string().describe("the change's target id"),
         opType: z.enum(["add", "edit", "remove"]).describe("which op row to delete"),
@@ -287,39 +312,44 @@ export function buildScenarioWriteTools({
 
   const compareAndSnapshot = tool(
     async ({ name, leftRef, rightRef }) => {
-      const gate = await gateAccess(ctx.clientId);
-      if ("error" in gate) return gate.error;
-      const { firmId } = gate;
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+        const { firmId } = gate;
 
-      const left = toRef(leftRef);
-      const right = toRef(rightRef);
+        const left = toRef(leftRef);
+        const right = toRef(rightRef);
 
-      // loadProjectionForRef enforces firm scoping on each ref (loadEffectiveTreeForRef
-      // throws cross-firm) and proves both are loadable before we freeze them.
-      // ScenarioRef is a subset of EstateCompareRef, so the cast is widening-only.
-      await loadProjectionForRef(ctx.clientId, firmId, left as EstateCompareRef);
-      await loadProjectionForRef(ctx.clientId, firmId, right as EstateCompareRef);
+        // loadProjectionForRef enforces firm scoping on each ref (loadEffectiveTreeForRef
+        // throws cross-firm) and proves both are loadable before we freeze them.
+        // ScenarioRef is a member of the EstateCompareRef union; the upcast is required
+        // by loadProjectionForRef's parameter type.
+        await loadProjectionForRef(ctx.clientId, firmId, left as EstateCompareRef);
+        await loadProjectionForRef(ctx.clientId, firmId, right as EstateCompareRef);
 
-      const snapshot = await createSnapshot({
-        clientId: ctx.clientId,
-        firmId,
-        leftRef: left,
-        rightRef: right,
-        name,
-        sourceKind: "manual",
-        userId: ctx.userId,
-      });
+        const snapshot = await createSnapshot({
+          clientId: ctx.clientId,
+          firmId,
+          leftRef: left,
+          rightRef: right,
+          name,
+          sourceKind: "manual",
+          userId: ctx.userId,
+        });
 
-      await recordAudit({
-        action: "copilot.write_approved",
-        resourceType: "scenario_snapshot",
-        resourceId: snapshot.id,
-        clientId: ctx.clientId,
-        firmId,
-        metadata: { tool: "compare_and_snapshot", name, leftRef, rightRef },
-      });
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "scenario_snapshot",
+          resourceId: snapshot.id,
+          clientId: ctx.clientId,
+          firmId,
+          metadata: { tool: "compare_and_snapshot", name, leftRef, rightRef },
+        });
 
-      return `Saved comparison snapshot "${name}" (id ${snapshot.id}).`;
+        return `Saved comparison snapshot "${name}" (id ${snapshot.id}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
     },
     {
       name: "compare_and_snapshot",
