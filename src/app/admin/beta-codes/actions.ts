@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { requireBetaOperator } from "@/lib/authz";
+import { requireOpsAdmin } from "@/lib/ops/ops-auth";
 import { mintCodes, revokeCode } from "@/lib/billing/beta-codes";
 import { recordAudit } from "@/lib/audit";
 
@@ -19,7 +19,7 @@ const MintInput = z.object({
 
 export async function mintCodesAction(input: unknown): Promise<MintResult> {
   try {
-    await requireBetaOperator();
+    await requireOpsAdmin();
   } catch {
     return { ok: false, error: "Not authorized." };
   }
@@ -45,7 +45,7 @@ export async function mintCodesAction(input: unknown): Promise<MintResult> {
 
 export async function revokeCodeAction(id: string): Promise<RevokeResult> {
   try {
-    await requireBetaOperator();
+    await requireOpsAdmin();
   } catch {
     return { ok: false, error: "Not authorized." };
   }
