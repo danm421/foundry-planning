@@ -60,8 +60,18 @@ export function assertCopilotAzureConfig(model: "full" | "mini"): CopilotAzureCo
 }
 
 /**
- * Tool-calling chat model for the copilot. `temperature: 0` for deterministic
- * tool use; `streaming: true` is REQUIRED so LangGraph streamEvents v2 surfaces
+ * Tool-calling chat model for the copilot. Both deployments (gpt-5.4 /
+ * gpt-5.4-mini) are GPT-5-series *reasoning* models, which reject any
+ * `temperature` other than the default — passing `temperature: 0` makes Azure
+ * 400 (`unsupported_value`) on the very first turn, so the stream route would
+ * emit a generic error with zero tokens. We therefore send NO temperature,
+ * mirroring the extraction path against the same deployment
+ * (src/lib/extraction/azure-client.ts, which passes only `max_completion_tokens`).
+ * `@langchain/openai` includes `temperature` in the request whenever it is set
+ * (completions invocationParams) and does not strip it for reasoning models, so
+ * the fix is to leave it unset rather than rely on the library.
+ *
+ * `streaming: true` is REQUIRED so LangGraph streamEvents v2 surfaces
  * on_chat_model_stream token deltas — without it invoke() makes one
  * non-streaming call and the reply arrives as a single chunk (the exact bug
  * ethos hit). Defaults to the full (gpt-5.4) deployment.
@@ -73,7 +83,6 @@ export function chatModel(model: "full" | "mini" = "full"): AzureChatOpenAI {
     azureOpenAIApiInstanceName: instanceName,
     azureOpenAIApiDeploymentName: deployment,
     azureOpenAIApiVersion: apiVersion,
-    temperature: 0,
     streaming: true,
   });
 }
