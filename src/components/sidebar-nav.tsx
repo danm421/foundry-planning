@@ -37,7 +37,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "FIRM",
     items: [
-      { icon: <FolderIcon />, label: "Documents", placeholder: true },
       { icon: <SettingsIcon />, label: "Settings", href: "/settings" },
     ],
   },
