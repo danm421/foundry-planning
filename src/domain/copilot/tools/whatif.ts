@@ -5,10 +5,14 @@ import { z } from "zod";
 import type { CopilotToolContext } from "../context";
 import { assertClientReadable } from "../guards";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { runProjection } from "@/engine";
+import { runProjection, runProjectionWithEvents } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
-import type { RothConversion, ProjectionYear } from "@/engine/types";
+import type {
+  RothConversion,
+  ProjectionYear,
+  HypotheticalEstateTaxOrdering,
+} from "@/engine/types";
 import { solveSsClaimAgeByPortfolio } from "@/lib/solver/solve-ss-portfolio";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import type { ScenarioChange } from "@/engine/scenario/types";
@@ -40,6 +44,18 @@ function sumTax(projection: ProjectionYear[]): number {
 /** Sum Medicare total annual cost across a projection, guarding the optional. */
 function sumMedicare(projection: ProjectionYear[]): number {
   return projection.reduce((s, y) => s + (y.medicare?.totalAnnualCost ?? 0), 0);
+}
+
+/** Flatten one hypothetical-estate-tax ordering to its headline totals. */
+function orderingTotals(o: HypotheticalEstateTaxOrdering | undefined) {
+  if (!o) return null;
+  return {
+    firstDecedent: o.firstDecedent,
+    federal: o.totals.federal,
+    state: o.totals.state,
+    admin: o.totals.admin,
+    total: o.totals.total,
+  };
 }
 
 export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
@@ -266,5 +282,84 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
     },
   );
 
-  return [whatifRoth, whatifSocialSecurity, whatifWithdrawal];
+  const whatifEstateTax = tool(
+    async ({ clientId, scenarioId, dieInYear }) => {
+      const denied = await guardClient(ctx, clientId);
+      if (denied) return denied;
+
+      const { effectiveTree } = await loadEffectiveTree(clientId, ctx.firmId, scenarioId, {});
+      const result = runProjectionWithEvents(effectiveTree);
+
+      // Die-in-year-N: read that projection year's EoY hypothetical estate tax
+      // (computed by the engine via computeHypotheticalEstateTax per year).
+      if (dieInYear != null) {
+        const row = result.years.find((y) => y.year === dieInYear);
+        if (!row) {
+          return JSON.stringify({
+            error: `No projection year ${dieInYear} (plan horizon does not reach it).`,
+          });
+        }
+        return JSON.stringify({
+          scenarioId,
+          dieInYear,
+          hypotheticalEstateTax: {
+            year: row.hypotheticalEstateTax.year,
+            primaryFirst: orderingTotals(row.hypotheticalEstateTax.primaryFirst),
+            spouseFirst: orderingTotals(row.hypotheticalEstateTax.spouseFirst),
+          },
+          disclaimer:
+            "Hypothetical end-of-year estate tax if both principals died in this year; observations only.",
+        });
+      }
+
+      // Default mode: the projected first/second death events + today's snapshot.
+      return JSON.stringify({
+        scenarioId,
+        firstDeath: result.firstDeathEvent
+          ? {
+              year: result.firstDeathEvent.year,
+              deceased: result.firstDeathEvent.deceased,
+              totalTaxesAndExpenses: result.firstDeathEvent.totalTaxesAndExpenses,
+              federalEstateTax: result.firstDeathEvent.federalEstateTax,
+              stateEstateTax: result.firstDeathEvent.stateEstateTax,
+            }
+          : null,
+        secondDeath: result.secondDeathEvent
+          ? {
+              year: result.secondDeathEvent.year,
+              deceased: result.secondDeathEvent.deceased,
+              totalTaxesAndExpenses: result.secondDeathEvent.totalTaxesAndExpenses,
+              federalEstateTax: result.secondDeathEvent.federalEstateTax,
+              stateEstateTax: result.secondDeathEvent.stateEstateTax,
+            }
+          : null,
+        today: {
+          year: result.todayHypotheticalEstateTax.year,
+          primaryFirst: orderingTotals(result.todayHypotheticalEstateTax.primaryFirst),
+          spouseFirst: orderingTotals(result.todayHypotheticalEstateTax.spouseFirst),
+        },
+        disclaimer:
+          "Estate-tax figures are engine-computed for the projected death years; observations only, not advice.",
+      });
+    },
+    {
+      name: "whatif_estate_tax",
+      description:
+        "Report a scenario's estate-tax exposure. Default: the projected first- and second-death " +
+        "estate-tax events plus the 'as of today' hypothetical (both principals die now), with " +
+        "client-first and spouse-first orderings. Pass dieInYear to read the hypothetical estate " +
+        "tax if both principals died in a specific future year.",
+      schema: z.object({
+        clientId: z.string().describe("the client uuid (must match your scope)"),
+        scenarioId: z.string().describe("scenario uuid, or 'base'"),
+        dieInYear: z
+          .number()
+          .int()
+          .optional()
+          .describe("optional: a future calendar year for the 'die in year N' hypothetical"),
+      }),
+    },
+  );
+
+  return [whatifRoth, whatifSocialSecurity, whatifWithdrawal, whatifEstateTax];
 }
