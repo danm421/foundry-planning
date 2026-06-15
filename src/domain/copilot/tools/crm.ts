@@ -15,6 +15,8 @@ import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { recordActivity, listActivity } from "@/lib/crm/activity";
 import { listTasks } from "@/lib/crm-tasks/queries";
+import { createTask } from "@/lib/crm-tasks/mutations";
+import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
 import { recordAudit } from "@/lib/audit";
@@ -224,5 +226,35 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity];
+  const createTaskTool = tool(
+    async (args) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        // Validate the model-supplied fields, then inject the server-resolved householdId.
+        // householdId MUST come from gate — never from the model (IDOR protection).
+        const validated = createCrmTaskSchema.omit({ householdId: true }).parse(args);
+        const input = { ...validated, householdId: gate.householdId };
+        const task = await createTask(gate.firmId, ctx.userId, input);
+        await auditToolCall(ctx, conversationId, "crm_task", task.id, "crm_create_task");
+        return JSON.stringify({ task });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to create task.";
+      }
+    },
+    {
+      name: "crm_create_task",
+      description:
+        "Create a CRM task for this client's household. Applies immediately (reversible — " +
+        "can be deleted with approval). The householdId is resolved server-side; do not pass it.",
+      schema: z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().max(10_000).optional(),
+        priority: z.enum(["low", "med", "high"]).optional(),
+        dueDate: z.string().nullable().optional(), // YYYY-MM-DD
+      }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool];
 }
