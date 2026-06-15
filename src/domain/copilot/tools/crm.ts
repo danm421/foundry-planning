@@ -68,10 +68,12 @@ async function assertNoteInHousehold(
 }
 
 /** Fire the copilot.tool_call audit for a Tier-A auto-applied write (in addition
- *  to the core's own crm.* row). Only mutating Tier-A tools call this. */
+ *  to the core's own crm.* row). Only mutating Tier-A tools call this.
+ *  firmId must be the verified gate.firmId, not ctx.firmId. */
 async function auditToolCall(
   ctx: CopilotAuthContext,
   conversationId: string,
+  firmId: string,
   resourceType: string,
   resourceId: string,
   tool: string,
@@ -80,7 +82,7 @@ async function auditToolCall(
     action: "copilot.tool_call",
     resourceType,
     resourceId,
-    firmId: ctx.firmId,
+    firmId,
     actorId: ctx.userId,
     metadata: { tool, conversationId, clientId: ctx.clientId },
   });
@@ -201,7 +203,7 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
       try {
         const input = createCrmNoteSchema.parse(args);
         const note = await createNote(gate.householdId, gate.firmId, ctx.userId, input);
-        await auditToolCall(ctx, conversationId, "crm_note", note.id, "crm_add_note");
+        await auditToolCall(ctx, conversationId, gate.firmId, "crm_note", note.id, "crm_add_note");
         return JSON.stringify({ note });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to add note.";
@@ -237,7 +239,7 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
           },
           { actorUserId: ctx.userId },
         );
-        await auditToolCall(ctx, conversationId, "crm_activity", gate.householdId, "crm_log_activity");
+        await auditToolCall(ctx, conversationId, gate.firmId, "crm_activity", gate.householdId, "crm_log_activity");
         return JSON.stringify({ ok: true, kind, title });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to log activity.";
@@ -267,7 +269,7 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
         const validated = createCrmTaskSchema.omit({ householdId: true }).parse(args);
         const input = { ...validated, householdId: gate.householdId };
         const task = await createTask(gate.firmId, ctx.userId, input);
-        await auditToolCall(ctx, conversationId, "crm_task", task.id, "crm_create_task");
+        await auditToolCall(ctx, conversationId, gate.firmId, "crm_task", task.id, "crm_create_task");
         return JSON.stringify({ task });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to create task.";
@@ -297,7 +299,7 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
         // Build the discriminated-union update input. Status changes go through crm_complete_task.
         const update = { field, value } as Parameters<typeof updateTaskField>[3];
         const task = await updateTaskField(taskId, gate.firmId, ctx.userId, update);
-        await auditToolCall(ctx, conversationId, "crm_task", taskId, "crm_update_task");
+        await auditToolCall(ctx, conversationId, gate.firmId, "crm_task", taskId, "crm_update_task");
         return JSON.stringify({ task });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to update task.";
@@ -324,7 +326,7 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
       if (own !== true) return own;
       try {
         const result = await setTaskStatus(taskId, gate.firmId, ctx.userId, status ?? "done");
-        await auditToolCall(ctx, conversationId, "crm_task", taskId, "crm_complete_task");
+        await auditToolCall(ctx, conversationId, gate.firmId, "crm_task", taskId, "crm_complete_task");
         return JSON.stringify({ task: result.task, followOnId: result.followOnId });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to update task status.";
@@ -350,7 +352,7 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
       if (own !== true) return own;
       try {
         await postComment(taskId, gate.firmId, ctx.userId, body);
-        await auditToolCall(ctx, conversationId, "crm_task", taskId, "crm_post_task_comment");
+        await auditToolCall(ctx, conversationId, gate.firmId, "crm_task", taskId, "crm_post_task_comment");
         return JSON.stringify({ ok: true });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to post comment.";
@@ -730,10 +732,8 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     async ({ noteId }) => {
       const gate = await gateCrm(ctx);
       if ("error" in gate) return gate.error;
-      // Ownership gate: note must belong to this household (IDOR protection)
-      const own = await assertNoteInHousehold(noteId, gate.firmId, gate.householdId);
-      if (own !== true) return own;
       try {
+        // Fetch notes once: ownership check + note lookup in one list (IDOR protection).
         const notes = await listHouseholdNotes(gate.householdId, gate.firmId);
         const note = notes.find((n: { id: string }) => n.id === noteId);
         if (!note) return `Note ${noteId} not found for this client.`;
