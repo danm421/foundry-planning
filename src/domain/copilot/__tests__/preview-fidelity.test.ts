@@ -8,7 +8,7 @@
 //
 // Skips cleanly without a DB (no DATABASE_URL) so it never adds to the no-delta
 // failing set in CI. Mirrors changes-writer.test.ts's Cooper-fixture setup.
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { formatProposedWrite } from "../preview";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
