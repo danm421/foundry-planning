@@ -25,6 +25,18 @@ import { computeRowDiff } from "@/lib/scenario/diff-row";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import { runProjection } from "@/engine";
+import {
+  assertEntitiesInClient,
+  assertAccountsInClient,
+  assertBusinessAccountsInClient,
+} from "@/lib/db-scoping";
+import { z } from "zod";
+import { formatZodIssues } from "@/lib/schemas/common";
+import {
+  expenseCreateSchema,
+  expenseUpdateSchema,
+} from "@/lib/schemas/expenses";
+import { createDiffLines } from "@/lib/clients/create-diff-adapter";
 import type {
   OpType,
   ScenarioChange,
@@ -146,6 +158,25 @@ function previewCrmCreateTasks(a: Record<string, unknown>): WritePreview {
   return { name: "crm_create_tasks", summary: `Create ${tasks.length} task${tasks.length === 1 ? "" : "s"}: ${titles.slice(0, 5).join(", ")}.` };
 }
 
+function previewAddExpense(a: Record<string, unknown>): WritePreview {
+  const name = str(a.name) ?? "(unnamed)";
+  const type = str(a.type);
+  const typeLabel = type ? ` (${type})` : "";
+  return { name: "add_expense", summary: `Add expense “${name}”${typeLabel}.` };
+}
+
+function previewUpdateExpense(a: Record<string, unknown>): WritePreview {
+  const id = str(a.expenseId) ?? "";
+  const name = str(a.name);
+  const label = name ? `“${name}” ` : "";
+  return { name: "update_expense", summary: `Update expense ${label}(id ${id}).`.trim() };
+}
+
+function previewRemoveExpense(a: Record<string, unknown>): WritePreview {
+  const id = str(a.expenseId) ?? "";
+  return { name: "remove_expense", summary: `Remove expense (id ${id}).` };
+}
+
 function previewCompareAndSnapshot(args: Record<string, unknown>): WritePreview {
   const name = str(args.name) ?? "(unnamed)";
   const left = refLabel(str(args.leftRef));
@@ -171,6 +202,12 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewRevertChange(call.args);
     case "compare_and_snapshot":
       return previewCompareAndSnapshot(call.args);
+    case "add_expense":
+      return previewAddExpense(call.args);
+    case "update_expense":
+      return previewUpdateExpense(call.args);
+    case "remove_expense":
+      return previewRemoveExpense(call.args);
     case "crm_delete_note":
       return previewCrmDeleteNote(call.args);
     case "crm_delete_task":
@@ -242,13 +279,106 @@ function computePortfolioImpact(
   return scenarioEnd - baseEnd;
 }
 
+/** Plain-language join of a safeParse error's issues, matching the core's format. */
+function zodErrorMessage(error: z.ZodError): string {
+  return formatZodIssues(error)
+    .map((i) => i.message)
+    .join("; ");
+}
+
 /**
- * Async preview. Without an auth context (or for any non-propose_changes call)
- * it returns the pure formatter result unchanged. For `propose_changes` with a
- * context it ALSO enriches `details` with:
- *   • the live field-level from→to diff for each edit (against the current row);
- *   • a combined signed end-of-plan portfolio impact line.
- * All enrichment is best-effort — wrapped in try/catch so a load/projection
+ * Run the SAME FK asserts the expense create/update core runs (entities,
+ * accounts, business accounts) — all client-scoped, mirroring the core. Returns
+ * a validation message on the first failed assert, or null if every FK is
+ * in-client. NO insert/update — this is a dry run.
+ */
+async function assertExpenseFks(
+  clientId: string,
+  fields: {
+    ownerEntityId?: string | null;
+    ownerAccountId?: string | null;
+    cashAccountId?: string | null;
+  },
+): Promise<string | null> {
+  const ent = await assertEntitiesInClient(clientId, [fields.ownerEntityId]);
+  if (!ent.ok) return ent.reason;
+  const acct = await assertAccountsInClient(clientId, [
+    fields.cashAccountId,
+    fields.ownerAccountId,
+  ]);
+  if (!acct.ok) return acct.reason;
+  if (fields.ownerAccountId != null) {
+    const biz = await assertBusinessAccountsInClient(clientId, [fields.ownerAccountId]);
+    if (!biz.ok) return biz.reason;
+  }
+  return null;
+}
+
+/**
+ * Dry-run enrichment for add_expense: zod-parse via expenseCreateSchema, run the
+ * same FK asserts the core runs (NO insert), then render the would-be new row as
+ * `field: value` lines via createDiffLines (since computeRowDiff(null,row) has no
+ * fields). On a zod or FK failure, surface the plain-language validation error as
+ * the summary with no diff.
+ */
+async function enrichAddExpense(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  clientId: string,
+): Promise<WritePreview> {
+  const parsed = expenseCreateSchema.safeParse(args);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertExpenseFks(clientId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+  return { ...base, details: createDiffLines(parsed.data) };
+}
+
+/**
+ * Dry-run enrichment for update_expense: zod-parse the (non-id) args via
+ * expenseUpdateSchema, run the same FK asserts (NO update), load the live row,
+ * and diff `currentRow → {...currentRow, ...parsed}` to render `field: from → to`
+ * lines. On a zod or FK failure, surface the validation error as the summary.
+ */
+async function enrichUpdateExpense(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  ctx: CopilotAuthContext,
+): Promise<WritePreview> {
+  const { expenseId, ...rest } = args;
+  const id = typeof expenseId === "string" ? expenseId : undefined;
+  const parsed = expenseUpdateSchema.safeParse(rest);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertExpenseFks(ctx.clientId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+
+  if (!id) return base;
+  const { effectiveTree } = await loadEffectiveTree(
+    ctx.clientId,
+    ctx.firmId,
+    ctx.scenarioId,
+    {},
+  );
+  const current = findRowById(effectiveTree, id);
+  if (!current) return base;
+  const diff = computeRowDiff(current, { ...current, ...parsed.data });
+  if (diff.kind !== "edit") return base;
+  return {
+    ...base,
+    details: diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`),
+  };
+}
+
+/**
+ * Async preview. Without an auth context (or for any tool without enrichment) it
+ * returns the pure formatter result unchanged. With a context it ALSO enriches:
+ *   • propose_changes — live field-level from→to diff per edit + portfolio impact;
+ *   • add_expense / update_expense — a dry-run row diff (zod + FK asserts, NO
+ *     write), or the plain-language validation error when the payload is invalid.
+ * All enrichment is best-effort — wrapped in try/catch so any load/parse/assert
  * failure degrades to the pure preview rather than blocking approval.
  */
 export async function describeProposedWrite(
@@ -256,9 +386,17 @@ export async function describeProposedWrite(
   ctx?: CopilotAuthContext,
 ): Promise<WritePreview> {
   const base = formatProposedWrite(call);
-  if (!ctx || call.name !== "propose_changes") return base;
+  if (!ctx) return base;
 
   try {
+    if (call.name === "add_expense") {
+      return await enrichAddExpense(base, call.args, ctx.clientId);
+    }
+    if (call.name === "update_expense") {
+      return await enrichUpdateExpense(base, call.args, ctx);
+    }
+    if (call.name !== "propose_changes") return base;
+
     const a = call.args;
     const scenarioId = typeof a.scenarioId === "string" ? a.scenarioId : ctx.scenarioId;
     const changes = readChanges(a);

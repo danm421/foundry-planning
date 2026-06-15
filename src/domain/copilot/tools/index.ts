@@ -5,6 +5,7 @@ import { buildReadTools } from "./read";
 import { buildComputeTools } from "./compute";
 import { buildWhatIfTools } from "./whatif";
 import { buildScenarioWriteTools } from "./scenario-writes";
+import { buildDetailWriteTools } from "./detail-writes";
 import { buildCrmTools } from "./crm";
 
 /**
@@ -16,6 +17,8 @@ import { buildCrmTools } from "./crm";
  * Phase 2: adds the 4 scenario write tools (create_scenario, propose_changes,
  * revert_change, compare_and_snapshot) which route through the human-approval
  * gate when called.
+ * Phase 3: adds the detail (plan-data) write tools — the expense sub-phase
+ * (add_expense, update_expense, remove_expense), also HITL-gated.
  */
 export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
   return [
@@ -23,6 +26,7 @@ export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface
     ...buildComputeTools(toolCtx),
     ...buildWhatIfTools(toolCtx),
     ...buildScenarioWriteTools(toolCtx),
+    ...buildDetailWriteTools(toolCtx),
     ...buildCrmTools(toolCtx),
   ];
 }
@@ -37,6 +41,10 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "propose_changes",
   "revert_change",
   "compare_and_snapshot",
+  // Phase-3 detail (plan-data) writes — expense sub-phase, HITL-gated
+  "add_expense",
+  "update_expense",
+  "remove_expense",
   // Tier-B CRM destructive / bulk writes — route through HITL approval node
   "crm_delete_note",
   "crm_delete_task",
