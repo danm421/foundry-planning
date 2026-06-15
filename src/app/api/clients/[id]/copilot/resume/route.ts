@@ -96,6 +96,11 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   ) {
     return json(400, { error: "conversationId and decisions are required." });
   }
+  // Every decision verdict must be a recognized confirm|reject — reject anything
+  // else before it reaches the graph's resume Command.
+  if (!Object.values(body.decisions).every((v) => v === "confirm" || v === "reject")) {
+    return json(400, { error: "decisions must map to 'confirm' or 'reject'." });
+  }
   const conversationId = body.conversationId;
   const decisions = body.decisions;
 
@@ -107,9 +112,13 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   }
 
   // (b) Client pin: the checkpointed authContext.clientId MUST equal the URL
-  // clientId. This is the canonical "pin the conversation IDOR to the URL
-  // clientId" guard — a missing checkpoint (nothing to resume) or a mismatch
-  // (the pending write belongs to a different client) both 404, never leaking.
+  // clientId, AND the checkpointed authContext.userId MUST equal the resuming
+  // userId. Pinning the user to the same object that drives execution scope binds
+  // the user check to the checkpoint that actually runs (hardening against a
+  // future conversation-handoff feature). This is the canonical "pin the
+  // conversation IDOR to the URL clientId" guard — a missing checkpoint (nothing
+  // to resume) or a mismatch (pending write belongs to a different client/user)
+  // both 404, never leaking.
   let checkpointAuth: CopilotAuthContext;
   try {
     const tuple = await getCheckpointer().getTuple({
@@ -118,7 +127,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     const persisted = tuple?.checkpoint?.channel_values?.authContext as
       | CopilotAuthContext
       | undefined;
-    if (!persisted || persisted.clientId !== clientId) {
+    if (!persisted || persisted.clientId !== clientId || persisted.userId !== userId) {
       return new Response("Not found", { status: 404 });
     }
     checkpointAuth = persisted;
@@ -153,20 +162,24 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
 
   // Conversation-level resume marker. The PER-WRITE write_approved is owned by
   // the tools (only on real success); this records the advisor's approval of the
-  // resume turn with a confirmed/rejected breakdown.
+  // resume turn with a confirmed/rejected breakdown. Only fire when at least one
+  // decision is a confirm — an all-reject (or empty) resume approves nothing, and
+  // the per-write write_approved (tools) + write_rejected (node) already cover
+  // that case, so recording a route-level approval here would be a false positive.
   const verdicts = Object.values(decisions);
-  await recordAudit({
-    action: "copilot.write_approved",
-    resourceType: "copilot_conversation",
-    resourceId: conversationId,
-    clientId,
-    firmId,
-    actorId: userId,
-    metadata: {
-      confirmed: verdicts.filter((v) => v === "confirm").length,
-      rejected: verdicts.filter((v) => v === "reject").length,
-    },
-  });
+  const confirmed = verdicts.filter((v) => v === "confirm").length;
+  const rejected = verdicts.filter((v) => v === "reject").length;
+  if (confirmed > 0) {
+    await recordAudit({
+      action: "copilot.write_approved",
+      resourceType: "copilot_conversation",
+      resourceId: conversationId,
+      clientId,
+      firmId,
+      actorId: userId,
+      metadata: { confirmed, rejected },
+    });
+  }
 
   const graph = buildGraph(authContext, getCheckpointer(), conversationId, systemPrompt);
   const encoder = new TextEncoder();
@@ -181,6 +194,10 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       // Cancel-on-disconnect: stop consuming and close once the client aborts.
       // The abort signal is also threaded into streamEvents so the graph run
       // itself is cancelled, not just the SSE write side.
+      // DIVERGENCE (intentional): this resume route handles req.signal
+      // cancel-on-disconnect; the stream route does NOT yet (logged open item in
+      // security-hardening.md "## Open — Copilot Phase-0", "Abort the in-flight
+      // Azure request on client disconnect"). A future PR should backport this here.
       const onAbort = () => {
         closed = true;
         try {

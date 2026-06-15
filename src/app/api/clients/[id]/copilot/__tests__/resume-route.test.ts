@@ -210,6 +210,33 @@ describe("POST /api/clients/[id]/copilot/resume — gates + IDOR", () => {
     expect(buildGraph).not.toHaveBeenCalled();
   });
 
+  it("returns 404 on user-pin mismatch (checkpointed userId !== resuming userId) — buildGraph NOT called", async () => {
+    getTuple.mockResolvedValue({
+      checkpoint: {
+        channel_values: {
+          authContext: {
+            userId: "OTHER-USER",
+            firmId: "firm_1",
+            clientId: "c1",
+            scenarioId: "scenario_orig",
+          },
+        },
+      },
+    });
+    const res = await POST(makeReq(goodBody), ctx);
+    expect(res.status).toBe(404);
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when a decisions value is not confirm|reject — buildGraph NOT called", async () => {
+    const res = await POST(
+      makeReq({ conversationId: "conv-1", decisions: { call_1: "banana" } }),
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when verifyClientAccess=false (cross-firm)", async () => {
     verifyClientAccess.mockResolvedValue(false);
     const res = await POST(makeReq(goodBody), ctx);
@@ -242,14 +269,33 @@ describe("POST /api/clients/[id]/copilot/resume — happy path", () => {
     // Conversation touched for the owner.
     expect(touchConversation).toHaveBeenCalledWith("conv-1", "user_1");
 
-    // Conversation-level write_approved resume marker recorded.
+    // Conversation-level write_approved resume marker recorded (the body has a
+    // confirm, so the route-level audit fires with the confirmed/rejected count).
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "copilot.write_approved",
         actorId: "user_1",
         clientId: "c1",
         firmId: "firm_1",
+        metadata: expect.objectContaining({ confirmed: 1, rejected: 0 }),
       }),
+    );
+  });
+
+  it("does NOT record route-level write_approved on an all-reject resume", async () => {
+    const res = await POST(
+      makeReq({ conversationId: "conv-1", decisions: { call_1: "reject" as const } }),
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    // Drain so the stream lifecycle (touch/getState) completes.
+    await drainSse(res);
+
+    // No route-level copilot.write_approved row for a resume that confirmed
+    // nothing. (The graph is mocked, so the per-write tool audit / write_rejected
+    // node never fire here — this isolates the route-level audit.)
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
     );
   });
 
