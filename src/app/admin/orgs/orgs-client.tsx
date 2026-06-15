@@ -16,7 +16,7 @@ const STATUS_STYLE: Record<string, string> = {
   trialing: "bg-sky-500/15 text-sky-300",
   past_due: "bg-amber-500/15 text-amber-300",
   unpaid: "bg-amber-500/15 text-amber-300",
-  none: "bg-neutral-500/15 text-neutral-500",
+  none: "bg-neutral-500/15 text-neutral-300",
 };
 
 function fmt(iso: string | null) {
