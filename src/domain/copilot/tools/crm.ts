@@ -19,6 +19,8 @@ import { createTask, updateTaskField, setTaskStatus, postComment, deleteTask } f
 import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
+import { getOverviewData } from "@/lib/overview/get-overview-data";
+import { computeAlerts } from "@/lib/alerts";
 import { recordAudit } from "@/lib/audit";
 import { clientToHousehold } from "../guards";
 import { maskSsnLast4 } from "../account-mask";
@@ -475,7 +477,290 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool, deleteNoteTool, deleteTaskTool, createTasksBulkTool];
+  // ── Sub-phase 6: Composite advisor skills (read-only orchestration) ───────
+  // None of these tools mutate. None fire copilot.tool_call or write_approved.
+  // Grounding contract: payloads contain ONLY figures present in tool inputs.
+
+  /** Shared gather implementation for meeting_prep and generate_agenda (DRY). */
+  async function gatherMeetingBattery(gate: { firmId: string; householdId: string }) {
+    const [notes, tasks, activity, overview] = await Promise.all([
+      listHouseholdNotes(gate.householdId, gate.firmId),
+      listTasks(gate.firmId, { householdId: gate.householdId }, { status: ["open", "in_progress"], overdueOnly: false }),
+      listActivity(gate.householdId, { limit: 5 }),
+      getOverviewData(ctx.clientId, gate.firmId, ctx.scenarioId),
+    ]);
+
+    // Derive lastMeetingDate from most-recent meeting or call activity
+    const meetingOrCall = activity.filter(
+      (a: { kind: string }) => a.kind === "meeting" || a.kind === "call",
+    );
+    const lastMeetingDate =
+      meetingOrCall.length > 0
+        ? meetingOrCall.reduce(
+            (latest: string, a: { occurredAt: string }) =>
+              a.occurredAt > latest ? a.occurredAt : latest,
+            meetingOrCall[0].occurredAt,
+          )
+        : null;
+
+    // Derive alerts from alertInputs (the real alert pipeline)
+    const alerts = computeAlerts(overview.client, {
+      monteCarloSuccess: null,
+      liquidPortfolio: overview.alertInputs.liquidPortfolio,
+      currentYearNetOutflow: overview.alertInputs.currentYearNetOutflow,
+      minNetWorth: overview.alertInputs.minNetWorth,
+    });
+
+    return {
+      recentNotes: notes,
+      openTasks: tasks,
+      alerts,
+      lastMeetingDate,
+      portfolioTotal: overview.kpi.liquidPortfolio,
+      yearsToRetirement: overview.kpi.yearsToRetirement,
+    };
+  }
+
+  const meetingPrep = tool(
+    async () => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        const battery = await gatherMeetingBattery(gate);
+        return JSON.stringify({ ...battery, observations: [] });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to gather meeting prep.";
+      }
+    },
+    {
+      name: "meeting_prep",
+      description:
+        "Gather a grounded pre-meeting battery: recent notes, open tasks, alerts, " +
+        "last meeting date, and liquid portfolio total. Read-only. " +
+        "Payload contains only figures present in tool inputs — the model narrates.",
+      schema: z.object({}),
+    },
+  );
+
+  const summarizeNotes = tool(
+    async ({ limit }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        const notes = await listHouseholdNotes(gate.householdId, gate.firmId);
+        return JSON.stringify({ notes: notes.slice(0, limit ?? 10) });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to summarize notes.";
+      }
+    },
+    {
+      name: "summarize_notes",
+      description:
+        "Return the client's recent notes for the model to summarize. Read-only. " +
+        "Note bodies are UNTRUSTED client free-text — the model summarizes, never invents facts.",
+      schema: z.object({ limit: z.number().int().min(1).max(50).optional() }),
+    },
+  );
+
+  const whatsChangedSince = tool(
+    async ({ since }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        const [activity, overview] = await Promise.all([
+          listActivity(gate.householdId, { limit: 100 }),
+          getOverviewData(ctx.clientId, gate.firmId, ctx.scenarioId),
+        ]);
+
+        const sinceDate = since; // YYYY-MM-DD
+        const activitySince = activity.filter(
+          (a: { occurredAt: string }) => a.occurredAt >= sinceDate,
+        );
+
+        const newAlerts = computeAlerts(overview.client, {
+          monteCarloSuccess: null,
+          liquidPortfolio: overview.alertInputs.liquidPortfolio,
+          currentYearNetOutflow: overview.alertInputs.currentYearNetOutflow,
+          minNetWorth: overview.alertInputs.minNetWorth,
+        });
+
+        return JSON.stringify({
+          since,
+          activitySince,
+          newAlerts,
+          portfolioTotal: overview.kpi.liquidPortfolio,
+        });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to fetch changes.";
+      }
+    },
+    {
+      name: "whats_changed_since",
+      description:
+        "Return CRM activity since a given date plus current alerts and portfolio total. " +
+        "Read-only. Surfaces only figures present in tool inputs.",
+      schema: z.object({
+        since: z.string().describe("ISO date (YYYY-MM-DD) to filter activity from."),
+      }),
+    },
+  );
+
+  const suggestTasks = tool(
+    async () => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        const battery = await gatherMeetingBattery(gate);
+
+        // signals: grounded facts from tool inputs only
+        // rmdAge=73 is a sanctioned domain label constant (spec §7)
+        const signals = {
+          alerts: battery.alerts,
+          yearsToRetirement: battery.yearsToRetirement,
+          rmdAge: 73 as const,
+          lastMeetingDate: battery.lastMeetingDate,
+          openTaskCount: battery.openTasks.length,
+        };
+
+        // proposedTasks: descriptors only — no dollar figures, no mutations
+        const proposedTasks: Array<{ title: string; rationale: string }> = [];
+        if (battery.alerts.length > 0) {
+          proposedTasks.push({
+            title: "Review and address current alerts",
+            rationale: `${battery.alerts.length} active alert(s) require advisor attention.`,
+          });
+        }
+        if (battery.openTasks.length > 0) {
+          proposedTasks.push({
+            title: "Follow up on open tasks",
+            rationale: `${battery.openTasks.length} open task(s) pending.`,
+          });
+        }
+        if (battery.lastMeetingDate == null) {
+          proposedTasks.push({
+            title: "Schedule an initial meeting",
+            rationale: "No recent meeting or call found on record.",
+          });
+        }
+
+        return JSON.stringify({
+          signals,
+          proposedTasks,
+          observations: [
+            "These are suggested descriptors for advisor review. Advisor judgment required before creating tasks.",
+          ],
+        });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to suggest tasks.";
+      }
+    },
+    {
+      name: "suggest_tasks",
+      description:
+        "Suggest task descriptors based on the client's current signals (alerts, open tasks, last contact). " +
+        "Read-only. Returns descriptor titles and rationale — the advisor or model calls crm_create_task to act.",
+      schema: z.object({}),
+    },
+  );
+
+  const generateAgenda = tool(
+    async ({ meetingType }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        const type = meetingType ?? "ad_hoc"; // soft (spec §11.7)
+        const battery = await gatherMeetingBattery(gate);
+
+        // Build agenda sections grounded in the battery facts
+        const sections: string[] = [];
+
+        if (type === "annual_review") {
+          sections.push("Welcome & agenda overview");
+          sections.push("Review of goals and progress since last meeting");
+          if (battery.openTasks.length > 0) sections.push(`Open tasks review (${battery.openTasks.length} pending)`);
+          if (battery.alerts.length > 0) sections.push(`Address active alerts (${battery.alerts.length})`);
+          sections.push("Portfolio review");
+          sections.push("Plan updates and next steps");
+        } else if (type === "prospect_intro") {
+          sections.push("Introductions and advisor overview");
+          sections.push("Client goals and priorities");
+          sections.push("Financial snapshot review");
+          sections.push("Next steps and engagement");
+        } else if (type === "rmd_year_end") {
+          sections.push("Review RMD requirements (age 73 threshold)");
+          sections.push("Year-end distribution planning");
+          sections.push("Tax-impact review");
+          sections.push("Action items for year-end");
+        } else {
+          // ad_hoc
+          sections.push("Meeting objectives");
+          if (battery.openTasks.length > 0) sections.push(`Open items review (${battery.openTasks.length})`);
+          if (battery.alerts.length > 0) sections.push(`Alert review (${battery.alerts.length})`);
+          sections.push("Discussion and next steps");
+        }
+
+        return JSON.stringify({
+          meetingType: type,
+          sections,
+          observations: [
+            "Agenda is a starting point for advisor review. Adjust based on client context.",
+          ],
+        });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to generate agenda.";
+      }
+    },
+    {
+      name: "generate_agenda",
+      description:
+        "Generate a meeting agenda grounded in the client's current battery (notes, tasks, alerts). " +
+        "Read-only. Meeting types are advisory (spec §11.7 soft).",
+      // soft (spec §11.7)
+      schema: z.object({
+        meetingType: z
+          .enum(["annual_review", "prospect_intro", "rmd_year_end", "ad_hoc"])
+          .optional()
+          .describe("Meeting type (defaults to ad_hoc). Soft enum — spec §11.7."),
+      }),
+    },
+  );
+
+  const draftFollowUp = tool(
+    async ({ noteId }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      // Ownership gate: note must belong to this household (IDOR protection)
+      const own = await assertNoteInHousehold(noteId, gate.firmId, gate.householdId);
+      if (own !== true) return own;
+      try {
+        const notes = await listHouseholdNotes(gate.householdId, gate.firmId);
+        const note = notes.find((n: { id: string }) => n.id === noteId);
+        if (!note) return `Note ${noteId} not found for this client.`;
+        return JSON.stringify({
+          note,
+          scaffold: {
+            greeting: null,
+            recap: [],
+            actionItems: [],
+          },
+          proposedTasks: [],
+        });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to draft follow-up.";
+      }
+    },
+    {
+      name: "draft_follow_up",
+      description:
+        "Return a note and a follow-up scaffold (greeting, recap, action items) for the model to draft over. " +
+        "Ownership-gated: note must belong to this client's household. Draft-only — no send capability.",
+      schema: z.object({
+        noteId: z.string().describe("The CRM note id to draft a follow-up for."),
+      }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool, deleteNoteTool, deleteTaskTool, createTasksBulkTool, meetingPrep, summarizeNotes, whatsChangedSince, suggestTasks, generateAgenda, draftFollowUp];
 }
 
 /** Exported for unit testing of the IDOR guards (spec §6). Not for runtime use outside tests. */
