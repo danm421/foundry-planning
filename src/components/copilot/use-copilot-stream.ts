@@ -94,6 +94,8 @@ export interface UseCopilotStreamResult {
   /** POST a turn and stream the reply into the trailing assistant bubble. */
   send: (args: SendArgs) => Promise<void>;
   cancel: () => void;
+  /** Resume an interrupted conversation after the advisor submits approval decisions. */
+  resume: (decisions: Record<string, "confirm" | "reject">) => Promise<void>;
 }
 
 export function useCopilotStream(clientId: string): UseCopilotStreamResult {
@@ -148,6 +150,39 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
     }
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // consumeStream — shared SSE reader used by both `send` and `resume`.
+  // Reads chunks from `res.body`, runs parseCopilotSse + applyEvent on each
+  // complete frame, and sets status to "done" when the stream drains normally.
+  // Aborts and error paths are handled by the caller's try/catch.
+  // ---------------------------------------------------------------------------
+  const consumeStream = useCallback(
+    async (res: Response, ac: AbortController) => {
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const it = parseCopilotSse(buffer);
+        let next = it.next();
+        while (!next.done) {
+          applyEvent(next.value);
+          next = it.next();
+        }
+        buffer = next.value as string;
+      }
+      // Only advance to "done" if we haven't already been set to an error/cancel
+      // state by an applyEvent("error") call mid-stream.
+      setStatus((s) => (s === "streaming" ? "done" : s));
+      // Suppress the unused-variable warning — ac is accepted for API symmetry
+      // so callers can pass their AbortController without a special-case.
+      void ac;
+    },
+    [applyEvent],
+  );
+
   const send = useCallback(
     async (args: SendArgs) => {
       cancel();
@@ -198,23 +233,8 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
       try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const it = parseCopilotSse(buffer);
-          let next = it.next();
-          while (!next.done) {
-            applyEvent(next.value);
-            next = it.next();
-          }
-          buffer = next.value as string;
-        }
-        setStatus((s) => (s === "streaming" ? "done" : s));
+        await consumeStream(res, ac);
       } catch (err) {
         if (ac.signal.aborted) return setStatus("cancelled");
         const msg = err instanceof Error ? err.message : String(err);
@@ -222,7 +242,44 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
         setErrorMessage(msg);
       }
     },
-    [clientId, conversationId, cancel, applyEvent],
+    [clientId, conversationId, cancel, consumeStream],
+  );
+
+  const resume = useCallback(
+    async (decisions: Record<string, "confirm" | "reject">) => {
+      if (!conversationId) return; // nothing to resume
+      setPendingApproval(null); // optimistic clear so the card unmounts
+      setStatus("streaming");
+      setErrorMessage(null);
+      // Push an empty assistant bubble to stream the response into,
+      // matching the same shape `send` uses so the renderer is consistent.
+      setMessages((m) => [...m, { role: "assistant", text: "" }]);
+      const ac = new AbortController();
+      abortRef.current = ac;
+      try {
+        const res = await fetch(`/api/clients/${clientId}/copilot/resume`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ conversationId, decisions }),
+          signal: ac.signal,
+        });
+        if (!res.ok || !res.body) {
+          const text = await res.text().catch(() => "");
+          setStatus("error");
+          setErrorMessage(text || `HTTP ${res.status}`);
+          return;
+        }
+        await consumeStream(res, ac);
+      } catch (err) {
+        if (ac.signal.aborted) {
+          setStatus("cancelled");
+          return;
+        }
+        setStatus("error");
+        setErrorMessage(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [clientId, conversationId, consumeStream],
   );
 
   return {
@@ -238,5 +295,6 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
     setConversationId,
     send,
     cancel,
+    resume,
   };
 }

@@ -6,6 +6,7 @@ import { sectionKeyForPath } from "@/lib/back-nav";
 import { useCopilot } from "./copilot-provider";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
 import { useCopilotStream, type PendingApproval } from "./use-copilot-stream";
+import { ApprovalCard } from "./approval-card";
 import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
 import { listMyConversations, loadConversationMessages } from "./actions";
@@ -41,6 +42,7 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
     setConversationId,
     send,
     cancel,
+    resume,
   } = useCopilotStream(clientId);
 
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -238,16 +240,21 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
             </div>
           )}
 
-          {/* Phase-1 placeholder: when an approval is pending we surface a notice.
-              The rich ApprovalCard (Confirm/Reject + previews) is Phase 2. */}
+          {/* Phase-2: render the real ApprovalCard when approval is pending.
+              key= per approval round so verdict state resets on each new payload. */}
           {pendingApproval && (
-            <div
-              data-testid="approval-slot"
-              className="rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-3 py-2 text-[12px] text-ink-2"
-            >
-              The copilot wants to make {pendingApproval.calls.length} change
-              {pendingApproval.calls.length === 1 ? "" : "s"}. Review and approve is coming soon.
-            </div>
+            <ApprovalCard
+              key={pendingApproval.calls[0]?.id ?? "approval"}
+              previews={pendingApproval.previews}
+              calls={pendingApproval.calls}
+              busy={status === "streaming"}
+              onSubmit={(decisions) => resume(decisions)}
+              onCancel={() => {
+                const rejectAll: Record<string, "confirm" | "reject"> = {};
+                for (const c of pendingApproval.calls) rejectAll[c.id] = "reject";
+                resume(rejectAll);
+              }}
+            />
           )}
 
           {status === "error" && errorMessage && (
