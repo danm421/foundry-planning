@@ -14,7 +14,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { recordActivity, listActivity } from "@/lib/crm/activity";
-import { listTasks } from "@/lib/crm-tasks/queries";
+import { listTasks, getTaskById } from "@/lib/crm-tasks/queries";
 import { createTask } from "@/lib/crm-tasks/mutations";
 import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { listOpenItems } from "@/lib/overview/list-open-items";
@@ -39,6 +39,30 @@ async function gateCrm(
   } catch {
     return { error: "Client not found or access denied." };
   }
+}
+
+// ── §6 Household-ownership IDOR guards ─────────────────────────────────────
+// Task-targeting and note-targeting Tier-A/B tools MUST call these before any
+// mutation. A same-firm task in another household must NEVER be mutated.
+
+async function assertTaskInHousehold(
+  taskId: string,
+  firmId: string,
+  householdId: string,
+): Promise<true | string> {
+  const row = await getTaskById(taskId, firmId);
+  if (!row) return `Task ${taskId} not found.`;
+  if (row.task.householdId !== householdId) return `Task ${taskId} does not belong to this client.`;
+  return true;
+}
+
+async function assertNoteInHousehold(
+  noteId: string,
+  firmId: string,
+  householdId: string,
+): Promise<true | string> {
+  const notes = await listHouseholdNotes(householdId, firmId);
+  return notes.some((n) => n.id === noteId) ? true : `Note ${noteId} not found for this client.`;
 }
 
 /** Fire the copilot.tool_call audit for a Tier-A auto-applied write (in addition
@@ -258,3 +282,6 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
 
   return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool];
 }
+
+/** Exported for unit testing of the IDOR guards (spec §6). Not for runtime use outside tests. */
+export const __testing = { assertTaskInHousehold, assertNoteInHousehold };
