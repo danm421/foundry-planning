@@ -4,6 +4,7 @@ const requireOrgId = vi.fn();
 const verifyClientAccess = vi.fn();
 const clientToHousehold = vi.fn();
 const createNote = vi.fn();
+const recordActivity = vi.fn();
 const recordAudit = vi.fn();
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
@@ -17,6 +18,10 @@ vi.mock("../guards", async (o) => ({
 vi.mock("@/lib/crm/notes", () => ({
   createNote: (...a: unknown[]) => createNote(...a),
   listHouseholdNotes: vi.fn(),
+}));
+vi.mock("@/lib/crm/activity", () => ({
+  recordActivity: (i: unknown, o: unknown) => recordActivity(i, o),
+  listActivity: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: (a: unknown) => recordAudit(a) }));
 
@@ -32,7 +37,42 @@ beforeEach(() => {
   verifyClientAccess.mockResolvedValue(true);
   clientToHousehold.mockResolvedValue("hh-1");
   createNote.mockReset();
+  recordActivity.mockReset();
   recordAudit.mockReset();
+});
+
+describe("crm_log_activity (Tier A)", () => {
+  it("records activity with actorUserId=ctx.userId and fires copilot.tool_call", async () => {
+    recordActivity.mockResolvedValue(undefined);
+    const out = JSON.parse(
+      await byName("crm_log_activity").invoke({
+        kind: "call",
+        title: "Quarterly check-in",
+        body: "Reviewed allocation",
+        occurredAt: "2026-06-15T10:00:00Z",
+      }),
+    );
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ householdId: "hh-1", kind: "call", title: "Quarterly check-in" }),
+      { actorUserId: "advisor-9" },
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.tool_call",
+        resourceType: "crm_activity",
+        resourceId: "hh-1",
+      }),
+    );
+    expect(out.ok).toBe(true);
+    expect(out.kind).toBe("call");
+  });
+
+  it("returns an error string when access is denied", async () => {
+    verifyClientAccess.mockResolvedValue(false);
+    const out = await byName("crm_log_activity").invoke({ kind: "call", title: "test" });
+    expect(out).toMatch(/access denied/i);
+    expect(recordActivity).not.toHaveBeenCalled();
+  });
 });
 
 describe("crm_add_note (Tier A)", () => {

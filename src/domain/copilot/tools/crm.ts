@@ -13,7 +13,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
-import { listActivity } from "@/lib/crm/activity";
+import { recordActivity, listActivity } from "@/lib/crm/activity";
 import { listTasks } from "@/lib/crm-tasks/queries";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
@@ -189,5 +189,40 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote];
+  const logActivity = tool(
+    async ({ kind, title, body, occurredAt }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        await recordActivity(
+          {
+            householdId: gate.householdId,
+            kind,
+            title,
+            body,
+            occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
+          },
+          { actorUserId: ctx.userId },
+        );
+        await auditToolCall(ctx, conversationId, "crm_activity", gate.householdId, "crm_log_activity");
+        return JSON.stringify({ ok: true, kind, title });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to log activity.";
+      }
+    },
+    {
+      name: "crm_log_activity",
+      description:
+        "Log a call, meeting, or email interaction to the client's activity timeline. " +
+        "Applies immediately (reversible). Use for interactions that aren't detailed notes.",
+      schema: z.object({
+        kind: z.enum(["call", "meeting", "email"]),
+        title: z.string().min(1).max(300),
+        body: z.string().max(20_000).optional(),
+        occurredAt: z.string().optional(), // ISO datetime
+      }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity];
 }
