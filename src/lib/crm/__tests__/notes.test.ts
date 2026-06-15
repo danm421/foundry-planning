@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholds, crmActivity, auditLog } from "@/db/schema";
-import { NOTE_KINDS, listHouseholdNotes } from "../notes";
+import { NOTE_KINDS, listHouseholdNotes, createNote } from "../notes";
 
 // Each later task (4/5/6) ADDS its function to this import line when it adds
 // its describe block — keep the import in sync with what's implemented so the
@@ -88,5 +88,48 @@ describe("listHouseholdNotes", () => {
     });
     const rows = await listHouseholdNotes(householdId, ORG);
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("createNote", () => {
+  it("inserts a crm_activity row with mapped fields and writes audit", async () => {
+    const note = await createNote(householdId, ORG, USER, {
+      subject: "Kickoff meeting",
+      body: "**Discussed** goals",
+      noteKind: "meeting",
+      noteDate: "2026-06-15",
+    });
+
+    expect(note.title).toBe("Kickoff meeting");
+    expect(note.body).toBe("**Discussed** goals");
+    expect(note.kind).toBe("meeting");
+    // noon-UTC mapping
+    expect(note.occurredAt).toBe("2026-06-15T12:00:00.000Z");
+    expect(note.actorUserId).toBe(USER);
+
+    const row = await db.query.crmActivity.findFirst({
+      where: eq(crmActivity.id, note.id),
+    });
+    expect(row?.firmId).toBe(ORG);
+    expect(row?.householdId).toBe(householdId);
+
+    const audits = await db.query.auditLog.findMany({
+      where: and(eq(auditLog.firmId, ORG), eq(auditLog.resourceType, "crm_note")),
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].action).toBe("crm.note.create");
+    expect(audits[0].resourceId).toBe(note.id);
+  });
+
+  it("rejects a household outside the firm", async () => {
+    const other = await makeHousehold(OTHER_ORG, "Foreign Household");
+    await expect(
+      createNote(other.id, ORG, USER, {
+        subject: "x",
+        body: "",
+        noteKind: "note",
+        noteDate: "2026-06-15",
+      }),
+    ).rejects.toThrow(/not found in firm/i);
   });
 });
