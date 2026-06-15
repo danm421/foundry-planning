@@ -16,6 +16,10 @@ import type {
 import { solveSsClaimAgeByPortfolio } from "@/lib/solver/solve-ss-portfolio";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import type { ScenarioChange } from "@/engine/scenario/types";
+import {
+  runLifeInsuranceWhatIf,
+  survivorEndingPortfolio,
+} from "@/engine/what-if/life-insurance-need";
 
 /**
  * Shared preamble for every what-if tool: the model-supplied clientId must equal
@@ -361,5 +365,116 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
     },
   );
 
-  return [whatifRoth, whatifSocialSecurity, whatifWithdrawal, whatifEstateTax];
+  const whatifLifeInsuranceNeed = tool(
+    async ({
+      clientId,
+      scenarioId,
+      deceased,
+      deathYear,
+      targetSurvivorPortfolio,
+      proceedsGrowthRate,
+      livingExpenseAtDeath,
+      payoffLiabilityIds,
+    }) => {
+      const denied = await guardClient(ctx, clientId);
+      if (denied) return denied;
+
+      const { effectiveTree } = await loadEffectiveTree(clientId, ctx.firmId, scenarioId, {});
+
+      const target = targetSurvivorPortfolio ?? 0;
+      // Survivor ending portfolio rises monotonically with face value, so a
+      // simple bisection over [0, $5M] converges. Deterministic engine runs
+      // (no Monte Carlo) → repeatable. $10k tolerance, capped iterations.
+      const LO_INIT = 0;
+      const HI_INIT = 5_000_000;
+      const TOLERANCE = 10_000;
+      const MAX_ITERATIONS = 24;
+
+      const evaluate = (faceValue: number): number => {
+        const projection = runLifeInsuranceWhatIf({
+          data: effectiveTree,
+          deceased: deceased as "client" | "spouse",
+          deathYear,
+          faceValue,
+          proceedsGrowthRate: proceedsGrowthRate ?? effectiveTree.planSettings?.inflationRate ?? 0,
+          livingExpenseAtDeath: livingExpenseAtDeath ?? null,
+          payoffLiabilityIds: payoffLiabilityIds ?? [],
+        });
+        return survivorEndingPortfolio(projection, deceased as "client" | "spouse", effectiveTree);
+      };
+
+      let lo = LO_INIT;
+      let hi = HI_INIT;
+      const hiEnding = evaluate(hi);
+      let status: "converged" | "unreachable" = "converged";
+      if (hiEnding < target) {
+        // Even max coverage can't clear the target — report the ceiling.
+        status = "unreachable";
+        lo = hi;
+      } else {
+        for (let i = 0; i < MAX_ITERATIONS && hi - lo > TOLERANCE; i += 1) {
+          const mid = (lo + hi) / 2;
+          if (evaluate(mid) >= target) {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+      }
+
+      const solvedFaceValue = Math.round(hi / TOLERANCE) * TOLERANCE;
+      const solvedSurvivorPortfolio = evaluate(solvedFaceValue);
+
+      return JSON.stringify({
+        scenarioId,
+        deceased,
+        deathYear,
+        status,
+        targetSurvivorPortfolio: target,
+        solvedFaceValue,
+        solvedSurvivorPortfolio,
+        disclaimer:
+          "Smallest term face value (to $10k) whose deterministic projection leaves the survivor " +
+          "at or above the target ending portfolio. Observations only, not advice.",
+      });
+    },
+    {
+      name: "whatif_life_insurance_need",
+      description:
+        "Solve how much term life-insurance coverage the household needs. Bisects candidate face " +
+        "values for a premature death of one principal in deathYear, returning the smallest face " +
+        "value whose deterministic projection leaves the survivor's ending portfolio at or above " +
+        "targetSurvivorPortfolio (default $0 = does not run out).",
+      schema: z.object({
+        clientId: z.string().describe("the client uuid (must match your scope)"),
+        scenarioId: z.string().describe("scenario uuid, or 'base'"),
+        deceased: z.enum(["client", "spouse"]).describe("which principal dies prematurely"),
+        deathYear: z.number().int().describe("calendar year of the premature death"),
+        targetSurvivorPortfolio: z
+          .number()
+          .optional()
+          .describe("survivor's required final-year liquid portfolio; default 0"),
+        proceedsGrowthRate: z
+          .number()
+          .optional()
+          .describe("blended growth rate on the proceeds; default = plan inflation rate"),
+        livingExpenseAtDeath: z
+          .number()
+          .optional()
+          .describe("survivor's annual living expense after the death; default = unchanged"),
+        payoffLiabilityIds: z
+          .array(z.string())
+          .optional()
+          .describe("household liability uuids retired at the insured's death"),
+      }),
+    },
+  );
+
+  return [
+    whatifRoth,
+    whatifSocialSecurity,
+    whatifWithdrawal,
+    whatifEstateTax,
+    whatifLifeInsuranceNeed,
+  ];
 }
