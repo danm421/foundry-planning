@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholds, crmActivity, auditLog } from "@/db/schema";
-import { NOTE_KINDS, listHouseholdNotes, createNote } from "../notes";
+import { NOTE_KINDS, listHouseholdNotes, createNote, updateNote } from "../notes";
 
 // Each later task (4/5/6) ADDS its function to this import line when it adds
 // its describe block — keep the import in sync with what's implemented so the
@@ -131,5 +131,66 @@ describe("createNote", () => {
         noteDate: "2026-06-15",
       }),
     ).rejects.toThrow(/not found in firm/i);
+  });
+});
+
+describe("updateNote", () => {
+  it("updates only the provided fields and writes audit", async () => {
+    const note = await createNote(householdId, ORG, USER, {
+      subject: "Draft",
+      body: "old",
+      noteKind: "note",
+      noteDate: "2026-06-15",
+    });
+
+    const updated = await updateNote(note.id, householdId, ORG, USER, {
+      subject: "Final",
+      noteKind: "meeting",
+    });
+
+    expect(updated.title).toBe("Final");
+    expect(updated.kind).toBe("meeting");
+    expect(updated.body).toBe("old"); // untouched
+    expect(updated.occurredAt).toBe("2026-06-15T12:00:00.000Z"); // untouched
+
+    const audits = await db.query.auditLog.findMany({
+      where: and(eq(auditLog.firmId, ORG), eq(auditLog.resourceType, "crm_note")),
+    });
+    expect(audits.some((a) => a.action === "crm.note.update")).toBe(true);
+  });
+
+  it("remaps noteDate to a noon-UTC occurredAt", async () => {
+    const note = await createNote(householdId, ORG, USER, {
+      subject: "x", body: "", noteKind: "note", noteDate: "2026-06-15",
+    });
+    const updated = await updateNote(note.id, householdId, ORG, USER, { noteDate: "2026-07-01" });
+    expect(updated.occurredAt).toBe("2026-07-01T12:00:00.000Z");
+  });
+
+  it("refuses to update a system-kind activity row", async () => {
+    const [sys] = await db
+      .insert(crmActivity)
+      .values({
+        householdId,
+        firmId: ORG,
+        actorUserId: USER,
+        kind: "status_change",
+        title: "Status",
+        occurredAt: new Date(),
+      })
+      .returning();
+    await expect(
+      updateNote(sys.id, householdId, ORG, USER, { subject: "hijack" }),
+    ).rejects.toThrow(/note not found/i);
+  });
+
+  it("refuses a note from another household", async () => {
+    const other = await makeHousehold(ORG, "Other HH");
+    const note = await createNote(other.id, ORG, USER, {
+      subject: "x", body: "", noteKind: "note", noteDate: "2026-06-15",
+    });
+    await expect(
+      updateNote(note.id, householdId, ORG, USER, { subject: "y" }),
+    ).rejects.toThrow(/note not found/i);
   });
 });
