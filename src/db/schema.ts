@@ -3696,6 +3696,24 @@ export const betaCodes = pgTable("beta_codes", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Foundry staff who can operate across all orgs (ops console). Keyed to the
+// Clerk *user*, deliberately OUTSIDE Clerk org roles — so it neither needs nor
+// consumes the B2B custom-roles add-on, and never collides with the per-org
+// advisor `org:admin` role. Generalizes the retired BETA_OPERATOR allowlist.
+export const opsAdmins = pgTable(
+  "ops_admins",
+  {
+    clerkUserId: text("clerk_user_id").primaryKey(),
+    email: text("email").notNull(),
+    role: text("role").notNull(), // 'support' | 'ops' | 'superadmin'
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [check("ops_admins_role_check", sql`${t.role} IN ('support','ops','superadmin')`)],
+);
+
 // Stripe subscription items — one per seat line + one per add-on.
 // `kind` distinguishes seats (quantity tracks org membership) from
 // add-ons (quantity is always 1, presence = entitlement).
