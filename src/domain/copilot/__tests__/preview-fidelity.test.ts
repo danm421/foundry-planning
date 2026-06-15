@@ -8,7 +8,8 @@
 //
 // Skips cleanly without a DB (no DATABASE_URL) so it never adds to the no-delta
 // failing set in CI. Mirrors changes-writer.test.ts's Cooper-fixture setup.
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { formatProposedWrite } from "../preview";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -158,5 +159,20 @@ describe.skipIf(!HAS_DB)("preview fidelity", () => {
     const detailText = preview.details!.join(" ");
     expect(detailText).toContain("annualAmount");
     expect(detailText).toContain(String(realField!.to));
+  });
+});
+
+describe("CRM Tier-B previews", () => {
+  it("crm_delete_note → Delete note summary naming the tool", () => {
+    const p = formatProposedWrite({ name: "crm_delete_note", args: { noteId: "n1" } });
+    expect(p.name).toBe("crm_delete_note"); expect(p.summary).toMatch(/delete note/i);
+  });
+  it("crm_delete_task → Delete task summary", () => {
+    const p = formatProposedWrite({ name: "crm_delete_task", args: { taskId: "t1" } });
+    expect(p.summary).toMatch(/delete task/i);
+  });
+  it("crm_create_tasks → 'Create N tasks' with the count", () => {
+    const p = formatProposedWrite({ name: "crm_create_tasks", args: { tasks: [{ title: "A" }, { title: "B" }, { title: "C" }] } });
+    expect(p.summary).toMatch(/create 3 task/i);
   });
 });

@@ -132,6 +132,20 @@ function previewRevertChange(args: Record<string, unknown>): WritePreview {
   };
 }
 
+function previewCrmDeleteNote(a: Record<string, unknown>): WritePreview {
+  return { name: "crm_delete_note", summary: `Delete note ${str(a.noteId) ?? ""}.`.trim() };
+}
+
+function previewCrmDeleteTask(a: Record<string, unknown>): WritePreview {
+  return { name: "crm_delete_task", summary: `Delete task ${str(a.taskId) ?? ""}.`.trim() };
+}
+
+function previewCrmCreateTasks(a: Record<string, unknown>): WritePreview {
+  const tasks = Array.isArray(a.tasks) ? a.tasks : [];
+  const titles = tasks.map((t) => (t as { title?: string })?.title).filter(Boolean) as string[];
+  return { name: "crm_create_tasks", summary: `Create ${tasks.length} task${tasks.length === 1 ? "" : "s"}: ${titles.slice(0, 5).join(", ")}.` };
+}
+
 function previewCompareAndSnapshot(args: Record<string, unknown>): WritePreview {
   const name = str(args.name) ?? "(unnamed)";
   const left = refLabel(str(args.leftRef));
@@ -157,6 +171,12 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewRevertChange(call.args);
     case "compare_and_snapshot":
       return previewCompareAndSnapshot(call.args);
+    case "crm_delete_note":
+      return previewCrmDeleteNote(call.args);
+    case "crm_delete_task":
+      return previewCrmDeleteTask(call.args);
+    case "crm_create_tasks":
+      return previewCrmCreateTasks(call.args);
     default:
       return { name: call.name, summary: `Proposed ${call.name}.` };
   }

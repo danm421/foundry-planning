@@ -49,18 +49,24 @@ const EXPECTED_PHASE1 = [
   "solve_max_spending",
 ];
 
-const EXPECTED_WRITE_TOOL_NAMES = [
+const EXPECTED_SCENARIO_WRITE_TOOL_NAMES = [
   "compare_and_snapshot",
   "create_scenario",
   "propose_changes",
   "revert_change",
 ];
 
+const EXPECTED_CRM_TIER_B_TOOL_NAMES = [
+  "crm_create_tasks",
+  "crm_delete_note",
+  "crm_delete_task",
+];
+
 describe("buildTools (Phase 1 + Phase 2 assembly)", () => {
-  it("returns exactly the 19 named tools (15 Phase-1 + 4 Phase-2 writes)", () => {
+  it("returns exactly the 19 named tools (15 Phase-1 + 4 Phase-2 scenario writes)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual([...EXPECTED_PHASE1, ...EXPECTED_WRITE_TOOL_NAMES].sort());
+    expect(names).toEqual([...EXPECTED_PHASE1, ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES].sort());
     expect(tools).toHaveLength(19);
   });
 
@@ -69,20 +75,28 @@ describe("buildTools (Phase 1 + Phase 2 assembly)", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (write tools registered in Phase 2)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (7 entries: 4 scenario writes + 3 Tier-B CRM writes)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(4);
+    expect(WRITE_TOOL_NAMES.size).toBe(7);
   });
 });
 
 describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
-  it("WRITE_TOOL_NAMES contains exactly the 4 scenario-write tool names (sorted)", () => {
-    expect([...WRITE_TOOL_NAMES].sort()).toEqual(EXPECTED_WRITE_TOOL_NAMES);
+  it("WRITE_TOOL_NAMES contains exactly the 4 scenario-write tool names", () => {
+    for (const n of EXPECTED_SCENARIO_WRITE_TOOL_NAMES) {
+      expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
+    }
   });
 
-  it("buildTools includes all 4 write tool names", () => {
+  it("WRITE_TOOL_NAMES contains exactly the 3 Tier-B CRM tool names", () => {
+    for (const n of EXPECTED_CRM_TIER_B_TOOL_NAMES) {
+      expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
+    }
+  });
+
+  it("buildTools includes all 4 scenario write tool names", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
-    for (const w of EXPECTED_WRITE_TOOL_NAMES) {
+    for (const w of EXPECTED_SCENARIO_WRITE_TOOL_NAMES) {
       expect(names.has(w), `expected ${w} in buildTools output`).toBe(true);
     }
   });
@@ -97,6 +111,11 @@ describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
     const names = buildTools(TOOL_CTX).map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });
+});
+
+it("Tier-B CRM writes are in WRITE_TOOL_NAMES; Tier-A writes are NOT", () => {
+  for (const n of ["crm_delete_note", "crm_delete_task", "crm_create_tasks"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(true);
+  for (const n of ["crm_add_note","crm_log_activity","crm_create_task","crm_update_task","crm_complete_task","crm_post_task_comment"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(false);
 });
 
 describe("routeAfterAgent with WRITE_TOOL_NAMES", () => {

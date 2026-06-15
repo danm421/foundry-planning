@@ -35,4 +35,8 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "propose_changes",
   "revert_change",
   "compare_and_snapshot",
+  // Tier-B CRM destructive / bulk writes — route through HITL approval node
+  "crm_delete_note",
+  "crm_delete_task",
+  "crm_create_tasks",
 ]);
