@@ -276,7 +276,65 @@ export function buildScenarioWriteTools({
     },
   );
 
-  // compare_and_snapshot is appended in the following task; this array is
-  // extended in place.
-  return [createScenario, proposeChanges, revertChangeTool];
+  // Resolve a model-supplied ref string ("base" | scenario uuid) into a
+  // ScenarioRef. We do NOT accept snapshot/do-nothing refs from the model here
+  // — the copilot snapshots live scenarios only.
+  const toRef = (raw: string): ScenarioRef => ({
+    kind: "scenario",
+    id: raw === "base" ? "base" : raw,
+    toggleState: {},
+  });
+
+  const compareAndSnapshot = tool(
+    async ({ name, leftRef, rightRef }) => {
+      const gate = await gateAccess(ctx.clientId);
+      if ("error" in gate) return gate.error;
+      const { firmId } = gate;
+
+      const left = toRef(leftRef);
+      const right = toRef(rightRef);
+
+      // loadProjectionForRef enforces firm scoping on each ref (loadEffectiveTreeForRef
+      // throws cross-firm) and proves both are loadable before we freeze them.
+      // ScenarioRef is a subset of EstateCompareRef, so the cast is widening-only.
+      await loadProjectionForRef(ctx.clientId, firmId, left as EstateCompareRef);
+      await loadProjectionForRef(ctx.clientId, firmId, right as EstateCompareRef);
+
+      const snapshot = await createSnapshot({
+        clientId: ctx.clientId,
+        firmId,
+        leftRef: left,
+        rightRef: right,
+        name,
+        sourceKind: "manual",
+        userId: ctx.userId,
+      });
+
+      await recordAudit({
+        action: "copilot.write_approved",
+        resourceType: "scenario_snapshot",
+        resourceId: snapshot.id,
+        clientId: ctx.clientId,
+        firmId,
+        metadata: { tool: "compare_and_snapshot", name, leftRef, rightRef },
+      });
+
+      return `Saved comparison snapshot "${name}" (id ${snapshot.id}).`;
+    },
+    {
+      name: "compare_and_snapshot",
+      description:
+        "Freeze a comparison between two scenarios into a saved snapshot that survives later " +
+        "edits or deletion of the source scenarios. Pass leftRef and rightRef as 'base' or a " +
+        "scenario uuid. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        name: z.string().min(1).max(80).describe("name for the saved snapshot"),
+        leftRef: z.string().describe("'base' or a scenario uuid for the left side"),
+        rightRef: z.string().describe("'base' or a scenario uuid for the right side"),
+      }),
+    },
+  );
+
+  return [createScenario, proposeChanges, revertChangeTool, compareAndSnapshot];
 }
