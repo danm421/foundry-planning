@@ -125,7 +125,117 @@ export function buildScenarioWriteTools({
     },
   );
 
-  // propose_changes, revert_change, compare_and_snapshot are appended in the
-  // following tasks; this array is extended in place.
-  return [createScenario];
+  const ChangeSchema = z.discriminatedUnion("opType", [
+    z.object({
+      opType: z.literal("add"),
+      targetKind: z.string().describe("entity kind, e.g. account | income | roth_conversion"),
+      targetId: z.string().describe("a fresh uuid for the new entity (also used as entity.id)"),
+      entity: z
+        .record(z.string(), z.unknown())
+        .describe("the full entity payload; must include id matching targetId"),
+    }),
+    z.object({
+      opType: z.literal("edit"),
+      targetKind: z.string(),
+      targetId: z.string().describe("id of the existing base row to edit"),
+      desiredFields: z
+        .record(z.string(), z.unknown())
+        .describe("field → desired value; only changed fields are written"),
+    }),
+    z.object({
+      opType: z.literal("remove"),
+      targetKind: z.string(),
+      targetId: z.string().describe("id of the base row to remove in this scenario"),
+    }),
+  ]);
+
+  const proposeChanges = tool(
+    async ({ scenarioId, groupName, changes }) => {
+      const gate = await gateAccess(ctx.clientId);
+      if ("error" in gate) return gate.error;
+      const { firmId } = gate;
+
+      // Confirm the scenario belongs to this client before minting anything.
+      // (The changes-writer re-asserts firm scope on every call, but we want a
+      // clean rejection before we write a toggle-group row.)
+      const [scenarioRow] = await db
+        .select({ id: scenarios.id, clientId: scenarios.clientId })
+        .from(scenarios)
+        .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, ctx.clientId)));
+      if (!scenarioRow) return `Scenario ${scenarioId} not found for this client.`;
+
+      // Mint ONE toggle group so the whole proposal toggles as a unit (default-on
+      // so the advisor sees its effect immediately; they can switch it off).
+      const [group] = await db
+        .insert(scenarioToggleGroups)
+        .values({
+          scenarioId,
+          name: groupName,
+          defaultOn: true,
+          requiresGroupId: null,
+          orderIndex: 0,
+        })
+        .returning();
+      const toggleGroupId = group.id;
+
+      const applied: string[] = [];
+      for (const c of changes) {
+        const targetKind = c.targetKind as TargetKind;
+        if (c.opType === "add") {
+          const entity = { ...(c.entity as Record<string, unknown>), id: c.targetId } as {
+            id: string;
+            [k: string]: unknown;
+          };
+          await applyEntityAdd({ scenarioId, firmId, targetKind, entity, toggleGroupId });
+          applied.push(`add ${c.targetKind}`);
+        } else if (c.opType === "edit") {
+          await applyEntityEdit({
+            scenarioId,
+            firmId,
+            targetKind,
+            targetId: c.targetId,
+            desiredFields: c.desiredFields as Record<string, unknown>,
+            toggleGroupId,
+          });
+          applied.push(`edit ${c.targetKind}`);
+        } else {
+          await applyEntityRemove({ scenarioId, firmId, targetKind, targetId: c.targetId, toggleGroupId });
+          applied.push(`remove ${c.targetKind}`);
+        }
+      }
+
+      await recordAudit({
+        action: "copilot.write_approved",
+        resourceType: "scenario",
+        resourceId: scenarioId,
+        clientId: ctx.clientId,
+        firmId,
+        metadata: { tool: "propose_changes", groupName, count: changes.length, applied },
+      });
+
+      return `Applied ${changes.length} change${changes.length === 1 ? "" : "s"} to scenario ${scenarioId} under "${groupName}".`;
+    },
+    {
+      name: "propose_changes",
+      description:
+        "Apply a batch of related what-if changes to an existing scenario, bundled under one " +
+        "toggle group so the advisor can switch the whole proposal on/off. Each change is an " +
+        "add (full entity), edit (desiredFields), or remove (by id). Use the scenarioId of the " +
+        "scenario you want to modify (create one first with create_scenario if needed). " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        scenarioId: z.string().describe("the scenario to modify (must belong to this client)"),
+        groupName: z
+          .string()
+          .min(1)
+          .max(80)
+          .describe("label for the bundled change group, e.g. 'Roth ladder'"),
+        changes: z.array(ChangeSchema).min(1).describe("the changes to apply together"),
+      }),
+    },
+  );
+
+  // revert_change, compare_and_snapshot are appended in the following tasks;
+  // this array is extended in place.
+  return [createScenario, proposeChanges];
 }
