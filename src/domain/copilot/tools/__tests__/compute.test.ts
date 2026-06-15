@@ -200,6 +200,28 @@ describe("compute.ts — run_monte_carlo", () => {
     expect(out.available).toBe(false);
     expect(summarizeMonteCarlo).not.toHaveBeenCalled();
   });
+
+  it("degrades (available:false) on a partial cache result with missing raw, without throwing", async () => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        client: { firstName: "Jane", lastName: "Doe" },
+        planSettings: { planStartYear: 2025 },
+      },
+      warnings: [],
+      resolutionContext: {},
+    } as unknown as Awaited<ReturnType<typeof loadEffectiveTree>>);
+    // Stale/partial cached payload: shape never validated → raw is undefined.
+    vi.mocked(getOrComputeMonteCarlo).mockResolvedValue({
+      payload: {},
+      raw: undefined,
+    } as unknown as Awaited<ReturnType<typeof getOrComputeMonteCarlo>>);
+
+    const out = JSON.parse(
+      (await tool("run_monte_carlo").invoke({ clientId: "client-1" })) as string,
+    );
+    expect(out.available).toBe(false);
+    expect(summarizeMonteCarlo).not.toHaveBeenCalled();
+  });
 });
 
 function loaded(name: string, endPortfolio: number, totalTax: number, isDoNothing = false) {
@@ -315,5 +337,15 @@ describe("compute.ts — explain_report", () => {
       (await tool("explain_report").invoke({ clientId: "client-1", pageId: "nope" })) as string,
     );
     expect(out.error).toMatch(/unknown page/i);
+  });
+
+  it("marks a page that needs unloaded context (monteCarlo) as unavailable without building it", async () => {
+    const out = JSON.parse(
+      (await tool("explain_report").invoke({ clientId: "client-1", pageId: "monteCarlo" })) as string,
+    );
+    expect(out.unavailable).toBe(true);
+    expect(PRESENTATION_PAGES.monteCarlo.buildData).not.toHaveBeenCalled();
+    // No projection load happens for an unavailable page.
+    expect(loadEffectiveTree).not.toHaveBeenCalled();
   });
 });

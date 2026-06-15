@@ -36,8 +36,25 @@ function lifetimeTax(result: ProjectionResult): number {
 }
 function endingPortfolio(result: ProjectionResult): number {
   const last = result.years[result.years.length - 1];
+  // `?? 0` is effectively unreachable: a valid plan always spans
+  // planStartYear..planEndYear, so `years` is never empty. The fallback exists
+  // only to satisfy the optional-access type — it is not a real "$0 portfolio".
   return last?.portfolioAssets.total ?? 0;
 }
+
+// Pages whose buildData depends on an optional context bundle that explain_report
+// does NOT load (investments / monteCarlo / lifeInsurance / scenarioChanges /
+// bundlesByRef). Built without it they return structurally-empty data the model
+// could narrate as a real zero. Surface them as unavailable + redirect to the
+// dedicated tool instead of building ungrounded output.
+const PAGES_NEEDING_UNLOADED_CONTEXT = new Set<string>([
+  "assetAllocation",      // needs ctx.investments
+  "portfolioAnalysis",    // needs ctx.investments
+  "monteCarlo",           // needs ctx.monteCarlo — use run_monte_carlo
+  "lifeInsuranceSummary", // needs ctx.lifeInsurance
+  "scenarioChanges",      // needs ctx.scenarioChanges — use list_scenarios
+  "retirementComparison", // needs bundlesByRef — use compare_scenarios
+]);
 
 /** Per-year story compacted for the model — the engine's own numbers only. */
 function compactYear(y: ProjectionYear) {
@@ -127,7 +144,10 @@ export function buildComputeTools(toolCtx: CopilotToolContext) {
       } catch (err) {
         console.error("[copilot] monte-carlo compute failed", err);
       }
-      if (!cached || cached.raw.trialsRun === 0) {
+      // The compute cache returns `row.payload as T` with no shape validation, so
+      // a stale/partial cached result could be missing `raw` entirely. Degrade
+      // (don't deref `cached.raw.trialsRun` and throw an uncaught TypeError).
+      if (!cached?.raw || cached.raw.trialsRun === 0) {
         return JSON.stringify({
           available: false,
           note: "Monte Carlo could not be computed for this scenario right now.",
@@ -137,7 +157,7 @@ export function buildComputeTools(toolCtx: CopilotToolContext) {
       const summary = summarizeMonteCarlo(cached.raw, {
         client: effectiveTree.client,
         planSettings: effectiveTree.planSettings,
-        startingLiquidBalance: cached.meta.startingLiquidBalance,
+        startingLiquidBalance: cached.meta?.startingLiquidBalance,
       });
 
       return JSON.stringify({
@@ -219,10 +239,31 @@ export function buildComputeTools(toolCtx: CopilotToolContext) {
           })),
         });
       }
-      if (!(pageId in PRESENTATION_PAGES)) {
+      // `Object.hasOwn` (not `in`) so prototype keys like "constructor"/"toString"
+      // don't pass as real page ids and then crash on `.buildData`.
+      if (!Object.hasOwn(PRESENTATION_PAGES, pageId)) {
         return JSON.stringify({
           error: `Unknown page "${pageId}".`,
           availablePages: ids.map((id) => ({ id, title: PRESENTATION_PAGES[id].title })),
+        });
+      }
+
+      const page = PRESENTATION_PAGES[pageId as PresentationPageId];
+      // Pages that need a context bundle this tool doesn't load would build
+      // structurally-empty data the model could narrate as a real zero. Surface
+      // them as unavailable (and redirect to the dedicated tool) BEFORE loading
+      // the tree or calling buildData. `requiredScenarioRefs` marks multi-scenario
+      // pages that need bundlesByRef, which this tool also doesn't assemble.
+      if (
+        PAGES_NEEDING_UNLOADED_CONTEXT.has(pageId) ||
+        typeof page.requiredScenarioRefs === "function"
+      ) {
+        return JSON.stringify({
+          pageId,
+          unavailable: true,
+          reason:
+            "This page needs data this tool does not load (investment / Monte Carlo / multi-scenario context).",
+          hint: "Use run_monte_carlo, read_detail, compare_scenarios, or list_scenarios for that data.",
         });
       }
 
@@ -255,7 +296,6 @@ export function buildComputeTools(toolCtx: CopilotToolContext) {
         accentColor: resolveAccentColor(null),
       };
 
-      const page = PRESENTATION_PAGES[pageId as PresentationPageId];
       // `page` is the union of all page defs; `buildData`'s options param is the
       // intersection of every page's option type (contravariant method on a
       // union). `as never` is the same escape hatch the export route uses
