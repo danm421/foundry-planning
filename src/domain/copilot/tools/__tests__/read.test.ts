@@ -223,6 +223,11 @@ describe("read.ts — read_detail", () => {
     expect(loadEffectiveTree).not.toHaveBeenCalled();
   });
 
+  // NOTE: the engine `Account` type (loadEffectiveTree output) carries no
+  // account-number field today — `accountNumber` here is a forward/defense-in-
+  // depth stand-in proving sanitizeRow masks any such field a future or
+  // import-sourced payload might introduce. (The SSN case below is a real
+  // vector: a CRM free-text field can carry a pasted SSN.)
   it("masks account numbers in account rows", async () => {
     loadEffectiveTree.mockResolvedValue({
       effectiveTree: {
@@ -243,6 +248,27 @@ describe("read.ts — read_detail", () => {
     expect(out.count).toBe(1);
     expect(out.rows[0].accountNumber).toBe("••••6655");
     // The full account number must never appear anywhere in the payload.
+    expect(raw).not.toContain("9988776655");
+  });
+
+  it("masks a NUMERIC account-number field without crashing", async () => {
+    loadEffectiveTree.mockResolvedValue({
+      effectiveTree: {
+        accounts: [
+          { id: "acc-2", name: "Checking", accountNumber: 9988776655, value: 200 },
+        ],
+      },
+      warnings: [],
+    });
+
+    const raw = (await tool("read_detail").invoke({
+      clientId: "client-1",
+      kind: "account",
+    })) as string;
+    const out = JSON.parse(raw);
+
+    expect(out.rows[0].accountNumber).toBe("••••6655");
+    // The raw numeric value must never appear anywhere in the serialised payload.
     expect(raw).not.toContain("9988776655");
   });
 

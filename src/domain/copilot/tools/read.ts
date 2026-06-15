@@ -54,7 +54,9 @@ function sanitizeRow(value: unknown): unknown {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       if (ACCOUNT_NUMBER_FIELDS.has(k)) {
-        out.accountNumber = maskAccountNumber(v as string | null | undefined);
+        // Coerce to string first: a numeric account number must be masked too,
+        // never echoed raw or crash maskAccountNumber's .trim().
+        out.accountNumber = maskAccountNumber(v == null ? null : String(v));
       } else {
         out[k] = sanitizeRow(v);
       }
