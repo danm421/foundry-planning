@@ -5,6 +5,7 @@ import { buildReadTools } from "./read";
 import { buildComputeTools } from "./compute";
 import { buildWhatIfTools } from "./whatif";
 import { buildScenarioWriteTools } from "./scenario-writes";
+import { buildCrmTools } from "./crm";
 
 /**
  * Build the tool set for one conversation. EVERY tool closes over `toolCtx` for
@@ -22,6 +23,7 @@ export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface
     ...buildComputeTools(toolCtx),
     ...buildWhatIfTools(toolCtx),
     ...buildScenarioWriteTools(toolCtx),
+    ...buildCrmTools(toolCtx),
   ];
 }
 

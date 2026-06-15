@@ -21,6 +21,20 @@ vi.mock("@/lib/solver/apply-mutations", () => ({ applyMutations: vi.fn() }));
 // Phase 2: stub scenario-writes IO deps
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
 vi.mock("@/db", () => ({ db: {} }));
+// CRM tool deps (assembly test stays pure — no DB, no CRM IO)
+vi.mock("@/lib/crm/notes", () => ({ createNote: vi.fn(), listHouseholdNotes: vi.fn(), deleteNote: vi.fn() }));
+vi.mock("@/lib/crm/schemas", () => ({ createCrmNoteSchema: { parse: vi.fn() } }));
+vi.mock("@/lib/crm/activity", () => ({ recordActivity: vi.fn(), listActivity: vi.fn() }));
+vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: vi.fn(), getTaskById: vi.fn() }));
+vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn(), updateTaskField: vi.fn(), setTaskStatus: vi.fn(), postComment: vi.fn(), deleteTask: vi.fn() }));
+vi.mock("@/lib/crm-tasks/schemas", () => ({ createCrmTaskSchema: { parse: vi.fn() } }));
+vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: vi.fn() }));
+vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn() }));
+vi.mock("@/lib/overview/get-overview-data", () => ({ getOverviewData: vi.fn() }));
+vi.mock("@/lib/alerts", () => ({ computeAlerts: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
+vi.mock("../guards", () => ({ clientToHousehold: vi.fn(), assertHouseholdReadable: vi.fn() }));
+vi.mock("../account-mask", () => ({ maskSsnLast4: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -62,12 +76,48 @@ const EXPECTED_CRM_TIER_B_TOOL_NAMES = [
   "crm_delete_task",
 ];
 
+const EXPECTED_CRM_ALL_19 = [
+  // read (4)
+  "crm_client_card",
+  "crm_recent_notes",
+  "crm_list_tasks",
+  "crm_activity_feed",
+  // Tier-A writes (6)
+  "crm_add_note",
+  "crm_log_activity",
+  "crm_create_task",
+  "crm_update_task",
+  "crm_complete_task",
+  "crm_post_task_comment",
+  // Tier-B writes (3)
+  "crm_delete_note",
+  "crm_delete_task",
+  "crm_create_tasks",
+  // composite skills (6)
+  "meeting_prep",
+  "generate_agenda",
+  "draft_follow_up",
+  "summarize_notes",
+  "whats_changed_since",
+  "suggest_tasks",
+];
+
 describe("buildTools (Phase 1 + Phase 2 assembly)", () => {
-  it("returns exactly the 19 named tools (15 Phase-1 + 4 Phase-2 scenario writes)", () => {
+  it("returns exactly the 38 named tools (15 Phase-1 + 4 Phase-2 scenario writes + 19 CRM)", () => {
     const tools = buildTools(TOOL_CTX);
-    const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual([...EXPECTED_PHASE1, ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES].sort());
-    expect(tools).toHaveLength(19);
+    const names = new Set(tools.map((t) => t.name));
+    // Phase-1 and scenario-write tools still present
+    for (const n of [...EXPECTED_PHASE1, ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES]) {
+      expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
+    }
+    expect(tools).toHaveLength(38);
+  });
+
+  it("buildTools includes all 19 CRM tools by name", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    for (const n of EXPECTED_CRM_ALL_19) {
+      expect(names.has(n), `expected CRM tool ${n} in buildTools output`).toBe(true);
+    }
   });
 
   it("has no duplicate tool names", () => {
@@ -129,5 +179,14 @@ describe("routeAfterAgent with WRITE_TOOL_NAMES", () => {
 
   it("routes empty tool calls to __end__", () => {
     expect(routeAfterAgent([], WRITE_TOOL_NAMES)).toBe("__end__");
+  });
+
+  // CRM routing
+  it("routes crm_add_note (Tier-A) to tools (auto-apply, no HITL)", () => {
+    expect(routeAfterAgent([{ name: "crm_add_note" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+
+  it("routes crm_delete_task (Tier-B) to approval (HITL required)", () => {
+    expect(routeAfterAgent([{ name: "crm_delete_task" }], WRITE_TOOL_NAMES)).toBe("approval");
   });
 });
