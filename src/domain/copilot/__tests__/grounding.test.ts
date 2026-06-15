@@ -41,4 +41,15 @@ describe("grounding — anti-hallucination guard", () => {
     const answer = "Across 2025 and 2026 your net cash flow stays above $20,000.";
     expect(findUngroundedNumbers(answer, PAYLOADS)).toEqual([]);
   });
+
+  it("flags a fabricated percentage even when its integer appears as an unrelated payload value", () => {
+    const payloads = [JSON.stringify({ fundCount: 12, successRate: 0.92 })];
+    const ungrounded = findUngroundedNumbers("Your fees run about 12% a year.", payloads);
+    expect(ungrounded).toContain("12%");
+  });
+
+  it("grounds a percentage whose decimal form is in the payload", () => {
+    const payloads = [JSON.stringify({ successRate: 0.92 })];
+    expect(findUngroundedNumbers("Probability of success is 92%.", payloads)).toEqual([]);
+  });
 });

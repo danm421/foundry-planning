@@ -1,15 +1,15 @@
 // src/domain/copilot/grounding.ts
 
-// Matches $2.5M, $100,000, 92%, 2026, 0.92, etc.
-const NUMBER_TOKEN_RE = /\$?\d[\d,]*(?:\.\d+)?\s?(?:[MK])?%?/g;
+// Matches $2.5M, $100,000, 92%, 2026, 0.92, etc. (M/K suffix case-insensitive)
+const NUMBER_TOKEN_RE = /\$?\d[\d,]*(?:\.\d+)?\s?(?:[MKmk])?%?/g;
 
 /** Reduce a token to the set of plain numeric strings it could mean, so a
  *  payload that stores 2500000 grounds an answer that wrote "$2.5M". */
 function candidateValues(token: string): string[] {
   const trimmed = token.trim();
   const hasPercent = trimmed.endsWith("%");
-  const suffix = /([MK])%?$/.exec(trimmed)?.[1];
-  const numeric = trimmed.replace(/[$,%\sMK]/g, "");
+  const suffix = /([MKmk])%?$/.exec(trimmed)?.[1]?.toUpperCase();
+  const numeric = trimmed.replace(/[$,%\sMKmk]/g, "");
   const base = Number(numeric);
   if (!Number.isFinite(base)) return [];
 
@@ -20,14 +20,17 @@ function candidateValues(token: string): string[] {
     if (Number.isInteger(n)) values.add(String(Math.round(n)));
   };
 
-  if (suffix === "M") push(base * 1_000_000);
-  else if (suffix === "K") push(base * 1_000);
-  else push(base);
-
-  // A percent in prose maps to its decimal payload form (92% ↔ 0.92).
   if (hasPercent) {
+    // A percent in prose maps ONLY to its decimal payload form (92% ↔ 0.92).
+    // Do NOT push the bare integer — it could match an unrelated count/age/id.
     push(base / 100);
-    values.add((base / 100).toFixed(2)); // 0.92
+    values.add((base / 100).toFixed(2)); // e.g. "0.92"
+  } else if (suffix === "M") {
+    push(base * 1_000_000);
+  } else if (suffix === "K") {
+    push(base * 1_000);
+  } else {
+    push(base);
   }
   return [...values];
 }
