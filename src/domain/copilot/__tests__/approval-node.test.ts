@@ -57,20 +57,27 @@ vi.mock("@/lib/scenario/changes-writer", () => ({
   revertChange: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
-vi.mock("@/db", () => ({
-  db: {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() =>
-          Promise.resolve([{ id: "scenario_1", clientId: "client_1" }]),
-        ),
+vi.mock("@/db", () => {
+  const insertChain = () => ({
+    values: vi.fn(() => ({ returning: vi.fn(() => Promise.resolve([{ id: "tg-new" }])) })),
+  });
+  return {
+    db: {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() =>
+            Promise.resolve([{ id: "scenario_1", clientId: "client_1" }]),
+          ),
+        })),
       })),
-    })),
-    insert: vi.fn(() => ({
-      values: vi.fn(() => ({ returning: vi.fn(() => Promise.resolve([{ id: "tg-new" }])) })),
-    })),
-  },
-}));
+      insert: vi.fn(insertChain),
+      // propose_changes mints + applies the batch inside one transaction.
+      transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({ insert: vi.fn(insertChain) }),
+      ),
+    },
+  };
+});
 // Preview enrichment is best-effort (try/catch in describeProposedWrite). Force
 // it to fail fast so the node falls back to the pure summary (previews.length
 // stays 1) and the test never blocks on a real load/projection. The

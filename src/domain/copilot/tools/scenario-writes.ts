@@ -169,46 +169,54 @@ export function buildScenarioWriteTools({
           .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, ctx.clientId)));
         if (!scenarioRow) return `Scenario ${scenarioId} not found for this client.`;
 
-        // Mint ONE toggle group so the whole proposal toggles as a unit (default-on
-        // so the advisor sees its effect immediately; they can switch it off).
-        const [group] = await db
-          .insert(scenarioToggleGroups)
-          .values({
-            scenarioId,
-            name: groupName,
-            defaultOn: true,
-            requiresGroupId: null,
-            orderIndex: 0,
-          })
-          .returning();
-        if (!group) return "Could not create the change group. Please try again.";
-        const toggleGroupId = group.id;
-
+        // Apply the whole proposal ATOMICALLY: mint ONE toggle group (default-on
+        // so the advisor sees its effect immediately; they can switch it off),
+        // then apply every change on the SAME transaction. If any change fails
+        // mid-batch, the toggle group AND every prior change roll back together —
+        // no orphaned group, no half-applied proposal. The write_approved audit
+        // fires only AFTER the batch commits, so it can never record a write that
+        // didn't actually persist.
         const applied: string[] = [];
-        for (const c of changes) {
-          const targetKind = c.targetKind as TargetKind;
-          if (c.opType === "add") {
-            const entity = { ...(c.entity as Record<string, unknown>), id: c.targetId } as {
-              id: string;
-              [k: string]: unknown;
-            };
-            await applyEntityAdd({ scenarioId, firmId, targetKind, entity, toggleGroupId });
-            applied.push(`add ${c.targetKind}`);
-          } else if (c.opType === "edit") {
-            await applyEntityEdit({
+        await db.transaction(async (tx) => {
+          const [group] = await tx
+            .insert(scenarioToggleGroups)
+            .values({
               scenarioId,
-              firmId,
-              targetKind,
-              targetId: c.targetId,
-              desiredFields: c.desiredFields as Record<string, unknown>,
-              toggleGroupId,
-            });
-            applied.push(`edit ${c.targetKind}`);
-          } else {
-            await applyEntityRemove({ scenarioId, firmId, targetKind, targetId: c.targetId, toggleGroupId });
-            applied.push(`remove ${c.targetKind}`);
+              name: groupName,
+              defaultOn: true,
+              requiresGroupId: null,
+              orderIndex: 0,
+            })
+            .returning();
+          if (!group) throw new Error("toggle group insert returned no row");
+          const toggleGroupId = group.id;
+
+          for (const c of changes) {
+            const targetKind = c.targetKind as TargetKind;
+            if (c.opType === "add") {
+              const entity = { ...(c.entity as Record<string, unknown>), id: c.targetId } as {
+                id: string;
+                [k: string]: unknown;
+              };
+              await applyEntityAdd({ scenarioId, firmId, targetKind, entity, toggleGroupId, tx });
+              applied.push(`add ${c.targetKind}`);
+            } else if (c.opType === "edit") {
+              await applyEntityEdit({
+                scenarioId,
+                firmId,
+                targetKind,
+                targetId: c.targetId,
+                desiredFields: c.desiredFields as Record<string, unknown>,
+                toggleGroupId,
+                tx,
+              });
+              applied.push(`edit ${c.targetKind}`);
+            } else {
+              await applyEntityRemove({ scenarioId, firmId, targetKind, targetId: c.targetId, toggleGroupId, tx });
+              applied.push(`remove ${c.targetKind}`);
+            }
           }
-        }
+        });
 
         await recordAudit({
           action: "copilot.write_approved",

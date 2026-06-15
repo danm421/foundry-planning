@@ -67,16 +67,23 @@ describe("create_scenario", () => {
 });
 
 describe("propose_changes", () => {
+  // The batch runs inside db.transaction; the toggle-group mint + every change
+  // share this tx so a mid-batch failure rolls them all back as one unit.
+  let txMock: { insert: ReturnType<typeof vi.fn> };
   beforeEach(() => {
-    // db.insert(scenarioToggleGroups) must succeed and return a minted id.
     const insertChain = {
       values: vi.fn(() => ({ returning: vi.fn(() => Promise.resolve([{ id: "tg-new" }])) })),
     };
-    // Re-mock db with both select (scenario lookup) and insert (toggle group).
+    txMock = { insert: vi.fn(() => insertChain) };
+    // db.select (the client-pin scenario lookup) returns a matching row.
     vi.mocked(db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       from: vi.fn(() => ({ where: vi.fn(() => Promise.resolve([{ id: "scenario_1", clientId: "client_1" }])) })),
     } as never);
-    (db as unknown as { insert: ReturnType<typeof vi.fn> }).insert = vi.fn(() => insertChain);
+    // db.transaction runs the callback with txMock and PROPAGATES a rejection,
+    // exactly as a real transaction rolls back when the callback throws.
+    (db as unknown as { transaction: ReturnType<typeof vi.fn> }).transaction = vi.fn(
+      async (cb: (tx: unknown) => Promise<unknown>) => cb(txMock),
+    );
   });
 
   it('description ends with "Requires human approval."', () => {
@@ -107,10 +114,29 @@ describe("propose_changes", () => {
         { opType: "remove", targetKind: "income", targetId: "inc-old" },
       ],
     });
-    // All three writers fired, each carrying the minted toggleGroupId "tg-new".
-    expect(applyEntityAdd).toHaveBeenCalledWith(expect.objectContaining({ scenarioId: "scenario_1", firmId: "org_session", toggleGroupId: "tg-new" }));
-    expect(applyEntityEdit).toHaveBeenCalledWith(expect.objectContaining({ desiredFields: { ssClaimAgePrimary: 70 }, toggleGroupId: "tg-new" }));
-    expect(applyEntityRemove).toHaveBeenCalledWith(expect.objectContaining({ targetId: "inc-old", toggleGroupId: "tg-new" }));
+    // All three writers fired, each carrying the minted toggleGroupId "tg-new"
+    // AND the shared batch transaction (so they commit/roll back as one unit).
+    expect(applyEntityAdd).toHaveBeenCalledWith(expect.objectContaining({ scenarioId: "scenario_1", firmId: "org_session", toggleGroupId: "tg-new", tx: txMock }));
+    expect(applyEntityEdit).toHaveBeenCalledWith(expect.objectContaining({ desiredFields: { ssClaimAgePrimary: 70 }, toggleGroupId: "tg-new", tx: txMock }));
+    expect(applyEntityRemove).toHaveBeenCalledWith(expect.objectContaining({ targetId: "inc-old", toggleGroupId: "tg-new", tx: txMock }));
+  });
+
+  it("rolls back and does NOT audit write_approved when a change fails mid-batch", async () => {
+    // A mid-batch failure (e.g. constraint violation, or the model emitting an
+    // unrecognized targetKind that the writer rejects) must roll back the whole
+    // batch — no orphaned toggle group, no half-applied proposal — and skip the
+    // write_approved audit, so the audit trail never claims a write that didn't
+    // persist. Audit ownership: tools own write_approved (real success only).
+    vi.mocked(applyEntityEdit).mockRejectedValue(new Error("constraint violation"));
+    const result = await getTool("propose_changes").invoke({
+      scenarioId: "scenario_1",
+      groupName: "g",
+      changes: [{ opType: "edit", targetKind: "income", targetId: "inc1", desiredFields: { annualAmount: 1 } }],
+    });
+    expect(String(result)).toMatch(/sorry/i);
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
   });
 
   it("emits copilot.write_approved after the batch", async () => {
