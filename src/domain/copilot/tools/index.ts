@@ -1,18 +1,25 @@
 // src/domain/copilot/tools/index.ts
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { CopilotToolContext } from "../context";
+import { buildReadTools } from "./read";
+import { buildComputeTools } from "./compute";
+import { buildWhatIfTools } from "./whatif";
 
 /**
  * Build the tool set for one conversation. EVERY tool closes over `toolCtx` for
  * server-derived scope (firm/client/scenario) + audit — the model supplies only
  * tool arguments, never scope.
  *
- * Phase 0: empty (the graph runs as a pure chat model). Phase 1 adds the
- * read/compute tools; Phase 2 adds the four write tools.
+ * Phase 1: the read + compute + what-if tools (15 total). No write tools exist
+ * until Phase 2, so WRITE_TOOL_NAMES stays empty and routeAfterAgent never
+ * routes to the approval node.
  */
 export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
-  void toolCtx; // referenced by every tool added in Phase 1/2
-  return [];
+  return [
+    ...buildReadTools(toolCtx),
+    ...buildComputeTools(toolCtx),
+    ...buildWhatIfTools(toolCtx),
+  ];
 }
 
 /**
