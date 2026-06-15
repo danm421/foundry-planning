@@ -19,7 +19,7 @@ export type NoteKind = (typeof NOTE_KINDS)[number];
 
 export type NoteRow = {
   id: string;
-  kind: NoteKind; // note=General, meeting, call, email
+  kind: NoteKind; // "note" surfaces as "General" in the UI; meeting/call/email map 1:1
   title: string; // subject
   body: string; // markdown
   occurredAt: string; // ISO; date shown UTC
@@ -146,6 +146,10 @@ export async function updateNote(
       ),
     )
     .returning();
+
+  // loadNoteOrThrow already proved the row exists; an empty returning here means
+  // a concurrent delete raced us. Surface a clean domain error, not a TypeError.
+  if (!row) throw new Error("Note not found");
 
   await recordAudit({
     action: "crm.note.update",

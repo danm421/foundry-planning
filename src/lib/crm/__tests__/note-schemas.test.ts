@@ -31,6 +31,16 @@ describe("createCrmNoteSchema", () => {
     ).toThrow();
   });
 
+  it("rejects a body over 20000 chars", () => {
+    expect(() =>
+      createCrmNoteSchema.parse({
+        subject: "x",
+        noteDate: "2026-06-15",
+        body: "x".repeat(20_001),
+      }),
+    ).toThrow();
+  });
+
   it("rejects a non-ISO date", () => {
     expect(() => createCrmNoteSchema.parse({ subject: "x", noteDate: "06/15/2026" })).toThrow();
   });
