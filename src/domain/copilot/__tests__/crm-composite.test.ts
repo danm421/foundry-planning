@@ -97,8 +97,8 @@ const MOCK_TASKS = [
 ];
 
 const MOCK_ACTIVITY = [
-  { id: "a1", kind: "meeting", title: "Annual review", occurredAt: "2026-03-01T00:00:00Z" },
-  { id: "a2", kind: "call", title: "Quick check-in", occurredAt: "2026-04-15T10:00:00Z" },
+  { id: "a1", kind: "meeting", title: "Annual review", occurredAt: new Date("2026-03-01T00:00:00Z") },
+  { id: "a2", kind: "call", title: "Quick check-in", occurredAt: new Date("2026-04-15T10:00:00Z") },
 ];
 
 beforeEach(() => {
@@ -121,7 +121,7 @@ describe("meeting_prep", () => {
     expect(out.openTasks).toHaveLength(1);
     expect(Array.isArray(out.alerts)).toBe(true);
     // lastMeetingDate = most recent meeting or call activity
-    expect(out.lastMeetingDate).toBe("2026-04-15T10:00:00Z");
+    expect(out.lastMeetingDate).toBe("2026-04-15T10:00:00.000Z");
     // portfolioTotal maps to kpi.liquidPortfolio
     expect(out.portfolioTotal).toBe(1_250_000);
   });
@@ -228,7 +228,7 @@ describe("suggest_tasks", () => {
   it("signals.lastMeetingDate comes from activity tool inputs", async () => {
     const out = JSON.parse(await byName("suggest_tasks").invoke({}));
     // Most recent meeting/call is 2026-04-15
-    expect(out.signals.lastMeetingDate).toBe("2026-04-15T10:00:00Z");
+    expect(out.signals.lastMeetingDate).toBe("2026-04-15T10:00:00.000Z");
   });
 
   it("proposedTasks carry no dollar figures (descriptors only)", async () => {

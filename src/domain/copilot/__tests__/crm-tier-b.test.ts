@@ -87,7 +87,7 @@ describe("crm_create_tasks (Tier B, bulk)", () => {
     expect(createTask).toHaveBeenCalledWith("org_A", "advisor-9", expect.objectContaining({ householdId: "hh-1", title: "Task C" }));
     // One write_approved audit, count=3
     const auditCalls = recordAudit.mock.calls.filter(
-      (c: [unknown]) => (c[0] as { action: string }).action === "copilot.write_approved",
+      (c) => (c[0] as { action: string }).action === "copilot.write_approved",
     );
     expect(auditCalls).toHaveLength(1);
     expect(auditCalls[0][0]).toMatchObject({ metadata: { count: 3 } });

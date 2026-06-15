@@ -137,7 +137,7 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
       if ("error" in gate) return gate.error;
       try {
         const [tasks, openItems] = await Promise.all([
-          listTasks(gate.firmId, { householdId: gate.householdId }, { status, overdueOnly: overdueOnly ?? false, assigneeUserId: undefined }),
+          listTasks(gate.firmId, { householdId: gate.householdId }, { status: status ?? null, overdueOnly: overdueOnly ?? false, assigneeUserId: null }),
           listOpenItems(ctx.clientId, gate.firmId),
         ]);
         return JSON.stringify({ tasks, openItems });
@@ -485,19 +485,19 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
   async function gatherMeetingBattery(gate: { firmId: string; householdId: string }) {
     const [notes, tasks, activity, overview] = await Promise.all([
       listHouseholdNotes(gate.householdId, gate.firmId),
-      listTasks(gate.firmId, { householdId: gate.householdId }, { status: ["open", "in_progress"], overdueOnly: false }),
+      listTasks(gate.firmId, { householdId: gate.householdId }, { status: ["open", "in_progress"], overdueOnly: false, assigneeUserId: null }),
       listActivity(gate.householdId, { limit: 5 }),
       getOverviewData(ctx.clientId, gate.firmId, ctx.scenarioId),
     ]);
 
     // Derive lastMeetingDate from most-recent meeting or call activity
     const meetingOrCall = activity.filter(
-      (a: { kind: string }) => a.kind === "meeting" || a.kind === "call",
+      (a) => a.kind === "meeting" || a.kind === "call",
     );
     const lastMeetingDate =
       meetingOrCall.length > 0
         ? meetingOrCall.reduce(
-            (latest: string, a: { occurredAt: string }) =>
+            (latest, a) =>
               a.occurredAt > latest ? a.occurredAt : latest,
             meetingOrCall[0].occurredAt,
           )
@@ -573,8 +573,9 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
         ]);
 
         const sinceDate = since; // YYYY-MM-DD
+        const sinceMs = new Date(sinceDate).getTime();
         const activitySince = activity.filter(
-          (a: { occurredAt: string }) => a.occurredAt >= sinceDate,
+          (a) => a.occurredAt.getTime() >= sinceMs,
         );
 
         const newAlerts = computeAlerts(overview.client, {
