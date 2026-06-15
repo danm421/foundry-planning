@@ -1,4 +1,7 @@
 // src/domain/copilot/guards.ts
+import { db } from "@/db";
+import { clients } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import type { CopilotAuthContext } from "./state";
 
@@ -27,4 +30,32 @@ export async function assertClientReadable(
   }
   const ok = await verifyClientAccess(clientId, ctx.firmId);
   if (!ok) throw new ForbiddenScopeError(`client ${clientId}`);
+}
+
+/**
+ * Resolve the conversation's clientId to its CRM householdId. MUST be called
+ * AFTER verifyClientAccess(clientId, firmId): we re-scope the lookup to firmId
+ * so a model-echoed clientId can never resolve a household outside the firm.
+ * `clients.crmHouseholdId` is uuid NOT NULL UNIQUE (1:1) — a present row always
+ * has one. Throws ForbiddenScopeError when no firm-owned client row matches.
+ */
+export async function clientToHousehold(clientId: string, firmId: string): Promise<string> {
+  const row = await db.query.clients.findFirst({
+    where: and(eq(clients.id, clientId), eq(clients.firmId, firmId)),
+    columns: { crmHouseholdId: true },
+  });
+  if (!row?.crmHouseholdId) {
+    throw new ForbiddenScopeError(`client ${clientId} (no household in firm)`);
+  }
+  return row.crmHouseholdId;
+}
+
+/**
+ * Read-gate for CRM tools: prove the firm may read the conversation's bound
+ * client, then resolve+return its householdId. Composes assertClientReadable so
+ * the cross-firm + outside-conversation-scope checks run first.
+ */
+export async function assertHouseholdReadable(ctx: CopilotAuthContext): Promise<string> {
+  await assertClientReadable(ctx, ctx.clientId);
+  return clientToHousehold(ctx.clientId, ctx.firmId);
 }
