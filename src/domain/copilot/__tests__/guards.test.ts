@@ -17,17 +17,18 @@ const ctx: CopilotAuthContext = {
 beforeEach(() => verifyClientAccess.mockReset());
 
 describe("assertClientReadable", () => {
-  it("invokes verifyClientAccess with the requested client and the ctx firmId", async () => {
+  it("resolves when clientId matches the conversation scope and the firm grants access", async () => {
     verifyClientAccess.mockResolvedValue(true);
-    await assertClientReadable(ctx, "client-in-firm");
+    await assertClientReadable(ctx, "client-in-firm"); // ctx.clientId === "client-in-firm"
     expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm", "org_A");
   });
-
-  it("throws ForbiddenScopeError for a client the firm cannot access (cross-firm IDOR)", async () => {
+  it("throws ForbiddenScopeError for a clientId outside the conversation scope, before any DB call", async () => {
+    await expect(assertClientReadable(ctx, "another-client")).rejects.toBeInstanceOf(ForbiddenScopeError);
+    expect(verifyClientAccess).not.toHaveBeenCalled();
+  });
+  it("throws ForbiddenScopeError when the bound client fails the firm access check (cross-firm IDOR)", async () => {
     verifyClientAccess.mockResolvedValue(false);
-    await expect(assertClientReadable(ctx, "client-in-other-firm")).rejects.toBeInstanceOf(
-      ForbiddenScopeError,
-    );
-    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-other-firm", "org_A");
+    await expect(assertClientReadable(ctx, "client-in-firm")).rejects.toBeInstanceOf(ForbiddenScopeError);
+    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm", "org_A");
   });
 });
