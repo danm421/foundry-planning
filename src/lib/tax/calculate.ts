@@ -8,6 +8,7 @@ import { calcFica, calcAdditionalMedicare } from "./fica";
 import { calcQbiDeduction } from "./qbi";
 import { calcTaxableSocialSecurity } from "./ssTaxability";
 import { computeStateIncomeTax } from "./state-income";
+import { getAdditionalStdDeduction, getObbbaSeniorBonus } from "./senior-deductions";
 
 export function calculateTaxYear(input: CalcInput): TaxResult {
   const p = input.taxParams;
@@ -55,12 +56,29 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // 3. AGI
   const adjustedGrossIncome = totalIncome - input.aboveLineDeductions;
 
-  // 4. Below-line deductions (standard or itemized, whichever larger)
-  const stdDeduction = p.stdDeduction[fs];
+  // 4. Below-line deductions (standard or itemized, whichever larger). The §63(f)
+  //    additional standard deduction (65+/blind boxes) augments the STANDARD path
+  //    only — never itemized — per IRC §63(f); 2026 amounts from Rev. Proc. 2025-32.
+  const baseStdDeduction = p.stdDeduction[fs];
+  const additionalStdDeduction = getAdditionalStdDeduction(
+    input.year, fs, input.primaryAge ?? 0, input.spouseAge, input.inflationFactor,
+  );
+  const stdDeduction = baseStdDeduction + additionalStdDeduction;
+  const usedStandard = stdDeduction >= input.itemizedDeductions; // std wins ties (Math.max)
   const belowLineDeductions = Math.max(stdDeduction, input.itemizedDeductions);
 
+  // OBBBA temporary senior bonus (P.L. 119-21 §70103) — reduces taxable income for
+  // std OR itemized filers; allowed for AMT (no §56 add-back). TY2025-2028.
+  // MAGI = AGI (statutory MAGI adds back §911/931/933 foreign exclusions only,
+  // which this engine does not model — tax-exempt muni interest is NOT included).
+  const seniorBonus = getObbbaSeniorBonus(
+    input.year, fs, input.primaryAge ?? 0, input.spouseAge, adjustedGrossIncome,
+  );
+
   // Taxable income before QBI (needed for QBI cap and threshold check)
-  const taxableIncomeBeforeQbi = Math.max(0, adjustedGrossIncome - belowLineDeductions);
+  const taxableIncomeBeforeQbi = Math.max(
+    0, adjustedGrossIncome - belowLineDeductions - seniorBonus,
+  );
 
   // 5. QBI deduction
   const qbiThreshold = fs === "married_joint" ? p.qbi.thresholdMfj : p.qbi.thresholdSingleHohMfs;
@@ -102,15 +120,21 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // The §199A QBI deduction IS allowed for AMT (IRC §199A(f)(2)), so we start
   // from post-QBI taxableIncome — Form 6251 line 1 begins at Form 1040 taxable
   // income, which is already net of QBI (there is no QBI add-back line). The
-  // standard deduction is NOT allowed for AMT (IRC §56(b)(1)(E) / Form 6251
-  // line 2a), so when it was the deduction taken it must be added back. (No SALT
-  // add-back for itemizers — SALT isn't tracked as a separate input.)
+  // standard deduction — including the §63(f) aged/blind add-on — is NOT allowed
+  // for AMT (IRC §56(b)(1)(E) / Form 6251 line 2a), so when it was the deduction
+  // taken the FULL standard deduction must be added back. For ITEMIZERS the
+  // disallowed item is instead the Schedule A line 7 SALT deduction (state/local
+  // income + property, post-§164 cap) — IRC §56(b)(1)(A)(ii) / Form 6251 line 2a
+  // (F7). The OBBBA senior bonus is NOT a §56 preference item → no add-back (it
+  // stays out of taxableIncome and out of AMTI alike).
   // Form 6251 Part III: LTCG + qualified dividends inside AMTI are taxed at
   // 0/15/20% (the same preferential rates as regular), not 26/28%. Passing them
   // through — with the regular ordinary base as the stacking floor — so
   // calcAmtTentative can split the base.
-  const stdDeductionAddBack = belowLineDeductions === stdDeduction ? stdDeduction : 0;
-  const amti = taxableIncome + stdDeductionAddBack + (input.isoSpread ?? 0);
+  const amtAddBack = usedStandard
+    ? stdDeduction                 // F12: full standard incl. §63(f)
+    : (input.saltDeducted ?? 0);   // F7: Schedule A line 7 taxes (post-§164 cap)
+  const amti = taxableIncome + amtAddBack + (input.isoSpread ?? 0);
   const amtParams = filingAmtParams(fs, p);
   const tentativeAmt = calcAmtTentative(amti, amtParams, {
     year: input.year,

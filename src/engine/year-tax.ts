@@ -7,7 +7,8 @@ import type {
 import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { CharityBucket } from "./charitable-deduction";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
-import { computeCharitableDeductionForYear } from "./charitable-deduction";
+import { computeCharitableDeductionForYear, computeCharitableNoItemize } from "./charitable-deduction";
+import { getAdditionalStdDeduction } from "../lib/tax/senior-deductions";
 
 export interface YearTaxInput {
   /** taxDetail with all scheduled income + (optionally) supplemental withdrawal income layered in */
@@ -89,25 +90,74 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
 
   // Approximate AGI for §170(b) bucket math (exact AGI is computed inside calculateTaxYearBracket).
   const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
-  const willItemize = useBracket
-    ? itemizedIn > (resolved?.params.stdDeduction[filingStatus] ?? 0)
-    : false;
+  // F23: the itemize-vs-standard election must compare (existing itemized + THIS
+  // YEAR's candidate charitable deduction) against the standard deduction. The
+  // threshold must match calculate.ts: include the §63(f) additional standard
+  // deduction for 65+ filers (the standard path is what we'd fall back to).
+  const baseStd = resolved?.params.stdDeduction[filingStatus] ?? 0;
+  const effectiveStd =
+    baseStd +
+    getAdditionalStdDeduction(
+      year,
+      filingStatus,
+      primaryAge ?? 0,
+      spouseAge,
+      resolved?.inflationFactor ?? 1,
+    );
 
-  const charityResult = computeCharitableDeductionForYear({
+  // Candidate charity deduction assuming we itemize — drives the election. The
+  // election uses the UN-floored candidate; the F22 floor (below) is a deduction
+  // haircut applied only after we've committed to itemizing, not an election input.
+  const candidate = computeCharitableDeductionForYear({
     giftsThisYear: charityGiftsThisYear,
     agi: charityAgi,
     carryforwardIn: charityCarryforwardIn,
     currentYear: year,
-    willItemize,
   });
 
-  const itemizedDeductions = itemizedIn + charityResult.deductionThisYear;
+  const willItemize = useBracket
+    ? itemizedIn + candidate.deductionThisYear > effectiveStd
+    : false;
 
-  // Patch deduction breakdown for charity (mirrors projection.ts:1703-1715)
+  // Commit the matching branch. When standard wins, no carryforward is consumed —
+  // prior entries only decay/expire and this year's gifts are appended (F23 fix).
+  const charityResult = willItemize
+    ? candidate
+    : computeCharitableNoItemize({
+        giftsThisYear: charityGiftsThisYear,
+        carryforwardIn: charityCarryforwardIn,
+        currentYear: year,
+      });
+
+  // F22 / OBBBA §170(b)(1)(I): 0.5%-of-AGI floor on ITEMIZED charitable
+  // contributions, effective tax years beginning after 2025 (i.e. 2026+).
+  //
+  // Statutory carryforward rule — IRC §170(d)(1)(C): the amount disallowed by
+  // the 0.5%-AGI floor carries forward ONLY to the extent the taxpayer also has
+  // a percentage-limitation (60%/30%/20% AGI-ceiling) carryover for that year;
+  // absent such a ceiling carryover, the floored amount is permanently LOST.
+  // This engine always treats the floored amount as lost — exact for the common
+  // case (gift within the AGI ceiling, no ceiling carryover) and a conservative
+  // simplification for the over-ceiling case (it understates the future
+  // carryforward, so it can only understate a future deduction, never overstate).
+  //
+  // TODO / known limitation: when an AGI-ceiling carryover exists, the floored
+  // amount should be preserved (up to that carryover) rather than dropped. Not
+  // yet modeled — see §170(d)(1)(C).
+  let charityDeductionThisYear = charityResult.deductionThisYear;
+  if (willItemize && year >= 2026 && charityDeductionThisYear > 0) {
+    const floor = 0.005 * charityAgi;
+    charityDeductionThisYear = Math.max(0, charityDeductionThisYear - floor);
+  }
+
+  const itemizedDeductions = itemizedIn + charityDeductionThisYear;
+
+  // Patch deduction breakdown for charity (mirrors projection.ts:1703-1715).
+  // Uses the floored amount (F22) so the breakdown matches the deduction taken.
   let deductionBreakdownOut = deductionBreakdownIn;
-  if (deductionBreakdownIn && charityResult.deductionThisYear > 0) {
-    const newCharitable = deductionBreakdownIn.belowLine.charitable + charityResult.deductionThisYear;
-    const newItemizedTotal = deductionBreakdownIn.belowLine.itemizedTotal + charityResult.deductionThisYear;
+  if (deductionBreakdownIn && charityDeductionThisYear > 0) {
+    const newCharitable = deductionBreakdownIn.belowLine.charitable + charityDeductionThisYear;
+    const newItemizedTotal = deductionBreakdownIn.belowLine.itemizedTotal + charityDeductionThisYear;
     deductionBreakdownOut = {
       ...deductionBreakdownIn,
       belowLine: {
@@ -144,6 +194,10 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         primaryAge,
         spouseAge,
         isoSpread: isoSpread ?? 0,
+        // F7: itemized SALT (Schedule A line 7, post-§164 cap) is disallowed for AMT
+        // (IRC §56(b)(1)(A)(ii)) → added back to AMTI for itemizers. The breakdown's
+        // taxesPaid is already the capped total (Math.min(rawSalt, saltCap)).
+        saltDeducted: deductionBreakdownOut?.belowLine.taxesPaid ?? 0,
       })
     : calculateTaxYearFlat({
         taxableIncome,
@@ -186,6 +240,6 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     charityCarryforwardOut: charityResult.carryforwardOut,
     deductionBreakdown: deductionBreakdownOut,
     charityAgi,
-    charityDeductionThisYear: charityResult.deductionThisYear,
+    charityDeductionThisYear,
   };
 }

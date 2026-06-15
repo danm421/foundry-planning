@@ -141,6 +141,130 @@ describe("computeTaxForYear", () => {
     );
   });
 
+  // Shared builder for the F23/F22 charitable-election tests. Bracket mode with the
+  // 2026 fixture (single std = 15,000). High taxableIncome → charityAgi well above
+  // the 60% ceiling so the election/floor behavior is isolated from the AGI cap.
+  function charityInput(over: {
+    year?: number;
+    filingStatus?: "single" | "married_joint" | "married_separate" | "head_of_household";
+    itemizedDeductions?: number;
+    charityGiftsThisYear?: { amount: number; bucket: import("../charitable-deduction").CharityBucket }[];
+    charityCarryforwardIn?: import("../types").CharityCarryforward;
+    taxableIncome?: number;
+  }) {
+    return {
+      taxDetail: {
+        earnedIncome: 0,
+        ordinaryIncome: over.taxableIncome ?? 1_000_000,
+        dividends: 0,
+        capitalGains: 0,
+        stCapitalGains: 0,
+        qbi: 0,
+        taxExempt: 0,
+        taxExemptInterest: 0,
+        bySource: {},
+      },
+      socialSecurityGross: 0,
+      totalIncome: over.taxableIncome ?? 1_000_000,
+      taxableIncome: over.taxableIncome ?? 1_000_000,
+      filingStatus: over.filingStatus ?? ("single" as const),
+      year: over.year ?? 2026,
+      planSettings: basePlanSettings,
+      resolved: { params: TAX_YEAR_2026, inflationFactor: 1 },
+      useBracket: true,
+      aboveLineDeductions: 0,
+      itemizedDeductions: over.itemizedDeductions ?? 0,
+      charityCarryforwardIn: over.charityCarryforwardIn ?? emptyCharityCarryforward(),
+      charityGiftsThisYear: over.charityGiftsThisYear ?? [],
+      secaResult: { seTax: 0, deductibleHalf: 0 },
+      transferEarlyWithdrawalPenalty: 0,
+      interestIncomeForTax: 0,
+      deductionBreakdownIn: null,
+    };
+  }
+
+  it("F23: large charitable gift drives the itemize election", () => {
+    // single filer, std 15,000; itemizedIn 5,000; $50k cash gift; high AGI.
+    // 5,000 + 50,000 = 55,000 > 15,000 → itemize, full 50k deducted.
+    // Year 2025 isolates the election from the 2026+ F22 floor.
+    const out = computeTaxForYear(
+      charityInput({
+        year: 2025,
+        filingStatus: "single",
+        itemizedDeductions: 5_000,
+        charityGiftsThisYear: [{ amount: 50_000, bucket: "cashPublic" }],
+      }),
+    );
+    expect(out.charityDeductionThisYear).toBe(50_000);
+  });
+
+  it("F23: when standard wins, current-year gift goes to carryforward, prior intact", () => {
+    const out = computeTaxForYear(
+      charityInput({
+        filingStatus: "single",
+        itemizedDeductions: 2_000,
+        charityGiftsThisYear: [{ amount: 3_000, bucket: "cashPublic" }],
+      }),
+    );
+    // 2,000 + 3,000 = 5,000 < 15,000 → standard → $0 deducted this year.
+    expect(out.charityDeductionThisYear).toBe(0);
+    // current-year 3,000 appended to carryforward (nothing consumed).
+    const cf = out.charityCarryforwardOut.cashPublic;
+    expect(cf.reduce((s, e) => s + e.amount, 0)).toBeGreaterThanOrEqual(3_000);
+  });
+
+  it("F23: standard branch decays prior carryforward but consumes nothing", () => {
+    const out = computeTaxForYear(
+      charityInput({
+        filingStatus: "single",
+        itemizedDeductions: 2_000,
+        charityGiftsThisYear: [{ amount: 3_000, bucket: "cashPublic" }],
+        charityCarryforwardIn: {
+          cashPublic: [
+            { amount: 10_000, originYear: 2020 }, // 6 yrs old in 2026 → expired/dropped
+            { amount: 5_000, originYear: 2025 }, // valid → preserved untouched
+          ],
+          cashPrivate: [],
+          appreciatedPublic: [],
+          appreciatedPrivate: [],
+        },
+      }),
+    );
+    expect(out.charityDeductionThisYear).toBe(0);
+    // Expired 2020 entry dropped; 2025 entry preserved; current-year 3,000 appended.
+    expect(out.charityCarryforwardOut.cashPublic).toEqual([
+      { amount: 5_000, originYear: 2025 },
+      { amount: 3_000, originYear: 2026 },
+    ]);
+  });
+
+  it("F22: 0.5%-of-AGI floor haircuts itemized charity in 2026", () => {
+    // AGI 1,000,000; $100k cash-to-public gift; year 2026 → floor 5,000 → 95,000.
+    const out2026 = computeTaxForYear(
+      charityInput({
+        year: 2026,
+        filingStatus: "single",
+        itemizedDeductions: 50_000, // ensures itemize
+        charityGiftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+        taxableIncome: 1_000_000,
+      }),
+    );
+    expect(out2026.charityDeductionThisYear).toBe(95_000);
+  });
+
+  it("F22: no floor pre-2026", () => {
+    const out2025 = computeTaxForYear(
+      charityInput({
+        year: 2025,
+        filingStatus: "single",
+        itemizedDeductions: 50_000,
+        charityGiftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+        taxableIncome: 1_000_000,
+      }),
+    );
+    expect(out2025.charityDeductionThisYear).toBe(100_000);
+  });
+
   it("BUG #11: SS §86 combined income uses muni interest only, not the broad taxExempt bucket", () => {
     // Broad taxExempt = 50k (e.g. non-taxable business pass-through) but muni
     // interest = 0. The §86 worksheet must see only the muni subset, so the 50k

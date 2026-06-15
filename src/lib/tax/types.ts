@@ -144,6 +144,12 @@ export interface CalcInput {
    *  item: added to AMTI but NOT to regular taxable income. v1: no dual-basis /
    *  AMT credit carryforward. */
   isoSpread?: number;
+  /** Capped SALT actually deducted on Schedule A (state/local income + property,
+   *  post-§164 cap). Disallowed for AMT (IRC §56(b)(1)(A)(ii) / Form 6251 line 2a).
+   *  Only meaningful for itemizers; standard-deduction add-back is handled separately.
+   *  Itemizing callers MUST supply this — when omitted it defaults to 0, understating AMTI
+   *  (the SALT add-back is silently skipped). */
+  saltDeducted?: number;
 }
 
 export interface TaxResult {

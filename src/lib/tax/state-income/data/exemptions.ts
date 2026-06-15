@@ -45,6 +45,6 @@ export const EXEMPTIONS: Record<number, Partial<Record<USPSStateCode, ExemptionR
     VA: { single: 930, joint: 1860, dependent: 930, add65: 800, type: "exemption", notes: "$800 add'l per filer 65+; NOT indexed for inflation" },
     VT: { single: 5300, joint: 10600, dependent: 5300, add65: 0, type: "exemption", notes: "Inflation-indexed; based on pre-TCJA federal amount" },
     WI: { single: 700, joint: 1400, dependent: 700, add65: 250, type: "exemption", notes: "$250 add'l per filer 65+" },
-    WV: { single: 2000, joint: 4000, dependent: 2000, add65: 8000, type: "exemption", notes: "$8,000 add'l per filer 65+ — large" },
+    WV: { single: 2000, joint: 4000, dependent: 2000, add65: 0, type: "exemption", notes: "$8,000 add'l per filer 65+ — large. add65 zeroed — $8K routed via retirement perFilerCap to avoid double-count (audit F18)." },
   },
 };

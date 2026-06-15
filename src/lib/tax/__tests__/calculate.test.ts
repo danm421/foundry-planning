@@ -435,6 +435,182 @@ describe("calculateTaxYear — AMT Part III stacks LTCG on the regular base (Bug
   });
 });
 
+describe("calculateTaxYear — F12 §63(f) additional standard deduction", () => {
+  // IRC §63(f): a 65+ taxpayer (or spouse) on the STANDARD path gets an extra
+  // standard-deduction box ($1,650/box married, $2,050/box unmarried for 2026 per
+  // Rev. Proc. 2025-32). This engine's belowLineDeductions reports the FULL
+  // standard deduction (base + §63(f)), so for a senior std filer it rises by the
+  // §63(f) amount AND taxableIncome falls by the same amount.
+  it("MFJ both 65+ standard filer: +$3,300 std deduction, -$3,300 taxable income", () => {
+    // year 2029 so the OBBBA bonus (which also cuts taxable income) doesn't muddy
+    // the §63(f)-only delta. 2 boxes × $1,650 = $3,300.
+    const base = makeInput({ year: 2029, ordinaryIncome: 120_000, primaryAge: 70, spouseAge: 70 });
+    const young = calculateTaxYear({ ...base, primaryAge: 60, spouseAge: 60 });
+    const old = calculateTaxYear(base);
+    // §63(f) flows into belowLineDeductions (engine reports the full standard ded).
+    expect(old.flow.belowLineDeductions - young.flow.belowLineDeductions).toBe(3300);
+    // taxableIncome lower by the same $3,300.
+    expect(young.flow.taxableIncome - old.flow.taxableIncome).toBe(3300);
+    // Hand check: AGI 120000, std MFJ 32200 + 3300 = 35500 → taxable 84500.
+    expect(old.flow.taxableIncome).toBe(84500);
+    expect(young.flow.taxableIncome).toBe(87800); // 120000 - 32200
+  });
+
+  it("single 65+ standard filer: +$2,050 std deduction", () => {
+    const base = makeInput({ year: 2029, filingStatus: "single", ordinaryIncome: 80_000, primaryAge: 67 });
+    const young = calculateTaxYear({ ...base, primaryAge: 60 });
+    const old = calculateTaxYear(base);
+    expect(old.flow.belowLineDeductions - young.flow.belowLineDeductions).toBe(2050);
+    expect(young.flow.taxableIncome - old.flow.taxableIncome).toBe(2050);
+  });
+
+  it("does not augment when the filer ITEMIZES above the augmented standard", () => {
+    // Itemized 50000 > std 32200+3300 → itemized wins; §63(f) does not stack on it.
+    const base = makeInput({ year: 2029, ordinaryIncome: 120_000, itemizedDeductions: 50_000 });
+    const young = calculateTaxYear({ ...base, primaryAge: 60, spouseAge: 60 });
+    const old = calculateTaxYear({ ...base, primaryAge: 70, spouseAge: 70 });
+    expect(old.flow.belowLineDeductions).toBe(50_000);
+    expect(old.flow.taxableIncome).toBe(young.flow.taxableIncome); // identical — itemized path
+  });
+});
+
+describe("calculateTaxYear — F12 AMT add-back of the augmented standard deduction", () => {
+  // The standard deduction (incl. §63(f) add-on) is disallowed for AMT
+  // (IRC §56(b)(1)(E)) and must be added back to AMTI. A senior std filer's
+  // taxableIncome drops by §63(f) and so does regular tax — but the AMT add-back
+  // rises by the same §63(f) amount, leaving AMTI (hence tentative minimum tax)
+  // UNCHANGED vs an otherwise-identical younger filer. Since flow doesn't expose
+  // AMTI/TMT directly, we prove AMTI is flat via the identity:
+  //   amtAdditional = TMT − regularTax, TMT constant ⇒
+  //   Δ amtAdditional = −Δ regularTax  (senior's lower regular tax ⇒ higher add'l AMT).
+  it("adds the augmented std deduction back to AMTI (TMT held flat across ages)", () => {
+    // year 2029 → no OBBBA bonus to perturb taxableIncome differently from AMTI.
+    const base = makeInput({
+      year: 2029, filingStatus: "single", ordinaryIncome: 250_000,
+      isoSpread: 50_000, flatStateRate: 0,
+    });
+    const young = calculateTaxYear({ ...base, primaryAge: 60 });
+    const old = calculateTaxYear({ ...base, primaryAge: 67 });
+    // Senior gets +$2,050 std ded → taxableIncome and regular tax both lower.
+    expect(young.flow.taxableIncome - old.flow.taxableIncome).toBe(2050);
+    expect(old.flow.amtAdditional).toBeGreaterThan(0); // AMT actually binds
+    // TMT unchanged (std added back) ⇒ amtAdditional rises by exactly the
+    // regular-tax drop. If the add-back were NOT augmented, AMTI would fall by
+    // 2050 and this identity would break.
+    const regularTaxDrop = young.flow.regularTaxCalc - old.flow.regularTaxCalc;
+    expect(old.flow.amtAdditional - young.flow.amtAdditional).toBe(regularTaxDrop);
+  });
+});
+
+describe("calculateTaxYear — F13 OBBBA senior bonus", () => {
+  // P.L. 119-21 §70103: $6,000/senior temporary deduction, TY2025-2028, reduces
+  // taxable income for std OR itemized filers. MAGI = AGI here (no foreign excl).
+  it("MFJ both 65+ below phaseout: -$12,000 taxable income vs the 2029 sunset year", () => {
+    const i2026 = makeInput({ year: 2026, ordinaryIncome: 120_000, primaryAge: 70, spouseAge: 70 });
+    const i2029 = { ...i2026, year: 2029 };
+    // Both years carry the same §63(f) +$3,300 (age-based, not sunsetting), so the
+    // taxableIncome gap is purely the $12,000 OBBBA bonus.
+    expect(calculateTaxYear(i2029).flow.taxableIncome - calculateTaxYear(i2026).flow.taxableIncome).toBe(12000);
+  });
+
+  it("single 65+ at $175k MAGI is fully phased out → no bonus reduction", () => {
+    // AGI = 175000 (ordinary only). single threshold 75000; 6%×(175k-75k)=6000 → bonus 0.
+    const i2026 = makeInput({ year: 2026, filingStatus: "single", ordinaryIncome: 175_000, primaryAge: 67 });
+    const i2029 = { ...i2026, year: 2029 };
+    expect(calculateTaxYear(i2026).flow.taxableIncome).toBe(calculateTaxYear(i2029).flow.taxableIncome);
+  });
+
+  it("year 2029 sunset: no bonus even below phaseout", () => {
+    const i2029 = makeInput({ year: 2029, ordinaryIncome: 120_000, primaryAge: 70, spouseAge: 70 });
+    // taxable = AGI 120000 - std(32200 + 3300 §63(f)) = 84500, no bonus.
+    expect(calculateTaxYear(i2029).flow.taxableIncome).toBe(84500);
+  });
+
+  it("bonus is allowed for AMT — reduces AMTI, NOT added back (not a §56 preference)", () => {
+    // Single 65+, 2026 vs 2029, ISO spread sized so AMT binds in both years. The
+    // OBBBA bonus is a deduction ALLOWED for AMT: it reduces regular taxable income
+    // AND AMTI alike (it is NOT a §56(b) add-back item). So in 2026 both taxable
+    // income and AMTI fall by the bonus. With no gains, TMT = amtAdditional +
+    // regularTaxCalc; the bonus sits in the 26% AMT band, so TMT drops by ~26% of it.
+    // AGI 120k: single bonus = 6000 - 6%×(120k-75k) = 6000-2700 = 3300.
+    const lower = makeInput({
+      filingStatus: "single", ordinaryIncome: 120_000, isoSpread: 120_000,
+      primaryAge: 67, flatStateRate: 0,
+    });
+    const y2026 = calculateTaxYear({ ...lower, year: 2026 });
+    const y2029 = calculateTaxYear({ ...lower, year: 2029 });
+    // taxableIncome lower in 2026 by the $3,300 bonus.
+    expect(y2029.flow.taxableIncome - y2026.flow.taxableIncome).toBe(3300);
+    expect(y2026.flow.amtAdditional).toBeGreaterThan(0);
+    expect(y2029.flow.amtAdditional).toBeGreaterThan(0);
+    // No gains ⇒ TMT = amtAdditional + regularTaxCalc. Bonus reduces AMTI (allowed
+    // for AMT, no add-back) ⇒ TMT drops by 26% of the $3,300 bonus = $858.
+    const tmt2026 = y2026.flow.amtAdditional + y2026.flow.regularTaxCalc;
+    const tmt2029 = y2029.flow.amtAdditional + y2029.flow.regularTaxCalc;
+    expect(tmt2029 - tmt2026).toBe(Math.round(3300 * 0.26)); // 858
+  });
+});
+
+describe("calculateTaxYear — F7 itemizer SALT added back to AMTI (Form 6251 line 2a)", () => {
+  // IRC §56(b)(1)(A)(ii): the itemized SALT deduction (Schedule A line 7, post-§164
+  // cap) is disallowed for AMT and must be added back to AMTI. A standard-deduction
+  // filer's SALT is irrelevant (they deduct no SALT) — only itemizers add it back.
+  //
+  // MFJ 2026, ordinary 600000, itemized 80000 (incl. SALT), ISO spread 250000 so AMT
+  // binds in BOTH cases (otherwise the assertion is vacuous). SALT 0 vs 40000.
+  //
+  //   Regular path (identical both cases — itemized TOTAL is 80000 regardless of how
+  //   much of it is SALT; ISO is not regular income):
+  //     AGI 600000, itemized 80000 > std 32200 → taxable 520000 = incomeTaxBase.
+  //     regularTax MFJ on 520000:
+  //       24800×.10 + (100800-24800)×.12 + (211950-100800)×.22 + (405000-211950)×.24
+  //       + (510400-405000)×.32 + (520000-510400)×.35
+  //       = 2480 + 9120 + 24453 + 46332 + 33728 + 3360 = 119473.
+  //
+  //   AMT exemption MFJ 140200; phaseout starts 1000000 (AMTI < 1M → no phaseout);
+  //   28% breakpoint 244500. No LTCG → all AMTI ordinary.
+  //     noSalt:  AMTI = 520000 + 0     + 250000 = 770000 → taxable 629800
+  //              TMT = 244500×.26 + (629800-244500)×.28 = 63570 + 107884 = 171454
+  //              amtAdditional = 171454 - 119473 = 51981
+  //     withSalt:AMTI = 520000 + 40000 + 250000 = 810000 → taxable 669800
+  //              TMT = 244500×.26 + (669800-244500)×.28 = 63570 + 119084 = 182654
+  //              amtAdditional = 182654 - 119473 = 63181
+  //     Δ amtAdditional = 11200 = 40000 × 0.28 (SALT add-back taxed at the 28% band).
+  it("itemizer's SALT is added back to AMTI; regular tax unchanged, TMT higher by 28% × SALT", () => {
+    const noSalt = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, itemizedDeductions: 80_000, saltDeducted: 0,
+      isoSpread: 250_000, flatStateRate: 0,
+    }));
+    const withSalt = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, itemizedDeductions: 80_000, saltDeducted: 40_000,
+      isoSpread: 250_000, flatStateRate: 0,
+    }));
+    // Regular tax identical (itemized total unchanged; ISO not regular income).
+    expect(withSalt.flow.regularFederalIncomeTax).toBe(noSalt.flow.regularFederalIncomeTax);
+    expect(noSalt.flow.regularFederalIncomeTax).toBe(119_473);
+    // AMT actually binds in both cases (non-vacuous).
+    expect(noSalt.flow.amtAdditional).toBeGreaterThan(0);
+    expect(withSalt.flow.amtAdditional).toBeGreaterThan(0);
+    // SALT add-back raises AMTI by 40000 → TMT (hence amtAdditional) by 28% × 40000.
+    expect(withSalt.flow.amtAdditional).toBeGreaterThan(noSalt.flow.amtAdditional);
+    expect(noSalt.flow.amtAdditional).toBeCloseTo(51_981, 0);
+    expect(withSalt.flow.amtAdditional).toBeCloseTo(63_181, 0);
+    expect(withSalt.flow.amtAdditional - noSalt.flow.amtAdditional).toBeCloseTo(11_200, 0);
+  });
+
+  it("standard-deduction filer's saltDeducted is ignored (no SALT deducted to add back)", () => {
+    // Same income but no itemized deductions → std path. saltDeducted must not move AMTI:
+    // the std add-back (F12) already covers the disallowed standard deduction.
+    const a = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, isoSpread: 250_000, saltDeducted: 0, flatStateRate: 0,
+    }));
+    const b = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, isoSpread: 250_000, saltDeducted: 40_000, flatStateRate: 0,
+    }));
+    expect(b.flow.amtAdditional).toBe(a.flow.amtAdditional);
+  });
+});
+
 describe("calculateTaxYear — ISO spread as an AMT preference item", () => {
   // Single filer with enough ordinary income that AMTI sits well above the
   // exemption edge, so an ISO bargain element pushes tentative AMT past regular.

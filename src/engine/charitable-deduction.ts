@@ -21,8 +21,10 @@
  * sub-cap for appreciated property; the single-ceiling version is the agreed
  * conservative fix that eliminates the >100%-of-AGI over-deduction.
  *
- * Itemize-vs-standard branch: the deduction only flows through if total
- * itemized deductions exceed the standard deduction for the filing status.
+ * Itemize-vs-standard branch: this function computes the deduction assuming the
+ * household itemizes. The standard-deduction case is handled separately by
+ * computeCharitableNoItemize (F23), which preserves the carryforward instead of
+ * consuming it. The caller (year-tax.ts) elects between the two.
  */
 
 import type { CharityCarryforward, CarryforwardEntry } from "./types";
@@ -43,12 +45,10 @@ export interface ComputeCharitableDeductionInput {
   agi: number;
   carryforwardIn: CharityCarryforward;
   currentYear: number;
-  /** True if the household will itemize this year (Σ itemized > standard for filing status). */
-  willItemize: boolean;
 }
 
 export interface ComputeCharitableDeductionResult {
-  /** Total deduction realized this year (zero if !willItemize). */
+  /** Total deduction realized this year, assuming the household itemizes. */
   deductionThisYear: number;
   /** Updated carryforward for next year. */
   carryforwardOut: CharityCarryforward;
@@ -75,7 +75,7 @@ const CARRYFORWARD_MAX_YEARS = 5;
 export function computeCharitableDeductionForYear(
   input: ComputeCharitableDeductionInput,
 ): ComputeCharitableDeductionResult {
-  const { giftsThisYear, agi, carryforwardIn, currentYear, willItemize } = input;
+  const { giftsThisYear, agi, carryforwardIn, currentYear } = input;
 
   const byBucket: Record<CharityBucket, number> = {
     cashPublic: 0,
@@ -146,20 +146,39 @@ export function computeCharitableDeductionForYear(
     }
   }
 
-  if (!willItemize) {
-    return {
-      deductionThisYear: 0,
-      carryforwardOut: carryforwardWorking,
-      byBucket: {
-        cashPublic: 0,
-        cashPrivate: 0,
-        appreciatedPublic: 0,
-        appreciatedPrivate: 0,
-      },
-    };
-  }
-
   return { deductionThisYear, carryforwardOut: carryforwardWorking, byBucket };
+}
+
+/**
+ * Standard-deduction branch (F23 fix). When the household takes the standard
+ * deduction, NO charitable deduction is realized and — critically — NO
+ * carryforward is consumed: a deduction can only be "used" against an itemized
+ * return. The correct carryforward treatment is therefore (a) decay/expire prior
+ * entries by age and (b) APPEND this year's gifts in full so they remain
+ * available in a future itemizing year. The old in-line `willItemize:false`
+ * branch wrongly ran the full FIFO consumption loop first, shifting consumed
+ * dollars out of the carryforward even though nothing was deducted.
+ */
+export function computeCharitableNoItemize(input: {
+  giftsThisYear: CharityGiftThisYear[];
+  carryforwardIn: CharityCarryforward;
+  currentYear: number;
+}): ComputeCharitableDeductionResult {
+  const { giftsThisYear, carryforwardIn, currentYear } = input;
+  const carryforwardOut: CharityCarryforward = {
+    cashPublic: dropExpired(carryforwardIn.cashPublic, currentYear).map(cloneEntry),
+    cashPrivate: dropExpired(carryforwardIn.cashPrivate, currentYear).map(cloneEntry),
+    appreciatedPublic: dropExpired(carryforwardIn.appreciatedPublic, currentYear).map(cloneEntry),
+    appreciatedPrivate: dropExpired(carryforwardIn.appreciatedPrivate, currentYear).map(cloneEntry),
+  };
+  for (const g of giftsThisYear) {
+    carryforwardOut[g.bucket].push({ amount: g.amount, originYear: currentYear });
+  }
+  return { deductionThisYear: 0, carryforwardOut, byBucket: emptyByBucket() };
+}
+
+function emptyByBucket(): Record<CharityBucket, number> {
+  return { cashPublic: 0, cashPrivate: 0, appreciatedPublic: 0, appreciatedPrivate: 0 };
 }
 
 function dropExpired(

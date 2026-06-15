@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import type { ClientData, FamilyMember } from "../types";
+import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 
 const PUBLIC_CHARITY_ID = "00000000-0000-0000-0000-000000000aaa";
 const CLIENT_FM_ID = "00000000-0000-0000-0000-000000000001";
@@ -95,6 +96,12 @@ function baseScenarioWithClut(opts: {
     assetTransactions: [],
     gifts: [],
     giftEvents: [],
+    // Seed bracket-mode tax params so the CLT inception deduction is actually
+    // itemized — without these the engine falls back to FLAT mode (no charitable
+    // deduction is realized). Pre-F23 these tests "passed" in flat mode only
+    // because the buggy standard branch consumed the contribution out of the
+    // carryforward; the fix made that no longer happen.
+    taxYearRows: [TAX_YEAR_2026],
     wills: [],
     familyMembers: [
       {

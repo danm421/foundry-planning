@@ -422,6 +422,101 @@ describe("computeStateIncomeTax — age-65 standard-deduction add-on (per filer)
   });
 });
 
+describe("computeStateIncomeTax — age-65 exemption add-on (per filer)", () => {
+  // Finding 18: getExemption must honor the per-filer add65 add-on, mirroring
+  // getStdDeduction. Each spouse 65+ on a joint return gets the add-on once.
+  it("VA exemption adds per-filer age-65 add-on (MFJ both 70) → 3460 (1860 + 2×800)", () => {
+    const r = computeStateIncomeTax({
+      state: "VA",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 70,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.personalExemptionDeduction).toBe(3460);
+  });
+
+  it("CA exemption-credit adds per-filer age-65 add-on (MFJ both 70) → 612 (306 + 2×153)", () => {
+    const r = computeStateIncomeTax({
+      state: "CA",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 70,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.exemptionCredits).toBe(612);
+  });
+
+  it("VA exemption honors older spouse (primary 60, spouse 70) → 2660 (1860 + 1×800)", () => {
+    const r = computeStateIncomeTax({
+      state: "VA",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 60,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.personalExemptionDeduction).toBe(2660);
+  });
+
+  it("VA single age 70 → 1730 (930 + 1×800)", () => {
+    const r = computeStateIncomeTax({
+      state: "VA",
+      year: 2026,
+      filingStatus: "single",
+      primaryAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.personalExemptionDeduction).toBe(1730);
+  });
+
+  it("VA MFJ both under 65 → 1860 (no add-on)", () => {
+    const r = computeStateIncomeTax({
+      state: "VA",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 60,
+      spouseAge: 60,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.personalExemptionDeduction).toBe(1860);
+  });
+
+  it("WV exemption add65 is zeroed (routed via retirement rule, no double-count) → 4000", () => {
+    // WV's $8,000 65+ add-on is delivered through the retirement perFilerCap, so
+    // the exemption add65 must be 0 — NOT 4000 + 2×8000.
+    const r = computeStateIncomeTax({
+      state: "WV",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 70,
+      spouseAge: 70,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.personalExemptionDeduction).toBe(4000);
+  });
+});
+
 describe("computeStateIncomeTax — easy FAGI-base states", () => {
   it("AZ 2026 single, $100K FAGI, no SS/retirement → flat 2.5% on (AGI − std ded)", () => {
     const r = computeStateIncomeTax({

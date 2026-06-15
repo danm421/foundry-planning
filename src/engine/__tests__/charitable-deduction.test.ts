@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeCharitableDeductionForYear,
+  computeCharitableNoItemize,
   type ComputeCharitableDeductionInput,
 } from "../charitable-deduction";
 import { emptyCharityCarryforward } from "../types";
@@ -16,7 +17,6 @@ function baseInput(over: Partial<ComputeCharitableDeductionInput> = {}): Compute
     agi: 1_000_000,
     carryforwardIn: emptyCharityCarryforward(),
     currentYear: 2026,
-    willItemize: true,
     ...over,
   };
 }
@@ -201,26 +201,48 @@ describe("computeCharitableDeductionForYear — overall §170(b) AGI ceiling acr
   });
 });
 
-describe("computeCharitableDeductionForYear — itemize-vs-standard branch", () => {
-  it("returns zero deduction when willItemize=false, but preserves carryforward", () => {
-    const result = computeCharitableDeductionForYear(
-      baseInput({
-        giftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
-        agi: 1_000_000,
-        willItemize: false,
-        currentYear: 2026,
-      }),
-    );
+describe("computeCharitableNoItemize — standard-deduction branch (F23)", () => {
+  it("realizes zero deduction and appends this-year gifts to carryforward in full", () => {
+    const result = computeCharitableNoItemize({
+      giftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+      carryforwardIn: emptyCharityCarryforward(),
+      currentYear: 2026,
+    });
     expect(result.deductionThisYear).toBe(0);
+    // Gift is preserved in full for a future itemizing year — NOT consumed.
+    expect(result.carryforwardOut.cashPublic).toEqual([
+      { amount: 100_000, originYear: 2026 },
+    ]);
   });
 
-  it("standard path zeros byBucket too", () => {
-    const result = computeCharitableDeductionForYear(
-      baseInput({
-        giftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
-        willItemize: false,
-      }),
-    );
+  it("zeros byBucket", () => {
+    const result = computeCharitableNoItemize({
+      giftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+      carryforwardIn: emptyCharityCarryforward(),
+      currentYear: 2026,
+    });
     expect(result.byBucket.cashPublic).toBe(0);
+  });
+
+  it("does NOT consume prior carryforward — only decays expired entries and appends new gifts", () => {
+    const result = computeCharitableNoItemize({
+      giftsThisYear: [{ amount: 50_000, bucket: "cashPublic" }],
+      carryforwardIn: {
+        cashPublic: [
+          { amount: 100_000, originYear: 2020 }, // 6 years old → expired, dropped
+          { amount: 200_000, originYear: 2025 }, // valid → preserved untouched
+        ],
+        cashPrivate: [],
+        appreciatedPublic: [],
+        appreciatedPrivate: [],
+      },
+      currentYear: 2026,
+    });
+    expect(result.deductionThisYear).toBe(0);
+    // 2020 entry decayed; 2025 entry preserved in full (NOT consumed); new gift appended.
+    expect(result.carryforwardOut.cashPublic).toEqual([
+      { amount: 200_000, originYear: 2025 },
+      { amount: 50_000, originYear: 2026 },
+    ]);
   });
 });
