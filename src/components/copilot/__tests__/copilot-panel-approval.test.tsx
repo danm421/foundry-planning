@@ -144,4 +144,15 @@ describe("CopilotPanel approval slot — Phase 2", () => {
     expect(resumeMock).toHaveBeenCalledOnce();
     expect(resumeMock).toHaveBeenCalledWith({ call_a: "confirm" });
   });
+
+  it("(4) locks the composer while an approval is pending (no new /stream turn)", () => {
+    // The graph is checkpointed mid-interrupt; the only valid next step is
+    // Confirm/Cancel → /resume. Sending a fresh /stream turn would corrupt the
+    // pending proposal, so the textarea + send button must be disabled even
+    // though status is "idle"/"done" (not "streaming") while the card is up.
+    mockStreamState = makeStreamState({ pendingApproval: SAMPLE_APPROVAL, status: "done" });
+    mountPanel();
+    expect(screen.getByRole("textbox", { name: /ask the copilot/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+  });
 });

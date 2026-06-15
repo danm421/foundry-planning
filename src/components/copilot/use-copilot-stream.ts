@@ -154,10 +154,11 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
   // consumeStream — shared SSE reader used by both `send` and `resume`.
   // Reads chunks from `res.body`, runs parseCopilotSse + applyEvent on each
   // complete frame, and sets status to "done" when the stream drains normally.
-  // Aborts and error paths are handled by the caller's try/catch.
+  // Aborts and error paths are handled by the caller's try/catch (each caller
+  // owns its own AbortController).
   // ---------------------------------------------------------------------------
   const consumeStream = useCallback(
-    async (res: Response, ac: AbortController) => {
+    async (res: Response) => {
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -176,9 +177,6 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
       // Only advance to "done" if we haven't already been set to an error/cancel
       // state by an applyEvent("error") call mid-stream.
       setStatus((s) => (s === "streaming" ? "done" : s));
-      // Suppress the unused-variable warning — ac is accepted for API symmetry
-      // so callers can pass their AbortController without a special-case.
-      void ac;
     },
     [applyEvent],
   );
@@ -234,7 +232,7 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
       }
 
       try {
-        await consumeStream(res, ac);
+        await consumeStream(res);
       } catch (err) {
         if (ac.signal.aborted) return setStatus("cancelled");
         const msg = err instanceof Error ? err.message : String(err);
@@ -269,7 +267,7 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
           setErrorMessage(text || `HTTP ${res.status}`);
           return;
         }
-        await consumeStream(res, ac);
+        await consumeStream(res);
       } catch (err) {
         if (ac.signal.aborted) {
           setStatus("cancelled");

@@ -50,6 +50,13 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
   const [loadingThread, setLoadingThread] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = status === "streaming";
+  // While an approval is pending the graph is checkpointed mid-interrupt; the
+  // only valid next step is Confirm/Cancel on the ApprovalCard (→ /resume).
+  // Sending a fresh /stream turn here would re-enter the interrupted node and
+  // corrupt the pending proposal, so lock the composer until it resolves.
+  // (busy alone isn't enough: the stream emits `approval_required` then `done`,
+  // so status is "done" — not "streaming" — while the card is up.)
+  const locked = busy || pendingApproval != null;
 
   // Mutual exclusion belt-and-braces: if the scenario drawer opens while the
   // copilot is open, close the copilot (the provider handles the inverse).
@@ -109,7 +116,7 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
 
   async function onSend() {
     const msg = input.trim();
-    if (!msg || busy) return;
+    if (!msg || locked) return;
     setInput("");
     // scenarioId + pathname are re-read every render → current scope per turn.
     await send({
@@ -244,7 +251,7 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
               key= per approval round so verdict state resets on each new payload. */}
           {pendingApproval && (
             <ApprovalCard
-              key={pendingApproval.calls[0]?.id ?? "approval"}
+              key={pendingApproval.calls.map((c) => c.id).join("|") || "approval"}
               previews={pendingApproval.previews}
               calls={pendingApproval.calls}
               busy={status === "streaming"}
@@ -278,8 +285,8 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
                   void onSend();
                 }
               }}
-              placeholder="Ask about this plan…"
-              disabled={busy}
+              placeholder={pendingApproval ? "Confirm or cancel the proposed change above…" : "Ask about this plan…"}
+              disabled={locked}
               className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none disabled:opacity-50"
             />
             {busy ? (
@@ -295,7 +302,7 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
               <button
                 type="button"
                 onClick={() => void onSend()}
-                disabled={!input.trim()}
+                disabled={!input.trim() || locked}
                 aria-label="Send message"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-secondary text-secondary-on hover:bg-secondary-ink disabled:opacity-40"
               >
