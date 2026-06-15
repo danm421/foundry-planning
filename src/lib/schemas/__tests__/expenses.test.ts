@@ -48,6 +48,33 @@ describe("expenseUpdateSchema", () => {
   it("is fully partial — accepts an empty patch", () => {
     expect(expenseUpdateSchema.safeParse({}).success).toBe(true);
   });
+
+  it("injects NO ghost defaults for an empty patch (truly partial)", () => {
+    const d = expenseUpdateSchema.parse({});
+    // Strict: no keys at all (catches ghost keys even if undefined-valued).
+    expect(Object.keys(d).length).toBe(0);
+    expect(d.annualAmount).toBeUndefined();
+    expect(d.growthRate).toBeUndefined();
+    expect(d.growthSource).toBeUndefined();
+    expect(d.startYear).toBeUndefined();
+    expect(d.endYear).toBeUndefined();
+  });
+
+  it("leaves omitted loose fields undefined when only name is patched", () => {
+    const d = expenseUpdateSchema.parse({ name: "Rent" });
+    expect(d.name).toBe("Rent");
+    expect(d.annualAmount).toBeUndefined();
+    expect(d.growthRate).toBeUndefined();
+    expect(d.growthSource).toBeUndefined();
+  });
+
+  it("still coerces present values identically to create", () => {
+    expect(expenseUpdateSchema.parse({ annualAmount: 1500 }).annualAmount).toBe("1500");
+    expect(expenseUpdateSchema.parse({ startYear: "2031" }).startYear).toBe(2031);
+    expect(expenseUpdateSchema.parse({ growthSource: "inflation" }).growthSource).toBe("inflation");
+    expect(expenseUpdateSchema.parse({ growthSource: "wibble" }).growthSource).toBe("custom");
+  });
+
   it("still enforces the medicare enum and both-owner refine when those fields are present", () => {
     expect(expenseUpdateSchema.safeParse({ endsAtMedicareEligibilityOwner: "nope" }).success).toBe(false);
     expect(expenseUpdateSchema.safeParse({

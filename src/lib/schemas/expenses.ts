@@ -1,37 +1,40 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
 
-// Accept number or numeric string and coerce to number (mirrors Number(startYear) in routes).
-const yearCoerce = z.union([z.number(), z.string()]).transform((v) => Number(v));
+// --- Coercion building blocks (shared by create + update) ---
+// Each GUARDS undefined so an omitted field in a partial update stays undefined
+// instead of being coerced/defaulted. Defaults are applied ONLY in the create
+// schema, never baked into these shared pieces.
 
-const base = {
-  type: z.string().min(1),
-  name: z.string().min(1),
-  annualAmount: z
-    .union([z.number(), z.string()])
-    .transform((v) => String(v))
-    .optional()
-    .default("0"),
-  startYear: yearCoerce,
-  endYear: yearCoerce,
-  growthRate: z
-    .union([z.number(), z.string()])
-    .transform((v) => String(v))
-    .optional()
-    .default("0.03"),
-  // Mirrors: growthSource === "inflation" ? "inflation" : "custom"
-  growthSource: z
-    .string()
-    .optional()
-    .transform((v) => (v === "inflation" ? "inflation" : "custom")),
+// number | string → number (mirrors Number(startYear) in the route handlers)
+const yearCoerce = z
+  .union([z.number(), z.string()])
+  .transform((v) => Number(v));
+
+// number | string → string, but pass undefined through untouched
+const numericStringOptional = z
+  .union([z.number(), z.string()])
+  .optional()
+  .transform((v) => (v === undefined ? undefined : String(v)));
+
+// growthSource: "inflation" stays, anything else → "custom"; undefined → undefined
+const growthSourceOptional = z
+  .string()
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v === "inflation" ? "inflation" : "custom"));
+
+const inflationStartYearOptional = z
+  .union([z.number(), z.string()])
+  .transform((v) => Number(v))
+  .nullable()
+  .optional();
+
+// Fields shared by both schemas verbatim (no create-only defaults attached).
+const shared = {
   ownerEntityId: uuidSchema.nullable().optional(),
   ownerAccountId: uuidSchema.nullable().optional(),
   cashAccountId: uuidSchema.nullable().optional(),
-  inflationStartYear: z
-    .union([z.number(), z.string()])
-    .transform((v) => Number(v))
-    .nullable()
-    .optional(),
+  inflationStartYear: inflationStartYearOptional,
   startYearRef: z.unknown().nullable().optional(),
   endYearRef: z.unknown().nullable().optional(),
   deductionType: z.string().nullable().optional(),
@@ -51,14 +54,36 @@ function refineBothOwner(
   }
 }
 
-export const expenseCreateSchema = z.object(base).superRefine(refineBothOwner);
+// CREATE: type/name required, loose fields defaulted to mirror the POST route.
+export const expenseCreateSchema = z
+  .object({
+    type: z.string().min(1),
+    name: z.string().min(1),
+    annualAmount: numericStringOptional.default("0"),
+    startYear: yearCoerce,
+    endYear: yearCoerce,
+    growthRate: numericStringOptional.default("0.03"),
+    // No default: an omitted growthSource on create still resolves to "custom"
+    // via the route's `growthSource === "inflation" ? ... : "custom"` only when
+    // present. To preserve prior behavior (always "custom" on create), default it.
+    growthSource: growthSourceOptional.default("custom"),
+    ...shared,
+  })
+  .superRefine(refineBothOwner);
 
+// UPDATE: truly partial — every field optional, NO defaults injected. An omitted
+// field stays absent; a present field is coerced identically to create.
 export const expenseUpdateSchema = z
-  .object(
-    Object.fromEntries(
-      Object.entries(base).map(([k, v]) => [k, (v as z.ZodTypeAny).optional()]),
-    ) as Record<string, z.ZodTypeAny>,
-  )
+  .object({
+    type: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    annualAmount: numericStringOptional,
+    startYear: yearCoerce.optional(),
+    endYear: yearCoerce.optional(),
+    growthRate: numericStringOptional,
+    growthSource: growthSourceOptional,
+    ...shared,
+  })
   .superRefine(refineBothOwner);
 
 export type ExpenseCreateInput = z.infer<typeof expenseCreateSchema>;
