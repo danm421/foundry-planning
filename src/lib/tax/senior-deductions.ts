@@ -4,10 +4,17 @@
 import type { FilingStatus } from "./types";
 import { floorToStep } from "./constants";
 
+// §63(f) per-box rate distinction: the MARRIED set selects the *married* per-box
+// rate ($1,650) for BOTH married_joint and married_separate. This is a different
+// predicate from `married` in the box/senior counters below (which is strictly
+// married_joint, since MFS never counts a spouse). Don't collapse the two: an MFS
+// senior gets the married rate but only ever one box.
 const MARRIED: ReadonlySet<FilingStatus> = new Set(["married_joint", "married_separate"]);
 
 // §63(f) additional standard deduction per box (per 65+/blind taxpayer).
-// 2026 published (Rev. Proc. 2025-32): $1,650/box married, $2,050/box unmarried.
+// Base-year (2026 published, Rev. Proc. 2025-32): $1,650/box married, $2,050/box
+// unmarried. These are scaled forward for out-years by the resolver's
+// `inflationFactor` (perBox * boxes * inflationFactor) — not a 2026-only value.
 const ADDL_STD_PER_BOX_2026 = { married: 1650, unmarried: 2050 } as const;
 
 function age65BoxCount(fs: FilingStatus, primaryAge: number, spouseAge?: number): number {
@@ -17,7 +24,10 @@ function age65BoxCount(fs: FilingStatus, primaryAge: number, spouseAge?: number)
 }
 
 /** §63(f) additional standard deduction. Augments the STANDARD path only.
- *  `inflationFactor` is the resolver's general factor (1.0 for seeded 2026). */
+ *  `inflationFactor` is the resolver's general factor (1.0 for seeded 2026).
+ *  `year` is unused: §63(f) is permanent law with no year gate (unlike the
+ *  temporary OBBBA bonus below). It's accepted for signature parity with
+ *  getObbbaSeniorBonus and as a hook for any future statutory cliff. */
 export function getAdditionalStdDeduction(
   year: number, fs: FilingStatus, primaryAge: number, spouseAge: number | undefined,
   inflationFactor: number,

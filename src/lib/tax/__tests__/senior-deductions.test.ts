@@ -11,6 +11,12 @@ describe("getAdditionalStdDeduction (§63(f))", () => {
   it("single 65+ → $2,050", () => {
     expect(getAdditionalStdDeduction(2026, "single", 67, undefined, 1.0)).toBe(2050);
   });
+  it("HOH 65+ → unmarried $2,050 (one box)", () => {
+    expect(getAdditionalStdDeduction(2026, "head_of_household", 67, undefined, 1.0)).toBe(2050);
+  });
+  it("MFS 65+ → married per-box $1,650, one box (spouse never counts for MFS)", () => {
+    expect(getAdditionalStdDeduction(2026, "married_separate", 67, undefined, 1.0)).toBe(1650);
+  });
   it("under 65 → 0", () => {
     expect(getAdditionalStdDeduction(2026, "single", 60, undefined, 1.0)).toBe(0);
   });
@@ -34,6 +40,13 @@ describe("getObbbaSeniorBonus (OBBBA 2025-2028)", () => {
   });
   it("single 65+ fully phased out at $175k → 0", () => {
     expect(getObbbaSeniorBonus(2026, "single", 67, undefined, 175_000)).toBe(0);
+  });
+  it("MFS 65+ uses single $75k threshold → 6000 - 0.06×(100k-75k) = 4500", () => {
+    // `married` is strictly married_joint, so MFS gets the single threshold.
+    expect(getObbbaSeniorBonus(2026, "married_separate", 67, undefined, 100_000)).toBe(4500);
+  });
+  it("HOH 65+ uses single $75k threshold → 4500", () => {
+    expect(getObbbaSeniorBonus(2026, "head_of_household", 67, undefined, 100_000)).toBe(4500);
   });
   it("year 2029 → 0 (sunset)", () => {
     expect(getObbbaSeniorBonus(2029, "married_joint", 70, 70, 100_000)).toBe(0);
