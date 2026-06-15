@@ -7,6 +7,9 @@ import { assertClientReadable, ForbiddenScopeError } from "../guards";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection, runProjectionWithEvents } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
+import { solveTarget } from "@/lib/solver/solve-target";
+import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
+import type { SolveLeverKey, PoSSolveResult } from "@/lib/solver/solve-types";
 import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
 import type {
   RothConversion,
@@ -64,6 +67,16 @@ function orderingTotals(o: HypotheticalEstateTaxOrdering | undefined) {
     total: o.totals.total,
   };
 }
+
+// Mirrors SolveLeverKey (src/lib/solver/solve-types.ts). z.discriminatedUnion
+// gives the model a clear menu of solvable levers.
+const SOLVE_LEVER_SCHEMA = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("retirement-age"), person: z.enum(["client", "spouse"]) }),
+  z.object({ kind: z.literal("living-expense-scale") }),
+  z.object({ kind: z.literal("savings-contribution"), accountId: z.string() }),
+  z.object({ kind: z.literal("ss-claim-age"), person: z.enum(["client", "spouse"]) }),
+  z.object({ kind: z.literal("roth-conversion-amount"), techniqueId: z.string() }),
+]);
 
 export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
   const { ctx } = toolCtx;
@@ -473,11 +486,76 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
     },
   );
 
+  const solveGoal = tool(
+    async ({ clientId, scenarioId, target, targetPoS }) => {
+      const denied = await guardClient(ctx, clientId);
+      if (denied) return denied;
+
+      const { effectiveTree, resolutionContext } = await loadEffectiveTree(
+        clientId,
+        ctx.firmId,
+        scenarioId,
+        {},
+      );
+      // Reuse the persisted per-scenario MC seed so the solve is reproducible.
+      const mcPayload = await loadMonteCarloData(clientId, ctx.firmId, scenarioId);
+
+      // PoS levers always resolve to the PoS branch of SolveResultEvent.
+      const result = (await solveTarget({
+        effectiveTree,
+        mcPayload,
+        baselineMutations: [],
+        target: target as SolveLeverKey,
+        targetPoS,
+        resolutionContext,
+      })) as PoSSolveResult;
+
+      const endingPortfolio =
+        result.finalProjection[result.finalProjection.length - 1]?.portfolioAssets.liquidTotal ??
+        null;
+
+      return JSON.stringify({
+        scenarioId,
+        target,
+        targetPoS,
+        status: result.status,
+        solvedValue: result.solvedValue,
+        achievedPoS: result.achievedPoS, // 250-trial search value (debug)
+        canonicalPoS: result.canonicalPoS, // 1000-trial canonical
+        reportedPoS: result.canonicalPoS, // headline the canonical value
+        seed: result.seed,
+        endingPortfolio,
+        disclaimer:
+          "reportedPoS is the canonical 1000-trial probability of success; achievedPoS is the " +
+          "faster 250-trial search value. Observations only, not advice.",
+      });
+    },
+    {
+      name: "solve_goal",
+      description:
+        "Goal-seek a single lever to hit a Monte-Carlo probability-of-success target. Levers: " +
+        "retirement-age, living-expense-scale, savings-contribution, ss-claim-age, " +
+        "roth-conversion-amount. Returns the solved lever value and the canonical 1000-trial PoS " +
+        "(reportedPoS). Reuses the scenario's persisted seed so the result is reproducible.",
+      schema: z.object({
+        clientId: z.string().describe("the client uuid (must match your scope)"),
+        scenarioId: z.string().describe("scenario uuid, or 'base'"),
+        target: SOLVE_LEVER_SCHEMA.describe("which lever to solve and its parameters"),
+        targetPoS: z
+          .number()
+          .min(0.01)
+          .max(0.99)
+          .describe("target probability of success, e.g. 0.85"),
+      }),
+    },
+  );
+
   return [
     whatifRoth,
     whatifSocialSecurity,
     whatifWithdrawal,
     whatifEstateTax,
     whatifLifeInsuranceNeed,
+    solveGoal,
   ];
 }
