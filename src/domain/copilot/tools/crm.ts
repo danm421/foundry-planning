@@ -15,7 +15,7 @@ import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { recordActivity, listActivity } from "@/lib/crm/activity";
 import { listTasks, getTaskById } from "@/lib/crm-tasks/queries";
-import { createTask } from "@/lib/crm-tasks/mutations";
+import { createTask, updateTaskField, setTaskStatus } from "@/lib/crm-tasks/mutations";
 import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
@@ -280,7 +280,62 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool];
+  const updateTaskTool = tool(
+    async ({ taskId, field, value }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      const own = await assertTaskInHousehold(taskId, gate.firmId, gate.householdId);
+      if (own !== true) return own;
+      try {
+        // Build the discriminated-union update input. Status changes go through crm_complete_task.
+        const update = { field, value } as Parameters<typeof updateTaskField>[3];
+        const task = await updateTaskField(taskId, gate.firmId, ctx.userId, update);
+        await auditToolCall(ctx, conversationId, "crm_task", taskId, "crm_update_task");
+        return JSON.stringify({ task });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to update task.";
+      }
+    },
+    {
+      name: "crm_update_task",
+      description:
+        "Update a single field on an existing CRM task (title, description, priority, or dueDate). " +
+        "Applies immediately. Status changes must use crm_complete_task instead.",
+      schema: z.object({
+        taskId: z.string(),
+        field: z.enum(["title", "description", "priority", "dueDate"]),
+        value: z.union([z.string(), z.null()]),
+      }),
+    },
+  );
+
+  const completeTaskTool = tool(
+    async ({ taskId, status }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      const own = await assertTaskInHousehold(taskId, gate.firmId, gate.householdId);
+      if (own !== true) return own;
+      try {
+        const result = await setTaskStatus(taskId, gate.firmId, ctx.userId, status ?? "done");
+        await auditToolCall(ctx, conversationId, "crm_task", taskId, "crm_complete_task");
+        return JSON.stringify({ task: result.task, followOnId: result.followOnId });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to update task status.";
+      }
+    },
+    {
+      name: "crm_complete_task",
+      description:
+        "Mark a CRM task as done (or set another status). Applies immediately. " +
+        "Returns followOnId if a recurring follow-on task was spawned.",
+      schema: z.object({
+        taskId: z.string(),
+        status: z.enum(["open", "in_progress", "blocked", "done"]).optional(),
+      }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool];
 }
 
 /** Exported for unit testing of the IDOR guards (spec §6). Not for runtime use outside tests. */

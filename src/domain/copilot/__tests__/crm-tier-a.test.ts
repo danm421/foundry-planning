@@ -6,6 +6,10 @@ const clientToHousehold = vi.fn();
 const createNote = vi.fn();
 const recordActivity = vi.fn();
 const createTask = vi.fn();
+const updateTaskField = vi.fn();
+const setTaskStatus = vi.fn();
+const postComment = vi.fn();
+const getTaskById = vi.fn();
 const recordAudit = vi.fn();
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
@@ -26,9 +30,13 @@ vi.mock("@/lib/crm/activity", () => ({
 }));
 vi.mock("@/lib/crm-tasks/mutations", () => ({
   createTask: (f: string, u: string, i: unknown) => createTask(f, u, i),
-  updateTaskField: vi.fn(),
-  setTaskStatus: vi.fn(),
-  postComment: vi.fn(),
+  updateTaskField: (tid: string, fid: string, uid: string, u: unknown) => updateTaskField(tid, fid, uid, u),
+  setTaskStatus: (tid: string, fid: string, uid: string, s: unknown) => setTaskStatus(tid, fid, uid, s),
+  postComment: (tid: string, fid: string, uid: string, b: string) => postComment(tid, fid, uid, b),
+}));
+vi.mock("@/lib/crm-tasks/queries", () => ({
+  getTaskById: (t: string, f: string) => getTaskById(t, f),
+  listTasks: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: (a: unknown) => recordAudit(a) }));
 
@@ -46,6 +54,10 @@ beforeEach(() => {
   createNote.mockReset();
   recordActivity.mockReset();
   createTask.mockReset();
+  updateTaskField.mockReset();
+  setTaskStatus.mockReset();
+  postComment.mockReset();
+  getTaskById.mockReset();
   recordAudit.mockReset();
 });
 
@@ -151,6 +163,56 @@ describe("crm_add_note (Tier A)", () => {
     });
     expect(out).toMatch(/access denied/i);
     expect(createNote).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("crm_update_task (Tier A, ownership-gated)", () => {
+  it("updates a task field when ownership passes and fires copilot.tool_call", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });
+    updateTaskField.mockResolvedValue({ id: "t1", title: "Updated title" });
+    const out = JSON.parse(
+      await byName("crm_update_task").invoke({ taskId: "t1", field: "title", value: "Updated title" }),
+    );
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1", "org_A", "advisor-9",
+      expect.objectContaining({ field: "title", value: "Updated title" }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.tool_call", resourceType: "crm_task", resourceId: "t1" }),
+    );
+    expect(out.task.id).toBe("t1");
+  });
+
+  it("IDOR: same-firm task in another household → updateTaskField NEVER called", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t9", householdId: "hh-OTHER" }, tags: [] });
+    const out = await byName("crm_update_task").invoke({ taskId: "t9", field: "title", value: "x" });
+    expect(out).toMatch(/does not belong to this client/i);
+    expect(updateTaskField).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("crm_complete_task (Tier A, ownership-gated)", () => {
+  it("sets task status and returns followOnId when ownership passes", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });
+    setTaskStatus.mockResolvedValue({ task: { id: "t1", status: "done" }, followOnId: "t2" });
+    const out = JSON.parse(
+      await byName("crm_complete_task").invoke({ taskId: "t1", status: "done" }),
+    );
+    expect(setTaskStatus).toHaveBeenCalledWith("t1", "org_A", "advisor-9", "done");
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.tool_call", resourceType: "crm_task", resourceId: "t1" }),
+    );
+    expect(out.task.status).toBe("done");
+    expect(out.followOnId).toBe("t2");
+  });
+
+  it("IDOR: same-firm task in another household → setTaskStatus NEVER called", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t9", householdId: "hh-OTHER" }, tags: [] });
+    const out = await byName("crm_complete_task").invoke({ taskId: "t9" });
+    expect(out).toMatch(/does not belong to this client/i);
+    expect(setTaskStatus).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
 });
