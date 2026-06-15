@@ -154,6 +154,7 @@ describe.skipIf(!HAS_DB)("preview fidelity", () => {
     const realField = realDiff.fields.find((f) => f.field === "annualAmount");
     expect(realField).toBeDefined();
 
+    expect(preview.details).toBeDefined();
     const detailText = preview.details!.join(" ");
     expect(detailText).toContain("annualAmount");
     expect(detailText).toContain(String(realField!.to));

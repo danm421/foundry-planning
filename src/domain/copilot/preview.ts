@@ -167,6 +167,7 @@ function findRowById(
   tree: ClientData,
   id: string,
 ): Record<string, unknown> | null {
+  // ClientData has heterogeneous typed fields; iterate its values as a generic map.
   for (const value of Object.values(tree as unknown as Record<string, unknown>)) {
     if (!Array.isArray(value)) continue;
     for (const row of value) {
@@ -180,6 +181,22 @@ function findRowById(
 
 function fmt(v: unknown): string {
   return v == null ? "—" : String(v);
+}
+
+/**
+ * Live field-level `field: from → to` lines for one edit, diffed against the
+ * current effective row. Returns null when the target row can't be resolved or
+ * the diff isn't an edit, so the caller can fall back to the pure formatter.
+ */
+function enrichedEditLines(
+  tree: ClientData,
+  c: ProposedChange,
+): string[] | null {
+  const current = findRowById(tree, c.targetId);
+  if (!current) return null;
+  const diff = computeRowDiff(current, { ...current, ...c.desiredFields });
+  if (diff.kind !== "edit") return null;
+  return diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`);
 }
 
 /**
@@ -234,17 +251,20 @@ export async function describeProposedWrite(
       {},
     );
 
-    const details = [...(base.details ?? [])];
-
-    // Live field-level diff for each edit, computed against the current row.
+    // Describe each change ONCE. For an edit whose live row resolves, the
+    // enriched `field: from → to` line(s) REPLACE the pure formatter's
+    // `undefined → to` line. Edits with no resolvable row, and add/remove
+    // changes, fall back to the pure `describeChangeUnit` line.
+    const details: string[] = [];
     for (const c of changes) {
-      if (c.opType !== "edit" || !c.desiredFields) continue;
-      const current = findRowById(effectiveTree, c.targetId);
-      if (!current) continue;
-      const diff = computeRowDiff(current, { ...current, ...c.desiredFields });
-      if (diff.kind !== "edit") continue;
-      for (const f of diff.fields) {
-        details.push(`${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`);
+      const enriched =
+        c.opType === "edit" && c.desiredFields
+          ? enrichedEditLines(effectiveTree, c)
+          : null;
+      if (enriched && enriched.length > 0) {
+        details.push(...enriched);
+      } else {
+        details.push(describeProposedChange(c));
       }
     }
 
