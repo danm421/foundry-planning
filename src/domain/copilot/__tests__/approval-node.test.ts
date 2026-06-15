@@ -9,10 +9,11 @@
 // tool reaches success on confirm.
 //
 // Audit ownership split under test:
-//   • the NODE emits copilot.write_proposed (pre-interrupt) and, on a decline,
-//     copilot.write_rejected;
+//   • the NODE emits copilot.write_proposed (post-interrupt, so it fires once per
+//     proposal — only on the resume pass) and, on a decline, copilot.write_rejected;
 //   • the write TOOL emits copilot.write_approved — only on a real success.
-// So a confirm run shows write_approved coming from the tool (not the node).
+// So a confirm run shows write_approved coming from the tool (not the node), and a
+// paused run (no resume) shows NO write_proposed yet.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { MemorySaver, Command } from "@langchain/langgraph";
@@ -110,7 +111,7 @@ beforeEach(() => {
 });
 
 describe("approval node", () => {
-  it("pauses on a write turn: emits write_proposed, builds a preview, runs no write", async () => {
+  it("pauses on a write turn: builds a preview, runs no write, defers write_proposed", async () => {
     const g = build("conv-pause");
     const result = await g.invoke(
       { messages: [new HumanMessage("delay social security to 70")], authContext: ctx },
@@ -135,14 +136,11 @@ describe("approval node", () => {
     expect(payload.previews).toHaveLength(1);
     expect(payload.calls[0]).toMatchObject({ id: "call_1", name: "propose_changes" });
 
-    // The node audited the proposal (NOT approval) before pausing.
-    expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "copilot.write_proposed",
-        clientId: "client_1",
-        firmId: "org_session",
-        metadata: expect.objectContaining({ tool: "propose_changes", toolCallId: "call_1" }),
-      }),
+    // write_proposed is now recorded AFTER interrupt(), so on this first
+    // (paused, no-resume) pass it has NOT fired yet — interrupt() threw before
+    // reaching the audit loop. It records once on the resume pass (Tests 2 & 3).
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_proposed" }),
     );
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "copilot.write_approved" }),
@@ -161,6 +159,11 @@ describe("approval node", () => {
 
     // The real propose_changes tool ran exactly once.
     expect(applyEntityEdit).toHaveBeenCalledTimes(1);
+    // write_proposed fires EXACTLY ONCE across the propose + resume passes — the
+    // audit loop is now after interrupt(), so the pre-resume pass never records it.
+    expect(
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+    ).toHaveLength(1);
     // write_approved is emitted by the TOOL on success, never by the node.
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -185,6 +188,11 @@ describe("approval node", () => {
 
     // No write ran.
     expect(applyEntityEdit).not.toHaveBeenCalled();
+    // write_proposed fires EXACTLY ONCE (on the resume pass), independent of the
+    // reject verdict — the node audits every proposed write, confirm or decline.
+    expect(
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+    ).toHaveLength(1);
     // The node audited the rejection.
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({

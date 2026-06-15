@@ -59,15 +59,29 @@ export function buildGraph(
       writeCalls.map((c) => describeProposedWrite({ name: c.name, args: c.args }, ctx)),
     );
 
+    // Pause; the resume value is { decisions: Record<toolCallId, 'confirm'|'reject'> }.
+    // CRITICAL: LangGraph re-runs this node from the top on resume; interrupt()
+    // throws on the FIRST pass (so nothing below it runs) and returns the resume
+    // value on the SECOND (resume) pass. ALL tool execution AND the write_proposed
+    // audit must happen AFTER interrupt() so each fires EXACTLY ONCE.
+    const decision = interrupt({
+      type: "approval_required",
+      previews,
+      calls: writeCalls.map((c) => ({ id: c.id, name: c.name, args: c.args })),
+    }) as { decisions: Record<string, "confirm" | "reject"> };
+
     // AUDIT OWNERSHIP SPLIT (do not "fix" to also emit write_approved here):
-    //   • The NODE emits write_proposed (below, pre-interrupt) and write_rejected
-    //     (on a decline, post-interrupt).
+    //   • The NODE emits write_proposed (here, recorded ONCE on the resume pass —
+    //     once per resolved proposal regardless of the confirm/reject verdict) and
+    //     write_rejected (on a decline, in the decision loop below).
     //   • The write TOOLS own write_approved — they emit it on ACTUAL success
     //     (with the real resourceId). Emitting it here after t.invoke() would
     //     double-audit AND falsely record approval even when the tool returned a
     //     sanitized error string (a failed write), since the tools return error
     //     strings rather than throwing. So write_approved exists iff the write
     //     truly succeeded.
+    // This must live AFTER interrupt(): a pre-interrupt loop would fire on both
+    // the proposal pass and the resume pass, double-recording write_proposed.
     for (const c of writeCalls) {
       await recordAudit({
         action: "copilot.write_proposed",
@@ -79,25 +93,19 @@ export function buildGraph(
       });
     }
 
-    // Pause; the resume value is { decisions: Record<toolCallId, 'confirm'|'reject'> }.
-    // CRITICAL: LangGraph re-runs this node from the top on resume; interrupt()
-    // returns the resume value on the SECOND run. ALL tool execution must happen
-    // AFTER interrupt() so each write runs EXACTLY ONCE.
-    const decision = interrupt({
-      type: "approval_required",
-      previews,
-      calls: writeCalls.map((c) => ({ id: c.id, name: c.name, args: c.args })),
-    }) as { decisions: Record<string, "confirm" | "reject"> };
-
     const messages: ToolMessage[] = [];
     for (const c of last.tool_calls ?? []) {
+      // Azure always populates tool_call ids; guard malformed model output so a
+      // missing id can't silently reject a confirmed write or break tool pairing.
+      const id = c.id;
+      if (!id) continue;
       if (WRITE_TOOL_NAMES.has(c.name)) {
-        const verdict = decision.decisions[c.id!] ?? "reject";
+        const verdict = decision.decisions[id] ?? "reject";
         if (verdict === "confirm") {
           // The tool emits copilot.write_approved itself, only on real success.
           const t = toolsByName.get(c.name)!;
           const result = await t.invoke(c.args);
-          messages.push(new ToolMessage({ tool_call_id: c.id!, content: String(result) }));
+          messages.push(new ToolMessage({ tool_call_id: id, content: String(result) }));
         } else {
           await recordAudit({
             action: "copilot.write_rejected",
@@ -108,14 +116,14 @@ export function buildGraph(
             metadata: { tool: c.name, toolCallId: c.id },
           });
           messages.push(
-            new ToolMessage({ tool_call_id: c.id!, content: "User declined this action." }),
+            new ToolMessage({ tool_call_id: id, content: "User declined this action." }),
           );
         }
       } else {
         // A read call mixed into a write turn: execute it immediately (no approval needed).
         const t = toolsByName.get(c.name);
         const result = t ? await t.invoke(c.args) : "Unknown tool.";
-        messages.push(new ToolMessage({ tool_call_id: c.id!, content: String(result) }));
+        messages.push(new ToolMessage({ tool_call_id: id, content: String(result) }));
       }
     }
     return { messages };
