@@ -66,6 +66,44 @@ beforeEach(() => {
   recordAudit.mockReset();
 });
 
+describe("crm_create_tasks (Tier B, bulk)", () => {
+  it("creates all tasks household-stamped and fires ONE write_approved with count", async () => {
+    createTask
+      .mockResolvedValueOnce({ id: "t1" })
+      .mockResolvedValueOnce({ id: "t2" })
+      .mockResolvedValueOnce({ id: "t3" });
+    const out = JSON.parse(
+      await byName("crm_create_tasks").invoke({
+        tasks: [
+          { title: "Task A" },
+          { title: "Task B" },
+          { title: "Task C" },
+        ],
+      }),
+    );
+    expect(createTask).toHaveBeenCalledTimes(3);
+    expect(createTask).toHaveBeenCalledWith("org_A", "advisor-9", expect.objectContaining({ householdId: "hh-1", title: "Task A" }));
+    expect(createTask).toHaveBeenCalledWith("org_A", "advisor-9", expect.objectContaining({ householdId: "hh-1", title: "Task B" }));
+    expect(createTask).toHaveBeenCalledWith("org_A", "advisor-9", expect.objectContaining({ householdId: "hh-1", title: "Task C" }));
+    // One write_approved audit, count=3
+    const auditCalls = recordAudit.mock.calls.filter(
+      (c: [unknown]) => (c[0] as { action: string }).action === "copilot.write_approved",
+    );
+    expect(auditCalls).toHaveLength(1);
+    expect(auditCalls[0][0]).toMatchObject({ metadata: { count: 3 } });
+    expect(out.created).toBe(3);
+    expect(out.ids).toEqual(["t1", "t2", "t3"]);
+  });
+
+  it("returns an error string and creates nothing when tasks exceed the hard cap (>25)", async () => {
+    const tasks = Array.from({ length: 26 }, (_, i) => ({ title: `Task ${i + 1}` }));
+    const out = await byName("crm_create_tasks").invoke({ tasks });
+    expect(out).toMatch(/exceed/i);
+    expect(createTask).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved" }));
+  });
+});
+
 describe("crm_delete_task (Tier B)", () => {
   it("deletes the task (household-checked) and fires copilot.write_approved on success", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });

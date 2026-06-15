@@ -84,6 +84,11 @@ async function auditToolCall(
   });
 }
 
+// soft: confirm threshold with Dan (spec §11.1 — HITL is unconditional because
+// the name is in WRITE_TOOL_NAMES; this const only drives preview copy)
+const BULK_TASK_HITL_THRESHOLD = 3;
+const BULK_TASK_HARD_CAP = 25;
+
 export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): StructuredToolInterface[] {
   const recentNotes = tool(
     async ({ limit }) => {
@@ -425,7 +430,52 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool, deleteNoteTool, deleteTaskTool];
+  const createTasksBulkTool = tool(
+    async ({ tasks }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      if (tasks.length > BULK_TASK_HARD_CAP) {
+        return `Batch exceeds the hard cap of ${BULK_TASK_HARD_CAP} tasks. Split into smaller batches.`;
+      }
+      try {
+        const ids: string[] = [];
+        for (const t of tasks) {
+          // householdId MUST come from gate — never from the model (IDOR protection).
+          const input = createCrmTaskSchema.omit({ householdId: true }).parse(t);
+          const task = await createTask(gate.firmId, ctx.userId, { ...input, householdId: gate.householdId });
+          ids.push(task.id);
+        }
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "crm_task",
+          resourceId: gate.householdId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "crm_create_tasks", count: ids.length, conversationId },
+        });
+        return JSON.stringify({ created: ids.length, ids });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to create tasks.";
+      }
+    },
+    {
+      name: "crm_create_tasks",
+      description:
+        `Create multiple CRM tasks for this client's household in a single batch ` +
+        `(${BULK_TASK_HITL_THRESHOLD}+ tasks trigger HITL approval). Hard cap: ${BULK_TASK_HARD_CAP}. ` +
+        `Requires human approval. For a single task, prefer crm_create_task (auto-applies).`,
+      schema: z.object({
+        tasks: z.array(z.object({
+          title: z.string().min(1).max(200),
+          description: z.string().max(10_000).optional(),
+          priority: z.enum(["low", "med", "high"]).optional(),
+          dueDate: z.string().nullable().optional(),
+        })).min(1),
+      }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool, deleteNoteTool, deleteTaskTool, createTasksBulkTool];
 }
 
 /** Exported for unit testing of the IDOR guards (spec §6). Not for runtime use outside tests. */
