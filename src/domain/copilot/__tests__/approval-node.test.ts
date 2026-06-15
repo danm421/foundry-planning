@@ -253,20 +253,6 @@ const CRM_DELETE_CALL = {
   args: { taskId: "task_abc" },
 };
 
-// Scripted two-turn fake for crm_delete_task: turn 1 emits the Tier-B call;
-// turn 2 (post-resume) emits a plain message → END.
-const crmInvoke = vi
-  .fn()
-  .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [CRM_DELETE_CALL] }))
-  .mockResolvedValue(new AIMessage("Done — task deleted."));
-
-function buildCrm(threadId: string) {
-  // Temporarily swap the chatModel mock to emit the CRM call.
-  // We re-use the same graph builder; invoke is already module-mocked, so we
-  // override it per-test via crmInvoke below.
-  return buildGraph(ctx, new MemorySaver(), threadId, () => "SYSTEM");
-}
-
 describe("approval node — crm_delete_task (Tier-B CRM write)", () => {
   beforeEach(() => {
     vi.clearAllMocks();

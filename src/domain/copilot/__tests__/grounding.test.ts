@@ -1,5 +1,5 @@
 // src/domain/copilot/__tests__/grounding.test.ts
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { findUngroundedNumbers } from "../grounding";
 
 // Fixed mock plan: the exact JSON payloads run_projection + run_monte_carlo
