@@ -9,10 +9,14 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { scenarios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { searchClients } from "@/lib/client-search";
 import { getOverviewData } from "@/lib/overview/get-overview-data";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
+import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import type { CopilotToolContext } from "../context";
 import { assertClientReadable } from "../guards";
 
@@ -85,5 +89,65 @@ export function buildReadTools(
     },
   );
 
-  return [findClient, clientBriefing];
+  const listScenarios = tool(
+    async ({ clientId, scenarioId }: { clientId: string; scenarioId?: string }) => {
+      const firmId = await requireOrgId();
+      await assertClientReadable(ctx, clientId);
+
+      const list = await db
+        .select({
+          id: scenarios.id,
+          name: scenarios.name,
+          isBaseCase: scenarios.isBaseCase,
+        })
+        .from(scenarios)
+        .where(eq(scenarios.clientId, clientId));
+
+      // No drill requested → just the roster.
+      if (!scenarioId) return JSON.stringify({ scenarios: list });
+
+      // Drill requested for an id that isn't in this client's roster → no detail.
+      if (!list.some((s) => s.id === scenarioId)) {
+        return JSON.stringify({
+          scenarios: list,
+          detail: null,
+          note: `scenario ${scenarioId} is not in this client's roster`,
+        });
+      }
+
+      // loadPanelData returns null for the base case (nothing to revert) or a
+      // missing client — surface the roster with no detail rather than erroring.
+      const panel = await loadPanelData(clientId, scenarioId, firmId);
+      if (panel == null) {
+        return JSON.stringify({
+          scenarios: list,
+          detail: null,
+          note: `scenario ${scenarioId} has no change detail (base case or unavailable)`,
+        });
+      }
+
+      return JSON.stringify({
+        scenarios: list,
+        detail: {
+          scenarioId: panel.scenarioId,
+          changes: panel.changes,
+          toggleGroups: panel.toggleGroups,
+        },
+      });
+    },
+    {
+      name: "list_scenarios",
+      description:
+        "List a client's scenarios (id, name, isBaseCase). Pass a scenarioId to drill into that scenario's changes and toggle groups.",
+      schema: z.object({
+        clientId: z.string().describe("The client (household) id."),
+        scenarioId: z
+          .string()
+          .optional()
+          .describe("Optional scenario id to drill into for change detail."),
+      }),
+    },
+  );
+
+  return [findClient, clientBriefing, listScenarios];
 }

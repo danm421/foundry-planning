@@ -23,6 +23,30 @@ vi.mock("@/lib/clients/get-client-with-contacts", () => ({
   getClientWithContacts: (...a: unknown[]) => getClientWithContacts(...a),
 }));
 
+// db.select({...}).from(scenarios).where(eq(...)) → resolves the scenario roster.
+const dbWhere = vi.fn();
+vi.mock("@/db", () => {
+  const where = (...a: unknown[]) => dbWhere(...a);
+  const from = () => ({ where });
+  const select = () => ({ from });
+  return {
+    db: { select },
+  };
+});
+// drizzle-orm eq is called inside the tool; pass it through harmlessly.
+vi.mock("drizzle-orm", async (orig) => {
+  const actual = (await orig()) as Record<string, unknown>;
+  return { ...actual, eq: (...a: unknown[]) => ({ __eq: a }) };
+});
+vi.mock("@/db/schema", () => ({
+  scenarios: { id: "id", name: "name", isBaseCase: "isBaseCase", clientId: "clientId" },
+}));
+
+const loadPanelData = vi.fn();
+vi.mock("@/lib/scenario/load-panel-data", () => ({
+  loadPanelData: (...a: unknown[]) => loadPanelData(...a),
+}));
+
 // The guard is async; the mock enforces clientId === ctx.clientId so the
 // rejection path is exercised without a DB round-trip.
 vi.mock("../../guards", () => {
@@ -73,6 +97,8 @@ beforeEach(() => {
   getClientWithContacts.mockRejectedValue(
     new Error("getClientWithContacts should not be called"),
   );
+  dbWhere.mockReset();
+  loadPanelData.mockReset();
 });
 
 describe("read.ts — find_client", () => {
@@ -129,5 +155,56 @@ describe("read.ts — client_briefing", () => {
     expect(out.projectionAvailable).toBe(false);
     expect(out.minProjectedNetWorth).toBeNull();
     expect(out.lifeEvents).toEqual([]);
+  });
+});
+
+describe("read.ts — list_scenarios", () => {
+  const roster = [
+    { id: "scn-base", name: "Base Case", isBaseCase: true },
+    { id: "scn-roth", name: "Roth Ladder", isBaseCase: false },
+  ];
+
+  it("rejects an out-of-scope clientId with forbidden_scope", async () => {
+    await expect(
+      tool("list_scenarios").invoke({ clientId: "client-OTHER" }),
+    ).rejects.toThrow(/forbidden_scope/);
+    expect(loadPanelData).not.toHaveBeenCalled();
+  });
+
+  it("lists the client's scenarios without drilling", async () => {
+    dbWhere.mockResolvedValue(roster);
+
+    const out = JSON.parse(
+      (await tool("list_scenarios").invoke({ clientId: "client-1" })) as string,
+    );
+
+    expect(out.scenarios).toEqual(roster);
+    expect(out.detail).toBeUndefined();
+    expect(loadPanelData).not.toHaveBeenCalled();
+  });
+
+  it("drills into a scenario in the roster", async () => {
+    dbWhere.mockResolvedValue(roster);
+    loadPanelData.mockResolvedValue({
+      scenarioId: "scn-roth",
+      scenarioName: "Roth Ladder",
+      changes: [{ id: "chg-1", opType: "edit" }],
+      toggleGroups: [{ id: "tg-1", name: "Phase 1" }],
+      cascadeWarnings: [],
+      targetNames: {},
+    });
+
+    const out = JSON.parse(
+      (await tool("list_scenarios").invoke({
+        clientId: "client-1",
+        scenarioId: "scn-roth",
+      })) as string,
+    );
+
+    expect(loadPanelData).toHaveBeenCalledWith("client-1", "scn-roth", "firmA");
+    expect(out.scenarios).toEqual(roster);
+    expect(out.detail.scenarioId).toBe("scn-roth");
+    expect(out.detail.changes).toHaveLength(1);
+    expect(out.detail.toggleGroups).toHaveLength(1);
   });
 });
