@@ -11,11 +11,13 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { listHouseholdNotes } from "@/lib/crm/notes";
+import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
+import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { listActivity } from "@/lib/crm/activity";
 import { listTasks } from "@/lib/crm-tasks/queries";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
+import { recordAudit } from "@/lib/audit";
 import { clientToHousehold } from "../guards";
 import { maskSsnLast4 } from "../account-mask";
 import type { CopilotAuthContext } from "../state";
@@ -37,7 +39,26 @@ async function gateCrm(
   }
 }
 
-export function buildCrmTools({ ctx }: CopilotToolContext): StructuredToolInterface[] {
+/** Fire the copilot.tool_call audit for a Tier-A auto-applied write (in addition
+ *  to the core's own crm.* row). Only mutating Tier-A tools call this. */
+async function auditToolCall(
+  ctx: CopilotAuthContext,
+  conversationId: string,
+  resourceType: string,
+  resourceId: string,
+  tool: string,
+) {
+  await recordAudit({
+    action: "copilot.tool_call",
+    resourceType,
+    resourceId,
+    firmId: ctx.firmId,
+    actorId: ctx.userId,
+    metadata: { tool, conversationId, clientId: ctx.clientId },
+  });
+}
+
+export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): StructuredToolInterface[] {
   const recentNotes = tool(
     async ({ limit }) => {
       const gate = await gateCrm(ctx);
@@ -138,5 +159,35 @@ export function buildCrmTools({ ctx }: CopilotToolContext): StructuredToolInterf
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard];
+  // ── Tier-A: auto-apply writes ──────────────────────────────────────────────
+
+  const addNote = tool(
+    async (args) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      try {
+        const input = createCrmNoteSchema.parse(args);
+        const note = await createNote(gate.householdId, gate.firmId, ctx.userId, input);
+        await auditToolCall(ctx, conversationId, "crm_note", note.id, "crm_add_note");
+        return JSON.stringify({ note });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to add note.";
+      }
+    },
+    {
+      name: "crm_add_note",
+      description:
+        "Add a CRM note (meeting/call/email/note) to the client's timeline. Applies " +
+        "immediately (reversible — can be deleted with approval). The note BODY you " +
+        "write is recorded verbatim.",
+      schema: z.object({
+        subject: z.string().min(1).max(300),
+        body: z.string().max(20_000).optional(),
+        noteKind: z.enum(["note", "meeting", "call", "email"]).optional(),
+        noteDate: z.string(), // YYYY-MM-DD
+      }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote];
 }
