@@ -1,0 +1,208 @@
+// src/domain/copilot/__tests__/approval-node.test.ts
+//
+// Phase-2 Task 61 — the approval node's audit + preview behaviour, exercised
+// end-to-end through the REAL graph (real agent/approval nodes, real tools).
+//
+// The model is faked so the run is deterministic: turn 1 emits one
+// `propose_changes` write call; on resume turn 2 emits a plain message so the
+// graph terminates. The write-path IO is mocked so the REAL propose_changes
+// tool reaches success on confirm.
+//
+// Audit ownership split under test:
+//   • the NODE emits copilot.write_proposed (pre-interrupt) and, on a decline,
+//     copilot.write_rejected;
+//   • the write TOOL emits copilot.write_approved — only on a real success.
+// So a confirm run shows write_approved coming from the tool (not the node).
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { MemorySaver, Command } from "@langchain/langgraph";
+
+// --- LLM: a scripted two-turn fake. Matches the real agent node, which calls
+// chatModel().bindTools(tools).invoke(...). bindTools returns the same fake.
+const WRITE_CALL = {
+  id: "call_1",
+  name: "propose_changes",
+  args: {
+    scenarioId: "scenario_1",
+    groupName: "Delay SS to 70",
+    changes: [
+      {
+        opType: "edit",
+        targetKind: "plan_settings",
+        targetId: "plan_settings",
+        desiredFields: { ssClaimAgePrimary: 70 },
+      },
+    ],
+  },
+};
+const invoke = vi
+  .fn()
+  // turn 1: propose a write → routes to the approval node
+  .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [WRITE_CALL] }))
+  // turn 2 (post-resume): plain answer → END
+  .mockResolvedValue(new AIMessage("Done — applied the change."));
+vi.mock("../llm", () => ({
+  chatModel: () => ({ bindTools: () => ({ invoke }) }),
+}));
+
+// --- Write-path IO for the REAL propose_changes tool (success path). Mirrors
+// scenario-writes.test.ts.
+vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
+vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn() }));
+vi.mock("@/lib/scenario/changes-writer", () => ({
+  applyEntityAdd: vi.fn(),
+  applyEntityEdit: vi.fn(),
+  applyEntityRemove: vi.fn(),
+  revertChange: vi.fn(),
+}));
+vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
+vi.mock("@/db", () => ({
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() =>
+          Promise.resolve([{ id: "scenario_1", clientId: "client_1" }]),
+        ),
+      })),
+    })),
+    insert: vi.fn(() => ({
+      values: vi.fn(() => ({ returning: vi.fn(() => Promise.resolve([{ id: "tg-new" }])) })),
+    })),
+  },
+}));
+// Preview enrichment is best-effort (try/catch in describeProposedWrite). Force
+// it to fail fast so the node falls back to the pure summary (previews.length
+// stays 1) and the test never blocks on a real load/projection. The
+// propose_changes tool does NOT import the loader, so the confirm-path write is
+// unaffected.
+vi.mock("@/lib/scenario/loader", () => ({
+  loadEffectiveTree: vi.fn(() => Promise.reject(new Error("no db in test"))),
+}));
+
+import { buildGraph } from "../graph";
+import type { CopilotAuthContext } from "../state";
+import { requireOrgId } from "@/lib/db-helpers";
+import { verifyClientAccess } from "@/lib/clients/authz";
+import { applyEntityEdit } from "@/lib/scenario/changes-writer";
+import { recordAudit } from "@/lib/audit";
+
+const ctx: CopilotAuthContext = {
+  userId: "user_1",
+  firmId: "org_session",
+  clientId: "client_1",
+  scenarioId: "scenario_1",
+};
+
+function build(threadId: string) {
+  return buildGraph(ctx, new MemorySaver(), threadId, () => "SYSTEM");
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  invoke
+    .mockReset()
+    .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [WRITE_CALL] }))
+    .mockResolvedValue(new AIMessage("Done — applied the change."));
+  vi.mocked(requireOrgId).mockResolvedValue("org_session");
+  vi.mocked(verifyClientAccess).mockResolvedValue(true);
+  vi.mocked(recordAudit).mockResolvedValue(undefined);
+  vi.mocked(applyEntityEdit).mockResolvedValue(undefined);
+});
+
+describe("approval node", () => {
+  it("pauses on a write turn: emits write_proposed, builds a preview, runs no write", async () => {
+    const g = build("conv-pause");
+    const result = await g.invoke(
+      { messages: [new HumanMessage("delay social security to 70")], authContext: ctx },
+      { configurable: { thread_id: "conv-pause" }, recursionLimit: 10 },
+    );
+
+    // The write has NOT executed — we're paused at the interrupt.
+    expect(applyEntityEdit).not.toHaveBeenCalled();
+
+    // The run surfaced an approval interrupt with one preview + the write call.
+    // __interrupt__ is added by LangGraph at runtime and isn't on the compiled
+    // graph's static state type, so read it through a narrow cast.
+    const interrupts = (result as { __interrupt__?: Array<{ value: unknown }> })
+      .__interrupt__;
+    expect(interrupts).toBeDefined();
+    const payload = interrupts![0].value as {
+      type: string;
+      previews: unknown[];
+      calls: Array<{ id: string; name: string }>;
+    };
+    expect(payload.type).toBe("approval_required");
+    expect(payload.previews).toHaveLength(1);
+    expect(payload.calls[0]).toMatchObject({ id: "call_1", name: "propose_changes" });
+
+    // The node audited the proposal (NOT approval) before pausing.
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_proposed",
+        clientId: "client_1",
+        firmId: "org_session",
+        metadata: expect.objectContaining({ tool: "propose_changes", toolCallId: "call_1" }),
+      }),
+    );
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+
+  it("confirm: runs the real write exactly once; write_approved comes from the TOOL", async () => {
+    const g = build("conv-confirm");
+    const cfg = { configurable: { thread_id: "conv-confirm" }, recursionLimit: 10 };
+    await g.invoke(
+      { messages: [new HumanMessage("delay social security to 70")], authContext: ctx },
+      cfg,
+    );
+
+    await g.invoke(new Command({ resume: { decisions: { call_1: "confirm" } } }), cfg);
+
+    // The real propose_changes tool ran exactly once.
+    expect(applyEntityEdit).toHaveBeenCalledTimes(1);
+    // write_approved is emitted by the TOOL on success, never by the node.
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_approved",
+        metadata: expect.objectContaining({ tool: "propose_changes" }),
+      }),
+    );
+  });
+
+  it("reject: skips the write, audits write_rejected, pushes a decline ToolMessage", async () => {
+    const g = build("conv-reject");
+    const cfg = { configurable: { thread_id: "conv-reject" }, recursionLimit: 10 };
+    await g.invoke(
+      { messages: [new HumanMessage("delay social security to 70")], authContext: ctx },
+      cfg,
+    );
+
+    const out = await g.invoke(
+      new Command({ resume: { decisions: { call_1: "reject" } } }),
+      cfg,
+    );
+
+    // No write ran.
+    expect(applyEntityEdit).not.toHaveBeenCalled();
+    // The node audited the rejection.
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_rejected",
+        clientId: "client_1",
+        firmId: "org_session",
+        metadata: expect.objectContaining({ tool: "propose_changes", toolCallId: "call_1" }),
+      }),
+    );
+    // The tool never claimed approval.
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+    // The decline message is in the thread.
+    const declined = out.messages.find(
+      (m): m is ToolMessage =>
+        m instanceof ToolMessage && m.content === "User declined this action.",
+    );
+    expect(declined).toBeDefined();
+  });
+});

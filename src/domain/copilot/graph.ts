@@ -10,7 +10,8 @@ import { buildTools, WRITE_TOOL_NAMES } from "./tools";
 import { buildToolContext } from "./context";
 import { routeAfterAgent } from "./routing";
 import { selectHistoryWindow } from "./history-window";
-import type { WritePreview } from "./types"; // SSE-contract preview shape
+import { describeProposedWrite } from "@/domain/copilot/preview";
+import { recordAudit } from "@/lib/audit";
 
 /**
  * Compile the copilot graph for one conversation.
@@ -46,15 +47,38 @@ export function buildGraph(
   }
 
   async function approvalNode(state: typeof CopilotState.State) {
+    // authContext is the server-derived scope (firm/client); it's the `ctx`
+    // describeProposedWrite + the audit calls below need.
+    const ctx = authContext;
     const last = state.messages[state.messages.length - 1] as AIMessage;
     const writeCalls = (last.tool_calls ?? []).filter((c) => WRITE_TOOL_NAMES.has(c.name));
-    // Phase 0: WRITE_TOOL_NAMES is empty so writeCalls is always []. Phase 2
-    // builds rich previews here (describeProposedWrite); until then the preview
-    // list is empty and this node is unreachable via routeAfterAgent.
-    const previews: WritePreview[] = writeCalls.map((c) => ({
-      name: c.name,
-      summary: `Proposed ${c.name}`,
-    }));
+    // Rich, best-effort previews for the approval card (field-level diff + plan
+    // impact for propose_changes; pure summary otherwise). describeProposedWrite
+    // never throws — its enrichment IO is wrapped in try/catch.
+    const previews = await Promise.all(
+      writeCalls.map((c) => describeProposedWrite({ name: c.name, args: c.args }, ctx)),
+    );
+
+    // AUDIT OWNERSHIP SPLIT (do not "fix" to also emit write_approved here):
+    //   • The NODE emits write_proposed (below, pre-interrupt) and write_rejected
+    //     (on a decline, post-interrupt).
+    //   • The write TOOLS own write_approved — they emit it on ACTUAL success
+    //     (with the real resourceId). Emitting it here after t.invoke() would
+    //     double-audit AND falsely record approval even when the tool returned a
+    //     sanitized error string (a failed write), since the tools return error
+    //     strings rather than throwing. So write_approved exists iff the write
+    //     truly succeeded.
+    for (const c of writeCalls) {
+      await recordAudit({
+        action: "copilot.write_proposed",
+        resourceType: "copilot_conversation",
+        resourceId: conversationId,
+        clientId: ctx.clientId,
+        firmId: ctx.firmId,
+        metadata: { tool: c.name, toolCallId: c.id },
+      });
+    }
+
     // Pause; the resume value is { decisions: Record<toolCallId, 'confirm'|'reject'> }.
     // CRITICAL: LangGraph re-runs this node from the top on resume; interrupt()
     // returns the resume value on the SECOND run. ALL tool execution must happen
@@ -70,10 +94,19 @@ export function buildGraph(
       if (WRITE_TOOL_NAMES.has(c.name)) {
         const verdict = decision.decisions[c.id!] ?? "reject";
         if (verdict === "confirm") {
+          // The tool emits copilot.write_approved itself, only on real success.
           const t = toolsByName.get(c.name)!;
           const result = await t.invoke(c.args);
           messages.push(new ToolMessage({ tool_call_id: c.id!, content: String(result) }));
         } else {
+          await recordAudit({
+            action: "copilot.write_rejected",
+            resourceType: "copilot_conversation",
+            resourceId: conversationId,
+            clientId: ctx.clientId,
+            firmId: ctx.firmId,
+            metadata: { tool: c.name, toolCallId: c.id },
+          });
           messages.push(
             new ToolMessage({ tool_call_id: c.id!, content: "User declined this action." }),
           );
