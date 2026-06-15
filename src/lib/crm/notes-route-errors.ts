@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { UnauthorizedError } from "@/lib/db-helpers";
 
 /**
@@ -18,7 +19,7 @@ export function mapCrmNoteError(err: unknown): NextResponse {
   if (err instanceof Error && err.message === "Unauthorized") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (err instanceof Error && err.name === "ZodError") {
+  if (err instanceof ZodError) {
     return NextResponse.json({ error: err.message }, { status: 400 });
   }
   if (err instanceof Error) {
