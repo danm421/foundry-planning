@@ -1,5 +1,6 @@
 // src/domain/copilot/tools/compute.ts
 import { tool } from "@langchain/core/tools";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import type { CopilotToolContext } from "../context";
 import { assertClientReadable } from "../guards";
@@ -71,7 +72,9 @@ function compactYear(y: ProjectionYear) {
   };
 }
 
-export function buildComputeTools(toolCtx: CopilotToolContext) {
+export function buildComputeTools(
+  toolCtx: CopilotToolContext,
+): StructuredToolInterface[] {
   const { ctx } = toolCtx;
 
   const runProjection = tool(
