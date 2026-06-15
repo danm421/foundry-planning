@@ -8,6 +8,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection, runProjectionWithEvents } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { solveTarget } from "@/lib/solver/solve-target";
+import { solveMaxSpending } from "@/lib/solver/solve-max-spending";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import type { SolveLeverKey, PoSSolveResult } from "@/lib/solver/solve-types";
 import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
@@ -550,6 +551,51 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
     },
   );
 
+  const solveMaxSpendingTool = tool(
+    async ({ clientId, scenarioId, targetPoS }) => {
+      const denied = await guardClient(ctx, clientId);
+      if (denied) return denied;
+
+      const { effectiveTree } = await loadEffectiveTree(clientId, ctx.firmId, scenarioId, {});
+      // Reuse the persisted per-scenario MC seed for reproducibility.
+      const mcPayload = await loadMonteCarloData(clientId, ctx.firmId, scenarioId);
+
+      const result = await solveMaxSpending({
+        tree: effectiveTree,
+        mcPayload,
+        targetPoS,
+      });
+
+      return JSON.stringify({
+        scenarioId,
+        targetPoS,
+        status: result.status,
+        realAnnualSpend: result.realAnnualSpend, // today's dollars, rounded to $2k
+        scaleFactor: result.scaleFactor,
+        achievedPoS: result.achievedPoS, // canonical 1000-trial value
+        disclaimer:
+          "realAnnualSpend is the maximum sustainable retirement spend (today's dollars, rounded " +
+          "to $2k) at the target probability of success. Observations only, not advice.",
+      });
+    },
+    {
+      name: "solve_max_spending",
+      description:
+        "Find the maximum sustainable annual retirement spending (today's dollars) that keeps " +
+        "Monte-Carlo probability of success at or above a target. Reuses the scenario's persisted " +
+        "seed and reports the canonical 1000-trial achieved PoS.",
+      schema: z.object({
+        clientId: z.string().describe("the client uuid (must match your scope)"),
+        scenarioId: z.string().describe("scenario uuid, or 'base'"),
+        targetPoS: z
+          .number()
+          .min(0.01)
+          .max(0.99)
+          .describe("target probability of success, e.g. 0.85"),
+      }),
+    },
+  );
+
   return [
     whatifRoth,
     whatifSocialSecurity,
@@ -557,5 +603,6 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
     whatifEstateTax,
     whatifLifeInsuranceNeed,
     solveGoal,
+    solveMaxSpendingTool,
   ];
 }
