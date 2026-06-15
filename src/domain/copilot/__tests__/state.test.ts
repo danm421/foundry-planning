@@ -18,7 +18,9 @@ describe("CopilotState", () => {
 
   it("messages reducer APPENDS rather than replaces (MessagesAnnotation semantics)", () => {
     // LangGraph uses `.operator` (not `.reducer`) for the binary reduce function
-    const reduce = (CopilotState.spec.messages as { operator?: Function }).operator!;
+    const reduce = (CopilotState.spec.messages as {
+      operator?: (a: unknown[], b: unknown[]) => unknown[];
+    }).operator!;
     const merged = reduce(
       [new HumanMessage("hi")],
       [new AIMessage("hello there")],
@@ -30,7 +32,9 @@ describe("CopilotState", () => {
 
   it("authContext is last-write-wins (single value, no append)", () => {
     // LangGraph uses `.operator` (not `.reducer`) for the binary reduce function
-    const reduce = (CopilotState.spec.authContext as { operator?: Function }).operator!;
+    const reduce = (CopilotState.spec.authContext as {
+      operator?: (a: unknown, b: unknown) => unknown;
+    }).operator!;
     const next = { ...ctx, scenarioId: "scn_2" };
     expect(reduce(ctx, next)).toEqual(next);
   });
