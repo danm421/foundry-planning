@@ -66,6 +66,25 @@ beforeEach(() => {
   recordAudit.mockReset();
 });
 
+describe("crm_delete_task (Tier B)", () => {
+  it("deletes the task (household-checked) and fires copilot.write_approved on success", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });
+    deleteTask.mockResolvedValue(undefined);
+    const out = JSON.parse(await byName("crm_delete_task").invoke({ taskId: "t1" }));
+    expect(deleteTask).toHaveBeenCalledWith("t1", "org_A");
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved", resourceType: "crm_task", resourceId: "t1" }));
+    expect(out.ok).toBe(true);
+  });
+
+  it("rejects a task from another household (IDOR) and does NOT delete or audit-approve", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-OTHER" }, tags: [] });
+    const out = await byName("crm_delete_task").invoke({ taskId: "t1" });
+    expect(out).toMatch(/does not belong to this client/i);
+    expect(deleteTask).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved" }));
+  });
+});
+
 describe("crm_delete_note (Tier B)", () => {
   it("deletes the note and fires copilot.write_approved on real success", async () => {
     listHouseholdNotes.mockResolvedValue([{ id: "n1" }]);

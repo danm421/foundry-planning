@@ -15,7 +15,7 @@ import { createNote, listHouseholdNotes, deleteNote } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { recordActivity, listActivity } from "@/lib/crm/activity";
 import { listTasks, getTaskById } from "@/lib/crm-tasks/queries";
-import { createTask, updateTaskField, setTaskStatus, postComment } from "@/lib/crm-tasks/mutations";
+import { createTask, updateTaskField, setTaskStatus, postComment, deleteTask } from "@/lib/crm-tasks/mutations";
 import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
@@ -396,7 +396,36 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool, deleteNoteTool];
+  const deleteTaskTool = tool(
+    async ({ taskId }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      const own = await assertTaskInHousehold(taskId, gate.firmId, gate.householdId);
+      if (own !== true) return own;
+      try {
+        await deleteTask(taskId, gate.firmId);
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "crm_task",
+          resourceId: taskId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "crm_delete_task", conversationId },
+        });
+        return JSON.stringify({ ok: true });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to delete task.";
+      }
+    },
+    {
+      name: "crm_delete_task",
+      description:
+        "Permanently delete a CRM task from the client's task list. Requires human approval.",
+      schema: z.object({ taskId: z.string() }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool, deleteNoteTool, deleteTaskTool];
 }
 
 /** Exported for unit testing of the IDOR guards (spec §6). Not for runtime use outside tests. */
