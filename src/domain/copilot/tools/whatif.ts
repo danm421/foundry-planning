@@ -3,7 +3,7 @@ import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import type { CopilotToolContext } from "../context";
-import { assertClientReadable } from "../guards";
+import { assertClientReadable, ForbiddenScopeError } from "../guards";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection, runProjectionWithEvents } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
@@ -34,8 +34,11 @@ async function guardClient(
 ): Promise<string | null> {
   try {
     await assertClientReadable(ctx, clientId);
-  } catch {
-    return "You are not authorized to read that client (scope mismatch).";
+  } catch (err) {
+    if (err instanceof ForbiddenScopeError) {
+      return "You are not authorized to read that client (scope mismatch).";
+    }
+    return "Couldn't verify access to that client right now. Please try again.";
   }
   return null;
 }
@@ -422,7 +425,7 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
         }
       }
 
-      const solvedFaceValue = Math.round(hi / TOLERANCE) * TOLERANCE;
+      const solvedFaceValue = Math.ceil(hi / TOLERANCE) * TOLERANCE;
       const solvedSurvivorPortfolio = evaluate(solvedFaceValue);
 
       return JSON.stringify({

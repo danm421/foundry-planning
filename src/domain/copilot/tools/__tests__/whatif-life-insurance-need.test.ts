@@ -90,6 +90,35 @@ describe("whatif_life_insurance_need", () => {
     expect(a.solvedFaceValue).toBe(b.solvedFaceValue);
   });
 
+  it("regression: solved face always clears target when bisection hi falls between $10k grid lines", async () => {
+    // With REQUIREMENT=211_000, the bisection [0, 5M] converges to hi=214843.75.
+    // Math.round(214843.75/10000)*10000 = 210000 (rounds DOWN — below requirement).
+    // Math.ceil(214843.75/10000)*10000  = 220000 (rounds UP  — clears requirement).
+    // This test confirms the tool reports solvedSurvivorPortfolio >= target (0) and
+    // solvedFaceValue >= REQUIREMENT. It FAILS with Math.round and PASSES with Math.ceil.
+    const REQUIREMENT = 211_000;
+    survivorEndingPortfolio.mockImplementation(() => {
+      const face = runLifeInsuranceWhatIf.mock.calls.at(-1)![0].faceValue as number;
+      return face - REQUIREMENT;
+    });
+    const tool = toolByName("whatif_life_insurance_need");
+    const out = JSON.parse(
+      String(
+        await tool.invoke({
+          clientId: "client-1",
+          scenarioId: "base",
+          deceased: "client",
+          deathYear: 2030,
+          targetSurvivorPortfolio: 0,
+        }),
+      ),
+    );
+    // The contract: the reported portfolio must be at or above the target.
+    expect(out.solvedSurvivorPortfolio).toBeGreaterThanOrEqual(out.targetSurvivorPortfolio);
+    // And the face value itself must cover the requirement.
+    expect(out.solvedFaceValue).toBeGreaterThanOrEqual(REQUIREMENT);
+  });
+
   it("blocks a cross-scope clientId", async () => {
     const tool = toolByName("whatif_life_insurance_need");
     const out = String(await tool.invoke({ clientId: "x", scenarioId: "base", deceased: "client", deathYear: 2030 }));

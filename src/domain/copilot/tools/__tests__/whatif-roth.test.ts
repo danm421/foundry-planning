@@ -79,6 +79,20 @@ describe("whatif_roth", () => {
     expect(loadEffectiveTree).not.toHaveBeenCalled();
   });
 
+  it("regression: transient verifyClientAccess error returns 'try again' message, not a scope denial", async () => {
+    // clientId matches ctx.clientId (no scope violation), but verifyClientAccess
+    // throws a transient DB error. The old catch-all returned the scope message,
+    // misleading the advisor. After the fix, it returns a distinct "try again" message.
+    verifyClientAccess.mockRejectedValue(new Error("db down"));
+    const tool = toolByName("whatif_roth");
+    const out = String(
+      await tool.invoke({ clientId: "client-1", scenarioId: "base", conversions: [] }),
+    );
+    expect(out).toMatch(/try again/i);
+    expect(out).not.toMatch(/scope mismatch/i);
+    expect(loadEffectiveTree).not.toHaveBeenCalled();
+  });
+
   it("reports gross/taxable per conversion year and Base->Scenario tax + medicare deltas", async () => {
     // Base run: no conversions, $10k tax, $5k medicare.
     // Scenario run: a $40k conversion ($40k taxable), $18k tax, $6k medicare.
