@@ -105,7 +105,9 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
       resolved?.inflationFactor ?? 1,
     );
 
-  // Candidate charity deduction assuming we itemize — drives the election.
+  // Candidate charity deduction assuming we itemize — drives the election. The
+  // election uses the UN-floored candidate; the F22 floor (below) is a deduction
+  // haircut applied only after we've committed to itemizing, not an election input.
   const candidate = computeCharitableDeductionForYear({
     giftsThisYear: charityGiftsThisYear,
     agi: charityAgi,
@@ -128,10 +130,20 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         currentYear: year,
       });
 
-  const charityDeductionThisYear = charityResult.deductionThisYear;
+  // F22 / OBBBA §170(b)(1)(I): 0.5%-of-AGI floor on ITEMIZED charitable
+  // contributions, effective tax years beginning after 2025 (i.e. 2026+). The
+  // floored-off amount is LOST, not carried forward (plan modeling decision —
+  // statutory carryforward treatment of the floor is subtle; flagged for review).
+  let charityDeductionThisYear = charityResult.deductionThisYear;
+  if (willItemize && year >= 2026 && charityDeductionThisYear > 0) {
+    const floor = 0.005 * charityAgi;
+    charityDeductionThisYear = Math.max(0, charityDeductionThisYear - floor);
+  }
+
   const itemizedDeductions = itemizedIn + charityDeductionThisYear;
 
   // Patch deduction breakdown for charity (mirrors projection.ts:1703-1715).
+  // Uses the floored amount (F22) so the breakdown matches the deduction taken.
   let deductionBreakdownOut = deductionBreakdownIn;
   if (deductionBreakdownIn && charityDeductionThisYear > 0) {
     const newCharitable = deductionBreakdownIn.belowLine.charitable + charityDeductionThisYear;

@@ -238,6 +238,33 @@ describe("computeTaxForYear", () => {
     ]);
   });
 
+  it("F22: 0.5%-of-AGI floor haircuts itemized charity in 2026", () => {
+    // AGI 1,000,000; $100k cash-to-public gift; year 2026 → floor 5,000 → 95,000.
+    const out2026 = computeTaxForYear(
+      charityInput({
+        year: 2026,
+        filingStatus: "single",
+        itemizedDeductions: 50_000, // ensures itemize
+        charityGiftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+        taxableIncome: 1_000_000,
+      }),
+    );
+    expect(out2026.charityDeductionThisYear).toBe(95_000);
+  });
+
+  it("F22: no floor pre-2026", () => {
+    const out2025 = computeTaxForYear(
+      charityInput({
+        year: 2025,
+        filingStatus: "single",
+        itemizedDeductions: 50_000,
+        charityGiftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+        taxableIncome: 1_000_000,
+      }),
+    );
+    expect(out2025.charityDeductionThisYear).toBe(100_000);
+  });
+
   it("BUG #11: SS §86 combined income uses muni interest only, not the broad taxExempt bucket", () => {
     // Broad taxExempt = 50k (e.g. non-taxable business pass-through) but muni
     // interest = 0. The §86 worksheet must see only the muni subset, so the 50k

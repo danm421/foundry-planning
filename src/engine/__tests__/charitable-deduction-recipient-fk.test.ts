@@ -183,11 +183,13 @@ describe("charitable-deduction picks up recipient_external_beneficiary_id gifts"
 
     expect(y).toBeDefined();
     // $40k mortgage interest forces itemizing (> $30k std deduction).
-    // $50k gift to public charity is well within 60% AGI limit ($500k × 60% = $300k)
-    // so the full $50k must appear in the charitable-deduction breakdown.
+    // $50k gift to public charity is well within 60% AGI limit ($500k × 60% = $300k).
+    // F22 (OBBBA §170(b)(1)(I), 2026+): the itemized charitable deduction is haircut
+    // by a 0.5%-of-AGI floor → 0.005 × $500k = $2,500, so $50k − $2,500 = $47,500.
     expect(y.deductionBreakdown?.belowLine.charitable ?? 0).toBeGreaterThan(0);
-    expect(y.deductionBreakdown?.belowLine.charitable ?? 0).toBe(50_000);
-    // Carryforward should be empty — fully consumed in current year.
+    expect(y.deductionBreakdown?.belowLine.charitable ?? 0).toBe(47_500);
+    // Carryforward stays empty — the full $50k cleared the AGI ceiling; the $2,500
+    // floored off is LOST (plan modeling decision), not carried forward.
     expect(y.charityCarryforward?.cashPublic).toEqual([]);
   });
 
