@@ -173,9 +173,28 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
             // blocks (Phase 1+ tool/reasoning output) would need normalizing here.
             const text = typeof chunk?.content === "string" ? chunk.content : "";
             if (text) send({ type: "token", text });
+          } else if (ev.event === "on_tool_start") {
+            send({ type: "tool_start", name: ev.name });
+          } else if (ev.event === "on_tool_end") {
+            send({ type: "tool_end", name: ev.name });
           }
         }
         await touchConversation(cid, userId);
+
+        // A write tool (Phase 2) interrupts before executing; surface the approval
+        // payload. Phase-1 read/compute graphs never interrupt → tasks is empty and
+        // this branch is inert, but the wiring is here.
+        const snapshot = await graph.getState({ configurable: { thread_id: cid } });
+        const pending = snapshot.tasks?.find(
+          (t: { interrupts?: unknown[] }) => t.interrupts?.length,
+        );
+        if (pending) {
+          const intr = (pending.interrupts as Array<{
+            value: { previews: unknown; calls: unknown };
+          }>)[0].value;
+          send({ type: "approval_required", previews: intr.previews, calls: intr.calls });
+        }
+
         send({ type: "done" });
       } catch (err) {
         // §C: never emit raw err.message — it may leak client ids / internals.
