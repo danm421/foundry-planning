@@ -11,7 +11,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
+import { createNote, listHouseholdNotes, deleteNote } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { recordActivity, listActivity } from "@/lib/crm/activity";
 import { listTasks, getTaskById } from "@/lib/crm-tasks/queries";
@@ -361,7 +361,42 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool];
+  // ── Tier-B: HITL destructive / bulk writes ────────────────────────────────
+  // These are in WRITE_TOOL_NAMES → routed through the approval node.
+  // The tool body runs ONLY AFTER interrupt() on resume. The tool fires
+  // copilot.write_approved (never copilot.tool_call) on real persisted success.
+  // The node owns write_proposed / write_rejected.
+
+  const deleteNoteTool = tool(
+    async ({ noteId }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      const own = await assertNoteInHousehold(noteId, gate.firmId, gate.householdId);
+      if (own !== true) return own;
+      try {
+        await deleteNote(noteId, gate.householdId, gate.firmId, ctx.userId);
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "crm_note",
+          resourceId: noteId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "crm_delete_note", conversationId },
+        });
+        return JSON.stringify({ ok: true });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to delete note.";
+      }
+    },
+    {
+      name: "crm_delete_note",
+      description:
+        "Permanently delete a CRM note from the client's timeline. Requires human approval.",
+      schema: z.object({ noteId: z.string() }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool, deleteNoteTool];
 }
 
 /** Exported for unit testing of the IDOR guards (spec §6). Not for runtime use outside tests. */
