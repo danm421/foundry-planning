@@ -218,15 +218,15 @@ describe("GET /api/cron/reconcile-billing", () => {
         ],
       },
     });
-    // Seat implies ai_import; the active white_label add-on grants its own
-    // entitlement. Both must be present in Clerk for no drift — and because
-    // white_label is NOT seat-implied, this also proves the cron classifies
-    // the add-on via price.metadata (misreading it as a seat would drop
-    // white_label from the derived set and surface entitlement drift).
+    // Seat implies the bundled ai_copilot + ai_import; the active white_label
+    // add-on grants its own entitlement. All three must be present in Clerk for
+    // no drift — and because white_label is NOT seat-implied, this also proves
+    // the cron classifies the add-on via price.metadata (misreading it as a seat
+    // would drop white_label from the derived set and surface entitlement drift).
     mockGetOrg.mockResolvedValue({
       publicMetadata: {
         subscription_status: "active",
-        entitlements: ["ai_import", "white_label"],
+        entitlements: ["ai_copilot", "ai_import", "white_label"],
       },
     });
 
