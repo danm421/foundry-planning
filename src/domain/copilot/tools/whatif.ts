@@ -10,6 +10,8 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
 import type { RothConversion, ProjectionYear } from "@/engine/types";
 import { solveSsClaimAgeByPortfolio } from "@/lib/solver/solve-ss-portfolio";
+import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
+import type { ScenarioChange } from "@/engine/scenario/types";
 
 /**
  * Shared preamble for every what-if tool: the model-supplied clientId must equal
@@ -189,5 +191,80 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
     },
   );
 
-  return [whatifRoth, whatifSocialSecurity];
+  const whatifWithdrawal = tool(
+    async ({ clientId, scenarioId, withdrawalStrategy }) => {
+      const denied = await guardClient(ctx, clientId);
+      if (denied) return denied;
+
+      const { effectiveTree } = await loadEffectiveTree(clientId, ctx.firmId, scenarioId, {});
+
+      const baseProjection = runProjection(effectiveTree);
+      const fromStrategy = effectiveTree.withdrawalStrategy;
+
+      // withdrawal_strategy is a singleton TargetKind: an edit change whose
+      // payload is the {field:{from,to}} map the engine's applyEdit consumes.
+      const change: ScenarioChange = {
+        id: "copilot-whatif-withdrawal",
+        scenarioId: "copilot-whatif",
+        opType: "edit",
+        targetKind: "withdrawal_strategy",
+        targetId: "withdrawal_strategy",
+        payload: {
+          withdrawalStrategy: { from: fromStrategy, to: withdrawalStrategy },
+        },
+        toggleGroupId: null,
+        orderIndex: 0,
+      };
+      const { effectiveTree: scenarioTree } = applyScenarioChanges(
+        effectiveTree,
+        [change],
+        {},
+        [],
+      );
+      const scenarioProjection = runProjection(scenarioTree);
+
+      const baseTax = sumTax(baseProjection);
+      const scenarioTax = sumTax(scenarioProjection);
+      const baseEndingPortfolio =
+        baseProjection[baseProjection.length - 1]?.portfolioAssets.liquidTotal ?? 0;
+      const scenarioEndingPortfolio =
+        scenarioProjection[scenarioProjection.length - 1]?.portfolioAssets.liquidTotal ?? 0;
+
+      return JSON.stringify({
+        scenarioId,
+        baseStrategy: fromStrategy,
+        scenarioStrategy: withdrawalStrategy,
+        totals: {
+          baseTax,
+          scenarioTax,
+          taxDelta: scenarioTax - baseTax,
+          baseEndingPortfolio,
+          scenarioEndingPortfolio,
+          endingPortfolioDelta: scenarioEndingPortfolio - baseEndingPortfolio,
+        },
+        disclaimer:
+          "Deltas are combined Base->Scenario lifetime totals; observations only, not advice.",
+      });
+    },
+    {
+      name: "whatif_withdrawal",
+      description:
+        "Model a different withdrawal-order (the sequence accounts are drained in retirement) " +
+        "as a read-only what-if. Provide the full ordered list of withdrawal buckets. Returns " +
+        "the combined Base->Scenario lifetime tax and final-year liquid-portfolio deltas. " +
+        "For 'how much can they sustainably spend' use solve_max_spending.",
+      schema: z.object({
+        clientId: z.string().describe("the client uuid (must match your scope)"),
+        scenarioId: z.string().describe("scenario uuid, or 'base'"),
+        withdrawalStrategy: z
+          .array(z.string())
+          .describe(
+            "the full ordered list of withdrawal buckets (e.g. ['taxable','tax_deferred','tax_free']); " +
+              "first item is drained first",
+          ),
+      }),
+    },
+  );
+
+  return [whatifRoth, whatifSocialSecurity, whatifWithdrawal];
 }
