@@ -7,8 +7,9 @@ import { assertClientReadable } from "../guards";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
-import type { SolverMutation } from "@/lib/solver/types";
+import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
 import type { RothConversion, ProjectionYear } from "@/engine/types";
+import { solveSsClaimAgeByPortfolio } from "@/lib/solver/solve-ss-portfolio";
 
 /**
  * Shared preamble for every what-if tool: the model-supplied clientId must equal
@@ -136,5 +137,57 @@ export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInt
     },
   );
 
-  return [whatifRoth];
+  const whatifSocialSecurity = tool(
+    async ({ clientId, scenarioId, person }) => {
+      const denied = await guardClient(ctx, clientId);
+      if (denied) return denied;
+
+      const { effectiveTree, resolutionContext } = await loadEffectiveTree(
+        clientId,
+        ctx.firmId,
+        scenarioId,
+        {},
+      );
+
+      // Deterministic argmax over claim ages 62-70 on the straight-line
+      // projection. No Monte Carlo -> no seed, no PoS. resolutionContext lets
+      // technique reinvestments re-resolve (mirrors the solver route).
+      const result = solveSsClaimAgeByPortfolio({
+        effectiveTree,
+        baselineMutations: [],
+        person: person as SolverPerson,
+        resolutionContext,
+      });
+
+      return JSON.stringify({
+        scenarioId,
+        person,
+        bestClaimAge: result.solvedValue,
+        bestEndingPortfolio: result.endingPortfolio,
+        candidates: result.candidates.map((c) => ({
+          claimAge: c.value,
+          endingPortfolio: c.endingPortfolio,
+        })),
+        method:
+          "Deterministic: each candidate age is run once on the straight-line projection; " +
+          "the winner maximizes final-year liquid portfolio (ties break toward the earliest age).",
+      });
+    },
+    {
+      name: "whatif_social_security",
+      description:
+        "Find the Social Security claim age (62-70) that maximizes the final-year liquid " +
+        "portfolio for one household member. Deterministic (no Monte Carlo). Returns the best " +
+        "age and the full candidate table so you can show the trade-off.",
+      schema: z.object({
+        clientId: z.string().describe("the client uuid (must match your scope)"),
+        scenarioId: z.string().describe("scenario uuid, or 'base'"),
+        person: z
+          .enum(["client", "spouse"])
+          .describe("which household member's claim age to solve"),
+      }),
+    },
+  );
+
+  return [whatifRoth, whatifSocialSecurity];
 }
