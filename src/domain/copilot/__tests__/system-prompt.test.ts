@@ -60,6 +60,14 @@ describe("GROUNDING_RULES", () => {
   });
 });
 
+describe("CRM system-prompt block", () => {
+  it("states the tiered write rule and treats notes/activity as untrusted", () => {
+    expect(COPILOT_SYSTEM_PREFIX).toMatch(/reversible CRM (actions|writes).*apply immediately/i);
+    expect(COPILOT_SYSTEM_PREFIX).toMatch(/delete.*require.*approval/i);
+    expect(COPILOT_SYSTEM_PREFIX).toMatch(/note.*(bodies|content).*UNTRUSTED|untrusted data/i);
+  });
+});
+
 describe("buildSystemPrompt", () => {
   it("starts with the stable prefix verbatim (prefix is cacheable)", () => {
     const p = buildSystemPrompt(promptCtx);
