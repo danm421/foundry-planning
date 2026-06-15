@@ -12,6 +12,12 @@ import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import type { EstateCompareRef } from "@/lib/scenario/scenario-from-search-params";
 import type { ProjectionResult } from "@/engine";
+import {
+  PRESENTATION_PAGES,
+  type BuildDataContext,
+  type PresentationPageId,
+} from "@/components/presentations/registry";
+import { resolveAccentColor } from "@/components/pdf/theme";
 
 /** Map a model-supplied token to an EstateCompareRef. Mirrors tokenToRef in
  *  scenario-from-search-params.ts: "do-nothing" → counterfactual, "base" →
@@ -26,7 +32,7 @@ function refFromToken(token: string): EstateCompareRef {
 }
 
 function lifetimeTax(result: ProjectionResult): number {
-  return result.years.reduce((sum, y) => sum + (y.taxResult?.totalTax ?? 0), 0);
+  return result.years.reduce((sum, y) => sum + (y.taxResult?.flow.totalTax ?? 0), 0);
 }
 function endingPortfolio(result: ProjectionResult): number {
   const last = result.years[result.years.length - 1];
@@ -41,7 +47,7 @@ function compactYear(y: ProjectionYear) {
     totalIncome: y.income.total,
     totalExpenses: y.expenses.total,
     netCashFlow: y.netCashFlow,
-    totalTax: y.taxResult?.totalTax ?? null,
+    totalTax: y.taxResult?.flow.totalTax ?? null,
     medicareTotal: y.medicare?.totalAnnualCost ?? null,
     irmaaSurcharge: y.medicare?.totalIrmaaSurcharge ?? null,
     portfolioAssets: y.portfolioAssets,
@@ -197,5 +203,96 @@ export function buildComputeTools(toolCtx: CopilotToolContext) {
     },
   );
 
-  return [runProjection, runMonteCarlo, compareScenarios];
+  const explainReport = tool(
+    async ({ clientId, pageId }) => {
+      const firmId = await requireOrgId();
+      await assertClientReadable(ctx, clientId);
+
+      // Enumerate pages at RUNTIME — never hardcode the list.
+      const ids = Object.keys(PRESENTATION_PAGES) as PresentationPageId[];
+      if (!pageId) {
+        return JSON.stringify({
+          availablePages: ids.map((id) => ({
+            id,
+            title: PRESENTATION_PAGES[id].title,
+            category: PRESENTATION_PAGES[id].category,
+          })),
+        });
+      }
+      if (!(pageId in PRESENTATION_PAGES)) {
+        return JSON.stringify({
+          error: `Unknown page "${pageId}".`,
+          availablePages: ids.map((id) => ({ id, title: PRESENTATION_PAGES[id].title })),
+        });
+      }
+
+      const { effectiveTree } = await loadEffectiveTree(
+        clientId,
+        firmId,
+        ctx.scenarioId,
+        {},
+      );
+      const projection = runProjectionWithEvents(effectiveTree);
+      const c = effectiveTree.client;
+      const clientName = `${c.firstName} ${c.lastName}`.trim();
+
+      // Assemble the same context shape the export route builds. The copilot
+      // needs only the page DATA, not PDF branding, so cover/branding fields
+      // get safe placeholders (non-framing pages ignore them).
+      const reportCtx: BuildDataContext = {
+        years: projection.years,
+        projection,
+        clientData: effectiveTree,
+        scenarioLabel: ctx.scenarioId === "base" ? "Base case" : "Scenario",
+        clientName,
+        spouseName: c.spouseName ?? null,
+        firmName: "",
+        firmTagline: null,
+        reportDate: new Date().toISOString().slice(0, 10),
+        firmLogoDataUrl: null,
+        // Copilot returns page DATA, not a styled PDF — use the default report
+        // accent (firm override is irrelevant here; only framing pages read it).
+        accentColor: resolveAccentColor(null),
+      };
+
+      const page = PRESENTATION_PAGES[pageId as PresentationPageId];
+      // `page` is the union of all page defs; `buildData`'s options param is the
+      // intersection of every page's option type (contravariant method on a
+      // union). `as never` is the same escape hatch the export route uses
+      // (see document.tsx) to call buildData with each page's own defaults.
+      const data = page.buildData(reportCtx, page.defaultOptions as never);
+      // Summary pages emit deterministic `narrative` bullets — surface them so
+      // the agent paraphrases a correct baseline rather than inventing prose.
+      const narrative =
+        data && typeof data === "object" && "narrative" in data
+          ? (data as { narrative: unknown }).narrative
+          : null;
+
+      return JSON.stringify({
+        pageId,
+        title: page.title,
+        category: page.category,
+        data,
+        narrative,
+      });
+    },
+    {
+      name: "explain_report",
+      description:
+        "Get the exact data a presentation page would show for the ACTIVE scenario. Call with " +
+        "no pageId to list the available pages ({id, title, category}); call with a pageId to " +
+        "get that page's built data and (for summary pages) its deterministic narrative " +
+        "bullets. Narrate FROM this data — every number you state about the report must come " +
+        "from this payload.",
+      schema: z.object({
+        clientId: z.string().describe("the active client uuid"),
+        pageId: z
+          .string()
+          .optional()
+          .describe("optional: a page id from the list; omit to enumerate available pages"),
+      }),
+    },
+  );
+
+  return [runProjection, runMonteCarlo, compareScenarios, explainReport];
 }

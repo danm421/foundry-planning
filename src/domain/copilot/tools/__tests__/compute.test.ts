@@ -23,6 +23,23 @@ vi.mock("@/engine/monteCarlo/summarize", () => ({
 vi.mock("@/lib/scenario/load-projection-for-ref", () => ({
   loadProjectionForRef: vi.fn(),
 }));
+vi.mock("@/components/presentations/registry", () => {
+  const cashFlowPage = {
+    id: "cashFlow",
+    title: "Cash Flow",
+    category: "Cash Flow",
+    defaultOptions: { drill: false },
+    buildData: vi.fn(() => ({ rows: [{ year: 2025, total: 100_000 }], narrative: ["Cash flow is positive."] })),
+  };
+  const monteCarloPage = {
+    id: "monteCarlo",
+    title: "Monte Carlo",
+    category: "Monte Carlo",
+    defaultOptions: {},
+    buildData: vi.fn(() => ({ successRate: 0.9 })),
+  };
+  return { PRESENTATION_PAGES: { cashFlow: cashFlowPage, monteCarlo: monteCarloPage } };
+});
 vi.mock("../../guards", () => {
   class ForbiddenScopeError extends Error {
     constructor(detail: string) {
@@ -43,6 +60,7 @@ import { runProjectionWithEvents } from "@/engine";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
+import { PRESENTATION_PAGES } from "@/components/presentations/registry";
 
 const ctx: CopilotAuthContext = {
   userId: "u1",
@@ -68,7 +86,7 @@ function fakeYear(year: number) {
     expenses: { total: 80_000 },
     netCashFlow: 20_000,
     portfolioAssets: { total: 2_000_000 },
-    taxResult: { totalTax: 18_000 },
+    taxResult: { flow: { totalTax: 18_000 } },
     medicare: { totalAnnualCost: 0, totalIrmaaSurcharge: 0 },
   };
 }
@@ -191,10 +209,14 @@ function loaded(name: string, endPortfolio: number, totalTax: number, isDoNothin
     isDoNothing,
     result: {
       years: [
-        { year: 2025, taxResult: { totalTax: totalTax / 2 }, portfolioAssets: { total: 0 } },
+        {
+          year: 2025,
+          taxResult: { flow: { totalTax: totalTax / 2 } },
+          portfolioAssets: { total: 0 },
+        },
         {
           year: 2026,
-          taxResult: { totalTax: totalTax / 2 },
+          taxResult: { flow: { totalTax: totalTax / 2 } },
           portfolioAssets: { total: endPortfolio },
         },
       ],
@@ -246,5 +268,52 @@ describe("compute.ts — compare_scenarios", () => {
     expect(loadProjectionForRef).toHaveBeenNthCalledWith(1, "client-1", "firmA", {
       kind: "do-nothing",
     });
+  });
+});
+
+describe("compute.ts — explain_report", () => {
+  it("rejects an out-of-scope clientId", async () => {
+    await expect(
+      tool("explain_report").invoke({ clientId: "client-OTHER", pageId: "cashFlow" }),
+    ).rejects.toThrow("forbidden_scope");
+  });
+
+  it("enumerates the available pages at runtime when no pageId is given", async () => {
+    const out = JSON.parse(
+      (await tool("explain_report").invoke({ clientId: "client-1" })) as string,
+    );
+    expect(out.availablePages.map((p: { id: string }) => p.id).sort()).toEqual([
+      "cashFlow",
+      "monteCarlo",
+    ]);
+  });
+
+  it("builds the page data via PRESENTATION_PAGES[pageId].buildData and returns narrative", async () => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        client: { firstName: "Jane", lastName: "Doe", spouseName: "John" },
+        planSettings: {},
+      },
+      warnings: [],
+      resolutionContext: {},
+    } as unknown as Awaited<ReturnType<typeof loadEffectiveTree>>);
+    vi.mocked(runProjectionWithEvents).mockReturnValue({
+      years: [{ year: 2025 } as never],
+    } as unknown as ReturnType<typeof runProjectionWithEvents>);
+
+    const out = JSON.parse(
+      (await tool("explain_report").invoke({ clientId: "client-1", pageId: "cashFlow" })) as string,
+    );
+    expect(PRESENTATION_PAGES.cashFlow.buildData).toHaveBeenCalled();
+    expect(out.pageId).toBe("cashFlow");
+    expect(out.data.rows[0].total).toBe(100_000);
+    expect(out.narrative).toEqual(["Cash flow is positive."]);
+  });
+
+  it("returns an error payload for an unknown pageId (does not throw)", async () => {
+    const out = JSON.parse(
+      (await tool("explain_report").invoke({ clientId: "client-1", pageId: "nope" })) as string,
+    );
+    expect(out.error).toMatch(/unknown page/i);
   });
 });
