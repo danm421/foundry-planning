@@ -17,8 +17,52 @@ import { searchClients } from "@/lib/client-search";
 import { getOverviewData } from "@/lib/overview/get-overview-data";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { loadPanelData } from "@/lib/scenario/load-panel-data";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { redactSsns } from "@/lib/extraction/redact-ssn";
+import type { ClientData } from "@/engine/types";
 import type { CopilotToolContext } from "../context";
 import { assertClientReadable } from "../guards";
+import { maskAccountNumber } from "../account-mask";
+
+/** Detail kinds the model may request → the corresponding effective-tree slice. */
+const DETAIL_KINDS = {
+  account: (t: ClientData) => t.accounts ?? [],
+  income: (t: ClientData) => t.incomes ?? [],
+  expense: (t: ClientData) => t.expenses ?? [],
+  liability: (t: ClientData) => t.liabilities ?? [],
+  entity: (t: ClientData) => t.entities ?? [],
+  gift: (t: ClientData) => t.gifts ?? [],
+  family_member: (t: ClientData) => t.familyMembers ?? [],
+  external_beneficiary: (t: ClientData) => t.externalBeneficiaries ?? [],
+} satisfies Record<string, (t: ClientData) => unknown[]>;
+
+type DetailKind = keyof typeof DETAIL_KINDS;
+
+/** Account-number-bearing fields are masked to last-4 before the model sees them. */
+const ACCOUNT_NUMBER_FIELDS = new Set(["accountNumber", "accountNumberRaw"]);
+
+/**
+ * Recursively sanitize a detail row before it leaves the server: redact SSNs
+ * from every string, and collapse any account-number field to a masked
+ * last-4 value (`accountNumber`). Walks arrays and nested objects so a leaked
+ * SSN or raw account number anywhere in the row is caught.
+ */
+function sanitizeRow(value: unknown): unknown {
+  if (typeof value === "string") return redactSsns(value).text;
+  if (Array.isArray(value)) return value.map(sanitizeRow);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (ACCOUNT_NUMBER_FIELDS.has(k)) {
+        out.accountNumber = maskAccountNumber(v as string | null | undefined);
+      } else {
+        out[k] = sanitizeRow(v);
+      }
+    }
+    return out;
+  }
+  return value;
+}
 
 /** Join a first/last name into a display string, or null when both are empty. */
 function joinName(
@@ -149,5 +193,37 @@ export function buildReadTools(
     },
   );
 
-  return [findClient, clientBriefing, listScenarios];
+  const readDetail = tool(
+    async ({ clientId, kind }: { clientId: string; kind: DetailKind }) => {
+      const firmId = await requireOrgId();
+      await assertClientReadable(ctx, clientId);
+
+      const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
+      const rows = DETAIL_KINDS[kind](effectiveTree).map(sanitizeRow);
+
+      return JSON.stringify({ kind, rows, count: rows.length });
+    },
+    {
+      name: "read_detail",
+      description:
+        "Read the full base-case detail rows for one entity kind (accounts, incomes, expenses, liabilities, entities, gifts, family members, external beneficiaries). Account numbers are masked and SSNs redacted.",
+      schema: z.object({
+        clientId: z.string().describe("The client (household) id."),
+        kind: z
+          .enum([
+            "account",
+            "income",
+            "expense",
+            "liability",
+            "entity",
+            "gift",
+            "family_member",
+            "external_beneficiary",
+          ])
+          .describe("Which entity kind's detail rows to return."),
+      }),
+    },
+  );
+
+  return [findClient, clientBriefing, listScenarios, readDetail];
 }

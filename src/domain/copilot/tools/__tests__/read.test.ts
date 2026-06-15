@@ -47,6 +47,11 @@ vi.mock("@/lib/scenario/load-panel-data", () => ({
   loadPanelData: (...a: unknown[]) => loadPanelData(...a),
 }));
 
+const loadEffectiveTree = vi.fn();
+vi.mock("@/lib/scenario/loader", () => ({
+  loadEffectiveTree: (...a: unknown[]) => loadEffectiveTree(...a),
+}));
+
 // The guard is async; the mock enforces clientId === ctx.clientId so the
 // rejection path is exercised without a DB round-trip.
 vi.mock("../../guards", () => {
@@ -99,6 +104,7 @@ beforeEach(() => {
   );
   dbWhere.mockReset();
   loadPanelData.mockReset();
+  loadEffectiveTree.mockReset();
 });
 
 describe("read.ts — find_client", () => {
@@ -206,5 +212,55 @@ describe("read.ts — list_scenarios", () => {
     expect(out.detail.scenarioId).toBe("scn-roth");
     expect(out.detail.changes).toHaveLength(1);
     expect(out.detail.toggleGroups).toHaveLength(1);
+  });
+});
+
+describe("read.ts — read_detail", () => {
+  it("rejects an out-of-scope clientId with forbidden_scope (no tree load)", async () => {
+    await expect(
+      tool("read_detail").invoke({ clientId: "client-OTHER", kind: "account" }),
+    ).rejects.toThrow(/forbidden_scope/);
+    expect(loadEffectiveTree).not.toHaveBeenCalled();
+  });
+
+  it("masks account numbers in account rows", async () => {
+    loadEffectiveTree.mockResolvedValue({
+      effectiveTree: {
+        accounts: [
+          { id: "acc-1", name: "Brokerage", accountNumber: "9988776655", value: 100 },
+        ],
+      },
+      warnings: [],
+    });
+
+    const raw = (await tool("read_detail").invoke({
+      clientId: "client-1",
+      kind: "account",
+    })) as string;
+    const out = JSON.parse(raw);
+
+    expect(out.kind).toBe("account");
+    expect(out.count).toBe(1);
+    expect(out.rows[0].accountNumber).toBe("••••6655");
+    // The full account number must never appear anywhere in the payload.
+    expect(raw).not.toContain("9988776655");
+  });
+
+  it("redacts an SSN that leaked into an income name", async () => {
+    loadEffectiveTree.mockResolvedValue({
+      effectiveTree: {
+        incomes: [{ id: "inc-1", name: "Salary 123-45-6789", amount: 50000 }],
+      },
+      warnings: [],
+    });
+
+    const raw = (await tool("read_detail").invoke({
+      clientId: "client-1",
+      kind: "income",
+    })) as string;
+    const out = JSON.parse(raw);
+
+    expect(out.rows[0].name).toContain("[REDACTED-SSN]");
+    expect(raw).not.toContain("123-45-6789");
   });
 });
