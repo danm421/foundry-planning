@@ -435,6 +435,122 @@ describe("calculateTaxYear — AMT Part III stacks LTCG on the regular base (Bug
   });
 });
 
+describe("calculateTaxYear — F12 §63(f) additional standard deduction", () => {
+  // IRC §63(f): a 65+ taxpayer (or spouse) on the STANDARD path gets an extra
+  // standard-deduction box ($1,650/box married, $2,050/box unmarried for 2026 per
+  // Rev. Proc. 2025-32). This engine's belowLineDeductions reports the FULL
+  // standard deduction (base + §63(f)), so for a senior std filer it rises by the
+  // §63(f) amount AND taxableIncome falls by the same amount.
+  it("MFJ both 65+ standard filer: +$3,300 std deduction, -$3,300 taxable income", () => {
+    // year 2029 so the OBBBA bonus (which also cuts taxable income) doesn't muddy
+    // the §63(f)-only delta. 2 boxes × $1,650 = $3,300.
+    const base = makeInput({ year: 2029, ordinaryIncome: 120_000, primaryAge: 70, spouseAge: 70 });
+    const young = calculateTaxYear({ ...base, primaryAge: 60, spouseAge: 60 });
+    const old = calculateTaxYear(base);
+    // §63(f) flows into belowLineDeductions (engine reports the full standard ded).
+    expect(old.flow.belowLineDeductions - young.flow.belowLineDeductions).toBe(3300);
+    // taxableIncome lower by the same $3,300.
+    expect(young.flow.taxableIncome - old.flow.taxableIncome).toBe(3300);
+    // Hand check: AGI 120000, std MFJ 32200 + 3300 = 35500 → taxable 84500.
+    expect(old.flow.taxableIncome).toBe(84500);
+    expect(young.flow.taxableIncome).toBe(87800); // 120000 - 32200
+  });
+
+  it("single 65+ standard filer: +$2,050 std deduction", () => {
+    const base = makeInput({ year: 2029, filingStatus: "single", ordinaryIncome: 80_000, primaryAge: 67 });
+    const young = calculateTaxYear({ ...base, primaryAge: 60 });
+    const old = calculateTaxYear(base);
+    expect(old.flow.belowLineDeductions - young.flow.belowLineDeductions).toBe(2050);
+    expect(young.flow.taxableIncome - old.flow.taxableIncome).toBe(2050);
+  });
+
+  it("does not augment when the filer ITEMIZES above the augmented standard", () => {
+    // Itemized 50000 > std 32200+3300 → itemized wins; §63(f) does not stack on it.
+    const base = makeInput({ year: 2029, ordinaryIncome: 120_000, itemizedDeductions: 50_000 });
+    const young = calculateTaxYear({ ...base, primaryAge: 60, spouseAge: 60 });
+    const old = calculateTaxYear({ ...base, primaryAge: 70, spouseAge: 70 });
+    expect(old.flow.belowLineDeductions).toBe(50_000);
+    expect(old.flow.taxableIncome).toBe(young.flow.taxableIncome); // identical — itemized path
+  });
+});
+
+describe("calculateTaxYear — F12 AMT add-back of the augmented standard deduction", () => {
+  // The standard deduction (incl. §63(f) add-on) is disallowed for AMT
+  // (IRC §56(b)(1)(E)) and must be added back to AMTI. A senior std filer's
+  // taxableIncome drops by §63(f) and so does regular tax — but the AMT add-back
+  // rises by the same §63(f) amount, leaving AMTI (hence tentative minimum tax)
+  // UNCHANGED vs an otherwise-identical younger filer. Since flow doesn't expose
+  // AMTI/TMT directly, we prove AMTI is flat via the identity:
+  //   amtAdditional = TMT − regularTax, TMT constant ⇒
+  //   Δ amtAdditional = −Δ regularTax  (senior's lower regular tax ⇒ higher add'l AMT).
+  it("adds the augmented std deduction back to AMTI (TMT held flat across ages)", () => {
+    // year 2029 → no OBBBA bonus to perturb taxableIncome differently from AMTI.
+    const base = makeInput({
+      year: 2029, filingStatus: "single", ordinaryIncome: 250_000,
+      isoSpread: 50_000, flatStateRate: 0,
+    });
+    const young = calculateTaxYear({ ...base, primaryAge: 60 });
+    const old = calculateTaxYear({ ...base, primaryAge: 67 });
+    // Senior gets +$2,050 std ded → taxableIncome and regular tax both lower.
+    expect(young.flow.taxableIncome - old.flow.taxableIncome).toBe(2050);
+    expect(old.flow.amtAdditional).toBeGreaterThan(0); // AMT actually binds
+    // TMT unchanged (std added back) ⇒ amtAdditional rises by exactly the
+    // regular-tax drop. If the add-back were NOT augmented, AMTI would fall by
+    // 2050 and this identity would break.
+    const regularTaxDrop = young.flow.regularTaxCalc - old.flow.regularTaxCalc;
+    expect(old.flow.amtAdditional - young.flow.amtAdditional).toBe(regularTaxDrop);
+  });
+});
+
+describe("calculateTaxYear — F13 OBBBA senior bonus", () => {
+  // P.L. 119-21 §70103: $6,000/senior temporary deduction, TY2025-2028, reduces
+  // taxable income for std OR itemized filers. MAGI = AGI here (no foreign excl).
+  it("MFJ both 65+ below phaseout: -$12,000 taxable income vs the 2029 sunset year", () => {
+    const i2026 = makeInput({ year: 2026, ordinaryIncome: 120_000, primaryAge: 70, spouseAge: 70 });
+    const i2029 = { ...i2026, year: 2029 };
+    // Both years carry the same §63(f) +$3,300 (age-based, not sunsetting), so the
+    // taxableIncome gap is purely the $12,000 OBBBA bonus.
+    expect(calculateTaxYear(i2029).flow.taxableIncome - calculateTaxYear(i2026).flow.taxableIncome).toBe(12000);
+  });
+
+  it("single 65+ at $175k MAGI is fully phased out → no bonus reduction", () => {
+    // AGI = 175000 (ordinary only). single threshold 75000; 6%×(175k-75k)=6000 → bonus 0.
+    const i2026 = makeInput({ year: 2026, filingStatus: "single", ordinaryIncome: 175_000, primaryAge: 67 });
+    const i2029 = { ...i2026, year: 2029 };
+    expect(calculateTaxYear(i2026).flow.taxableIncome).toBe(calculateTaxYear(i2029).flow.taxableIncome);
+  });
+
+  it("year 2029 sunset: no bonus even below phaseout", () => {
+    const i2029 = makeInput({ year: 2029, ordinaryIncome: 120_000, primaryAge: 70, spouseAge: 70 });
+    // taxable = AGI 120000 - std(32200 + 3300 §63(f)) = 84500, no bonus.
+    expect(calculateTaxYear(i2029).flow.taxableIncome).toBe(84500);
+  });
+
+  it("bonus is allowed for AMT — reduces AMTI, NOT added back (not a §56 preference)", () => {
+    // Single 65+, 2026 vs 2029, ISO spread sized so AMT binds in both years. The
+    // OBBBA bonus is a deduction ALLOWED for AMT: it reduces regular taxable income
+    // AND AMTI alike (it is NOT a §56(b) add-back item). So in 2026 both taxable
+    // income and AMTI fall by the bonus. With no gains, TMT = amtAdditional +
+    // regularTaxCalc; the bonus sits in the 26% AMT band, so TMT drops by ~26% of it.
+    // AGI 120k: single bonus = 6000 - 6%×(120k-75k) = 6000-2700 = 3300.
+    const lower = makeInput({
+      filingStatus: "single", ordinaryIncome: 120_000, isoSpread: 120_000,
+      primaryAge: 67, flatStateRate: 0,
+    });
+    const y2026 = calculateTaxYear({ ...lower, year: 2026 });
+    const y2029 = calculateTaxYear({ ...lower, year: 2029 });
+    // taxableIncome lower in 2026 by the $3,300 bonus.
+    expect(y2029.flow.taxableIncome - y2026.flow.taxableIncome).toBe(3300);
+    expect(y2026.flow.amtAdditional).toBeGreaterThan(0);
+    expect(y2029.flow.amtAdditional).toBeGreaterThan(0);
+    // No gains ⇒ TMT = amtAdditional + regularTaxCalc. Bonus reduces AMTI (allowed
+    // for AMT, no add-back) ⇒ TMT drops by 26% of the $3,300 bonus = $858.
+    const tmt2026 = y2026.flow.amtAdditional + y2026.flow.regularTaxCalc;
+    const tmt2029 = y2029.flow.amtAdditional + y2029.flow.regularTaxCalc;
+    expect(tmt2029 - tmt2026).toBe(Math.round(3300 * 0.26)); // 858
+  });
+});
+
 describe("calculateTaxYear — ISO spread as an AMT preference item", () => {
   // Single filer with enough ordinary income that AMTI sits well above the
   // exemption edge, so an ISO bargain element pushes tentative AMT past regular.
