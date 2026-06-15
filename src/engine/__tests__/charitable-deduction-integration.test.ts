@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import type { ClientData, FamilyMember, Gift } from "../types";
+import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 
 const PUBLIC_CHARITY_ID = "00000000-0000-0000-0000-000000000aaa";
 const PRIVATE_CHARITY_ID = "00000000-0000-0000-0000-000000000bbb";
@@ -68,6 +69,12 @@ function baseScenario(): ClientData {
     gifts: [],
     // giftEvents is required (not optional) in ClientData
     giftEvents: [],
+    // Seed bracket-mode tax params so the engine actually itemizes — without
+    // these the engine falls back to FLAT mode, where no charitable deduction is
+    // ever realized and these AGI-limit assertions are meaningless. (Pre-F23 the
+    // tests "passed" in flat mode only because the buggy standard branch consumed
+    // gifts out of carryforward; the fix made that no longer happen.)
+    taxYearRows: [TAX_YEAR_2026],
     wills: [],
     familyMembers: [
       {

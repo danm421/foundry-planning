@@ -7,7 +7,8 @@ import type {
 import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { CharityBucket } from "./charitable-deduction";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
-import { computeCharitableDeductionForYear } from "./charitable-deduction";
+import { computeCharitableDeductionForYear, computeCharitableNoItemize } from "./charitable-deduction";
+import { getAdditionalStdDeduction } from "../lib/tax/senior-deductions";
 
 export interface YearTaxInput {
   /** taxDetail with all scheduled income + (optionally) supplemental withdrawal income layered in */
@@ -89,25 +90,52 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
 
   // Approximate AGI for §170(b) bucket math (exact AGI is computed inside calculateTaxYearBracket).
   const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
-  const willItemize = useBracket
-    ? itemizedIn > (resolved?.params.stdDeduction[filingStatus] ?? 0)
-    : false;
+  // F23: the itemize-vs-standard election must compare (existing itemized + THIS
+  // YEAR's candidate charitable deduction) against the standard deduction. The
+  // threshold must match calculate.ts: include the §63(f) additional standard
+  // deduction for 65+ filers (the standard path is what we'd fall back to).
+  const baseStd = resolved?.params.stdDeduction[filingStatus] ?? 0;
+  const effectiveStd =
+    baseStd +
+    getAdditionalStdDeduction(
+      year,
+      filingStatus,
+      primaryAge ?? 0,
+      spouseAge,
+      resolved?.inflationFactor ?? 1,
+    );
 
-  const charityResult = computeCharitableDeductionForYear({
+  // Candidate charity deduction assuming we itemize — drives the election.
+  const candidate = computeCharitableDeductionForYear({
     giftsThisYear: charityGiftsThisYear,
     agi: charityAgi,
     carryforwardIn: charityCarryforwardIn,
     currentYear: year,
-    willItemize,
+    willItemize: true,
   });
 
-  const itemizedDeductions = itemizedIn + charityResult.deductionThisYear;
+  const willItemize = useBracket
+    ? itemizedIn + candidate.deductionThisYear > effectiveStd
+    : false;
 
-  // Patch deduction breakdown for charity (mirrors projection.ts:1703-1715)
+  // Commit the matching branch. When standard wins, no carryforward is consumed —
+  // prior entries only decay/expire and this year's gifts are appended (F23 fix).
+  const charityResult = willItemize
+    ? candidate
+    : computeCharitableNoItemize({
+        giftsThisYear: charityGiftsThisYear,
+        carryforwardIn: charityCarryforwardIn,
+        currentYear: year,
+      });
+
+  const charityDeductionThisYear = charityResult.deductionThisYear;
+  const itemizedDeductions = itemizedIn + charityDeductionThisYear;
+
+  // Patch deduction breakdown for charity (mirrors projection.ts:1703-1715).
   let deductionBreakdownOut = deductionBreakdownIn;
-  if (deductionBreakdownIn && charityResult.deductionThisYear > 0) {
-    const newCharitable = deductionBreakdownIn.belowLine.charitable + charityResult.deductionThisYear;
-    const newItemizedTotal = deductionBreakdownIn.belowLine.itemizedTotal + charityResult.deductionThisYear;
+  if (deductionBreakdownIn && charityDeductionThisYear > 0) {
+    const newCharitable = deductionBreakdownIn.belowLine.charitable + charityDeductionThisYear;
+    const newItemizedTotal = deductionBreakdownIn.belowLine.itemizedTotal + charityDeductionThisYear;
     deductionBreakdownOut = {
       ...deductionBreakdownIn,
       belowLine: {
@@ -190,6 +218,6 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     charityCarryforwardOut: charityResult.carryforwardOut,
     deductionBreakdown: deductionBreakdownOut,
     charityAgi,
-    charityDeductionThisYear: charityResult.deductionThisYear,
+    charityDeductionThisYear,
   };
 }
