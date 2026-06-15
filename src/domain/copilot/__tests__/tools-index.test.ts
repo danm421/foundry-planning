@@ -18,13 +18,17 @@ vi.mock("@/engine/what-if/life-insurance-need", () => ({
   survivorEndingPortfolio: vi.fn(),
 }));
 vi.mock("@/lib/solver/apply-mutations", () => ({ applyMutations: vi.fn() }));
+// Phase 2: stub scenario-writes IO deps
+vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
+vi.mock("@/db", () => ({ db: {} }));
 
 import { buildTools, WRITE_TOOL_NAMES } from "../tools";
+import { routeAfterAgent } from "../routing";
 
 const ctx: CopilotAuthContext = { userId: "u1", firmId: "org_A", clientId: "c1", scenarioId: "base" };
 const TOOL_CTX = buildToolContext(ctx, "conv-1");
 
-const EXPECTED = [
+const EXPECTED_PHASE1 = [
   // read
   "find_client",
   "client_briefing",
@@ -45,12 +49,19 @@ const EXPECTED = [
   "solve_max_spending",
 ];
 
-describe("buildTools (Phase 1 assembly)", () => {
-  it("returns exactly the 15 named Phase-1 tools", () => {
+const EXPECTED_WRITE_TOOL_NAMES = [
+  "compare_and_snapshot",
+  "create_scenario",
+  "propose_changes",
+  "revert_change",
+];
+
+describe("buildTools (Phase 1 + Phase 2 assembly)", () => {
+  it("returns exactly the 19 named tools (15 Phase-1 + 4 Phase-2 writes)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual([...EXPECTED].sort());
-    expect(tools).toHaveLength(15);
+    expect(names).toEqual([...EXPECTED_PHASE1, ...EXPECTED_WRITE_TOOL_NAMES].sort());
+    expect(tools).toHaveLength(19);
   });
 
   it("has no duplicate tool names", () => {
@@ -58,8 +69,46 @@ describe("buildTools (Phase 1 assembly)", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is still empty in Phase 1 (no writes until Phase 2)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (write tools registered in Phase 2)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(0);
+    expect(WRITE_TOOL_NAMES.size).toBe(4);
+  });
+});
+
+describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
+  it("WRITE_TOOL_NAMES contains exactly the 4 scenario-write tool names (sorted)", () => {
+    expect([...WRITE_TOOL_NAMES].sort()).toEqual(EXPECTED_WRITE_TOOL_NAMES);
+  });
+
+  it("buildTools includes all 4 write tool names", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    for (const w of EXPECTED_WRITE_TOOL_NAMES) {
+      expect(names.has(w), `expected ${w} in buildTools output`).toBe(true);
+    }
+  });
+
+  it("buildTools still includes Phase-1 read+compute tool names", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    expect(names.has("find_client")).toBe(true);
+    expect(names.has("run_projection")).toBe(true);
+  });
+
+  it("has no duplicate tool names after adding write tools", () => {
+    const names = buildTools(TOOL_CTX).map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe("routeAfterAgent with WRITE_TOOL_NAMES", () => {
+  it("routes a write tool call to approval", () => {
+    expect(routeAfterAgent([{ name: "propose_changes" }], WRITE_TOOL_NAMES)).toBe("approval");
+  });
+
+  it("routes a read tool call to tools", () => {
+    expect(routeAfterAgent([{ name: "find_client" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+
+  it("routes empty tool calls to __end__", () => {
+    expect(routeAfterAgent([], WRITE_TOOL_NAMES)).toBe("__end__");
   });
 });
