@@ -235,7 +235,48 @@ export function buildScenarioWriteTools({
     },
   );
 
-  // revert_change, compare_and_snapshot are appended in the following tasks;
-  // this array is extended in place.
-  return [createScenario, proposeChanges];
+  const revertChangeTool = tool(
+    async ({ scenarioId, targetKind, targetId, opType }) => {
+      const gate = await gateAccess(ctx.clientId);
+      if ("error" in gate) return gate.error;
+      const { firmId } = gate;
+
+      await revertChange({
+        scenarioId,
+        firmId,
+        targetKind: targetKind as TargetKind,
+        targetId,
+        opType: opType as OpType,
+      });
+
+      await recordAudit({
+        action: "copilot.write_approved",
+        resourceType: "scenario",
+        resourceId: scenarioId,
+        clientId: ctx.clientId,
+        firmId,
+        metadata: { tool: "revert_change", targetKind, targetId, opType },
+      });
+
+      return `Reverted the ${opType} on ${targetKind} ${targetId} in scenario ${scenarioId}.`;
+    },
+    {
+      name: "revert_change",
+      description:
+        "Remove a single previously-proposed change from a scenario, restoring that entity to " +
+        "its base value. Identify the change by scenarioId + targetKind + targetId + opType " +
+        "(add | edit | remove). " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        scenarioId: z.string(),
+        targetKind: z.string().describe("entity kind of the change to revert"),
+        targetId: z.string().describe("the change's target id"),
+        opType: z.enum(["add", "edit", "remove"]).describe("which op row to delete"),
+      }),
+    },
+  );
+
+  // compare_and_snapshot is appended in the following task; this array is
+  // extended in place.
+  return [createScenario, proposeChanges, revertChangeTool];
 }
