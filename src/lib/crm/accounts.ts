@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { crmHouseholdAccounts } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { auth } from "@clerk/nextjs/server";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
@@ -8,6 +9,7 @@ import type { CreateCrmAccountInput } from "./schemas";
 
 export async function createCrmAccount(householdId: string, input: CreateCrmAccountInput) {
   const { orgId } = await requireCrmHouseholdAccess(householdId);
+  const { userId } = await auth();
   const [created] = await db
     .insert(crmHouseholdAccounts)
     .values({
@@ -27,13 +29,16 @@ export async function createCrmAccount(householdId: string, input: CreateCrmAcco
     resourceId: created.id,
     firmId: orgId,
   });
-  await recordActivity({
-    householdId,
-    kind: "account_change",
-    title: `Added account: ${input.custodian ?? "Custodian"} ${input.accountType ?? ""} (${input.accountNumberLast4 ?? "—"})`,
-    metadata: { accountId: created.id },
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId,
+      kind: "account_change",
+      title: `Added account: ${input.custodian ?? "Custodian"} ${input.accountType ?? ""} (${input.accountNumberLast4 ?? "—"})`,
+      metadata: { accountId: created.id },
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
   return created;
 }
 
@@ -43,6 +48,7 @@ export async function updateCrmAccount(accountId: string, patch: Partial<CreateC
   });
   if (!existing) throw new Error("Account not found");
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { userId } = await auth();
   const [updated] = await db
     .update(crmHouseholdAccounts)
     .set({
@@ -58,13 +64,16 @@ export async function updateCrmAccount(accountId: string, patch: Partial<CreateC
     resourceId: accountId,
     firmId: orgId,
   });
-  await recordActivity({
-    householdId: existing.householdId,
-    kind: "account_change",
-    title: `Updated account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
-    metadata: { accountId, fields: Object.keys(patch) },
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: existing.householdId,
+      kind: "account_change",
+      title: `Updated account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
+      metadata: { accountId, fields: Object.keys(patch) },
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
   return updated;
 }
 
@@ -74,6 +83,7 @@ export async function deleteCrmAccount(accountId: string) {
   });
   if (!existing) return;
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { userId } = await auth();
   await db.delete(crmHouseholdAccounts).where(eq(crmHouseholdAccounts.id, accountId));
   await recordAudit({
     action: "crm.account.delete",
@@ -81,10 +91,13 @@ export async function deleteCrmAccount(accountId: string) {
     resourceId: accountId,
     firmId: orgId,
   });
-  await recordActivity({
-    householdId: existing.householdId,
-    kind: "account_change",
-    title: `Removed account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: existing.householdId,
+      kind: "account_change",
+      title: `Removed account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
 }

@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { crmHouseholdContacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { auth } from "@clerk/nextjs/server";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
@@ -9,6 +10,7 @@ import type { CreateCrmContactInput } from "./schemas";
 
 export async function createCrmContact(householdId: string, input: CreateCrmContactInput) {
   const { orgId } = await requireCrmHouseholdAccess(householdId);
+  const { userId } = await auth();
 
   const [created] = await db
     .insert(crmHouseholdContacts)
@@ -43,13 +45,16 @@ export async function createCrmContact(householdId: string, input: CreateCrmCont
     resourceId: created.id,
     firmId: orgId,
   });
-  await recordActivity({
-    householdId,
-    kind: "contact_change",
-    title: `Added ${input.role}: ${input.firstName} ${input.lastName}`,
-    metadata: { contactId: created.id, role: input.role },
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId,
+      kind: "contact_change",
+      title: `Added ${input.role}: ${input.firstName} ${input.lastName}`,
+      metadata: { contactId: created.id, role: input.role },
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
   return created;
 }
 
@@ -59,6 +64,7 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
   });
   if (!existing) throw new Error("Contact not found");
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { userId } = await auth();
 
   const [updated] = await db
     .update(crmHouseholdContacts)
@@ -72,13 +78,16 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
     resourceId: contactId,
     firmId: orgId,
   });
-  await recordActivity({
-    householdId: existing.householdId,
-    kind: "contact_change",
-    title: `Updated ${existing.role}: ${existing.firstName} ${existing.lastName}`,
-    metadata: { contactId, fields: Object.keys(patch) },
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: existing.householdId,
+      kind: "contact_change",
+      title: `Updated ${existing.role}: ${existing.firstName} ${existing.lastName}`,
+      metadata: { contactId, fields: Object.keys(patch) },
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
   return updated;
 }
 
@@ -88,6 +97,7 @@ export async function deleteCrmContact(contactId: string) {
   });
   if (!existing) return;
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { userId } = await auth();
   await db.delete(crmHouseholdContacts).where(eq(crmHouseholdContacts.id, contactId));
   await recordAudit({
     action: "crm.contact.delete",
@@ -95,10 +105,13 @@ export async function deleteCrmContact(contactId: string) {
     resourceId: contactId,
     firmId: orgId,
   });
-  await recordActivity({
-    householdId: existing.householdId,
-    kind: "contact_change",
-    title: `Removed ${existing.role}: ${existing.firstName} ${existing.lastName}`,
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: existing.householdId,
+      kind: "contact_change",
+      title: `Removed ${existing.role}: ${existing.firstName} ${existing.lastName}`,
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
 }

@@ -91,13 +91,16 @@ export async function uploadCrmDocument(
     },
   });
 
-  await recordActivity({
-    householdId,
-    kind: "document_uploaded",
-    title: `Uploaded document: ${file.name}`,
-    metadata: { documentId: doc.id, sizeBytes: file.size },
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId,
+      kind: "document_uploaded",
+      title: `Uploaded document: ${file.name}`,
+      metadata: { documentId: doc.id, sizeBytes: file.size },
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
 
   return doc;
 }
@@ -169,6 +172,8 @@ export async function deleteCrmDocument(documentId: string): Promise<void> {
       ),
     );
 
+  const { userId } = await auth();
+
   await recordAudit({
     action: "crm.document.delete",
     resourceType: "crm_document",
@@ -177,13 +182,16 @@ export async function deleteCrmDocument(documentId: string): Promise<void> {
     metadata: { filename: doc.filename },
   });
 
-  await recordActivity({
-    householdId: doc.householdId,
-    kind: "note",
-    title: `Deleted document: ${doc.filename}`,
-    metadata: { documentId, filename: doc.filename },
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: doc.householdId,
+      kind: "note",
+      title: `Deleted document: ${doc.filename}`,
+      metadata: { documentId, filename: doc.filename },
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
 }
 
 export async function updateCrmDocument(
