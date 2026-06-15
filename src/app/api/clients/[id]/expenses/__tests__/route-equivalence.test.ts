@@ -92,13 +92,13 @@ d("POST /expenses route vs createExpenseForClient core — equivalence", () => {
 
     // --- 4. Both fired expense.create audit entries ---
     const auditRows = await db
-      .select({ action: auditLog.action, resourceId: auditLog.resourceId })
+      .select({ action: auditLog.action, resourceId: auditLog.resourceId, actorId: auditLog.actorId })
       .from(auditLog)
       .where(
         eq(auditLog.resourceId, routeData.id),
       );
     const coreAuditRows = await db
-      .select({ action: auditLog.action, resourceId: auditLog.resourceId })
+      .select({ action: auditLog.action, resourceId: auditLog.resourceId, actorId: auditLog.actorId })
       .from(auditLog)
       .where(
         eq(auditLog.resourceId, coreResult.data.id),
@@ -106,6 +106,8 @@ d("POST /expenses route vs createExpenseForClient core — equivalence", () => {
 
     expect(auditRows.length).toBeGreaterThan(0);
     expect(auditRows[0].action).toBe("expense.create");
+    // SOC2 regression: route must record the real userId, not the org id.
+    expect(auditRows[0].actorId).toBe("user_route_equiv_test");
 
     expect(coreAuditRows.length).toBeGreaterThan(0);
     expect(coreAuditRows[0].action).toBe("expense.create");

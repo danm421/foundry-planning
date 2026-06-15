@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { scenarios, expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { createExpenseForClient } from "@/lib/clients/expenses-writes";
 
@@ -54,12 +54,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id } = await params;
     const result = await createExpenseForClient({
       clientId: id,
       firmId,
-      actorId: firmId,
+      actorId: userId,
       input: await request.json(),
     });
     return result.ok

@@ -39,3 +39,20 @@ export async function requireOrgId(): Promise<string> {
   if (!orgId) throw new UnauthorizedError("Organization context required");
   return orgId;
 }
+
+/**
+ * Like `requireOrgId()` but also returns the authenticated userId.
+ * Use on mutating routes so the audit actor is the real acting user,
+ * not the org id. A single `auth()` call covers both checks.
+ *
+ * Throws `UnauthorizedError` on missing session *or* missing org.
+ */
+export async function requireOrgAndUser(): Promise<{
+  orgId: string;
+  userId: string;
+}> {
+  const { orgId, userId } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  if (!orgId) throw new UnauthorizedError("Organization context required");
+  return { orgId, userId };
+}

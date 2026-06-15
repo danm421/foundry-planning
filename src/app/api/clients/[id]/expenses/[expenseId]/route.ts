@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import {
   updateExpenseForClient,
   deleteExpenseForClient,
@@ -13,12 +13,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; expenseId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, expenseId } = await params;
     const result = await updateExpenseForClient({
       clientId: id,
       firmId,
-      actorId: firmId,
+      actorId: userId,
       expenseId,
       input: await request.json(),
     });
@@ -40,12 +40,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; expenseId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, expenseId } = await params;
     const result = await deleteExpenseForClient({
       clientId: id,
       firmId,
-      actorId: firmId,
+      actorId: userId,
       expenseId,
     });
     return result.ok
