@@ -144,6 +144,10 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         primaryAge,
         spouseAge,
         isoSpread: isoSpread ?? 0,
+        // F7: itemized SALT (Schedule A line 7, post-§164 cap) is disallowed for AMT
+        // (IRC §56(b)(1)(A)(ii)) → added back to AMTI for itemizers. The breakdown's
+        // taxesPaid is already the capped total (Math.min(rawSalt, saltCap)).
+        saltDeducted: deductionBreakdownOut?.belowLine.taxesPaid ?? 0,
       })
     : calculateTaxYearFlat({
         taxableIncome,

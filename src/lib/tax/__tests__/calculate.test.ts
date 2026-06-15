@@ -551,6 +551,66 @@ describe("calculateTaxYear — F13 OBBBA senior bonus", () => {
   });
 });
 
+describe("calculateTaxYear — F7 itemizer SALT added back to AMTI (Form 6251 line 2a)", () => {
+  // IRC §56(b)(1)(A)(ii): the itemized SALT deduction (Schedule A line 7, post-§164
+  // cap) is disallowed for AMT and must be added back to AMTI. A standard-deduction
+  // filer's SALT is irrelevant (they deduct no SALT) — only itemizers add it back.
+  //
+  // MFJ 2026, ordinary 600000, itemized 80000 (incl. SALT), ISO spread 250000 so AMT
+  // binds in BOTH cases (otherwise the assertion is vacuous). SALT 0 vs 40000.
+  //
+  //   Regular path (identical both cases — itemized TOTAL is 80000 regardless of how
+  //   much of it is SALT; ISO is not regular income):
+  //     AGI 600000, itemized 80000 > std 32200 → taxable 520000 = incomeTaxBase.
+  //     regularTax MFJ on 520000:
+  //       24800×.10 + (100800-24800)×.12 + (211950-100800)×.22 + (405000-211950)×.24
+  //       + (510400-405000)×.32 + (520000-510400)×.35
+  //       = 2480 + 9120 + 24453 + 46332 + 33728 + 3360 = 119473.
+  //
+  //   AMT exemption MFJ 140200; phaseout starts 1000000 (AMTI < 1M → no phaseout);
+  //   28% breakpoint 244500. No LTCG → all AMTI ordinary.
+  //     noSalt:  AMTI = 520000 + 0     + 250000 = 770000 → taxable 629800
+  //              TMT = 244500×.26 + (629800-244500)×.28 = 63570 + 107884 = 171454
+  //              amtAdditional = 171454 - 119473 = 51981
+  //     withSalt:AMTI = 520000 + 40000 + 250000 = 810000 → taxable 669800
+  //              TMT = 244500×.26 + (669800-244500)×.28 = 63570 + 119084 = 182654
+  //              amtAdditional = 182654 - 119473 = 63181
+  //     Δ amtAdditional = 11200 = 40000 × 0.28 (SALT add-back taxed at the 28% band).
+  it("itemizer's SALT is added back to AMTI; regular tax unchanged, TMT higher by 28% × SALT", () => {
+    const noSalt = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, itemizedDeductions: 80_000, saltDeducted: 0,
+      isoSpread: 250_000, flatStateRate: 0,
+    }));
+    const withSalt = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, itemizedDeductions: 80_000, saltDeducted: 40_000,
+      isoSpread: 250_000, flatStateRate: 0,
+    }));
+    // Regular tax identical (itemized total unchanged; ISO not regular income).
+    expect(withSalt.flow.regularFederalIncomeTax).toBe(noSalt.flow.regularFederalIncomeTax);
+    expect(noSalt.flow.regularFederalIncomeTax).toBe(119_473);
+    // AMT actually binds in both cases (non-vacuous).
+    expect(noSalt.flow.amtAdditional).toBeGreaterThan(0);
+    expect(withSalt.flow.amtAdditional).toBeGreaterThan(0);
+    // SALT add-back raises AMTI by 40000 → TMT (hence amtAdditional) by 28% × 40000.
+    expect(withSalt.flow.amtAdditional).toBeGreaterThan(noSalt.flow.amtAdditional);
+    expect(noSalt.flow.amtAdditional).toBeCloseTo(51_981, 0);
+    expect(withSalt.flow.amtAdditional).toBeCloseTo(63_181, 0);
+    expect(withSalt.flow.amtAdditional - noSalt.flow.amtAdditional).toBeCloseTo(11_200, 0);
+  });
+
+  it("standard-deduction filer's saltDeducted is ignored (no SALT deducted to add back)", () => {
+    // Same income but no itemized deductions → std path. saltDeducted must not move AMTI:
+    // the std add-back (F12) already covers the disallowed standard deduction.
+    const a = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, isoSpread: 250_000, saltDeducted: 0, flatStateRate: 0,
+    }));
+    const b = calculateTaxYear(makeInput({
+      ordinaryIncome: 600_000, isoSpread: 250_000, saltDeducted: 40_000, flatStateRate: 0,
+    }));
+    expect(b.flow.amtAdditional).toBe(a.flow.amtAdditional);
+  });
+});
+
 describe("calculateTaxYear — ISO spread as an AMT preference item", () => {
   // Single filer with enough ordinary income that AMTI sits well above the
   // exemption edge, so an ISO bargain element pushes tentative AMT past regular.

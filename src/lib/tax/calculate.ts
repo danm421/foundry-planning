@@ -122,14 +122,18 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // income, which is already net of QBI (there is no QBI add-back line). The
   // standard deduction — including the §63(f) aged/blind add-on — is NOT allowed
   // for AMT (IRC §56(b)(1)(E) / Form 6251 line 2a), so when it was the deduction
-  // taken the FULL standard deduction must be added back. The OBBBA senior bonus
-  // is NOT a §56 preference item → no add-back (it stays out of taxableIncome and
-  // out of AMTI alike). (Itemizer SALT add-back is wired in Task 3 / audit F7.)
+  // taken the FULL standard deduction must be added back. For ITEMIZERS the
+  // disallowed item is instead the Schedule A line 7 SALT deduction (state/local
+  // income + property, post-§164 cap) — IRC §56(b)(1)(A)(ii) / Form 6251 line 2a
+  // (F7). The OBBBA senior bonus is NOT a §56 preference item → no add-back (it
+  // stays out of taxableIncome and out of AMTI alike).
   // Form 6251 Part III: LTCG + qualified dividends inside AMTI are taxed at
   // 0/15/20% (the same preferential rates as regular), not 26/28%. Passing them
   // through — with the regular ordinary base as the stacking floor — so
   // calcAmtTentative can split the base.
-  const amtAddBack = usedStandard ? stdDeduction : 0; // SALT branch wired in Task 3 (F7)
+  const amtAddBack = usedStandard
+    ? stdDeduction                 // F12: full standard incl. §63(f)
+    : (input.saltDeducted ?? 0);   // F7: Schedule A line 7 taxes (post-§164 cap)
   const amti = taxableIncome + amtAddBack + (input.isoSpread ?? 0);
   const amtParams = filingAmtParams(fs, p);
   const tentativeAmt = calcAmtTentative(amti, amtParams, {
