@@ -25,6 +25,9 @@ export async function getOpsAdmin(): Promise<OpsAdmin | null> {
     .where(eq(opsAdmins.clerkUserId, userId))
     .limit(1);
   if (!row || row.disabledAt) return null;
+  // Fail safe: an unrecognized role (only reachable if the DB CHECK is ever
+  // dropped) is treated as no access, never granted.
+  if (!(row.role in RANK)) return null;
   return { clerkUserId: row.clerkUserId, email: row.email, role: row.role as OpsRole };
 }
 
@@ -41,7 +44,9 @@ export async function requireOpsAdmin(minRole: OpsRole = "support"): Promise<Ops
   if (!userId) throw new UnauthorizedError();
   const admin = await getOpsAdmin();
   if (!admin) throw new ForbiddenError("Ops admin access required");
-  if (RANK[admin.role] < RANK[minRole]) {
+  // Defensive: never let an undefined rank compare-false into a grant.
+  const rank = RANK[admin.role];
+  if (rank === undefined || rank < RANK[minRole]) {
     throw new ForbiddenError(`Ops role '${minRole}' required`);
   }
   return admin;

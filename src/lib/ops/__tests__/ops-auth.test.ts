@@ -36,6 +36,10 @@ describe("getOpsAdmin", () => {
     h.rows = [];
     expect(await getOpsAdmin()).toBeNull();
   });
+  it("returns null (fail safe) for an unrecognized role", async () => {
+    h.rows = [{ clerkUserId: "user_op", email: "op@foundry", role: "owner", disabledAt: null }];
+    expect(await getOpsAdmin()).toBeNull();
+  });
 });
 
 describe("requireOpsAdmin", () => {
@@ -59,5 +63,9 @@ describe("requireOpsAdmin", () => {
   it("allows a higher role for a lower minRole", async () => {
     h.rows = [{ clerkUserId: "user_op", email: "op@foundry", role: "ops", disabledAt: null }];
     await expect(requireOpsAdmin("support")).resolves.toBeDefined();
+  });
+  it("throws ForbiddenError (fail safe) for an unrecognized role", async () => {
+    h.rows = [{ clerkUserId: "user_op", email: "op@foundry", role: "owner", disabledAt: null }];
+    await expect(requireOpsAdmin()).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
