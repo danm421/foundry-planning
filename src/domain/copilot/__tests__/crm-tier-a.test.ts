@@ -216,3 +216,26 @@ describe("crm_complete_task (Tier A, ownership-gated)", () => {
     expect(recordAudit).not.toHaveBeenCalled();
   });
 });
+
+describe("crm_post_task_comment (Tier A, ownership-gated)", () => {
+  it("posts a comment with authorUserId=ctx.userId and fires copilot.tool_call", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });
+    postComment.mockResolvedValue({ id: "c1", bodyMarkdown: "Great progress!" });
+    const out = JSON.parse(
+      await byName("crm_post_task_comment").invoke({ taskId: "t1", body: "Great progress!" }),
+    );
+    expect(postComment).toHaveBeenCalledWith("t1", "org_A", "advisor-9", "Great progress!");
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.tool_call", resourceType: "crm_task", resourceId: "t1" }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it("IDOR: same-firm task in another household → postComment NEVER called", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t9", householdId: "hh-OTHER" }, tags: [] });
+    const out = await byName("crm_post_task_comment").invoke({ taskId: "t9", body: "comment" });
+    expect(out).toMatch(/does not belong to this client/i);
+    expect(postComment).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});

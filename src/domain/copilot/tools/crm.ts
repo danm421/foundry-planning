@@ -15,7 +15,7 @@ import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { recordActivity, listActivity } from "@/lib/crm/activity";
 import { listTasks, getTaskById } from "@/lib/crm-tasks/queries";
-import { createTask, updateTaskField, setTaskStatus } from "@/lib/crm-tasks/mutations";
+import { createTask, updateTaskField, setTaskStatus, postComment } from "@/lib/crm-tasks/mutations";
 import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
@@ -335,7 +335,33 @@ export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): Stru
     },
   );
 
-  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool];
+  const postTaskCommentTool = tool(
+    async ({ taskId, body }) => {
+      const gate = await gateCrm(ctx);
+      if ("error" in gate) return gate.error;
+      const own = await assertTaskInHousehold(taskId, gate.firmId, gate.householdId);
+      if (own !== true) return own;
+      try {
+        await postComment(taskId, gate.firmId, ctx.userId, body);
+        await auditToolCall(ctx, conversationId, "crm_task", taskId, "crm_post_task_comment");
+        return JSON.stringify({ ok: true });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to post comment.";
+      }
+    },
+    {
+      name: "crm_post_task_comment",
+      description:
+        "Post a comment on an existing CRM task. Applies immediately. " +
+        "The comment body is recorded verbatim.",
+      schema: z.object({
+        taskId: z.string(),
+        body: z.string().min(1).max(20_000),
+      }),
+    },
+  );
+
+  return [recentNotes, activityFeed, listTasksTool, clientCard, addNote, logActivity, createTaskTool, updateTaskTool, completeTaskTool, postTaskCommentTool];
 }
 
 /** Exported for unit testing of the IDOR guards (spec §6). Not for runtime use outside tests. */
