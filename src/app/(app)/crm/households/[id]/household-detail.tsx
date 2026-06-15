@@ -13,10 +13,11 @@ import { AccountsTab } from "./tabs/accounts-tab";
 import { ActivityTab } from "./tabs/activity-tab";
 import { DocumentsTab } from "./tabs/documents-tab";
 import { TasksTab } from "./tabs/tasks-tab";
+import { NotesTab } from "./tabs/notes-tab";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
-const TABS = ["overview", "contacts", "accounts", "activity", "documents", "tasks"] as const;
+const TABS = ["overview", "contacts", "accounts", "activity", "documents", "tasks", "notes"] as const;
 type Tab = (typeof TABS)[number];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -127,6 +128,7 @@ export function HouseholdDetail({
             initialTaskDetail={tasksBootstrap.initialTaskDetail}
           />
         )}
+        {tab === "notes" && <NotesTab household={household} />}
       </div>
     </div>
   );

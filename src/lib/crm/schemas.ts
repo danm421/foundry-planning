@@ -80,3 +80,24 @@ export type CreateCrmHouseholdInput = z.infer<typeof createCrmHouseholdSchema>;
 export type CreateCrmContactInput = z.infer<typeof createCrmContactSchema>;
 export type CreateCrmAccountInput = z.infer<typeof createCrmAccountSchema>;
 export type CreateCrmActivityInput = z.infer<typeof createCrmActivitySchema>;
+
+export const crmNoteKindSchema = z.enum(["note", "meeting", "call", "email"]);
+
+export const createCrmNoteSchema = z.object({
+  subject: z.string().trim().min(1).max(300),
+  body: z.string().max(20_000).default(""),
+  noteKind: crmNoteKindSchema.default("note"),
+  noteDate: z.iso.date(), // YYYY-MM-DD
+});
+
+// Explicit optional fields (NOT createCrmNoteSchema.partial()) so PATCH never
+// re-applies the create-time defaults for body/noteKind onto an existing row.
+export const updateCrmNoteSchema = z.object({
+  subject: z.string().trim().min(1).max(300).optional(),
+  body: z.string().max(20_000).optional(),
+  noteKind: crmNoteKindSchema.optional(),
+  noteDate: z.iso.date().optional(),
+});
+
+export type CreateCrmNoteInput = z.infer<typeof createCrmNoteSchema>;
+export type UpdateCrmNoteInput = z.infer<typeof updateCrmNoteSchema>;

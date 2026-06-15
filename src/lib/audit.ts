@@ -259,6 +259,10 @@ export type AuditAction =
   | "crm.task.file_uploaded"
   | "crm.task.file_deleted"
   | "crm.tag.create"
+  // CRM Notes (view over crm_activity)
+  | "crm.note.create"
+  | "crm.note.update"
+  | "crm.note.delete"
   // Medicare coverage (per-person, client-scoped overrides)
   | "medicare_coverage.upsert"
   // Presentation templates
