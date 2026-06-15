@@ -191,4 +191,12 @@ describe("POST /api/clients/[id]/copilot/stream — hello stream", () => {
     const res = await POST(makeReq({}), ctx);
     expect(res.status).toBe(400);
   });
+
+  it("returns 400 when the message is whitespace-only (empty after trim)", async () => {
+    const res = await POST(makeReq({ message: "   ", scenarioId: "base" }), ctx);
+    expect(res.status).toBe(400);
+    // Must not create a blank-titled conversation or reach the model.
+    expect(createConversation).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
 });

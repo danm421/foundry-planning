@@ -15,6 +15,7 @@ import {
 import { loadPromptContext } from "@/domain/copilot/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/copilot/system-prompt";
 import { safeCopilotErrorMessage } from "@/domain/copilot/safe-error";
+import { isCopilotEnabled } from "@/domain/copilot/flag";
 import type { CopilotAuthContext } from "@/domain/copilot/state";
 
 export const dynamic = "force-dynamic";
@@ -38,8 +39,8 @@ function json(status: number, body: unknown): Response {
 export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   // --- Gate chain (canonical order — ALL before the ReadableStream opens) ---
 
-  // 1. Feature flag.
-  if (process.env.COPILOT_ENABLED !== "true") {
+  // 1. Feature flag (canonical single source of truth — strict "true").
+  if (!isCopilotEnabled()) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -93,12 +94,14 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   } catch {
     return json(400, { error: "Invalid request body." });
   }
-  if (
-    typeof body.message !== "string" ||
-    body.message.length === 0 ||
-    typeof body.scenarioId !== "string"
-  ) {
+  if (typeof body.message !== "string" || typeof body.scenarioId !== "string") {
     return json(400, { error: "message and scenarioId are required." });
+  }
+  // Trim once and validate the trimmed value: a whitespace-only message must not
+  // create a blank-titled conversation or burn a model turn on empty input.
+  const message = body.message.trim();
+  if (message.length === 0) {
+    return json(400, { error: "message must not be empty." });
   }
 
   let cid: string;
@@ -116,7 +119,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         userId,
         firmId,
         clientId,
-        title: body.message.slice(0, 60),
+        title: message.slice(0, 60),
       });
     }
     cid = conversationId;
@@ -160,7 +163,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       send({ type: "conversation", conversationId: cid });
       try {
         const events = graph.streamEvents(
-          { messages: [new HumanMessage(body.message)], authContext },
+          { messages: [new HumanMessage(message)], authContext },
           { version: "v2", configurable: { thread_id: cid }, recursionLimit: 25 },
         );
         for await (const ev of events) {
