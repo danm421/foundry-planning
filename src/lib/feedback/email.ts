@@ -4,6 +4,7 @@ import type { FeedbackSubmission } from "./schema";
 
 export interface FeedbackContext {
   firmId: string;
+  firmName: string;
   advisorName: string;
   advisorEmail: string;
   userAgent: string;
@@ -36,7 +37,8 @@ export function buildFeedbackEmail(
 ): { subject: string; html: string } {
   const rows: Array<[string, string]> = [
     ["From", `${ctx.advisorName} <${ctx.advisorEmail}>`],
-    ["Firm", ctx.firmId],
+    ["Firm", ctx.firmName],
+    ["Firm ID", ctx.firmId],
     ["Page", s.pageUrl ?? "—"],
     ["When", ctx.submittedAt],
     ["User agent", ctx.userAgent],
@@ -94,9 +96,13 @@ export async function sendFeedbackEmail(args: {
   }
 
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.SUPPORT_EMAIL_FROM ?? process.env.BILLING_EMAIL_FROM;
+  // Support mail must come *from* a support-branded sender, not billing. An
+  // explicit SUPPORT_EMAIL_FROM still wins; otherwise default to the support
+  // inbox (an address on the Resend-verified foundryplanning.com domain).
+  const from =
+    process.env.SUPPORT_EMAIL_FROM ?? "Foundry Support <support@foundryplanning.com>";
   const to = process.env.SUPPORT_EMAIL ?? "support@foundryplanning.com";
-  if (!apiKey || !from) {
+  if (!apiKey) {
     if (process.env.NODE_ENV === "development") {
       console.log(`[feedback-email] ${action} (Resend not configured)`, {
         to,

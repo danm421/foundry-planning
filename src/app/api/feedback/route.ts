@@ -53,6 +53,10 @@ export async function POST(req: Request): Promise<Response> {
       "unknown@unknown";
     const advisorName =
       [user.firstName, user.lastName].filter(Boolean).join(" ") || advisorEmail;
+    const org = await cc.organizations
+      .getOrganization({ organizationId: firmId })
+      .catch(() => null);
+    const firmName = org?.name || firmId;
 
     const attachments = await Promise.all(
       files.map(async (f) => ({
@@ -65,6 +69,7 @@ export async function POST(req: Request): Promise<Response> {
       submission: parsed.data,
       context: {
         firmId,
+        firmName,
         advisorName,
         advisorEmail,
         userAgent: req.headers.get("user-agent") ?? "unknown",
