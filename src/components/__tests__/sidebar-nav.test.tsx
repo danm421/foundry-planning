@@ -18,12 +18,11 @@ describe("SidebarNav", () => {
     expect(container.textContent).toContain("FIRM");
   });
 
-  it("renders all 5 nav items in order", () => {
+  it("renders all 4 nav items in order", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
     const { container } = render(<SidebarNav clientsCount={0} />);
     const text = container.textContent ?? "";
     const expectedLabels = [
-      "Home",
       "Clients",
       "CMA's",
       "Tasks",
@@ -78,13 +77,5 @@ describe("SidebarNav", () => {
       (el) => el.textContent?.trim(),
     );
     expect(labels).not.toContain("CRM");
-  });
-
-  it("renders placeholders (e.g. Tasks) as non-anchor items with Soon badge", () => {
-    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
-    const { container } = render(<SidebarNav clientsCount={0} />);
-    const allText = container.textContent ?? "";
-    expect(allText).toContain("Soon");
-    expect(allText).toContain("Tasks");
   });
 });

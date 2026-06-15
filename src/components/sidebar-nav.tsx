@@ -5,7 +5,6 @@ import { type MouseEvent, type ReactElement, type ReactNode } from "react";
 import SidebarNavItem from "./sidebar-nav-item";
 import { useSidebar } from "./sidebar-provider";
 import {
-  HomeIcon,
   ClientsIcon,
   FolderIcon,
   ListCheckIcon,
@@ -28,7 +27,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "WORKSPACE",
     items: [
-      { icon: <HomeIcon />, label: "Home", placeholder: true },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
       { icon: <ListCheckIcon />, label: "Tasks", href: "/tasks" },
