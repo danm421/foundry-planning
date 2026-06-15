@@ -21,8 +21,10 @@
  * sub-cap for appreciated property; the single-ceiling version is the agreed
  * conservative fix that eliminates the >100%-of-AGI over-deduction.
  *
- * Itemize-vs-standard branch: the deduction only flows through if total
- * itemized deductions exceed the standard deduction for the filing status.
+ * Itemize-vs-standard branch: this function computes the deduction assuming the
+ * household itemizes. The standard-deduction case is handled separately by
+ * computeCharitableNoItemize (F23), which preserves the carryforward instead of
+ * consuming it. The caller (year-tax.ts) elects between the two.
  */
 
 import type { CharityCarryforward, CarryforwardEntry } from "./types";
@@ -43,12 +45,10 @@ export interface ComputeCharitableDeductionInput {
   agi: number;
   carryforwardIn: CharityCarryforward;
   currentYear: number;
-  /** True if the household will itemize this year (Σ itemized > standard for filing status). */
-  willItemize: boolean;
 }
 
 export interface ComputeCharitableDeductionResult {
-  /** Total deduction realized this year (zero if !willItemize). */
+  /** Total deduction realized this year, assuming the household itemizes. */
   deductionThisYear: number;
   /** Updated carryforward for next year. */
   carryforwardOut: CharityCarryforward;
@@ -75,7 +75,7 @@ const CARRYFORWARD_MAX_YEARS = 5;
 export function computeCharitableDeductionForYear(
   input: ComputeCharitableDeductionInput,
 ): ComputeCharitableDeductionResult {
-  const { giftsThisYear, agi, carryforwardIn, currentYear, willItemize } = input;
+  const { giftsThisYear, agi, carryforwardIn, currentYear } = input;
 
   const byBucket: Record<CharityBucket, number> = {
     cashPublic: 0,
@@ -144,19 +144,6 @@ export function computeCharitableDeductionForYear(
     if (overflow > 0) {
       cf.push({ amount: overflow, originYear: currentYear });
     }
-  }
-
-  if (!willItemize) {
-    return {
-      deductionThisYear: 0,
-      carryforwardOut: carryforwardWorking,
-      byBucket: {
-        cashPublic: 0,
-        cashPrivate: 0,
-        appreciatedPublic: 0,
-        appreciatedPrivate: 0,
-      },
-    };
   }
 
   return { deductionThisYear, carryforwardOut: carryforwardWorking, byBucket };
