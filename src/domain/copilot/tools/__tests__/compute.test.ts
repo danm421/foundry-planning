@@ -20,6 +20,9 @@ vi.mock("@/lib/compute-cache/monte-carlo", () => ({
 vi.mock("@/engine/monteCarlo/summarize", () => ({
   summarizeMonteCarlo: vi.fn(),
 }));
+vi.mock("@/lib/scenario/load-projection-for-ref", () => ({
+  loadProjectionForRef: vi.fn(),
+}));
 vi.mock("../../guards", () => {
   class ForbiddenScopeError extends Error {
     constructor(detail: string) {
@@ -39,6 +42,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
+import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 
 const ctx: CopilotAuthContext = {
   userId: "u1",
@@ -177,5 +181,70 @@ describe("compute.ts — run_monte_carlo", () => {
     );
     expect(out.available).toBe(false);
     expect(summarizeMonteCarlo).not.toHaveBeenCalled();
+  });
+});
+
+function loaded(name: string, endPortfolio: number, totalTax: number, isDoNothing = false) {
+  return {
+    tree: {},
+    scenarioName: name,
+    isDoNothing,
+    result: {
+      years: [
+        { year: 2025, taxResult: { totalTax: totalTax / 2 }, portfolioAssets: { total: 0 } },
+        {
+          year: 2026,
+          taxResult: { totalTax: totalTax / 2 },
+          portfolioAssets: { total: endPortfolio },
+        },
+      ],
+    },
+  } as unknown as Awaited<ReturnType<typeof loadProjectionForRef>>;
+}
+
+describe("compute.ts — compare_scenarios", () => {
+  it("rejects an out-of-scope clientId before loading either side", async () => {
+    await expect(
+      tool("compare_scenarios").invoke({
+        clientId: "client-OTHER",
+        left: "base",
+        right: "scn-1",
+      }),
+    ).rejects.toThrow("forbidden_scope");
+    expect(loadProjectionForRef).not.toHaveBeenCalled();
+  });
+
+  it("loads two projections via loadProjectionForRef and diffs them", async () => {
+    vi.mocked(loadProjectionForRef)
+      .mockResolvedValueOnce(loaded("Base case", 2_000_000, 400_000))
+      .mockResolvedValueOnce(loaded("Roth ladder", 2_300_000, 360_000));
+
+    const out = JSON.parse(
+      (await tool("compare_scenarios").invoke({
+        clientId: "client-1",
+        left: "base",
+        right: "scn-roth",
+      })) as string,
+    );
+    expect(loadProjectionForRef).toHaveBeenCalledTimes(2);
+    expect(out.left.scenarioName).toBe("Base case");
+    expect(out.right.scenarioName).toBe("Roth ladder");
+    expect(out.delta.endingPortfolio).toBe(300_000);
+    expect(out.delta.lifetimeTax).toBe(-40_000);
+  });
+
+  it("supports the do-nothing counterfactual ref", async () => {
+    vi.mocked(loadProjectionForRef)
+      .mockResolvedValueOnce(loaded("Do nothing (no plan)", 1_500_000, 500_000, true))
+      .mockResolvedValueOnce(loaded("Base case", 2_000_000, 400_000));
+
+    await tool("compare_scenarios").invoke({
+      clientId: "client-1",
+      left: "do-nothing",
+      right: "base",
+    });
+    expect(loadProjectionForRef).toHaveBeenNthCalledWith(1, "client-1", "firmA", {
+      kind: "do-nothing",
+    });
   });
 });

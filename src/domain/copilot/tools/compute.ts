@@ -9,6 +9,29 @@ import { runProjectionWithEvents } from "@/engine";
 import type { ProjectionYear } from "@/engine";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
+import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
+import type { EstateCompareRef } from "@/lib/scenario/scenario-from-search-params";
+import type { ProjectionResult } from "@/engine";
+
+/** Map a model-supplied token to an EstateCompareRef. Mirrors tokenToRef in
+ *  scenario-from-search-params.ts: "do-nothing" → counterfactual, "base" →
+ *  base case, "snap:<id>" → snapshot, otherwise a scenario uuid. */
+function refFromToken(token: string): EstateCompareRef {
+  if (token === "do-nothing") return { kind: "do-nothing" };
+  if (token === "base") return { kind: "scenario", id: "base", toggleState: {} };
+  if (token.startsWith("snap:")) {
+    return { kind: "snapshot", id: token.slice("snap:".length), side: "left" };
+  }
+  return { kind: "scenario", id: token, toggleState: {} };
+}
+
+function lifetimeTax(result: ProjectionResult): number {
+  return result.years.reduce((sum, y) => sum + (y.taxResult?.totalTax ?? 0), 0);
+}
+function endingPortfolio(result: ProjectionResult): number {
+  const last = result.years[result.years.length - 1];
+  return last?.portfolioAssets.total ?? 0;
+}
 
 /** Per-year story compacted for the model — the engine's own numbers only. */
 function compactYear(y: ProjectionYear) {
@@ -136,5 +159,43 @@ export function buildComputeTools(toolCtx: CopilotToolContext) {
     },
   );
 
-  return [runProjection, runMonteCarlo];
+  const compareScenarios = tool(
+    async ({ clientId, left, right }) => {
+      const firmId = await requireOrgId();
+      await assertClientReadable(ctx, clientId);
+
+      const [a, b] = await Promise.all([
+        loadProjectionForRef(clientId, firmId, refFromToken(left)),
+        loadProjectionForRef(clientId, firmId, refFromToken(right)),
+      ]);
+
+      const aEnd = endingPortfolio(a.result);
+      const bEnd = endingPortfolio(b.result);
+      const aTax = lifetimeTax(a.result);
+      const bTax = lifetimeTax(b.result);
+
+      return JSON.stringify({
+        left: { scenarioName: a.scenarioName, endingPortfolio: aEnd, lifetimeTax: aTax },
+        right: { scenarioName: b.scenarioName, endingPortfolio: bEnd, lifetimeTax: bTax },
+        // Combined left→right delta only. Do NOT attribute to a single change.
+        delta: { endingPortfolio: bEnd - aEnd, lifetimeTax: bTax - aTax },
+      });
+    },
+    {
+      name: "compare_scenarios",
+      description:
+        "Compare two plans side by side and return end-of-plan portfolio assets and total " +
+        "lifetime tax for each, plus the combined left→right delta. Each side is a token: " +
+        "'base', a scenario id, 'snap:<id>' for a snapshot, or 'do-nothing' for the no-plan " +
+        "counterfactual. The delta is the combined difference between the two plans — never " +
+        "attribute it to one specific change.",
+      schema: z.object({
+        clientId: z.string().describe("the active client uuid"),
+        left: z.string().describe("left ref token: base | <scenarioId> | snap:<id> | do-nothing"),
+        right: z.string().describe("right ref token: base | <scenarioId> | snap:<id> | do-nothing"),
+      }),
+    },
+  );
+
+  return [runProjection, runMonteCarlo, compareScenarios];
 }
