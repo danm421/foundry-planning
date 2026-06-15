@@ -10,6 +10,7 @@ import {
   buildCrtLifecycleFixture,
   CRT_FIXTURE_IDS,
 } from "@/engine/__tests__/_fixtures/crt";
+import { TAX_YEAR_2026 } from "@/engine/__tests__/_fixtures/tax-year-2026";
 import { applyMutations } from "../apply-mutations";
 import {
   buildSplitInterestSnapshot,
@@ -88,6 +89,13 @@ describe("solver-built CLT drives the engine's §170 deduction + remainder gift"
       ...fixture,
       entities: [], // drop the DB-created CLT — the solver rebuilds it
       gifts: [], // drop the fixture's hand-built remainder gift
+      // The fixture declares taxEngineMode:"bracket" but omits taxYearRows, so
+      // without these the engine logs a warning and falls back to FLAT mode —
+      // where willItemize is forced false and the §170 income-interest deduction
+      // is never realized (it's only appended to carryforward). These tests
+      // assert BRACKET-mode behavior (low AGI → carryforward; high AGI fully
+      // absorbs the deduction with no residue), so seed real 2026 bracket params.
+      taxYearRows: [TAX_YEAR_2026],
     };
   }
 
