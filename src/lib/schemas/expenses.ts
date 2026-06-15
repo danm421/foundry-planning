@@ -6,10 +6,33 @@ import { uuidSchema } from "./common";
 // instead of being coerced/defaulted. Defaults are applied ONLY in the create
 // schema, never baked into these shared pieces.
 
-// number | string → number (mirrors Number(startYear) in the route handlers)
-const yearCoerce = z
+// number | string → validated integer in [1900, 2200].
+// Rejects 0, "", negatives, NaN, out-of-range. Used for CREATE (required).
+const yearValue = z.union([z.number(), z.string()]).transform((v, ctx) => {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isInteger(n) || n < 1900 || n > 2200) {
+    ctx.addIssue({ code: "custom", message: "Must be a year between 1900 and 2200" });
+    return z.NEVER;
+  }
+  return n;
+});
+
+// Optional variant for UPDATE: undefined passes through; present values are
+// range-validated identically to yearValue. The explicit undefined guard is
+// required because zod's .optional() does NOT short-circuit the transform in
+// this codebase's version — matching the pattern used by numericStringOptional.
+const yearValueOptional = z
   .union([z.number(), z.string()])
-  .transform((v) => Number(v));
+  .optional()
+  .transform((v, ctx) => {
+    if (v === undefined) return undefined;
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isInteger(n) || n < 1900 || n > 2200) {
+      ctx.addIssue({ code: "custom", message: "Must be a year between 1900 and 2200" });
+      return z.NEVER;
+    }
+    return n;
+  });
 
 // number | string → string, but pass undefined through untouched
 const numericStringOptional = z
@@ -60,8 +83,8 @@ export const expenseCreateSchema = z
     type: z.string().min(1),
     name: z.string().min(1),
     annualAmount: numericStringOptional.default("0"),
-    startYear: yearCoerce,
-    endYear: yearCoerce,
+    startYear: yearValue,
+    endYear: yearValue,
     growthRate: numericStringOptional.default("0.03"),
     // No default: an omitted growthSource on create still resolves to "custom"
     // via the route's `growthSource === "inflation" ? ... : "custom"` only when
@@ -78,8 +101,8 @@ export const expenseUpdateSchema = z
     type: z.string().min(1).optional(),
     name: z.string().min(1).optional(),
     annualAmount: numericStringOptional,
-    startYear: yearCoerce.optional(),
-    endYear: yearCoerce.optional(),
+    startYear: yearValueOptional,
+    endYear: yearValueOptional,
     growthRate: numericStringOptional,
     growthSource: growthSourceOptional,
     ...shared,

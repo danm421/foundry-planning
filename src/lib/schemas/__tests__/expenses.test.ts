@@ -30,6 +30,21 @@ describe("expenseCreateSchema parity with inline route coercion", () => {
     expect(expenseCreateSchema.safeParse({ name: "x", startYear: 1, endYear: 2 }).success).toBe(false);
   });
 
+  it("rejects year 0 (startYear and endYear)", () => {
+    expect(expenseCreateSchema.safeParse({ ...base, startYear: 0 }).success).toBe(false);
+    expect(expenseCreateSchema.safeParse({ ...base, endYear: 0 }).success).toBe(false);
+  });
+
+  it('rejects empty string years (Number("") === 0)', () => {
+    expect(expenseCreateSchema.safeParse({ ...base, startYear: "" }).success).toBe(false);
+    expect(expenseCreateSchema.safeParse({ ...base, endYear: "" }).success).toBe(false);
+  });
+
+  it("rejects out-of-range years (below 1900, above 2200)", () => {
+    expect(expenseCreateSchema.safeParse({ ...base, startYear: 1899 }).success).toBe(false);
+    expect(expenseCreateSchema.safeParse({ ...base, startYear: 2300 }).success).toBe(false);
+  });
+
   it("enforces endsAtMedicareEligibilityOwner ∈ {client, spouse, null}", () => {
     expect(expenseCreateSchema.safeParse({ ...base, endsAtMedicareEligibilityOwner: "child" }).success).toBe(false);
     expect(expenseCreateSchema.safeParse({ ...base, endsAtMedicareEligibilityOwner: "spouse" }).success).toBe(true);
@@ -73,6 +88,22 @@ describe("expenseUpdateSchema", () => {
     expect(expenseUpdateSchema.parse({ startYear: "2031" }).startYear).toBe(2031);
     expect(expenseUpdateSchema.parse({ growthSource: "inflation" }).growthSource).toBe("inflation");
     expect(expenseUpdateSchema.parse({ growthSource: "wibble" }).growthSource).toBe("custom");
+  });
+
+  it("rejects year 0 in a patch (startYear: 0)", () => {
+    expect(expenseUpdateSchema.safeParse({ startYear: 0 }).success).toBe(false);
+    expect(expenseUpdateSchema.safeParse({ endYear: 0 }).success).toBe(false);
+  });
+
+  it("accepts a valid string year in a patch and coerces to number", () => {
+    const r = expenseUpdateSchema.safeParse({ startYear: "2031" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.startYear).toBe(2031);
+  });
+
+  it("preserves the empty-patch zero-keys invariant after year field additions", () => {
+    const d = expenseUpdateSchema.parse({});
+    expect(Object.keys(d).length).toBe(0);
   });
 
   it("still enforces the medicare enum and both-owner refine when those fields are present", () => {
