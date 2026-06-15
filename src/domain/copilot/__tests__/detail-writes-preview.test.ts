@@ -14,6 +14,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { describeProposedWrite } from "../preview";
 import type { ProposedWrite } from "../preview";
 import { expenseCreateSchema } from "@/lib/schemas/expenses";
+import { incomeCreateSchema } from "@/lib/schemas/incomes";
 import type { CopilotAuthContext } from "@/domain/copilot/state";
 import { db } from "@/db";
 
@@ -99,6 +100,78 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_expense dry run)", () => {
     // Pure formatter result: named summary, NO enriched details.
     expect(preview.name).toBe("add_expense");
     expect(preview.summary).toMatch(/Add expense/i);
+    expect(preview.details).toBeUndefined();
+  });
+});
+
+describe.skipIf(!HAS_DB)("detail-writes preview (add_income dry run)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders the would-be-new-row field lines and does NOT insert", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    const call: ProposedWrite = {
+      name: "add_income",
+      args: {
+        type: "salary",
+        name: "Base salary",
+        annualAmount: 90000,
+        startYear: 2030,
+        endYear: 2040,
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    // The dry run never writes.
+    expect(insertSpy).not.toHaveBeenCalled();
+
+    expect(preview.name).toBe("add_income");
+    expect(preview.summary).toMatch(/Add income/i);
+    expect(preview.details).toBeDefined();
+    const text = preview.details!.join(" ");
+    // createDiffLines renders the parsed, defaulted row as `field: value` lines.
+    expect(text).toMatch(/name: Base salary/);
+    expect(text).toMatch(/annualAmount: 90000/);
+    expect(text).toMatch(/startYear: 2030/);
+    expect(text).toMatch(/endYear: 2040/);
+  });
+
+  it("surfaces the both-owner validation error as the summary (no insert)", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    const call: ProposedWrite = {
+      name: "add_income",
+      args: {
+        type: "salary",
+        name: "Bad income",
+        startYear: 2030,
+        endYear: 2040,
+        ownerEntityId: "11111111-1111-1111-1111-111111111111",
+        ownerAccountId: "22222222-2222-2222-2222-222222222222",
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(preview.name).toBe("add_income");
+    expect(preview.summary).toMatch(/Cannot set both ownerEntityId and ownerAccountId/i);
+    // A validation failure renders no field diff.
+    expect(preview.details).toBeUndefined();
+  });
+
+  it("degrades to the pure formatter when enrichment throws", async () => {
+    vi.spyOn(incomeCreateSchema, "safeParse").mockImplementation(() => {
+      throw new Error("boom");
+    });
+    const call: ProposedWrite = {
+      name: "add_income",
+      args: { type: "salary", name: "Salary", startYear: 2030, endYear: 2040 },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    // Pure formatter result: named summary, NO enriched details.
+    expect(preview.name).toBe("add_income");
+    expect(preview.summary).toMatch(/Add income/i);
     expect(preview.details).toBeUndefined();
   });
 });

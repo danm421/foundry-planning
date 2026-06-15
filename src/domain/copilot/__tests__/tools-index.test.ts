@@ -21,11 +21,16 @@ vi.mock("@/lib/solver/apply-mutations", () => ({ applyMutations: vi.fn() }));
 // Phase 2: stub scenario-writes IO deps
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
 vi.mock("@/db", () => ({ db: {} }));
-// Phase 3: stub detail-writes (expense) cores
+// Phase 3: stub detail-writes (expense + income) cores
 vi.mock("@/lib/clients/expenses-writes", () => ({
   createExpenseForClient: vi.fn(),
   updateExpenseForClient: vi.fn(),
   deleteExpenseForClient: vi.fn(),
+}));
+vi.mock("@/lib/clients/incomes-writes", () => ({
+  createIncomeForClient: vi.fn(),
+  updateIncomeForClient: vi.fn(),
+  deleteIncomeForClient: vi.fn(),
 }));
 // CRM tool deps (assembly test stays pure — no DB, no CRM IO)
 vi.mock("@/lib/crm/notes", () => ({ createNote: vi.fn(), listHouseholdNotes: vi.fn(), deleteNote: vi.fn() }));
@@ -80,6 +85,9 @@ const EXPECTED_DETAIL_WRITE_TOOL_NAMES = [
   "add_expense",
   "update_expense",
   "remove_expense",
+  "add_income",
+  "update_income",
+  "remove_income",
 ];
 
 const EXPECTED_CRM_TIER_B_TOOL_NAMES = [
@@ -115,7 +123,7 @@ const EXPECTED_CRM_ALL_19 = [
 ];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 assembly)", () => {
-  it("returns exactly the 41 named tools (15 Phase-1 + 4 scenario writes + 3 detail writes + 19 CRM)", () => {
+  it("returns exactly the 44 named tools (15 Phase-1 + 4 scenario writes + 6 detail writes + 19 CRM)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, and detail-write tools all present
@@ -126,10 +134,10 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 assembly)", () => {
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(41);
+    expect(tools).toHaveLength(44);
   });
 
-  it("buildTools includes the 3 detail-write (expense) tool names", () => {
+  it("buildTools includes the 6 detail-write (expense + income) tool names", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
     for (const n of EXPECTED_DETAIL_WRITE_TOOL_NAMES) {
       expect(names.has(n), `expected detail-write tool ${n} in buildTools output`).toBe(true);
@@ -148,12 +156,12 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 assembly)", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (10 entries: 4 scenario writes + 3 detail writes + 3 Tier-B CRM writes)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (13 entries: 4 scenario writes + 6 detail writes + 3 Tier-B CRM writes)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(10);
+    expect(WRITE_TOOL_NAMES.size).toBe(13);
   });
 
-  it("WRITE_TOOL_NAMES contains the 3 detail-write (expense) tool names", () => {
+  it("WRITE_TOOL_NAMES contains the 6 detail-write (expense + income) tool names", () => {
     for (const n of EXPECTED_DETAIL_WRITE_TOOL_NAMES) {
       expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
     }

@@ -36,6 +36,10 @@ import {
   expenseCreateSchema,
   expenseUpdateSchema,
 } from "@/lib/schemas/expenses";
+import {
+  incomeCreateSchema,
+  incomeUpdateSchema,
+} from "@/lib/schemas/incomes";
 import { createDiffLines } from "@/lib/clients/create-diff-adapter";
 import type {
   OpType,
@@ -177,6 +181,25 @@ function previewRemoveExpense(a: Record<string, unknown>): WritePreview {
   return { name: "remove_expense", summary: `Remove expense (id ${id}).` };
 }
 
+function previewAddIncome(a: Record<string, unknown>): WritePreview {
+  const name = str(a.name) ?? "(unnamed)";
+  const type = str(a.type);
+  const typeLabel = type ? ` (${type})` : "";
+  return { name: "add_income", summary: `Add income “${name}”${typeLabel}.` };
+}
+
+function previewUpdateIncome(a: Record<string, unknown>): WritePreview {
+  const id = str(a.incomeId) ?? "";
+  const name = str(a.name);
+  const label = name ? `“${name}” ` : "";
+  return { name: "update_income", summary: `Update income ${label}(id ${id}).`.trim() };
+}
+
+function previewRemoveIncome(a: Record<string, unknown>): WritePreview {
+  const id = str(a.incomeId) ?? "";
+  return { name: "remove_income", summary: `Remove income (id ${id}).` };
+}
+
 function previewCompareAndSnapshot(args: Record<string, unknown>): WritePreview {
   const name = str(args.name) ?? "(unnamed)";
   const left = refLabel(str(args.leftRef));
@@ -208,6 +231,12 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewUpdateExpense(call.args);
     case "remove_expense":
       return previewRemoveExpense(call.args);
+    case "add_income":
+      return previewAddIncome(call.args);
+    case "update_income":
+      return previewUpdateIncome(call.args);
+    case "remove_income":
+      return previewRemoveIncome(call.args);
     case "crm_delete_note":
       return previewCrmDeleteNote(call.args);
     case "crm_delete_task":
@@ -287,12 +316,14 @@ function zodErrorMessage(error: z.ZodError): string {
 }
 
 /**
- * Run the SAME FK asserts the expense create/update core runs (entities,
- * accounts, business accounts) — all client-scoped, mirroring the core. Returns
- * a validation message on the first failed assert, or null if every FK is
- * in-client. NO insert/update — this is a dry run.
+ * Run the SAME FK asserts the expense AND income create/update cores run
+ * (entities, accounts, business accounts) — all client-scoped, mirroring the
+ * cores. Both entities share the identical three-assert sequence on the same
+ * three FK fields, so one helper covers both. Returns a validation message on
+ * the first failed assert, or null if every FK is in-client. NO insert/update —
+ * this is a dry run.
  */
-async function assertExpenseFks(
+async function assertDetailFks(
   clientId: string,
   fields: {
     ownerEntityId?: string | null;
@@ -330,7 +361,7 @@ async function enrichAddExpense(
   if (!parsed.success) {
     return { ...base, summary: zodErrorMessage(parsed.error) };
   }
-  const fkError = await assertExpenseFks(clientId, parsed.data);
+  const fkError = await assertDetailFks(clientId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
   return { ...base, details: createDiffLines(parsed.data) };
 }
@@ -352,7 +383,66 @@ async function enrichUpdateExpense(
   if (!parsed.success) {
     return { ...base, summary: zodErrorMessage(parsed.error) };
   }
-  const fkError = await assertExpenseFks(ctx.clientId, parsed.data);
+  const fkError = await assertDetailFks(ctx.clientId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+
+  if (!id) return base;
+  const { effectiveTree } = await loadEffectiveTree(
+    ctx.clientId,
+    ctx.firmId,
+    ctx.scenarioId,
+    {},
+  );
+  const current = findRowById(effectiveTree, id);
+  if (!current) return base;
+  const diff = computeRowDiff(current, { ...current, ...parsed.data });
+  if (diff.kind !== "edit") return base;
+  return {
+    ...base,
+    details: diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`),
+  };
+}
+
+/**
+ * Dry-run enrichment for add_income: zod-parse via incomeCreateSchema, run the
+ * same FK asserts the core runs (NO insert), then render the would-be new row as
+ * `field: value` lines via createDiffLines. On a zod or FK failure, surface the
+ * plain-language validation error as the summary with no diff. Mirrors
+ * enrichAddExpense.
+ */
+async function enrichAddIncome(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  clientId: string,
+): Promise<WritePreview> {
+  const parsed = incomeCreateSchema.safeParse(args);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertDetailFks(clientId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+  return { ...base, details: createDiffLines(parsed.data) };
+}
+
+/**
+ * Dry-run enrichment for update_income: zod-parse the (non-id) args via
+ * incomeUpdateSchema, run the same FK asserts (NO update), load the live row,
+ * and diff `currentRow → {...currentRow, ...parsed}` to render `field: from → to`
+ * lines. On a zod or FK failure, surface the validation error as the summary.
+ * Mirrors enrichUpdateExpense.
+ */
+async function enrichUpdateIncome(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  ctx: CopilotAuthContext,
+): Promise<WritePreview> {
+  const { incomeId, ...rest } = args;
+  const id = typeof incomeId === "string" ? incomeId : undefined;
+  const parsed = incomeUpdateSchema.safeParse(rest);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertDetailFks(ctx.clientId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
 
   if (!id) return base;
@@ -376,8 +466,9 @@ async function enrichUpdateExpense(
  * Async preview. Without an auth context (or for any tool without enrichment) it
  * returns the pure formatter result unchanged. With a context it ALSO enriches:
  *   • propose_changes — live field-level from→to diff per edit + portfolio impact;
- *   • add_expense / update_expense — a dry-run row diff (zod + FK asserts, NO
- *     write), or the plain-language validation error when the payload is invalid.
+ *   • add_expense / update_expense / add_income / update_income — a dry-run row
+ *     diff (zod + FK asserts, NO write), or the plain-language validation error
+ *     when the payload is invalid.
  * All enrichment is best-effort — wrapped in try/catch so any load/parse/assert
  * failure degrades to the pure preview rather than blocking approval.
  */
@@ -394,6 +485,12 @@ export async function describeProposedWrite(
     }
     if (call.name === "update_expense") {
       return await enrichUpdateExpense(base, call.args, ctx);
+    }
+    if (call.name === "add_income") {
+      return await enrichAddIncome(base, call.args, ctx.clientId);
+    }
+    if (call.name === "update_income") {
+      return await enrichUpdateIncome(base, call.args, ctx);
     }
     if (call.name !== "propose_changes") return base;
 
