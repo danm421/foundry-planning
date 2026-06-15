@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholds, crmActivity, auditLog } from "@/db/schema";
-import { NOTE_KINDS, listHouseholdNotes, createNote, updateNote } from "../notes";
+import { NOTE_KINDS, listHouseholdNotes, createNote, updateNote, deleteNote } from "../notes";
 
 // Each later task (4/5/6) ADDS its function to this import line when it adds
 // its describe block — keep the import in sync with what's implemented so the
@@ -192,5 +192,35 @@ describe("updateNote", () => {
     await expect(
       updateNote(note.id, householdId, ORG, USER, { subject: "y" }),
     ).rejects.toThrow(/note not found/i);
+  });
+});
+
+describe("deleteNote", () => {
+  it("deletes the note row and writes audit", async () => {
+    const note = await createNote(householdId, ORG, USER, {
+      subject: "Trash me", body: "", noteKind: "note", noteDate: "2026-06-15",
+    });
+    await deleteNote(note.id, householdId, ORG, USER);
+
+    const row = await db.query.crmActivity.findFirst({ where: eq(crmActivity.id, note.id) });
+    expect(row).toBeUndefined();
+
+    const audits = await db.query.auditLog.findMany({
+      where: and(eq(auditLog.firmId, ORG), eq(auditLog.resourceType, "crm_note")),
+    });
+    expect(audits.some((a) => a.action === "crm.note.delete")).toBe(true);
+  });
+
+  it("refuses to delete a system-kind activity row", async () => {
+    const [sys] = await db
+      .insert(crmActivity)
+      .values({
+        householdId, firmId: ORG, actorUserId: USER,
+        kind: "document_uploaded", title: "Doc", occurredAt: new Date(),
+      })
+      .returning();
+    await expect(deleteNote(sys.id, householdId, ORG, USER)).rejects.toThrow(/note not found/i);
+    const stillThere = await db.query.crmActivity.findFirst({ where: eq(crmActivity.id, sys.id) });
+    expect(stillThere).toBeDefined();
   });
 });
