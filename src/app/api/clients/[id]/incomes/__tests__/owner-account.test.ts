@@ -6,6 +6,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 vi.mock("@/lib/db-helpers", () => ({
   requireOrgId: vi.fn().mockResolvedValue("firm_test"),
+  requireOrgAndUser: vi.fn().mockResolvedValue({ orgId: "firm_test", userId: "user_test" }),
 }));
 
 vi.mock("@/lib/db-scoping", () => ({
