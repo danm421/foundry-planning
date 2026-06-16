@@ -1,9 +1,10 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import type { ReactElement } from "react";
 import AppShell from "@/components/app-shell";
 import { BackNavProvider } from "@/components/back-nav-provider";
 import Footer from "@/components/footer";
+import ImpersonationBanner from "@/components/impersonation-banner";
 import Sidebar from "@/components/sidebar";
 import SidebarFrame from "@/components/sidebar-frame";
 import { SidebarProvider } from "@/components/sidebar-provider";
@@ -17,7 +18,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }): Promise<ReactElement> {
-  const [{ orgId, sessionClaims }, jar, state] = await Promise.all([
+  const [{ orgId, sessionClaims, actor }, jar, state] = await Promise.all([
     auth(),
     cookies(),
     getSubscriptionState(),
@@ -29,6 +30,15 @@ export default async function AppLayout({
       ?.org_public_metadata ?? {};
   const isFounder = meta.is_founder === true;
 
+  let impersonatedName: string | null = null;
+  if (actor?.sub) {
+    const u = await currentUser();
+    impersonatedName =
+      [u?.firstName, u?.lastName].filter(Boolean).join(" ") ||
+      u?.emailAddresses?.[0]?.emailAddress ||
+      "this advisor";
+  }
+
   return (
     <SidebarProvider initialCollapsed={collapsed}>
       <AppShell>
@@ -37,6 +47,7 @@ export default async function AppLayout({
         </SidebarFrame>
         <BackNavProvider>
           <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
+            {impersonatedName && <ImpersonationBanner advisorName={impersonatedName} />}
             <Topbar />
             <div className="px-[var(--pad-card)] pt-[var(--pad-card)] empty:hidden">
               <SubscriptionGuard state={state} isFounder={isFounder} />
