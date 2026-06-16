@@ -1,6 +1,5 @@
-import { notFound } from "next/navigation";
-import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
+import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { firms, subscriptions } from "@/db/schema";
 
@@ -20,7 +19,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export default async function OrgDetailPage({ params }: { params: Promise<{ firmId: string }> }) {
+export default async function OrgOverviewPage({
+  params,
+}: {
+  params: Promise<{ firmId: string }>;
+}) {
   const { firmId } = await params;
 
   const [firm] = await db.select().from(firms).where(eq(firms.firmId, firmId)).limit(1);
@@ -35,14 +38,6 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ firm
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <Link href="/admin/orgs" className="text-xs text-sky-300 hover:underline">
-          &larr; All organizations
-        </Link>
-        <h1 className="text-lg font-medium">{firm.displayName ?? "(unnamed)"}</h1>
-        <p className="font-mono text-xs text-neutral-500">{firm.firmId}</p>
-      </div>
-
       <section className="rounded border border-neutral-800 p-4">
         <h2 className="mb-2 text-sm font-medium text-neutral-300">Organization</h2>
         <dl className="text-sm">
