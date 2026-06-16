@@ -48,7 +48,7 @@ export default function ImpersonateClient({
       <h2 className="text-sm font-medium text-neutral-300">Impersonate</h2>
       <p className="text-sm text-neutral-500">
         Signs you into the selected advisor&rsquo;s account so you see exactly what they see. A
-        reason is required, the session is time-limited, and{" "}
+        reason is required, the sign-in link expires in 10 minutes, and{" "}
         <strong>every action you take is logged to the audit trail</strong> attributed to you. A red
         banner stays on screen until you end the session.
       </p>
