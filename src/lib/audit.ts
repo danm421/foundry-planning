@@ -218,6 +218,9 @@ export type AuditAction =
   | "billing.reconcile_healed"
   | "billing.access_denied"
   | "billing.dispute_closed"
+  // Ops console (cross-org staff actions; actorId = ops user, firmId = target)
+  | "ops.entitlement.granted"
+  | "ops.entitlement.revoked"
   // Org membership lifecycle (mirrors Clerk events)
   | "member.invited"
   | "member.removed"
