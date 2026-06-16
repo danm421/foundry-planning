@@ -9,6 +9,7 @@ import {
   deriveEntitlements,
   type StripeItemView,
 } from "@/lib/billing/entitlements";
+import { getActiveEntitlementOverrides } from "@/lib/ops/entitlements";
 import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
 import { recordAudit } from "@/lib/audit";
 
@@ -112,7 +113,8 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     ...readSubscriptionItemMeta(it),
     removed: false,
   }));
-  const entitlements = deriveEntitlements({ items: itemsView });
+  const overrides = await getActiveEntitlementOverrides(firmId);
+  const entitlements = deriveEntitlements({ items: itemsView, overrides });
 
   const subRows = await db
     .insert(subscriptions)

@@ -17,6 +17,7 @@ import {
 } from "@/lib/billing/reconcile";
 import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
 import { checkRecentWebhookErrors } from "@/lib/billing/webhook-error-check";
+import { getActiveEntitlementOverrides } from "@/lib/ops/entitlements";
 import { recordAudit } from "@/lib/audit";
 import { planAutoHeal } from "@/lib/billing/auto-heal";
 
@@ -97,6 +98,8 @@ export async function GET(req: NextRequest): Promise<Response> {
         removed: false,
       }));
 
+      const overrides = await getActiveEntitlementOverrides(firm.firmId);
+
       const firmDrift = diffReconciliation({
         firmId: firm.firmId,
         stripe: { status: stripeSub.status, items: stripeItems },
@@ -113,6 +116,7 @@ export async function GET(req: NextRequest): Promise<Response> {
             ? (clerkMeta.entitlements as string[])
             : [],
         },
+        overrides,
       });
       drift.push(...firmDrift);
 
