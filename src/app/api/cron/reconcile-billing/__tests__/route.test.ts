@@ -66,6 +66,13 @@ vi.mock("@sentry/nextjs", () => ({
 // per-firm catch (which would push a spurious "<error>" drift entry).
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
+// Override-aware write paths now consult manual entitlement overrides. These are
+// the non-override flow tests, so stub the lookup to "no active overrides" —
+// preserving the original assertions (entitlements derived from sub items alone).
+vi.mock("@/lib/ops/entitlements", () => ({
+  getActiveEntitlementOverrides: () => Promise.resolve([]),
+}));
+
 import { GET } from "../route";
 
 beforeEach(() => {
