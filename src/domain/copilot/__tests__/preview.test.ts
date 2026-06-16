@@ -40,6 +40,13 @@ describe("formatProposedWrite (pure)", () => {
     expect(out.summary).toMatch(/snapshot/i);
     expect(out.summary).toContain("Base vs Roth");
   });
+  it("summarizes promote_to_base as DESTRUCTIVE (overwrites base + deletes all other scenarios)", () => {
+    const out = formatProposedWrite({ name: "promote_to_base", args: { scenarioId: "s1" } });
+    expect(out.name).toBe("promote_to_base");
+    expect(out.summary).toContain("s1");
+    expect(out.summary).toMatch(/destructive/i);
+    expect(out.summary).toMatch(/delete/i);
+  });
   it("falls back gracefully for an unknown tool", () => {
     const out = formatProposedWrite({ name: "mystery", args: { a: 1 } });
     expect(out.summary).toContain("mystery");

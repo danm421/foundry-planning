@@ -244,6 +244,14 @@ function previewRemoveAccount(a: Record<string, unknown>): WritePreview {
   return { name: "remove_account", summary: `Remove account (id ${id}).` };
 }
 
+function previewPromoteToBase(args: Record<string, unknown>): WritePreview {
+  const id = str(args.scenarioId) ?? "(scenario)";
+  return {
+    name: "promote_to_base",
+    summary: `Promote scenario ${id} to base — DESTRUCTIVE: overwrites the base plan, auto-snapshots the current base, and deletes ALL other scenarios.`,
+  };
+}
+
 function previewCompareAndSnapshot(args: Record<string, unknown>): WritePreview {
   const name = str(args.name) ?? "(unnamed)";
   const left = refLabel(str(args.leftRef));
@@ -269,6 +277,8 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewRevertChange(call.args);
     case "compare_and_snapshot":
       return previewCompareAndSnapshot(call.args);
+    case "promote_to_base":
+      return previewPromoteToBase(call.args);
     case "add_expense":
       return previewAddExpense(call.args);
     case "update_expense":

@@ -49,6 +49,8 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "propose_changes",
   "revert_change",
   "compare_and_snapshot",
+  // DESTRUCTIVE scenario write — overwrites the base + deletes all other scenarios
+  "promote_to_base",
   // Phase-3 detail (plan-data) writes — expense sub-phase, HITL-gated
   "add_expense",
   "update_expense",

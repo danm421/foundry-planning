@@ -102,6 +102,7 @@ const EXPECTED_SCENARIO_WRITE_TOOL_NAMES = [
   "create_scenario",
   "propose_changes",
   "revert_change",
+  "promote_to_base",
 ];
 
 const EXPECTED_DETAIL_WRITE_TOOL_NAMES = [
@@ -152,7 +153,7 @@ const EXPECTED_CRM_ALL_19 = [
 ];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
-  it("returns exactly the 51 named tools (15 Phase-1 + 4 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
+  it("returns exactly the 52 named tools (15 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, and report tools all present
@@ -164,7 +165,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(51);
+    expect(tools).toHaveLength(52);
   });
 
   it("buildTools includes the 12 detail-write (expense + income + liability + account) tool names", () => {
@@ -186,9 +187,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (19 entries: 4 scenario writes + 12 detail writes + 3 Tier-B CRM writes)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (20 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(19);
+    expect(WRITE_TOOL_NAMES.size).toBe(20);
   });
 
   it("WRITE_TOOL_NAMES contains the 12 detail-write (expense + income + liability + account) tool names", () => {
@@ -199,10 +200,15 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
 });
 
 describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
-  it("WRITE_TOOL_NAMES contains exactly the 4 scenario-write tool names", () => {
+  it("WRITE_TOOL_NAMES contains exactly the 5 scenario-write tool names", () => {
     for (const n of EXPECTED_SCENARIO_WRITE_TOOL_NAMES) {
       expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
     }
+  });
+
+  it("promote_to_base is a write tool that routes through the HITL approval gate", () => {
+    expect(WRITE_TOOL_NAMES.has("promote_to_base")).toBe(true);
+    expect(routeAfterAgent([{ name: "promote_to_base" }], WRITE_TOOL_NAMES)).toBe("approval");
   });
 
   it("WRITE_TOOL_NAMES contains exactly the 3 Tier-B CRM tool names", () => {
@@ -211,7 +217,7 @@ describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
     }
   });
 
-  it("buildTools includes all 4 scenario write tool names", () => {
+  it("buildTools includes all 5 scenario write tool names", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
     for (const w of EXPECTED_SCENARIO_WRITE_TOOL_NAMES) {
       expect(names.has(w), `expected ${w} in buildTools output`).toBe(true);
