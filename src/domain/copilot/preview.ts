@@ -40,6 +40,10 @@ import {
   incomeCreateSchema,
   incomeUpdateSchema,
 } from "@/lib/schemas/incomes";
+import {
+  liabilityCreateSchema,
+  liabilityUpdateSchema,
+} from "@/lib/schemas/liabilities";
 import { createDiffLines } from "@/lib/clients/create-diff-adapter";
 import type {
   OpType,
@@ -200,6 +204,23 @@ function previewRemoveIncome(a: Record<string, unknown>): WritePreview {
   return { name: "remove_income", summary: `Remove income (id ${id}).` };
 }
 
+function previewAddLiability(a: Record<string, unknown>): WritePreview {
+  const name = str(a.name) ?? "(unnamed)";
+  return { name: "add_liability", summary: `Add liability “${name}”.` };
+}
+
+function previewUpdateLiability(a: Record<string, unknown>): WritePreview {
+  const id = str(a.liabilityId) ?? "";
+  const name = str(a.name);
+  const label = name ? `“${name}” ` : "";
+  return { name: "update_liability", summary: `Update liability ${label}(id ${id}).`.trim() };
+}
+
+function previewRemoveLiability(a: Record<string, unknown>): WritePreview {
+  const id = str(a.liabilityId) ?? "";
+  return { name: "remove_liability", summary: `Remove liability (id ${id}).` };
+}
+
 function previewCompareAndSnapshot(args: Record<string, unknown>): WritePreview {
   const name = str(args.name) ?? "(unnamed)";
   const left = refLabel(str(args.leftRef));
@@ -237,6 +258,12 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewUpdateIncome(call.args);
     case "remove_income":
       return previewRemoveIncome(call.args);
+    case "add_liability":
+      return previewAddLiability(call.args);
+    case "update_liability":
+      return previewUpdateLiability(call.args);
+    case "remove_liability":
+      return previewRemoveLiability(call.args);
     case "crm_delete_note":
       return previewCrmDeleteNote(call.args);
     case "crm_delete_task":
@@ -343,6 +370,65 @@ async function assertDetailFks(
     if (!biz.ok) return biz.reason;
   }
   return null;
+}
+
+/**
+ * Run the SAME FK asserts the liability create core runs (entities for
+ * ownerEntityId, accounts for linkedPropertyId, and — when parentAccountId is
+ * set — the business-account check). All client-scoped; the
+ * assertBusinessAccountsInClient call covers BOTH the cross-tenant AND the
+ * not-business rejects the core enforces. Returns the first failed assert's
+ * message, or null when every FK is in-client. NO insert — dry run only.
+ */
+async function assertLiabilityFks(
+  clientId: string,
+  fields: {
+    ownerEntityId?: string | null;
+    linkedPropertyId?: string | null;
+    parentAccountId?: string | null;
+  },
+): Promise<string | null> {
+  const ent = await assertEntitiesInClient(clientId, [fields.ownerEntityId]);
+  if (!ent.ok) return ent.reason;
+  const acct = await assertAccountsInClient(clientId, [fields.linkedPropertyId]);
+  if (!acct.ok) return acct.reason;
+  if (fields.parentAccountId != null) {
+    const biz = await assertBusinessAccountsInClient(clientId, [fields.parentAccountId]);
+    if (!biz.ok) return biz.reason;
+  }
+  return null;
+}
+
+/** A single proposed owner from the liability owners[] split (model arg shape). */
+type ProposedOwner = {
+  kind?: string;
+  familyMemberId?: string;
+  entityId?: string;
+  percent?: number;
+};
+
+/**
+ * Cascade lines describing how the liability's ownership resolves (spec §5).
+ * A non-null parentAccountId means the row inherits ownership via the business
+ * account (no per-row owners); otherwise each owner[] entry renders as one line.
+ * Returns [] when neither applies, so the caller appends nothing.
+ */
+function liabilityOwnershipLines(
+  parentAccountId: string | null | undefined,
+  owners: ProposedOwner[] | undefined,
+): string[] {
+  if (parentAccountId != null) {
+    return ["Owned via parent business account (no separate owners)."];
+  }
+  if (owners && owners.length > 0) {
+    return owners.map(
+      (o) =>
+        `Owner: ${o.kind} ${o.familyMemberId ?? o.entityId ?? ""} (${Math.round(
+          (o.percent ?? 0) * 100,
+        )}%)`,
+    );
+  }
+  return [];
 }
 
 /**
@@ -463,12 +549,87 @@ async function enrichUpdateIncome(
 }
 
 /**
+ * Dry-run enrichment for add_liability: zod-parse via liabilityCreateSchema, run
+ * the same FK asserts the core runs (NO insert), then render the would-be new row
+ * as `field: value` lines via createDiffLines, PLUS the ownership cascade line(s)
+ * (Task-12 delta, spec §5): a parentAccountId means ownership is inherited via the
+ * business account; otherwise each owner[] entry renders as its own line. The
+ * owners array is stripped before createDiffLines (an array renders as
+ * "[object Object]"). On a zod or FK failure, surface the validation error as the
+ * summary with no diff. Mirrors enrichAddExpense.
+ */
+async function enrichAddLiability(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  clientId: string,
+): Promise<WritePreview> {
+  const parsed = liabilityCreateSchema.safeParse(args);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertLiabilityFks(clientId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+
+  const { owners, ...rowForLines } = parsed.data;
+  const details = createDiffLines(rowForLines);
+  details.push(
+    ...liabilityOwnershipLines(parsed.data.parentAccountId, owners as ProposedOwner[] | undefined),
+  );
+  return { ...base, details };
+}
+
+/**
+ * Dry-run enrichment for update_liability: zod-parse the (non-id) args via
+ * liabilityUpdateSchema, run the same FK asserts (NO update), load the live row,
+ * and diff `currentRow → {...currentRow, ...parsed}` to render `field: from → to`
+ * lines (owners excluded — they live in a satellite, not on the row), PLUS the
+ * ownership cascade line(s). On a zod or FK failure, surface the validation error
+ * as the summary. Mirrors enrichUpdateExpense.
+ */
+async function enrichUpdateLiability(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  ctx: CopilotAuthContext,
+): Promise<WritePreview> {
+  const { liabilityId, ...rest } = args;
+  const id = typeof liabilityId === "string" ? liabilityId : undefined;
+  const parsed = liabilityUpdateSchema.safeParse(rest);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertLiabilityFks(ctx.clientId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+
+  if (!id) return base;
+  const { effectiveTree } = await loadEffectiveTree(
+    ctx.clientId,
+    ctx.firmId,
+    ctx.scenarioId,
+    {},
+  );
+  const current = findRowById(effectiveTree, id);
+  if (!current) return base;
+
+  const { owners, ...rowFields } = parsed.data;
+  const diff = computeRowDiff(current, { ...current, ...rowFields });
+  const details = diff.kind === "edit"
+    ? diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`)
+    : [];
+  details.push(
+    ...liabilityOwnershipLines(parsed.data.parentAccountId, owners as ProposedOwner[] | undefined),
+  );
+  if (details.length === 0) return base;
+  return { ...base, details };
+}
+
+/**
  * Async preview. Without an auth context (or for any tool without enrichment) it
  * returns the pure formatter result unchanged. With a context it ALSO enriches:
  *   • propose_changes — live field-level from→to diff per edit + portfolio impact;
- *   • add_expense / update_expense / add_income / update_income — a dry-run row
- *     diff (zod + FK asserts, NO write), or the plain-language validation error
- *     when the payload is invalid.
+ *   • add_expense / update_expense / add_income / update_income /
+ *     add_liability / update_liability — a dry-run row diff (zod + FK asserts, NO
+ *     write) plus, for liabilities, the ownership cascade line(s); or the
+ *     plain-language validation error when the payload is invalid.
  * All enrichment is best-effort — wrapped in try/catch so any load/parse/assert
  * failure degrades to the pure preview rather than blocking approval.
  */
@@ -491,6 +652,12 @@ export async function describeProposedWrite(
     }
     if (call.name === "update_income") {
       return await enrichUpdateIncome(base, call.args, ctx);
+    }
+    if (call.name === "add_liability") {
+      return await enrichAddLiability(base, call.args, ctx.clientId);
+    }
+    if (call.name === "update_liability") {
+      return await enrichUpdateLiability(base, call.args, ctx);
     }
     if (call.name !== "propose_changes") return base;
 

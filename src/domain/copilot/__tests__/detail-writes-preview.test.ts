@@ -15,11 +15,18 @@ import { describeProposedWrite } from "../preview";
 import type { ProposedWrite } from "../preview";
 import { expenseCreateSchema } from "@/lib/schemas/expenses";
 import { incomeCreateSchema } from "@/lib/schemas/incomes";
+import { liabilityCreateSchema } from "@/lib/schemas/liabilities";
 import type { CopilotAuthContext } from "@/domain/copilot/state";
 import { db } from "@/db";
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
 const COOPER_FIRM_ID = "org_3CitTEIe8PJa1BVYw7LnEjkiP9r";
+// Cooper "Consulting Business" account (category === "business") — a valid parent.
+const COOPER_BUSINESS_ACCOUNT_ID = "f43af48f-178c-417f-8934-79dba967de93";
+// Cooper "client" family member — used for the owners[] cascade-line path.
+const COOPER_FM_ID = "7f875f15-50f6-4ef2-8f18-8a0b1f8b3997";
+// An account that belongs to a DIFFERENT client — proves cross-tenant FK rejection.
+const FOREIGN_ACCOUNT_ID = "3d552610-0eff-47b4-a7bf-fe3a3805d876";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 
@@ -172,6 +179,130 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_income dry run)", () => {
     // Pure formatter result: named summary, NO enriched details.
     expect(preview.name).toBe("add_income");
     expect(preview.summary).toMatch(/Add income/i);
+    expect(preview.details).toBeUndefined();
+  });
+});
+
+describe.skipIf(!HAS_DB)("detail-writes preview (add_liability dry run)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders the would-be-new-row field lines and does NOT insert", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    const call: ProposedWrite = {
+      name: "add_liability",
+      args: {
+        name: "Mortgage",
+        startYear: 2030,
+        termMonths: 120,
+        balance: 200000,
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    // The dry run never writes.
+    expect(insertSpy).not.toHaveBeenCalled();
+
+    expect(preview.name).toBe("add_liability");
+    expect(preview.summary).toMatch(/Add liability/i);
+    expect(preview.details).toBeDefined();
+    const text = preview.details!.join(" ");
+    // createDiffLines renders the parsed, defaulted row as `field: value` lines.
+    expect(text).toMatch(/name: Mortgage/);
+    expect(text).toMatch(/balance: 200000/);
+    expect(text).toMatch(/startYear: 2030/);
+    expect(text).toMatch(/termMonths: 120/);
+  });
+
+  it("renders the parent-business cascade line when parentAccountId is set", async () => {
+    const call: ProposedWrite = {
+      name: "add_liability",
+      args: {
+        name: "Business loan",
+        startYear: 2030,
+        termMonths: 120,
+        balance: 50000,
+        parentAccountId: COOPER_BUSINESS_ACCOUNT_ID,
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(preview.name).toBe("add_liability");
+    expect(preview.details).toBeDefined();
+    const text = preview.details!.join(" ");
+    expect(text).toMatch(/Owned via parent business account \(no separate owners\)\./);
+  });
+
+  it("renders an owner cascade line when owners[] is provided", async () => {
+    const call: ProposedWrite = {
+      name: "add_liability",
+      args: {
+        name: "Joint mortgage",
+        startYear: 2030,
+        termMonths: 120,
+        balance: 300000,
+        owners: [
+          { kind: "family_member", familyMemberId: COOPER_FM_ID, percent: 1.0 },
+        ],
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(preview.name).toBe("add_liability");
+    expect(preview.details).toBeDefined();
+    const text = preview.details!.join(" ");
+    expect(text).toMatch(/Owner: family_member .* \(100%\)/);
+  });
+
+  it("surfaces the cross-tenant linkedPropertyId FK error as the summary (no insert)", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    const call: ProposedWrite = {
+      name: "add_liability",
+      args: {
+        name: "Bad liability",
+        startYear: 2030,
+        termMonths: 120,
+        linkedPropertyId: FOREIGN_ACCOUNT_ID,
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(preview.name).toBe("add_liability");
+    expect(preview.summary).toMatch(/not owned by this client/i);
+    // An FK failure renders no field diff.
+    expect(preview.details).toBeUndefined();
+  });
+
+  it("surfaces the missing-termMonths validation error as the summary (no insert)", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    const call: ProposedWrite = {
+      name: "add_liability",
+      args: { name: "Incomplete liability", startYear: 2030 },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(preview.name).toBe("add_liability");
+    // termMonths is required (coerceToInt.pipe(number)) — a zod failure.
+    expect(preview.summary).not.toMatch(/^Add liability/);
+    expect(preview.details).toBeUndefined();
+  });
+
+  it("degrades to the pure formatter when enrichment throws", async () => {
+    vi.spyOn(liabilityCreateSchema, "safeParse").mockImplementation(() => {
+      throw new Error("boom");
+    });
+    const call: ProposedWrite = {
+      name: "add_liability",
+      args: { name: "Mortgage", startYear: 2030, termMonths: 120 },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    // Pure formatter result: named summary, NO enriched details.
+    expect(preview.name).toBe("add_liability");
+    expect(preview.summary).toMatch(/Add liability/i);
     expect(preview.details).toBeUndefined();
   });
 });

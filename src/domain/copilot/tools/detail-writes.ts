@@ -1,8 +1,9 @@
 // src/domain/copilot/tools/detail-writes.ts
 //
 // Phase 3 DETAIL (plan-data) WRITE TOOLS — the expense sub-phase
-// (add_/update_/remove_expense) plus the income sub-phase
-// (add_/update_/remove_income). These mutate base-case plan data, so they
+// (add_/update_/remove_expense), the income sub-phase
+// (add_/update_/remove_income), and the liability sub-phase
+// (add_/update_/remove_liability). These mutate base-case plan data, so they
 // route through the human-approval gate (WRITE_TOOL_NAMES) exactly like the
 // Phase-2 scenario writes, and they share that surface's security posture:
 //
@@ -39,6 +40,11 @@ import {
   updateIncomeForClient,
   deleteIncomeForClient,
 } from "@/lib/clients/incomes-writes";
+import {
+  createLiabilityForClient,
+  updateLiabilityForClient,
+  deleteLiabilityForClient,
+} from "@/lib/clients/liabilities-writes";
 import type { CopilotToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
@@ -128,6 +134,54 @@ const incomeFields = {
   ownerEntityId: z.string().optional().describe("owning entity id; mutually exclusive with ownerAccountId"),
   ownerAccountId: z.string().optional().describe("owning business-account id; mutually exclusive with ownerEntityId"),
   cashAccountId: z.string().optional().describe("cash account this income flows into"),
+};
+
+// The model-supplied public liability fields (clientId/scenarioId come from ctx).
+// Mirrors the loose, coercion-tolerant input the API route accepts; the core
+// zod-parses it via liabilityCreateSchema and applies the FK asserts + defaults.
+// startYear/termMonths are kept .optional() here (matching expenseFields.startYear)
+// — the add tool re-requires them; the core's liabilityCreateSchema enforces
+// required-ness once for all callers. (The internal startYearRef ref token is NOT
+// exposed — expenseFields/incomeFields omit their refs too.)
+const liabilityFields = {
+  startYear: z.number().int().optional().describe("first plan year the liability applies"),
+  termMonths: z.number().int().optional().describe("loan term in months"),
+  balance: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("outstanding balance (defaults to 0)"),
+  interestRate: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("annual interest rate, e.g. 0.05 (defaults to 0)"),
+  monthlyPayment: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("monthly payment amount (defaults to 0)"),
+  startMonth: z.number().int().optional().describe("month the liability begins (1-12, defaults to 1)"),
+  termUnit: z.string().optional().describe("term unit, e.g. 'annual' (defaults to 'annual')"),
+  balanceAsOfMonth: z.number().int().optional().describe("month the balance was last observed"),
+  balanceAsOfYear: z.number().int().optional().describe("year the balance was last observed"),
+  isInterestDeductible: z.boolean().optional().describe("whether interest is tax-deductible"),
+  linkedPropertyId: z.string().optional().describe("real-estate account id this liability is secured against"),
+  parentAccountId: z
+    .string()
+    .optional()
+    .describe("business-account id; makes this a child-of-business liability (ownership inherited, no separate owners)"),
+  ownerEntityId: z.string().optional().describe("owning entity id (legacy owner synthesis)"),
+  owners: z
+    .array(
+      z.object({
+        kind: z.enum(["family_member", "entity"]),
+        familyMemberId: z.string().optional(),
+        entityId: z.string().optional(),
+        percent: z.number(),
+      }),
+    )
+    .optional()
+    .describe(
+      "ownership split; percents are fractions summing to 1.0; mutually exclusive with parentAccountId",
+    ),
 };
 
 export function buildDetailWriteTools({
@@ -390,6 +444,132 @@ export function buildDetailWriteTools({
     },
   );
 
+  const addLiability = tool(
+    async (input) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await createLiabilityForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          input,
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "liability",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "add_liability", name: r.data.name },
+        });
+
+        return `Added liability "${r.data.name}" (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "add_liability",
+      description:
+        "Add a new liability to the current client's base-case plan. The model supplies the " +
+        "liability fields (name + startYear + termMonths required); clientId is server-derived. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        name: z.string().min(1).describe("display name for the liability"),
+        ...liabilityFields,
+      }),
+    },
+  );
+
+  const updateLiability = tool(
+    async ({ liabilityId, ...input }) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await updateLiabilityForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          liabilityId,
+          input,
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "liability",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "update_liability", name: r.data.name },
+        });
+
+        return `Updated liability "${r.data.name}" (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "update_liability",
+      description:
+        "Update fields on an existing liability in the current client's base-case plan. Pass the " +
+        "liabilityId plus only the fields to change. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        liabilityId: z.string().describe("id of the liability to update"),
+        name: z.string().min(1).optional().describe("display name for the liability"),
+        ...liabilityFields,
+      }),
+    },
+  );
+
+  const removeLiability = tool(
+    async ({ liabilityId }) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await deleteLiabilityForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          liabilityId,
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "liability",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "remove_liability" },
+        });
+
+        return `Removed liability (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "remove_liability",
+      description:
+        "Remove a liability from the current client's base-case plan by id. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        liabilityId: z.string().describe("id of the liability to remove"),
+      }),
+    },
+  );
+
   return [
     addExpense,
     updateExpense,
@@ -397,5 +577,8 @@ export function buildDetailWriteTools({
     addIncome,
     updateIncome,
     removeIncome,
+    addLiability,
+    updateLiability,
+    removeLiability,
   ];
 }

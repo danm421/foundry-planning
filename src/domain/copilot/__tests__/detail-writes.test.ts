@@ -24,6 +24,11 @@ vi.mock("@/lib/clients/incomes-writes", () => ({
   updateIncomeForClient: vi.fn(),
   deleteIncomeForClient: vi.fn(),
 }));
+vi.mock("@/lib/clients/liabilities-writes", () => ({
+  createLiabilityForClient: vi.fn(),
+  updateLiabilityForClient: vi.fn(),
+  deleteLiabilityForClient: vi.fn(),
+}));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { buildDetailWriteTools } from "../tools/detail-writes";
@@ -39,6 +44,11 @@ import {
   updateIncomeForClient,
   deleteIncomeForClient,
 } from "@/lib/clients/incomes-writes";
+import {
+  createLiabilityForClient,
+  updateLiabilityForClient,
+  deleteLiabilityForClient,
+} from "@/lib/clients/liabilities-writes";
 import { recordAudit } from "@/lib/audit";
 import type { CopilotAuthContext } from "@/domain/copilot/context";
 
@@ -391,6 +401,186 @@ describe("remove_income", () => {
     });
     const result = await getTool("remove_income").invoke({ incomeId: "missing" });
     expect(String(result)).toBe("Client not found");
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+});
+
+describe("add_liability", () => {
+  it('description ends with "Requires human approval."', () => {
+    expect(getTool("add_liability").description).toMatch(/Requires human approval\.$/);
+  });
+
+  it("gates access BEFORE the core and passes actorId: ctx.userId (NOT firmId)", async () => {
+    vi.mocked(createLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-1", name: "Mortgage" } as never,
+      resourceId: "liab-1",
+    });
+    await getTool("add_liability").invoke({
+      name: "Mortgage",
+      startYear: 2030,
+      termMonths: 360,
+    });
+
+    expect(requireOrgId).toHaveBeenCalled();
+    expect(verifyClientAccess).toHaveBeenCalledWith("client_1", "org_session");
+    expect(createLiabilityForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client_1",
+        firmId: "org_session",
+        actorId: "u1",
+      }),
+    );
+
+    const accessOrder = vi.mocked(verifyClientAccess).mock.invocationCallOrder[0];
+    const writeOrder = vi.mocked(createLiabilityForClient).mock.invocationCallOrder[0];
+    expect(accessOrder).toBeLessThan(writeOrder);
+  });
+
+  it("audits copilot.write_approved and returns the new id on success", async () => {
+    vi.mocked(createLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-1", name: "Mortgage" } as never,
+      resourceId: "liab-1",
+    });
+    const result = await getTool("add_liability").invoke({
+      name: "Mortgage",
+      startYear: 2030,
+      termMonths: 360,
+    });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_approved",
+        resourceType: "liability",
+        resourceId: "liab-1",
+        metadata: expect.objectContaining({ tool: "add_liability" }),
+      }),
+    );
+    expect(String(result)).toContain("liab-1");
+  });
+
+  it("returns the core error verbatim and does NOT audit write_approved on {ok:false}", async () => {
+    vi.mocked(createLiabilityForClient).mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: "A liability cannot have both a parent business and explicit owners",
+    });
+    const result = await getTool("add_liability").invoke({
+      name: "x",
+      startYear: 2030,
+      termMonths: 360,
+      parentAccountId: "a1",
+      owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }],
+    });
+    expect(String(result)).toBe(
+      "A liability cannot have both a parent business and explicit owners",
+    );
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+
+  it("rejects when verifyClientAccess fails WITHOUT calling the core", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    const result = await getTool("add_liability").invoke({
+      name: "x",
+      startYear: 2030,
+      termMonths: 360,
+    });
+    expect(String(result)).toMatch(/not found|access denied/i);
+    expect(createLiabilityForClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("update_liability", () => {
+  it('description ends with "Requires human approval."', () => {
+    expect(getTool("update_liability").description).toMatch(/Requires human approval\.$/);
+  });
+
+  it("passes liabilityId + actorId: ctx.userId to the core and audits on success", async () => {
+    vi.mocked(updateLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-1", name: "Mortgage" } as never,
+      resourceId: "liab-1",
+    });
+    const result = await getTool("update_liability").invoke({
+      liabilityId: "liab-1",
+      balance: 200000,
+    });
+    expect(updateLiabilityForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client_1",
+        firmId: "org_session",
+        actorId: "u1",
+        liabilityId: "liab-1",
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_approved",
+        resourceType: "liability",
+        resourceId: "liab-1",
+        metadata: expect.objectContaining({ tool: "update_liability" }),
+      }),
+    );
+    expect(String(result)).toContain("liab-1");
+  });
+
+  it("returns the core error verbatim on {ok:false}", async () => {
+    vi.mocked(updateLiabilityForClient).mockResolvedValue({
+      ok: false,
+      status: 404,
+      error: "Liability not found",
+    });
+    const result = await getTool("update_liability").invoke({ liabilityId: "missing" });
+    expect(String(result)).toBe("Liability not found");
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+});
+
+describe("remove_liability", () => {
+  it('description ends with "Requires human approval."', () => {
+    expect(getTool("remove_liability").description).toMatch(/Requires human approval\.$/);
+  });
+
+  it("passes liabilityId + actorId: ctx.userId to the core and audits on success", async () => {
+    vi.mocked(deleteLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-1" },
+      resourceId: "liab-1",
+    });
+    const result = await getTool("remove_liability").invoke({ liabilityId: "liab-1" });
+    expect(deleteLiabilityForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client_1",
+        firmId: "org_session",
+        actorId: "u1",
+        liabilityId: "liab-1",
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_approved",
+        resourceType: "liability",
+        resourceId: "liab-1",
+        metadata: expect.objectContaining({ tool: "remove_liability" }),
+      }),
+    );
+    expect(String(result)).toContain("liab-1");
+  });
+
+  it("returns the core error verbatim on {ok:false}", async () => {
+    vi.mocked(deleteLiabilityForClient).mockResolvedValue({
+      ok: false,
+      status: 404,
+      error: "Liability not found",
+    });
+    const result = await getTool("remove_liability").invoke({ liabilityId: "missing" });
+    expect(String(result)).toBe("Liability not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "copilot.write_approved" }),
     );
